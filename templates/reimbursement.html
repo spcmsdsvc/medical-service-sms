@@ -468,6 +468,297 @@
         font-weight: 700;
     }
 
+    .reim-action-dock {
+        --reim-action-dock-height: 76px;
+        position: fixed;
+        left: var(--sidebar-width, 240px);
+        right: 0;
+        bottom: 0;
+        z-index: 1200;
+        min-height: var(--reim-action-dock-height);
+        box-sizing: border-box;
+        display: none;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 18px calc(10px + env(safe-area-inset-bottom, 0px));
+        border-top: 1px solid var(--app-border, #dbe3ea);
+        background: color-mix(in srgb, var(--app-surface, #fff) 96%, transparent);
+        box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(12px);
+    }
+
+    .reim-page.reim-dock-visible {
+        padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .reim-dock-total {
+        min-width: 150px;
+        color: var(--app-primary, #0f5132);
+        font-size: 1.1rem;
+        font-weight: 950;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .reim-readiness-toggle {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid var(--app-border, #cbd5e1);
+        border-radius: 10px;
+        padding: 8px 12px;
+        background: var(--app-surface-raised, #f8fafc);
+        color: var(--app-text, #172033);
+        font-weight: 850;
+        cursor: pointer;
+    }
+
+    .reim-readiness-toggle.ready {
+        border-color: #86efac;
+        background: #f0fdf4;
+        color: #166534;
+    }
+
+    .reim-readiness-toggle.blocked {
+        border-color: #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+    }
+
+    .reim-readiness-toggle.locked {
+        border-color: var(--app-border, #cbd5e1);
+        background: var(--app-surface-raised, #f8fafc);
+        color: var(--app-muted-text, #64748b);
+    }
+
+    .reim-dock-status {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .reim-dock-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+    }
+
+    .reim-readiness-panel {
+        position: fixed;
+        left: var(--sidebar-width, 240px);
+        right: 0;
+        bottom: 76px;
+        z-index: 1199;
+        display: none;
+        max-height: min(62vh, 520px);
+        overflow: auto;
+        padding: 12px 18px;
+        border-top: 1px solid var(--app-border, #dbe3ea);
+        background: var(--app-surface, #fff);
+        box-shadow: 0 -14px 32px rgba(15, 23, 42, 0.16);
+    }
+
+    .reim-readiness-panel.show,
+    .reim-page.reim-dock-visible .reim-action-dock {
+        display: flex;
+    }
+
+    .reim-readiness-panel.show {
+        display: block;
+    }
+
+    .reim-readiness-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+    }
+
+    .reim-readiness-head h3 {
+        margin: 0;
+        color: var(--app-text, #172033);
+        font-size: 0.98rem;
+    }
+
+    .reim-readiness-list {
+        display: grid;
+        gap: 6px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .reim-readiness-item {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        border: 1px solid var(--app-border, #e2e8f0);
+        border-radius: 9px;
+        background: var(--app-surface-raised, #f8fafc);
+    }
+
+    .reim-readiness-item.blocking {
+        border-color: #fed7aa;
+        background: #fff7ed;
+    }
+
+    .reim-readiness-item.advisory {
+        border-color: #bfdbfe;
+        background: #eff6ff;
+    }
+
+    .reim-readiness-item.ready {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+    }
+
+    .reim-readiness-item-copy {
+        min-width: 0;
+    }
+
+    .reim-readiness-item-title {
+        display: block;
+        color: var(--app-text, #172033);
+        font-weight: 850;
+    }
+
+    .reim-readiness-item-detail {
+        display: block;
+        margin-top: 2px;
+        color: var(--app-muted-text, #64748b);
+        font-size: 0.82rem;
+    }
+
+    .reim-readiness-action {
+        flex: 0 0 auto;
+        min-height: 36px;
+        border: 1px solid var(--app-border, #cbd5e1);
+        border-radius: 8px;
+        padding: 6px 9px;
+        background: var(--app-surface, #fff);
+        color: var(--app-primary, #166534);
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .reim-readiness-action:hover {
+        border-color: var(--app-primary, #198754);
+    }
+
+    @media (min-width: 821px) {
+        body.reim-focus-active .reim-page.reim-dock-visible {
+            padding-bottom: 0;
+        }
+
+        body.reim-focus-active .reim-action-dock {
+            position: relative;
+            left: auto;
+            right: auto;
+            bottom: auto;
+            width: auto;
+            align-self: stretch;
+            flex: 0 0 48px;
+            min-height: 48px;
+            --reim-action-dock-height: 48px;
+            gap: 8px;
+            padding: 4px 10px;
+            border-radius: 10px 10px 0 0;
+            box-shadow: 0 -4px 14px rgba(15, 23, 42, 0.1);
+        }
+
+        body.reim-focus-active .reim-readiness-panel {
+            left: 8px;
+            right: 8px;
+            bottom: 52px;
+        }
+
+        body.reim-focus-active .reim-dock-total {
+            min-width: 120px;
+            font-size: 0.95rem;
+        }
+
+        body.reim-focus-active .reim-readiness-toggle,
+        body.reim-focus-active .reim-dock-actions .reim-btn {
+            min-height: 40px;
+            height: 40px;
+            padding: 6px 10px;
+            font-size: 0.82rem;
+        }
+
+        body.reim-focus-active .reim-dock-status {
+            font-size: 0.72rem;
+        }
+    }
+
+    @media (max-width: 820px) {
+        .reim-action-dock {
+            left: 0;
+            --reim-action-dock-height: 112px;
+            display: none;
+            align-items: stretch;
+            flex-wrap: wrap;
+            gap: 6px 8px;
+            padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+        }
+
+        .reim-page.reim-dock-visible {
+            padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+        }
+
+        .reim-dock-total {
+            order: 1;
+            min-width: 0;
+            flex: 1 1 auto;
+            font-size: 1rem;
+        }
+
+        .reim-readiness-toggle {
+            order: 2;
+            min-height: 44px;
+            max-width: 58%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .reim-dock-status {
+            order: 3;
+            flex: 1 1 100%;
+            min-height: 20px;
+            font-size: 0.76rem;
+        }
+
+        .reim-dock-actions {
+            order: 4;
+            flex: 1 1 100%;
+        }
+
+        .reim-dock-actions .reim-btn {
+            min-height: 44px;
+            flex: 1 1 0;
+        }
+
+        .reim-readiness-panel {
+            left: 0;
+            bottom: 112px;
+            padding: 10px;
+        }
+    }
+
+    @media print {
+        .reim-action-dock,
+        .reim-readiness-panel {
+            display: none !important;
+        }
+    }
+
     .reim-btn-success {
         background: #0f5132;
         color: #fff;
@@ -2239,7 +2530,7 @@
             max-height: 100%;
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 2px;
             padding: 0;
             overflow: hidden;
         }
@@ -2248,7 +2539,7 @@
             flex: 1 1 auto;
             min-height: 0;
             margin: 0;
-            padding: 6px;
+            padding: 4px 4px 0;
             display: flex;
             flex-direction: column;
             gap: 0;
@@ -2259,10 +2550,11 @@
             position: relative;
             z-index: 25;
             flex: 0 0 auto;
-            min-height: 32px;
-            max-height: 40px;
-            margin: 0 0 3px !important;
-            padding: 0 0 3px;
+            min-height: 28px;
+            max-height: 34px;
+            margin: 0 0 2px !important;
+            padding: 0 0 1px;
+            flex-wrap: wrap !important;
             overflow: visible;
             border-bottom: 1px solid var(--app-border, #dbe3ea);
             background: var(--app-surface, #ffffff);
@@ -2283,19 +2575,19 @@
             text-overflow: ellipsis;
             white-space: nowrap;
             font-size: 0.76rem;
-            line-height: 32px;
+            line-height: 28px;
         }
 
         body.reim-focus-active .reim-top-actions {
             gap: 4px;
-            flex-wrap: nowrap;
+            flex-wrap: wrap;
             min-width: 0;
         }
 
         body.reim-focus-active .reim-top-actions .reim-btn {
-            min-height: 32px;
-            height: 32px;
-            padding: 4px 8px;
+            min-height: 30px;
+            height: 30px;
+            padding: 3px 7px;
             font-size: 0.78rem;
             line-height: 1.1;
         }
@@ -2371,10 +2663,10 @@
 
         body.reim-focus-active .reim-worksheet-summary {
             flex: 0 0 auto;
-            min-height: 31px;
-            margin: 0 0 3px;
-            padding: 4px 8px;
-            gap: 4px;
+            min-height: 28px;
+            margin: 0 0 2px;
+            padding: 3px 6px;
+            gap: 3px;
             grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(110px, 0.6fr));
             border-radius: 8px;
         }
@@ -2389,13 +2681,13 @@
         }
 
         body.reim-focus-active .reim-summary-value {
-            margin-top: 2px;
-            font-size: 0.8rem;
-            line-height: 1.15;
+            margin-top: 1px;
+            font-size: 0.76rem;
+            line-height: 1.05;
         }
 
         body.reim-focus-active .reim-summary-total .reim-summary-value {
-            font-size: 0.92rem;
+            font-size: 0.88rem;
         }
 
         body.reim-focus-active .reim-focus-toolbar {
@@ -2404,8 +2696,8 @@
             justify-content: space-between;
             gap: 6px;
             flex: 0 0 auto;
-            min-height: 32px;
-            margin: 0 0 4px;
+            min-height: 30px;
+            margin: 0 0 2px;
         }
 
         body.reim-focus-active .reim-focus-utility-actions {
@@ -2421,9 +2713,9 @@
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            min-height: 32px;
-            height: 32px;
-            padding: 4px 8px;
+            min-height: 30px;
+            height: 30px;
+            padding: 3px 7px;
             font-size: 0.74rem;
             font-weight: 700;
             line-height: 1.1;
@@ -2444,9 +2736,9 @@
 
         body.reim-focus-active .reim-column-view-control select,
         body.reim-focus-active .reim-zoom-control select {
-            min-height: 32px;
-            height: 32px;
-            padding: 4px 22px 4px 7px;
+            min-height: 30px;
+            height: 30px;
+            padding: 3px 22px 3px 7px;
             font-size: 0.74rem;
         }
 
@@ -2460,11 +2752,55 @@
         }
 
         body.reim-focus-active .reim-zoom-control .reim-btn {
-            min-width: 32px;
-            min-height: 32px;
-            height: 32px;
-            padding: 4px 8px;
+            min-width: 30px;
+            min-height: 30px;
+            height: 30px;
+            padding: 3px 7px;
             font-size: 0.74rem;
+        }
+
+        body.reim-focus-active .reim-row-selection-toolbar {
+            flex: 0 0 36px;
+            min-height: 36px;
+            height: 36px;
+            box-sizing: border-box;
+            margin: 0 0 2px;
+            padding: 2px 6px;
+            gap: 6px;
+            flex-wrap: nowrap;
+            overflow: hidden;
+        }
+
+        body.reim-focus-active .reim-row-selection-control {
+            min-height: 30px;
+            gap: 5px;
+            font-size: 0.74rem;
+            white-space: nowrap;
+        }
+
+        body.reim-focus-active #reimSelectAllRows {
+            width: 16px;
+            height: 16px;
+        }
+
+        body.reim-focus-active .reim-row-selection-status {
+            font-size: 0.72rem;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        body.reim-focus-active #reimDeleteSelectedBtn {
+            min-height: 30px;
+            height: 30px;
+            padding: 3px 8px;
+            font-size: 0.74rem;
+            white-space: nowrap;
+        }
+
+        body.reim-focus-active .reim-table th,
+        body.reim-focus-active .reim-table tfoot td {
+            padding-top: 6px;
+            padding-bottom: 6px;
         }
 
         body.reim-focus-active .reim-table-wrap {
@@ -2617,6 +2953,16 @@
         }
     }
 
+    @media (min-width: 1201px) {
+        body.reim-focus-active .reim-worksheet-topbar {
+            flex-wrap: nowrap !important;
+        }
+
+        body.reim-focus-active .reim-focus-utility-actions {
+            flex-wrap: nowrap;
+        }
+    }
+
     /* The app shell shows its compact mobile-nav through 992px. Reserve its
        fixed-height row so the focus surface does not extend below the viewport. */
     @media (min-width: 821px) and (max-width: 992px) {
@@ -2633,6 +2979,7 @@
     @media (min-width: 821px) and (max-width: 1100px) {
         body.reim-focus-active .reim-worksheet-topbar {
             max-height: 96px;
+            flex-wrap: wrap !important;
             overflow: visible;
         }
 
@@ -2799,9 +3146,6 @@
                 <div class="reim-muted" id="reimStatusText">Select a date range to begin.</div>
             </div>
             <div class="reim-top-actions">
-                <span class="reim-save-status" id="reimDraftStatus" data-save-state="idle" aria-live="polite">Not saved yet.</span>
-                <button type="button" class="reim-btn reim-btn-secondary" id="reimSaveDraftBtn" onclick="saveReimbursementDraft()">Save Draft</button>
-                <button type="button" class="reim-btn reim-btn-primary" id="reimSubmitBtn" onclick="submitReimbursement()">Submit</button>
                 <div class="reim-focus-secondary-actions">
                     <button type="button" class="reim-btn reim-btn-secondary reim-focus-more-toggle" id="reimFocusMoreToggle" data-focus-panel="reimFocusMorePanel" aria-controls="reimFocusMorePanel" aria-expanded="false" onclick="toggleReimbursementFocusPanel('reimFocusMorePanel')">
                         <i class="fa-solid fa-ellipsis" aria-hidden="true"></i> More
@@ -3133,6 +3477,27 @@
         </div>
     </div>
 
+    <div class="reim-readiness-panel" id="reimReadinessPanel" role="region" aria-label="Submission readiness details" aria-hidden="true">
+        <div class="reim-readiness-head">
+            <h3>Submission readiness</h3>
+            <button type="button" class="reim-btn reim-btn-secondary" id="reimReadinessClose" onclick="closeReimbursementReadiness()">Close</button>
+        </div>
+        <ul class="reim-readiness-list" id="reimReadinessList"></ul>
+    </div>
+
+    <div class="reim-action-dock" id="reimActionDock" role="region" aria-label="Reimbursement actions">
+        <div class="reim-dock-total" id="reimDockTotal">₱ 0.00</div>
+        <button type="button" class="reim-readiness-toggle blocked" id="reimReadinessToggle" aria-expanded="false" aria-controls="reimReadinessPanel" onclick="toggleReimbursementReadiness()">
+            <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+            <span id="reimReadinessLabel">Not ready</span>
+        </button>
+        <span class="reim-save-status reim-dock-status" id="reimDraftStatus" data-save-state="idle" aria-live="polite">Not saved yet.</span>
+        <div class="reim-dock-actions">
+            <button type="button" class="reim-btn reim-btn-secondary" id="reimSaveDraftBtn" onclick="saveReimbursementDraft()">Save Draft</button>
+            <button type="button" class="reim-btn reim-btn-primary" id="reimSubmitBtn" onclick="submitReimbursement()">Submit</button>
+        </div>
+    </div>
+
 </div>
 <script>
     const reimbursementExpenseKeys = [
@@ -3206,6 +3571,274 @@
     let reimbursementReceiptsByShift = {};
     let reimbursementAdditionalReceipts = [];
     let reimbursementReceiptUploadBusy = false;
+    let reimbursementWorksheetLoaded = false;
+    let reimbursementReadinessOpen = false;
+    let reimbursementReadinessState = {
+        signature: 'pending',
+        signatureToken: '',
+        lpr: 'pending',
+        lprToken: '',
+        lprItem: null,
+        lprSavedVersion: -1
+    };
+
+    function reimbursementReadinessToken() {
+        const context = reimbursementCurrentContext();
+        return `${reimbursementContextRevision}:${context.key}`;
+    }
+
+    function reimbursementReadinessTokenMatches(token) {
+        return String(token || '') === String(reimbursementReadinessToken());
+    }
+
+    function buildReimbursementReadinessSnapshot(options) {
+        options = options || {};
+        const rows = Array.isArray(options.rows) ? options.rows : [];
+        const includedRows = rows.filter(function(row) {
+            return getReimbursementPayloadRowTotal(row) > 0;
+        });
+        const zeroRows = rows.length - includedRows.length;
+        const total = includedRows.reduce(function(sum, row) {
+            return sum + getReimbursementPayloadRowTotal(row);
+        }, 0);
+        const editable = options.editable !== false;
+        const saveState = String(options.saveState || 'idle').toLowerCase();
+        const unsaved = options.unsaved !== false;
+        const signature = String(options.signature || 'pending').toLowerCase();
+        const lprRequired = Number(options.officeFieldTotal || 0) > 0.005;
+        const lpr = String(options.lpr || 'pending').toLowerCase();
+        const lprNeedsSave = !!options.unsaved || !options.hasSavedRecord;
+        const blockers = [];
+        const advisories = [];
+
+        if (!editable) {
+            blockers.push({
+                id: 'lifecycle',
+                title: options.lifecycleLabel || 'Locked record',
+                detail: options.lifecycleReason || 'This reimbursement is read-only.'
+            });
+        } else if (!includedRows.length) {
+            blockers.push({
+                id: 'amount',
+                title: 'Claim amount',
+                detail: 'Enter a positive amount in at least one row.',
+                action: 'focusReimbursementAmountField',
+                actionLabel: 'Enter amount'
+            });
+        }
+
+        if (editable && (unsaved || saveState !== 'saved')) {
+            blockers.push({
+                id: 'save',
+                title: 'Draft save',
+                detail: saveState === 'saving'
+                    ? 'Saving the latest reimbursement values…'
+                    : (saveState === 'unsaved' ? 'Save the latest entered values before submitting.' : 'Save this worksheet before submitting.'),
+                action: saveState === 'saving' ? '' : 'saveReimbursementFromReadiness',
+                actionLabel: saveState === 'saving' ? '' : 'Save now'
+            });
+        } else {
+            advisories.push({ id: 'save-ready', title: 'Draft save', detail: 'Latest entered values are saved.', state: 'ready' });
+        }
+
+        if (signature !== 'ready') {
+            blockers.push({
+                id: 'signature',
+                title: 'Signature',
+                detail: signature === 'pending'
+                    ? 'Checking your saved signature…'
+                    : (signature === 'error' ? 'Signature check failed. Try again.' : 'Add your signature in Settings before submitting.'),
+                action: signature === 'pending' ? '' : (signature === 'error' ? 'retryReimbursementReadinessSignature' : 'openReimbursementSettingsForSignature'),
+                actionLabel: signature === 'pending' ? '' : (signature === 'error' ? 'Retry' : 'Open Settings')
+            });
+        } else {
+            advisories.push({ id: 'signature-ready', title: 'Signature', detail: 'Saved signature confirmed.', state: 'ready' });
+        }
+
+        if (lprRequired && lpr !== 'ready') {
+            blockers.push({
+                id: 'lpr',
+                title: 'LPR for Office/Field Items',
+                detail: lpr === 'pending'
+                    ? 'Checking the linked LPR…'
+                    : (!lprNeedsSave
+                        ? 'Review or attach the LPR for the latest saved claim.'
+                        : 'Save the draft before reviewing the required LPR.'),
+                action: lprNeedsSave ? 'saveAndReviewReimbursementLpr' : 'openReimbursementLprForReviewFromReadiness',
+                actionLabel: lpr === 'pending' ? '' : (lprNeedsSave ? 'Save and review LPR' : 'Review LPR')
+            });
+        } else if (lprRequired) {
+            advisories.push({ id: 'lpr-ready', title: 'LPR', detail: 'Required linked LPR refreshed after the latest save.', state: 'ready' });
+        } else {
+            advisories.push({ id: 'lpr-not-required', title: 'LPR', detail: 'Not required because Office/Field Items is zero.', state: 'ready' });
+        }
+
+        advisories.unshift({
+            id: 'included-rows',
+            title: 'Included rows',
+            detail: `${includedRows.length} row${includedRows.length === 1 ? '' : 's'} with a positive amount will be submitted.`,
+            state: includedRows.length ? 'ready' : 'advisory'
+        });
+        advisories.push({
+            id: 'zero-rows',
+            title: 'Zero-value rows',
+            detail: `${zeroRows} row${zeroRows === 1 ? '' : 's'} will be excluded from submission.`,
+            state: 'advisory'
+        });
+        advisories.push({
+            id: 'receipts',
+            title: 'Receipts',
+            detail: `${Number(options.receiptCount || 0)} attachment${Number(options.receiptCount || 0) === 1 ? '' : 's'} available. Receipts are recommended but advisory.`,
+            action: 'openReimbursementReceiptsFromReadiness',
+            actionLabel: 'View receipts',
+            state: 'advisory'
+        });
+
+        return {
+            ready: editable && blockers.length === 0,
+            editable,
+            total,
+            includedRows: includedRows.length,
+            zeroRows,
+            blockers,
+            advisories,
+            lprRequired,
+            signature,
+            saveState
+        };
+    }
+
+    function reimbursementReadinessActionMarkup(item) {
+        if (!item || !item.action || !item.actionLabel) return '';
+        return `<button type="button" class="reim-readiness-action" onclick="${item.action}()">${reimEscape(item.actionLabel)}</button>`;
+    }
+
+    function renderReimbursementReadiness(snapshot) {
+        if (!snapshot || typeof document === 'undefined') return;
+        const label = document.getElementById('reimReadinessLabel');
+        const toggle = document.getElementById('reimReadinessToggle');
+        const dockTotal = document.getElementById('reimDockTotal');
+        const list = document.getElementById('reimReadinessList');
+        if (dockTotal) dockTotal.textContent = `₱ ${formatMoney(snapshot.total)}`;
+        if (label) label.textContent = snapshot.ready ? 'Ready to submit' : (snapshot.editable ? `${snapshot.blockers.length} item${snapshot.blockers.length === 1 ? '' : 's'} need attention` : 'Read-only record');
+        if (toggle) {
+            toggle.classList.toggle('ready', snapshot.ready);
+            toggle.classList.toggle('blocked', !snapshot.ready && snapshot.editable);
+            toggle.classList.toggle('locked', !snapshot.editable);
+            const icon = toggle.querySelector('i');
+            if (icon) icon.className = snapshot.ready ? 'fa-solid fa-circle-check' : (snapshot.editable ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-lock');
+        }
+        if (list) {
+            const items = snapshot.blockers.map(function(item) { return Object.assign({}, item, { state: 'blocking' }); }).concat(snapshot.advisories);
+            list.innerHTML = items.map(function(item) {
+                return `<li class="reim-readiness-item ${reimEscape(item.state || 'advisory')}">
+                    <div class="reim-readiness-item-copy"><span class="reim-readiness-item-title">${reimEscape(item.title)}</span><span class="reim-readiness-item-detail">${reimEscape(item.detail)}</span></div>
+                    ${reimbursementReadinessActionMarkup(item)}
+                </li>`;
+            }).join('');
+        }
+    }
+
+    function updateReimbursementReadiness() {
+        if (typeof document === 'undefined') return null;
+        let rows = currentReimbursementRows || [];
+        try {
+            rows = collectReimbursementRowsForSave();
+        } catch (error) {
+            // The live DOM may not exist during initial script evaluation.
+        }
+        const statusEl = document.getElementById('reimDraftStatus');
+        const snapshot = buildReimbursementReadinessSnapshot({
+            rows,
+            editable: reimbursementIsEditable(),
+            lifecycleLabel: currentReimbursementLifecycle && currentReimbursementLifecycle.lifecycle_label,
+            lifecycleReason: currentReimbursementLifecycle && currentReimbursementLifecycle.lock_reason,
+            saveState: statusEl && statusEl.dataset ? statusEl.dataset.saveState : 'idle',
+            unsaved: reimbursementHasUnsavedEdits(),
+            signature: reimbursementReadinessState.signature,
+            officeFieldTotal: reimbursementOfficeFieldTotal(rows),
+            lpr: reimbursementReadinessState.lpr,
+            savedVersion: reimbursementSavedEditVersion,
+            hasSavedRecord: Number(currentReimbursementId || 0) > 0,
+            receiptCount: (reimbursementAdditionalReceipts || []).length
+        });
+        renderReimbursementReadiness(snapshot);
+        return snapshot;
+    }
+
+    function setReimbursementDockVisibility(visible) {
+        reimbursementWorksheetLoaded = !!visible;
+        const page = document.querySelector('.reim-page');
+        if (page) page.classList.toggle('reim-dock-visible', reimbursementWorksheetLoaded);
+        if (!reimbursementWorksheetLoaded) closeReimbursementReadiness();
+    }
+
+    function toggleReimbursementReadiness() {
+        const panel = document.getElementById('reimReadinessPanel');
+        const toggle = document.getElementById('reimReadinessToggle');
+        if (!panel || !toggle) return;
+        reimbursementReadinessOpen = !reimbursementReadinessOpen;
+        panel.classList.toggle('show', reimbursementReadinessOpen);
+        panel.setAttribute('aria-hidden', reimbursementReadinessOpen ? 'false' : 'true');
+        toggle.setAttribute('aria-expanded', reimbursementReadinessOpen ? 'true' : 'false');
+        if (reimbursementReadinessOpen) {
+            updateReimbursementReadiness();
+            const close = document.getElementById('reimReadinessClose');
+            if (close) close.focus();
+        }
+    }
+
+    function closeReimbursementReadiness() {
+        reimbursementReadinessOpen = false;
+        const panel = document.getElementById('reimReadinessPanel');
+        const toggle = document.getElementById('reimReadinessToggle');
+        if (panel) {
+            panel.classList.remove('show');
+            panel.setAttribute('aria-hidden', 'true');
+        }
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function focusReimbursementAmountField() {
+        const input = document.querySelector(`${getActiveReimbursementAmountSelector()}:not([readonly])`);
+        if (!input) {
+            reimAlert('Enter an amount in an editable reimbursement row.');
+            return;
+        }
+        input.focus();
+        try { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (error) { input.scrollIntoView(); }
+        closeReimbursementReadiness();
+    }
+
+    async function saveReimbursementFromReadiness() {
+        const saved = await saveReimbursementDraft(false);
+        updateReimbursementReadiness();
+        return saved;
+    }
+
+    async function openReimbursementLprForReviewFromReadiness() {
+        const result = await openReimbursementLprForReview(false);
+        updateReimbursementReadiness();
+        return result;
+    }
+
+    async function saveAndReviewReimbursementLpr() {
+        const saved = await saveReimbursementDraft(false);
+        if (!saved) return false;
+        return openReimbursementLprForReviewFromReadiness();
+    }
+
+    function openReimbursementReceiptsFromReadiness() {
+        closeReimbursementReadiness();
+        if (typeof toggleReimbursementFocusPanel === 'function') {
+            toggleReimbursementFocusPanel('reimAdditionalReceiptsCard');
+        }
+    }
+
+    async function retryReimbursementReadinessSignature() {
+        await refreshReimbursementSignatureStatus();
+        updateReimbursementReadiness();
+    }
 
     // Package 1: keep worksheet edits durable without allowing an older request
     // to claim that a newer edit (or a different reimbursement) was saved.
@@ -4175,6 +4808,7 @@
             grandTotalEl.textContent = formatMoney(grandTotal);
         }
         syncReimbursementWorksheetSummary();
+        updateReimbursementReadiness();
     }
 
     function buildMobileExpenseInputs(row) {
@@ -4715,6 +5349,7 @@ function renderReimbursementRows(rows) {
         syncReimbursementRowSelectionUi();
         renderRemovedReimbursementRows();
         syncReimbursementFocusPanelButtons();
+        updateReimbursementReadiness();
 
         document.querySelectorAll('#reimManualItemModal input, #reimManualItemModal select, #reimManualItemModal button').forEach(function(el) {
             el.disabled = !editable;
@@ -4740,6 +5375,7 @@ function renderReimbursementRows(rows) {
             );
         }
         syncReimbursementWorksheetSummary();
+        updateReimbursementReadiness();
     }
 
     function getReimbursementReceiptList(rowKey) {
@@ -4929,6 +5565,7 @@ function renderReimbursementRows(rows) {
 
     function refreshReimbursementReceiptCells() {
         renderAdditionalReimbursementReceipts();
+        updateReimbursementReadiness();
     }
 
     async function fetchReimbursementReceipts(start, end) {
@@ -5134,6 +5771,7 @@ function renderReimbursementRows(rows) {
         el.style.color = tone === 'error'
             ? '#b91c1c'
             : (tone === 'ok' ? '#0f5132' : (tone === 'warn' ? '#b45309' : '#64748b'));
+        updateReimbursementReadiness();
         if (text && (tone === 'error' || tone === 'ok')) {
             reimToast(text, tone);
         }
@@ -5240,6 +5878,11 @@ function renderReimbursementRows(rows) {
             return;
         }
         reimbursementEditVersion += 1;
+        if (reimbursementReadinessState.lpr !== 'not-required') {
+            reimbursementReadinessState.lpr = 'missing';
+            reimbursementReadinessState.lprItem = null;
+            reimbursementReadinessState.lprSavedVersion = -1;
+        }
         setReimbursementDraftStatus('Unsaved changes', 'warn', 'unsaved');
         scheduleReimbursementAutosave();
     }
@@ -5415,6 +6058,10 @@ function renderReimbursementRows(rows) {
                 warning ? `Review: ${warning}` : ''
             ].filter(Boolean).join(' | ');
             reimbursementSavedEditVersion = entry.version;
+            if (typeof reimbursementReadinessState !== 'undefined' && reimbursementReadinessState.lprItem && reimbursementReadinessTokenMatches(reimbursementReadinessState.lprToken)) {
+                reimbursementReadinessState.lprSavedVersion = entry.version;
+                reimbursementReadinessState.lpr = 'ready';
+            }
             if (reimbursementEditVersion === entry.version && reimbursementSaveContextMatches(entry)) {
                 setReimbursementDraftStatus(saveStatus, warning ? 'warn' : 'ok', 'saved');
             } else {
@@ -6414,15 +7061,27 @@ async function saveReimbursementDraft(silent, options) {
     }
 
     async function refreshReimbursementLprPanel() {
+        const readinessToken = reimbursementReadinessToken();
         const panel = document.getElementById('reimLprPanel');
         const body = document.getElementById('reimLprPanelBody');
         const actions = document.getElementById('reimLprPanelActions');
-        if (!panel || !body || !actions) return;
+        if (!panel || !body || !actions) {
+            reimbursementReadinessState.lpr = 'not-required';
+            reimbursementReadinessState.lprItem = null;
+            reimbursementReadinessState.lprToken = readinessToken;
+            updateReimbursementReadiness();
+            return;
+        }
         if (!currentReimbursementId) {
             panel.style.display = 'none';
             body.innerHTML = '';
             actions.innerHTML = '';
+            reimbursementReadinessState.lpr = 'missing';
+            reimbursementReadinessState.lprItem = null;
+            reimbursementReadinessState.lprToken = readinessToken;
+            reimbursementReadinessState.lprSavedVersion = -1;
             syncReimbursementFocusPanelButtons();
+            updateReimbursementReadiness();
             return;
         }
         try {
@@ -6430,12 +7089,18 @@ async function saveReimbursementDraft(silent, options) {
                 credentials: 'same-origin', cache: 'no-store', headers: {'Accept': 'application/json'}
             });
             const payload = await parseReimbursementJsonResponse(response, 'Unable to load attached LPR.');
+            if (!reimbursementReadinessTokenMatches(readinessToken)) return;
             const item = Array.isArray(payload.items) ? payload.items[0] : null;
             if (!item) {
                 panel.style.display = 'none';
                 body.innerHTML = '';
                 actions.innerHTML = '';
+                reimbursementReadinessState.lpr = 'missing';
+                reimbursementReadinessState.lprItem = null;
+                reimbursementReadinessState.lprToken = readinessToken;
+                reimbursementReadinessState.lprSavedVersion = -1;
                 syncReimbursementFocusPanelButtons();
+                updateReimbursementReadiness();
                 return;
             }
             panel.style.display = '';
@@ -6447,8 +7112,19 @@ async function saveReimbursementDraft(silent, options) {
                 <a class="reim-btn reim-btn-secondary" href="${reimEscape(item.download_url || '#')}"><i class="fa-solid fa-download"></i> Download</a>
                 ${canEdit ? `<button type="button" class="reim-btn reim-btn-danger-outline" onclick="deleteReimbursementLinkedLpr(${Number(item.id || 0)})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
             `;
+            reimbursementReadinessState.lpr = reimbursementHasUnsavedEdits() ? 'pending' : 'ready';
+            reimbursementReadinessState.lprItem = item;
+            reimbursementReadinessState.lprToken = readinessToken;
+            reimbursementReadinessState.lprSavedVersion = reimbursementSavedEditVersion;
             syncReimbursementFocusPanelButtons();
+            updateReimbursementReadiness();
         } catch (error) {
+            if (reimbursementReadinessTokenMatches(readinessToken)) {
+                reimbursementReadinessState.lpr = 'error';
+                reimbursementReadinessState.lprItem = null;
+                reimbursementReadinessState.lprToken = readinessToken;
+                updateReimbursementReadiness();
+            }
             console.warn('[Reimbursement] Attached LPR panel unavailable', error);
             syncReimbursementFocusPanelButtons();
         }
@@ -6889,6 +7565,14 @@ async function saveReimbursementDraft(silent, options) {
         reimbursementTransitionBusy = true;
         syncReimbursementRowSelectionUi();
         reimbursementInvalidatePendingSaves();
+        reimbursementReadinessState = {
+            signature: 'pending',
+            signatureToken: '',
+            lpr: 'pending',
+            lprToken: '',
+            lprItem: null,
+            lprSavedVersion: -1
+        };
         reimbursementEditVersion = 0;
         reimbursementSavedEditVersion = 0;
         currentReimbursementId = requestedReimbursementId || null;
@@ -7000,6 +7684,7 @@ async function saveReimbursementDraft(silent, options) {
                 setReimbursementDraftStatus('Rows loaded. Receipt attachments could not be loaded.', 'error');
             }
             await refreshReimbursementLprPanel();
+            await refreshReimbursementSignatureStatus();
             const availableCount = Number(payload.available_count ?? payload.count ?? rows.length);
             const excludedCount = Number(payload.excluded_count || 0);
             const warningMessage = payload.warning_count ? ` ${payload.warning_count} schedule row(s) were skipped due to incomplete data.` : '';
@@ -7022,6 +7707,8 @@ async function saveReimbursementDraft(silent, options) {
                 draft.exists ? 'saved' : 'idle'
             );
             applyReimbursementStatusUi();
+            setReimbursementDockVisibility(true);
+            updateReimbursementReadiness();
             return true;
         } catch (error) {
             console.error(error);
@@ -7051,11 +7738,13 @@ async function saveReimbursementDraft(silent, options) {
                 setReimbursementDraftStatus(`${message} Previous worksheet remains open.`, 'error',
                     previousLoadState.editVersion === previousLoadState.savedEditVersion ? 'saved' : 'unsaved');
                 status.textContent = `${message} Previous worksheet remains open.`;
+                setReimbursementDockVisibility(true);
             } else {
                 status.textContent = message;
                 currentReimbursementExcludedRows = [];
                 renderReimbursementRows([]);
                 setReimbursementDraftStatus(message, 'error', 'unsaved');
+                setReimbursementDockVisibility(false);
             }
             return false;
         } finally {
@@ -7401,17 +8090,47 @@ async function saveReimbursementDraft(silent, options) {
         }
     }
 
+    async function refreshReimbursementSignatureStatus() {
+        const token = reimbursementReadinessToken();
+        reimbursementReadinessState.signature = 'pending';
+        reimbursementReadinessState.signatureToken = token;
+        updateReimbursementReadiness();
+        try {
+            const signature = await fetchCurrentReimbursementSignatureStatus();
+            if (!reimbursementReadinessTokenMatches(token)) return false;
+            reimbursementReadinessState.signature = signature && signature.has_signature ? 'ready' : 'missing';
+            reimbursementReadinessState.signatureToken = token;
+            updateReimbursementReadiness();
+            return reimbursementReadinessState.signature === 'ready';
+        } catch (error) {
+            if (!reimbursementReadinessTokenMatches(token)) return false;
+            reimbursementReadinessState.signature = 'error';
+            reimbursementReadinessState.signatureToken = token;
+            updateReimbursementReadiness();
+            return false;
+        }
+    }
+
     async function ensureReimbursementSignatureBeforeSubmit() {
         setReimbursementSubmitNotice('Checking saved signature...', 'warn');
 
         try {
             const signature = await fetchCurrentReimbursementSignatureStatus();
             if (signature && signature.has_signature) {
+                reimbursementReadinessState.signature = 'ready';
+                reimbursementReadinessState.signatureToken = reimbursementReadinessToken();
+                updateReimbursementReadiness();
                 hideReimbursementSignatureRequiredPanel();
                 setReimbursementSubmitNotice('Saved signature found. Ready to submit.', 'ok');
                 return true;
             }
+            reimbursementReadinessState.signature = 'missing';
+            reimbursementReadinessState.signatureToken = reimbursementReadinessToken();
+            updateReimbursementReadiness();
         } catch (error) {
+            reimbursementReadinessState.signature = 'error';
+            reimbursementReadinessState.signatureToken = reimbursementReadinessToken();
+            updateReimbursementReadiness();
             console.warn('Signature check failed:', error);
         }
 

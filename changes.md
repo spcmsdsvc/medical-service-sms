@@ -1,6 +1,72 @@
 # Project Change Log
 
+codex changes - 2026-09-13
+
+- The owner authorized committing and pushing only Reimbursement Package 2 and its focus-view
+  space correction to `origin/main`. The publication allowlist is limited to the reimbursement
+  template, focused readiness test, v155 service-worker marker and exact current-cache assertions,
+  the two Reimbursement release entries, and the associated plan/change records.
+- Local and remote `main` both resolved to `5a01484` immediately before publication. Protected
+  `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, and unrelated work remain excluded.
+  Existing focused and related verification applies; browser visual checks and formal review remain
+  pending. Railway variables, manual redeployment, database operations, and production data changes
+  are not authorized.
+
 codex changes - 2026-09-11
+
+- Started the owner-authorized Reimbursement Package 2 implementation recorded at the top of
+  `plans.md`. This package adds the worksheet submission-readiness disclosure and persistent
+  bottom action dock while reusing existing row calculations, autosave, signature, linked-LPR,
+  receipt, lifecycle, and Submit behavior. No schema, endpoint, dependency, receipt-workspace,
+  Package 3–6, production, Railway, commit, push, or browser/Codex UI operation is in scope.
+- Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`, `tmp/`, and unrelated
+  dirty work remain owner-owned and outside the implementation allowlist.
+- Implemented the Reimbursement Package 2 submission-readiness model and persistent bottom action
+  dock in `templates/reimbursement.html`. Existing Save Draft, Submit, and `reimDraftStatus`
+  elements retain their IDs and handlers; the dock adds live total and an expandable checklist for
+  positive claim amounts, included/zero-value rows, latest saved state, signature, required LPR,
+  and advisory receipt count. Locked lifecycle records remain read-only and never report Ready.
+- Wired readiness refreshes to worksheet edits, row render/recalculation, autosave success/failure,
+  load/lifecycle state, signature checks, linked-LPR refresh, and receipt refresh. Signature/LPR
+  results carry the active worksheet context token so stale responses cannot update a different
+  date range or claim. Resolution actions reuse existing focus, save, Settings, LPR review, and
+  receipt-panel paths; no backend/API/schema/dependency changes were added.
+- Added `tests/test_reimbursement_readiness.py`, bumped exact worker/cache assertions to
+  `medical-service-pwa-offline-navigation-v154-reimbursement-readiness`, and published the dated
+  `2026-09-11-reimbursement-readiness` Reimbursement release entry.
+- Verification passed: Package 2 focused **8/8**, combined related Reimbursement/layout/theme/cache/
+  changelog set **183/183**, and isolated full discovery **1,072 tests: 1,054 passed, 18 known
+  baseline failures, 0 errors, 0 skipped**. Static Jinja/inline-JavaScript/CSS/release/diff checks
+  passed; browser visual verification remains owner-only. No commit, push, deployment, Railway,
+  production/database, or protected-artifact operation was performed.
+- Reserved an additional 74px inside the desktop focus worksheet for the fixed action dock so the
+  dock cannot cover the final visible worksheet rows while focus mode is active; the Package 2
+  focused/design checks were rerun and remained **67/67 passed**.
+- Implemented the owner-authorized Reimbursement Package 2 focus-space correction from the
+  expanded-worksheet screenshot. `templates/reimbursement.html` now compacts only desktop focus
+  topbar, summary, utility controls, row selection, table header/totals, and the readiness action
+  dock; the selection toolbar stays one short labelled row and the dock is a 48px in-flow flex row,
+  so the worksheet no longer reserves or overlays the former 74px/68px footer space. Normal
+  desktop fixed-dock behavior, mobile safe-area/44px controls, focus panels, totals, scrolling,
+  autosave, selection, receipts/LPR, themes, zoom/columns, print, and submission semantics remain
+  unchanged.
+- Extended `tests/test_reimbursement_readiness.py` with the focus compact-geometry contract. The
+  fail-first checkpoint failed on the absent focus selectors as expected; final Package 2
+  readiness/design/bulk/autosave/manual-category checks passed **77/77** before delivery-marker
+  updates, with the focused geometry contract included.
+- Advanced the embedded service-worker marker to
+  `medical-service-pwa-offline-navigation-v155-reimbursement-focus-space`, updated all exact
+  current-cache assertions, and added the published `2026-09-11-reimbursement-focus-space`
+  Reimbursement release item. No backend/API/schema/dependency/database/protected-artifact,
+  production, Railway, commit, push, deployment, browser, or Codex UI operation was performed.
+- Final post-marker verification passed: Reimbursement readiness/design/bulk/autosave/manual-
+  category plus layout/theme/cache checks **130/130**, and the broader Timeline/TSR/stock/offline
+  marker set **140/140**. App AST, reimbursement Jinja, Jinja-masked inline JavaScript, service-
+  worker JavaScript, reimbursement CSS braces (**434/434**), release JSON uniqueness (**89
+  releases, 252 items**), cache marker, and `git diff --check` all passed. No full discovery was
+  rerun for this CSS-only correction; the Package 2 record retains the prior isolated result of
+  **1,072 tests: 1,054 passed, 18 known baseline failures, 0 errors, 0 skipped**. Browser visual
+  verification remains owner-only.
 
 - Fixed approved legacy Calibration Reports missing from Calendar schedule cards. Application
   startup now performs a one-time, exact-marker scan for generated report DOCX sources that predate

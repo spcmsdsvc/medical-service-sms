@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-11-reimbursement-focus-space",
+      "release_date": "2026-09-11",
+      "title": "Reimbursement Focus View Space",
+      "summary": "The expanded reimbursement worksheet gives more room to review and enter rows while keeping its actions available.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-11-reimbursement-focus-space-everyone",
+          "category": "Reimbursement",
+          "description": "Compacted the expanded worksheet header, row-selection toolbar, and action footer so the table regains vertical space while totals, scrolling, selection, save, readiness, and submit controls remain available.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-11-reimbursement-readiness",
+      "release_date": "2026-09-11",
+      "title": "Reimbursement Submission Readiness",
+      "summary": "Reimbursement users can see what is ready to submit and keep save and submit actions available while working through a worksheet.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-11-reimbursement-readiness-everyone",
+          "category": "Reimbursement",
+          "description": "Added a live submission-readiness checklist for claim amounts, saved values, signature, required LPR, included and zero-value rows, and advisory receipts, plus a persistent responsive action dock with the current total, save state, Save Draft, and Submit controls.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-10-tsr-calendar-regression-correction",
       "release_date": "2026-09-10",
       "title": "TSR and Calendar Reliability Fix",

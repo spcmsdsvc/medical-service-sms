@@ -1,5 +1,182 @@
 # Medical Service SMS — Approved Plans
 
+## Reimbursement Package 2 — Focus View Space Correction
+
+**Status:** Executed — local implementation complete; owner-authorized package publication is
+pending. Formal review and browser/Codex UI verification remain pending.
+**Approved:** 2026-09-11 — the owner explicitly requested the focused correction after observing
+that the Package 2 header and persistent footer reduced the expanded worksheet table height.
+**Detailed:** 2026-09-11.
+**Publication authorized:** 2026-09-13 — the owner said “commit and push only these changes,”
+covering Package 2 readiness plus this focus-space correction and their required records/tests.
+
+### Context and boundaries
+
+The desktop Reimbursement focus view currently spends too much vertical space on the row-selection
+toolbar and a fixed readiness action dock. The table also reserves footer space for that overlay,
+so the expanded worksheet shows fewer rows than the earlier focus view. Recover table height with
+small focus-only CSS changes while preserving the existing DOM IDs, handlers, selection behavior,
+totals, sticky table footer, horizontal scrollbar, readiness disclosure, autosave, and submit
+semantics. Normal desktop and mobile layout/44px controls remain unchanged.
+
+No backend route, schema, dependency, database, production, Railway, browser automation, or
+protected-artifact operation is included. The service-worker marker and published release metadata
+are updated once because this is a user-visible cached template correction.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read all applicable instructions, the complete current change log,
+   Package 2 plan/outcome, dirty Git state, focus/readiness CSS and markup, related tests, worker
+   marker, cache assertions, and release format. Preserve `scheduler.db`, handoffs, `.claude/`,
+   `output/`, `outputs/`, `tmp/`, and unrelated dirty work.
+2. **Fail-first contract.** Extend `tests/test_reimbursement_readiness.py` with a proportional
+   source contract requiring a compact one-row focus selection toolbar and an in-flow 48px focus
+   action dock, plus zero bottom reserve in the focus table card and readiness-panel offset. Run
+   the unchanged-source contract and retain its expected failure before the CSS change.
+3. **Focus-only layout correction.** In `templates/reimbursement.html`, reduce focus topbar,
+   summary, utility, selection-toolbar, table-header/totals, and dock padding/gaps. Override the
+   global selection control sizing only under `body.reim-focus-active`; keep Select all, count,
+   Delete selected, labels, and bulk handlers intact. Change only the desktop focus dock to a
+   48px flex item after the table card, remove its 74px table padding reserve, and place the open
+   readiness panel above the compact dock. Keep tablet wrapping, normal fixed dock, mobile safe
+   area/44px sizing, themes, dialogs, focus panels, and print rules intact.
+4. **Delivery records.** Advance the embedded worker marker from v154 to the monotonic v155
+   `reimbursement-focus-space` label, update all exact current-cache assertions, add the published
+   2026-09-11 Reimbursement focus-space release item, and record the change in `changes.md`.
+5. **Verification and closeout.** Run the focused readiness/design/bulk/autosave/manual-category
+   suites, related layout/theme/cache/changelog checks as needed, and the required static
+   Jinja/inline-JavaScript/CSS/release/diff checks. Record exact results, baseline failures, visual
+   owner-only limitation, deviations, and protected-artifact confirmation here. Stop without
+   commit, push, deployment, Railway, database, browser, or formal review operations.
+
+### Acceptance criteria
+
+- Desktop focus view recovers meaningful vertical table space; the selection toolbar is one short
+  row and the action dock is a single compact bottom row participating in the focus flex layout.
+- Sticky table totals and the horizontal scrollbar remain visible; readiness details overlay without
+  permanently shrinking the table when closed.
+- Normal desktop and mobile behavior, 44px touch targets, selection/bulk deletion, autosave,
+  calculations, receipts/LPR, themes, sidebar states, zoom/columns, print, and submission behavior
+  remain compatible.
+
+### Implementation outcome (2026-09-11)
+
+**Status:** Executed — local implementation complete; no commit hash because publication remains
+separately authorized.
+
+Updated `templates/reimbursement.html` with focus-only compact geometry: the topbar, summary,
+utility controls, row-selection toolbar, table header/totals, and readiness dock use shorter
+spacing; the selection toolbar remains a labelled one-row control; and the focus action dock is a
+48px in-flow flex item instead of a 68px fixed overlay. Removed the focus table’s 74px bottom
+reserve and kept the readiness disclosure offset above the compact dock. Added the geometry source
+contract to `tests/test_reimbursement_readiness.py`; the unchanged-source checkpoint failed as
+expected because the new selectors were absent, and the final focused contract passed.
+
+The worker marker now reads
+`medical-service-pwa-offline-navigation-v155-reimbursement-focus-space`; exact current-cache
+assertions and the published `2026-09-11-reimbursement-focus-space` Reimbursement release entry
+were updated. No backend/API/schema/dependency/database/protected-artifact/production/Railway,
+commit, push, deployment, browser, or Codex UI operation was performed. Final verification results
+and the inherited Package 2 baseline failures are recorded in `changes.md`: the post-marker focused
+set passed **130/130**, the broader marker set passed **140/140**, and all static checks passed.
+
+## Reimbursement Package 2 — Submission Readiness and Persistent Actions
+
+**Status:** Executed — local implementation complete; owner-authorized package publication is
+pending. Formal review and browser/Codex UI verification remain pending.
+**Approved:** 2026-09-11 — the owner supplied and explicitly authorized the complete Package 2
+implementation plan below with “PLEASE IMPLEMENT THIS PLAN”.
+**Detailed:** 2026-09-11.
+**Publication authorized:** 2026-09-13 — the owner said “commit and push only these changes,”
+covering Package 2 readiness, its focus-space correction, and required records/tests only.
+
+### Summary and boundaries
+
+Add a compact readiness summary and a persistent viewport-bottom action dock to the personal
+Reimbursement worksheet. The dock retains the existing `reimDraftStatus`, `reimSaveDraftBtn`,
+and `reimSubmitBtn` IDs and handlers, and adds a live total plus an expandable readiness
+disclosure. Reuse current row collection, autosave, signature, linked-LPR, receipt, lifecycle,
+and server Submit behavior. No database migration, endpoint, dependency, schema, approval policy,
+receipt-workspace feature, or Package 3–6 work is included.
+
+Readiness must require at least one positive included row, the latest edit version saved, a
+confirmed current signature, and a refreshed linked LPR when Office/Field Items is claimed.
+Zero-value rows and missing receipts are advisory. Missing/failed signature and LPR checks expose
+resolution actions. Locked Submitted, Approved, and Paid records remain read-only, show lifecycle
+and total, and are never labelled Ready.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read all instructions, `changes.md`, the current plans, dirty Git
+   state, reimbursement template/controllers/tests, current worker marker, cache assertions, and
+   release format. Preserve `scheduler.db`, `Handoffs/`, `.claude/`, `output/`, `outputs/`, `tmp/`,
+   and unrelated work. Record this plan and truthful implementation status before source edits.
+2. **Fail-first contracts.** Add `tests/test_reimbursement_readiness.py` with source contracts and
+   a Node runtime harness for readiness calculation/rendering, issue/advisory classification,
+   save/signature/LPR state, stale async context guards, locked lifecycle, dock markup,
+   accessibility, responsive/print rules, cache marker, and release metadata. Run the unchanged
+   source checkpoint and retain its truthful result.
+3. **Readiness model.** In `templates/reimbursement.html`, add one page-local readiness state and
+   pure calculation/render helpers. Derive rows and totals from `collectReimbursementRowsForSave`
+   and `getReimbursementPayloadRowTotal`; use existing save state, signature endpoint,
+   `reimbursementOfficeFieldTotal`, linked-LPR refresh, and receipt collections. Associate async
+   signature/LPR results with the current worksheet context revision and ignore stale responses.
+4. **Resolution actions and refresh wiring.** Add actions for focusing the amount field, saving,
+   opening/retrying Settings signature checks, saving then reviewing LPR, and opening receipts.
+   Recompute after row/amount/category/remarks changes, row removal/restoration/bulk deletion,
+   save completion/failure, load/lifecycle updates, signature/LPR refresh, and receipt changes.
+5. **Persistent dock.** Move the existing status and Save/Submit controls into a fixed bottom dock
+   aligned to `--sidebar-width`; add total and readiness summary/details. Reserve content space,
+   adapt focus view/sidebar states, provide mobile safe-area/two-row 44px controls, use theme
+   tokens, keep dialogs/focus panels above it, support Escape and `aria-expanded`/`aria-controls`,
+   and hide the dock in print and before a valid worksheet context loads.
+6. **Release and verification.** Bump the live worker marker once from v153 to the next monotonic
+   reimbursement-readiness label, update exact cache assertions and one published Reimbursement
+   release entry, and record exact implementation/check results in this plan and `changes.md`.
+   Run focused and related reimbursement suites, isolated full unittest discovery with a unique
+   external disposable database, syntax/Jinja/inline-JavaScript/CSS/release/diff checks. Browser
+   visual checks remain owner-only; do not commit, push, deploy, or perform production/database
+   operations.
+
+### Acceptance and exclusions
+
+- The dock remains reachable while scrolling and does not cover worksheet/supporting content.
+- Total, save state, Save, Submit, and readiness reflect the same live worksheet state.
+- Blocking items have usable actions; zero rows and missing receipts are clearly advisory.
+- Stale signature/LPR responses cannot update another claim or date range, and Submit retains
+  final server authority.
+- No browser automation, production/Railway operation, database data change, commit, push, or
+  Package 3–6 functionality is included.
+
+### Implementation outcome (2026-09-11)
+
+**Status:** Executed — local implementation complete; no commit hash because publication remains
+separately authorized.
+
+Implemented the readiness model and responsive bottom action dock in
+`templates/reimbursement.html`, with `tests/test_reimbursement_readiness.py` covering the pure
+classification model, markup, actions, async context guards, lifecycle, layout, cache, and release
+contracts. The dock reuses the existing save and submit controls and live save state, reports the
+current total, exposes expandable blocking/advisory details, and remains hidden until a worksheet
+loads. Amount, save, signature, required LPR, included/zero-row, and receipt states refresh through
+the existing worksheet mutation, save, lifecycle, signature, LPR, and receipt paths. Signature and
+LPR responses are ignored when their captured worksheet context is stale; locked records remain
+read-only and are never labelled Ready.
+
+The embedded worker marker was bumped to
+`medical-service-pwa-offline-navigation-v154-reimbursement-readiness`, all exact current-cache
+assertions were updated, and the published `2026-09-11-reimbursement-readiness` release entry was
+added. No backend route, schema, dependency, database, protected artifact, production, Railway,
+commit, push, or browser/Codex UI change was performed.
+
+Verification completed: focused Package 2 contracts **8/8 passed**; Package 1, bulk-selection, and
+related Reimbursement/layout/theme/cache/changelog checks **183/183 passed**; isolated full
+unittest discovery **1,072 tests: 1,054 passed, 18 known baseline failures, 0 errors, 0 skipped**.
+The baseline failures are 16 Purchase Order setup/rate-limit HTTP-429 cases and 2 Staff Creation
+fixture/duplicate-initials cases. Jinja parsing, extracted inline JavaScript syntax, CSS brace
+balance (**422/422**), release JSON uniqueness (**88 releases, 251 items**), and `git diff --check`
+passed. Browser visual verification remains owner-only.
+
 ## Urgent TSR and Calendar Regression Correction
 
 **Status:** Executed — implementation commit `61b0b8b`.
