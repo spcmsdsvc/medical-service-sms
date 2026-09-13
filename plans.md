@@ -2,7 +2,7 @@
 
 ## Reimbursement Package 2 — Focus View Space Correction
 
-**Status:** Executed — local implementation complete; owner-authorized package publication is
+**Status:** Executed — implementation committed as `6a1a229`; owner-authorized publication is
 pending. Formal review and browser/Codex UI verification remain pending.
 **Approved:** 2026-09-11 — the owner explicitly requested the focused correction after observing
 that the Package 2 header and persistent footer reduced the expanded worksheet table height.
@@ -61,8 +61,8 @@ are updated once because this is a user-visible cached template correction.
 
 ### Implementation outcome (2026-09-11)
 
-**Status:** Executed — local implementation complete; no commit hash because publication remains
-separately authorized.
+**Status:** Executed — implementation committed as `6a1a229`; owner-authorized push remains
+pending.
 
 Updated `templates/reimbursement.html` with focus-only compact geometry: the topbar, summary,
 utility controls, row-selection toolbar, table header/totals, and readiness dock use shorter
@@ -82,7 +82,7 @@ set passed **130/130**, the broader marker set passed **140/140**, and all stati
 
 ## Reimbursement Package 2 — Submission Readiness and Persistent Actions
 
-**Status:** Executed — local implementation complete; owner-authorized package publication is
+**Status:** Executed — implementation committed as `6a1a229`; owner-authorized publication is
 pending. Formal review and browser/Codex UI verification remain pending.
 **Approved:** 2026-09-11 — the owner supplied and explicitly authorized the complete Package 2
 implementation plan below with “PLEASE IMPLEMENT THIS PLAN”.
@@ -150,8 +150,8 @@ and total, and are never labelled Ready.
 
 ### Implementation outcome (2026-09-11)
 
-**Status:** Executed — local implementation complete; no commit hash because publication remains
-separately authorized.
+**Status:** Executed — implementation committed as `6a1a229`; owner-authorized push remains
+pending.
 
 Implemented the readiness model and responsive bottom action dock in
 `templates/reimbursement.html`, with `tests/test_reimbursement_readiness.py` covering the pure

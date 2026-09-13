@@ -2,6 +2,10 @@
 
 codex changes - 2026-09-13
 
+- Committed the 19-file Package 2 readiness and focus-space allowlist as `6a1a229`. This
+  journal/plan closeout records that implementation commit before the authorized push to
+  `origin/main`.
+
 - The owner authorized committing and pushing only Reimbursement Package 2 and its focus-view
   space correction to `origin/main`. The publication allowlist is limited to the reimbursement
   template, focused readiness test, v155 service-worker marker and exact current-cache assertions,
