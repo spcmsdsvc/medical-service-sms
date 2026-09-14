@@ -1,5 +1,115 @@
 # Medical Service SMS — Approved Plans
 
+## One-time Calibration Certificate approver-title repair
+
+**Status:** Executed — local implementation complete; commit, push, deployment, and formal review remain unauthorized.
+**Approved/executing:** 2026-09-14 — the owner explicitly authorized implementation of the guarded
+one-time repair command and its required verification. Commit, push, deployment, Railway,
+production database/storage, browser, and Codex UI actions are excluded.
+**Detailed:** 2026-09-14.
+
+### Goal and boundaries
+
+Add `scripts/repair_calibration_certificate_titles.py`, a dry-run-by-default administrative
+command for the current/latest `Approved` Calibration Certificate approvals whose assigned
+approver is exactly `robert` or `rodito`, whose current nonblank `User.approval_title` differs
+from either the rendered signed PDF title or `approver_title_snapshot`. The command regenerates
+only the signed certificate bytes in place from the immutable eight-field `mapped_data_json`
+snapshot, stored certificate number, stored approver name, and stored signature snapshot. It
+preserves approval status/time, revision, certificate number, submission linkage, signed
+`ShiftFile` id and filenames, and the no-signature artifact. It updates only the title snapshot,
+certificate fingerprint, artifact-created timestamp, and updated timestamp, then appends one
+universal audit event recording prior/new titles and old/new hashes. It is limited to Robert and
+Rodito and is idempotent.
+
+The apply guard requires `--apply`, one or more repeated explicit `--approval-id` values, and
+`--expected-count`; dry-run remains read-only and reports IDs, certificate numbers, stored and
+rendered/current titles, validations, and hashes. Every selected record is revalidated for
+status/latest/title/approver linkage and source bytes before replacement. Original bytes are
+backed up first under `reports/_calibration_certificate_title_repair_backups/<date>/`, the
+backup checksum is verified, and storage/database failure restores the original object and
+database state. Records are processed independently and errors are reported without silently
+continuing a stale or unsafe record.
+
+### Authorized implementation and numbered execution
+
+1. Read all instructions, this plan, complete `changes.md`, Git state, certificate models,
+   immutable snapshot/builder functions, managed storage, universal audit, release metadata, and
+   related tests. Preserve `scheduler.db`, `Handoffs/`, `.claude/`, `output/`, `tmp/`, the
+   detailed handoff artifact, and unrelated dirty work. Record start in `changes.md`.
+2. Add fail-first `tests/test_calibration_certificate_title_repair.py` covering title resolution
+   for Robert and Rodito, stale rendered PDF detection even when the stored snapshot already
+   equals current title, Pending/non-latest/historical/unrelated-user exclusions, dry-run
+   no-write behavior, explicit-ID and expected-count guards, backup-before-replace, metadata and
+   no-signature preservation, audit metadata, idempotency, concurrency/staleness rejection,
+   storage/database rollback, and real one-page Letter PDF verification through pypdf/PyMuPDF.
+   Run this unchanged against the pre-command source and record the expected failure checkpoint.
+3. Implement the standalone command with delayed `app` import, exact Robert/Rodito selection,
+   immutable snapshot validation, rendered-title extraction, dry-run JSON reporting, strict apply
+   guards, per-record fresh-state/source-hash checks, and safe independent error handling.
+4. Implement backup/replace/rollback using the existing managed reports storage contract and the
+   date-scoped backup prefix. Verify backup bytes and SHA-256 before replacement; restore object
+   bytes and rollback DB session on storage or commit/audit failure. Do not create a revision,
+   touch the no-signature file, alter linkage/filenames, or change any other approval columns.
+5. Regenerate through the existing certificate builder with the stored mapped values, number,
+   approver name, title, and signature. Verify one Letter page, no fields/widgets/annotations,
+   preserved mapped values/name/signature, exactly one `Medical Systems Division`, and no stale
+   `Superadmin`; make reruns a no-op after current title and PDF are correct.
+6. Add one admin-facing release entry in `static/changelog/releases.json`; update this plan with
+   truthful outcomes and update `changes.md` in the same task. Do not change app routes, schema,
+   UI/templates/email/routing, service-worker code/marker, or protected artifacts.
+7. Run the focused repair tests after implementation, then the focused certificate workflow,
+   Calibration Center/Product/email-related tests, Python syntax/AST, Jinja/inline checks where
+   relevant, release JSON validation, an isolated disposable-external-DB full discovery, and
+   `git diff --check`. Record exact pass/fail/skip results. Browser verification is excluded by
+   project rules unless separately authorized.
+8. Perform a final self-review of the diff and protected-worktree allowlist. Do not commit, push,
+   deploy, alter Railway, or modify production data/storage. Leave formal post-implementation
+   review as a separate owner gate.
+
+### Acceptance and exclusions
+
+Only explicit current/latest Approved Robert/Rodito approvals with a nonblank changed current
+title are repairable. Dry-run never writes. Apply refuses unlisted IDs/count mismatches and stale
+status/latest/title/linkage/source bytes. Backup verification, in-place storage replacement,
+rollback, audit, metadata preservation, independent error reporting, and idempotent rerun are
+required. Excluded are all other approvers, revisions, no-signature artifacts, schema/API/UI/
+template/email/routing/service-worker changes, production operations, browser automation, and
+publication.
+
+### Implementation outcome
+
+Implemented `scripts/repair_calibration_certificate_titles.py` and
+`tests/test_calibration_certificate_title_repair.py`. The command now defaults to a read-only
+report, accepts only Robert/Rodito approvers, requires explicit IDs/counts for apply mode,
+resolves rendered titles with coordinate-aware PyMuPDF inspection, regenerates from immutable
+mapped values plus stored certificate/name/signature snapshots, and preserves revision,
+submission, ShiftFile, filename, and no-signature linkage. It writes a date-scoped verified
+backup before replacing the existing managed object, verifies replacement bytes, restores the
+original on storage or database/audit failure, updates only the four approved approval fields,
+and records old/new titles and hashes in the universal audit. Changed status/latest/title,
+approver linkage, immutable identity, stored fingerprint, or source bytes is rejected per
+record; a second run is a no-op.
+
+Added the single admins-facing
+`2026-09-14-calibration-certificate-title-repair-admins` release item. The embedded service
+worker remains at the existing v158 marker; no route, schema, UI/template, email/routing, or
+protected artifact changed. The required PDF marker was run exactly once from the bundled PDF
+skill path before PDF authoring/fixture generation.
+
+Fail-first evidence: the new repair test module was run before the command existed and produced
+the expected import error. Final repair coverage passed **15/15**, including real pypdf/PyMuPDF
+Letter-page/flattening/identity checks, backup ordering/checksum, metadata/no-signature
+preservation, audit, idempotency, explicit guards, and storage/database rollback. Combined
+Calibration Certificate approval/report, Calibration Center, Product, service-file/email, and
+changelog coverage passed **112/112** with one pre-existing platform skip. Isolated full unittest
+discovery against a unique disposable external SQLite database ran **1,129 tests: 1,108 passed,
+19 unrelated baseline/environment failures, 2 skips**; failures were outside this repair and
+included the existing changelog-sync state, purchase-order rate-limit setup, and staff-fixture
+uniqueness behavior. Python AST, release JSON, service-worker-marker, and `git diff --check`
+validation passed. No browser, production database/storage, Railway, commit, push, deploy, or
+formal review operation was performed.
+
 ## Calibration Center and calibration-specific CC group
 
 **Status:** Executed — implementation commit `cc96293`; record commit `16ae6ff` was pushed to

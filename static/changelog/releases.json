@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-14-calibration-certificate-title-repair",
+      "release_date": "2026-09-14",
+      "title": "Calibration Certificate Title Repair",
+      "summary": "Administrators can safely repair stale Robert and Rodito approver titles on current signed Calibration Certificates with verified backups and audit history.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-14-calibration-certificate-title-repair-admins",
+          "category": "Calibration",
+          "description": "Added a guarded dry-run-by-default repair command for current/latest Approved Robert and Rodito certificates. It regenerates the signed PDF from immutable approval data, preserves certificate linkage and the no-signature copy, verifies a dated backup before replacement, rolls back on storage/database failure, and records old/new titles and hashes in the universal approval audit.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-14-calibration-center",
       "release_date": "2026-09-14",
       "title": "Calibration Center",

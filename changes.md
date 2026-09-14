@@ -2,6 +2,49 @@
 
 codex changes - 2026-09-14
 
+- Started the owner-authorized one-time Calibration Certificate approver-title repair package.
+  The new dry-run-by-default command will be limited to current/latest Approved certificates
+  assigned to `robert` or `rodito`, regenerate only the signed PDF in place from its immutable
+  mapped snapshot, preserve approval/linkage/no-signature metadata, back up and verify original
+  bytes before replacement, append a universal audit event, and reject stale/count/linkage/hash
+  changes. Fail-first and focused disposable-database verification are required; no app route,
+  schema, UI, email, service-worker, production, browser, Railway, commit, or push operation is
+  authorized, and protected dirty artifacts remain untouched.
+- Added the fail-first `tests/test_calibration_certificate_title_repair.py` checkpoint before
+  adding the repair command. Running the unchanged source produced the expected import error
+  because `scripts/repair_calibration_certificate_titles.py` did not yet exist; no application,
+  database, storage object, protected artifact, or PDF was changed by that checkpoint.
+- Implemented `scripts/repair_calibration_certificate_titles.py` as a dry-run-by-default,
+  Robert/Rodito-only command with explicit `--apply`, repeated `--approval-id`, and
+  `--expected-count` guards. It selects only current/latest Approved approvals, reports stored
+  versus rendered/current titles and old/new hashes, rejects changed status/latest/title/linkage/
+  immutable identity/fingerprint/source bytes, and processes selected records independently.
+- The command regenerates only the existing signed certificate object from immutable
+  `mapped_data_json`, stored certificate number/name/signature, and the current nonblank user
+  title. It preserves approval status/time, revision, certificate number, submission, signed
+  ShiftFile id/filename, and no-signature linkage; updates only `approver_title_snapshot`,
+  `certificate_fingerprint`, `artifact_created_at`, and `updated_at`; and appends a universal
+  `title_repaired` audit event with prior/new titles plus old/new/backup hashes.
+- Original signed bytes are backed up under
+  `reports/_calibration_certificate_title_repair_backups/<date>/` and checksum-verified before
+  replacement. Bucket/volume writes and replacement verification are explicit; storage or
+  database/audit failure restores the original object and rolls back database state. Repeated
+  apply is idempotent after title and PDF are current.
+- Added 15 focused tests covering Robert/Rodito title resolution, stale rendered PDFs even when
+  the snapshot matches, Pending/non-latest/historical/unrelated exclusions, dry-run no-write,
+  explicit guards, backup order/checksum, metadata/no-signature preservation, audit, idempotency,
+  stale-state rejection, PDF invariants through pypdf/PyMuPDF, and storage/database rollback.
+  The focused repair suite passes **15/15**. Combined Calibration Certificate approval/report,
+  Calibration Center, Product, service-file/email, and changelog tests pass **112/112** with one
+  existing platform skip. Isolated disposable-external-DB full discovery ran **1,129 tests:
+  1,108 passed, 19 unrelated baseline/environment failures, 2 skips**.
+- Added the admins-facing `2026-09-14-calibration-certificate-title-repair-admins` release
+  entry. No schema, route, UI/template, email/routing, service-worker, or protected artifact
+  changed; the service-worker marker was verified unchanged at v158. Python AST, release JSON,
+  and `git diff --check` passed. The bundled PDF artifact marker was run exactly once before PDF
+  generation. No browser, production database/storage, Railway, commit, push, deployment, or
+  formal review operation was performed.
+
 - Implemented the owner-authorized Calibration Center CC follow-up. Settings now exposes
   separate `Calibration Report & Certificate CC - Manila` and `Calibration Report & Certificate
   CC - Cebu/Davao` groups. Preview and send select the group from the calibration creator's
