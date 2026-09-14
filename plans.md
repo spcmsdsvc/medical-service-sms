@@ -2,8 +2,9 @@
 
 ## Calibration Center and calibration-specific CC group
 
-**Status:** Executed — implementation commit `cc96293`; publication verification pending.
-No production database/storage, browser, or Codex UI operation is authorized in this package.
+**Status:** Executed — implementation commit `cc96293`; record commit `16ae6ff` was pushed to
+`origin/main` and successfully deployed by Railway. No production database/storage, browser, or
+Codex UI operation was performed.
 **Approved/executing:** 2026-09-14 — the owner explicitly instructed implementation after
 the detailed plan and Builder rules were presented.
 **Detailed:** 2026-09-14.
@@ -123,7 +124,10 @@ unrelated untracked files unstaged.
 The owner separately authorized commit and push of this feature-only allowlist. The Calibration
 Center implementation and its required tests/records were committed on `main` as `cc96293`; the
 protected dirty and untracked paths remained unstaged. Remote and Railway publication status is
-recorded only after it is independently verified.
+recorded only after it is independently verified. `origin/main` resolved to full commit
+`16ae6ff2f3e0cbbe5328cba9c13f07fa9e9864b6`, and Railway deployment
+`5c2d5885-f6dd-4a38-a721-3efb65abcb01` completed successfully with its instance running that exact
+commit. No Railway variable, manual redeploy, production database, or storage operation occurred.
 
 ## Permanent backup configuration fix
 

@@ -76,7 +76,13 @@ codex changes - 2026-09-14
   The commit contains the center backend/UI, calibration CC group, cache/privacy delivery,
   focused tests and marker assertions, release entry, and required records. `scheduler.db`, the
   handoff, `.claude`, output, tmp, the detailed handoff, and unrelated work were not staged or
-  committed. Remote push and Railway acceptance remain to be verified separately.
+  committed.
+- Pushed the Calibration Center implementation and record commits to `origin/main`; independent
+  remote verification resolved `refs/heads/main` to
+  `16ae6ff2f3e0cbbe5328cba9c13f07fa9e9864b6`. Railway deployment
+  `5c2d5885-f6dd-4a38-a721-3efb65abcb01` completed with status **SUCCESS** and a running instance on
+  that exact commit. No Railway variable, manual redeploy, production database, storage, or
+  browser operation was performed.
 
 - Corrected the authorized Permanent backup configuration validator in
   `gunicorn.conf.py`: Gunicorn's real `Config.worker_class` resolves to a worker class
