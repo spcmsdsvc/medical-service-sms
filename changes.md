@@ -1,6 +1,74 @@
 # Project Change Log
 
+codex changes - 2026-09-14
+
+- Corrected the authorized Permanent backup configuration validator in
+  `gunicorn.conf.py`: Gunicorn's real `Config.worker_class` resolves to a worker class
+  object, so the previous comparison with the string `gthread` rejected the correct
+  production configuration before startup. Validation now reads the supported effective
+  `Config.worker_class_str` value while still reporting only the setting name on conflict.
+- Updated `tests/test_backup_permanent_fix.py` to model Gunicorn's resolved worker class and
+  string properties, proving a valid `gthread` configuration passes and incompatible
+  effective settings remain rejected. Focused configuration checks passed **7 tests with
+  1 expected Windows skip**; the complete backup correction module passed **13 tests with
+  1 expected Windows skip**.
+- This was a focused correction within the existing backup package. `scheduler.db`,
+  `Handoffs/`, `.claude/`, `output/`, `tmp/`, Reimbursement changes, and all unrelated dirty
+  files remain preserved and outside the commit allowlist. No deployment, Railway, browser,
+  database, storage, commit, or push operation was performed.
+- Pre-commit allowlist inspection confirmed that all existing Reimbursement, Timeline, Stock,
+  and TSR test-file edits are limited to the required v156-to-v157 cache-marker assertion.
+  Restored one accidentally shifted indentation level in the TSR contact-suggestions assertion
+  loop before staging so its cross-file coverage and application behavior remain unchanged.
+
 codex changes - 2026-09-13
+
+- Started the owner-authorized Permanent backup configuration fix recorded at the top of
+  `plans.md`. The implementation is limited to version-controlled Gunicorn startup
+  enforcement, truthful System Backup progress/status messaging, focused regressions, and
+  the required cache/release records; Railway variables, deployment, database/storage
+  operations, browser/Codex UI verification, commit, and push remain excluded.
+- Preserved the existing dirty Reimbursement work, `scheduler.db`, handoffs, `.claude/`,
+  `output/`, and `tmp/`. The live embedded service-worker marker was v156 before this
+  package, so this package will advance it once to the next monotonic marker rather than
+  overwriting the earlier user-visible cache bump.
+
+- Added root `gunicorn.conf.py` as the version-controlled Gunicorn source of truth for the
+  System Backup worker: one `gthread` worker process, eight threads, 180-second request
+  timeout, 30-second graceful timeout, and disabled request-count recycling, reload, and
+  preload. Its shared startup/reload validator rejects incompatible effective settings by
+  setting name while leaving bind and ordinary logging overrides configurable and never
+  echoing environment values.
+- Updated `Dockerfile` and `Procfile` to load `gunicorn.conf.py` explicitly and removed the
+  duplicated tuning flags. Railway's plain `gunicorn app:app` invocation will discover the
+  same root configuration from `/app`.
+- Updated `app.py` System Backup progress so local upload totals are reset to an explicit
+  unknown denominator at the streamed private-bucket phase while cumulative archived-file
+  counts continue through completion. Restart reconciliation now records `Build interrupted`,
+  preserves the last phase for context, and says only that the server process changed and the
+  unfinished build must be restarted; it no longer asserts unverified database integrity.
+- Updated `templates/system_backup.html` to label the percentage as overall progress, render
+  `N files archived` when bucket totals are unknown, and show database `Included` only for
+  completed result metadata. Failed or cancelled builds show `Not confirmed`, and the
+  database snapshot method is withheld unless inclusion is confirmed.
+- Added `tests/test_backup_permanent_fix.py` covering effective configuration validation,
+  harmless bind/logging overrides, command/config parity, temporary SQLite/bucket progress,
+  template status contracts, and process-restart reconciliation. Updated the existing
+  Gunicorn concurrency contracts and all exact current-cache assertions for the next marker.
+- Advanced the embedded service-worker marker once from v156 to
+  `medical-service-pwa-offline-navigation-v157-backup-permanent-config` and added the
+  published `2026-09-13-backup-permanent-configuration` release entry in
+  `static/changelog/releases.json`.
+- Verification: unchanged-source fail-first contracts failed as expected before the fix;
+  final focused backup/startup/offline/cache/reimbursement coverage passed **312 tests with
+  1 expected Windows skip**. Isolated full discovery against a unique external temporary
+  database ran **1,093 tests: 1,073 passed, 18 known baseline failures, and 2 skips**; the
+  failures were existing Purchase Order login-throttle setup and staff-creation fixture/
+  duplicate-initials cases. Python AST, Jinja, masked inline JavaScript, release JSON
+  uniqueness (**91 releases/254 items**), and `git diff --check` passed. The POSIX-only
+  Gunicorn process test was skipped because WSL/Linux is unavailable; browser verification
+  remains owner-only. No commit, push, deployment, Railway, database, storage, production,
+  browser, or Codex UI operation was performed.
 
 - Started the owner-authorized Reimbursement Package 3 implementation recorded at the top of
   `plans.md`. The package is limited to presentation-only worksheet search/filter/category

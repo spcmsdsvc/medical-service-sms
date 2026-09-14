@@ -18964,7 +18964,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v156-reimbursement-worksheet-views';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v157-backup-permanent-config';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -22144,6 +22144,8 @@ def empty_backup_job_state():
         'status': 'idle',
         'phase': '',
         'phase_label': '',
+        'interrupted': False,
+        'last_phase_label': '',
         'percent': 0,
         'files_total': 0,
         'files_done': 0,
@@ -22228,7 +22230,9 @@ def reconcile_backup_job_state():
     2. **The thread stopped heartbeating.** The builder refreshes `updated_at`
        on every phase and periodically inside file loops.
 
-    Without this the page would spin forever on a job that died silently.
+    Without this the page would spin forever on a job that died silently. A
+    process-change interruption is reported without making an unverified claim
+    about the database snapshot or archive contents.
     """
     with _backup_job_lock:
         state = load_backup_job_state()
@@ -22237,7 +22241,18 @@ def reconcile_backup_job_state():
 
         reason = ''
         if clean_str(state.get('boot_id')) != PROCESS_BOOT_ID:
-            reason = 'The server restarted while this backup was building. Nothing was corrupted; start a new one.'
+            last_phase_label = (
+                clean_str(state.get('phase_label'))
+                or clean_str(state.get('phase'))
+                or 'the last recorded phase'
+            )
+            state['interrupted'] = True
+            state['last_phase_label'] = last_phase_label
+            state['phase_label'] = 'Build interrupted'
+            reason = (
+                'The server process changed while this backup was building. '
+                f'Last phase: {last_phase_label}. The unfinished build must be restarted.'
+            )
         else:
             updated = parse_state_timestamp(state.get('updated_at'))
             if updated is not None:
@@ -23300,7 +23315,14 @@ def build_system_backup_archive(job_id, username, cancel=None, progress_sink=Non
 
             # --- bucket objects ---------------------------------------------
             if file_storage.bucket_configured:
-                report(phase='bucket', phase_label='Downloading private bucket objects', percent=90)
+                # Bucket listing is intentionally streamed rather than pre-counted. The
+                # local denominator would make a cumulative count such as 1388 of 494
+                # look impossible, so zero means the total is unknown for this phase.
+                files_total = 0
+                report(
+                    phase='bucket', phase_label='Downloading private bucket objects',
+                    percent=90, files_done=files_done, files_total=files_total,
+                )
                 bucket_result = add_bucket_objects_to_backup_zip(
                     backup_zip,
                     progress=note_file,
@@ -23412,6 +23434,7 @@ def build_system_backup_archive(job_id, username, cancel=None, progress_sink=Non
                 'budget_exhausted': bool(bucket_result.get('budget_exhausted')),
             },
             'files_done': files_done,
+            'files_total': files_total,
             'duration_seconds': round(time.monotonic() - started_monotonic, 2),
         }
     finally:
@@ -23481,6 +23504,7 @@ def run_system_backup_job(job_id, username):
             warnings_truncated=len(warnings) > BACKUP_MAX_RECORDED_WARNINGS,
             bucket=result.get('bucket') or {},
             files_done=result.get('files_done', 0),
+            files_total=result.get('files_total', 0),
             archive={
                 'filename': result.get('filename', ''),
                 'path': result.get('path', ''),
@@ -23538,6 +23562,8 @@ def backup_status_payload():
             'status': state.get('status', 'idle'),
             'phase': state.get('phase', ''),
             'phase_label': state.get('phase_label', ''),
+            'interrupted': bool(state.get('interrupted')),
+            'last_phase_label': state.get('last_phase_label', ''),
             'percent': state.get('percent', 0),
             'files_done': state.get('files_done', 0),
             'files_total': state.get('files_total', 0),

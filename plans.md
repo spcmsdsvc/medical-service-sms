@@ -1,5 +1,151 @@
 # Medical Service SMS — Approved Plans
 
+## Permanent backup configuration fix
+
+**Status:** Executed locally — implementation and repository verification are complete; no
+commit, push, Railway, deployment, database/storage, browser, or Codex UI operation was
+performed.
+**Approved:** 2026-09-13 — the owner explicitly requested implementation of the complete
+permanent backup configuration fix plan.
+**Detailed:** 2026-09-13.
+
+### Goal and boundaries
+
+Prevent the production startup mismatch that allowed Railway to run `gunicorn app:app`
+with a synchronous worker while the repository expected a threaded worker, which can
+interrupt the background System Backup build. Keep the existing background backup and
+SQLite snapshot design. Correct the impossible bucket progress denominator and the
+database/restart status wording so the Backup Center reports only confirmed facts.
+
+The implementation is limited to the version-controlled Gunicorn configuration and
+validation, `Dockerfile`, `Procfile`, the System Backup backend/template, focused tests,
+the embedded service-worker/cache marker and release record, and the required project
+records. No Railway variable changes, deployment, database migration or repair, storage
+operation, dependency upgrade, queue/resume architecture, browser automation, commit, or
+push is included. Protected `scheduler.db`, `Handoffs/`, `.claude/`, `output/`, `tmp/`,
+and unrelated dirty work remain outside the scope.
+
+### Decisions
+
+- Centralize the required Gunicorn settings in root `gunicorn.conf.py`, which plain
+  `gunicorn app:app` discovers from `/app` and the repository start commands explicitly
+  load. Validate effective settings in `on_starting` and `on_reload`; incompatible worker,
+  timeout, recycling, reload, or preload settings fail with names only, while ordinary
+  bind/logging overrides remain configurable.
+- Require `gthread`, one worker, eight threads, 180-second timeout, 30-second graceful
+  timeout, no request-count recycling, no reload, and no preload. Keep one replica and
+  the existing daemon background build; an interrupted build remains restart-required.
+- During the bucket phase, keep the cumulative successful-file count but set the file
+  denominator to zero because bucket listing is intentionally not pre-scanned. The UI
+  renders `N files archived` when the denominator is unknown.
+- Show database inclusion only from confirmed completed-result metadata. Restart-detected
+  jobs show `Build interrupted`, with the restart explanation stating only that the server
+  process changed and the unfinished build must be restarted.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read all applicable instructions, the complete `changes.md`,
+   this approved plan, current Git state, backup source/template/tests, startup files,
+   worker marker, cache assertions, and release format. Preserve protected and unrelated
+   dirty work. Record this plan as `In progress` before source edits.
+2. **Startup configuration.** Add root `gunicorn.conf.py` with the required threaded
+   settings, disabled recycling/reload/preload, one shared validation function, and
+   `on_starting`/`on_reload` hooks. Update `Dockerfile` and `Procfile` to use
+   `--config gunicorn.conf.py` without duplicated tuning arguments. The validator logs a
+   short success line and raises a concise error naming conflicting settings without
+   exposing environment values.
+3. **Backup progress and failure status.** In `app.py`, keep local-file totals for local
+   uploads and set `files_total` to zero at the bucket phase while retaining cumulative
+   `files_done`. In `templates/system_backup.html`, render an unknown-total count, label
+   the percentage as overall phase progress, derive database `Included` only from confirmed
+   completed metadata, show `Not confirmed` for failed/interrupted unconfirmed jobs, and
+   show `Build interrupted` for restart reconciliation. Preserve archive publication,
+   checksums, cancellation, authorization, storage limits, and download behavior.
+4. **Regression coverage.** Add startup configuration tests proving plain and explicit
+   commands resolve identically, incompatible CLI/`GUNICORN_CMD_ARGS` overrides are rejected,
+   harmless bind/logging overrides remain accepted, and the pinned Gunicorn check works with
+   a temporary minimal WSGI fixture when Linux support is available. Add focused backup
+   progress and display/status tests, including counts exceeding the local denominator,
+   failed/unconfirmed database status, successful inclusion, and restart wording.
+5. **Delivery records and verification.** Reread the live worker marker immediately before
+   editing and advance it once from v156 to the next monotonic marker for this fix; update
+   exact current-cache assertions and add one published release item. Run fail-first
+   regressions before implementation, then focused backup/startup/cache/release tests, the
+   isolated full suite once, syntax/Jinja/inline-JavaScript checks, release JSON validation,
+   and `git diff --check`. Record exact results, limitations, deviations, and protected-file
+   confirmation in this plan and `changes.md`.
+
+### Acceptance and limits
+
+- `gunicorn app:app` and the Dockerfile/Procfile commands use the same validated settings;
+  incompatible future worker or timeout overrides fail visibly before serving traffic.
+- Bucket progress never displays an impossible `N of M` ratio; completion retains the
+  cumulative count and confirmed database metadata.
+- Restarted or failed jobs never assert that the database snapshot failed unless the
+  result metadata confirms that fact; completed archives continue to show `Included`.
+- The guard cannot prevent a deliberate replacement of the config/application server, an
+  external deployment override that omits the project config, process crashes, resource
+  exhaustion, or a mid-build restart. No production operation occurs in this implementation.
+
+### Implementation outcome (2026-09-13)
+
+- Added root `gunicorn.conf.py` as the version-controlled source of truth for the single
+  `gthread` worker, eight threads, 180-second timeout, 30-second graceful timeout, disabled
+  request-count recycling, reload, and preload. A shared `validate_effective_settings` hook
+  runs on startup and reload, logs a short success line, and rejects conflicting effective
+  values by setting name without echoing environment values. `Dockerfile` and `Procfile`
+  now explicitly load this config without duplicating tuning flags; ordinary bind/logging
+  settings remain platform-configurable.
+- Updated `app.py` backup progress so the local file denominator is reset to zero when the
+  streamed bucket phase begins while cumulative `files_done` continues through completion.
+  Backup state now carries the terminal `files_total` value. Restart reconciliation records
+  `Build interrupted`, preserves the last phase in state and UI context, and explains only
+  that the server process changed and the unfinished build must be restarted.
+- Updated `templates/system_backup.html` to label the percentage as overall progress, render
+  `N files archived` when the total is unknown, and show `Included` only for completed or
+  completed-with-warnings metadata. Failed or cancelled jobs show `Not confirmed`; the
+  database method is hidden unless inclusion is confirmed.
+- Added `tests/test_backup_permanent_fix.py` with config, override, temporary SQLite/bucket
+  count, template, and restart regressions. Updated the existing Gunicorn concurrency
+  contracts and all exact current-cache assertions to the next marker,
+  `medical-service-pwa-offline-navigation-v157-backup-permanent-config`, and added the
+  published `2026-09-13-backup-permanent-configuration` release entry.
+- The unchanged-source fail-first checkpoint ran before implementation and failed as expected
+  (five failures and six missing-config errors, with the POSIX-only runtime check skipped).
+  Final focused backup/startup/offline/cache/reimbursement coverage passed **312 tests with
+  1 expected Windows skip**. Isolated full discovery against a unique external temporary
+  database ran **1,093 tests: 1,073 passed, 18 known baseline failures, and 2 skips**; the
+  failures were the existing Purchase Order login-throttle setup cases and staff-creation
+  fixture/duplicate-initials cases, with no backup-fix failure.
+- Python AST parsing, Jinja parsing, masked Backup Center inline-JavaScript syntax, release
+  JSON uniqueness (**91 releases/254 items**), and `git diff --check` passed. A real Linux
+  Gunicorn process check was retained but skipped because WSL/Linux is unavailable in this
+  Windows environment. Browser visual verification remains owner-only.
+- Protected `scheduler.db`, `Handoffs/`, `.claude/`, `output/`, `tmp/`, and unrelated dirty
+  work were preserved. No commit, push, deployment, Railway variable, production, database,
+  storage, browser, or Codex UI operation was performed.
+
+### Focused validator correction outcome (2026-09-14)
+
+- The pre-publication check identified a material startup defect: Gunicorn's real
+  `Config.worker_class` property resolves the configured worker URI to a Python class, but
+  `validate_effective_settings()` compared that class object with the string `gthread`.
+  A correctly configured production process would therefore reject its own startup; the
+  earlier mock only exposed a string and did not catch this.
+- Corrected `gunicorn.conf.py` to validate the real effective string interface,
+  `Config.worker_class_str`, while retaining `worker_class` as the secret-safe conflict
+  label and leaving every other required setting check unchanged. The startup and reload
+  hooks remain shared.
+- Updated `tests/test_backup_permanent_fix.py` server doubles to model both Gunicorn worker
+  forms and added a regression proving a resolved worker class with
+  `worker_class_str == 'gthread'` passes. The existing conflicting-setting and harmless
+  bind/logging tests now exercise the same interface shape.
+- Focused configuration contracts passed **7 tests with 1 expected Windows skip**; the full
+  backup correction module passed **13 tests with 1 expected Windows skip**. Python syntax
+  checks passed for the corrected files. No production, Railway, browser, database, storage,
+  commit, or push operation was performed; protected and unrelated dirty files remain
+  untouched and excluded.
+
 ## Reimbursement Package 3 — Worksheet Views and Faster Mobile Entry
 
 **Status:** Executed — implementation committed as `780a428`; owner-authorized publication to

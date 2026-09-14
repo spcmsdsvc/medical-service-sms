@@ -153,7 +153,7 @@ class ReimbursementWorksheetViewTests(unittest.TestCase):
         self.assertIn("applyReimbursementWorksheetView();", load)
 
     def test_current_worker_marker_and_release_record_are_current(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v156-reimbursement-worksheet-views", APP_SOURCE)
+        self.assertIn("medical-service-pwa-offline-navigation-v157-backup-permanent-config", APP_SOURCE)
         matches = [
             release for release in RELEASES.get("releases", [])
             if release.get("release_key") == "2026-09-13-reimbursement-worksheet-views"

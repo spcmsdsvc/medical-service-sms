@@ -76,26 +76,28 @@ class OfflineApiFallbackTests(unittest.TestCase):
 
 
 class BackupConcurrencyTests(unittest.TestCase):
-    """The Procfile is the fix for the backup blocking every other user.
+    """The shared Gunicorn config is the fix for backup request isolation.
 
     A single sync worker meant one superadmin downloading a backup froze the app
     for everyone, and a build that outran the worker timeout had its worker
-    killed. gthread moves the arbiter heartbeat into the accept loop, so a slow
-    request no longer looks like a hung worker.
+    killed. The version-controlled gthread config moves the arbiter heartbeat into
+    the accept loop, so a slow request no longer looks like a hung worker.
     """
 
     @classmethod
     def setUpClass(cls):
         cls.procfile = (ROOT / 'Procfile').read_text(encoding='utf-8')
+        cls.gunicorn_config = (ROOT / 'gunicorn.conf.py').read_text(encoding='utf-8')
 
     def test_the_web_process_can_serve_more_than_one_request_at_a_time(self):
-        self.assertIn('--worker-class gthread', self.procfile)
-        threads = re.search(r'--threads\s+(\d+)', self.procfile)
+        self.assertIn('--config gunicorn.conf.py', self.procfile)
+        self.assertIn("worker_class = 'gthread'", self.gunicorn_config)
+        threads = re.search(r'threads\s*=\s*(\d+)', self.gunicorn_config)
         self.assertIsNotNone(threads, 'gthread without --threads still serializes requests')
         self.assertGreaterEqual(int(threads.group(1)), 2)
 
     def test_the_timeout_leaves_room_for_a_backup_build(self):
-        timeout = re.search(r'--timeout\s+(\d+)', self.procfile)
+        timeout = re.search(r'timeout\s*=\s*(\d+)', self.gunicorn_config)
         self.assertIsNotNone(timeout)
         self.assertGreaterEqual(int(timeout.group(1)), 180)
 
@@ -106,7 +108,7 @@ class BackupConcurrencyTests(unittest.TestCase):
         busy timeout. Threads share one engine and connection pool, so this
         stays a deliberate choice rather than something to 'optimise' later.
         """
-        workers = re.search(r'--workers\s+(\d+)', self.procfile)
+        workers = re.search(r'workers\s*=\s*(\d+)', self.gunicorn_config)
         self.assertIsNotNone(workers)
         self.assertEqual(int(workers.group(1)), 1)
 

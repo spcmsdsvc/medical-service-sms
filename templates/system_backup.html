@@ -66,10 +66,10 @@
         <div class="mt-4" aria-live="polite">
             <div class="backup-status-line small mb-2">
                 <span id="backup-phase" class="fw-bold">Waiting</span>
-                <span id="backup-progress-text" class="backup-muted">0%</span>
+                <span id="backup-progress-text" class="backup-muted">Overall progress: 0%</span>
                 <span id="backup-file-count" class="backup-muted"></span>
             </div>
-            <div class="backup-progress" role="progressbar" aria-label="Backup build progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="backup-progress" role="progressbar" aria-label="Overall backup build progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                 <div id="backup-progress-bar"></div>
             </div>
         </div>
@@ -156,12 +156,21 @@
         const storage = payload.storage || {};
         const running = job.status === 'running';
         const percent = Math.max(0, Math.min(100, Number(job.percent || 0)));
+        const filesDone = Math.max(0, Number(job.files_done || 0));
+        const filesTotal = Math.max(0, Number(job.files_total || 0));
+        const databaseConfirmed = ['completed', 'completed_with_warnings'].includes(job.status)
+            && job.database_included === true;
         const badgeLabels = { idle: 'Idle', running: 'Building', completed: 'Ready', completed_with_warnings: 'Ready with warnings', failed: 'Failed', cancelled: 'Cancelled' };
         setStatusBadge('backup-status-badge', job.status, badgeLabels[job.status] || job.status || 'Idle');
         setText('backup-message', job.message || (running ? 'The backup is being built in the background.' : 'No backup job is running.'));
-        setText('backup-phase', job.phase_label || (running ? 'Building backup' : 'Waiting'));
-        setText('backup-progress-text', `${percent}%`);
-        setText('backup-file-count', job.files_total ? `${job.files_done || 0} of ${job.files_total} files` : '');
+        const lastPhaseContext = job.interrupted && job.last_phase_label
+            ? ` (last phase: ${job.last_phase_label})`
+            : '';
+        setText('backup-phase', `${job.phase_label || (running ? 'Building backup' : 'Waiting')}${lastPhaseContext}`);
+        setText('backup-progress-text', `Overall progress: ${percent}%`);
+        setText('backup-file-count', filesTotal > 0
+            ? `${filesDone} of ${filesTotal} files archived`
+            : (filesDone > 0 ? `${filesDone} files archived` : ''));
         const bar = $('backup-progress-bar');
         if (bar) bar.style.width = `${percent}%`;
         const progress = document.querySelector('.backup-progress');
@@ -174,8 +183,8 @@
         setText('storage-used', storage.used_human || '-');
         setText('storage-free', storage.free_human || '-');
         setText('storage-percent', storage.usage_percent == null ? '-' : `${storage.usage_percent}% used`);
-        setText('database-status', job.database_included ? 'Included' : (job.status === 'failed' ? 'Failed' : 'Not built'));
-        setText('database-method', job.database_snapshot_method || '-');
+        setText('database-status', databaseConfirmed ? 'Included' : (['failed', 'cancelled'].includes(job.status) ? 'Not confirmed' : 'Not built'));
+        setText('database-method', databaseConfirmed ? (job.database_snapshot_method || '-') : '-');
         setText('archive-size', archive ? (archive.size_human || '-') : 'None');
         setText('archive-age', archive ? humanAge(archive.age_seconds) : '-');
         setText('archive-name', archive ? `${archive.filename} (${archive.size_human || 'size unavailable'})` : 'No published backup archive is available.');

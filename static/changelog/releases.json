@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-13-backup-permanent-configuration",
+      "release_date": "2026-09-13",
+      "title": "Reliable System Backup Builds",
+      "summary": "System Backup uses one validated threaded server configuration and reports interrupted builds and bucket progress accurately.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-13-backup-permanent-configuration-everyone",
+          "category": "System Backup",
+          "description": "System Backup now validates the required threaded Gunicorn settings at startup and reload, keeps bucket file counts honest when the total is unknown, and labels interrupted or unconfirmed database results clearly.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-13-reimbursement-worksheet-views",
       "release_date": "2026-09-13",
       "title": "Reimbursement Worksheet Views",
