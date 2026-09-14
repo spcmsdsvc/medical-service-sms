@@ -22284,6 +22284,11 @@ def sweep_backup_artifacts(active_job_id=''):
     temp-directory rule matches `.zip` only.
     """
     removed = []
+    active_job_id = clean_str(active_job_id)
+    active_artifact_names = {
+        f'.building-{active_job_id}.zip',
+        f'.build-{active_job_id}',
+    } if active_job_id else set()
 
     # 1. Inside our own archive directory: keep the newest valid archive, drop the rest.
     try:
@@ -22300,8 +22305,8 @@ def sweep_backup_artifacts(active_job_id=''):
             except OSError:
                 pass
         elif BACKUP_BUILDING_FILENAME_PATTERN.match(name) or BACKUP_WORKDIR_PATTERN.match(name):
-            # Leave the running job's own workspace alone.
-            if active_job_id and active_job_id in name:
+            # Leave only the running job's exact workspace and temporary archive alone.
+            if name in active_artifact_names:
                 continue
             try:
                 if os.path.isdir(full_path):
@@ -23593,8 +23598,8 @@ def system_backup_page():
     if not is_superadmin_user():
         return render_template('access_denied.html',
                                denied_message='Only superadmins can manage system backups.'), 403
-    reconcile_backup_job_state()
-    sweep_backup_artifacts_throttled()
+    state = reconcile_backup_job_state()
+    sweep_backup_artifacts_throttled(state.get('job_id') if state.get('status') == 'running' else '')
     return render_template('system_backup.html')
 
 

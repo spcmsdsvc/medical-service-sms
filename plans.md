@@ -151,6 +151,56 @@ and unrelated dirty work remain outside the scope.
   eight threads, and the 180-second timeout. No Railway variable, manual redeploy, database,
   storage, or production backup operation was performed.
 
+### Focused Backup Center sweeper correction (2026-09-14)
+
+**Status:** In progress — correction implementation complete; awaiting the parent’s allowlisted
+publication. No database, storage, browser, Railway, or Codex UI operation was performed.
+**Approved:** 2026-09-14 — the owner explicitly authorized implementation and publication of
+the focused correction after the production backup failed while finalizing its temporary archive.
+**Detailed:** 2026-09-14.
+
+### Goal and boundaries
+
+Ensure opening or reopening `/admin/backup` cannot delete the temporary ZIP or work directory
+owned by a currently running backup. Keep cleanup of abandoned build artifacts, and make active
+artifact protection exact so a similar job ID cannot shield stale files. The correction is limited
+to `app.py`, focused sweeper/route regressions in `tests/test_system_backup.py`, and these project
+records. No service-worker/cache bump is required because the behavior is server-side route and
+cleanup logic with no static asset change. Protected `scheduler.db`, `Handoffs/`, `.claude/`,
+`output/`, `tmp/`, and unrelated dirty work remain outside the scope.
+
+### Numbered execution steps
+
+1. Read the applicable instructions, complete `changes.md`, this backup plan, current Git state,
+   and the existing sweeper, Backup Center route, and tests. Preserve all protected and unrelated
+   dirty work.
+2. Pass the reconciled running job ID from `system_backup_page()` into
+   `sweep_backup_artifacts_throttled()`, using the same running-state rule as the status payload.
+3. In `sweep_backup_artifacts()`, preserve only the exact `.building-<job>.zip` and
+   `.build-<job>` names for the active job; continue removing unrelated and stale matching
+   artifacts.
+4. Add route-level regressions that open and reopen Backup Center during a running build and
+   assert exact active artifacts survive while stale and near-match artifacts are removed. Add
+   direct sweeper coverage for exact-name protection and near-match rejection. Run focused backup
+   tests plus Python AST and whitespace checks.
+5. Record the implementation result, test counts, no-cache-bump decision, and protected-file
+   confirmation here and in `changes.md`. Leave commit, push, Railway deployment, and production
+   backup verification to the separately authorized parent publication step.
+
+### Implementation outcome (2026-09-14)
+
+- `system_backup_page()` now reconciles once and passes the active job ID to the throttled
+  sweeper, so page entry/re-entry preserves the running build's temporary archive and workspace.
+- `sweep_backup_artifacts()` now builds an exact active-artifact allowlist and compares complete
+  basenames. Unrelated stale artifacts and IDs that merely contain the active ID are still removed.
+- Added route and direct-sweeper regressions in `tests/test_system_backup.py`. The focused
+  Backup Center route/sweeper set passed **10/10** tests; Python AST parsing and `git diff --check`
+  passed. The test process used its disposable test database; `scheduler.db` was not part of this
+  correction.
+- No service-worker marker or release entry was changed because this is a backend route/sweeper
+  correction and no cached static asset changed. Protected `scheduler.db`, handoffs, `.claude/`,
+  `output/`, `tmp/`, and unrelated work remain untouched and excluded from publication.
+
 ## Reimbursement Package 3 — Worksheet Views and Faster Mobile Entry
 
 **Status:** Executed — implementation committed as `780a428`; owner-authorized publication to

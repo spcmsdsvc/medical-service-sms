@@ -28,6 +28,20 @@ codex changes - 2026-09-14
   started with `gthread`, one process, eight threads, and the 180-second timeout. No Railway
   variable, manual redeploy, database, storage, production-backup, browser, or Codex UI action
   was performed.
+- Implemented the focused Backup Center sweeper correction in `app.py`: the `/admin/backup`
+  route now passes the reconciled running job ID to the throttled cleanup sweep, so opening or
+  reopening the page cannot delete that job's `.building-<job>.zip` or `.build-<job>` workspace.
+- Hardened active artifact protection to compare complete artifact basenames exactly. Stale
+  unrelated build artifacts and near-match job IDs continue to be removed, while the exact active
+  archive and work directory survive cleanup.
+- Added route-level and direct-sweeper regressions in `tests/test_system_backup.py`; the focused
+  Backup Center route/sweeper set passed **10/10**, Python AST parsing passed, and `git diff --check`
+  passed. The tests used a disposable test database and did not modify the protected
+  `scheduler.db` publication artifact.
+- This backend route/cleanup correction requires no service-worker/cache marker or release bump;
+  no static asset or offline behavior changed. Protected `Handoffs/`, `.claude/`, `output/`,
+  `tmp/`, `scheduler.db`, and unrelated owner work remain excluded. No commit, push, Railway,
+  production, browser, or Codex UI action was performed by the Builder.
 
 codex changes - 2026-09-13
 

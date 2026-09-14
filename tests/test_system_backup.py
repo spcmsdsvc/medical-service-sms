@@ -665,6 +665,86 @@ class BackupArtifactSweeperTests(unittest.TestCase):
         self.assertTrue(newer.exists(), 'the newest archive must survive')
         self.assertFalse(older.exists(), 'older archives must be reclaimed')
 
+    def test_only_exact_active_job_artifacts_are_preserved(self):
+        active_job_id = 'abcdef0123456789'
+        exact_building = self.work / f'.building-{active_job_id}.zip'
+        exact_workdir = self.work / f'.build-{active_job_id}'
+        stale_building = self.work / '.building-fedcba9876543210.zip'
+        stale_workdir = self.work / '.build-fedcba9876543210'
+        near_building = self.work / f'.building-0{active_job_id}.zip'
+        near_workdir = self.work / f'.build-0{active_job_id}'
+
+        exact_building.write_bytes(b'active')
+        exact_workdir.mkdir()
+        (exact_workdir / 'part').write_bytes(b'active')
+        stale_building.write_bytes(b'stale')
+        stale_workdir.mkdir()
+        near_building.write_bytes(b'near match')
+        near_workdir.mkdir()
+
+        with patch.object(app_module, 'BACKUP_ARCHIVE_DIR', str(self.work)):
+            app_module.sweep_backup_artifacts(active_job_id)
+
+        self.assertTrue(exact_building.exists(), 'the active temporary archive must survive')
+        self.assertTrue(exact_workdir.exists(), 'the active work directory must survive')
+        self.assertFalse(stale_building.exists(), 'an unrelated temporary archive must be removed')
+        self.assertFalse(stale_workdir.exists(), 'an unrelated work directory must be removed')
+        self.assertFalse(near_building.exists(), 'a near-match archive must not be preserved')
+        self.assertFalse(near_workdir.exists(), 'a near-match work directory must not be preserved')
+
+
+class BackupCenterRunningJobSweepTests(BackupCenterRouteTests):
+    """Opening the page must not sweep the workspace owned by its running job."""
+
+    def setUp(self):
+        super().setUp()
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix='backup_page_sweep_'))
+        self.addCleanup(shutil.rmtree, self.work, True)
+        self.archive_root = self.work / 'archives'
+        self.state_root = self.work / 'state'
+        self.archive_root.mkdir()
+        self.state_root.mkdir()
+
+    def test_opening_and_reopening_backup_center_preserves_running_artifacts(self):
+        active_job_id = '0123456789abcdef'
+        exact_building = self.archive_root / f'.building-{active_job_id}.zip'
+        exact_workdir = self.archive_root / f'.build-{active_job_id}'
+        stale_building = self.archive_root / '.building-fedcba9876543210.zip'
+        stale_workdir = self.archive_root / '.build-fedcba9876543210'
+        near_building = self.archive_root / f'.building-0{active_job_id}.zip'
+        near_workdir = self.archive_root / f'.build-0{active_job_id}'
+        exact_building.write_bytes(b'active')
+        exact_workdir.mkdir()
+        stale_building.write_bytes(b'stale')
+        stale_workdir.mkdir()
+        near_building.write_bytes(b'near match')
+        near_workdir.mkdir()
+
+        state = app_module.empty_backup_job_state()
+        state.update({
+            'job_id': active_job_id,
+            'boot_id': app_module.PROCESS_BOOT_ID,
+            'status': 'running',
+            'phase': 'bucket',
+            'phase_label': 'Downloading private bucket objects',
+        })
+        with patch.object(app_module, 'BACKUP_ARCHIVE_DIR', str(self.archive_root)), \
+                patch.object(app_module, 'RUNTIME_STATE_DIR', str(self.state_root)), \
+                patch.object(app_module, 'is_superadmin_user', return_value=True), \
+                patch.object(app_module, '_backup_sweep_last_run', 0.0):
+            app_module.save_backup_job_state(state)
+            first = self.client.get('/admin/backup')
+            second = self.client.get('/admin/backup')
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(exact_building.exists(), 'opening Backup Center must preserve the active archive')
+        self.assertTrue(exact_workdir.exists(), 'reopening Backup Center must preserve the active workspace')
+        self.assertFalse(stale_building.exists(), 'stale artifacts must still be cleaned')
+        self.assertFalse(stale_workdir.exists(), 'stale workspaces must still be cleaned')
+        self.assertFalse(near_building.exists(), 'near-match artifacts must not be protected')
+        self.assertFalse(near_workdir.exists(), 'near-match workspaces must not be protected')
+
 
 class BackupJobReconcileTests(unittest.TestCase):
     """A job whose process is gone must not leave the page spinning forever."""
