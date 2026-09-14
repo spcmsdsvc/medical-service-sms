@@ -131,8 +131,9 @@ commit. No Railway variable, manual redeploy, production database, or storage op
 
 ### Branch-routed CC and creator-copy follow-up (2026-09-14)
 
-**Status:** Executed — implementation commit `9c02c86`; owner-authorized publication to
-`origin/main` is in progress.
+**Status:** Executed — implementation commit `9c02c86` and record commit `ae0dc0a` were pushed
+to `origin/main`; Railway deployment `384e9e13-1db4-40e2-84d2-ee75d42bf17f` completed
+successfully on full commit `ae0dc0a57f5cc17c88322a0b5801af0aa4fa3151`.
 
 The owner authorized a contained follow-up to split the Calibration Center Settings CC into
 Manila/Main and Cebu/Davao groups using the Engineer-profile branch of the engineer who created

@@ -33,6 +33,11 @@ codex changes - 2026-09-14
   templates, focused Calibration Center tests, the admins release item, and required plan/change
   records. Protected `scheduler.db`, handoff, `.claude`, output, tmp, and unrelated untracked work
   were not staged. The owner separately authorized pushing this package to `origin/main`.
+- Pushed implementation commit `9c02c86` and record commit `ae0dc0a` to `origin/main`; independent
+  remote verification resolved the branch to full commit
+  `ae0dc0a57f5cc17c88322a0b5801af0aa4fa3151`. Railway accepted that exact commit as deployment
+  `384e9e13-1db4-40e2-84d2-ee75d42bf17f`, which completed with status **SUCCESS**. No Railway
+  variable, manual redeploy, production database/storage, or browser operation was performed.
 
 - Started the owner-authorized Calibration Center implementation recorded at the top of
   `plans.md`. The package adds strict admin-only current-approved calibration indexing,
