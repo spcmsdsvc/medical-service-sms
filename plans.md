@@ -2,9 +2,8 @@
 
 ## Calibration Center and calibration-specific CC group
 
-**Status:** Executed — owner-authorized implementation completed 2026-09-14. No commit,
-push, deployment, Railway, production database/storage, browser, or Codex UI operation is
-authorized in this package.
+**Status:** Executed — implementation commit `cc96293`; publication verification pending.
+No production database/storage, browser, or Codex UI operation is authorized in this package.
 **Approved/executing:** 2026-09-14 — the owner explicitly instructed implementation after
 the detailed plan and Builder rules were presented.
 **Detailed:** 2026-09-14.
@@ -120,6 +119,11 @@ The final pre-commit allowlist run used another unique external disposable datab
 service-worker privacy, and every modified exact-cache-marker module. Staged inspection includes
 only this feature package and leaves the protected database, handoff, `.claude`, output, tmp, and
 unrelated untracked files unstaged.
+
+The owner separately authorized commit and push of this feature-only allowlist. The Calibration
+Center implementation and its required tests/records were committed on `main` as `cc96293`; the
+protected dirty and untracked paths remained unstaged. Remote and Railway publication status is
+recorded only after it is independently verified.
 
 ## Permanent backup configuration fix
 

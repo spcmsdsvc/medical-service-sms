@@ -72,6 +72,11 @@ codex changes - 2026-09-14
   that only the Calibration Center feature, its focused tests/cache assertions, release entry, and
   project records are included; protected dirty database, handoff, `.claude`, output, tmp, and
   unrelated untracked files remain unstaged.
+- Committed the owner-authorized Calibration Center feature-only allowlist on `main` as `cc96293`.
+  The commit contains the center backend/UI, calibration CC group, cache/privacy delivery,
+  focused tests and marker assertions, release entry, and required records. `scheduler.db`, the
+  handoff, `.claude`, output, tmp, the detailed handoff, and unrelated work were not staged or
+  committed. Remote push and Railway acceptance remain to be verified separately.
 
 - Corrected the authorized Permanent backup configuration validator in
   `gunicorn.conf.py`: Gunicorn's real `Config.worker_class` resolves to a worker class
