@@ -1,5 +1,126 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Center and calibration-specific CC group
+
+**Status:** Executed — owner-authorized implementation completed 2026-09-14. No commit,
+push, deployment, Railway, production database/storage, browser, or Codex UI operation is
+authorized in this package.
+**Approved/executing:** 2026-09-14 — the owner explicitly instructed implementation after
+the detailed plan and Builder rules were presented.
+**Detailed:** 2026-09-14.
+
+### Goal and boundaries
+
+Add an admin-only Calibration Center that indexes existing current approved
+`CalibrationCertificateApproval` records and their exact generated report PDF plus signed
+certificate. Access is strictly `is_admin_authorized()` (named superadmins and the validated
+regional admin, nationwide), with engineers, capability delegates, approver-only users,
+legacy generic admins, and anonymous users denied. Engineers' existing non-center artifact
+access remains unchanged. Add the Settings-managed
+`calibration_report_certificate_cc` group and use it only for Calibration Center client
+emails. Do not move, copy, regenerate, replace, delete, or migrate artifacts/data.
+
+### Authorized implementation and numbered execution
+
+1. Read all applicable instructions, this plan, complete `changes.md`, current Git state,
+   affected authorization/approval/artifact/email/sidebar/service-worker code, and tests.
+   Preserve `scheduler.db`, `Handoffs/`, `.claude/`, `output/`, `tmp/`, the handoff artifact,
+   and every unrelated dirty/untracked path. Record implementation start in `changes.md`.
+2. Add `can_access_calibration_center()` and use it independently on the page, data,
+   preparation, preview, and send endpoints plus the matching sidebar flag. Do not widen
+   authority through schedule/report capabilities or raw role checks.
+3. Query only `status='Approved'` and `is_latest=True`, resolve the report through the
+   existing conversion-owned PDF linkage and the signed certificate through the approval's
+   `signed_shift_file_id`, verify exact shift/submission pairing, and keep unavailable rows
+   visible but unsendable with a reason. Add server-side search, delivery filters, stable
+   approved-date ordering, ten-row pagination, summary counts, and per-file markers.
+4. Add a fixed server-owned two-file manifest and dedicated preparation path. Reuse existing
+   recipient parsing/contact suggestions, sender copy, remembered manual CC, font validation,
+   calibration subject/body, provider, marker, and activity-log helpers. CC order is only new
+   calibration Settings group, sender copy, manual CC; dedupe case-insensitively and never
+   inherit `tsr_client_cc`. Revalidate approval, linkage, readability, and manifest signature
+   during preview and send; stale state returns 409. Provider failure writes no markers;
+   success marks both files and records activity; tracking failure keeps the established
+   do-not-resend warning. Existing Timeline Send Service Files behavior must remain intact.
+5. Add the new Settings group/order metadata and Settings UI fallback/usage copy using the
+   existing superadmin-only recipient APIs. No schema migration or seeded address.
+6. Add `templates/calibration_center.html` with responsive table/cards, summary/search/
+   delivery filters, loading/empty/error/pagination states, exact report/certificate
+   preview/download actions, fixed-pair email modal, CSRF, confirmation reset, escaping,
+   keyboard focus, and no bulk/approval/upload/regeneration controls. Add only a strict-admin
+   navigation link in the existing Records area.
+7. Mark `/admin/calibration-center` network-first/no-store in the embedded service worker,
+   bump the marker exactly v157 to v158, mechanically update intentional exact-marker tests,
+   add one admins release item, and update records.
+8. Add fail-first `tests/test_calibration_center.py` before application behavior changes;
+   run it unchanged and record expected failures. Then run focused authorization, selection,
+   exact-pair, recipient/CC, preview/send/failure, sidebar, and cache/release tests; AST,
+   Jinja, inline-JavaScript, release JSON, isolated disposable-DB full discovery, and
+   `git diff --check`. Do not use browser automation. Report exact outcomes and deviations.
+
+### Acceptance and exclusions
+
+Only strict system admins can list/open/preview/send; regional admin sees all branches;
+engineers cannot access any center route. Only current approved rows list, and every send has
+exactly the matching report PDF and signed certificate. New calibration CC is isolated from
+TSR CC, stale/incomplete/mismatched pairs cannot send, and sensitive center responses are not
+cached. Excluded: schema/database/storage changes, history/bulk/scheduled sends, approval or
+artifact workflow changes, unrelated refactors, commit/push/deploy/Railway/production work,
+browser/Codex UI verification, and review/correction cycles.
+
+### Implementation outcome
+
+Implemented in `app.py`, `templates/calibration_center.html`, `templates/layout.html`,
+`templates/settings.html`, `tests/test_calibration_center.py`, the focused exact-v157 cache
+marker assertions, `static/changelog/releases.json`, `plans.md`, and `changes.md`. The center
+now has independent strict-system-admin guards, current-approved pagination/search/delivery
+summaries, exact conversion-owned report plus signed-certificate resolution, stale manifest
+protection, fixed two-file preview/send/tracking, calibration-only CC composition, responsive
+accessible UI, and authenticated network-first/no-store routing at service-worker v158. The
+Settings group is ordered immediately after `tsr_client_cc`; existing TSR delivery behavior
+was not changed.
+
+Fail-first evidence: the new `tests/test_calibration_center.py` was run before the application
+implementation and produced the expected missing-route/group/template checkpoint (**7 tests:
+6 failures, 1 error**). After implementation it passed **9 tests**. Focused calibration,
+delivery, TSR CC, sidebar, backup/cache, and modified exact-marker modules passed (**388 tests
+across the focused runs; 2 expected platform skips in the broader suite**). Python AST checks
+passed for `app.py` and all changed Python tests; Jinja parsing, extracted inline JavaScript
+syntax, release JSON uniqueness/syntax, and `git diff --check` passed. Isolated full unittest
+discovery used a disposable external SQLite database and ran **1,108 tests: 1,088 passed,
+18 unrelated baseline failures, 2 skips**; failures were existing purchase-order rate-limit
+setup collisions and staff-fixture uniqueness conflicts, not Calibration Center failures.
+
+No browser verification was performed because the project rules require separate owner
+authorization. No migration, production/database/storage operation, artifact relocation,
+commit, push, deploy, Railway change, or review/correction cycle was performed. Protected
+`scheduler.db`, `Handoffs/`, `.claude/`, `output/`, `tmp/`, the medical-service handoff, and
+unrelated owner work remain untouched.
+
+### Focused page-render correction outcome (2026-09-14)
+
+Local entry to `/admin/calibration-center` exposed a runtime `NameError`: the new page route
+used Flask's `make_response()` for its explicit no-store response header without importing that
+symbol. Added the missing Flask import and extended `tests/test_calibration_center.py` with an
+executable page-render regression that requires HTTP 200, the rendered body, and the exact
+`Cache-Control: no-store, no-cache, must-revalidate, max-age=0` header. This correction does not
+change authorization, center data, email behavior, frontend assets, the v158 cache marker, or the
+release manifest. The focused Calibration Center suite passed **10/10** and Python AST plus
+targeted `git diff --check` validation passed. No browser, database/storage, Railway, commit,
+push, or deployment operation is included.
+
+Before publication, the focused suite was rerun against a uniquely named external disposable
+SQLite database with **10/10 passing**. A direct runtime smoke rendered the real Calibration Center
+template through `calibration_center_page()` and returned **HTTP 200**, the exact no-store header,
+and a complete HTML response. This specifically verifies the missing-`make_response` failure no
+longer occurs without using the protected repository database or browser automation.
+
+The final pre-commit allowlist run used another unique external disposable database and passed
+**332/332 tests** across the Calibration Center, service-file delivery, TSR CC, sidebar,
+service-worker privacy, and every modified exact-cache-marker module. Staged inspection includes
+only this feature package and leaves the protected database, handoff, `.claude`, output, tmp, and
+unrelated untracked files unstaged.
+
 ## Permanent backup configuration fix
 
 **Status:** Executed — implementation committed as `042e84a` and successfully deployed by

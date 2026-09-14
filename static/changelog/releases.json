@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-14-calibration-center",
+      "release_date": "2026-09-14",
+      "title": "Calibration Center",
+      "summary": "Authorized administrators can find approved calibration reports and signed certificates in one place and email the exact pair to clients.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-14-calibration-center-admins",
+          "category": "Calibration",
+          "description": "Added an administrator-only Calibration Center for current approved Calibration Report and signed Certificate pairs, with client email sending and a dedicated Settings-managed CC group.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-13-backup-permanent-configuration",
       "release_date": "2026-09-13",
       "title": "Reliable System Backup Builds",

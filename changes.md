@@ -2,6 +2,77 @@
 
 codex changes - 2026-09-14
 
+- Started the owner-authorized Calibration Center implementation recorded at the top of
+  `plans.md`. The package adds strict admin-only current-approved calibration indexing,
+  exact report/certificate pairing, a fixed two-file email flow, and the new
+  `calibration_report_certificate_cc` Settings recipient group while preserving engineers'
+  existing non-center access and ordinary TSR email behavior. Protected scheduler/handoff/
+  `.claude`/output/tmp artifacts and unrelated dirty work remain outside scope; no commit,
+  push, deployment, Railway, production database/storage, browser, or Codex UI operation is
+  authorized.
+
+- Implemented the owner-authorized Calibration Center package. `app.py` now exposes strict
+  `/admin/calibration-center` page/data/email/preview/send endpoints, resolves only
+  `CalibrationCertificateApproval` rows that are both Approved and latest, pairs the exact
+  conversion-owned report PDF with the approval's signed certificate, reports unavailable
+  pairs without making them sendable, paginates ten rows, tracks per-file delivery markers,
+  and revalidates approval/linkage/managed-storage readability and a content-aware manifest
+  signature at preview and send.
+- Added the fixed two-artifact calibration email preparation path. It reuses existing client
+  contact suggestions, sender-copy and remembered manual-CC helpers, calibration-only subject
+  and body builders, provider delivery, marker tracking, and Activity Logs. Final CC order is
+  calibration Settings recipients, sender copy, then manual CC with case-insensitive
+  deduplication; `tsr_client_cc` is intentionally excluded. Provider failure leaves markers
+  unchanged, while tracking failure retains the established do-not-resend warning.
+- Added the `calibration_report_certificate_cc` Settings group directly after `tsr_client_cc`
+  with the Calibration Center label/description and usage copy, without a migration or seeded
+  address. Added the strict-admin Records sidebar link and new responsive
+  `templates/calibration_center.html` with search/filter/summary states, exact report and
+  certificate actions, fixed-pair preview, CSRF, escaping, keyboard focus, mobile controls,
+  and duplicate-send/confirmation reset behavior.
+- Added the admins-audience `2026-09-14-calibration-center-admins` release item and advanced
+  the embedded service-worker marker exactly from v157 to
+  `medical-service-pwa-offline-navigation-v158-calibration-center`. The center page and GET
+  JSON/context paths are network-first, request `no-store`, and never enter runtime cache;
+  intentional exact-marker tests were mechanically updated.
+- Added `tests/test_calibration_center.py` before implementation for the required fail-first
+  checkpoint: **7 tests produced 6 failures and 1 error** against unchanged source. After
+  implementation it passed **9 tests**. Focused calibration/TSR/delivery/sidebar/cache and
+  modified-marker runs passed **388 covered test cases across the invocations**. AST, Jinja,
+  inline JavaScript, release JSON, and `git diff --check` validation passed. Isolated external
+  disposable-DB full discovery ran **1,108 tests: 1,088 passed, 18 unrelated baseline
+  failures, 2 skips** (purchase-order rate-limit setup and staff-fixture uniqueness
+  collisions). Browser verification was not run under project authorization rules.
+- No schema/database/storage rewrite, production/Railway action, browser/Codex UI operation,
+  commit, push, deployment, or review/correction cycle was performed. Protected `scheduler.db`,
+  `Handoffs/`, `.claude/`, `output/`, `tmp/`, the medical-service handoff, and unrelated owner
+  changes remain outside this package.
+- Final in-scope hardening added content fingerprints to the two-file manifest, an explicit
+  no-store response header on the center HTML page, a missing-schedule 409 guard, and escaped
+  HTML-body source rendering plus visible To/Settings-CC/sender-copy/final-CC preview fields.
+  Mobile cards now expose both preview and download actions for each artifact. The rerun
+  focused package verification remained green at **129 tests** with AST, Jinja, inline
+  JavaScript, and diff checks passing.
+- Corrected the Calibration Center page startup failure reported during local use: the page
+  route called Flask's `make_response()` to attach its no-store header, but the symbol was not
+  imported. Added the missing Flask import and an executable route regression that renders the
+  page and verifies both HTTP 200 and the exact no-store header, covering the runtime path that
+  the original source-contract test did not execute. The focused Calibration Center suite passed
+  **10/10** and Python AST plus targeted `git diff --check` validation passed. No frontend, cache
+  marker, release entry, database, storage, Railway, browser, commit, or push change was required.
+- Pre-publication verification reran the focused Calibration Center suite against a uniquely named
+  external disposable SQLite database with **10/10 passing**, then rendered the real
+  `/admin/calibration-center` Jinja page through its route with strict access enabled. The runtime
+  smoke returned **HTTP 200**, the exact no-store header, and a complete HTML response, confirming
+  the missing-`make_response` failure is fixed before publication. The protected repository
+  `scheduler.db` was excluded from testing and remains outside the publication allowlist.
+- Final pre-commit verification ran the Calibration Center, service-file delivery, TSR CC,
+  sidebar, service-worker privacy, and every modified exact-cache-marker module against another
+  unique external disposable database: **332/332 tests passed**. Staged-file inspection confirmed
+  that only the Calibration Center feature, its focused tests/cache assertions, release entry, and
+  project records are included; protected dirty database, handoff, `.claude`, output, tmp, and
+  unrelated untracked files remain unstaged.
+
 - Corrected the authorized Permanent backup configuration validator in
   `gunicorn.conf.py`: Gunicorn's real `Config.worker_class` resolves to a worker class
   object, so the previous comparison with the string `gthread` rejected the correct

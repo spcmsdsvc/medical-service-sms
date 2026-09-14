@@ -1,0 +1,194 @@
+{% extends 'layout.html' %}
+
+{% block page_head %}
+<style>
+    .calibration-center-page { max-width: 1480px; margin: 0 auto; }
+    .calibration-center-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
+    .calibration-center-header h1 { font-weight:900; letter-spacing:-.02em; }
+    .calibration-center-summary { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.8rem; }
+    .calibration-center-summary-card { border:1px solid rgba(100,116,139,.18); border-radius:16px; padding:1rem; background:var(--bs-body-bg,#fff); box-shadow:0 5px 18px rgba(15,23,42,.05); }
+    .calibration-center-summary-card .label { color:#64748b; font-size:.7rem; font-weight:900; text-transform:uppercase; letter-spacing:.06em; }
+    .calibration-center-summary-card .value { display:block; margin-top:.25rem; font-size:1.55rem; font-weight:900; }
+    .calibration-center-toolbar { display:flex; gap:.75rem; flex-wrap:wrap; align-items:end; }
+    .calibration-center-toolbar .search-wrap { flex:1 1 300px; }
+    .calibration-center-toolbar .filter-wrap { flex:0 1 190px; }
+    .calibration-center-table-wrap { overflow-x:auto; border:1px solid rgba(100,116,139,.2); border-radius:16px; }
+    .calibration-center-table { min-width:980px; margin:0; }
+    .calibration-center-table th { white-space:nowrap; color:#64748b; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; }
+    .calibration-center-table td { vertical-align:middle; }
+    .calibration-center-file { display:flex; gap:.45rem; flex-wrap:wrap; }
+    .calibration-center-mobile { display:none; }
+    .calibration-center-status { font-size:.72rem; font-weight:900; border-radius:999px; padding:.28rem .55rem; white-space:nowrap; }
+    .calibration-center-status.sent { background:#dcfce7; color:#166534; }
+    .calibration-center-status.partial { background:#fef3c7; color:#92400e; }
+    .calibration-center-status.unsent { background:#e2e8f0; color:#334155; }
+    .calibration-center-status.unavailable { background:#fee2e2; color:#991b1b; }
+    .calibration-center-loading, .calibration-center-empty, .calibration-center-error { border-radius:14px; padding:1.25rem; }
+    .calibration-center-modal-backdrop { position:fixed; inset:0; z-index:1100; display:none; align-items:center; justify-content:center; padding:1rem; background:rgba(15,23,42,.62); }
+    .calibration-center-modal-backdrop.open { display:flex; }
+    .calibration-center-modal { width:min(900px,100%); max-height:92vh; overflow:auto; border-radius:20px; background:var(--bs-body-bg,#fff); color:var(--bs-body-color,#111827); box-shadow:0 24px 70px rgba(0,0,0,.28); }
+    .calibration-center-modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; padding:1.1rem 1.25rem; border-bottom:1px solid rgba(100,116,139,.18); }
+    .calibration-center-modal-body { padding:1.25rem; }
+    .calibration-center-modal-footer { display:flex; justify-content:flex-end; gap:.6rem; flex-wrap:wrap; padding:1rem 1.25rem; border-top:1px solid rgba(100,116,139,.18); }
+    .calibration-center-attachment-list { display:grid; gap:.55rem; }
+    .calibration-center-attachment { display:flex; align-items:center; justify-content:space-between; gap:.8rem; padding:.7rem .8rem; border:1px solid rgba(100,116,139,.2); border-radius:12px; }
+    .calibration-center-preview { white-space:pre-wrap; max-height:260px; overflow:auto; background:#f8fafc; border-radius:12px; padding:.9rem; font-size:.82rem; }
+    @media (max-width: 1100px) { .calibration-center-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+    @media (max-width: 700px) {
+        .calibration-center-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .calibration-center-table-wrap { display:none; }
+        .calibration-center-mobile { display:grid; gap:.8rem; }
+        .calibration-center-mobile-card { border:1px solid rgba(100,116,139,.2); border-radius:16px; padding:1rem; background:var(--bs-body-bg,#fff); }
+        .calibration-center-mobile-card .identity { font-weight:900; }
+        .calibration-center-mobile-card .meta { color:#64748b; font-size:.82rem; }
+        .calibration-center-mobile-card .actions { display:flex; gap:.45rem; flex-wrap:wrap; margin-top:.75rem; }
+        .calibration-center-toolbar > * { flex:1 1 100%; }
+        .calibration-center-modal { max-height:96vh; }
+    }
+    @media (max-width: 420px) { .calibration-center-summary { gap:.5rem; } .calibration-center-summary-card { padding:.75rem; } .calibration-center-summary-card .value { font-size:1.25rem; } }
+    @media (max-width: 600px) { .calibration-center-page .btn, .calibration-center-page .form-control, .calibration-center-page .form-select { min-height:44px; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<main id="main-content" class="container-fluid py-4 calibration-center-page">
+    <div class="calibration-center-header mb-4">
+        <div>
+            <h1 class="h3 mb-1"><i class="fa-solid fa-certificate me-2 text-primary" aria-hidden="true"></i>Calibration Center</h1>
+            <p class="text-muted mb-0">Approved Calibration Reports and signed Certificates available to authorized administrators.</p>
+        </div>
+        <a class="btn btn-outline-secondary rounded-3 fw-bold" href="/admin/calibration-center" aria-label="Refresh Calibration Center"><i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Refresh</a>
+    </div>
+
+    <section class="calibration-center-summary mb-4" aria-label="Calibration Center summary">
+        <div class="calibration-center-summary-card"><span class="label">Approved</span><span id="summary-approved" class="value">0</span></div>
+        <div class="calibration-center-summary-card"><span class="label">Ready</span><span id="summary-ready" class="value text-success">0</span></div>
+        <div class="calibration-center-summary-card"><span class="label">Unavailable</span><span id="summary-unavailable" class="value text-danger">0</span></div>
+        <div class="calibration-center-summary-card"><span class="label">Unsent</span><span id="summary-unsent" class="value">0</span></div>
+        <div class="calibration-center-summary-card"><span class="label">Partial</span><span id="summary-partial" class="value text-warning">0</span></div>
+        <div class="calibration-center-summary-card"><span class="label">Sent</span><span id="summary-sent" class="value text-success">0</span></div>
+    </section>
+
+    <section class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-body p-3">
+            <div class="calibration-center-toolbar">
+                <div class="search-wrap">
+                    <label for="calibration-center-search" class="form-label small fw-bold text-muted mb-1">Search approved records</label>
+                    <input id="calibration-center-search" class="form-control rounded-3" type="search" autocomplete="off" placeholder="Certificate, client, equipment, serial, BSID, TSR...">
+                </div>
+                <div class="filter-wrap">
+                    <label for="calibration-center-delivery" class="form-label small fw-bold text-muted mb-1">Delivery</label>
+                    <select id="calibration-center-delivery" class="form-select rounded-3">
+                        <option value="all">All states</option><option value="unsent">Unsent</option><option value="partial">Partially sent</option><option value="sent">Sent</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div id="calibration-center-error" class="alert alert-danger calibration-center-error d-none" role="alert"></div>
+    <div id="calibration-center-loading" class="alert alert-light calibration-center-loading" role="status"><i class="fa-solid fa-circle-notch fa-spin me-2" aria-hidden="true"></i>Loading approved calibration records...</div>
+    <div id="calibration-center-empty" class="alert alert-light calibration-center-empty d-none" role="status">No approved calibration records match the current search and delivery filter.</div>
+
+    <section id="calibration-center-table-wrap" class="calibration-center-table-wrap d-none" aria-label="Approved calibration records">
+        <table class="table table-hover calibration-center-table mb-0">
+            <thead><tr><th>Calibration</th><th>Client / Equipment</th><th>Approval</th><th>Delivery</th><th>Artifacts</th><th>Actions</th></tr></thead>
+            <tbody id="calibration-center-table-body"></tbody>
+        </table>
+    </section>
+    <section id="calibration-center-mobile" class="calibration-center-mobile d-none" aria-label="Approved calibration records on mobile"></section>
+    <nav id="calibration-center-pagination" class="d-none mt-3" aria-label="Calibration Center pages"><ul class="pagination justify-content-center mb-0"></ul></nav>
+</main>
+
+<div id="calibration-center-modal-backdrop" class="calibration-center-modal-backdrop" role="presentation">
+    <section class="calibration-center-modal" role="dialog" aria-modal="true" aria-labelledby="calibration-center-modal-title">
+        <div class="calibration-center-modal-header"><div><h2 id="calibration-center-modal-title" class="h5 mb-1">Email approved calibration files</h2><div id="calibration-center-modal-subtitle" class="small text-muted"></div></div><button type="button" id="calibration-center-modal-close" class="btn btn-outline-secondary rounded-3" aria-label="Close email dialog">Close</button></div>
+        <div class="calibration-center-modal-body">
+            <div id="calibration-center-modal-error" class="alert alert-danger d-none" role="alert"></div>
+            <div class="mb-3"><label for="calibration-center-to" class="form-label fw-bold">To</label><input id="calibration-center-to" class="form-control rounded-3" type="text" placeholder="client@example.com"></div>
+            <div class="mb-3"><label for="calibration-center-manual-cc" class="form-label fw-bold">Manual CC <span class="text-muted fw-normal">(optional)</span></label><input id="calibration-center-manual-cc" class="form-control rounded-3" type="text" placeholder="recipient@example.com"></div>
+            <div class="mb-3"><label for="calibration-center-font" class="form-label fw-bold">Email font</label><select id="calibration-center-font" class="form-select rounded-3"></select></div>
+            <div class="mb-3"><div class="fw-bold mb-2">Suggested client recipients</div><div id="calibration-center-suggestions" class="d-flex flex-wrap gap-2"></div></div>
+            <div class="mb-3"><div class="fw-bold mb-2">Attachments <span class="text-muted fw-normal">(fixed approved pair)</span></div><div id="calibration-center-attachments" class="calibration-center-attachment-list"></div></div>
+            <div id="calibration-center-preview-box" class="d-none"><div class="fw-bold mb-2">Preview</div><div class="small mb-1"><strong>To:</strong> <span id="calibration-center-preview-to"></span></div><div class="small mb-1"><strong>Settings CC:</strong> <span id="calibration-center-preview-system-cc"></span></div><div class="small mb-1"><strong>Sender copy:</strong> <span id="calibration-center-preview-sender-copy"></span></div><div class="small mb-1"><strong>Final CC:</strong> <span id="calibration-center-preview-cc"></span></div><div class="small mb-2"><strong>Subject:</strong> <span id="calibration-center-preview-subject"></span></div><div class="small fw-bold mb-1">HTML body</div><div id="calibration-center-preview-html" class="calibration-center-preview"></div><details class="mt-2"><summary class="small fw-bold">Plain-text body</summary><div id="calibration-center-preview-body" class="calibration-center-preview mt-2"></div></details></div>
+        </div>
+        <div class="calibration-center-modal-footer"><span class="small text-muted me-auto align-self-center">Preview, then Confirm the exact two-file delivery.</span><button type="button" id="calibration-center-preview" class="btn btn-outline-primary rounded-3 fw-bold">Preview</button><button type="button" id="calibration-center-send" class="btn btn-primary rounded-3 fw-bold">Send Email</button></div>
+    </section>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(function () {
+    'use strict';
+    const state = { q: '', delivery: 'all', page: 1, records: [], email: null, manifest: '', message: null, sending: false, confirmKey: '' };
+    const byId = (id) => document.getElementById(id);
+    const escapeHtml = (value) => String(value == null ? '' : value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    const csrf = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const request = async (url, options = {}) => {
+        const headers = Object.assign({'Accept': 'application/json'}, options.headers || {});
+        if (options.body) { headers['Content-Type'] = 'application/json'; headers['X-CSRFToken'] = csrf(); }
+        const response = await fetch(url, Object.assign({}, options, {headers, credentials: 'same-origin', cache: 'no-store'}));
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) { const error = new Error(data.message || 'Request failed.'); error.status = response.status; error.data = data; throw error; }
+        return data;
+    };
+    const setVisible = (id, visible) => byId(id)?.classList.toggle('d-none', !visible);
+    const statusHtml = (record) => `<span class="calibration-center-status ${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}">${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}</span>`;
+    const artifactButton = (url, label) => url ? `<a class="btn btn-sm btn-outline-secondary rounded-3" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>` : `<span class="text-muted small">Unavailable</span>`;
+    const sendButton = (record) => record.can_send ? `<button type="button" class="btn btn-sm btn-primary rounded-3 js-calibration-email" data-approval-id="${record.approval_id}">Email</button>` : `<span class="text-danger small" title="${escapeHtml(record.unavailable_reason)}">${escapeHtml(record.unavailable_reason || 'Not ready')}</span>`;
+    function renderSummary(summary) { ['approved','ready','unavailable','unsent','partial','sent'].forEach((key) => { const el = byId(`summary-${key}`); if (el) el.textContent = summary?.[key] ?? 0; }); }
+    function renderRows(records) {
+        byId('calibration-center-table-body').innerHTML = records.map((record) => `<tr><td><strong>${escapeHtml(record.certificate_number)}</strong><div class="small text-muted">REV${escapeHtml(record.revision_no)} · ${escapeHtml(record.tsr_number || 'No TSR')}</div></td><td><strong>${escapeHtml(record.client_name || record.facility)}</strong><div class="small text-muted">${escapeHtml(record.equipment || record.model)} · ${escapeHtml(record.serial_number)}</div></td><td><div>${escapeHtml(record.approved_at || '')}</div><div class="small text-muted">${escapeHtml(record.requester || 'Requester')}</div></td><td>${statusHtml(record)}</td><td><div class="calibration-center-file">${artifactButton(record.report_preview_url, 'Report Preview')}${artifactButton(record.report_download_url, 'Report Download')}${artifactButton(record.certificate_preview_url, 'Certificate Preview')}${artifactButton(record.certificate_download_url, 'Certificate Download')}</div></td><td>${sendButton(record)}</td></tr>`).join('');
+        byId('calibration-center-mobile').innerHTML = records.map((record) => `<article class="calibration-center-mobile-card"><div class="identity">${escapeHtml(record.certificate_number)} <span class="ms-1">${statusHtml(record)}</span></div><div class="meta mt-1">${escapeHtml(record.client_name || record.facility)} · ${escapeHtml(record.equipment || record.model)} · ${escapeHtml(record.serial_number)}</div><div class="meta">Approved ${escapeHtml(record.approved_at || '')} · REV${escapeHtml(record.revision_no)}</div><div class="actions">${artifactButton(record.report_preview_url, 'Report Preview')}${artifactButton(record.report_download_url, 'Report Download')}${artifactButton(record.certificate_preview_url, 'Certificate Preview')}${artifactButton(record.certificate_download_url, 'Certificate Download')}${sendButton(record)}</div></article>`).join('');
+        document.querySelectorAll('.js-calibration-email').forEach((button) => button.addEventListener('click', () => openEmail(Number(button.dataset.approvalId))));
+    }
+    function renderPagination(data) {
+        const nav = byId('calibration-center-pagination'); const list = nav?.querySelector('ul');
+        if (!nav || !list || !data.pages || data.pages <= 1) { setVisible('calibration-center-pagination', false); return; }
+        setVisible('calibration-center-pagination', true); let html = '';
+        for (let page = 1; page <= data.pages; page++) html += `<li class="page-item ${page === data.page ? 'active' : ''}"><button class="page-link" type="button" data-page="${page}">${page}</button></li>`;
+        list.innerHTML = html; list.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', () => { state.page = Number(button.dataset.page); loadRecords(); }));
+    }
+    async function loadRecords() {
+        setVisible('calibration-center-loading', true); setVisible('calibration-center-error', false);
+        try {
+            const params = new URLSearchParams({q: state.q, delivery: state.delivery, page: String(state.page)});
+            const data = await request(`/admin/calibration-center/data?${params.toString()}`); state.records = data.records || []; renderSummary(data.summary || {}); renderRows(state.records); renderPagination(data);
+            setVisible('calibration-center-loading', false); setVisible('calibration-center-empty', !state.records.length); setVisible('calibration-center-table-wrap', !!state.records.length); setVisible('calibration-center-mobile', !!state.records.length);
+        } catch (error) { setVisible('calibration-center-loading', false); setVisible('calibration-center-table-wrap', false); setVisible('calibration-center-mobile', false); const el = byId('calibration-center-error'); if (el) { el.textContent = error.message; el.classList.remove('d-none'); } }
+    }
+    function setModalError(message) { const el = byId('calibration-center-modal-error'); if (el) { el.textContent = message || ''; el.classList.toggle('d-none', !message); } }
+    function closeModal() { byId('calibration-center-modal-backdrop')?.classList.remove('open'); state.email = null; state.manifest = ''; state.message = null; state.confirmKey = ''; }
+    function addSuggestion(candidate) { const input = byId('calibration-center-to'); if (!input) return; const existing = input.value.trim(); input.value = existing ? `${existing}, ${candidate.email}` : candidate.email; state.confirmKey = ''; }
+    function renderEmailContext(data) {
+        state.email = data; state.manifest = data.attachment_manifest_signature || ''; state.message = null; state.confirmKey = '';
+        byId('calibration-center-modal-subtitle').textContent = `${data.certificate_number || 'Calibration'} · ${data.client_name || 'Client'}`;
+        byId('calibration-center-to').value = (data.suggested_emails || []).map((item) => item.email).join(', ');
+        byId('calibration-center-manual-cc').value = (data.remembered_manual_cc || []).join(', ');
+        const font = byId('calibration-center-font'); font.innerHTML = (data.font_options || []).map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`).join(''); font.value = data.default_font_key || '';
+        byId('calibration-center-suggestions').innerHTML = (data.suggested_emails || []).map((item) => `<button type="button" class="btn btn-sm btn-outline-secondary rounded-3 js-calibration-suggestion">${escapeHtml(item.email)}</button>`).join('') || '<span class="text-muted small">No client suggestion found; enter an address manually.</span>';
+        byId('calibration-center-suggestions').querySelectorAll('.js-calibration-suggestion').forEach((button, index) => button.addEventListener('click', () => addSuggestion(data.suggested_emails[index])));
+        byId('calibration-center-attachments').innerHTML = (data.attachments || []).map((item) => `<div class="calibration-center-attachment"><span><strong>${escapeHtml(item.source_label)}</strong><br><span class="small text-muted">${escapeHtml(item.display_name || item.filename)}</span></span><span class="badge bg-light text-dark">Fixed</span></div>`).join('');
+        setVisible('calibration-center-preview-box', false); setModalError(''); byId('calibration-center-modal-backdrop').classList.add('open'); byId('calibration-center-modal-close').focus();
+    }
+    async function openEmail(approvalId) { setModalError('Loading email context...'); byId('calibration-center-modal-backdrop').classList.add('open'); try { renderEmailContext(await request(`/admin/calibration-center/${approvalId}/email`)); } catch (error) { setModalError(error.message); } }
+    function emailPayload() { return {emails: byId('calibration-center-to').value, manual_cc: byId('calibration-center-manual-cc').value, font_key: byId('calibration-center-font').value, attachment_manifest_signature: state.manifest}; }
+    async function previewEmail() { if (!state.email) return; try { const data = await request(`/admin/calibration-center/${state.email.approval_id}/email-preview`, {method:'POST', body:JSON.stringify(emailPayload())}); state.message = data; state.confirmKey = ''; byId('calibration-center-preview-to').textContent = (data.to || []).join(', ') || 'None'; byId('calibration-center-preview-system-cc').textContent = (data.system_cc || []).join(', ') || 'None'; byId('calibration-center-preview-sender-copy').textContent = (data.sender_copy || []).join(', ') || 'None'; byId('calibration-center-preview-cc').textContent = (data.cc || []).join(', ') || 'None'; byId('calibration-center-preview-subject').textContent = data.subject || ''; byId('calibration-center-preview-html').textContent = data.html_body || ''; byId('calibration-center-preview-body').textContent = data.text_body || ''; setVisible('calibration-center-preview-box', true); setModalError(''); } catch (error) { if (error.status === 409 && error.data?.attachments_changed) { state.manifest = ''; state.confirmKey = ''; } setModalError(error.message); } }
+    async function sendEmail() {
+        if (!state.email || state.sending) return;
+        const key = JSON.stringify(emailPayload());
+        if (state.confirmKey !== key) { state.confirmKey = key; setModalError('Click Send Email again to confirm this exact two-file delivery.'); return; }
+        state.sending = true; const button = byId('calibration-center-send'); if (button) { button.disabled = true; button.textContent = 'Sending...'; }
+        try { await request(`/admin/calibration-center/${state.email.approval_id}/send-email`, {method:'POST', body:JSON.stringify(emailPayload())}); closeModal(); await loadRecords(); } catch (error) { setModalError(error.message); } finally { state.sending = false; if (button) { button.disabled = false; button.textContent = 'Send Email'; } }
+    }
+    let searchTimer = null;
+    byId('calibration-center-search')?.addEventListener('input', (event) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.q = event.target.value.trim(); state.page = 1; loadRecords(); }, 250); });
+    byId('calibration-center-delivery')?.addEventListener('change', (event) => { state.delivery = event.target.value; state.page = 1; loadRecords(); });
+    byId('calibration-center-modal-close')?.addEventListener('click', closeModal); byId('calibration-center-modal-backdrop')?.addEventListener('click', (event) => { if (event.target.id === 'calibration-center-modal-backdrop') closeModal(); });
+    byId('calibration-center-preview')?.addEventListener('click', previewEmail); byId('calibration-center-send')?.addEventListener('click', sendEmail);
+    ['calibration-center-to','calibration-center-manual-cc','calibration-center-font'].forEach((id) => ['input', 'change'].forEach((eventName) => byId(id)?.addEventListener(eventName, () => { state.confirmKey = ''; })));
+    loadRecords();
+})();
+</script>
+{% endblock %}

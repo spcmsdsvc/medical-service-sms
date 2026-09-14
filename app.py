@@ -55,6 +55,7 @@ from flask import (
     after_this_request,
     has_app_context,
     has_request_context,
+    make_response,
 )
 
 from flask_sqlalchemy import SQLAlchemy
@@ -391,6 +392,10 @@ EMAIL_RECIPIENT_GROUPS = {
         'label': 'Service Files Client Email CC',
         'description': 'Internal recipients automatically copied when service files are emailed to clients.'
     },
+    'calibration_report_certificate_cc': {
+        'label': 'Calibration Report & Certificate Client Email CC',
+        'description': 'Internal recipients automatically copied when the approved calibration report and certificate are emailed from Calibration Center.'
+    },
     'accounting_handoff_cc': {
         'label': 'Accounting Handoff CC - Manila',
         'description': 'Extra internal recipients copied on approved accounting handoff emails from Manila/Main employees.'
@@ -443,6 +448,7 @@ EMAIL_RECIPIENT_GROUPS = {
 
 EMAIL_RECIPIENT_GROUP_ORDER = [
     'tsr_client_cc',
+    'calibration_report_certificate_cc',
     'accounting_handoff_cc',
     'accounting_handoff_cc_cebu_davao',
     'travel_accounting',
@@ -1335,6 +1341,7 @@ def inject_navigation_access():
         'nav_is_engineer': authenticated and role == 'engineer',
         'nav_is_approval_center_user': is_approval_center_user(),
         'nav_is_approver_only': is_approver_only_user(),
+        'nav_can_access_calibration_center': can_access_calibration_center(),
         'nav_can_access_accounting_center': can_access_accounting_center(),
         'nav_is_scheduler': is_scheduler_user(),
         'nav_can_administer_personnel': can_administer_personnel(),
@@ -8916,6 +8923,16 @@ def is_regional_admin_user(user=None):
 def is_admin_authorized(user=None):
     """System-management authorization. The old generic admin role is intentionally not accepted."""
     return is_superadmin_user(user) or is_regional_admin_user(user)
+
+
+def can_access_calibration_center(user=None):
+    """Return the strict system-admin authority for the Calibration Center.
+
+    Capability flags such as schedule/report administration and approval routing
+    intentionally do not grant access here. Keeping this named helper lets every
+    center endpoint and the navigation use the same boundary.
+    """
+    return bool(is_admin_authorized(user))
 
 
 def _has_active_account_capability(user, field_name):
@@ -17511,6 +17528,581 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
     return item
 
 
+def _calibration_center_file_timestamp(file_record):
+    """Serialize one delivery marker without exposing storage metadata."""
+    value = getattr(file_record, 'last_emailed_at', None) if file_record else None
+    return value.isoformat() if isinstance(value, datetime) else (clean_str(value) or '')
+
+
+def _calibration_center_file_fingerprint(file_path):
+    """Hash one materialized center attachment for stale-preview detection."""
+    digest = hashlib.sha256()
+    with open(file_path, 'rb') as file_obj:
+        for chunk in iter(lambda: file_obj.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _calibration_center_storage_exists(file_record):
+    """Check managed-storage metadata without downloading the file."""
+    if not file_record:
+        return False
+    disk_name = get_shift_file_disk_name(file_record)
+    if not disk_name:
+        return False
+    try:
+        return bool(managed_storage_object_exists(
+            STORAGE_PREFIX_REPORTS,
+            os.path.join(app.config['UPLOAD_FOLDER'], disk_name),
+        ))
+    except Exception:
+        return False
+
+
+def _calibration_center_current_approval(approval_id):
+    """Resolve one center row and enforce the current approved revision."""
+    ensure_calibration_certificate_approval_table()
+    approval = db.session.get(CalibrationCertificateApproval, clean_int(approval_id))
+    if not approval:
+        return None, 'not_found'
+    if approval.status != 'Approved' or not bool(approval.is_latest):
+        return approval, 'stale'
+    return approval, None
+
+
+def _calibration_center_artifact_records(approval, materialize=False):
+    """Resolve the exact approved report PDF and signed certificate pair.
+
+    The list view uses the default metadata-only path. Preview/send passes
+    ``materialize=True`` so managed storage is read only at the delivery boundary.
+    """
+    if not approval or approval.status != 'Approved' or not bool(approval.is_latest):
+        raise ValueError('This calibration approval is no longer current and approved.')
+
+    shift_id = clean_int(getattr(approval, 'shift_id', None))
+    submission_id = clean_int(getattr(approval, 'online_tsr_submission_id', None))
+    if not shift_id or not submission_id:
+        raise ValueError('The approved calibration record is missing its TSR linkage.')
+
+    report_file = calibration_certificate_generated_report_file(approval)
+    if not report_file:
+        source_file = calibration_certificate_generated_report_source_file(approval)
+        conversion_state = (
+            calibration_report_conversion_state(source_file.id).get('state')
+            if source_file else 'missing'
+        )
+        if conversion_state == 'failed':
+            raise ValueError('The approved Calibration Report PDF conversion failed; retry conversion before sending.')
+        raise ValueError('The approved Calibration Report PDF is not ready.')
+    if (
+        clean_int(getattr(report_file, 'shift_id', None)) != shift_id or
+        clean_int(getattr(report_file, 'online_tsr_submission_id', None)) != submission_id or
+        not is_system_generated_calibration_report_pdf_file(report_file)
+    ):
+        raise ValueError('The Calibration Report PDF does not belong to this approved TSR revision.')
+
+    certificate_file = (
+        db.session.get(ShiftFile, clean_int(approval.signed_shift_file_id))
+        if clean_int(approval.signed_shift_file_id) else None
+    )
+    if not certificate_file:
+        raise ValueError('The signed Calibration Certificate is not available.')
+    if (
+        clean_int(getattr(certificate_file, 'shift_id', None)) != shift_id or
+        clean_int(getattr(certificate_file, 'online_tsr_submission_id', None)) != submission_id or
+        not calibration_report_filename_is_pdf(get_shift_file_display_name(certificate_file)) or
+        clean_int(getattr(calibration_certificate_approval_for_shift_file(certificate_file), 'id', None)) != clean_int(approval.id)
+    ):
+        raise ValueError('The signed Calibration Certificate does not belong to this approved TSR revision.')
+
+    result = []
+    for file_record, source_type, source_label in (
+        (report_file, 'calibration_report', 'Calibration Report'),
+        (certificate_file, 'calibration_certificate', 'Calibration Certificate'),
+    ):
+        disk_name = get_shift_file_disk_name(file_record)
+        display_name = get_shift_file_display_name(file_record) or disk_name
+        file_path = None
+        if materialize:
+            if not disk_name:
+                raise ValueError(f'{source_label} stored filename is missing.')
+            try:
+                file_path = managed_storage_read_path(
+                    STORAGE_PREFIX_REPORTS,
+                    os.path.join(app.config['UPLOAD_FOLDER'], disk_name),
+                )
+            except Exception as storage_error:
+                raise ValueError(f'{source_label} could not be read from managed storage.') from storage_error
+            if not file_path or not os.path.isfile(file_path):
+                raise ValueError(f'{source_label} could not be read from managed storage.')
+        result.append({
+            'id': clean_int(file_record.id),
+            'shift_id': shift_id,
+            'filename': disk_name,
+            'display_name': display_name,
+            'path': file_path,
+            'source_type': source_type,
+            'source_label': source_label,
+            'attachment_type': 'supporting',
+            'is_tsr': False,
+            'selectable': True,
+            'approval_id': clean_int(approval.id),
+            'revision_no': clean_int(approval.revision_no) or 1,
+            'file_size': os.path.getsize(file_path) if file_path and os.path.isfile(file_path) else 0,
+            'content_fingerprint': (
+                _calibration_center_file_fingerprint(file_path)
+                if file_path and os.path.isfile(file_path) else ''
+            ),
+            'preview_url': (
+                url_for(
+                    'preview_tsr_archive_file',
+                    file_id=file_record.id,
+                    scope='all',
+                    approval_id=approval.id,
+                )
+                if source_type == 'calibration_report' else
+                url_for('calibration_certificate_preview', approval_id=approval.id, artifact='signed')
+            ),
+            'download_url': (
+                url_for(
+                    'download_tsr_archive_file',
+                    file_id=file_record.id,
+                    scope='all',
+                    approval_id=approval.id,
+                )
+                if source_type == 'calibration_report' else
+                url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='signed')
+            ),
+            'was_sent': bool(getattr(file_record, 'last_emailed_at', None)),
+            'last_emailed_at': _calibration_center_file_timestamp(file_record),
+        })
+    return result
+
+
+def get_calibration_center_email_artifacts(approval):
+    """Return exactly the current approved report PDF and signed certificate."""
+    return _calibration_center_artifact_records(approval, materialize=True)
+
+
+def get_calibration_center_manifest_signature(approval, artifacts):
+    """Sign approval identity and the exact two-file delivery package."""
+    payload = {
+        'approval_id': clean_int(getattr(approval, 'id', None)),
+        'revision_no': clean_int(getattr(approval, 'revision_no', None)) or 1,
+        'report_fingerprint': clean_str(getattr(approval, 'report_fingerprint', None)) or '',
+        'certificate_fingerprint': clean_str(getattr(approval, 'certificate_fingerprint', None)) or '',
+        'files': [
+            {
+                'id': clean_int(item.get('id')),
+                'source_type': item.get('source_type') or '',
+                'filename': item.get('display_name') or item.get('filename') or '',
+                'size': clean_int(item.get('file_size')) or 0,
+                'content_fingerprint': item.get('content_fingerprint') or '',
+            }
+            for item in artifacts or []
+        ],
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode('utf-8')).hexdigest()
+
+
+def _calibration_center_record(approval):
+    """Serialize one current-approved center row without materializing files."""
+    shift = getattr(approval, 'shift', None) or db.session.get(Shift, approval.shift_id)
+    product = getattr(shift, 'product', None) if shift else None
+    client = getattr(shift, 'client', None) if shift else None
+    try:
+        mapped = json.loads(approval.mapped_data_json or '{}')
+    except (TypeError, ValueError):
+        mapped = {}
+    if not isinstance(mapped, dict):
+        mapped = {}
+    report_file = None
+    report_reason = ''
+    try:
+        report_file = calibration_certificate_generated_report_file(approval)
+        if report_file and not is_system_generated_calibration_report_pdf_file(report_file):
+            report_file = None
+    except Exception:
+        report_file = None
+    if not report_file:
+        source = calibration_certificate_generated_report_source_file(approval)
+        state = calibration_report_conversion_state(source.id).get('state') if source else 'missing'
+        report_reason = (
+            'Calibration Report PDF conversion failed.' if state == 'failed' else
+            'Calibration Report PDF is still being prepared.' if source else
+            'Calibration Report PDF is unavailable.'
+        )
+    elif not _calibration_center_storage_exists(report_file):
+        report_reason = 'Calibration Report PDF is missing from managed storage.'
+        report_file = None
+    certificate_file = (
+        db.session.get(ShiftFile, clean_int(approval.signed_shift_file_id))
+        if clean_int(approval.signed_shift_file_id) else None
+    )
+    certificate_valid = bool(
+        certificate_file and
+        clean_int(getattr(certificate_file, 'shift_id', None)) == clean_int(approval.shift_id) and
+        clean_int(getattr(certificate_file, 'online_tsr_submission_id', None)) == clean_int(approval.online_tsr_submission_id) and
+        calibration_report_filename_is_pdf(get_shift_file_display_name(certificate_file))
+    )
+    certificate_reason = '' if certificate_valid else 'Signed Calibration Certificate is unavailable or mismatched.'
+    if certificate_valid and not _calibration_center_storage_exists(certificate_file):
+        certificate_valid = False
+        certificate_reason = 'Signed Calibration Certificate is missing from managed storage.'
+    unavailable_reason = '; '.join(reason for reason in (report_reason, certificate_reason) if reason)
+    report_sent = bool(getattr(report_file, 'last_emailed_at', None))
+    certificate_sent = bool(getattr(certificate_file, 'last_emailed_at', None)) if certificate_valid else False
+    sent_count = int(report_sent) + int(certificate_sent)
+    delivery_state = 'sent' if sent_count == 2 else ('partial' if sent_count else 'unsent')
+    report_url_args = {'file_id': report_file.id, 'scope': 'all', 'approval_id': approval.id} if report_file else {}
+    return {
+        'approval_id': approval.id,
+        'certificate_number': approval.certificate_number or '',
+        'revision_no': clean_int(approval.revision_no) or 1,
+        'approved_at': approval.approved_at.isoformat() if approval.approved_at else None,
+        'requester': getattr(getattr(approval, 'requester', None), 'username', '') or '',
+        'facility': mapped.get('Text6', '') or getattr(client, 'name', '') or '',
+        'client_name': getattr(client, 'name', '') or mapped.get('Text6', '') or '',
+        'equipment': getattr(product, 'name', '') or mapped.get('Text1', '') or '',
+        'model': mapped.get('Text2', '') or '',
+        'serial_number': getattr(product, 'serial_number', '') or mapped.get('Text3', '') or '',
+        'bsid': getattr(product, 'bsid', '') or mapped.get('bsid', '') or '',
+        'tsr_number': mapped.get('Textfield-0', '') or '',
+        'report_file_id': report_file.id if report_file else None,
+        'report_filename': get_shift_file_display_name(report_file) if report_file else '',
+        'report_last_emailed_at': _calibration_center_file_timestamp(report_file),
+        'report_preview_url': url_for('preview_tsr_archive_file', **report_url_args) if report_file else '',
+        'report_download_url': url_for('download_tsr_archive_file', **report_url_args) if report_file else '',
+        'certificate_file_id': certificate_file.id if certificate_valid else None,
+        'certificate_filename': get_shift_file_display_name(certificate_file) if certificate_valid else '',
+        'certificate_last_emailed_at': _calibration_center_file_timestamp(certificate_file) if certificate_valid else '',
+        'certificate_preview_url': url_for('calibration_certificate_preview', approval_id=approval.id, artifact='signed') if certificate_valid else '',
+        'certificate_download_url': url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='signed') if certificate_valid else '',
+        'delivery_state': delivery_state,
+        'can_send': bool(report_file and certificate_valid),
+        'unavailable_reason': unavailable_reason,
+    }
+
+
+def _calibration_center_search_text(record):
+    return ' '.join(str(record.get(key) or '') for key in (
+        'certificate_number', 'facility', 'client_name', 'equipment', 'model',
+        'serial_number', 'bsid', 'tsr_number', 'requester',
+    )).casefold()
+
+
+@app.route('/admin/calibration-center')
+@login_required
+def calibration_center_page():
+    if not can_access_calibration_center():
+        return denied('Only authorized system administrators can access Calibration Center.')
+    response = make_response(render_template('calibration_center.html'))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return response
+
+
+@app.route('/admin/calibration-center/data')
+@login_required
+def calibration_center_data():
+    if not can_access_calibration_center():
+        return denied('Only authorized system administrators can access Calibration Center.')
+    ensure_calibration_certificate_approval_table()
+    approvals = (
+        CalibrationCertificateApproval.query
+        .options(joinedload(CalibrationCertificateApproval.shift), joinedload(CalibrationCertificateApproval.requester))
+        .filter(
+            CalibrationCertificateApproval.status == 'Approved',
+            CalibrationCertificateApproval.is_latest.is_(True),
+        )
+        .order_by(CalibrationCertificateApproval.approved_at.desc(), CalibrationCertificateApproval.id.desc())
+        .all()
+    )
+    all_records = [_calibration_center_record(approval) for approval in approvals]
+    summary = {
+        'approved': len(all_records),
+        'ready': sum(1 for item in all_records if item['can_send']),
+        'unavailable': sum(1 for item in all_records if not item['can_send']),
+        'unsent': sum(1 for item in all_records if item['delivery_state'] == 'unsent'),
+        'partial': sum(1 for item in all_records if item['delivery_state'] == 'partial'),
+        'sent': sum(1 for item in all_records if item['delivery_state'] == 'sent'),
+    }
+    search = (clean_str(request.args.get('q')) or '').strip().casefold()
+    if search:
+        all_records = [record for record in all_records if search in _calibration_center_search_text(record)]
+    delivery = (clean_str(request.args.get('delivery')) or 'all').strip().lower()
+    if delivery not in {'all', 'unsent', 'partial', 'sent'}:
+        delivery = 'all'
+    if delivery != 'all':
+        all_records = [record for record in all_records if record['delivery_state'] == delivery]
+    try:
+        page = max(int(request.args.get('page') or 1), 1)
+    except (TypeError, ValueError):
+        page = 1
+    per_page = 10
+    total = len(all_records)
+    pages = max(1, (total + per_page - 1) // per_page) if total else 0
+    page = min(page, pages) if pages else 1
+    start = (page - 1) * per_page
+    return no_store_jsonify({
+        'status': 'success',
+        'records': all_records[start:start + per_page],
+        'page': page,
+        'per_page': per_page,
+        'total': total,
+        'pages': pages,
+        'summary': summary,
+        'approved': summary['approved'],
+        'ready': summary['ready'],
+        'unavailable': summary['unavailable'],
+        'unsent': summary['unsent'],
+        'partial': summary['partial'],
+        'sent': summary['sent'],
+        'delivery': delivery,
+    })
+
+
+def get_calibration_report_certificate_cc_emails():
+    """Return only the Calibration Center Settings CC group."""
+    return get_active_email_recipients_by_group('calibration_report_certificate_cc')
+
+
+def _calibration_center_client_suggestions(shift):
+    tsr_files = get_tsr_files_for_shift(shift) if shift else []
+    saved = filter_tsr_client_suggestion_emails(get_saved_tsr_email_metadata_candidates(tsr_files))
+    detected = filter_tsr_client_suggestion_emails(detect_client_emails_from_tsr_files(tsr_files))
+    fallback = filter_tsr_client_suggestion_emails(get_shift_client_email_fallbacks(shift))
+    merged = filter_tsr_client_suggestion_emails(merge_tsr_email_candidate_lists(saved, detected, fallback))
+    return tsr_files, saved, detected, fallback, merged
+
+
+def prepare_calibration_center_email_message(approval, payload):
+    """Build the server-owned two-file Calibration Center message."""
+    payload = payload if isinstance(payload, dict) else {}
+    if not approval or approval.status != 'Approved' or not bool(approval.is_latest):
+        return None, 'This calibration approval is no longer current and approved.', 409
+    recipient_emails = parse_manual_recipient_emails(payload.get('emails') or payload.get('email'))
+    if not recipient_emails:
+        return None, 'Please provide at least one valid recipient email address.', 400
+    try:
+        artifacts = get_calibration_center_email_artifacts(approval)
+    except ValueError as artifact_error:
+        return None, str(artifact_error), 409
+    current_signature = get_calibration_center_manifest_signature(approval, artifacts)
+    preview_signature = clean_str(payload.get('attachment_manifest_signature')) or ''
+    if preview_signature and preview_signature != current_signature:
+        return None, 'The calibration attachments have changed. Reopen Calibration Center and review the updated pair before sending.', 409
+    font_key = clean_str(payload.get('font_key')) or DEFAULT_TSR_EMAIL_FONT_KEY
+    if font_key not in TSR_EMAIL_FONT_STACKS:
+        font_key = DEFAULT_TSR_EMAIL_FONT_KEY
+    shift = getattr(approval, 'shift', None) or db.session.get(Shift, approval.shift_id)
+    if not shift:
+        return None, 'The approved calibration schedule is no longer available.', 409
+    sender_name = current_user.username.capitalize() if current_user and current_user.is_authenticated else 'Scheduler'
+    text_body, html_body = build_calibration_only_email_bodies(shift, sender_name, font_key=font_key)
+    subject = build_calibration_only_email_subject(shift)
+    recipient_keys = {email_addr.lower() for email_addr in recipient_emails}
+    system_cc = [
+        email_addr for email_addr in normalize_email_list(get_calibration_report_certificate_cc_emails())
+        if email_addr.lower() not in recipient_keys
+    ]
+    used_keys = recipient_keys | {email_addr.lower() for email_addr in system_cc}
+    sender_copy_email = get_current_user_email_for_tsr_cc()
+    sender_copy = []
+    if sender_copy_email and sender_copy_email.lower() not in used_keys:
+        sender_copy = [sender_copy_email]
+        used_keys.add(sender_copy_email.lower())
+    requested_manual_cc = parse_manual_recipient_emails(payload.get('manual_cc') or [])
+    manual_cc = [email_addr for email_addr in requested_manual_cc if email_addr.lower() not in used_keys]
+    final_cc = normalize_email_list(system_cc + sender_copy + manual_cc)
+    signature_payload = {
+        'approval_id': clean_int(approval.id),
+        'to': recipient_emails,
+        'cc': final_cc,
+        'subject': subject,
+        'font_key': font_key,
+        'attachment_manifest_signature': current_signature,
+    }
+    message_signature = hashlib.sha256(json.dumps(signature_payload, ensure_ascii=True, sort_keys=True).encode('utf-8')).hexdigest()
+    return {
+        'recipient_emails': recipient_emails,
+        'manual_cc': manual_cc,
+        'system_cc': system_cc,
+        'sender_copy': sender_copy,
+        'final_cc': final_cc,
+        'subject': subject,
+        'subject_scenario': '',
+        'email_mode': 'calibration_only',
+        'font_key': font_key,
+        'font_stack': get_tsr_email_font_stack(font_key),
+        'text_body': text_body,
+        'html_body': html_body,
+        'tsr_files': [],
+        'available_tsr_files': [],
+        'available_attachments': artifacts,
+        'selected_attachments': artifacts,
+        'email_attachments': artifacts,
+        'selected_attachment_ids': [item['id'] for item in artifacts],
+        'attachment_manifest_signature': current_signature,
+        'message_signature': message_signature,
+        'attachments': [serialize_tsr_email_attachment(item) for item in artifacts],
+        'sender_name': sender_name,
+        'approval_id': clean_int(approval.id),
+    }, None, 200
+
+
+def _calibration_center_email_context(approval):
+    shift = getattr(approval, 'shift', None) or db.session.get(Shift, approval.shift_id)
+    if not shift:
+        raise ValueError('The approved calibration schedule is no longer available.')
+    artifacts = get_calibration_center_email_artifacts(approval)
+    _, saved, detected, fallback, merged = _calibration_center_client_suggestions(shift)
+    return {
+        'status': 'success',
+        'approval_id': approval.id,
+        'certificate_number': approval.certificate_number or '',
+        'client_name': getattr(getattr(shift, 'client', None), 'name', '') or '',
+        'detected_emails': detected,
+        'saved_recipient_emails': saved,
+        'fallback_emails': fallback,
+        'suggested_emails': merged,
+        'system_cc': get_calibration_report_certificate_cc_emails(),
+        'cc': get_calibration_report_certificate_cc_emails(),
+        'sender_copy_email': get_current_user_email_for_tsr_cc(),
+        'remembered_manual_cc': get_user_remembered_tsr_client_cc_emails(),
+        'font_options': [
+            {'key': key, 'label': key.title() if key != 'tenorite' else 'Tenorite'}
+            for key in TSR_EMAIL_FONT_STACKS.keys()
+        ],
+        'default_font_key': DEFAULT_TSR_EMAIL_FONT_KEY,
+        'attachments': [serialize_tsr_email_attachment(item) for item in artifacts],
+        'attachment_manifest_signature': get_calibration_center_manifest_signature(approval, artifacts),
+        'delivery_state': _calibration_center_record(approval).get('delivery_state'),
+        'can_send': True,
+    }
+
+
+@app.route('/admin/calibration-center/<int:approval_id>/email')
+@login_required
+def calibration_center_email(approval_id):
+    if not can_access_calibration_center():
+        return denied('Only authorized system administrators can access Calibration Center.')
+    approval, error_code = _calibration_center_current_approval(approval_id)
+    if error_code == 'not_found':
+        return no_store_jsonify({'message': 'Calibration approval not found.'}, 404)
+    if error_code == 'stale':
+        return no_store_jsonify({'message': 'This calibration approval is no longer current and approved.'}, 409)
+    try:
+        return no_store_jsonify(_calibration_center_email_context(approval))
+    except ValueError as artifact_error:
+        return no_store_jsonify({'message': str(artifact_error), 'can_send': False}, 409)
+
+
+@app.route('/admin/calibration-center/<int:approval_id>/email-preview', methods=['POST'])
+@login_required
+def calibration_center_email_preview(approval_id):
+    if not can_access_calibration_center():
+        return denied('Only authorized system administrators can access Calibration Center.')
+    approval, error_code = _calibration_center_current_approval(approval_id)
+    if error_code == 'not_found':
+        return no_store_jsonify({'message': 'Calibration approval not found.'}, 404)
+    if error_code == 'stale':
+        return no_store_jsonify({'message': 'This calibration approval is no longer current and approved.'}, 409)
+    message, error_message, status_code = prepare_calibration_center_email_message(approval, request.get_json(silent=True) or {})
+    if not message:
+        response_payload = {'message': error_message or 'Unable to prepare Calibration Center preview.'}
+        if status_code == 409 and (error_message or '').startswith('The calibration attachments have changed.'):
+            response_payload['attachments_changed'] = True
+        return no_store_jsonify(response_payload, status_code)
+    return no_store_jsonify({
+        'status': 'success',
+        'to': message['recipient_emails'],
+        'manual_cc': message['manual_cc'],
+        'system_cc': message['system_cc'],
+        'sender_copy': message['sender_copy'],
+        'cc': message['final_cc'],
+        'subject': message['subject'],
+        'text_body': message['text_body'],
+        'html_body': message['html_body'],
+        'attachments': message['attachments'],
+        'selected_attachment_ids': message['selected_attachment_ids'],
+        'attachment_manifest_signature': message['attachment_manifest_signature'],
+        'message_signature': message['message_signature'],
+    })
+
+
+@app.route('/admin/calibration-center/<int:approval_id>/send-email', methods=['POST'])
+@login_required
+def calibration_center_send_email(approval_id):
+    if not can_access_calibration_center():
+        return denied('Only authorized system administrators can access Calibration Center.')
+    approval, error_code = _calibration_center_current_approval(approval_id)
+    if error_code == 'not_found':
+        return jsonify({'message': 'Calibration approval not found.'}), 404
+    if error_code == 'stale':
+        return jsonify({'message': 'This calibration approval is no longer current and approved.'}), 409
+    message, error_message, status_code = prepare_calibration_center_email_message(approval, request.get_json(silent=True) or {})
+    if not message:
+        response_payload = {'message': error_message or 'Unable to prepare Calibration Center email.'}
+        if status_code == 409 and (error_message or '').startswith('The calibration attachments have changed.'):
+            response_payload['attachments_changed'] = True
+        return jsonify(response_payload), status_code
+    email_sent, email_message = send_email_with_attachments(
+        message['recipient_emails'], message['subject'], message['text_body'], message['html_body'],
+        attachments=message['email_attachments'], cc_emails=message['final_cc']
+    )
+    if not email_sent:
+        return jsonify({'message': email_message or 'Unable to send Calibration Center email.'}), 500
+    sent_at = get_manila_time()
+    tracking_warning = ''
+    tracked_records = []
+    recipients_label = ', '.join(message['recipient_emails'])
+    activity_action = (
+        f"Sent Calibration Report and Certificate to client: {recipients_label}"
+        f" | CC: {', '.join(message['final_cc']) if message['final_cc'] else 'None'}"
+        f" | Font: {message['font_key']} | Certificate: {approval.certificate_number}"
+        f" | {getattr(approval.shift, 'title', '')}"
+    )
+    try:
+        tracked_records = mark_service_files_emailed(message['selected_attachments'], sent_at=sent_at)
+        remembered_cc = remember_tsr_client_cc_emails(message['manual_cc'])
+        db.session.add(ActivityLog(user=message['sender_name'], action=activity_action))
+        db.session.commit()
+    except Exception as tracking_error:
+        db.session.rollback()
+        remembered_cc = get_user_remembered_tsr_client_cc_emails()
+        tracking_warning = ' Email sent, but per-file sent status could not be recorded. Please do not resend automatically; ask an administrator to verify delivery.'
+        print(f'[EMAIL-CLIENT] Calibration Center delivery tracking failed for approval_id={approval.id}: {tracking_error}', flush=True)
+        try:
+            db.session.add(ActivityLog(user=message['sender_name'], action=activity_action))
+            db.session.commit()
+        except Exception as activity_error:
+            db.session.rollback()
+            print(f'[EMAIL-CLIENT] Calibration Center activity log failed for approval_id={approval.id}: {activity_error}', flush=True)
+    if tracked_records and not tracking_warning:
+        sent_label = sent_at.isoformat()
+        for file_info in message['selected_attachments']:
+            file_info['was_sent'] = True
+            file_info['last_emailed_at'] = sent_label
+    return jsonify({
+        'status': 'success',
+        'message': f'Calibration Report and Certificate sent to {recipients_label}.{tracking_warning}',
+        'email': recipients_label,
+        'emails': message['recipient_emails'],
+        'recipient_count': len(message['recipient_emails']),
+        'cc': message['final_cc'],
+        'manual_cc': message['manual_cc'],
+        'system_cc': message['system_cc'],
+        'remembered_manual_cc': remembered_cc,
+        'sender_copy_email': get_current_user_email_for_tsr_cc(),
+        'subject': message['subject'],
+        'font_key': message['font_key'],
+        'font_stack': message['font_stack'],
+        'selected_attachment_ids': message['selected_attachment_ids'],
+        'attachment_states': [serialize_tsr_email_attachment(item) for item in message['selected_attachments']],
+        'attachments': [file_info.get('display_name') or file_info.get('filename') for file_info in message['email_attachments']],
+    })
+
+
 def calibration_certificate_no_signature_file(approval):
     """Return the managed hard-copy ShiftFile linked to an approval, if any."""
     return db.session.get(ShiftFile, approval.no_signature_shift_file_id) if approval and approval.no_signature_shift_file_id else None
@@ -18964,7 +19556,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v157-backup-permanent-config';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v158-calibration-center';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -19019,7 +19611,8 @@ const NETWORK_ONLY_DOWNLOAD_PREFIXES = [
 // contains account-specific state and an in-progress job must never be served from an
 // offline shell or runtime cache.
 const NETWORK_FIRST_AUTHENTICATED_PREFIXES = [
-  '/admin/backup'
+  '/admin/backup',
+  '/admin/calibration-center'
 ];
 
 // App shell entries that are only ever rendered for a signed-in account. These are dropped at

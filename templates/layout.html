@@ -149,6 +149,7 @@
                role logic or hardcoded usernames here: the previous inline versions were
                looser than the server and showed links that redirected away. #}
             {% set is_management_user = nav_is_admin %}
+            {% set can_access_calibration_center = nav_can_access_calibration_center %}
             {% set is_engineer_only = nav_is_engineer %}
             {% set is_reports_admin_user = nav_can_view_admin_reports %}
             {% set is_approver_user = nav_is_approval_center_user %}
@@ -160,7 +161,7 @@
             {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
             {% if lpr_enabled %}{% set field_ops_paths = field_ops_paths + ['/lpr'] %}{% endif %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
-            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page', '/po_details', '/reimbursement_tracker'] %}
+            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page', '/po_details', '/reimbursement_tracker', '/admin/calibration-center'] %}
             {% set admin_paths = ['/activity_page', '/settings', '/stock_inventory'] %}
 
             <div class="sidebar-group-label" aria-hidden="true">Main</div>
@@ -286,6 +287,9 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
                 <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}">
+                    {% if can_access_calibration_center %}
+                        {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
+                    {% endif %}
                     {% if nav_can_administer_personnel or is_engineer_only %}
                         {{ nav_link('/engineers_page', 'fa-user-gear', 'Personnel') }}
                     {% endif %}
