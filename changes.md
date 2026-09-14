@@ -20,6 +20,14 @@ codex changes - 2026-09-14
   and TSR test-file edits are limited to the required v156-to-v157 cache-marker assertion.
   Restored one accidentally shifted indentation level in the TSR contact-suggestions assertion
   loop before staging so its cross-file coverage and application behavior remain unchanged.
+- Committed the backup-only package as `042e84a` and pushed it to `origin/main`; remote ref
+  verification resolved to `042e84adecbcc514995df03f74da4908f96e12db`. The allowlist excluded
+  `scheduler.db`, the handoff, `.claude/`, `output/`, `tmp/`, and all unrelated owner files.
+- Railway deployment `cae47804-b011-4178-b6f5-8013d530e45b` completed successfully for the
+  backup commit. Live startup logs confirmed the version-controlled guard passed and Gunicorn
+  started with `gthread`, one process, eight threads, and the 180-second timeout. No Railway
+  variable, manual redeploy, database, storage, production-backup, browser, or Codex UI action
+  was performed.
 
 codex changes - 2026-09-13
 

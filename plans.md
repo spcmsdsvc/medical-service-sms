@@ -2,9 +2,8 @@
 
 ## Permanent backup configuration fix
 
-**Status:** Executed locally — implementation and repository verification are complete; no
-commit, push, Railway, deployment, database/storage, browser, or Codex UI operation was
-performed.
+**Status:** Executed — implementation committed as `042e84a` and successfully deployed by
+Railway on 2026-09-14. No database/storage, browser, or Codex UI operation was performed.
 **Approved:** 2026-09-13 — the owner explicitly requested implementation of the complete
 permanent backup configuration fix plan.
 **Detailed:** 2026-09-13.
@@ -145,6 +144,12 @@ and unrelated dirty work remain outside the scope.
   checks passed for the corrected files. No production, Railway, browser, database, storage,
   commit, or push operation was performed; protected and unrelated dirty files remain
   untouched and excluded.
+- The backup-only package was committed as `042e84a` and pushed to `origin/main`; the remote
+  ref resolved to the full commit `042e84adecbcc514995df03f74da4908f96e12db`. Railway
+  deployment `cae47804-b011-4178-b6f5-8013d530e45b` completed successfully. Live startup logs
+  recorded both the backup-safe validation success and `Using worker: gthread` with one process,
+  eight threads, and the 180-second timeout. No Railway variable, manual redeploy, database,
+  storage, or production backup operation was performed.
 
 ## Reimbursement Package 3 — Worksheet Views and Faster Mobile Entry
 
