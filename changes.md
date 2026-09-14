@@ -26,8 +26,13 @@ codex changes - 2026-09-14
   a disposable SQLite database in the system temp directory. Python AST, Jinja parsing, extracted
   Calibration Center inline JavaScript syntax, release JSON syntax, and `git diff --check` passed.
   No service-worker marker change is needed because no cache contract or static asset URL changed.
-  Protected database/handoff/temp/untracked work remains untouched; no browser, production,
-  Railway, commit, push, or deployment operation was performed.
+  Protected database/handoff/temp/untracked work remains untouched; no browser, production
+  database/storage, or Railway configuration operation was performed.
+- Committed the owner-authorized branch-routed Calibration Center CC and creator-copy package on
+  `main` as `9c02c86`. The commit contains only `app.py`, the Calibration Center and Settings
+  templates, focused Calibration Center tests, the admins release item, and required plan/change
+  records. Protected `scheduler.db`, handoff, `.claude`, output, tmp, and unrelated untracked work
+  were not staged. The owner separately authorized pushing this package to `origin/main`.
 
 - Started the owner-authorized Calibration Center implementation recorded at the top of
   `plans.md`. The package adds strict admin-only current-approved calibration indexing,

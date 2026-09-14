@@ -131,7 +131,8 @@ commit. No Railway variable, manual redeploy, production database, or storage op
 
 ### Branch-routed CC and creator-copy follow-up (2026-09-14)
 
-**Status:** Implemented locally — awaiting separate commit/push authorization.
+**Status:** Executed — implementation commit `9c02c86`; owner-authorized publication to
+`origin/main` is in progress.
 
 The owner authorized a contained follow-up to split the Calibration Center Settings CC into
 Manila/Main and Cebu/Davao groups using the Engineer-profile branch of the engineer who created
@@ -152,8 +153,9 @@ Authorized files are limited to `app.py`, `templates/settings.html`,
 `templates/calibration_center.html`, `tests/test_calibration_center.py`,
 `static/changelog/releases.json`, `plans.md`, and `changes.md`. No schema/migration, seeded
 addresses, TSR Service Files behavior change, approval/artifact change, service-worker bump,
-browser automation, database/storage/production operation, commit, push, or deployment is part
-of this follow-up. The focused test was added first and failed as expected against unchanged
+browser automation or database/storage/production operation is part of this follow-up. Commit
+and push were separately authorized by the owner after implementation. The focused test was
+added first and failed as expected against unchanged
 behavior (**12 tests: 3 failures and 10 subtest errors**); after implementation and a direct
 message-order regression it passes **13/13**. The combined focused Calibration Center,
 accounting branch-routing, TSR preview/CC, service-file delivery, and changelog workflow run
