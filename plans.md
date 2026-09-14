@@ -2,7 +2,10 @@
 
 ## One-time Calibration Certificate approver-title repair
 
-**Status:** Executed — local implementation complete; commit, push, deployment, and formal review remain unauthorized.
+**Status:** Executed — implementation commit `7e81801` was pushed to `origin/main`; Railway
+deployment `562490da-59e8-4521-8911-9a0c4d92a7b6` completed successfully on full commit
+`7e81801b788b3a0e24fd1d413217158ef3d5bd35`. Production repair execution and formal review
+remain separately unauthorized.
 **Approved/executing:** 2026-09-14 — the owner explicitly authorized implementation of the guarded
 one-time repair command and its required verification. Commit, push, deployment, Railway,
 production database/storage, browser, and Codex UI actions are excluded.
@@ -109,6 +112,15 @@ included the existing changelog-sync state, purchase-order rate-limit setup, and
 uniqueness behavior. Python AST, release JSON, service-worker-marker, and `git diff --check`
 validation passed. No browser, production database/storage, Railway, commit, push, deploy, or
 formal review operation was performed.
+
+The owner separately authorized publication of the five-file repair allowlist. Focused repair
+coverage was rerun immediately before commit and passed **15/15**. The implementation was committed
+as `7e81801` with only `changes.md`, `plans.md`, the repair script, its focused test, and the release
+record; protected `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, and unrelated work
+remained unstaged. `origin/main` resolved to full commit
+`7e81801b788b3a0e24fd1d413217158ef3d5bd35`, and Railway deployment
+`562490da-59e8-4521-8911-9a0c4d92a7b6` completed successfully on that exact commit. No production
+database/storage repair or dry-run was performed.
 
 ## Calibration Center and calibration-specific CC group
 

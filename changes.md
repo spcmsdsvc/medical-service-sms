@@ -2,6 +2,16 @@
 
 codex changes - 2026-09-14
 
+- Published the guarded Calibration Certificate title-repair package to `origin/main` as
+  implementation commit `7e81801` after rerunning the focused repair suite (**15/15 passed**) and
+  verifying the staged allowlist contained only `changes.md`, `plans.md`, the repair script, its
+  focused test, and the release record. Protected `scheduler.db`, handoff files, `.claude/`,
+  `output/`, `tmp/`, and unrelated work remained unstaged and were not pushed.
+- Verified `origin/main` at full commit `7e81801b788b3a0e24fd1d413217158ef3d5bd35` and Railway
+  deployment `562490da-59e8-4521-8911-9a0c4d92a7b6` as successful on that exact commit. This
+  publication makes the guarded command available in production but does not run it; no production
+  database or certificate-storage object was read or changed.
+
 - Started the owner-authorized one-time Calibration Certificate approver-title repair package.
   The new dry-run-by-default command will be limited to current/latest Approved certificates
   assigned to `robert` or `rodito`, regenerate only the signed PDF in place from its immutable
