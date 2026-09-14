@@ -2,6 +2,33 @@
 
 codex changes - 2026-09-14
 
+- Implemented the owner-authorized Calibration Center CC follow-up. Settings now exposes
+  separate `Calibration Report & Certificate CC - Manila` and `Calibration Report & Certificate
+  CC - Cebu/Davao` groups. Preview and send select the group from the calibration creator's
+  Engineer-profile branch recorded by the current approval requester; Cebu, Davao, BC02, BC03,
+  and branch names containing Cebu/Davao use the regional group, while Manila/Main, blank, and
+  unrecognized values use the Manila/Main group. No recipient migration or seeded address was
+  added.
+- Calibration Center emails now automatically copy the engineer who created the calibration
+  when that user has a valid profile/notification email. Final CC order is branch Settings group,
+  creator engineer, sender copy, then manual CC, with case-insensitive deduplication against To
+  and each earlier source. A missing creator email is visibly reported as `Creator email
+  unavailable` and does not block delivery. Preview/send resolve the approval-owned creator and
+  branch server-side, expose the selected group and creator-copy source, and include the group in
+  message-signature state.
+- Updated the Calibration Center preview, Settings explanatory/fallback/usage labels, and the
+  admins changelog release item for branch routing and creator copy. Added focused branch,
+  creator-email, missing-email, final-order, and duplicate-suppression tests. The pre-application
+  fail-first run produced the expected **12 tests: 3 failures and 10 subtest errors**; the first
+  implementation pass passed **12/12**, and the strengthened direct message preparation suite
+  passed **13/13**. Combined focused Calibration Center, accounting branch-routing, TSR
+  preview/CC, service-file delivery, and changelog workflow verification passed **90/90** against
+  a disposable SQLite database in the system temp directory. Python AST, Jinja parsing, extracted
+  Calibration Center inline JavaScript syntax, release JSON syntax, and `git diff --check` passed.
+  No service-worker marker change is needed because no cache contract or static asset URL changed.
+  Protected database/handoff/temp/untracked work remains untouched; no browser, production,
+  Railway, commit, push, or deployment operation was performed.
+
 - Started the owner-authorized Calibration Center implementation recorded at the top of
   `plans.md`. The package adds strict admin-only current-approved calibration indexing,
   exact report/certificate pairing, a fixed two-file email flow, and the new

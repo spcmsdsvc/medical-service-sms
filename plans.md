@@ -129,6 +129,38 @@ recorded only after it is independently verified. `origin/main` resolved to full
 `5c2d5885-f6dd-4a38-a721-3efb65abcb01` completed successfully with its instance running that exact
 commit. No Railway variable, manual redeploy, production database, or storage operation occurred.
 
+### Branch-routed CC and creator-copy follow-up (2026-09-14)
+
+**Status:** Implemented locally — awaiting separate commit/push authorization.
+
+The owner authorized a contained follow-up to split the Calibration Center Settings CC into
+Manila/Main and Cebu/Davao groups using the Engineer-profile branch of the engineer who created
+the calibration (`CalibrationCertificateApproval.requester_user_id`), never the administrator
+who sends the email. The existing `calibration_report_certificate_cc` key remains the Manila/Main
+group for compatibility and `calibration_report_certificate_cc_cebu_davao` is added immediately
+after it. Cebu, Davao, BC02, BC03, and branch values containing Cebu or Davao use the regional
+group; Manila/Main, blank, and unrecognized values use the Manila/Main group.
+
+The same creator engineer is automatically added after the branch-selected Settings group and
+before sender/manual copies when a valid profile/notification email is available. To recipients
+and every CC source remain case-insensitively deduplicated in this order: Settings group, creator
+engineer, sender copy, manual CC. A missing creator email is shown as `Creator email unavailable`
+in preview and does not block sending. Preview and send both resolve this context again from the
+server-owned current approval, and the chosen group is included in the message signature.
+
+Authorized files are limited to `app.py`, `templates/settings.html`,
+`templates/calibration_center.html`, `tests/test_calibration_center.py`,
+`static/changelog/releases.json`, `plans.md`, and `changes.md`. No schema/migration, seeded
+addresses, TSR Service Files behavior change, approval/artifact change, service-worker bump,
+browser automation, database/storage/production operation, commit, push, or deployment is part
+of this follow-up. The focused test was added first and failed as expected against unchanged
+behavior (**12 tests: 3 failures and 10 subtest errors**); after implementation and a direct
+message-order regression it passes **13/13**. The combined focused Calibration Center,
+accounting branch-routing, TSR preview/CC, service-file delivery, and changelog workflow run
+passed **90/90** against a disposable SQLite database in the system temp directory. Python AST,
+Jinja parsing, extracted inline JavaScript syntax, release JSON syntax, and `git diff --check`
+also passed.
+
 ## Permanent backup configuration fix
 
 **Status:** Executed — implementation committed as `042e84a` and successfully deployed by

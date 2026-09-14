@@ -15,6 +15,15 @@
             "admins"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-09-14-calibration-center-branch-cc-admins",
+          "category": "Calibration",
+          "description": "Calibration Center emails now use separate Manila/Main and Cebu/Davao Settings CC lists based on the calibration creator's branch, and automatically copy the creator engineer when an email is available.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
         }
       ]
     },

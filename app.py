@@ -393,8 +393,12 @@ EMAIL_RECIPIENT_GROUPS = {
         'description': 'Internal recipients automatically copied when service files are emailed to clients.'
     },
     'calibration_report_certificate_cc': {
-        'label': 'Calibration Report & Certificate Client Email CC',
-        'description': 'Internal recipients automatically copied when the approved calibration report and certificate are emailed from Calibration Center.'
+        'label': 'Calibration Report & Certificate CC - Manila',
+        'description': "Internal recipients automatically copied when the calibration creator's Engineer-profile branch is Manila/Main."
+    },
+    'calibration_report_certificate_cc_cebu_davao': {
+        'label': 'Calibration Report & Certificate CC - Cebu/Davao',
+        'description': "Internal recipients automatically copied when the calibration creator's Engineer-profile branch is Cebu or Davao."
     },
     'accounting_handoff_cc': {
         'label': 'Accounting Handoff CC - Manila',
@@ -449,6 +453,7 @@ EMAIL_RECIPIENT_GROUPS = {
 EMAIL_RECIPIENT_GROUP_ORDER = [
     'tsr_client_cc',
     'calibration_report_certificate_cc',
+    'calibration_report_certificate_cc_cebu_davao',
     'accounting_handoff_cc',
     'accounting_handoff_cc_cebu_davao',
     'travel_accounting',
@@ -17861,9 +17866,39 @@ def calibration_center_data():
     })
 
 
-def get_calibration_report_certificate_cc_emails():
-    """Return only the Calibration Center Settings CC group."""
-    return get_active_email_recipients_by_group('calibration_report_certificate_cc')
+def calibration_report_certificate_cc_group_for_branch(branch):
+    """Select Calibration Center Settings CC from the calibration creator's branch."""
+    normalized = str(branch or '').strip().lower()
+    if normalized in {'cebu', 'davao', 'bc02', 'bc03'} or 'cebu' in normalized or 'davao' in normalized:
+        return 'calibration_report_certificate_cc_cebu_davao'
+    return 'calibration_report_certificate_cc'
+
+
+def get_calibration_center_cc_context(approval):
+    """Resolve the creator, creator copy, and branch-specific Settings CC."""
+    creator = getattr(approval, 'requester', None) if approval else None
+    requester_user_id = clean_int(getattr(approval, 'requester_user_id', None)) if approval else None
+    if not creator and requester_user_id:
+        creator = db.session.get(User, requester_user_id)
+    creator_profile = getattr(creator, 'engineer_profile', None) if creator else None
+    creator_branch = clean_str(getattr(creator_profile, 'branch', None)) or ''
+    cc_group_key = calibration_report_certificate_cc_group_for_branch(creator_branch)
+    group_metadata = EMAIL_RECIPIENT_GROUPS.get(cc_group_key, {})
+    creator_emails = normalize_email_list([get_user_email_for_notification(creator)])
+    creator_email = creator_emails[0] if creator_emails else ''
+    return {
+        'cc_group_key': cc_group_key,
+        'cc_group_label': group_metadata.get('label') or cc_group_key,
+        'creator_branch': creator_branch,
+        'creator_email': creator_email,
+        'creator_copy_message': '' if creator_email else 'Creator email unavailable',
+        'system_cc': normalize_email_list(get_active_email_recipients_by_group(cc_group_key)),
+    }
+
+
+def get_calibration_report_certificate_cc_emails(approval=None):
+    """Return the creator-branch-selected Calibration Center Settings CC group."""
+    return get_calibration_center_cc_context(approval)['system_cc']
 
 
 def _calibration_center_client_suggestions(shift):
@@ -17901,11 +17936,17 @@ def prepare_calibration_center_email_message(approval, payload):
     text_body, html_body = build_calibration_only_email_bodies(shift, sender_name, font_key=font_key)
     subject = build_calibration_only_email_subject(shift)
     recipient_keys = {email_addr.lower() for email_addr in recipient_emails}
+    cc_context = get_calibration_center_cc_context(approval)
     system_cc = [
-        email_addr for email_addr in normalize_email_list(get_calibration_report_certificate_cc_emails())
+        email_addr for email_addr in cc_context['system_cc']
         if email_addr.lower() not in recipient_keys
     ]
     used_keys = recipient_keys | {email_addr.lower() for email_addr in system_cc}
+    creator_copy = []
+    creator_email = cc_context['creator_email']
+    if creator_email and creator_email.lower() not in used_keys:
+        creator_copy = [creator_email]
+        used_keys.add(creator_email.lower())
     sender_copy_email = get_current_user_email_for_tsr_cc()
     sender_copy = []
     if sender_copy_email and sender_copy_email.lower() not in used_keys:
@@ -17913,11 +17954,12 @@ def prepare_calibration_center_email_message(approval, payload):
         used_keys.add(sender_copy_email.lower())
     requested_manual_cc = parse_manual_recipient_emails(payload.get('manual_cc') or [])
     manual_cc = [email_addr for email_addr in requested_manual_cc if email_addr.lower() not in used_keys]
-    final_cc = normalize_email_list(system_cc + sender_copy + manual_cc)
+    final_cc = normalize_email_list(system_cc + creator_copy + sender_copy + manual_cc)
     signature_payload = {
         'approval_id': clean_int(approval.id),
         'to': recipient_emails,
         'cc': final_cc,
+        'cc_group_key': cc_context['cc_group_key'],
         'subject': subject,
         'font_key': font_key,
         'attachment_manifest_signature': current_signature,
@@ -17927,6 +17969,11 @@ def prepare_calibration_center_email_message(approval, payload):
         'recipient_emails': recipient_emails,
         'manual_cc': manual_cc,
         'system_cc': system_cc,
+        'creator_copy': creator_copy,
+        'creator_copy_message': cc_context['creator_copy_message'],
+        'creator_branch': cc_context['creator_branch'],
+        'cc_group_key': cc_context['cc_group_key'],
+        'cc_group_label': cc_context['cc_group_label'],
         'sender_copy': sender_copy,
         'final_cc': final_cc,
         'subject': subject,
@@ -17956,6 +18003,7 @@ def _calibration_center_email_context(approval):
         raise ValueError('The approved calibration schedule is no longer available.')
     artifacts = get_calibration_center_email_artifacts(approval)
     _, saved, detected, fallback, merged = _calibration_center_client_suggestions(shift)
+    cc_context = get_calibration_center_cc_context(approval)
     return {
         'status': 'success',
         'approval_id': approval.id,
@@ -17965,8 +18013,13 @@ def _calibration_center_email_context(approval):
         'saved_recipient_emails': saved,
         'fallback_emails': fallback,
         'suggested_emails': merged,
-        'system_cc': get_calibration_report_certificate_cc_emails(),
-        'cc': get_calibration_report_certificate_cc_emails(),
+        'system_cc': cc_context['system_cc'],
+        'cc': normalize_email_list(cc_context['system_cc'] + ([cc_context['creator_email']] if cc_context['creator_email'] else [])),
+        'creator_copy': [cc_context['creator_email']] if cc_context['creator_email'] else [],
+        'creator_copy_message': cc_context['creator_copy_message'],
+        'creator_branch': cc_context['creator_branch'],
+        'cc_group_key': cc_context['cc_group_key'],
+        'cc_group_label': cc_context['cc_group_label'],
         'sender_copy_email': get_current_user_email_for_tsr_cc(),
         'remembered_manual_cc': get_user_remembered_tsr_client_cc_emails(),
         'font_options': [
@@ -18018,6 +18071,11 @@ def calibration_center_email_preview(approval_id):
         'to': message['recipient_emails'],
         'manual_cc': message['manual_cc'],
         'system_cc': message['system_cc'],
+        'creator_copy': message['creator_copy'],
+        'creator_copy_message': message['creator_copy_message'],
+        'creator_branch': message['creator_branch'],
+        'cc_group_key': message['cc_group_key'],
+        'cc_group_label': message['cc_group_label'],
         'sender_copy': message['sender_copy'],
         'cc': message['final_cc'],
         'subject': message['subject'],
@@ -18092,6 +18150,11 @@ def calibration_center_send_email(approval_id):
         'cc': message['final_cc'],
         'manual_cc': message['manual_cc'],
         'system_cc': message['system_cc'],
+        'creator_copy': message['creator_copy'],
+        'creator_copy_message': message['creator_copy_message'],
+        'creator_branch': message['creator_branch'],
+        'cc_group_key': message['cc_group_key'],
+        'cc_group_label': message['cc_group_label'],
         'remembered_manual_cc': remembered_cc,
         'sender_copy_email': get_current_user_email_for_tsr_cc(),
         'subject': message['subject'],
