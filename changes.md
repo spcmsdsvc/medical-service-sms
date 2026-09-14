@@ -2,6 +2,18 @@
 
 codex changes - 2026-09-14
 
+- Executed the separately authorized production Calibration Certificate title repair for current
+  approval IDs 1–5 after a read-only scan validated all five candidates. Rodito's three signed
+  certificates now render `Senior Service Manager` instead of `Manager Approver`; Robert's two
+  signed certificates now render `Service Manager` instead of `Superadmin`. Existing certificate
+  numbers, approval dates, revisions, file IDs/filenames, signatures, submission linkages, and
+  no-signature copies were preserved, and no client email was sent.
+- Final production verification reported **5 selected, 0 eligible, 5 already current, and 0
+  errors**. Universal approval audit entries 1412–1416 exist for the repairs, and each of the five
+  dated backup PDFs exists with a SHA-256 value matching the original hash recorded in its audit
+  entry. The local protected `scheduler.db` was not staged, committed, or pushed. These production
+  execution records remain local pending separate commit/push authorization.
+
 - Published the guarded Calibration Certificate title-repair package to `origin/main` as
   implementation commit `7e81801` after rerunning the focused repair suite (**15/15 passed**) and
   verifying the staged allowlist contained only `changes.md`, `plans.md`, the repair script, its

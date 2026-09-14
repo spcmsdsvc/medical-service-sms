@@ -4,8 +4,8 @@
 
 **Status:** Executed — implementation commit `7e81801` was pushed to `origin/main`; Railway
 deployment `562490da-59e8-4521-8911-9a0c4d92a7b6` completed successfully on full commit
-`7e81801b788b3a0e24fd1d413217158ef3d5bd35`. Production repair execution and formal review
-remain separately unauthorized.
+`7e81801b788b3a0e24fd1d413217158ef3d5bd35`. The owner separately authorized and completed
+the guarded production repair for approval IDs 1–5; formal review remains separately unauthorized.
 **Approved/executing:** 2026-09-14 — the owner explicitly authorized implementation of the guarded
 one-time repair command and its required verification. Commit, push, deployment, Railway,
 production database/storage, browser, and Codex UI actions are excluded.
@@ -121,6 +121,16 @@ remained unstaged. `origin/main` resolved to full commit
 `7e81801b788b3a0e24fd1d413217158ef3d5bd35`, and Railway deployment
 `562490da-59e8-4521-8911-9a0c4d92a7b6` completed successfully on that exact commit. No production
 database/storage repair or dry-run was performed.
+
+The owner then separately authorized production dry-run and apply. The dry-run found five eligible
+current/latest approvals: IDs 1, 4, and 5 for Rodito (`Manager Approver` to
+`Senior Service Manager`) and IDs 2 and 3 for Robert (`Superadmin` to `Service Manager`). The
+guarded apply processed exactly IDs 1–5. A final read-only scan reported **5 selected, 0 eligible,
+5 already current, and 0 errors**; every stored and rendered title matches the approver's current
+Settings title. Universal audit entries 1412–1416 are present, and all five dated backup PDFs exist
+with SHA-256 values matching their recorded original hashes. Certificate numbers, approval dates,
+revision numbers, file IDs/filenames, signatures, submission linkages, and no-signature copies were
+preserved. No client email was sent and no local `scheduler.db` was staged, committed, or pushed.
 
 ## Calibration Center and calibration-specific CC group
 
