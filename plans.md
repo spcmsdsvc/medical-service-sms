@@ -153,8 +153,8 @@ and unrelated dirty work remain outside the scope.
 
 ### Focused Backup Center sweeper correction (2026-09-14)
 
-**Status:** In progress — correction implementation complete; awaiting the parent’s allowlisted
-publication. No database, storage, browser, Railway, or Codex UI operation was performed.
+**Status:** Executed — correction committed as `3b57efd` and successfully deployed by Railway.
+No database, storage, browser, or Codex UI operation was performed.
 **Approved:** 2026-09-14 — the owner explicitly authorized implementation and publication of
 the focused correction after the production backup failed while finalizing its temporary archive.
 **Detailed:** 2026-09-14.
@@ -200,6 +200,10 @@ cleanup logic with no static asset change. Protected `scheduler.db`, `Handoffs/`
 - No service-worker marker or release entry was changed because this is a backend route/sweeper
   correction and no cached static asset changed. Protected `scheduler.db`, handoffs, `.claude/`,
   `output/`, `tmp/`, and unrelated work remain untouched and excluded from publication.
+- The four-file correction was committed as `3b57efd` and pushed to `origin/main`; the remote ref
+  resolved to `3b57efd0f53e91f59485ec3e2ce1c014a1208763`. Railway deployment
+  `d02f708a-8020-4b3d-a4e9-ec790a4fe431` completed successfully, and live startup logs retained
+  the validated `gthread` worker configuration. No production backup was started automatically.
 
 ## Reimbursement Package 3 — Worksheet Views and Faster Mobile Entry
 

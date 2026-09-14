@@ -42,6 +42,11 @@ codex changes - 2026-09-14
   no static asset or offline behavior changed. Protected `Handoffs/`, `.claude/`, `output/`,
   `tmp/`, `scheduler.db`, and unrelated owner work remain excluded. No commit, push, Railway,
   production, browser, or Codex UI action was performed by the Builder.
+- Committed the four-file Backup Center sweeper correction as `3b57efd` and pushed it to
+  `origin/main`; remote verification resolved to `3b57efd0f53e91f59485ec3e2ce1c014a1208763`.
+  Railway deployment `d02f708a-8020-4b3d-a4e9-ec790a4fe431` completed successfully, and live
+  startup logs confirmed the validated `gthread` worker remained active. `scheduler.db`, the
+  handoff, `.claude/`, `output/`, `tmp/`, and unrelated files were not staged or committed.
 
 codex changes - 2026-09-13
 
