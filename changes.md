@@ -2,6 +2,10 @@
 
 codex changes - 2026-09-15
 
+- Committed the authorized six-file Approval Center package as `be1e336` after rerunning the
+  focused pagination and wording suites (**21/21 passed**) and confirming the staged allowlist
+  and `git diff --cached --check`. This follow-up record update contains only `plans.md` and
+  `changes.md`; protected dirty artifacts remain unstaged.
 - The owner explicitly authorized committing and pushing only the Approval Center Search,
   Filters, and Pagination package to `origin/main`. Publication is restricted to `app.py`,
   `templates/approvals.html`, `tests/test_approval_center_pagination.py`,

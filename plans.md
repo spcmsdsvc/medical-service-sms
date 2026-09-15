@@ -2,10 +2,9 @@
 
 ## Approval Center Search, Filters, and Pagination
 
-**Status:** Executed — publication authorized for the six-file Approval Center allowlist;
-implementation commit pending. Deployment verification is part of the authorized `origin/main`
-push, but Railway variables, manual redeployment, production/database, browser, and Codex UI
-actions remain unauthorized.
+**Status:** Executed — implementation commit `be1e336`; publication to `origin/main` authorized.
+Deployment verification is part of the authorized push, but Railway variables, manual
+redeployment, production/database, browser, and Codex UI actions remain unauthorized.
 **Approved/executing:** 2026-09-15 — the owner said **PLEASE IMPLEMENT THIS PLAN** after
 approving the bounded implementation package.
 **Detailed:** 2026-09-15.
