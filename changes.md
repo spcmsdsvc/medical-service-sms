@@ -8,7 +8,10 @@ codex changes - 2026-09-15
   The nine-file commit excludes the protected `scheduler.db`, handoff files, `output/`, `tmp/`,
   `.claude/`, and other unrelated dirty artifacts. Before committing, 53 focused Genoray,
   Vieworks, Product, and sidebar tests passed; Python AST, release JSON, and the staged
-  whitespace check passed. Publication and Railway verification are pending.
+  whitespace check passed. The implementation and record commits were pushed to `origin/main`;
+  `git ls-remote` verified `921a2b9` at the production branch tip, and Railway reported a
+  successful production web deployment for that exact commit (deployment
+  `9a832794-df03-458c-ba55-b6af98766d56`).
 - Fixed Vieworks first-load SQLite self-contention in `app.py`: `ensure_vieworks_item_table()`
   now commits pending request-session migration writes before opening its separate schema
   connection to create the unique BSID index and seed the Vieworks counter. The owner-provided
