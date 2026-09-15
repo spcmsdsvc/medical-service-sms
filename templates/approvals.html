@@ -663,6 +663,92 @@
         display: block;
     }
 
+    .approval-queue-filters {
+        display: grid;
+        grid-template-columns: minmax(220px, 1.5fr) repeat(5, minmax(130px, 1fr)) auto;
+        gap: 8px;
+        align-items: end;
+        padding: 12px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #ffffff;
+    }
+
+    .approval-queue-filter-field {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .approval-queue-filter-field label {
+        color: #475569;
+        font-size: .72rem;
+        font-weight: 900;
+        letter-spacing: .03em;
+        text-transform: uppercase;
+    }
+
+    .approval-queue-filter-field input,
+    .approval-queue-filter-field select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 9px 10px;
+        background: #fff;
+        color: #334155;
+        font-weight: 750;
+    }
+
+    .approval-queue-filter-actions {
+        display: flex;
+        align-items: end;
+    }
+
+    .approval-queue-status {
+        grid-column: 1 / -1;
+        min-height: 1.2em;
+        color: #64748b;
+        font-size: .82rem;
+        font-weight: 750;
+    }
+
+    .approval-queue-pagination {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 0 0 12px;
+        color: #475569;
+        font-size: .84rem;
+        font-weight: 800;
+    }
+
+    .approval-queue-pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .approval-queue-page-label {
+        min-width: 90px;
+        text-align: center;
+    }
+
+    @media (max-width: 1100px) {
+        .approval-queue-filters { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
+        .approval-queue-status { grid-column: 1 / -1; }
+    }
+
+    @media (max-width: 640px) {
+        .approval-queue-filters { grid-template-columns: 1fr 1fr; }
+        .approval-queue-filter-field:first-child,
+        .approval-queue-status,
+        .approval-queue-filter-actions { grid-column: 1 / -1; }
+        .approval-queue-pagination { align-items: flex-start; }
+        .approval-queue-pagination-controls { width: 100%; justify-content: space-between; }
+    }
+
     .approval-unified-list {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
@@ -2200,6 +2286,58 @@
     </section>
 
     <section class="approval-workspace">
+        <div class="approval-queue-filters" id="approvalQueueFilters" role="search" aria-label="Filter approval queue">
+            <div class="approval-queue-filter-field">
+                <label for="approvalQueueSearch">Search requests</label>
+                <input id="approvalQueueSearch" type="search" placeholder="Reference, requester, destination, purpose..." autocomplete="off">
+            </div>
+            <div class="approval-queue-filter-field">
+                <label for="approvalQueueModule">Module</label>
+                <select id="approvalQueueModule">
+                    <option value="all">All active modules</option>
+                    <option value="calibration_certificate">Calibration Report &amp; Certificate</option>
+                    <option value="travel_request">Travel Request</option>
+                    <option value="reimbursement">Reimbursement</option>
+                    <option value="cash_advance">Cash Advance</option>
+                    <option value="cash_advance_liquidation">Cash Advance Liquidation</option>
+                    <option value="travel_liquidation">Travel Liquidation</option>
+                    {% if lpr_enabled %}<option value="lpr">LPR</option>{% endif %}
+                    <option value="leave_request">Leave Request</option>
+                </select>
+            </div>
+            <div class="approval-queue-filter-field">
+                <label for="approvalQueueRequester">Requester</label>
+                <input id="approvalQueueRequester" type="search" placeholder="Requester name" autocomplete="off">
+            </div>
+            <div class="approval-queue-filter-field">
+                <label for="approvalQueueDateFrom">From</label>
+                <input id="approvalQueueDateFrom" type="date">
+            </div>
+            <div class="approval-queue-filter-field">
+                <label for="approvalQueueDateTo">To</label>
+                <input id="approvalQueueDateTo" type="date">
+            </div>
+            <div class="approval-queue-filter-field">
+                <label for="approvalQueueSort">Order</label>
+                <select id="approvalQueueSort">
+                    <option value="smart">Recommended</option>
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                </select>
+            </div>
+            <div class="approval-queue-filter-actions">
+                <button type="button" class="approval-btn approval-btn-secondary" id="approvalQueueClear">Clear Filters</button>
+            </div>
+            <div class="approval-queue-status" id="approvalQueueStatus" role="status" aria-live="polite"></div>
+        </div>
+        <div class="approval-queue-pagination" id="approvalQueuePagination" aria-label="Approval queue pagination">
+            <span id="approvalQueueShowing">Showing 0 of 0</span>
+            <div class="approval-queue-pagination-controls">
+                <button type="button" class="approval-btn approval-btn-secondary" id="approvalQueuePrevious" disabled>Previous</button>
+                <span class="approval-queue-page-label" id="approvalQueuePageLabel" aria-live="polite">Page 1 of 1</span>
+                <button type="button" class="approval-btn approval-btn-secondary" id="approvalQueueNext" disabled>Next</button>
+            </div>
+        </div>
         <div class="approval-tabs" role="tablist" aria-label="Approval queue tabs">
             <button type="button" class="approval-tab-btn active" data-approval-tab="pending" onclick="switchApprovalTab('pending')">Pending</button>
             <button type="button" class="approval-tab-btn" data-approval-tab="approved" onclick="switchApprovalTab('approved')">Approved</button>
@@ -2213,8 +2351,8 @@
                     <div class="approval-muted">All submitted requests assigned to you through Settings approval routing.</div>
                 </div>
             </div>
-            <div class="approval-unified-list" id="approvalUnifiedPendingList">
-                <div class="approval-empty-state">Loading pending approvals...</div>
+            <div class="approval-unified-list" id="approvalUnifiedPendingList" aria-live="polite" aria-busy="true">
+                <div class="approval-empty-state" role="status">Loading pending approvals...</div>
             </div>
         </div>
 
@@ -2225,8 +2363,8 @@
                     <div class="approval-muted">Approved requests from every active workflow.</div>
                 </div>
             </div>
-            <div class="approval-unified-list" id="approvalUnifiedApprovedList">
-                <div class="approval-empty-state">Loading approved history...</div>
+            <div class="approval-unified-list" id="approvalUnifiedApprovedList" aria-live="polite" aria-busy="false">
+                <div class="approval-empty-state" role="status">Loading approved history...</div>
             </div>
         </div>
 
@@ -2237,8 +2375,8 @@
                     <div class="approval-muted">Requests returned for correction or rejected with approver remarks.</div>
                 </div>
             </div>
-            <div class="approval-unified-list" id="approvalUnifiedRejectedList">
-                <div class="approval-empty-state">Loading returned history...</div>
+            <div class="approval-unified-list" id="approvalUnifiedRejectedList" aria-live="polite" aria-busy="false">
+                <div class="approval-empty-state" role="status">Loading returned history...</div>
             </div>
         </div>
     </section>
@@ -3115,10 +3253,14 @@ Recipient count: ${recipientCount}` : ''),
         if (!container) return;
         const list = Array.isArray(items) ? items : [];
         if (!list.length) {
-            container.innerHTML = `<div class="approval-empty-state">${approvalEscape(emptyText || 'No approval records found.')}</div>`;
+            container.innerHTML = `<div class="approval-empty-state" role="status">${approvalEscape(emptyText || 'No approval records found.')}</div>`;
             return;
         }
-        list.sort((a, b) => String(approvalWorkItemDate(b.item || b)).localeCompare(String(approvalWorkItemDate(a.item || a))));
+        // The new queue endpoint owns ordering. Keep the old client-side fallback
+        // sort only for legacy callers that do not carry queue metadata.
+        if (!list.some(entry => entry && entry.queue_status)) {
+            list.sort((a, b) => String(approvalWorkItemDate(b.item || b)).localeCompare(String(approvalWorkItemDate(a.item || a))));
+        }
         container.innerHTML = list.map(entry => buildUnifiedApprovalItem(entry.module, entry.item, entry.status)).join('');
     }
 
@@ -6320,4 +6462,307 @@ async function dismissApprovalNotification(event, notificationId) {
 })();
 </script>
 {% endif %}
+<script>
+// Unified Approval Center queue: one active-tab request, shared filters, and
+// server-owned pagination. The existing detail and decision handlers remain
+// the source of truth for module actions.
+(function () {
+    const approvalQueueExtensionPresent = {{ 'true' if lpr_enabled else 'false' }};
+    const approvalQueueState = {
+        activeTab: 'pending',
+        pages: { pending: 1, approved: 1, rejected: 1 },
+        filters: { q: '', module: 'all', requester: '', date_from: '', date_to: '', sort: 'smart' },
+        requestSequence: 0,
+        abortController: null,
+        deepLinkHandled: false,
+        debounceTimer: null,
+    };
+    let approvalQueueRequestSequence = 0;
+    window.approvalQueueState = approvalQueueState;
+
+    function approvalQueueListId(tab) {
+        return tab === 'approved'
+            ? 'approvalUnifiedApprovedList'
+            : (tab === 'rejected' ? 'approvalUnifiedRejectedList' : 'approvalUnifiedPendingList');
+    }
+
+    function approvalQueueReadFilters() {
+        const value = id => document.getElementById(id)?.value || '';
+        approvalQueueState.filters = {
+            q: value('approvalQueueSearch').trim(),
+            module: value('approvalQueueModule') || 'all',
+            requester: value('approvalQueueRequester').trim(),
+            date_from: value('approvalQueueDateFrom'),
+            date_to: value('approvalQueueDateTo'),
+            sort: value('approvalQueueSort') || 'smart',
+        };
+    }
+
+    function approvalQueueSetStatus(message, isError) {
+        const status = document.getElementById('approvalQueueStatus');
+        if (!status) return;
+        status.textContent = message || '';
+        status.setAttribute('role', isError ? 'alert' : 'status');
+    }
+
+    function approvalQueueSetLoading(tab) {
+        const container = document.getElementById(approvalQueueListId(tab));
+        if (!container) return;
+        container.setAttribute('aria-busy', 'true');
+        container.innerHTML = '<div class="approval-empty-state" role="status">Loading approval records...</div>';
+    }
+
+    function approvalQueueSetPagination(payload) {
+        payload = payload || {};
+        const total = Number(payload.total || 0);
+        const page = Number(payload.page || 1);
+        const pages = Math.max(Number(payload.pages || 1), 1);
+        const perPage = Number(payload.per_page || 10);
+        const start = total ? ((page - 1) * perPage) + 1 : 0;
+        const end = total ? Math.min(page * perPage, total) : 0;
+        const showing = document.getElementById('approvalQueueShowing');
+        const pageLabel = document.getElementById('approvalQueuePageLabel');
+        const previous = document.getElementById('approvalQueuePrevious');
+        const next = document.getElementById('approvalQueueNext');
+        if (showing) showing.textContent = `Showing ${start}–${end} of ${total}`;
+        if (pageLabel) pageLabel.textContent = `Page ${page} of ${pages}`;
+        if (previous) previous.disabled = page <= 1;
+        if (next) next.disabled = page >= pages;
+        approvalQueueState.pages[approvalQueueState.activeTab] = page;
+    }
+
+    function approvalQueueRender(tab, payload) {
+        const container = document.getElementById(approvalQueueListId(tab));
+        if (!container) return;
+        const entries = Array.isArray(payload?.items) ? payload.items : [];
+        container.setAttribute('aria-busy', 'false');
+        renderUnifiedApprovalQueue(
+            approvalQueueListId(tab),
+            entries,
+            tab === 'approved'
+                ? 'No approved approval history matches these filters.'
+                : (tab === 'rejected' ? 'No returned or rejected history matches these filters.' : 'No pending approvals match these filters.')
+        );
+        approvalQueueSetPagination(payload);
+        approvalQueueSetStatus(entries.length ? '' : 'No records match the selected filters.', false);
+    }
+
+    async function loadApprovalQueueTab(tab, options) {
+        options = options || {};
+        const targetTab = tab || approvalQueueState.activeTab || 'pending';
+        approvalQueueState.activeTab = targetTab;
+        if (options.resetPage) approvalQueueState.pages[targetTab] = 1;
+        approvalQueueReadFilters();
+        const sequence = ++approvalQueueRequestSequence;
+        approvalQueueState.requestSequence = sequence;
+        if (approvalQueueState.abortController && typeof approvalQueueState.abortController.abort === 'function') {
+            approvalQueueState.abortController.abort();
+        }
+        approvalQueueState.abortController = typeof AbortController === 'function' ? new AbortController() : null;
+        approvalQueueSetLoading(targetTab);
+        approvalQueueSetStatus('Loading approval records...', false);
+        const filters = approvalQueueState.filters;
+        const params = new URLSearchParams({
+            status: targetTab,
+            module: filters.module,
+            q: filters.q,
+            requester: filters.requester,
+            date_from: filters.date_from,
+            date_to: filters.date_to,
+            sort: filters.sort,
+            page: String(approvalQueueState.pages[targetTab] || 1),
+            _: String(Date.now()),
+        });
+        try {
+            const response = await fetch(`/get_approval_center_queue?${params.toString()}`, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { Accept: 'application/json' },
+                signal: approvalQueueState.abortController?.signal,
+            });
+            const payload = await parseApprovalJsonResponse(response, 'Unable to load Approval Center records.');
+            if (sequence !== approvalQueueRequestSequence || targetTab !== approvalQueueState.activeTab) return payload;
+            approvalQueueRender(targetTab, payload);
+            if (!approvalQueueState.deepLinkHandled) {
+                approvalQueueState.deepLinkHandled = true;
+                approvalQueueOpenDeepLink();
+            }
+            return payload;
+        } catch (error) {
+            if (error?.name === 'AbortError' || sequence !== approvalQueueRequestSequence) return null;
+            const container = document.getElementById(approvalQueueListId(targetTab));
+            if (container) {
+                container.setAttribute('aria-busy', 'false');
+                container.innerHTML = `<div class="approval-empty-state" role="alert">${approvalEscape(error.message || 'Unable to load Approval Center records.')}</div>`;
+            }
+            approvalQueueSetStatus(error.message || 'Unable to load Approval Center records.', true);
+            return null;
+        }
+    }
+
+    async function loadApprovalQueueSummary() {
+        try {
+            const response = await fetch(`/get_approval_center_summary?_=${Date.now()}`, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { Accept: 'application/json' },
+            });
+            const payload = await parseApprovalJsonResponse(response, 'Unable to load approval summary.');
+            const modules = Array.isArray(payload.modules) ? payload.modules : [];
+            const countMap = {
+                calibration_certificate: 'approvalCalibrationCertificatePendingCount',
+                travel_request: 'approvalTravelPendingCount',
+                reimbursement: 'approvalReimbursementPendingCount',
+                cash_advance: 'approvalCashAdvancePendingCount',
+                cash_advance_liquidation: 'approvalCashAdvanceLiquidationPendingCount',
+                travel_liquidation: 'approvalLiquidationPendingCount',
+                lpr: 'approvalLprPendingCount',
+                leave_request: 'approvalLeavePendingCount',
+            };
+            let pending = 0;
+            let approved = 0;
+            let rejected = 0;
+            let total = 0;
+            modules.forEach(module => {
+                const counts = module.counts || {};
+                const pendingCount = Number(counts.pending ?? counts.submitted ?? 0);
+                const approvedCount = Number(counts.approved || 0);
+                const rejectedCount = Number(counts.rejected ?? counts.returned ?? 0);
+                pending += pendingCount;
+                approved += approvedCount;
+                rejected += rejectedCount;
+                total += Number(counts.total || 0);
+                const target = document.getElementById(countMap[module.key]);
+                if (target) target.textContent = String(pendingCount);
+            });
+            const summary = payload.summary || {};
+            const totalFallback = pending + approved + rejected;
+            const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = String(value); };
+            setText('approvalSummaryPending', Number(summary.pending_total ?? pending));
+            setText('approvalSummaryApproved', approved);
+            setText('approvalSummaryRejected', rejected);
+            setText('approvalSummaryTotal', total || totalFallback);
+            return payload;
+        } catch (error) {
+            console.warn('[Approvals] Summary unavailable', error);
+            return null;
+        }
+    }
+
+    function approvalQueueFallbackCard(moduleKey, item, status) {
+        const key = String(moduleKey || '').toLowerCase();
+        const itemStatus = item?.status || status || '';
+        const pending = String(itemStatus).toLowerCase() === 'submitted' || String(itemStatus).toLowerCase() === 'pending';
+        if (key === 'calibration_certificate') {
+            return `<div class="approval-work-card"><div class="approval-work-top"><div><div class="approval-work-no">${approvalEscape(item.certificate_number || 'Calibration Report & Certificate')} <span class="approval-status-pill ${statusPillClass(itemStatus)}">${approvalEscape(itemStatus)}</span></div><div class="approval-meta">${approvalEscape(item.machine || item.bsid || 'Machine')} • ${approvalEscape(item.requester || 'Requester')}</div></div><div class="approval-actions"><button type="button" class="approval-btn approval-btn-primary" onclick="openCalibrationCertificateApprovalDetail(${Number(item.id) || 0})">${pending ? 'Review' : 'View Details'}</button></div></div></div>`;
+        }
+        if (key === 'leave_request') {
+            return `<div class="approval-work-card"><div class="approval-work-top"><div><div class="approval-work-no">${approvalEscape(item.request_no || ('Leave Request #' + item.id))} <span class="approval-status-pill ${statusPillClass(itemStatus)}">${approvalEscape(itemStatus)}</span></div><div class="approval-meta">Employee: ${approvalEscape(item.requester_name || 'Unknown employee')} • ${approvalEscape(item.leave_type || '')}</div><div class="approval-meta">Dates: ${approvalEscape(item.date_range || '')}</div></div><div class="approval-actions"><button type="button" class="approval-btn approval-btn-primary" onclick="openLeaveApprovalDetail(${Number(item.id) || 0})">${pending ? 'Review' : 'View Details'}</button></div></div></div>`;
+        }
+        return '';
+    }
+
+    const approvalQueueOriginalCardBuilder = window.buildUnifiedApprovalItem;
+    window.buildUnifiedApprovalItem = function (moduleKey, item, status) {
+        if (!approvalQueueExtensionPresent && ['calibration_certificate', 'leave_request'].includes(String(moduleKey || '').toLowerCase())) {
+            return approvalQueueFallbackCard(moduleKey, item, status);
+        }
+        const card = typeof approvalQueueOriginalCardBuilder === 'function'
+            ? approvalQueueOriginalCardBuilder(moduleKey, item, status)
+            : '';
+        return card || approvalQueueFallbackCard(moduleKey, item, status);
+    };
+
+    const approvalQueueOriginalSwitchTab = window.switchApprovalTab;
+    window.switchApprovalTab = function (tabName) {
+        const target = ['pending', 'approved', 'rejected'].includes(String(tabName || '').toLowerCase())
+            ? String(tabName).toLowerCase()
+            : 'pending';
+        if (typeof approvalQueueOriginalSwitchTab === 'function') approvalQueueOriginalSwitchTab(target);
+        approvalQueueState.activeTab = target;
+        approvalQueueState.pages[target] = 1;
+        loadApprovalQueueTab(target, { resetPage: true });
+    };
+
+    function approvalQueueFilterChanged() {
+        approvalQueueState.pages[approvalQueueState.activeTab] = 1;
+        loadApprovalQueueTab(approvalQueueState.activeTab, { resetPage: true });
+    }
+
+    function approvalQueueBindControls() {
+        const textInputs = ['approvalQueueSearch', 'approvalQueueRequester'];
+        textInputs.forEach(id => {
+            const input = document.getElementById(id);
+            if (!input) return;
+            input.addEventListener('input', function () {
+                clearTimeout(approvalQueueState.debounceTimer);
+                approvalQueueState.debounceTimer = setTimeout(approvalQueueFilterChanged, 250);
+            });
+        });
+        ['approvalQueueModule', 'approvalQueueDateFrom', 'approvalQueueDateTo', 'approvalQueueSort'].forEach(id => {
+            const input = document.getElementById(id);
+            if (input) input.addEventListener('change', approvalQueueFilterChanged);
+        });
+        const clear = document.getElementById('approvalQueueClear');
+        if (clear) clear.addEventListener('click', function () {
+            ['approvalQueueSearch', 'approvalQueueRequester', 'approvalQueueDateFrom', 'approvalQueueDateTo'].forEach(id => {
+                const input = document.getElementById(id);
+                if (input) input.value = '';
+            });
+            const module = document.getElementById('approvalQueueModule');
+            const sort = document.getElementById('approvalQueueSort');
+            if (module) module.value = 'all';
+            if (sort) sort.value = 'smart';
+            approvalQueueFilterChanged();
+        });
+        const previous = document.getElementById('approvalQueuePrevious');
+        const next = document.getElementById('approvalQueueNext');
+        if (previous) previous.addEventListener('click', function () {
+            approvalQueueState.pages[approvalQueueState.activeTab] = Math.max(approvalQueueState.pages[approvalQueueState.activeTab] - 1, 1);
+            loadApprovalQueueTab(approvalQueueState.activeTab);
+        });
+        if (next) next.addEventListener('click', function () {
+            approvalQueueState.pages[approvalQueueState.activeTab] += 1;
+            loadApprovalQueueTab(approvalQueueState.activeTab);
+        });
+    }
+
+    function approvalQueueOpenDeepLink() {
+        if (approvalQueueState.deepLinkOpened) return;
+        const params = new URLSearchParams(window.location.search);
+        const moduleKey = String(params.get('module') || '').toLowerCase();
+        const recordId = Number(params.get('id') || 0);
+        if (!moduleKey || !recordId) return;
+        approvalQueueState.deepLinkOpened = true;
+        const openers = {
+            calibration_certificate: 'openCalibrationCertificateApprovalDetail',
+            travel_request: 'openTravelApprovalDetail',
+            reimbursement: 'openReimbursementApprovalDetail',
+            cash_advance: 'openCashAdvanceApprovalDetail',
+            cash_advance_liquidation: 'openCashAdvanceLiquidationApprovalDetail',
+            travel_liquidation: 'openLiquidationApprovalDetail',
+            liquidation: 'openLiquidationApprovalDetail',
+            lpr: 'openLprApprovalDetail',
+            leave_request: 'openLeaveApprovalDetail',
+        };
+        const opener = window[openers[moduleKey]];
+        if (typeof opener === 'function') opener(recordId);
+    }
+
+    const approvalQueueOriginalRefresh = window.refreshAllApprovalCenterLists;
+    window.refreshAllApprovalCenterLists = async function () {
+        // Refresh only the active page and the unfiltered summary/module counts.
+        await Promise.all([
+            loadApprovalQueueSummary(),
+            loadApprovalQueueTab(approvalQueueState.activeTab, { resetPage: false }),
+        ]);
+        return approvalQueueState;
+    };
+
+    document.addEventListener('DOMContentLoaded', function () {
+        approvalQueueBindControls();
+        approvalQueueReadFilters();
+    });
+})();
+</script>
 {% endblock %}

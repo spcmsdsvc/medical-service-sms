@@ -1,5 +1,141 @@
 # Medical Service SMS — Approved Plans
 
+## Approval Center Search, Filters, and Pagination
+
+**Status:** Executed — publication authorized for the six-file Approval Center allowlist;
+implementation commit pending. Deployment verification is part of the authorized `origin/main`
+push, but Railway variables, manual redeployment, production/database, browser, and Codex UI
+actions remain unauthorized.
+**Approved/executing:** 2026-09-15 — the owner said **PLEASE IMPLEMENT THIS PLAN** after
+approving the bounded implementation package.
+**Detailed:** 2026-09-15.
+
+### Goal and boundaries
+
+Replace the Approval Center's client-side merge of capped per-module requests with one
+server-side `/get_approval_center_queue` endpoint and one active-tab renderer. Pending,
+Approved, and Returned/Rejected tabs will share search and filters, use a fixed ten-card
+page, preserve smart ordering (oldest pending and newest history), and keep the existing
+approval authorization, action/detail modal, notification, resend, feature-switch, latest
+calibration revision, standalone LPR, and deep-link contracts intact. Summary KPIs and module
+pending counts remain unfiltered and continue to come from the existing summary endpoint.
+
+The implementation is limited to `app.py`, `templates/approvals.html`, focused approval-center
+tests (including `tests/test_approval_center_wording.py` only if wording contracts need a
+small extension), `static/changelog/releases.json`, `plans.md`, and `changes.md`. It does not
+change schemas, migrations, dependencies, emails, PDFs, notification routing, production
+data, Railway settings, service-worker markers, or protected dirty artifacts.
+
+### Authorized implementation and numbered execution
+
+1. Read all applicable `AGENTS.md` instructions, this complete plan and `changes.md`, the
+   current Git state, Approval Center routes/helpers/serializers, the approvals template's
+   card/detail/action/deep-link JavaScript, relevant workflow/notification/LPR/calibration/
+   wording tests, and release metadata. Preserve `scheduler.db`, `Handoffs/`, `.claude/`,
+   `output/`, `tmp/`, the detailed handoff, and unrelated owner work. Record the implementation
+   start in `changes.md`.
+2. Add fail-first focused coverage in `tests/test_approval_center_pagination.py` (or a
+   clearly named equivalent) for cross-module status queues, ten-card boundaries and no
+   duplicates, safe page clamping, general/requester/module/inclusive-date/combined filters,
+   smart/newest/oldest ordering, invalid parameters, authorization/routing isolation,
+   calibration latest-revision filtering, disabled LPR behavior, and normalized entry shape.
+   Add source/UI contracts for shared filter state, clear/reset behavior, active-tab-only
+   loading, stale-request protection, loading/error/empty/accessibility states, preserved
+   action/detail/deep-link hooks, and unfiltered summary refresh. Run the unchanged-source
+   test module before implementing the endpoint where feasible and record the truthful
+   fail-first result in `changes.md`.
+3. In `app.py`, add the authenticated and Approval-Center-authorized GET
+   `/get_approval_center_queue` route. Validate status (`pending|approved|rejected`), active
+   module (`all` or catalog key, with LPR's existing feature switch), ISO date parameters,
+   and sort (`smart|newest|oldest`); clamp missing, malformed, and out-of-range pages safely
+   and always use `per_page=10`. Materialize each active module through its existing assigned-
+   approver query/visibility rules without the legacy 300-row cap, preserve calibration's
+   latest-revision pending behavior and LPR standalone-only query, normalize every serializer
+   into `{module, module_label, status, record_id, requester, action_date, item}` entries,
+   and return items plus page/per-page/total/pages and active-module metadata.
+4. Implement server-side queue matching and ordering helpers near the route: case-insensitive
+   general search over reference/request number, requester, and card-visible destination,
+   purpose, period, client/product/certificate context; requester text matching; module
+   filtering; inclusive date filtering using submitted date for pending and decision/action
+   date for history with `updated_at` only as the established fallback; and deterministic
+   module/record-ID tie-breaks for smart/newest/oldest ordering. Keep `/get_approval_center_items`
+   unchanged for compatibility and keep every existing decision/detail/notification endpoint
+   untouched.
+5. In `templates/approvals.html`, add a shared accessible filter bar above the tabs with
+   search, module, requester, inclusive From/To dates, Recommended/Newest/Oldest sort, and
+   Clear Filters. Keep filter values in page state (not URL state), reset the active page on
+   tab/filter changes, debounce text inputs, and use a request sequence/abort guard so stale
+   responses cannot overwrite current results. Load only the active tab from the new endpoint;
+   render the normalized entries through the existing module-aware card/detail/action hooks;
+   add accessible loading, error, and empty states plus fixed page showing text and Previous/
+   Next controls with disabled bounds. Refresh and approve/return should reload the active
+   page and the existing unfiltered summary/module counts, not every module/status endpoint.
+   Preserve `?module=...&id=...` deep links as one-time open targets without treating them as
+   filter state, and preserve responsive cards, dialogs, previews, resend, and action handlers.
+6. Add one approver/admin-facing release item in `static/changelog/releases.json`; keep the
+   service-worker marker, schema, migration, dependency, and deployment configuration
+   unchanged. Update this plan with actual outcomes and update `changes.md` in the same task.
+7. Run focused approval-center tests and related workflow/notification tests, then Python
+   compile/AST checks, Jinja parsing, extracted inline JavaScript syntax validation, release
+   JSON validation, `git diff --check`, and an isolated disposable external-DB full discovery
+   where practical. Browser automation is prohibited by project instructions; report it as
+   not run. Record exact pass/fail/skip counts and any baseline failures without claiming
+   unrun checks.
+8. Perform a final self-review against this plan and a protected-worktree allowlist. Leave
+   changes uncommitted and do not push, deploy, touch Railway/production/database state, or
+   perform formal post-implementation review; return one consolidated implementation report.
+
+### Acceptance and exclusions
+
+The new route must return correct cross-module pending/history pages beyond ten records,
+stable deterministic boundaries without duplicates, all requested filters and sort modes,
+safe parameter handling, assigned-approver isolation, LPR/calibration feature behavior, and
+metadata that the unified renderer can consume. The UI must show one active-tab request at a
+time, preserve shared filters across tabs, reset page safely, prevent stale overwrites, expose
+accessible loading/error/empty/pagination states, keep KPIs unfiltered, and preserve every
+existing open/action/deep-link contract. Excluded are schema/migration/dependency changes,
+production/Railway actions, browser automation, service-worker changes, and modifications to
+the compatibility `/get_approval_center_items` route.
+
+### Implementation outcome
+
+Implemented the uncapped `GET /get_approval_center_queue` path in `app.py`. Existing module
+serializers and assigned-approver query helpers feed a normalized `{module, module_label,
+status, queue_status, record_id, requester, action_date, item}` entry shape. The endpoint
+accepts the three queue statuses, active module keys, general/requester/date filters, and
+smart/newest/oldest ordering; it uses a fixed `per_page=10`, stable module/record-ID
+tie-breakers, safe page clamping, inclusive dates, clear 400 validation for status/module/
+date/sort, explicit disabled-LPR behavior, and no legacy 300-row cap. Calibration pending
+rows retain latest-revision filtering, LPR remains standalone and feature-gated, and the
+compatibility `/get_approval_center_items` route is unchanged.
+
+Updated `templates/approvals.html` with one shared accessible filter bar, persistent in-page
+filter state across tabs, filter/tab page resets, debounced text filters, active-tab-only
+queue requests, AbortController/request-sequence stale-response protection, unfiltered
+summary/module refresh, showing-range and Previous/Next controls, loading/error/empty states,
+responsive filter layout, and one-time `?module=...&id=...` deep-link opening without treating
+the query as filters. Existing module cards, detail modals, decisions, previews, resend, and
+notification handlers remain in use.
+
+Added `tests/test_approval_center_pagination.py` with helper, route, authorization, LPR
+feature-switch, calibration latest-revision, pagination/filter/sort, source-contract, and
+UI-state coverage. Added the approver-facing
+`2026-09-15-approval-center-queue-approvers` release item. No schema, migration, dependency,
+email/PDF, service-worker, production, Railway, browser, or protected-artifact change was
+made.
+
+Verification completed: the fail-first checkpoint ran before implementation (system Python
+was skipped because Flask is installed only in the project venv); final focused approval and
+related workflow/notification/changelog suites passed **115/115**. Python AST/built-in compile,
+Jinja parsing, extracted inline JavaScript syntax, release JSON validation, runtime Approval
+Center page smoke (**HTTP 200**), empty queue endpoint smoke (**HTTP 200**, page 1 of 1,
+per-page 10), and `git diff --check` passed. Isolated disposable external-DB full discovery
+ran **1,140 tests: 1,119 passed, 19 unrelated baseline failures, 2 skips**; failures were the
+existing changelog-manifest state, purchase-order rate-limit setup, and staff-creation fixture
+behavior. Browser verification was not run under the project prohibition. The implementation
+remains **uncommitted**; formal post-implementation review, commit, push, deployment,
+Railway, production/database, and Codex UI actions were not performed.
+
 ## One-time Calibration Certificate approver-title repair
 
 **Status:** Executed — implementation commit `7e81801` was pushed to `origin/main`; Railway

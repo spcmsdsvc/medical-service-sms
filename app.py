@@ -35133,6 +35133,370 @@ def get_approval_center_summary():
     })
 
 
+APPROVAL_CENTER_QUEUE_STATUSES = {'pending', 'approved', 'rejected'}
+APPROVAL_CENTER_QUEUE_SORTS = {'smart', 'newest', 'oldest'}
+APPROVAL_CENTER_QUEUE_PER_PAGE = 10
+
+
+def approval_center_queue_status(value):
+    """Normalize one workflow status to the three Approval Center buckets."""
+    normalized = (clean_str(value) or '').strip().lower().replace('_', ' ')
+    if normalized in {'pending', 'submitted'}:
+        return 'pending'
+    if normalized == 'approved':
+        return 'approved'
+    if normalized in {'rejected', 'returned', 'return'}:
+        return 'rejected'
+    return ''
+
+
+def approval_center_queue_date(value):
+    """Return the calendar date represented by a queue date value."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raw = clean_str(value) or ''
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace('Z', '+00:00')).date()
+    except (TypeError, ValueError):
+        try:
+            return date.fromisoformat(raw[:10])
+        except (TypeError, ValueError):
+            return None
+
+
+def approval_center_parse_queue_date(value, field_name):
+    raw = clean_str(value) or ''
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f'Invalid {field_name}; expected YYYY-MM-DD.')
+
+
+def approval_center_queue_search_text(value):
+    """Flatten serializer values for case-insensitive card-context search."""
+    parts = []
+
+    def visit(current):
+        if isinstance(current, dict):
+            for child in current.values():
+                visit(child)
+        elif isinstance(current, (list, tuple, set)):
+            for child in current:
+                visit(child)
+        elif isinstance(current, (str, int, float)) and not isinstance(current, bool):
+            text_value = clean_str(current)
+            if text_value:
+                parts.append(text_value)
+
+    visit(value)
+    return ' '.join(parts).casefold()
+
+
+def approval_center_queue_action_date(item, queue_status):
+    """Choose submitted time for pending and decision time for history."""
+    item = item or {}
+    if queue_status == 'pending':
+        candidates = ('submitted_at', 'created_at', 'updated_at')
+    elif queue_status == 'approved':
+        candidates = ('approved_at', 'approval_signed_at', 'updated_at')
+    else:
+        candidates = ('returned_at', 'rejected_at', 'updated_at')
+    for field_name in candidates:
+        value = item.get(field_name)
+        if value:
+            return value
+    return ''
+
+
+def approval_center_queue_requester(item):
+    item = item or {}
+    for field_name in (
+        'requester_name',
+        'requester',
+        'engineer_name',
+        'requested_by',
+        'username',
+        'requester_name_snapshot',
+    ):
+        value = clean_str(item.get(field_name))
+        if value:
+            return value
+    return ''
+
+
+def approval_center_queue_normalize_entry(module_key, module_label, item, source_status=None):
+    """Wrap existing module serializers in the common unified-card shape."""
+    item = dict(item or {})
+    queue_status = approval_center_queue_status(source_status or item.get('status'))
+    if not queue_status:
+        return None
+    action_date = approval_center_queue_action_date(item, queue_status)
+    requester = approval_center_queue_requester(item)
+    record_id = clean_int(item.get('id') or item.get('record_id'))
+    if not record_id:
+        return None
+    item.setdefault('approval_center_module', module_key)
+    item.setdefault('approval_center_status', queue_status)
+    item.setdefault('approval_center_action_date', action_date)
+    item.setdefault('approval_center_requester', requester)
+    item.setdefault('approval_center_search_text', approval_center_queue_search_text(item))
+    return {
+        'module': module_key,
+        'module_label': module_label,
+        'status': 'Submitted' if queue_status == 'pending' else ('Approved' if queue_status == 'approved' else 'Rejected'),
+        'queue_status': queue_status,
+        'record_id': record_id,
+        'requester': requester,
+        'action_date': action_date,
+        'item': item,
+    }
+
+
+def approval_center_active_module_metadata():
+    return [
+        {
+            'key': module.get('key'),
+            'label': module.get('label'),
+            'status': module.get('status', 'active'),
+            'enabled': bool(module.get('enabled', False)),
+        }
+        for module in approval_center_module_catalog()
+        if module.get('status') == 'active' and module.get('enabled', False)
+    ]
+
+
+def approval_center_queue_module_rows(module_key):
+    """Load one module with its existing visibility/assigned-approver rules."""
+    if module_key == 'calibration_certificate':
+        ensure_calibration_certificate_approval_table()
+        requester_ids = get_requester_user_ids_for_approver(current_user, 'calibration_certificate')
+        query = CalibrationCertificateApproval.query
+        if requester_ids:
+            query = query.filter(CalibrationCertificateApproval.requester_user_id.in_(requester_ids))
+        else:
+            query = query.filter(db.text('1 = 0'))
+        rows = query.order_by(CalibrationCertificateApproval.submitted_at.asc(), CalibrationCertificateApproval.id.asc()).all()
+        return [(row, calibration_certificate_approval_to_dict(row)) for row in rows]
+
+    if module_key == 'travel_request':
+        rows = travel_request_query_for_current_approver('All').all()
+        return [(row, travel_request_to_dict(row, include_lines=False)) for row in rows]
+
+    if module_key == 'travel_liquidation':
+        rows = travel_liquidation_query_for_current_approver('All').all()
+        return [(row, travel_liquidation_to_dict(row, include_rows=False)) for row in rows]
+
+    if module_key == 'reimbursement':
+        query = apply_assigned_approver_filter(ReimbursementHeader.query, ReimbursementHeader, current_user, 'reimbursement')
+        rows = query.order_by(ReimbursementHeader.updated_at.desc(), ReimbursementHeader.id.desc()).all()
+        return [(row, reimbursement_header_to_manager_dict(row, include_rows=False)) for row in rows]
+
+    if module_key == 'cash_advance':
+        rows = cash_advance_query_for_current_approver('All').all()
+        return [(row, cash_advance_to_dict(row, include_audit=False)) for row in rows]
+
+    if module_key == 'cash_advance_liquidation':
+        rows = cash_advance_liquidation_query_for_current_approver('All').all()
+        return [(row, cash_advance_liquidation_to_dict(row, include_rows=False)) for row in rows]
+
+    if module_key == 'lpr':
+        rows = lpr_query_for_current_approver('All').all()
+        return [(row, lpr_to_dict(row, include_items=False, include_attachments=False)) for row in rows]
+
+    if module_key == 'leave_request':
+        query = apply_assigned_approver_filter(LeaveRequest.query, LeaveRequest, current_user, 'leave_request')
+        rows = query.order_by(LeaveRequest.updated_at.desc(), LeaveRequest.id.desc()).all()
+        return [(row, leave_request_to_dict(row, include_attachments=False)) for row in rows]
+
+    return []
+
+
+def approval_center_collect_queue_entries(module_filter='all'):
+    """Collect uncapped, normalized queue entries for active modules."""
+    metadata = approval_center_active_module_metadata()
+    active = {module.get('key'): module for module in metadata}
+    if module_filter != 'all' and module_filter not in active:
+        raise ValueError('Unknown or inactive approval module.')
+    entries = []
+    module_keys = [module_filter] if module_filter != 'all' else list(active)
+    for module_key in module_keys:
+        module = active.get(module_key)
+        if not module:
+            continue
+        for row, item in approval_center_queue_module_rows(module_key):
+            # Calibration approval history keeps the existing all-history behavior,
+            # while a pending revision is visible only when it is the latest one.
+            queue_status = approval_center_queue_status(item.get('status'))
+            if not queue_status:
+                continue
+            if module_key == 'calibration_certificate' and queue_status == 'pending' and not bool(getattr(row, 'is_latest', item.get('is_latest', False))):
+                continue
+            entry = approval_center_queue_normalize_entry(module_key, module.get('label', module_key), item)
+            if entry:
+                entries.append(entry)
+    return entries
+
+
+def approval_center_filter_and_paginate(
+    entries,
+    *,
+    requested_status='pending',
+    q='',
+    module='all',
+    requester='',
+    date_from='',
+    date_to='',
+    sort='smart',
+    page=1,
+):
+    """Filter and paginate normalized entries; used by the queue API and tests."""
+    status = (clean_str(requested_status) or 'pending').strip().lower()
+    if status not in APPROVAL_CENTER_QUEUE_STATUSES:
+        raise ValueError('Invalid approval queue status. Use pending, approved, or rejected.')
+    module_key = (clean_str(module) or 'all').strip().lower()
+    allowed_modules = {item.get('key') for item in approval_center_active_module_metadata()}
+    if module_key != 'all' and module_key not in allowed_modules:
+        raise ValueError('Unknown or inactive approval module.')
+    sort_key = (clean_str(sort) or 'smart').strip().lower()
+    if sort_key not in APPROVAL_CENTER_QUEUE_SORTS:
+        raise ValueError('Invalid approval queue sort. Use smart, newest, or oldest.')
+    from_date = approval_center_parse_queue_date(date_from, 'date_from')
+    to_date = approval_center_parse_queue_date(date_to, 'date_to')
+    if from_date and to_date and from_date > to_date:
+        raise ValueError('date_from cannot be later than date_to.')
+
+    q_value = (clean_str(q) or '').casefold().strip()
+    requester_value = (clean_str(requester) or '').casefold().strip()
+    filtered = []
+    for entry in entries or []:
+        entry_status = approval_center_queue_status(entry.get('queue_status') or entry.get('status') or entry.get('item', {}).get('status'))
+        if entry_status != status:
+            continue
+        if module_key != 'all' and str(entry.get('module') or '').lower() != module_key:
+            continue
+        item = entry.get('item') or {}
+        requester_text = clean_str(entry.get('requester') or approval_center_queue_requester(item)) or ''
+        search_text = (clean_str(item.get('approval_center_search_text')) or approval_center_queue_search_text({**item, **entry}))
+        if q_value and q_value not in search_text.casefold():
+            continue
+        if requester_value and requester_value not in requester_text.casefold():
+            continue
+        action_date = entry.get('action_date') or approval_center_queue_action_date(item, entry_status)
+        action_day = approval_center_queue_date(action_date)
+        if from_date and (not action_day or action_day < from_date):
+            continue
+        if to_date and (not action_day or action_day > to_date):
+            continue
+        normalized_entry = dict(entry)
+        normalized_entry['queue_status'] = entry_status
+        normalized_entry['requester'] = requester_text
+        normalized_entry['action_date'] = action_date
+        filtered.append(normalized_entry)
+
+    def sort_key_for(entry):
+        day = approval_center_queue_date(entry.get('action_date')) or date.min
+        module_value = str(entry.get('module') or '')
+        record_value = clean_int(entry.get('record_id')) or 0
+        descending = sort_key == 'newest' or (sort_key == 'smart' and status != 'pending')
+        primary = day.toordinal()
+        if descending:
+            primary = -primary
+        # module/id remain ascending tie-breakers in every mode.
+        return (primary, module_value, record_value)
+
+    filtered.sort(key=sort_key_for)
+    total = len(filtered)
+    pages = max((total + APPROVAL_CENTER_QUEUE_PER_PAGE - 1) // APPROVAL_CENTER_QUEUE_PER_PAGE, 1)
+    try:
+        requested_page = int(page)
+    except (TypeError, ValueError):
+        requested_page = 1
+    requested_page = max(requested_page, 1)
+    active_page = min(requested_page, pages)
+    start = (active_page - 1) * APPROVAL_CENTER_QUEUE_PER_PAGE
+    return {
+        'items': filtered[start:start + APPROVAL_CENTER_QUEUE_PER_PAGE],
+        'page': active_page,
+        'per_page': APPROVAL_CENTER_QUEUE_PER_PAGE,
+        'total': total,
+        'pages': pages,
+    }
+
+
+@app.route('/get_approval_center_queue')
+@login_required
+def get_approval_center_queue():
+    """Return one uncapped, filtered, paginated Approval Center queue page."""
+    denied_response = require_approval_center_user()
+    if denied_response:
+        return denied_response
+
+    status = (request.args.get('status') or 'pending').strip().lower()
+    module_key = (request.args.get('module') or 'all').strip().lower()
+    if module_key == 'lpr' and not lpr_enabled():
+        return jsonify({'success': False, 'status': 'disabled', 'message': 'Local Purchase Requisition is not available yet.'}), 403
+    page_value = request.args.get('page') or '1'
+    try:
+        page_value = int(page_value)
+    except (TypeError, ValueError):
+        page_value = 1
+    try:
+        # Validate request controls before touching workflow tables. Page values
+        # deliberately clamp, while status/module/date/sort errors are explicit.
+        approval_center_filter_and_paginate(
+            [],
+            requested_status=status,
+            module=module_key,
+            requester=request.args.get('requester') or '',
+            date_from=request.args.get('date_from') or '',
+            date_to=request.args.get('date_to') or '',
+            sort=request.args.get('sort') or 'smart',
+            page=page_value,
+        )
+        entries = approval_center_collect_queue_entries(module_key)
+        result = approval_center_filter_and_paginate(
+            entries,
+            requested_status=status,
+            q=request.args.get('q') or '',
+            module=module_key,
+            requester=request.args.get('requester') or '',
+            date_from=request.args.get('date_from') or '',
+            date_to=request.args.get('date_to') or '',
+            sort=request.args.get('sort') or 'smart',
+            page=page_value,
+        )
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    active_modules = approval_center_active_module_metadata()
+    return jsonify({
+        'success': True,
+        'status': status,
+        'module': module_key,
+        'items': result['items'],
+        'entries': result['items'],
+        'page': result['page'],
+        'per_page': result['per_page'],
+        'total': result['total'],
+        'pages': result['pages'],
+        'active_modules': active_modules,
+        'modules': active_modules,
+        'filters': {
+            'q': request.args.get('q') or '',
+            'requester': request.args.get('requester') or '',
+            'module': module_key,
+            'date_from': request.args.get('date_from') or '',
+            'date_to': request.args.get('date_to') or '',
+            'sort': request.args.get('sort') or 'smart',
+        },
+    })
+
+
 @app.route('/get_approval_center_items')
 @login_required
 def get_approval_center_items():

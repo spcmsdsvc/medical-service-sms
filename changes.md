@@ -1,5 +1,53 @@
 # Project Change Log
 
+codex changes - 2026-09-15
+
+- The owner explicitly authorized committing and pushing only the Approval Center Search,
+  Filters, and Pagination package to `origin/main`. Publication is restricted to `app.py`,
+  `templates/approvals.html`, `tests/test_approval_center_pagination.py`,
+  `static/changelog/releases.json`, `plans.md`, and `changes.md`; the pre-existing dirty
+  `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, and all unrelated work remain
+  excluded and unstaged.
+- Started the owner-authorized Approval Center Search, Filters, and Pagination package. The
+  implementation is limited to the unified server-side queue, approvals page filters/paging,
+  focused verification, release metadata, and required records; compatibility endpoints,
+  schemas/migrations, dependencies, service-worker markers, emails/PDFs, production/Railway,
+  browser/Codex UI actions, and protected dirty artifacts remain outside scope.
+- Added the fail-first `tests/test_approval_center_pagination.py` checkpoint before adding the
+  queue helper/route or shared filter UI. The project virtual-environment run correctly failed
+  against the unchanged source because `approval_center_filter_and_paginate` and the new UI
+  contracts were absent (7 tests ran: 16 assertion failures and 7 expected helper-lookup
+  errors); the system Python was not used because Flask is available only in the project venv.
+- Implemented `GET /get_approval_center_queue` in `app.py` as the uncapped, authorized unified
+  Approval Center queue. Existing assigned-approver visibility helpers and serializers feed a
+  normalized module/status/requester/action-date entry shape. Pending, approved, and rejected
+  buckets support general/requester/module/inclusive-date filters, smart/newest/oldest stable
+  ordering, fixed ten-card pagination, safe page clamping, explicit invalid-parameter 400s,
+  active-module metadata, and disabled-LPR 403 behavior. Calibration pending entries retain
+  latest-revision filtering and standalone LPR entries remain feature-gated; the compatibility
+  `/get_approval_center_items` route was left unchanged.
+- Replaced the Approval Center's browser-side all-module/status merge with a shared filter bar
+  and active-tab-only queue requests in `templates/approvals.html`. Search/requester inputs
+  debounce, filters persist across tabs, filter/tab changes reset page one, AbortController
+  plus request-sequence guards prevent stale responses, and loading/error/empty states plus
+  showing-range/Previous/Next controls are accessible and responsive. Refresh and approval
+  decisions reload only the active page plus the existing unfiltered summary/module counts;
+  existing cards, detail/action handlers, previews, resend, notifications, and one-time
+  `?module=...&id=...` deep-link opening remain intact.
+- Added focused `tests/test_approval_center_pagination.py` coverage for helper filtering,
+  ordering, boundaries, invalid controls, route clamping/authentication, latest calibration
+  revision, disabled LPR, normalized metadata, and shared UI/stale-request contracts. Added
+  the approver-facing `2026-09-15-approval-center-queue-approvers` item to
+  `static/changelog/releases.json`.
+- Final focused Approval Center plus related workflow/notification/LPR/leave/sidebar/changelog
+  verification passed **115/115**. Python AST/built-in compile, Jinja parse, extracted inline
+  JavaScript syntax, release JSON validation, runtime Approval Center page/empty-queue smoke
+  checks, and `git diff --check` passed. Isolated disposable external-DB full discovery ran
+  **1,140 tests: 1,119 passed, 19 unrelated baseline failures, 2 skips** (changelog-manifest
+  state, purchase-order rate-limit setup, and staff-creation fixture behavior). Browser
+  verification was not run under the project prohibition; no schema, dependency,
+  service-worker, production/Railway, commit/push, or formal review operation was performed.
+
 codex changes - 2026-09-14
 
 - Executed the separately authorized production Calibration Certificate title repair for current

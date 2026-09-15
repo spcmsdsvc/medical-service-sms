@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-15-approval-center-queue",
+      "release_date": "2026-09-15",
+      "title": "Approval Center Queue",
+      "summary": "Approvers can search, filter, and page through assigned approval work across active modules.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-15-approval-center-queue-approvers",
+          "category": "Approvals",
+          "description": "Added a shared Approval Center queue with server-side search, module/requester/date filters, recommended or explicit ordering, ten-card pagination, and accessible loading, empty, and error states while preserving existing approval actions and history.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-14-calibration-certificate-title-repair",
       "release_date": "2026-09-14",
       "title": "Calibration Certificate Title Repair",
