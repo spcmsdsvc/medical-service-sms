@@ -2,7 +2,7 @@
 
 ## Vieworks Inventory page
 
-**Status:** Executed — implementation uncommitted; commit, push, and publication were not authorized.
+**Status:** Executed — implementation commit `ea5a84e`; owner-authorized publication to `origin/main` pending verification.
 **Approved:** 2026-09-15 — the owner submitted the complete Vieworks plan.
 **Detailed:** 2026-09-15.
 
@@ -140,7 +140,7 @@ bound those risks. Verification is proportionate and reports baseline failures h
 
 ## Automatic Genoray BSIDs
 
-**Status:** Executed — implementation uncommitted; commit, push, and publication were not authorized.
+**Status:** Executed — implementation commit `ea5a84e`; owner-authorized publication to `origin/main` pending verification.
 **Approved:** 2026-09-15 — the owner submitted the complete automatic-BSID plan.
 **Detailed:** 2026-09-15.
 
@@ -259,7 +259,7 @@ must be reported truthfully rather than treated as all-green if unrelated failur
 
 ## Genoray Inventory page
 
-**Status:** Executed — implementation uncommitted; commit, push, and publication were not authorized.
+**Status:** Executed — implementation commit `ea5a84e`; owner-authorized publication to `origin/main` pending verification.
 **Approved:** 2026-09-15 — the owner submitted the complete Genoray plan for implementation.
 **Detailed:** 2026-09-15.
 

@@ -2,6 +2,13 @@
 
 codex changes - 2026-09-15
 
+- Committed the authorized Genoray and Vieworks standalone inventory package, automatic BSID
+  counters, shared inventory page modes, role-guarded routes, release records, service-worker
+  version updates, focused tests, and Vieworks first-load lock fix as `ea5a84e` on local `main`.
+  The nine-file commit excludes the protected `scheduler.db`, handoff files, `output/`, `tmp/`,
+  `.claude/`, and other unrelated dirty artifacts. Before committing, 53 focused Genoray,
+  Vieworks, Product, and sidebar tests passed; Python AST, release JSON, and the staged
+  whitespace check passed. Publication and Railway verification are pending.
 - Fixed Vieworks first-load SQLite self-contention in `app.py`: `ensure_vieworks_item_table()`
   now commits pending request-session migration writes before opening its separate schema
   connection to create the unique BSID index and seed the Vieworks counter. The owner-provided
