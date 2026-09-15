@@ -149,6 +149,9 @@
                role logic or hardcoded usernames here: the previous inline versions were
                looser than the server and showed links that redirected away. #}
             {% set is_management_user = nav_is_admin %}
+            {% set can_access_genoray_inventory = nav_can_access_genoray_inventory %}
+            {% set can_access_vieworks_inventory = nav_can_access_vieworks_inventory %}
+            {% set is_inventory_management_user = is_management_user or can_access_genoray_inventory or can_access_vieworks_inventory %}
             {% set can_access_calibration_center = nav_can_access_calibration_center %}
             {% set is_engineer_only = nav_is_engineer %}
             {% set is_reports_admin_user = nav_can_view_admin_reports %}
@@ -161,7 +164,7 @@
             {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
             {% if lpr_enabled %}{% set field_ops_paths = field_ops_paths + ['/lpr'] %}{% endif %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
-            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page', '/po_details', '/reimbursement_tracker', '/admin/calibration-center'] %}
+            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page', '/genoray', '/vieworks', '/po_details', '/reimbursement_tracker', '/admin/calibration-center'] %}
             {% set admin_paths = ['/activity_page', '/settings', '/stock_inventory'] %}
 
             <div class="sidebar-group-label" aria-hidden="true">Main</div>
@@ -283,7 +286,7 @@
                     aria-controls="records-sidebar-section"
                 >
                     <i class="fa-solid fa-folder-open"></i>
-                    <span>{{ 'Records' if is_management_user else 'Resources' }}</span>
+                    <span>{{ 'Records' if is_inventory_management_user else 'Resources' }}</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
                 <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}">
@@ -294,7 +297,33 @@
                         {{ nav_link('/engineers_page', 'fa-user-gear', 'Personnel') }}
                     {% endif %}
                     {{ nav_link('/clients_page', 'fa-hospital', 'Medical Centers') }}
-                    {{ nav_link('/products_page', 'fa-boxes-stacked', 'Inventory') }}
+                    {% if can_access_genoray_inventory or can_access_vieworks_inventory %}
+                        <button
+                            type="button"
+                            class="sidebar-section-toggle sidebar-subnav-toggle {{ 'active' if request.path in ['/products_page', '/genoray', '/vieworks'] }}"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#inventory-sidebar-section"
+                            aria-expanded="{{ 'true' if request.path in ['/products_page', '/genoray', '/vieworks'] else 'false' }}"
+                            aria-controls="inventory-sidebar-section"
+                        >
+                            <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
+                            <span>Inventory</span>
+                            <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
+                        </button>
+                        <div id="inventory-sidebar-section" class="collapse sidebar-subnav sidebar-subnav-nested {{ 'show' if request.path in ['/products_page', '/genoray', '/vieworks'] }}">
+                            {% if can_access_genoray_inventory or can_access_vieworks_inventory %}
+                                {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
+                            {% endif %}
+                            {% if can_access_genoray_inventory %}
+                                {{ nav_link('/genoray', 'fa-boxes-packing', 'Genoray') }}
+                            {% endif %}
+                            {% if can_access_vieworks_inventory %}
+                                {{ nav_link('/vieworks', 'fa-boxes-packing', 'Vieworks') }}
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        {{ nav_link('/products_page', 'fa-boxes-stacked', 'Inventory') }}
+                    {% endif %}
                     {% if can_manage_purchase_orders %}
                         {{ nav_link('/po_details', 'fa-file-invoice', 'P.O. Details') }}
                     {% endif %}

@@ -179,8 +179,7 @@ class SidebarSourceTests(unittest.TestCase):
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
         self.assertIn("app-shell.css') }}?v=3", self.layout)
-        self.assertIn("medical-service-pwa-offline-navigation-v158-calibration-center", self.app_source)
-        assert_cache_version_at_least(self, 126, self.app_source)
+        assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_sidebar_visibility_preference_is_early_guarded_and_desktop_only(self):
         self.assertIn("medical_service_sidebar_visibility", self.layout)

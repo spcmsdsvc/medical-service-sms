@@ -1,5 +1,16 @@
 {% extends "layout.html" %}
 
+{% set inventory_mode = inventory_mode|default('product') %}
+{% set is_genoray_inventory = inventory_mode == 'genoray' %}
+{% set is_vieworks_inventory = inventory_mode == 'vieworks' %}
+{% set is_standalone_inventory = is_genoray_inventory or is_vieworks_inventory %}
+{% set inventory_label = 'Vieworks' if is_vieworks_inventory else ('Genoray' if is_genoray_inventory else 'Product') %}
+{% set inventory_plural = 'Vieworks items' if is_vieworks_inventory else ('Genoray items' if is_genoray_inventory else 'products') %}
+{% set inventory_api_url = '/api/vieworks/items' if is_vieworks_inventory else ('/api/genoray/items' if is_genoray_inventory else '/get_products') %}
+{% set inventory_summary_url = '/api/vieworks/summary' if is_vieworks_inventory else ('/api/genoray/summary' if is_genoray_inventory else '/get_products_summary') %}
+{% set inventory_import_url = '/vieworks/import' if is_vieworks_inventory else ('/genoray/import' if is_genoray_inventory else '/import_products') %}
+{% set inventory_export_url = '/vieworks/export' if is_vieworks_inventory else ('/genoray/export' if is_genoray_inventory else '/export_products') %}
+
 {% block content %}
 <div class="container-fluid">
     <div id="product-alert-stack" class="product-alert-stack no-print" aria-live="polite" aria-atomic="true"></div>
@@ -25,27 +36,27 @@
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 no-print">
             <h2 class="h4 mb-0">
                 <i class="fa-solid fa-boxes-stacked me-2 text-info"></i>
-                MEDICAL SERVICE Product Inventory
+                MEDICAL SERVICE {{ inventory_label }} Inventory
             </h2>
             <div class="btn-group">
                 <!-- BULK DATA IMPORT - Updated v5.4.2 to include Regional Admin -->
                 {% if product_can_delete %}
                 <input type="file" id="prod-csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
-                <button type="button" class="btn btn-outline-primary btn-sm" id="product-import-btn" title="Import products" aria-label="Import products" onclick="document.getElementById('prod-csv-file').click()">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="product-import-btn" title="Import {{ inventory_plural }}" aria-label="Import {{ inventory_plural }}" onclick="document.getElementById('prod-csv-file').click()">
                     <i class="fa-solid fa-file-import me-1"></i>Import
                 </button>
                 {% endif %}
                 
-                <button type="button" class="btn btn-outline-success btn-sm" title="Export products" aria-label="Export products" onclick="window.location.href='/export_products'">
+                <button type="button" class="btn btn-outline-success btn-sm" title="Export {{ inventory_plural }}" aria-label="Export {{ inventory_plural }}" onclick="window.location.href='{{ inventory_export_url }}'">
                     <i class="fa-solid fa-file-excel me-1"></i>Export
                 </button>
-                <button type="button" class="btn btn-outline-dark btn-sm" title="Print product inventory" aria-label="Print product inventory" onclick="window.print()">
+                <button type="button" class="btn btn-outline-dark btn-sm" title="Print {{ inventory_label }} inventory" aria-label="Print {{ inventory_label }} inventory" onclick="window.print()">
                     <i class="fa-solid fa-print me-1"></i>Print
                 </button>
                 
                 {% if product_can_edit %}
-                <button type="button" class="btn btn-success btn-sm ms-2" title="Add product" aria-label="Add product" onclick="openAddModal()">
-                    <i class="fa-solid fa-plus me-1"></i>Add Product
+                <button type="button" class="btn btn-success btn-sm ms-2" title="{% if is_vieworks_inventory %}Add Vieworks item{% elif is_genoray_inventory %}Add Genoray item{% else %}Add product{% endif %}" aria-label="{% if is_vieworks_inventory %}Add Vieworks item{% elif is_genoray_inventory %}Add Genoray item{% else %}Add product{% endif %}" onclick="openAddModal()">
+                    <i class="fa-solid fa-plus me-1"></i>{% if is_vieworks_inventory %}Add Vieworks Item{% elif is_genoray_inventory %}Add Genoray Item{% else %}Add Product{% endif %}
                 </button>
                 {% endif %}
             </div>
@@ -53,7 +64,7 @@
 
         <!-- Print-only Report Title -->
         <div class="d-none d-print-block text-center mb-3">
-            <h2>PRODUCT INVENTORY REPORT</h2>
+            <h2>{{ inventory_label|upper }} INVENTORY REPORT</h2>
             <hr>
         </div>
 
@@ -71,7 +82,7 @@
             </div>
             
             <div class="col-md-4">
-                <label class="small fw-bold text-muted text-uppercase">Product Status</label>
+                <label class="small fw-bold text-muted text-uppercase">{{ inventory_label }} Status</label>
                 <select id="filter-status" class="form-select form-select-sm" onchange="applyFilters()">
                     <option value="">All Statuses</option>
                     <option value="Under Warranty">Active Warranty</option>
@@ -98,7 +109,7 @@
                             <option value="status">Status</option>
                         </select>
                     </div>
-                    <div id="product-results-summary" class="product-results-summary" role="status" aria-live="polite">Loading products...</div>
+                    <div id="product-results-summary" class="product-results-summary" role="status" aria-live="polite">{% if is_vieworks_inventory %}Loading Vieworks items...{% elif is_genoray_inventory %}Loading Genoray items...{% else %}Loading products...{% endif %}</div>
                 </div>
                 <button type="button" id="product-clear-filters" class="btn btn-outline-secondary btn-sm" onclick="clearProductFilters()" disabled>
                     <i class="fa-solid fa-filter-circle-xmark me-1" aria-hidden="true"></i>Clear Filters
@@ -115,7 +126,7 @@
         <div id="product-table-scrollbar" class="product-table-scrollbar no-print" role="region" tabindex="0" aria-controls="product-table-wrap" aria-label="Horizontal product table scrollbar. Drag to view all columns.">
             <div id="product-table-scrollbar-content" aria-hidden="true"></div>
         </div>
-        <div id="product-table-wrap" class="table-responsive product-table-wrap" role="region" tabindex="0" aria-label="Product inventory table. Scroll horizontally to view all columns.">
+        <div id="product-table-wrap" class="table-responsive product-table-wrap" role="region" tabindex="0" {% if is_vieworks_inventory %}aria-label="Vieworks inventory table. Scroll horizontally to view all columns."{% elif is_genoray_inventory %}aria-label="Genoray inventory table. Scroll horizontally to view all columns."{% else %}aria-label="Product inventory table. Scroll horizontally to view all columns."{% endif %}>
             <table class="table table-hover align-middle">
                 <colgroup>
                     <col class="product-col-serial">
@@ -139,7 +150,7 @@
                 </thead>
                 <tbody id="prod-table-body">
                     <tr class="product-table-state-row">
-                        <td colspan="7">Loading products...</td>
+                        <td colspan="7">{% if is_vieworks_inventory %}Loading Vieworks items...{% elif is_genoray_inventory %}Loading Genoray items...{% else %}Loading products...{% endif %}</td>
                     </tr>
                 </tbody>
             </table>
@@ -150,7 +161,7 @@
         <div class="inventory-count-footer no-print mt-3 p-3 rounded-3 bg-light border d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
                 <div class="small text-muted text-uppercase fw-bold">Inventory Count</div>
-                <div class="fw-bold text-dark" id="product-count-label">Showing 0 of 0 products</div>
+                <div class="fw-bold text-dark" id="product-count-label">Showing 0 of 0 {{ inventory_plural }}</div>
             </div>
             <div class="d-flex flex-wrap gap-2">
                 <span class="count-chip bg-white border text-success">
@@ -185,8 +196,8 @@
             
             <div class="modal-header bg-success text-white">
                 <div>
-                    <h5 id="modal-title" class="modal-title">Product Details</h5>
-                    <div id="modal-product-context" class="product-modal-context" aria-live="polite">Add or edit a product record.</div>
+                    <h5 id="modal-title" class="modal-title">{% if is_vieworks_inventory %}Vieworks Item Details{% elif is_genoray_inventory %}Genoray Item Details{% else %}Product Details{% endif %}</h5>
+                    <div id="modal-product-context" class="product-modal-context" aria-live="polite">{% if is_vieworks_inventory %}Add or edit a Vieworks item record.{% elif is_genoray_inventory %}Add or edit a Genoray item record.{% else %}Add or edit a product record.{% endif %}</div>
                 </div>
                 <button type="button" class="btn-close btn-close-white" aria-label="Close product details" data-bs-dismiss="modal"></button>
             </div>
@@ -198,18 +209,18 @@
                 <div class="mb-3">
                     <label for="p-serial" class="small fw-bold text-muted text-uppercase">Serial Number (S/N)</label>
                     <input type="text" id="p-serial" class="form-control" placeholder="Unique machine identifier">
-                    <div class="xsmall text-muted mt-1" id="serial-edit-help">Serial number is editable. Changes are logged and linked schedules are updated.</div>
+                    <div class="xsmall text-muted mt-1" id="serial-edit-help">{% if is_standalone_inventory %}Serial number is editable. Changes are logged.{% else %}Serial number is editable. Changes are logged and linked schedules are updated.{% endif %}</div>
                 </div>
                 
                 <div class="mb-3">
-                    <label for="p-name" class="small fw-bold text-muted text-uppercase">Equipment Name</label>
-                    <input type="text" id="p-name" class="form-control" placeholder="Manufacturer or Model">
+                    <label for="p-name" class="small fw-bold text-muted text-uppercase">{% if is_standalone_inventory %}{{ inventory_label }} Equipment Name{% else %}Equipment Name{% endif %}</label>
+                    <input type="text" id="p-name" class="form-control" placeholder="{% if is_standalone_inventory %}{{ inventory_label }} manufacturer or model{% else %}Manufacturer or Model{% endif %}">
                 </div>
 
                 <div class="mb-3">
                     <label class="small fw-bold text-muted text-uppercase" for="p-bsid">BSID</label>
-                    <input type="text" id="p-bsid" class="form-control" maxlength="40" placeholder="Machine-level BSID">
-                    <div class="xsmall text-muted mt-1">Optional for legacy inventory; certification requires a BSID.</div>
+                    <input type="text" id="p-bsid" class="form-control" maxlength="40" placeholder="{% if is_standalone_inventory %}Assigned automatically on save{% else %}Machine-level BSID{% endif %}">
+                    <div class="xsmall text-muted mt-1">{% if is_standalone_inventory %}Assigned automatically for new {{ inventory_label }} items. Existing BSIDs may be replaced but cannot be cleared.{% else %}Optional for legacy inventory; certification requires a BSID.{% endif %}</div>
                 </div>
 
                 <!-- AUTOCOMPLETE CLIENT SEARCH -->
@@ -237,14 +248,14 @@
                         <input class="form-check-input" type="checkbox" role="switch" id="p-under-contract">
                         <label class="form-check-label fw-bold" for="p-under-contract">Contract</label>
                     </div>
-                    <div class="small text-muted mt-1">Turn on when this product is covered by an active service contract.</div>
+                    <div class="small text-muted mt-1">{% if is_vieworks_inventory %}Turn on when this Vieworks item is covered by an active service contract.{% elif is_genoray_inventory %}Turn on when this Genoray item is covered by an active service contract.{% else %}Turn on when this product is covered by an active service contract.{% endif %}</div>
                 </div>
             </div>
             
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-success btn-sm px-4" onclick="saveProduct()">
-                    <i class="fa-solid fa-floppy-disk me-1"></i>Save Product
+                    <i class="fa-solid fa-floppy-disk me-1"></i>{% if is_vieworks_inventory %}Save Vieworks Item{% elif is_genoray_inventory %}Save Genoray Item{% else %}Save Product{% endif %}
                 </button>
             </div>
             
@@ -380,7 +391,20 @@
         linked_products: 0
     };
     let productSortState = { key: '', direction: 'asc' };
-    const PRODUCT_SORT_STORAGE_KEY = 'medicalServiceProductSortV1';
+    const inventoryMode = {{ inventory_mode|tojson }};
+    const isGenorayInventory = inventoryMode === 'genoray';
+    const isVieworksInventory = inventoryMode === 'vieworks';
+    const isStandaloneInventory = isGenorayInventory || isVieworksInventory;
+    const inventoryLabel = isVieworksInventory ? 'Vieworks' : (isGenorayInventory ? 'Genoray' : 'Product');
+    const inventoryNoun = isVieworksInventory ? 'Vieworks item' : (isGenorayInventory ? 'Genoray item' : 'product');
+    const inventoryPlural = isVieworksInventory ? 'Vieworks items' : (isGenorayInventory ? 'Genoray items' : 'products');
+    const inventoryItemsUrl = {{ inventory_api_url|tojson }};
+    const inventorySummaryUrl = {{ inventory_summary_url|tojson }};
+    const inventoryImportUrl = {{ inventory_import_url|tojson }};
+    const inventoryExportUrl = {{ inventory_export_url|tojson }};
+    const PRODUCT_SORT_STORAGE_KEY = isVieworksInventory
+        ? 'medicalServiceVieworksSortV1'
+        : (isGenorayInventory ? 'medicalServiceGenoraySortV1' : 'medicalServiceProductSortV1');
     const PRODUCT_SORT_KEYS = ['serial', 'name', 'bsid', 'owner', 'start', 'end', 'status'];
     const PRODUCT_MOBILE_BREAKPOINT = 768;
     let productViewportIsMobile = window.innerWidth <= PRODUCT_MOBILE_BREAKPOINT;
@@ -388,7 +412,9 @@
     let productRequestState = 'loading';
     let productTableResizeObserver = null;
     let productFreezeColumn = 'name';
-    const PRODUCT_FREEZE_STORAGE_KEY = 'medicalServiceProductFreezeV1';
+    const PRODUCT_FREEZE_STORAGE_KEY = isVieworksInventory
+        ? 'medicalServiceVieworksFreezeV1'
+        : (isGenorayInventory ? 'medicalServiceGenorayFreezeV1' : 'medicalServiceProductFreezeV1');
     const PRODUCT_FREEZE_COLUMN_COUNTS = Object.freeze({
         none: 0,
         serial: 1,
@@ -607,7 +633,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         setupAutocomplete();
 
         const editId = getEditParam();
-        if(editId){
+        if(editId && !isGenorayInventory && !isVieworksInventory){
             setTimeout(()=>{
                 openEditModal(editId);
                 highlightAndScroll(editId);
@@ -636,20 +662,24 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         const states = {
             loading: {
                 icon: 'fa-spinner fa-spin',
-                message: 'Loading products...',
-                summary: 'Loading products...',
+                message: isVieworksInventory ? 'Loading Vieworks items...' : (isGenorayInventory ? 'Loading Genoray items...' : 'Loading products...'),
+                summary: isVieworksInventory ? 'Loading Vieworks items...' : (isGenorayInventory ? 'Loading Genoray items...' : 'Loading products...'),
                 action: ''
             },
             error: {
                 icon: 'fa-triangle-exclamation',
-                message: 'Unable to load products right now.',
-                summary: 'Unable to load products',
+                message: isVieworksInventory ? 'Unable to load Vieworks items right now.' : (isGenorayInventory ? 'Unable to load Genoray items right now.' : 'Unable to load products right now.'),
+                summary: isVieworksInventory ? 'Unable to load Vieworks items' : (isGenorayInventory ? 'Unable to load Genoray items' : 'Unable to load products'),
                 action: '<button type="button" class="product-state-action" onclick="loadData()">Retry</button>'
             },
             empty: {
                 icon: 'fa-box-open',
-                message: hasFilter ? 'No products match your filters.' : 'No products available.',
-                summary: hasFilter ? 'No products match your filters' : 'No products available',
+                message: hasFilter
+                    ? (isVieworksInventory ? 'No Vieworks items match your filters.' : (isGenorayInventory ? 'No Genoray items match your filters.' : 'No products match your filters.'))
+                    : (isVieworksInventory ? 'No Vieworks items available.' : (isGenorayInventory ? 'No Genoray items available.' : 'No products available.')),
+                summary: hasFilter
+                    ? (isVieworksInventory ? 'No Vieworks items match your filters' : (isGenorayInventory ? 'No Genoray items match your filters' : 'No products match your filters'))
+                    : (isVieworksInventory ? 'No Vieworks items available' : (isGenorayInventory ? 'No Genoray items available' : 'No products available')),
                 action: hasFilter ? '<button type="button" class="product-state-action" onclick="clearProductFilters()">Clear Filters</button>' : ''
             }
         };
@@ -693,13 +723,13 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
 
         try {
             const [resP, resC, summaryRes] = await Promise.all([
-                fetch(freshUrl('/get_products'), { cache: 'no-store' }),
+                fetch(freshUrl(inventoryItemsUrl), { cache: 'no-store' }),
                 fetch(freshUrl('/get_clients'), { cache: 'no-store' }),
-                fetch(freshUrl('/get_products_summary'), { cache: 'no-store' })
+                fetch(freshUrl(inventorySummaryUrl), { cache: 'no-store' })
             ]);
 
             if(!resP.ok || !resC.ok || !summaryRes.ok){
-                throw new Error('Product inventory request failed');
+                throw new Error(`${inventoryNoun} inventory request failed`);
             }
 
             productsData = await resP.json();
@@ -715,9 +745,9 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
 
             renderTable(sortProductRows(productsData));
         } catch(error) {
-            console.error('[Products] Unable to load product inventory', error);
+            console.error(`[${inventoryMode}] Unable to load inventory`, error);
             if(hadExistingData){
-                productAlert('Unable to refresh product inventory. The existing list is still shown.');
+                productAlert(`Unable to refresh ${inventoryNoun} inventory. The existing list is still shown.`);
             }else{
                 renderProductRequestState('error');
             }
@@ -751,7 +781,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         formData.append('file', file);
 
         try {
-            const res = await fetch('/import_products', { 
+            const res = await fetch(inventoryImportUrl, {
                 method: 'POST', 
                 headers: { 'X-CSRFToken': getCSRFToken() },
                 body: formData 
@@ -763,14 +793,14 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
                 await loadData();
                 showImportToast(
                     'success',
-                    'Product Import Complete',
+                    `${inventoryLabel} Import Complete`,
                     `${buildImportSummary(data)}<div class="small text-muted mt-1">${data.message || ''}</div>`
                 );
             } else {
-                showImportToast('error', 'Product Import Failed', data.message || 'Import failed. Please check your CSV file.');
+                showImportToast('error', `${inventoryLabel} Import Failed`, data.message || 'Import failed. Please check your CSV file.');
             }
         } catch(err) {
-            showImportToast('error', 'Product Import Failed', 'Network or server error during import.');
+            showImportToast('error', `${inventoryLabel} Import Failed`, 'Network or server error during import.');
         } finally {
             if(importBtn){
                 importBtn.disabled = false;
@@ -867,11 +897,13 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         const noExpiry = document.getElementById('product-no-expiry-count');
         const state = document.getElementById('product-filter-state');
 
-        if(label) label.innerText = `Showing ${shown} of ${total} products`;
+        if(label) label.innerText = `Showing ${shown} of ${total} ${inventoryPlural.toLowerCase()}`;
         if(summary){
             summary.innerText = shown === 0
-                ? (hasFilter ? 'No products match your filters' : 'No products available')
-                : `Showing ${shown} of ${total} products`;
+                ? (hasFilter
+                    ? `No ${inventoryPlural.toLowerCase()} match your filters`
+                    : `No ${inventoryPlural.toLowerCase()} available`)
+                : `Showing ${shown} of ${total} ${inventoryPlural.toLowerCase()}`;
         }
         if(clearFilters) clearFilters.disabled = !hasFilter;
         if(active) active.innerText = `${counts.active} active`;
@@ -892,7 +924,8 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
 }
 
 function getProductIdentityLabel(product){
-    const name = String(product?.name || 'Unnamed Product').trim() || 'Unnamed Product';
+    const fallbackName = isVieworksInventory ? 'Unnamed Vieworks Item' : (isGenorayInventory ? 'Unnamed Genoray Item' : 'Unnamed Product');
+    const name = String(product?.name || fallbackName).trim() || fallbackName;
     const serial = String(product?.serial_number || 'Unknown').trim() || 'Unknown';
     return `${name} (S/N: ${serial})`;
 }
@@ -904,14 +937,14 @@ function renderProductRowActions(product){
 
     if(productCanEdit){
         actions += `
-            <button type="button" class="product-row-action product-row-edit" onclick="openEditModal('${serial}')" title="Edit product" aria-label="Edit ${identity}" aria-controls="prodModal">
+            <button type="button" class="product-row-action product-row-edit" onclick="openEditModal('${serial}')" title="Edit ${inventoryNoun}" aria-label="Edit ${identity}" aria-controls="prodModal">
                 <i class="fa-solid fa-pen" aria-hidden="true"></i>
             </button>`;
     }
 
     if(productCanDelete){
         actions += `
-            <button type="button" class="product-row-action product-row-delete" onclick="deleteProduct('${serial}')" title="Delete product" aria-label="Delete ${identity}">
+            <button type="button" class="product-row-action product-row-delete" onclick="deleteProduct('${serial}')" title="Delete ${inventoryNoun}" aria-label="Delete ${identity}">
                 <i class="fa-solid fa-trash" aria-hidden="true"></i>
             </button>`;
     }
@@ -935,7 +968,7 @@ function renderProductMobileCards(data){
         container.innerHTML = `
             <div class="product-mobile-empty">
                 <i class="fa-solid fa-box-open"></i>
-                <span>${productFiltersAreActive() ? 'No products match your filters.' : 'No products available.'}</span>
+                <span>${productFiltersAreActive() ? `No ${inventoryPlural.toLowerCase()} match your filters.` : `No ${inventoryPlural.toLowerCase()} available.`}</span>
                 ${productFiltersAreActive() ? '<button type="button" class="product-state-action" onclick="clearProductFilters()">Clear Filters</button>' : ''}
             </div>`;
         return;
@@ -951,14 +984,14 @@ function renderProductMobileCards(data){
         let actions = '';
         if(productCanEdit){
             actions += `
-                <button type="button" class="product-mobile-btn product-mobile-edit" onclick="openEditModal('${escapeHtml(p.serial_number)}')" title="Edit product" aria-label="Edit ${identity}" aria-controls="prodModal">
+                <button type="button" class="product-mobile-btn product-mobile-edit" onclick="openEditModal('${escapeHtml(p.serial_number)}')" title="Edit ${inventoryNoun}" aria-label="Edit ${identity}" aria-controls="prodModal">
                     <i class="fa-solid fa-pen" aria-hidden="true"></i>Edit
                 </button>`;
         }
 
         if(productCanDelete){
             actions += `
-                <button type="button" class="product-mobile-btn product-mobile-delete" onclick="deleteProduct('${escapeHtml(p.serial_number)}')" title="Delete product" aria-label="Delete ${identity}">
+                <button type="button" class="product-mobile-btn product-mobile-delete" onclick="deleteProduct('${escapeHtml(p.serial_number)}')" title="Delete ${inventoryNoun}" aria-label="Delete ${identity}">
                     <i class="fa-solid fa-trash" aria-hidden="true"></i>Delete
                 </button>`;
         }
@@ -969,7 +1002,7 @@ function renderProductMobileCards(data){
                     <div class="product-mobile-main">
                         <div class="product-mobile-sn">${escapeHtml(p.serial_number)}</div>
                         ${renderProductSerialCertificateLink(p, true)}
-                        <div class="product-mobile-name">${escapeHtml(p.name || 'Unnamed Product')}</div>
+                        <div class="product-mobile-name">${escapeHtml(p.name || fallbackName)}</div>
                         <div class="product-mobile-sn">BSID: ${escapeHtml(p.bsid || 'Not assigned')}</div>
                         <div class="product-mobile-owner">
                             <i class="fa-solid fa-hospital"></i>
@@ -1007,6 +1040,8 @@ function renderProductMobileCards(data){
 }
 
 function renderProductSerialCertificateLink(product, mobile = false){
+    if(isGenorayInventory) return '';
+    if(isVieworksInventory) return '';
     const certificate = product.calibration_certificate;
     if(!certificate || !certificate.preview_url) return '';
 
@@ -1249,18 +1284,21 @@ function renderTable(data) {
         const previousIndex = productsData.findIndex(product => product.serial_number === previousSerial);
         const previousProduct = previousIndex >= 0 ? productsData[previousIndex] : {};
         const selectedClient = masterClients.find(client => String(client.id) === String(savedData.client_id));
+        const savedBsid = Object.prototype.hasOwnProperty.call(savedData, 'bsid')
+            ? (savedData.bsid || '')
+            : (previousProduct.bsid || '');
         const updatedProduct = {
             ...previousProduct,
-            serial_number: savedData.serial_number,
-            name: savedData.name,
-            bsid: savedData.bsid || '',
+            serial_number: savedData.serial_number || previousProduct.serial_number,
+            name: savedData.name || previousProduct.name,
+            bsid: savedBsid,
             client_id: selectedClient ? selectedClient.id : savedData.client_id,
-            client_name: selectedClient?.name || 'N/A',
+            client_name: savedData.client_name || selectedClient?.name || previousProduct.client_name || 'N/A',
             start_warranty: savedData.start_warranty || '',
             end_warranty: savedData.end_warranty || '',
             under_contract: Boolean(savedData.under_contract)
         };
-        updatedProduct.computed_status = getProductWarrantyStatus(updatedProduct);
+        updatedProduct.computed_status = savedData.computed_status || getProductWarrantyStatus(updatedProduct);
 
         if(previousIndex >= 0){
             productsData[previousIndex] = updatedProduct;
@@ -1274,16 +1312,22 @@ function renderTable(data) {
 
     // --- MODAL CONTROL LOGIC ---
 
-    function openAddModal() { 
-        document.getElementById('modal-title').innerText = "Add New Equipment Entry";
-        document.getElementById('modal-product-context').innerText = "Create a new equipment record.";
+function openAddModal() {
+        document.getElementById('modal-title').innerText = isStandaloneInventory ? `Add New ${inventoryLabel} Item` : "Add New Equipment Entry";
+        document.getElementById('modal-product-context').innerText = isStandaloneInventory ? `Create a new ${inventoryLabel} item record.` : "Create a new equipment record.";
         document.getElementById('edit-prod-serial').value = ""; 
         document.getElementById('p-serial').disabled = false; 
         const serialHelp = document.getElementById('serial-edit-help');
-        if(serialHelp) serialHelp.innerText = "Enter the unique product serial number.";
+        if(serialHelp) serialHelp.innerText = isStandaloneInventory ? `Enter the unique ${inventoryLabel} serial number.` : "Enter the unique product serial number.";
         
         // Reset all input fields
         document.querySelectorAll('.modal-body input').forEach(i => i.value = ""); 
+        const bsidField = document.getElementById('p-bsid');
+        if (bsidField) {
+            bsidField.disabled = isGenorayInventory;
+            if(isVieworksInventory) bsidField.disabled = true;
+            bsidField.placeholder = isStandaloneInventory ? 'Assigned automatically on save' : 'Machine-level BSID';
+        }
         document.getElementById('p-under-contract').checked = false;
         
         prodModal.show(); 
@@ -1292,16 +1336,25 @@ function renderTable(data) {
     function openEditModal(sn) { 
         const p = productsData.find(x => x.serial_number === sn); 
         if(!p){
-            return productAlert("Product record was not found. Please refresh and try again.");
+            return productAlert(isStandaloneInventory
+                ? `${inventoryLabel} item record was not found. Please refresh and try again.`
+                : "Product record was not found. Please refresh and try again.");
         }
-        document.getElementById('modal-title').innerText = "Edit Product Record";
+        document.getElementById('modal-title').innerText = isStandaloneInventory ? `Edit ${inventoryLabel} Item` : "Edit Product Record";
         document.getElementById('modal-product-context').innerText = getProductIdentityLabel(p);
         document.getElementById('edit-prod-serial').value = sn; 
         
         document.getElementById('p-serial').value = sn; 
         document.getElementById('p-serial').disabled = false; 
+        const bsidField = document.getElementById('p-bsid');
+        if (bsidField) {
+            bsidField.disabled = false;
+            bsidField.placeholder = isStandaloneInventory ? 'Enter a replacement BSID' : 'Machine-level BSID';
+        }
         const serialHelp = document.getElementById('serial-edit-help');
-        if(serialHelp) serialHelp.innerText = "Serial number can be changed. This will update linked schedules and create an activity log.";
+        if(serialHelp) serialHelp.innerText = isStandaloneInventory
+            ? "Serial number can be changed. This will create an activity log."
+            : "Serial number can be changed. This will update linked schedules and create an activity log.";
         document.getElementById('p-name').value = p.name; 
         document.getElementById('p-bsid').value = p.bsid || '';
         
@@ -1364,14 +1417,21 @@ function renderTable(data) {
             return productAlert("Validation Error: Product name is required.");
         }
 
-        if (!data.client_id) {
+        const existingInventoryItem = editSN ? productsData.find(item => item.serial_number === editSN) : null;
+        if (isStandaloneInventory && editSN && existingInventoryItem?.bsid && !data.bsid) {
+            return productAlert("Validation Error: BSID cannot be cleared once it has been assigned.");
+        }
+
+        if (!data.client_id && !isStandaloneInventory) {
             return productAlert("Validation Error: Please select a medical center from the autocomplete list.");
         }
 
         if (editSN && data.serial_number !== editSN) {
             const proceed = await productConfirmDialog({
                 title: 'Change Serial Number?',
-                message: `Change product serial number from ${editSN} to ${data.serial_number}?\n\nLinked schedules using this product will be updated and the action will be recorded in Activity Logs.`,
+                message: isStandaloneInventory
+                    ? `Change ${inventoryLabel} serial number from ${editSN} to ${data.serial_number}?\n\nThe change will be recorded in Activity Logs.`
+                    : `Change product serial number from ${editSN} to ${data.serial_number}?\n\nLinked schedules using this product will be updated and the action will be recorded in Activity Logs.`,
                 confirmText: 'Change Serial',
                 cancelText: 'Cancel',
                 tone: 'warning',
@@ -1384,7 +1444,9 @@ function renderTable(data) {
          * REQUIREMENT FIX: Handling Serial Numbers with hyphens (e.g. 01-003)
          * Using encodeURIComponent to ensure URL validity during PUT requests.
          */
-        const url = editSN ? `/update_product/${encodeURIComponent(editSN)}` : '/add_product';
+        const url = editSN
+            ? (isStandaloneInventory ? `${inventoryItemsUrl}/${encodeURIComponent(editSN)}` : `/update_product/${encodeURIComponent(editSN)}`)
+            : (isStandaloneInventory ? inventoryItemsUrl : '/add_product');
         const method = editSN ? 'PUT' : 'POST';
 
         try {
@@ -1402,15 +1464,24 @@ function renderTable(data) {
                 const scrollX = window.scrollX;
                 const scrollY = window.scrollY;
                 prodModal.hide();
-                updateProductListAfterSave(data, editSN);
+                if (isStandaloneInventory) {
+                    updateProductListAfterSave(responseData.item || responseData, editSN);
+                } else {
+                    updateProductListAfterSave(data, editSN);
+                }
                 requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
-                productToast(editSN ? 'Product updated.' : 'Product added.', 'success');
+                productToast(
+                    editSN
+                        ? (isStandaloneInventory ? `${inventoryLabel} item updated.` : 'Product updated.')
+                        : (isStandaloneInventory ? `${inventoryLabel} item added.` : 'Product added.'),
+                    'success'
+                );
             } else {
                 productAlert("Database Error: " + productResponseMessage(res, responseData, "Action failed"));
             }
         } catch (error) {
             console.error('[Products] Unable to save product', error);
-            productAlert('Unable to save the product. Please check your connection and try again.');
+            productAlert(`Unable to save the ${inventoryNoun}. Please check your connection and try again.`);
         }
     }
 
@@ -1420,13 +1491,15 @@ function renderTable(data) {
 
         const product = productsData.find(item => item.serial_number === s);
         if(!product){
-            return productAlert("Product record was not found. Please refresh and try again.");
+            return productAlert(`${inventoryNoun} record was not found. Please refresh and try again.`);
         }
 
         const confirmation = await productConfirmDialog({
-            title: 'Delete Product?',
-            message: `Delete ${getProductIdentityLabel(product)}?\n\nThis permanently removes the product record and cannot be undone.`,
-            confirmText: 'Delete Product',
+            title: isStandaloneInventory ? `Delete ${inventoryLabel} Item?` : 'Delete Product?',
+            message: isStandaloneInventory
+                ? `Delete ${getProductIdentityLabel(product)}?\n\nThis permanently removes the ${inventoryLabel} item record and cannot be undone.`
+                : `Delete ${getProductIdentityLabel(product)}?\n\nThis permanently removes the product record and cannot be undone.`,
+            confirmText: isStandaloneInventory ? `Delete ${inventoryLabel} Item` : 'Delete Product',
             cancelText: 'Cancel',
             tone: 'danger',
             icon: 'trash'
@@ -1434,10 +1507,15 @@ function renderTable(data) {
         if(!confirmation) return;
 
         try {
-            const res = await fetch(`/delete_product/${encodeURIComponent(s)}`, {
+            const res = await fetch(
+                isStandaloneInventory
+                    ? `${inventoryItemsUrl}/${encodeURIComponent(s)}`
+                    : `/delete_product/${encodeURIComponent(s)}`,
+                {
                 method:'DELETE',
                 headers: { 'X-CSRFToken': getCSRFToken() } // SECURITY TOKEN ADDED
-            });
+                }
+            );
             const responseData = await productResponseData(res);
 
             if (res.ok) {
@@ -1446,8 +1524,8 @@ function renderTable(data) {
                 productAlert(productResponseMessage(res, responseData, 'Deletion failed on server'));
             }
         } catch (error) {
-            console.error('[Products] Unable to delete product', error);
-            productAlert('Unable to delete the product. Please check your connection and try again.');
+            console.error(`[${inventoryMode}] Unable to delete inventory item`, error);
+            productAlert(`Unable to delete the ${inventoryNoun}. Please check your connection and try again.`);
         }
     }
 </script>

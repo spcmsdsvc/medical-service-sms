@@ -1,5 +1,387 @@
 # Medical Service SMS — Approved Plans
 
+## Vieworks Inventory page
+
+**Status:** Executed — implementation uncommitted; commit, push, and publication were not authorized.
+**Approved:** 2026-09-15 — the owner submitted the complete Vieworks plan.
+**Detailed:** 2026-09-15.
+
+### Context and decisions
+
+Add Vieworks as the next Records → Inventory child beside Product Inventory and Genoray. It
+has Genoray's responsive seven-column page and full controls, but begins empty in its own
+standalone inventory. The columns are S/N, Product Name, BSID, Owner (Medical Center), Start
+Date, End Date, and Status. Owner uses the Client directory; dates and contract flag feed the
+same warranty/contract status calculation.
+
+The owner confirmed exact Genoray parity except the Vieworks name, separate storage, and
+six-digit-minimum `V-` sequence starting at `V-000001`. All active authenticated generic
+admins, verified superadmins, and verified regional admins see and manage all Vieworks items.
+Engineers and other roles cannot open its page or API/CSV routes. New page/CSV records ignore
+incoming BSIDs and receive durable server-assigned IDs. CSV updates preserve stored BSIDs;
+admins may replace a nonblank ID, subject to uniqueness, but cannot clear one. Generated
+numbers are never reused after assignment, deletion, or edit. Vieworks is not connected to
+Product Inventory, Genoray, schedules, purchase orders, or calibration certificates.
+
+### Investigation and approach
+
+- `app.py:2526-2553` contains the standalone Genoray item and BSID-counter models;
+  `:3011-3134` additively creates the tables and allocates numbers in a locked SQLite write
+  transaction. Add parallel Vieworks storage/counter with fixed `V-` and six-digit formatting;
+  share only small fixed-brand sequence logic if it reduces duplicate risk without redesign.
+- `app.py:21588-21603`, `:25470-25631`, and `:53949-54261` contain the Genoray page, list,
+  summary, payload, CRUD, import, and export conventions. Vieworks routes need their own
+  table/query/identity with the same permission boundary and response shape.
+- `templates/products.html:3-13`, `:35-163`, and `:392-425` already select Product or Genoray
+  mode for labels/endpoints, seven-column desktop/mobile presentation, and saved preferences.
+  Add Vieworks mode without changing Product or Genoray behavior.
+- `templates/layout.html:166-314` holds the Records paths and Inventory submenu. Add Vieworks
+  as a guarded sibling and update active/open paths; its changed navigation requires a
+  monotonic service-worker cache bump from the live marker in `app.py:19711`.
+- The current Genoray and Automatic Genoray BSIDs code is uncommitted. Preserve that work and
+  protected dirty `scheduler.db`, handoffs, `.claude/`, `output/`, and `tmp/` during execution.
+
+### Numbered execution steps
+
+1. Preflight: read all applicable `AGENTS.md`, this complete plan, `changes.md`, Git status,
+   current Genoray source/tests, release JSON, and service-worker cache version. Confirm no
+   material state change invalidates this plan or conflicts with protected owner work. Mark
+   this plan **In progress** and record the implementation start in `changes.md`. Done when
+   the approved scope is still safe before the first source edit.
+2. In `app.py`, add `VieworksItem` (`vieworks_item`) and `VieworksBsidCounter`
+   (`vieworks_bsid_counter`) with the Genoray fields, Client link, serial primary key, and
+   case-insensitive unique nonblank BSID index. Add an additive ensure helper and a durable
+   counter seeded above any existing canonical `V-<number>` rows, default 1. Generate
+   `V-{number:06d}` under the same write transaction as a successful new item; reserve
+   manually assigned canonical `V-` numbers and never reuse issued values. Done when an empty
+   isolated DB starts at `V-000001` and concurrent creates cannot duplicate an ID.
+3. Add a Vieworks-only authorization helper in `app.py` that follows the exact verified
+   Genoray access rule, and expose its sidebar flag through `inject_navigation_access()`.
+   Add `/vieworks`, GET/POST `/api/vieworks/items`, GET `/api/vieworks/summary`, PUT/DELETE
+   `/api/vieworks/items/<path:serial_number>`, POST `/vieworks/import`, and GET
+   `/vieworks/export`. Guard every endpoint; use the Genoray response/CSV conventions,
+   validation, duplicate handling, owner/status calculation, and logging with Vieworks-only
+   queries. Done when permitted roles succeed, all other roles get denied, and no Product or
+   Genoray row is read or changed by Vieworks mutations.
+4. Extend `templates/products.html` with a Vieworks mode using its own labels, API/summary/
+   import/export URLs, sort and freeze storage keys, and add/edit/CSV messages. Keep the same
+   seven-column table and mobile cards, filters, sort/freeze choices, counts, dialogs, print,
+   CSV tools, loading/empty/error states, and escaping. Disable the BSID field on add with
+   assigned-on-save text; allow nonblank replacement on edit and use returned server item for
+   immediate list display. Omit certificate/Product deep links. Done when all three modes
+   render their correct endpoints and Product/Genoray regressions remain absent.
+5. Add a guarded Vieworks child in `templates/layout.html` beneath Inventory and include
+   `/vieworks` in the Records and nested Inventory active/open path lists. Preserve the
+   existing engineer Product link. Bump the live embedded service-worker cache version in
+   `app.py` monotonically. Done when authorized admins see the link, engineers do not, and
+   installed navigation shells can refresh.
+6. Add focused `tests/test_vieworks_inventory.py` using a disposable isolated SQLite DB.
+   Run a fail-first checkpoint against the current implementation and record truthful
+   results. Test every role/route boundary, empty list, sequential and concurrent `V-`
+   allocation, deletion/edit nonreuse, CSV creates/updates, admin nonblank edit and duplicate/
+   clear denial, owner/status mapping, responsive seven-column contracts, and Product/Genoray
+   non-interference. Add a Vieworks item to `static/changelog/releases.json`; update the
+   current Genoray/service-worker source contracts only where the new version requires it.
+   Update `changes.md` and this plan with actual outcomes. Done when focused tests and release
+   metadata are valid.
+7. Self-review the authorized diff and protected-worktree allowlist. Run focused Vieworks,
+   Genoray, Product, navigation, service-worker, and related tests; isolated full discovery;
+   Python/JS/Jinja/JSON syntax checks; and `git diff --check`. Record exact pass/fail/skip
+   counts, including unrelated baseline failures. Use Flask test-client and source-level UI
+   checks; browser automation is prohibited by project instructions without separate owner
+   permission. Return one consolidated implementation report and stop. Do not run formal
+   post-implementation review, commit, push, deploy, change Railway, or touch production data.
+
+### Exclusions, verification, and risks
+
+No Product/Genoray data migration, shared machine identity, schedule/P.O./certificate link,
+new dependency, production database or Railway operation, browser/Codex UI automation,
+commit, push, or deployment is included. Six digits are a minimum width, so numbering
+continues past `V-999999`. Source-level and Flask checks replace browser verification under
+the owner's Codex-app safety prohibition.
+
+The material risks are crossing brand tables or sequences, unguarded Vieworks endpoints,
+duplicate/reused IDs under concurrent writes, and breaking Product/Genoray mode while adding
+a third page. Dedicated Vieworks storage, the existing locked-counter pattern, a shared
+permission boundary, isolation/authorization tests, and existing-mode regression checks
+bound those risks. Verification is proportionate and reports baseline failures honestly.
+
+### Implementation outcome
+
+- Added standalone `VieworksItem` and `VieworksBsidCounter` storage in `app.py`, with additive
+  table/index creation, durable transactional `V-` allocation beginning at `V-000001`,
+  nonreuse after deletion or edits, manual-number reservation, and case-insensitive nonblank
+  BSID uniqueness. Vieworks rows have no Product, Genoray, schedule, purchase-order, or
+  calibration-certificate relationship.
+- Added the guarded `/vieworks` page, Vieworks list/summary/CRUD/API routes, CSV import/export,
+  owner lookup, warranty/contract/status mapping, activity logging, and the same active
+  admin/superadmin/regional-admin boundary as Genoray. Incoming BSIDs are ignored for new
+  records; stored nonblank IDs are preserved by CSV updates and may be replaced by admins but
+  cannot be cleared.
+- Extended `templates/products.html` with a Vieworks mode and separate endpoint, label, sort,
+  freeze, and CSV preferences while preserving the shared seven-column desktop/mobile layout,
+  controls, dialogs, print, counts, and Genoray/Product behavior. Added the guarded Inventory
+  submenu link and active path handling in `templates/layout.html`.
+- Bumped the embedded service-worker cache marker to v160 and added the published Vieworks
+  release item in `static/changelog/releases.json`. Updated the affected Genoray/sidebar cache
+  contracts to assert monotonic versions rather than stale exact literals.
+- Added `tests/test_vieworks_inventory.py` with isolated Flask/SQLite coverage for route roles,
+  empty start, sequencing/nonreuse, concurrent creation, CSV create/update, BSID editing,
+  owner/status mapping, responsive source contracts, export, and Product/Genoray isolation.
+  The fail-first checkpoint failed before implementation as expected; the focused Vieworks
+  suite then passed 9 tests. The combined related inventory/product suites passed 70 tests, and
+  the navigation, service-worker, offline, schedule, and stock group passed 181 tests.
+- Isolated full discovery ran 1,163 tests: 1,142 passed, 19 unrelated baseline failures, and
+  2 skipped. AST, Jinja render, rendered Vieworks inline-JavaScript `node --check`, release
+  JSON, and `git diff --check` validation passed. `py_compile` was not usable because the
+  protected existing `__pycache__` denied its bytecode write; AST parsing supplied the source
+  syntax check. Browser automation, production data, Railway, commit, and push actions were
+  excluded as authorized.
+
+## Automatic Genoray BSIDs
+
+**Status:** Executed — implementation uncommitted; commit, push, and publication were not authorized.
+**Approved:** 2026-09-15 — the owner submitted the complete automatic-BSID plan.
+**Detailed:** 2026-09-15.
+
+### Context and decisions
+
+The newly implemented Genoray page currently accepts typed BSIDs in its add/edit dialog and
+CSV import. Give every future newly created Genoray record a server-generated BSID beginning
+at `G-00001`, with at least five digits. Preserve existing Genoray BSIDs, including blanks and
+manual values. Do not alter Product Inventory BSID behavior or records.
+
+The owner decided that page adds and new CSV rows both generate IDs and ignore supplied BSID
+values; CSV rows updating existing Genoray records preserve their BSIDs. Admins may replace an
+assigned Genoray BSID in the edit dialog, subject to uniqueness, but cannot clear a nonblank
+one. Existing blank records may remain blank until explicitly edited. Generated numbers are
+never reused after a successful assignment, deletion, or edit. Export retains stored values.
+
+### Investigation and approach
+
+- `app.py:2526-2544` stores Genoray BSIDs separately from Product; `:2988` creates its
+  standalone table and unique nonblank BSID index.
+- `app.py:53799-53940` currently accepts request BSIDs for Genoray creation and editing;
+  `:53966-54108` accepts CSV BSIDs for creates and updates; `:54113` exports stored BSIDs.
+- `templates/products.html:219-221` renders a shared editable BSID field and `:1299-1335`
+  prepares the add/edit modal. Genoray mode can explain automatic assignment without changing
+  Product mode.
+- The SQLite database is already the application's storage (`app.py:791-838`). A Genoray-only
+  counter row updated in the same transaction as creation is the minimum durable way to avoid
+  deletion/edit reuse and serialize concurrent number allocation. Seed its next number above
+  current `G-` numeric BSIDs; no existing row is rewritten.
+
+### Numbered execution steps
+
+1. Preflight: read applicable `AGENTS.md`, this plan, `changes.md`, affected source/tests, and
+   Git status. Preserve the current uncommitted Genoray implementation and dirty
+   `scheduler.db`, handoff files, `.claude/`, `output/`, and `tmp/`. Mark this plan **In progress**
+   and record implementation start in `changes.md`. Done when the current Genoray code still
+   matches the plan and protected work remains untouched.
+2. In `app.py`, add a Genoray-only persistent counter table and additive ensure/initialization
+   helper beside `GenorayItem`/`ensure_genoray_item_table()`. Seed `next_number` to one above
+   the highest currently stored canonical `G-` number, or 1 if none exists. In the creation
+   transaction, atomically advance the counter, format `G-{number:05d}`, and save the item;
+   retry/skip occupied IDs safely. Successful assignments survive deletion/edit without reuse.
+   Done when two sequential creates start `G-00001`, `G-00002` in an empty isolated DB and
+   simultaneous allocations cannot duplicate numbers.
+3. In `add_genoray_item()` and `genoray_payload_values()` in `app.py`, ignore incoming BSID on
+   creation and assign the generated ID before commit. Keep the generated ID in the existing
+   response shape. In `update_genoray_item()`, retain admin editing, duplicate protection, and
+   reject clearing a previously nonblank BSID; preserve a pre-existing blank on unrelated
+   edits. Ensure manually assigned canonical `G-` numbers cannot later be generated again.
+   Done when add/update behavior follows these rules and Product routes are unchanged.
+4. In `import_genoray_items()` in `app.py`, generate an ID for each valid new row in CSV order,
+   regardless of a CSV BSID cell; preserve existing rows' BSIDs on update. Keep import rollback,
+   counts, owner/status behavior, and `export_genoray_items()` output. Done when skipped rows do
+   not receive stored items/IDs, successful new rows have generated IDs, and updates/export
+   reflect stored values.
+5. In `templates/products.html`, show the Genoray add form's BSID as automatically assigned on
+   save and prevent typing there; show the stored ID for authorized edit and allow nonblank
+   replacement. Keep Product mode's editable field, validation, and save behavior intact.
+   Use the returned generated value for immediate Genoray list updates. Done when the table
+   displays the server-assigned ID without a refresh and Product markup/flow is unchanged.
+6. Extend `tests/test_genoray_inventory.py` with a fail-first checkpoint against the current
+   code and focused cases for empty-start numbering, page/CSV creation, ignored supplied CSV
+   IDs, CSV update preservation, existing manual/blank preservation, edit/clear/duplicate
+   rules, deletion/edit number nonreuse, and Product isolation. Use the isolated disposable
+   test DB, never `scheduler.db`. Update the existing uncommitted Genoray release item in
+   `static/changelog/releases.json` to mention automatic IDs, and update `changes.md`/this
+   plan with actual outcomes. Done when focused tests pass and records are factual.
+7. Self-review only the authorized diff; run focused Genoray and Product tests, relevant
+   related suites, the isolated full suite, Python/JS/Jinja/JSON checks, and `git diff --check`.
+   Record exact pass/fail/skip results, including baseline failures. Use Flask test-client and
+   source checks; project rules prohibit browser automation without separate owner permission.
+   Stop with one consolidated report. Do not commit, push, deploy, change Railway or production
+   data, or start formal post-implementation review.
+
+### Exclusions, verification, and risks
+
+No backfill or replacement of existing IDs, Product Inventory change, second inventory page,
+certificate/schedule/P.O. integration, new dependency, browser/Codex UI operation, production
+database operation, Railway change, commit, or push is authorized. The prior Genoray release
+item is still uncommitted, so update it rather than creating a duplicate release item. No
+service-worker bump is planned because this package changes the Genoray page behavior but not
+the precached navigation shell; recheck the live cache list during preflight.
+
+The material risks are duplicate IDs under concurrent adds/imports, reissuing a deleted ID,
+silently changing existing/manual BSIDs, and altering the shared Product form. The durable
+counter, existing unique BSID index, isolated tests, and Product regression checks address
+those paths. Test positives must fail on the unchanged implementation, and full-suite results
+must be reported truthfully rather than treated as all-green if unrelated failures recur.
+
+### Implementation outcome
+
+- Added the additive `genoray_bsid_counter` table and transaction helpers in `app.py`. The
+  counter is seeded above existing canonical `G-<number>` BSIDs, advanced atomically under a
+  SQLite `BEGIN IMMEDIATE` writer transaction, formatted with a five-digit minimum, and kept
+  monotonic across deletion and BSID edits. Existing canonical manual numbers advance the
+  counter and occupied candidates are skipped.
+- Genoray page adds and valid new CSV rows now ignore supplied BSID cells and receive the next
+  generated value. CSV updates leave stored BSIDs unchanged. Existing Genoray BSIDs remain
+  editable by authorized administrators with case-insensitive duplicate rejection and a clear
+  rejection for nonblank values; historical blank/manual values remain intact. Product routes
+  and BSID behavior were left unchanged.
+- Updated the shared Product/Genoray dialog so new Genoray BSIDs are shown as assigned on save,
+  the add field is disabled, existing records expose an editable replacement field, and the
+  returned server item updates the list immediately. Updated the existing Genoray release item
+  description to document automatic IDs.
+- The HEAD fail-first source checkpoint confirmed the automatic-BSID markers were absent before
+  this package; the prior Genoray page test module could not run against that older HEAD because
+  HEAD predates the Genoray routes. The focused Genoray suite passed **14/14**, and related
+  Product inventory/contract/certificate tests passed **19/19**. AST, Jinja, extracted inline
+  JavaScript, release JSON, and `git diff --check` validations passed. Isolated full discovery
+  ran **1,154 tests: 1,133 passed, 19 unrelated baseline failures, and 2 skips**; failures were
+  confined to Changelog, Purchase Order rate-limit setup, and staff-creation workflows.
+- No browser/Codex UI operation, production database or Railway action, service-worker bump,
+  commit, push, or deployment was performed. The implementation remains uncommitted and
+  protected dirty artifacts were preserved.
+
+## Genoray Inventory page
+
+**Status:** Executed — implementation uncommitted; commit, push, and publication were not authorized.
+**Approved:** 2026-09-15 — the owner submitted the complete Genoray plan for implementation.
+**Detailed:** 2026-09-15.
+
+### Context and decisions
+
+Add the first of two planned pages beneath an Inventory submenu in the Records sidebar. Genoray
+must look and behave like Product Inventory, including its responsive list, seven columns,
+filters, sort/freeze controls, counts, CRUD dialogs, CSV import/export, and print action. It
+starts empty in its own table. Its machines do not participate in Product Inventory, schedules,
+purchase orders, or calibration certificates. The second page is a later, separate package.
+
+The seven columns are S/N, Product Name, BSID, Owner (Medical Center), Start Date, End Date, and
+Status. Dates are warranty dates; the existing warranty/contract calculation supplies Status.
+All active authenticated generic admins, verified superadmins, and verified regional admins
+can see and manage every Genoray record. Engineers and all other roles cannot access the page,
+API, import, or export. Product Inventory access and data remain unchanged.
+
+### Investigation and approach
+
+- `templates/products.html:25-155` supplies the pictured seven-column page, toolbar, filters,
+  freezing, sorting, and responsive table; its modal at `:180-275` supplies the data fields.
+- `app.py:2498-2523` defines the existing Product model, `:2598` computes warranty/contract
+  status, and `:21358`, `:25167`, `:53173-53715` hold the Product page/data/mutation/CSV routes.
+- `app.py:8898-8930` verifies superadmin and regional-admin identities; its system-admin helper
+  deliberately excludes generic admins. Genoray needs a dedicated narrow permission helper.
+- `templates/layout.html:164-297` gives Records one direct Inventory link, including for
+  engineers. Make that link a submenu without changing the engineer's Product access; show its
+  Genoray child only through the same server permission helper.
+- `app.py:19622` holds the service-worker cache marker; the navigation shell change requires a
+  monotonic bump from the live version read at implementation time.
+
+### Numbered execution steps
+
+1. Preflight: read all applicable `AGENTS.md`, this plan, `changes.md`, affected source/tests,
+   and Git status. Preserve dirty `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`,
+   and other owner work. Mark this plan **In progress** and record the implementation start in
+   `changes.md`. Done when no material source or protected-state change invalidates the plan.
+2. Add `can_access_genoray_inventory(user=None)` to `app.py` with active/authenticated checking,
+   generic `admin` role acceptance, and the existing verified superadmin/regional helpers. Add
+   its navigation flag through `inject_navigation_access()` and guard every new Genoray route.
+   Done when allowed roles pass and engineers/other roles fail at page and API boundaries.
+3. Add `GenorayItem` (`genoray_item`) and `ensure_genoray_item_table()` in `app.py`. Use serial
+   number as primary key, required name, nullable client foreign key and BSID, nullable date
+   fields, and a default-false contract flag. Create the table additively with `checkfirst`;
+   do not mutate `product`. Done when new and existing isolated SQLite test databases can open
+   Genoray without changing Product rows or existing schemas.
+4. Add the dedicated `/genoray` page, `/api/genoray/items` GET/POST,
+   `/api/genoray/items/<path:serial_number>` PUT/DELETE, `/api/genoray/summary` GET,
+   `/genoray/import` POST, and `/genoray/export` GET in `app.py`. Match the Product page's
+   field/response conventions, client lookup, date/contract status, CSV headers and import
+   counts. Reject duplicate serials and case-insensitive duplicate BSIDs within Genoray,
+   including CSV rows; preserve Product identities and workflows. Done when CRUD/CSV operate
+   only on Genoray and all routes apply the permission helper.
+5. Adapt `templates/products.html` for a Genoray mode while retaining existing Product mode.
+   Pass page-specific labels, route URLs, sort/freeze storage keys, and certificate/deep-link
+   capability from the page route. Keep the same seven columns, controls, dialogs, mobile
+   cards, loading/empty/error states, and escaping; omit certificate links and Product deep
+   links in Genoray mode. Done when either mode renders the correct data and controls without
+   changing Product behavior.
+6. Change `templates/layout.html` so Inventory expands to Product Inventory and Genoray.
+   Preserve the existing engineer-visible Product link; expose Genoray only to its authorized
+   roles, and update active/open path handling. Bump the live service-worker cache version in
+   `app.py` monotonically. Done when the menu reflects route authorization and new shell code
+   refreshes on installed devices.
+7. Add a focused `tests/test_genoray_inventory.py` using the project's isolated disposable
+   test-database convention. Before completing implementation, run suitable fail-first tests
+   against the unchanged behavior and record the actual failure. Cover role allow/deny for all
+   routes, empty start, CRUD/CSV/duplicates, owner and status mapping, mobile/table UI
+   contracts, and Product non-interference. Add one user-facing Genoray item in
+   `static/changelog/releases.json`; update `changes.md` and this plan with truthful results.
+   Done when focused tests pass and release JSON remains valid.
+8. Self-review the authorized diff and protected-worktree allowlist. Run focused Product,
+   navigation, service-worker, and Genoray tests, then the isolated full suite, Python/JS/Jinja
+   syntax checks, release JSON validation, and `git diff --check`. Use Flask test-client and
+   source-level UI checks; browser automation is prohibited without separate owner permission.
+   Record exact pass/fail/skip results. Stop after one consolidated implementation report;
+   leave changes uncommitted and unpublished. Formal post-implementation review, corrections,
+   commit, push, and deployment require their separate owner gates.
+
+### Exclusions and verification limits
+
+No second inventory page, Product migration or backfill, shared machine identity, schedule/P.O./
+certificate integration, Railway settings, production data operation, manual deployment,
+browser/Codex UI automation, commit, or push is included. The focused test must prove its
+authorization assertions can fail on unchanged source and verify realistic data isolation.
+Desktop/mobile markup and syntax are checked without browser automation under the project's
+Codex-app testing prohibition. A release entry and service-worker bump accompany the shell
+change; the current version is re-read before editing rather than assuming a fixed number.
+
+### Risks
+
+The principal risks are leaking Genoray data through an unguarded endpoint, accidentally
+writing Product rows while reusing page code, and breaking existing engineer Product access
+while adding the submenu. One shared Genoray guard, dedicated table/routes, isolated tests,
+and Product/navigation regression checks bound those risks.
+
+### Implementation outcome
+
+- Added the administrator-only Genoray permission helper, navigation flag, standalone
+  `genoray_item` table, additive table/index initialization, page route, list/summary APIs,
+  CRUD APIs, CSV import/export, owner lookup, duplicate protection, contract-aware status, and
+  activity logging in `app.py`. Genoray rows have no schedule, purchase-order, or calibration
+  certificate relationship, and Product rows/routes remain separate.
+- Adapted `templates/products.html` to use the existing responsive Product Inventory controls in
+  Product or Genoray mode, with separate Genoray endpoints and sort/freeze storage keys,
+  administrator-only `Genoray` navigation in `templates/layout.html`, and no certificate or
+  Product deep links in Genoray mode. Bumped the embedded service-worker cache to v159 and added
+  the published Genoray entry in `static/changelog/releases.json`.
+- Added `tests/test_genoray_inventory.py`. The fail-first source checkpoint against the unchanged
+  `HEAD` reported all seven expected Genoray contracts missing. The focused Genoray suite passed
+  **7/7**, including the three permitted roles, engineer/other-role/inactive denial, empty start,
+  CRUD/CSV/duplicates, owner/status mapping, sidebar visibility, and Product isolation.
+- Related Product, navigation, Stock Inventory, HR Schedule Viewer, service-worker, and offline
+  checks passed **110/110**. Python AST, Jinja template parsing, release JSON, Node inline
+  JavaScript, service-worker, and `git diff --check` validations passed. `py_compile` was also
+  attempted but could not write the existing protected `__pycache__` path; AST parsing supplied
+  the syntax check.
+- The isolated full discovery used a disposable SQLite database and ran **1146 tests** with
+  **1125 passed, 19 unrelated pre-existing failures, and 2 skips**. The failures were confined
+  to Changelog, Purchase Order, and staff-creation workflows; no Genoray test failed. No browser
+  automation, production database, Railway action, commit, or push was performed.
+
 ## Approval Center Search, Filters, and Pagination
 
 **Status:** Executed — implementation commit `be1e336`; publication to `origin/main` authorized.

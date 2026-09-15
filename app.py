@@ -1347,6 +1347,8 @@ def inject_navigation_access():
         'nav_is_approval_center_user': is_approval_center_user(),
         'nav_is_approver_only': is_approver_only_user(),
         'nav_can_access_calibration_center': can_access_calibration_center(),
+        'nav_can_access_genoray_inventory': can_access_genoray_inventory(),
+        'nav_can_access_vieworks_inventory': can_access_vieworks_inventory(),
         'nav_can_access_accounting_center': can_access_accounting_center(),
         'nav_is_scheduler': is_scheduler_user(),
         'nav_can_administer_personnel': can_administer_personnel(),
@@ -2522,6 +2524,62 @@ class Product(db.Model):
     shifts = db.relationship('Shift', backref='product', lazy=True)
 
 
+class GenorayItem(db.Model):
+    """Standalone Genoray equipment inventory.
+
+    Genoray equipment intentionally has no relationship to schedules, purchase orders,
+    or calibration certificates.  It shares only the existing Client directory and the
+    warranty/contract status calculation with Product Inventory.
+    """
+    __tablename__ = 'genoray_item'
+
+    serial_number = db.Column(db.String(100), primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=True, index=True)
+    start_warranty_date = db.Column(db.Date, nullable=True)
+    end_warranty_date = db.Column(db.Date, nullable=True)
+    under_contract = db.Column(db.Boolean, default=False, nullable=False)
+    bsid = db.Column(db.String(40), nullable=True, index=True)
+
+    owner = db.relationship('Client', foreign_keys=[client_id])
+
+
+class GenorayBsidCounter(db.Model):
+    """Durable, Genoray-only sequence state for automatically assigned BSIDs."""
+    __tablename__ = 'genoray_bsid_counter'
+
+    id = db.Column(db.Integer, primary_key=True)
+    next_number = db.Column(db.Integer, nullable=False)
+
+
+class VieworksItem(db.Model):
+    """Standalone Vieworks equipment inventory.
+
+    Vieworks equipment intentionally has no relationship to schedules, purchase orders,
+    or calibration certificates. It shares only the existing Client directory and the
+    warranty/contract status calculation with Product Inventory.
+    """
+    __tablename__ = 'vieworks_item'
+
+    serial_number = db.Column(db.String(100), primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=True, index=True)
+    start_warranty_date = db.Column(db.Date, nullable=True)
+    end_warranty_date = db.Column(db.Date, nullable=True)
+    under_contract = db.Column(db.Boolean, default=False, nullable=False)
+    bsid = db.Column(db.String(40), nullable=True, index=True)
+
+    owner = db.relationship('Client', foreign_keys=[client_id])
+
+
+class VieworksBsidCounter(db.Model):
+    """Durable, Vieworks-only sequence state for automatically assigned BSIDs."""
+    __tablename__ = 'vieworks_bsid_counter'
+
+    id = db.Column(db.Integer, primary_key=True)
+    next_number = db.Column(db.Integer, nullable=False)
+
+
 _product_contract_column_ready = False
 
 
@@ -2592,6 +2650,39 @@ def product_bsid_duplicate(value, exclude_serial=None):
     )
     if exclude_serial:
         query = query.filter(Product.serial_number != exclude_serial)
+    return query.first()
+
+
+def normalize_genoray_bsid(value):
+    """Trim a Genoray BSID while preserving its displayed casing."""
+    cleaned = clean_str(value)
+    return cleaned[:40] if cleaned else ''
+
+
+_GENORAY_NUMBERED_BSID_RE = re.compile(r'^G-(\d+)$', re.IGNORECASE)
+
+
+def genoray_bsid_number(value):
+    """Return the numeric part of a canonical Genoray G-number, if present."""
+    match = _GENORAY_NUMBERED_BSID_RE.fullmatch(normalize_genoray_bsid(value))
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def genoray_bsid_duplicate(value, exclude_serial=None):
+    """Return a Genoray item using this BSID case-insensitively."""
+    normalized = normalize_genoray_bsid(value)
+    if not normalized:
+        return None
+    query = GenorayItem.query.filter(
+        func.lower(func.trim(GenorayItem.bsid)) == normalized.casefold()
+    )
+    if exclude_serial:
+        query = query.filter(GenorayItem.serial_number != exclude_serial)
     return query.first()
 
 
@@ -2937,11 +3028,301 @@ _shift_travel_block_columns_ready = False
 _shift_creation_token_ready = False
 _travel_liquidation_tables_ready = False
 _stock_inventory_tables_ready = False
+_genoray_item_table_ready = False
+_genoray_bsid_counter_ready = False
+_vieworks_item_table_ready = False
+_vieworks_bsid_counter_ready = False
 _calibration_report_conversion_table_ready = False
 _calibration_report_conversion_worker = None
 _calibration_report_conversion_worker_lock = threading.Lock()
 _calibration_report_conversion_worker_wakeup = threading.Event()
 _calibration_report_conversion_backfill_checked = False
+
+
+def ensure_genoray_item_table():
+    """Create Genoray inventory and durable BSID sequence tables additively."""
+    global _genoray_item_table_ready, _genoray_bsid_counter_ready
+    if _genoray_item_table_ready and _genoray_bsid_counter_ready:
+        return
+    try:
+        GenorayItem.__table__.create(db.engine, checkfirst=True)
+        GenorayBsidCounter.__table__.create(db.engine, checkfirst=True)
+        # The ORM primary key prevents exact serial duplicates.  Route-level
+        # normalization handles case-insensitive serials, while this partial index
+        # protects nonblank BSIDs if a write bypasses the HTTP validation.
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_genoray_bsid_nonblank "
+                "ON genoray_item (lower(trim(bsid))) "
+                "WHERE bsid IS NOT NULL AND trim(bsid) <> ''"
+            )
+            existing_bsid_rows = connection.exec_driver_sql(
+                "SELECT bsid FROM genoray_item "
+                "WHERE bsid IS NOT NULL AND trim(bsid) <> ''"
+            ).fetchall()
+            highest_number = max(
+                (number for (value,) in existing_bsid_rows
+                 if (number := genoray_bsid_number(value)) is not None),
+                default=0,
+            )
+            seed_number = highest_number + 1
+            connection.exec_driver_sql(
+                "INSERT OR IGNORE INTO genoray_bsid_counter (id, next_number) VALUES (1, ?)",
+                (seed_number,),
+            )
+            connection.exec_driver_sql(
+                "UPDATE genoray_bsid_counter "
+                "SET next_number = CASE WHEN next_number < ? THEN ? ELSE next_number END "
+                "WHERE id = 1",
+                (seed_number, seed_number),
+            )
+        _genoray_item_table_ready = True
+        _genoray_bsid_counter_ready = True
+    except Exception as table_error:
+        print(f"[Genoray] Unable to ensure genoray_item table: {table_error}", flush=True)
+        raise
+
+
+def ensure_genoray_bsid_counter_row():
+    """Ensure the counter row exists in the current write transaction."""
+    if not (_genoray_item_table_ready and _genoray_bsid_counter_ready):
+        ensure_genoray_item_table()
+
+    existing_bsid_rows = db.session.execute(db.text(
+        "SELECT bsid FROM genoray_item "
+        "WHERE bsid IS NOT NULL AND trim(bsid) <> ''"
+    )).fetchall()
+    highest_number = max(
+        (number for (value,) in existing_bsid_rows
+         if (number := genoray_bsid_number(value)) is not None),
+        default=0,
+    )
+    seed_number = highest_number + 1
+    db.session.execute(
+        db.text(
+            "INSERT OR IGNORE INTO genoray_bsid_counter (id, next_number) "
+            "VALUES (1, :seed_number)"
+        ),
+        {'seed_number': seed_number},
+    )
+    db.session.execute(
+        db.text(
+            "UPDATE genoray_bsid_counter "
+            "SET next_number = CASE WHEN next_number < :seed_number "
+            "THEN :seed_number ELSE next_number END "
+            "WHERE id = 1"
+        ),
+        {'seed_number': seed_number},
+    )
+
+
+def begin_genoray_write_transaction():
+    """Acquire SQLite's writer lock before any Genoray write-transaction reads."""
+    # Shared before-request migrations may have opened a read transaction.  They
+    # perform no writes for this request, so clear that snapshot before upgrading
+    # to IMMEDIATE; otherwise SQLite can reject a stale read-to-write upgrade.
+    db.session.rollback()
+    db.session.connection().exec_driver_sql('BEGIN IMMEDIATE')
+
+
+def allocate_genoray_bsid():
+    """Allocate a unique G-number while holding the current DB write transaction."""
+    ensure_genoray_bsid_counter_row()
+    while True:
+        # The UPDATE acquires SQLite's writer lock before reading the value back.
+        # Keeping this transaction open through the item INSERT and commit makes
+        # concurrent page adds/import rows consume distinct sequence values.
+        db.session.execute(db.text(
+            "UPDATE genoray_bsid_counter "
+            "SET next_number = next_number + 1 "
+            "WHERE id = 1"
+        ))
+        next_number = db.session.execute(db.text(
+            "SELECT next_number FROM genoray_bsid_counter WHERE id = 1"
+        )).scalar()
+        if next_number is None:
+            raise RuntimeError('Genoray BSID counter is unavailable.')
+
+        candidate = f'G-{int(next_number) - 1:05d}'
+        if not genoray_bsid_duplicate(candidate):
+            return candidate
+
+
+def reserve_genoray_manual_bsid(value):
+    """Keep manually assigned canonical G-numbers ahead of future generation."""
+    number = genoray_bsid_number(value)
+    if number is None:
+        return
+    ensure_genoray_bsid_counter_row()
+    next_number = number + 1
+    db.session.execute(
+        db.text(
+            "UPDATE genoray_bsid_counter "
+            "SET next_number = CASE WHEN next_number < :next_number "
+            "THEN :next_number ELSE next_number END "
+            "WHERE id = 1"
+        ),
+        {'next_number': next_number},
+    )
+
+
+def ensure_vieworks_item_table():
+    """Create Vieworks inventory and durable BSID sequence tables additively."""
+    global _vieworks_item_table_ready, _vieworks_bsid_counter_ready
+    if _vieworks_item_table_ready and _vieworks_bsid_counter_ready:
+        return
+    try:
+        # Request migrations can leave this session holding SQLite's writer lock.
+        # Finish those writes before opening the separate DDL connection below.
+        db.session.commit()
+        VieworksItem.__table__.create(db.engine, checkfirst=True)
+        VieworksBsidCounter.__table__.create(db.engine, checkfirst=True)
+        # The ORM primary key prevents exact serial duplicates. Route-level
+        # normalization handles case-insensitive serials, while this partial index
+        # protects nonblank BSIDs if a write bypasses HTTP validation.
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_vieworks_bsid_nonblank "
+                "ON vieworks_item (lower(trim(bsid))) "
+                "WHERE bsid IS NOT NULL AND trim(bsid) <> ''"
+            )
+            existing_bsid_rows = connection.exec_driver_sql(
+                "SELECT bsid FROM vieworks_item "
+                "WHERE bsid IS NOT NULL AND trim(bsid) <> ''"
+            ).fetchall()
+            highest_number = max(
+                (number for (value,) in existing_bsid_rows
+                 if (number := vieworks_bsid_number(value)) is not None),
+                default=0,
+            )
+            seed_number = highest_number + 1
+            connection.exec_driver_sql(
+                "INSERT OR IGNORE INTO vieworks_bsid_counter (id, next_number) VALUES (1, ?)",
+                (seed_number,),
+            )
+            connection.exec_driver_sql(
+                "UPDATE vieworks_bsid_counter "
+                "SET next_number = CASE WHEN next_number < ? THEN ? ELSE next_number END "
+                "WHERE id = 1",
+                (seed_number, seed_number),
+            )
+        _vieworks_item_table_ready = True
+        _vieworks_bsid_counter_ready = True
+    except Exception as table_error:
+        print(f"[Vieworks] Unable to ensure vieworks_item table: {table_error}", flush=True)
+        raise
+
+
+def ensure_vieworks_bsid_counter_row():
+    """Ensure the Vieworks counter row exists in the current write transaction."""
+    if not (_vieworks_item_table_ready and _vieworks_bsid_counter_ready):
+        ensure_vieworks_item_table()
+
+    existing_bsid_rows = db.session.execute(db.text(
+        "SELECT bsid FROM vieworks_item "
+        "WHERE bsid IS NOT NULL AND trim(bsid) <> ''"
+    )).fetchall()
+    highest_number = max(
+        (number for (value,) in existing_bsid_rows
+         if (number := vieworks_bsid_number(value)) is not None),
+        default=0,
+    )
+    seed_number = highest_number + 1
+    db.session.execute(
+        db.text(
+            "INSERT OR IGNORE INTO vieworks_bsid_counter (id, next_number) "
+            "VALUES (1, :seed_number)"
+        ),
+        {'seed_number': seed_number},
+    )
+    db.session.execute(
+        db.text(
+            "UPDATE vieworks_bsid_counter "
+            "SET next_number = CASE WHEN next_number < :seed_number "
+            "THEN :seed_number ELSE next_number END "
+            "WHERE id = 1"
+        ),
+        {'seed_number': seed_number},
+    )
+
+
+def begin_vieworks_write_transaction():
+    """Acquire SQLite's writer lock before any Vieworks write-transaction reads."""
+    # Shared before-request migrations may have opened a read transaction. Clear
+    # that snapshot before upgrading to IMMEDIATE, as the Genoray writer does.
+    db.session.rollback()
+    db.session.connection().exec_driver_sql('BEGIN IMMEDIATE')
+
+
+def allocate_vieworks_bsid():
+    """Allocate a unique V-number while holding the current DB write transaction."""
+    ensure_vieworks_bsid_counter_row()
+    while True:
+        db.session.execute(db.text(
+            "UPDATE vieworks_bsid_counter "
+            "SET next_number = next_number + 1 "
+            "WHERE id = 1"
+        ))
+        next_number = db.session.execute(db.text(
+            "SELECT next_number FROM vieworks_bsid_counter WHERE id = 1"
+        )).scalar()
+        if next_number is None:
+            raise RuntimeError('Vieworks BSID counter is unavailable.')
+
+        candidate = f'V-{int(next_number) - 1:06d}'
+        if not vieworks_bsid_duplicate(candidate):
+            return candidate
+
+
+def reserve_vieworks_manual_bsid(value):
+    """Keep manually assigned canonical V-numbers ahead of future generation."""
+    number = vieworks_bsid_number(value)
+    if number is None:
+        return
+    ensure_vieworks_bsid_counter_row()
+    next_number = number + 1
+    db.session.execute(
+        db.text(
+            "UPDATE vieworks_bsid_counter "
+            "SET next_number = CASE WHEN next_number < :next_number "
+            "THEN :next_number ELSE next_number END "
+            "WHERE id = 1"
+        ),
+        {'next_number': next_number},
+    )
+
+
+def normalize_vieworks_bsid(value):
+    """Trim a Vieworks BSID while preserving its displayed casing."""
+    cleaned = clean_str(value)
+    return cleaned[:40] if cleaned else ''
+
+
+_VIEWORKS_NUMBERED_BSID_RE = re.compile(r'^V-(\d+)$', re.IGNORECASE)
+
+
+def vieworks_bsid_number(value):
+    """Return the numeric part of a canonical Vieworks V-number, if present."""
+    match = _VIEWORKS_NUMBERED_BSID_RE.fullmatch(normalize_vieworks_bsid(value))
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def vieworks_bsid_duplicate(value, exclude_serial=None):
+    """Return a Vieworks item using this BSID case-insensitively."""
+    normalized = normalize_vieworks_bsid(value)
+    if not normalized:
+        return None
+    query = VieworksItem.query.filter(
+        func.lower(func.trim(VieworksItem.bsid)) == normalized.casefold()
+    )
+    if exclude_serial:
+        query = query.filter(VieworksItem.serial_number != exclude_serial)
+    return query.first()
 
 
 def ensure_tsr_knowledge_entry_table():
@@ -5944,6 +6325,53 @@ def can_access_products_page(user=None):
         not is_approver_only_user(target) and
         not is_stock_inventory_only_user(target) and
         not is_hr_schedule_only_user(target)
+    )
+
+
+def can_access_genoray_inventory(user=None):
+    """Return whether an active account may use the Genoray inventory surface.
+
+    This is deliberately narrower than the Product Inventory gate.  Generic admins
+    are included for this standalone administrator workflow, while superadmins and
+    the verified regional administrator use the existing identity checks.  Engineers,
+    approvers, inactive accounts, and every other role are denied.
+    """
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True))
+    ):
+        return False
+
+    role = (getattr(target, 'role', '') or '').strip().lower()
+    return bool(
+        role == 'admin' or
+        is_superadmin_user(target) or
+        is_regional_admin_user(target)
+    )
+
+
+def can_access_vieworks_inventory(user=None):
+    """Return whether an active account may use the Vieworks inventory surface.
+
+    Vieworks follows the standalone Genoray administrator boundary. The helper is
+    intentionally separate so the two inventory surfaces can evolve independently
+    without making one route's permission check depend on the other table.
+    """
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True))
+    ):
+        return False
+
+    role = (getattr(target, 'role', '') or '').strip().lower()
+    return bool(
+        role == 'admin' or
+        is_superadmin_user(target) or
+        is_regional_admin_user(target)
     )
 
 
@@ -19619,7 +20047,10 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v158-calibration-center';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
+    # Navigation shell bump: medical-service-pwa-offline-navigation-v159-genoray-inventory
+    # -> v160 so installed clients refresh the Vieworks Inventory submenu.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v160-vieworks-inventory';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -21363,8 +21794,39 @@ def products_page():
         return redirect(url_for('dashboard_page'))
     return render_template(
         'products.html',
+        inventory_mode='product',
         product_can_edit=bool(is_admin_authorized() or current_user.role == 'engineer'),
         product_can_delete=bool(is_admin_authorized()),
+    )
+
+
+@app.route('/genoray')
+@login_required
+def genoray_page():
+    """Standalone Genoray inventory for active administrators only."""
+    if not can_access_genoray_inventory():
+        return Response('Access denied.', status=403, mimetype='text/plain')
+    ensure_genoray_item_table()
+    return render_template(
+        'products.html',
+        inventory_mode='genoray',
+        product_can_edit=True,
+        product_can_delete=True,
+    )
+
+
+@app.route('/vieworks')
+@login_required
+def vieworks_page():
+    """Standalone Vieworks inventory for active administrators only."""
+    if not can_access_vieworks_inventory():
+        return Response('Access denied.', status=403, mimetype='text/plain')
+    ensure_vieworks_item_table()
+    return render_template(
+        'products.html',
+        inventory_mode='vieworks',
+        product_can_edit=True,
+        product_can_delete=True,
     )
 
 
@@ -25232,6 +25694,344 @@ def get_products_summary():
             counts['no_expiry_no_contract'] += 1
 
     return jsonify(counts)
+
+
+def genoray_item_to_dict(item):
+    """Serialize one standalone Genoray item for the table and mobile cards."""
+    start_date = getattr(item, 'start_warranty_date', None)
+    end_date = getattr(item, 'end_warranty_date', None)
+    owner = getattr(item, 'owner', None)
+    return {
+        'serial_number': item.serial_number,
+        'name': item.name,
+        'bsid': normalize_genoray_bsid(getattr(item, 'bsid', None)),
+        'client_id': item.client_id,
+        'client_name': owner.name if owner else 'N/A',
+        'start_warranty': start_date.isoformat() if start_date else '',
+        'end_warranty': end_date.isoformat() if end_date else '',
+        'under_contract': bool(getattr(item, 'under_contract', False)),
+        'computed_status': product_contract_status(
+            end_date=end_date,
+            under_contract=bool(getattr(item, 'under_contract', False)),
+        ),
+    }
+
+
+def genoray_summary_for(items):
+    """Build the contract-aware summary shape used by the Product page template."""
+    counts = {
+        'total_items': len(items),
+        'total_genoray_items': len(items),
+        # Keep the legacy summary keys so the shared template can stay small.
+        'total_products': len(items),
+        'active_warranty': 0,
+        'expired_warranty': 0,
+        'na_warranty': 0,
+        'expired_under_contract': 0,
+        'expired_no_contract': 0,
+        'no_expiry_under_contract': 0,
+        'no_expiry_no_contract': 0,
+        'linked_items': sum(1 for item in items if item.client_id),
+        'linked_products': sum(1 for item in items if item.client_id),
+    }
+
+    for item in items:
+        status = product_contract_status(
+            end_date=item.end_warranty_date,
+            under_contract=bool(item.under_contract),
+        )
+        if status in {'Under Warranty', 'Under Contract'}:
+            counts['active_warranty'] += 1
+        elif status == 'Expired - Under Contract':
+            counts['expired_warranty'] += 1
+            counts['expired_under_contract'] += 1
+        elif status == 'Expired - No Contract':
+            counts['expired_warranty'] += 1
+            counts['expired_no_contract'] += 1
+        elif status == 'No Expiry Set - Under Contract':
+            counts['na_warranty'] += 1
+            counts['no_expiry_under_contract'] += 1
+        else:
+            counts['na_warranty'] += 1
+            counts['no_expiry_no_contract'] += 1
+
+    return counts
+
+
+def vieworks_item_to_dict(item):
+    """Serialize one standalone Vieworks item for the table and mobile cards."""
+    start_date = getattr(item, 'start_warranty_date', None)
+    end_date = getattr(item, 'end_warranty_date', None)
+    owner = getattr(item, 'owner', None)
+    return {
+        'serial_number': item.serial_number,
+        'name': item.name,
+        'bsid': normalize_vieworks_bsid(getattr(item, 'bsid', None)),
+        'client_id': item.client_id,
+        'client_name': owner.name if owner else 'N/A',
+        'start_warranty': start_date.isoformat() if start_date else '',
+        'end_warranty': end_date.isoformat() if end_date else '',
+        'under_contract': bool(getattr(item, 'under_contract', False)),
+        'computed_status': product_contract_status(
+            end_date=end_date,
+            under_contract=bool(getattr(item, 'under_contract', False)),
+        ),
+    }
+
+
+def vieworks_summary_for(items):
+    """Build the contract-aware summary shape used by the shared inventory template."""
+    counts = {
+        'total_items': len(items),
+        'total_vieworks_items': len(items),
+        # Keep the legacy summary keys so the shared template can stay small.
+        'total_products': len(items),
+        'active_warranty': 0,
+        'expired_warranty': 0,
+        'na_warranty': 0,
+        'expired_under_contract': 0,
+        'expired_no_contract': 0,
+        'no_expiry_under_contract': 0,
+        'no_expiry_no_contract': 0,
+        'linked_items': sum(1 for item in items if item.client_id),
+        'linked_products': sum(1 for item in items if item.client_id),
+    }
+
+    for item in items:
+        status = product_contract_status(
+            end_date=item.end_warranty_date,
+            under_contract=bool(item.under_contract),
+        )
+        if status in {'Under Warranty', 'Under Contract'}:
+            counts['active_warranty'] += 1
+        elif status == 'Expired - Under Contract':
+            counts['expired_warranty'] += 1
+            counts['expired_under_contract'] += 1
+        elif status == 'Expired - No Contract':
+            counts['expired_warranty'] += 1
+            counts['expired_no_contract'] += 1
+        elif status == 'No Expiry Set - Under Contract':
+            counts['na_warranty'] += 1
+            counts['no_expiry_under_contract'] += 1
+        else:
+            counts['na_warranty'] += 1
+            counts['no_expiry_no_contract'] += 1
+
+    return counts
+
+
+@app.route('/api/vieworks/items', methods=['GET'])
+@login_required
+def get_vieworks_items():
+    """Return every Vieworks item for the administrator-only inventory page."""
+    if not can_access_vieworks_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_vieworks_item_table()
+    items = VieworksItem.query.order_by(VieworksItem.serial_number).all()
+    return jsonify([vieworks_item_to_dict(item) for item in items])
+
+
+@app.route('/api/vieworks/summary', methods=['GET'])
+@login_required
+def get_vieworks_summary():
+    """Return contract-aware counts for the standalone Vieworks inventory."""
+    if not can_access_vieworks_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_vieworks_item_table()
+    return jsonify(vieworks_summary_for(VieworksItem.query.all()))
+
+
+@app.route('/api/genoray/items', methods=['GET'])
+@login_required
+def get_genoray_items():
+    """Return every Genoray item for the administrator-only inventory page."""
+    if not can_access_genoray_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_genoray_item_table()
+    items = GenorayItem.query.order_by(GenorayItem.serial_number).all()
+    return jsonify([genoray_item_to_dict(item) for item in items])
+
+
+@app.route('/api/genoray/summary', methods=['GET'])
+@login_required
+def get_genoray_summary():
+    """Return contract-aware counts for the standalone Genoray inventory."""
+    if not can_access_genoray_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_genoray_item_table()
+    return jsonify(genoray_summary_for(GenorayItem.query.all()))
+
+
+def genoray_payload_dates(payload, existing=None):
+    """Parse optional Genoray warranty dates, returning values and a validation error."""
+    existing = existing or {}
+    parsed_values = {}
+    for field_name, keys in {
+        'start_warranty_date': ('start_warranty', 'start_date', 'start_warranty_date'),
+        'end_warranty_date': ('end_warranty', 'end_date', 'end_warranty_date'),
+    }.items():
+        key = next((candidate for candidate in keys if candidate in payload), None)
+        if key is None:
+            parsed_values[field_name] = existing.get(field_name)
+            continue
+        raw_value = payload.get(key)
+        if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
+            parsed_values[field_name] = None
+            continue
+        if not isinstance(raw_value, (str, date, datetime)):
+            return None, f'{field_name.replace("_", " ").title()} must be a valid date.'
+        parsed = raw_value if isinstance(raw_value, date) and not isinstance(raw_value, datetime) else parse_date(raw_value)
+        if not parsed:
+            return None, f'{field_name.replace("_", " ").title()} must be a valid date.'
+        parsed_values[field_name] = parsed
+
+    start_date = parsed_values.get('start_warranty_date')
+    end_date = parsed_values.get('end_warranty_date')
+    if start_date and end_date and end_date < start_date:
+        return None, 'End Date cannot be earlier than Start Date.'
+    return parsed_values, None
+
+
+def genoray_payload_values(payload, existing=None):
+    """Normalize and validate the common Genoray add/edit payload."""
+    payload = payload or {}
+    existing = existing or {}
+    serial_value = payload.get('serial_number', existing.get('serial_number'))
+    serial_number = (clean_str(serial_value) or '').upper()
+    name = clean_str(payload.get('name', payload.get('product_name', existing.get('name'))))
+    existing_bsid = normalize_genoray_bsid(existing.get('bsid'))
+    if existing_bsid:
+        raw_bsid = clean_str(payload.get('bsid', existing_bsid)) or ''
+        if not raw_bsid:
+            return None, 'BSID cannot be cleared once it has been assigned.'
+    elif existing:
+        raw_bsid = clean_str(payload.get('bsid', '')) or ''
+    else:
+        # New records always receive a server-generated BSID.  Any incoming
+        # value is intentionally ignored, including values from CSV imports.
+        raw_bsid = ''
+
+    if not serial_number:
+        return None, 'Serial number is required.'
+    if len(serial_number) > 100:
+        return None, 'Serial number must be 100 characters or fewer.'
+    if not name:
+        return None, 'Product name is required.'
+    if len(name) > 100:
+        return None, 'Product name must be 100 characters or fewer.'
+    if len(raw_bsid) > 40:
+        return None, 'BSID must be 40 characters or fewer.'
+
+    dates, date_error = genoray_payload_dates(payload, existing)
+    if date_error:
+        return None, date_error
+
+    if 'client_id' in payload:
+        client_id = clean_int(payload.get('client_id'))
+    else:
+        client_id = existing.get('client_id')
+    if client_id and not db.session.get(Client, client_id):
+        return None, 'Medical center was not found.'
+
+    under_contract = parse_bool_flag(
+        payload.get('under_contract', payload.get('contract')),
+        default=bool(existing.get('under_contract', False)),
+    )
+    return {
+        'serial_number': serial_number,
+        'name': name,
+        'bsid': normalize_genoray_bsid(raw_bsid) or None,
+        'client_id': client_id,
+        'start_warranty_date': dates['start_warranty_date'],
+        'end_warranty_date': dates['end_warranty_date'],
+        'under_contract': under_contract,
+    }, None
+
+
+def vieworks_payload_dates(payload, existing=None):
+    """Parse optional Vieworks warranty dates, returning values and a validation error."""
+    existing = existing or {}
+    parsed_values = {}
+    for field_name, keys in {
+        'start_warranty_date': ('start_warranty', 'start_date', 'start_warranty_date'),
+        'end_warranty_date': ('end_warranty', 'end_date', 'end_warranty_date'),
+    }.items():
+        key = next((candidate for candidate in keys if candidate in payload), None)
+        if key is None:
+            parsed_values[field_name] = existing.get(field_name)
+            continue
+        raw_value = payload.get(key)
+        if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
+            parsed_values[field_name] = None
+            continue
+        if not isinstance(raw_value, (str, date, datetime)):
+            return None, f'{field_name.replace("_", " ").title()} must be a valid date.'
+        parsed = raw_value if isinstance(raw_value, date) and not isinstance(raw_value, datetime) else parse_date(raw_value)
+        if not parsed:
+            return None, f'{field_name.replace("_", " ").title()} must be a valid date.'
+        parsed_values[field_name] = parsed
+
+    start_date = parsed_values.get('start_warranty_date')
+    end_date = parsed_values.get('end_warranty_date')
+    if start_date and end_date and end_date < start_date:
+        return None, 'End Date cannot be earlier than Start Date.'
+    return parsed_values, None
+
+
+def vieworks_payload_values(payload, existing=None):
+    """Normalize and validate the common Vieworks add/edit payload."""
+    payload = payload or {}
+    existing = existing or {}
+    serial_value = payload.get('serial_number', existing.get('serial_number'))
+    serial_number = (clean_str(serial_value) or '').upper()
+    name = clean_str(payload.get('name', payload.get('product_name', existing.get('name'))))
+    existing_bsid = normalize_vieworks_bsid(existing.get('bsid'))
+    if existing_bsid:
+        raw_bsid = clean_str(payload.get('bsid', existing_bsid)) or ''
+        if not raw_bsid:
+            return None, 'BSID cannot be cleared once it has been assigned.'
+    elif existing:
+        raw_bsid = clean_str(payload.get('bsid', '')) or ''
+    else:
+        # New records always receive a server-generated BSID. Incoming values,
+        # including CSV BSIDs, are intentionally ignored.
+        raw_bsid = ''
+
+    if not serial_number:
+        return None, 'Serial number is required.'
+    if len(serial_number) > 100:
+        return None, 'Serial number must be 100 characters or fewer.'
+    if not name:
+        return None, 'Product name is required.'
+    if len(name) > 100:
+        return None, 'Product name must be 100 characters or fewer.'
+    if len(raw_bsid) > 40:
+        return None, 'BSID must be 40 characters or fewer.'
+
+    dates, date_error = vieworks_payload_dates(payload, existing)
+    if date_error:
+        return None, date_error
+
+    if 'client_id' in payload:
+        client_id = clean_int(payload.get('client_id'))
+    else:
+        client_id = existing.get('client_id')
+    if client_id and not db.session.get(Client, client_id):
+        return None, 'Medical center was not found.'
+
+    under_contract = parse_bool_flag(
+        payload.get('under_contract', payload.get('contract')),
+        default=bool(existing.get('under_contract', False)),
+    )
+    return {
+        'serial_number': serial_number,
+        'name': name,
+        'bsid': normalize_vieworks_bsid(raw_bsid) or None,
+        'client_id': client_id,
+        'start_warranty_date': dates['start_warranty_date'],
+        'end_warranty_date': dates['end_warranty_date'],
+        'under_contract': under_contract,
+    }, None
 
 
 @app.route('/get_open_tasks')
@@ -53543,6 +54343,647 @@ def delete_product(serial_number):
     return jsonify({'status': 'success'})
 
 
+@app.route('/api/vieworks/items', methods=['POST'])
+@login_required
+def add_vieworks_item():
+    """Add one standalone Vieworks inventory item."""
+    if not can_access_vieworks_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_vieworks_item_table()
+    begin_vieworks_write_transaction()
+    values, error = vieworks_payload_values(request.get_json(silent=True) or {})
+    if error:
+        db.session.rollback()
+        return jsonify({'message': error}), 400
+
+    serial_number = values['serial_number']
+    if db.session.get(VieworksItem, serial_number):
+        db.session.rollback()
+        return jsonify({
+            'status': 'duplicate',
+            'message': f'Serial number {serial_number} already exists in Vieworks inventory.',
+            'serial_number': serial_number,
+        }), 409
+
+    generated_bsid = None
+    item = VieworksItem(**values)
+    try:
+        generated_bsid = allocate_vieworks_bsid()
+        item.bsid = generated_bsid
+        db.session.add(item)
+        db.session.commit()
+    except IntegrityError as item_error:
+        db.session.rollback()
+        message = str(item_error).lower()
+        if 'bsid' in message:
+            return jsonify({
+                'status': 'duplicate',
+                'field': 'bsid',
+                'message': f'BSID {generated_bsid or "assigned value"} already exists in Vieworks inventory.',
+            }), 409
+        return jsonify({
+            'status': 'duplicate',
+            'message': f'Serial number {serial_number} already exists in Vieworks inventory.',
+            'serial_number': serial_number,
+        }), 409
+    except Exception as item_error:
+        db.session.rollback()
+        print(f'[Vieworks] Add item failed for {serial_number}: {item_error}', flush=True)
+        return jsonify({'message': 'Unable to add Vieworks item. Please try again.'}), 500
+
+    log_activity(f'Added Vieworks equipment: {item.serial_number}')
+    return jsonify({
+        'status': 'success',
+        'item': vieworks_item_to_dict(item),
+        **vieworks_item_to_dict(item),
+    })
+
+
+@app.route('/api/vieworks/items/<path:serial_number>', methods=['PUT'])
+@login_required
+def update_vieworks_item(serial_number):
+    """Update a Vieworks item without touching Product or related workflows."""
+    if not can_access_vieworks_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_vieworks_item_table()
+    begin_vieworks_write_transaction()
+    old_serial = (clean_str(serial_number) or '').upper()
+    item = db.session.get(VieworksItem, old_serial)
+    if not item:
+        db.session.rollback()
+        return jsonify({'message': 'Missing'}), 404
+
+    existing = {
+        'serial_number': item.serial_number,
+        'name': item.name,
+        'bsid': item.bsid,
+        'client_id': item.client_id,
+        'start_warranty_date': item.start_warranty_date,
+        'end_warranty_date': item.end_warranty_date,
+        'under_contract': bool(item.under_contract),
+    }
+    payload = request.get_json(silent=True) or {}
+    values, error = vieworks_payload_values(payload, existing)
+    if error:
+        db.session.rollback()
+        return jsonify({'message': error}), 400
+    if 'bsid' not in payload:
+        # An unrelated edit must not rewrite a historical BSID's stored value.
+        values['bsid'] = item.bsid
+
+    new_serial = values['serial_number']
+    if new_serial != old_serial and db.session.get(VieworksItem, new_serial):
+        db.session.rollback()
+        return jsonify({
+            'status': 'duplicate',
+            'message': f'Serial number {new_serial} already exists in Vieworks inventory.',
+            'serial_number': new_serial,
+        }), 409
+
+    duplicate_bsid = vieworks_bsid_duplicate(values['bsid'], exclude_serial=old_serial)
+    if duplicate_bsid:
+        db.session.rollback()
+        return jsonify({
+            'status': 'duplicate',
+            'field': 'bsid',
+            'message': f'BSID {values["bsid"]} already exists in Vieworks inventory.',
+        }), 409
+
+    try:
+        reserve_vieworks_manual_bsid(values['bsid'])
+        item.serial_number = new_serial
+        item.name = values['name']
+        item.bsid = values['bsid']
+        item.client_id = values['client_id']
+        item.start_warranty_date = values['start_warranty_date']
+        item.end_warranty_date = values['end_warranty_date']
+        item.under_contract = values['under_contract']
+        db.session.commit()
+    except IntegrityError as item_error:
+        db.session.rollback()
+        if 'bsid' in str(item_error).lower():
+            return jsonify({
+                'status': 'duplicate',
+                'field': 'bsid',
+                'message': f'BSID {values["bsid"]} already exists in Vieworks inventory.',
+            }), 409
+        return jsonify({
+            'status': 'duplicate',
+            'message': f'Serial number {new_serial} already exists in Vieworks inventory.',
+            'serial_number': new_serial,
+        }), 409
+    except Exception as item_error:
+        db.session.rollback()
+        print(f'[Vieworks] Update item failed for {old_serial}: {item_error}', flush=True)
+        return jsonify({'message': 'Unable to update Vieworks item. Please try again.'}), 500
+
+    log_activity(f'Updated Vieworks equipment: {item.serial_number}')
+    return jsonify({
+        'status': 'success',
+        'serial_changed': new_serial != old_serial,
+        'old_serial': old_serial,
+        'new_serial': new_serial,
+        'item': vieworks_item_to_dict(item),
+        **vieworks_item_to_dict(item),
+    })
+
+
+@app.route('/api/vieworks/items/<path:serial_number>', methods=['DELETE'])
+@login_required
+def delete_vieworks_item(serial_number):
+    """Delete one standalone Vieworks inventory item."""
+    if not can_access_vieworks_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_vieworks_item_table()
+    requested_serial = (clean_str(serial_number) or '').upper()
+    item = db.session.get(VieworksItem, requested_serial)
+    if item:
+        item_name = item.name
+        db.session.delete(item)
+        db.session.commit()
+        log_activity(f'Purged Vieworks equipment: {item_name}')
+    return jsonify({'status': 'success'})
+
+
+@app.route('/vieworks/import', methods=['POST'])
+@login_required
+def import_vieworks_items():
+    """Import Vieworks items from a flexible-header CSV file."""
+    if not can_access_vieworks_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_vieworks_item_table()
+
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'message': 'No CSV file selected.'}), 400
+    if not file.filename.lower().endswith('.csv'):
+        return jsonify({'message': 'Only .csv files are supported.'}), 400
+
+    try:
+        stream = io.StringIO(file.stream.read().decode('utf-8-sig'), newline=None)
+        reader = csv.DictReader(stream)
+        if not reader.fieldnames:
+            return jsonify({'message': 'CSV file is empty or missing headers.'}), 400
+        begin_vieworks_write_transaction()
+
+        has_contract_column = csv_has_header(
+            reader.fieldnames, 'Contract', 'Under Contract', 'Contract Status'
+        )
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        unresolved_owner_count = 0
+        seen_serials = set()
+
+        for row in reader:
+            serial = (clean_str(csv_get(row, 'Serial Number', 'Serial', 'S/N', 'SN')) or '').upper()
+            product_name = clean_str(csv_get(
+                row, 'Description', 'Product Name', 'Name', 'Equipment Name', 'Item'
+            ))
+            if serial and serial in seen_serials:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'duplicate',
+                    'field': 'serial_number',
+                    'message': f'Serial number {serial} is duplicated in this import.',
+                }), 409
+            if serial:
+                seen_serials.add(serial)
+
+            if not serial or not product_name:
+                skipped_count += 1
+                continue
+
+            owner_name = clean_str(csv_get(
+                row, 'Current Owner', 'Owner', 'Client', 'Client Name',
+                'Medical Center', 'Medical Center Name'
+            ))
+            client_id = csv_find_client_id(owner_name)
+            if owner_name and not client_id:
+                unresolved_owner_count += 1
+
+            start_value = csv_get(row, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date')
+            end_value = csv_get(row, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date')
+            start_date = parse_date(start_value)
+            end_date = parse_date(end_value)
+            if (clean_str(start_value) and not start_date) or (clean_str(end_value) and not end_date):
+                skipped_count += 1
+                continue
+            if start_date and end_date and end_date < start_date:
+                skipped_count += 1
+                continue
+
+            existing = db.session.get(VieworksItem, serial)
+            contract_value = parse_bool_flag(
+                csv_get(row, 'Contract', 'Under Contract', 'Contract Status')
+            ) if has_contract_column else None
+
+            if existing:
+                existing.name = product_name
+                existing.client_id = client_id
+                existing.start_warranty_date = start_date
+                existing.end_warranty_date = end_date
+                if has_contract_column:
+                    existing.under_contract = contract_value
+                # CSV updates intentionally preserve the stored BSID, including
+                # historical blank/manual values.
+                updated_count += 1
+            else:
+                db.session.add(VieworksItem(
+                    serial_number=serial,
+                    name=product_name,
+                    client_id=client_id,
+                    start_warranty_date=start_date,
+                    end_warranty_date=end_date,
+                    under_contract=bool(contract_value) if has_contract_column else False,
+                    bsid=allocate_vieworks_bsid(),
+                ))
+                created_count += 1
+
+        db.session.commit()
+        total = created_count + updated_count
+        message = (
+            f'Vieworks import complete: {created_count} created, '
+            f'{updated_count} updated, {skipped_count} skipped.'
+        )
+        if unresolved_owner_count:
+            message += f' {unresolved_owner_count} owner name(s) were not matched and were left blank.'
+        log_activity(
+            f'Imported Vieworks CSV: {created_count} created, '
+            f'{updated_count} updated, {skipped_count} skipped'
+        )
+        return jsonify({
+            'status': 'success',
+            'message': message,
+            'created': created_count,
+            'updated': updated_count,
+            'skipped': skipped_count,
+            'unresolved_owners': unresolved_owner_count,
+            'total': total,
+        })
+    except UnicodeDecodeError:
+        return jsonify({'message': 'Unable to read CSV. Please save it as UTF-8 CSV and try again.'}), 400
+    except Exception as import_error:
+        db.session.rollback()
+        print(f'[Vieworks] Import failed: {import_error}', flush=True)
+        return jsonify({'message': 'Vieworks import failed. Please check the CSV and try again.'}), 500
+
+
+@app.route('/vieworks/export', methods=['GET'])
+@login_required
+def export_vieworks_items():
+    """Export the standalone Vieworks inventory as CSV."""
+    if not can_access_vieworks_inventory():
+        return denied()
+    ensure_vieworks_item_table()
+    items = VieworksItem.query.order_by(VieworksItem.serial_number).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status'])
+    for item in items:
+        writer.writerow([
+            item.serial_number,
+            item.name,
+            normalize_vieworks_bsid(item.bsid),
+            item.owner.name if item.owner else 'N/A',
+            item.start_warranty_date.isoformat() if item.start_warranty_date else '',
+            item.end_warranty_date.isoformat() if item.end_warranty_date else '',
+            'Yes' if item.under_contract else 'No',
+            product_contract_status(
+                end_date=item.end_warranty_date,
+                under_contract=bool(item.under_contract),
+            ),
+        ])
+    output.seek(0)
+    log_activity('Exported the Vieworks Inventory')
+    filename = f"vieworks_inventory_{get_manila_time().strftime('%Y%m%d')}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-disposition': f'attachment; filename={filename}'},
+    )
+
+
+@app.route('/api/genoray/items', methods=['POST'])
+@login_required
+def add_genoray_item():
+    """Add one standalone Genoray inventory item."""
+    if not can_access_genoray_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_genoray_item_table()
+    begin_genoray_write_transaction()
+    values, error = genoray_payload_values(request.get_json(silent=True) or {})
+    if error:
+        db.session.rollback()
+        return jsonify({'message': error}), 400
+
+    serial_number = values['serial_number']
+    if db.session.get(GenorayItem, serial_number):
+        db.session.rollback()
+        return jsonify({
+            'status': 'duplicate',
+            'message': f'Serial number {serial_number} already exists in Genoray inventory.',
+            'serial_number': serial_number,
+        }), 409
+
+    generated_bsid = None
+    item = GenorayItem(**values)
+    try:
+        generated_bsid = allocate_genoray_bsid()
+        item.bsid = generated_bsid
+        db.session.add(item)
+        db.session.commit()
+    except IntegrityError as item_error:
+        db.session.rollback()
+        message = str(item_error).lower()
+        if 'bsid' in message:
+            return jsonify({
+                'status': 'duplicate',
+                'field': 'bsid',
+                'message': f'BSID {generated_bsid or "assigned value"} already exists in Genoray inventory.',
+            }), 409
+        return jsonify({
+            'status': 'duplicate',
+            'message': f'Serial number {serial_number} already exists in Genoray inventory.',
+            'serial_number': serial_number,
+        }), 409
+    except Exception as item_error:
+        db.session.rollback()
+        print(f'[Genoray] Add item failed for {serial_number}: {item_error}', flush=True)
+        return jsonify({'message': 'Unable to add Genoray item. Please try again.'}), 500
+
+    log_activity(f'Added Genoray equipment: {item.serial_number}')
+    return jsonify({
+        'status': 'success',
+        'item': genoray_item_to_dict(item),
+        **genoray_item_to_dict(item),
+    })
+
+
+@app.route('/api/genoray/items/<path:serial_number>', methods=['PUT'])
+@login_required
+def update_genoray_item(serial_number):
+    """Update a Genoray item without touching Product or related workflows."""
+    if not can_access_genoray_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_genoray_item_table()
+    begin_genoray_write_transaction()
+    old_serial = (clean_str(serial_number) or '').upper()
+    item = db.session.get(GenorayItem, old_serial)
+    if not item:
+        db.session.rollback()
+        return jsonify({'message': 'Missing'}), 404
+
+    existing = {
+        'serial_number': item.serial_number,
+        'name': item.name,
+        'bsid': item.bsid,
+        'client_id': item.client_id,
+        'start_warranty_date': item.start_warranty_date,
+        'end_warranty_date': item.end_warranty_date,
+        'under_contract': bool(item.under_contract),
+    }
+    payload = request.get_json(silent=True) or {}
+    values, error = genoray_payload_values(payload, existing)
+    if error:
+        db.session.rollback()
+        return jsonify({'message': error}), 400
+    if 'bsid' not in payload:
+        # An unrelated edit must not rewrite a historical BSID's stored value.
+        values['bsid'] = item.bsid
+
+    new_serial = values['serial_number']
+    if new_serial != old_serial and db.session.get(GenorayItem, new_serial):
+        db.session.rollback()
+        return jsonify({
+            'status': 'duplicate',
+            'message': f'Serial number {new_serial} already exists in Genoray inventory.',
+            'serial_number': new_serial,
+        }), 409
+
+    duplicate_bsid = genoray_bsid_duplicate(values['bsid'], exclude_serial=old_serial)
+    if duplicate_bsid:
+        db.session.rollback()
+        return jsonify({
+            'status': 'duplicate',
+            'field': 'bsid',
+            'message': f'BSID {values["bsid"]} already exists in Genoray inventory.',
+        }), 409
+
+    try:
+        reserve_genoray_manual_bsid(values['bsid'])
+        item.serial_number = new_serial
+        item.name = values['name']
+        item.bsid = values['bsid']
+        item.client_id = values['client_id']
+        item.start_warranty_date = values['start_warranty_date']
+        item.end_warranty_date = values['end_warranty_date']
+        item.under_contract = values['under_contract']
+        db.session.commit()
+    except IntegrityError as item_error:
+        db.session.rollback()
+        if 'bsid' in str(item_error).lower():
+            return jsonify({
+                'status': 'duplicate',
+                'field': 'bsid',
+                'message': f'BSID {values["bsid"]} already exists in Genoray inventory.',
+            }), 409
+        return jsonify({
+            'status': 'duplicate',
+            'message': f'Serial number {new_serial} already exists in Genoray inventory.',
+            'serial_number': new_serial,
+        }), 409
+    except Exception as item_error:
+        db.session.rollback()
+        print(f'[Genoray] Update item failed for {old_serial}: {item_error}', flush=True)
+        return jsonify({'message': 'Unable to update Genoray item. Please try again.'}), 500
+
+    log_activity(f'Updated Genoray equipment: {item.serial_number}')
+    return jsonify({
+        'status': 'success',
+        'serial_changed': new_serial != old_serial,
+        'old_serial': old_serial,
+        'new_serial': new_serial,
+        'item': genoray_item_to_dict(item),
+        **genoray_item_to_dict(item),
+    })
+
+
+@app.route('/api/genoray/items/<path:serial_number>', methods=['DELETE'])
+@login_required
+def delete_genoray_item(serial_number):
+    """Delete one standalone Genoray inventory item."""
+    if not can_access_genoray_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_genoray_item_table()
+    requested_serial = (clean_str(serial_number) or '').upper()
+    item = db.session.get(GenorayItem, requested_serial)
+    if item:
+        item_name = item.name
+        db.session.delete(item)
+        db.session.commit()
+        log_activity(f'Purged Genoray equipment: {item_name}')
+    return jsonify({'status': 'success'})
+
+
+@app.route('/genoray/import', methods=['POST'])
+@login_required
+def import_genoray_items():
+    """Import Genoray items from a flexible-header CSV file."""
+    if not can_access_genoray_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_genoray_item_table()
+
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'message': 'No CSV file selected.'}), 400
+    if not file.filename.lower().endswith('.csv'):
+        return jsonify({'message': 'Only .csv files are supported.'}), 400
+
+    try:
+        stream = io.StringIO(file.stream.read().decode('utf-8-sig'), newline=None)
+        reader = csv.DictReader(stream)
+        if not reader.fieldnames:
+            return jsonify({'message': 'CSV file is empty or missing headers.'}), 400
+        begin_genoray_write_transaction()
+
+        has_contract_column = csv_has_header(
+            reader.fieldnames, 'Contract', 'Under Contract', 'Contract Status'
+        )
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
+        unresolved_owner_count = 0
+        seen_serials = set()
+
+        for row in reader:
+            serial = (clean_str(csv_get(row, 'Serial Number', 'Serial', 'S/N', 'SN')) or '').upper()
+            product_name = clean_str(csv_get(
+                row, 'Description', 'Product Name', 'Name', 'Equipment Name', 'Item'
+            ))
+            if serial and serial in seen_serials:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'duplicate',
+                    'field': 'serial_number',
+                    'message': f'Serial number {serial} is duplicated in this import.',
+                }), 409
+            if serial:
+                seen_serials.add(serial)
+
+            if not serial or not product_name:
+                skipped_count += 1
+                continue
+
+            owner_name = clean_str(csv_get(
+                row, 'Current Owner', 'Owner', 'Client', 'Client Name',
+                'Medical Center', 'Medical Center Name'
+            ))
+            client_id = csv_find_client_id(owner_name)
+            if owner_name and not client_id:
+                unresolved_owner_count += 1
+
+            start_value = csv_get(row, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date')
+            end_value = csv_get(row, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date')
+            start_date = parse_date(start_value)
+            end_date = parse_date(end_value)
+            if (clean_str(start_value) and not start_date) or (clean_str(end_value) and not end_date):
+                skipped_count += 1
+                continue
+            if start_date and end_date and end_date < start_date:
+                skipped_count += 1
+                continue
+
+            existing = db.session.get(GenorayItem, serial)
+
+            contract_value = parse_bool_flag(
+                csv_get(row, 'Contract', 'Under Contract', 'Contract Status')
+            ) if has_contract_column else None
+
+            if existing:
+                existing.name = product_name
+                existing.client_id = client_id
+                existing.start_warranty_date = start_date
+                existing.end_warranty_date = end_date
+                if has_contract_column:
+                    existing.under_contract = contract_value
+                updated_count += 1
+            else:
+                db.session.add(GenorayItem(
+                    serial_number=serial,
+                    name=product_name,
+                    client_id=client_id,
+                    start_warranty_date=start_date,
+                    end_warranty_date=end_date,
+                    under_contract=bool(contract_value) if has_contract_column else False,
+                    bsid=allocate_genoray_bsid(),
+                ))
+                created_count += 1
+
+        db.session.commit()
+        total = created_count + updated_count
+        message = (
+            f'Genoray import complete: {created_count} created, '
+            f'{updated_count} updated, {skipped_count} skipped.'
+        )
+        if unresolved_owner_count:
+            message += f' {unresolved_owner_count} owner name(s) were not matched and were left blank.'
+        log_activity(
+            f'Imported Genoray CSV: {created_count} created, '
+            f'{updated_count} updated, {skipped_count} skipped'
+        )
+        return jsonify({
+            'status': 'success',
+            'message': message,
+            'created': created_count,
+            'updated': updated_count,
+            'skipped': skipped_count,
+            'unresolved_owners': unresolved_owner_count,
+            'total': total,
+        })
+    except UnicodeDecodeError:
+        return jsonify({'message': 'Unable to read CSV. Please save it as UTF-8 CSV and try again.'}), 400
+    except Exception as import_error:
+        db.session.rollback()
+        print(f'[Genoray] Import failed: {import_error}', flush=True)
+        return jsonify({'message': 'Genoray import failed. Please check the CSV and try again.'}), 500
+
+
+@app.route('/genoray/export', methods=['GET'])
+@login_required
+def export_genoray_items():
+    """Export the standalone Genoray inventory as CSV."""
+    if not can_access_genoray_inventory():
+        return denied()
+    ensure_genoray_item_table()
+    items = GenorayItem.query.order_by(GenorayItem.serial_number).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status'])
+    for item in items:
+        writer.writerow([
+            item.serial_number,
+            item.name,
+            normalize_genoray_bsid(item.bsid),
+            item.owner.name if item.owner else 'N/A',
+            item.start_warranty_date.isoformat() if item.start_warranty_date else '',
+            item.end_warranty_date.isoformat() if item.end_warranty_date else '',
+            'Yes' if item.under_contract else 'No',
+            product_contract_status(
+                end_date=item.end_warranty_date,
+                under_contract=bool(item.under_contract),
+            ),
+        ])
+    output.seek(0)
+    log_activity('Exported the Genoray Inventory')
+    filename = f"genoray_inventory_{get_manila_time().strftime('%Y%m%d')}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-disposition': f'attachment; filename={filename}'},
+    )
+
+
 
 def csv_get(row, *names):
     """Case/spacing tolerant CSV row value getter."""
@@ -53859,6 +55300,7 @@ def ensure_runtime_sqlite_migrations_before_request():
 
     ensure_shift_file_original_filename_column()
     ensure_product_contract_column()
+    ensure_genoray_item_table()
     ensure_calibration_certificate_approval_table()
     ensure_schedule_delete_indexes()
     ensure_approval_routing_schema()

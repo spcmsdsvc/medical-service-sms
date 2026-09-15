@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-15-vieworks-inventory",
+      "release_date": "2026-09-15",
+      "title": "Vieworks Inventory",
+      "summary": "Authorized administrators can manage Vieworks equipment in a separate inventory list.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-15-vieworks-inventory-admins",
+          "category": "Inventory",
+          "description": "Added a standalone Vieworks inventory page with the Product Inventory table, filters, sorting, column freezing, CRUD, CSV import/export, print, warranty and contract status, administrator-only access, and automatic server-assigned BSIDs beginning at V-000001 for new records.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-15-genoray-inventory",
+      "release_date": "2026-09-15",
+      "title": "Genoray Inventory",
+      "summary": "Authorized administrators can manage Genoray equipment in a separate inventory list.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-15-genoray-inventory-admins",
+          "category": "Inventory",
+          "description": "Added a standalone Genoray inventory page with the Product Inventory table, filters, sorting, column freezing, CRUD, CSV import/export, print, warranty and contract status, administrator-only access, and automatic server-assigned BSIDs beginning at G-00001 for new records.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-15-approval-center-queue",
       "release_date": "2026-09-15",
       "title": "Approval Center Queue",
