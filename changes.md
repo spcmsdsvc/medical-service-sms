@@ -2,6 +2,13 @@
 
 codex changes - 2026-09-16
 
+- Committed the authorized Genoray/Vieworks PM monitoring package, recurring cadence
+  generation, exact schedule matching, and editable future-plan rebuilding as `58ea064` on
+  local `main`. The nine-file commit excludes the protected `scheduler.db`, handoff files,
+  `.claude/`, `output/`, `tmp/`, and all unrelated dirty artifacts. Before committing, 82
+  focused PM, inventory, Product, and navigation tests passed; Python AST, PM Jinja template,
+  release JSON, and staged whitespace checks passed. Publication and Railway verification
+  are pending.
 - Recorded the owner's complete Editable PM cadence with future-plan rebuilding plan at the
   top of `plans.md` with status **Approved — awaiting go-ahead**. The amendment adds durable
   generated-plan identity and permits cadence changes from the selected visit onward, using
