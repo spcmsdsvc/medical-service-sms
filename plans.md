@@ -2,7 +2,7 @@
 
 ## Editable PM cadence with future-plan rebuilding
 
-**Status:** Executed — implementation commit `58ea064`; owner-authorized publication to `origin/main` pending verification.
+**Status:** Executed — implementation commit `58ea064` was pushed to `origin/main`; Railway deployed record commit `739c088` successfully.
 **Approved:** 2026-09-16 — the owner submitted the complete editable-cadence plan.
 **Detailed:** 2026-09-16.
 
@@ -152,7 +152,7 @@ Verification completed:
 
 ## Recurring PM generation and schedule matching
 
-**Status:** Executed — implementation commit `58ea064`; owner-authorized publication to `origin/main` pending verification.
+**Status:** Executed — implementation commit `58ea064` was pushed to `origin/main`; Railway deployed record commit `739c088` successfully.
 **Approved:** 2026-09-16 — the owner submitted the complete recurring-PM plan.
 **Detailed:** 2026-09-16.
 
@@ -327,7 +327,7 @@ Verification completed:
 
 ## Genoray and Vieworks PM monitoring
 
-**Status:** Executed — implementation commit `58ea064`; owner-authorized publication to `origin/main` pending verification.
+**Status:** Executed — implementation commit `58ea064` was pushed to `origin/main`; Railway deployed record commit `739c088` successfully.
 **Approved:** 2026-09-16 — the owner submitted the complete PM monitoring plan for implementation.
 **Detailed:** 2026-09-16.
 

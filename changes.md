@@ -7,8 +7,10 @@ codex changes - 2026-09-16
   local `main`. The nine-file commit excludes the protected `scheduler.db`, handoff files,
   `.claude/`, `output/`, `tmp/`, and all unrelated dirty artifacts. Before committing, 82
   focused PM, inventory, Product, and navigation tests passed; Python AST, PM Jinja template,
-  release JSON, and staged whitespace checks passed. Publication and Railway verification
-  are pending.
+  release JSON, and staged whitespace checks passed. The implementation and record commits
+  were pushed to `origin/main`; `git ls-remote` verified `739c088` at the production branch
+  tip, and Railway reported a successful production deployment for that exact commit
+  (deployment `e1edeef5-1b54-4f21-81c6-aef7aa1ed169`).
 - Recorded the owner's complete Editable PM cadence with future-plan rebuilding plan at the
   top of `plans.md` with status **Approved — awaiting go-ahead**. The amendment adds durable
   generated-plan identity and permits cadence changes from the selected visit onward, using
