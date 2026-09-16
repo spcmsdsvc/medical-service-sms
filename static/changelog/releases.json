@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-16-calendar-date-navigation",
+      "release_date": "2026-09-16",
+      "title": "Calendar Go to Date",
+      "summary": "Calendar users can now open any Monday–Sunday week directly from a compact date picker.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-16-calendar-date-navigation-everyone",
+          "category": "Calendar",
+          "description": "Choose a date from the expanded desktop Calendar, its collapsed rail, or the mobile Full Calendar to open the week containing it. Previous, Today/This Week, Next, branch filters, saved view state, and offline schedule data continue to work as before.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-16-calibration-report-eight-focal-rows",
       "release_date": "2026-09-16",
       "title": "Calibration Report Eight-Row Measurements",

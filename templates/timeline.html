@@ -126,6 +126,21 @@
             </button>
             <button
                 type="button"
+                class="timeline-collapsed-rail-button timeline-collapsed-rail-icon timeline-date-nav-trigger"
+                id="timeline-collapsed-date-picker"
+                data-timeline-week-nav="date"
+                data-timeline-date-trigger="true"
+                aria-haspopup="dialog"
+                aria-controls="timeline-date-picker-modal"
+                aria-label="Go to date"
+                title="Go to date"
+                onclick="openTimelineDatePicker('collapsed')"
+            >
+                <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+                <span class="timeline-collapsed-rail-label">Go to date</span>
+            </button>
+            <button
+                type="button"
                 class="timeline-collapsed-rail-button timeline-collapsed-rail-icon"
                 id="timeline-collapsed-next-week"
                 data-timeline-week-nav="next"
@@ -265,6 +280,22 @@
                     title="Previous Week"
                 >
                     <i class="fa-solid fa-chevron-left"></i>
+                </button>
+
+                <button
+                    type="button"
+                    class="btn btn-outline-secondary btn-sm timeline-date-nav-trigger timeline-date-nav-trigger-expanded"
+                    id="timeline-expanded-date-picker"
+                    data-timeline-week-nav="date"
+                    data-timeline-date-trigger="true"
+                    aria-haspopup="dialog"
+                    aria-controls="timeline-date-picker-modal"
+                    onclick="openTimelineDatePicker('expanded')"
+                    aria-label="Go to date"
+                    title="Go to date"
+                >
+                    <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+                    <span class="visually-hidden">Go to date</span>
                 </button>
 
                 <button
@@ -661,14 +692,29 @@
     </div>
 
     <div class="mobile-full-calendar-lite-toolbar">
-        <button type="button" class="mobile-full-calendar-lite-nav" onclick="changeMobileFullCalendarLiteWeek(-1)">
+        <button type="button" class="mobile-full-calendar-lite-nav" data-timeline-week-nav="previous" onclick="changeMobileFullCalendarLiteWeek(-1)">
             <i class="fa-solid fa-chevron-left"></i>
             Previous
         </button>
-        <button type="button" class="mobile-full-calendar-lite-nav mobile-full-calendar-lite-today" onclick="changeMobileFullCalendarLiteWeek(0)">
+        <button
+            type="button"
+            class="mobile-full-calendar-lite-nav timeline-date-nav-trigger"
+            id="mobile-full-calendar-lite-date-picker"
+            data-timeline-week-nav="date"
+            data-timeline-date-trigger="true"
+            aria-haspopup="dialog"
+            aria-controls="timeline-date-picker-modal"
+            onclick="openTimelineDatePicker('mobile')"
+            aria-label="Go to date"
+            title="Go to date"
+        >
+            <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+            <span class="visually-hidden">Go to date</span>
+        </button>
+        <button type="button" class="mobile-full-calendar-lite-nav mobile-full-calendar-lite-today" data-timeline-week-nav="today" onclick="changeMobileFullCalendarLiteWeek(0)">
             This Week
         </button>
-        <button type="button" class="mobile-full-calendar-lite-nav" onclick="changeMobileFullCalendarLiteWeek(1)">
+        <button type="button" class="mobile-full-calendar-lite-nav" data-timeline-week-nav="next" onclick="changeMobileFullCalendarLiteWeek(1)">
             Next
             <i class="fa-solid fa-chevron-right"></i>
         </button>
@@ -727,6 +773,52 @@
         <div class="timeline-dialog-actions">
             <button type="button" id="timeline-dialog-cancel" class="btn btn-outline-secondary btn-sm fw-bold px-4">Cancel</button>
             <button type="button" id="timeline-dialog-confirm" class="btn btn-primary btn-sm fw-bold px-4">Continue</button>
+        </div>
+    </div>
+</div>
+
+<div
+    class="modal fade no-print timeline-date-picker-modal"
+    id="timeline-date-picker-modal"
+    tabindex="-1"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="timeline-date-picker-title"
+    aria-describedby="timeline-date-picker-message"
+    aria-hidden="true"
+>
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header timeline-date-picker-header border-0">
+                <div>
+                    <h2 class="modal-title h5 fw-bold mb-1" id="timeline-date-picker-title">
+                        <i class="fa-solid fa-calendar-days me-2" aria-hidden="true"></i>Go to date
+                    </h2>
+                    <p class="small mb-0" id="timeline-date-picker-message">
+                        Choose any date to open its Monday–Sunday calendar week.
+                    </p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close date picker"></button>
+            </div>
+            <form id="timeline-date-picker-form" novalidate>
+                <div class="modal-body pt-2">
+                    <label class="form-label fw-bold" for="timeline-date-picker-input">Date</label>
+                    <input
+                        type="date"
+                        class="form-control timeline-date-picker-input"
+                        id="timeline-date-picker-input"
+                        name="timeline_date"
+                        autocomplete="off"
+                        aria-describedby="timeline-date-picker-message timeline-date-picker-error"
+                        aria-invalid="false"
+                    >
+                    <div class="invalid-feedback d-block" id="timeline-date-picker-error" role="alert" hidden></div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary fw-bold" id="timeline-date-picker-cancel" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-bold" id="timeline-date-picker-submit">Go to date</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -2110,6 +2202,118 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 .timeline-week-nav-loading i {
     opacity: 0.72;
+}
+
+.timeline-date-nav-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    min-width: 2.45rem;
+    min-height: 2.25rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.timeline-date-nav-trigger-expanded {
+    padding-inline: 0.7rem !important;
+}
+
+.timeline-date-nav-trigger:hover {
+    border-color: var(--app-primary, #0d6efd);
+}
+
+.timeline-date-nav-trigger:focus-visible {
+    outline: 3px solid rgba(13, 110, 253, 0.35);
+    outline-offset: 2px;
+    position: relative;
+    z-index: 2;
+}
+
+.timeline-date-nav-trigger:disabled,
+.timeline-date-nav-trigger.timeline-week-nav-loading {
+    cursor: wait !important;
+    opacity: 0.62;
+}
+
+.timeline-date-picker-modal .modal-content {
+    border: 1px solid #dbe3ee;
+}
+
+.timeline-date-picker-header {
+    padding: 1rem 1.15rem 0.65rem;
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.timeline-date-picker-header p,
+.timeline-date-picker-header .small {
+    color: #64748b;
+}
+
+.timeline-date-picker-input {
+    min-height: 2.75rem;
+    font-weight: 700;
+}
+
+.timeline-date-picker-input:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.18);
+}
+
+.timeline-date-picker-input.is-invalid {
+    border-color: #dc3545;
+}
+
+.timeline-date-picker-modal .invalid-feedback {
+    color: #b42318;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.timeline-date-picker-modal #timeline-date-picker-error[hidden] {
+    display: none !important;
+}
+
+@media (min-width: 769px) {
+    .timeline-intro-row-collapsed .timeline-date-nav-trigger {
+        min-width: 30px;
+    }
+
+    .timeline-intro-row-collapsed .timeline-date-nav-trigger .timeline-collapsed-rail-label {
+        display: inline;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 980px) {
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed .timeline-date-nav-trigger {
+        width: 30px;
+        min-width: 30px;
+        padding: 0.2rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .timeline-date-nav-trigger {
+        min-height: 2.75rem;
+        min-width: 0;
+        border-radius: 0.9rem;
+    }
+
+    .timeline-date-picker-modal .modal-dialog {
+        margin: 0.75rem;
+    }
+
+    .timeline-date-picker-modal .modal-content {
+        border-radius: 1rem !important;
+    }
+}
+
+@media print {
+    [data-timeline-date-trigger],
+    .timeline-date-picker-modal {
+        display: none !important;
+    }
 }
 
 .timeline-week-nav-status {
@@ -6922,7 +7126,7 @@ body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-
 
 .mobile-full-calendar-lite-toolbar {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: center;
     gap: 0.55rem;
     margin-bottom: 0.55rem;
@@ -6950,6 +7154,18 @@ body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-
 
 .mobile-full-calendar-lite-nav:disabled {
     opacity: 0.52;
+}
+
+.mobile-full-calendar-lite-nav:focus-visible {
+    outline: 3px solid rgba(13, 110, 253, 0.35);
+    outline-offset: 2px;
+    position: relative;
+    z-index: 2;
+}
+
+.mobile-full-calendar-lite-nav.timeline-week-nav-loading {
+    cursor: wait !important;
+    opacity: 0.58;
 }
 
 .mobile-full-calendar-lite-week {
@@ -9901,18 +10117,19 @@ function shouldUseEngineerMobileView(){
         scrollMobileFullCalendarLiteToTop(true);
     }
 
-    function changeMobileFullCalendarLiteWeek(direction){
+    async function changeMobileFullCalendarLiteWeek(direction){
         mobileFullCalendarLiteForced = true;
         mobileEngineerDesktopForced = false;
         setMobileDesktopGridSkippedState(true);
-        pendingMobileFilterAfterLoad = '';
-        weekOffset = (Number(direction) === 0) ? 0 : weekOffset + Number(direction || 0);
-        saveTimelineViewState();
-        refreshTimelineGrid();
-        setTimeout(() => {
-            renderMobileFullCalendarLite();
-            scrollMobileFullCalendarLiteToTop(true);
-        }, 0);
+        const numericDirection = Number(direction);
+        if(!Number.isFinite(numericDirection)) return false;
+        const targetWeekOffset = numericDirection === 0
+            ? 0
+            : (Number(weekOffset) || 0) + numericDirection;
+        const navigated = await navigateTimelineToWeekOffset(targetWeekOffset, {
+            mobileFullCalendar: true
+        });
+        return navigated;
     }
 
 
@@ -17965,34 +18182,118 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
         timelineWeekNavigationPreviousLabels = null;
     }
 
-    async function changeWeek(direction) {
-        const numericDirection = Number(direction);
+    let timelineDatePickerModalInstance = null;
+    let timelineDatePickerPreviousTrigger = null;
+    let timelineDatePickerSource = '';
+
+    function formatTimelineDateInputValue(dateValue){
+        const date = dateValue instanceof Date ? new Date(dateValue) : new Date(dateValue);
+        if(Number.isNaN(date.getTime())) return '';
+        return [
+            date.getFullYear(),
+            String(date.getMonth() + 1).padStart(2, '0'),
+            String(date.getDate()).padStart(2, '0')
+        ].join('-');
+    }
+
+    function getTimelineDatePickerDefaultValue(){
+        const displayedOffset = Number(weekOffset) || 0;
+        if(displayedOffset === 0) return formatTimelineDateInputValue(new Date());
+        return formatTimelineDateInputValue(getWeekStartFromOffset(displayedOffset));
+    }
+
+    function setTimelineDatePickerError(message=''){
+        const input = document.getElementById('timeline-date-picker-input');
+        const error = document.getElementById('timeline-date-picker-error');
+        const hasError = Boolean(String(message || '').trim());
+        if(error){
+            error.textContent = hasError ? String(message) : '';
+            error.hidden = !hasError;
+        }
+        if(input){
+            input.classList.toggle('is-invalid', hasError);
+            input.setAttribute('aria-invalid', String(hasError));
+        }
+    }
+
+    function openTimelineDatePicker(source='expanded'){
+        const modalElement = document.getElementById('timeline-date-picker-modal');
+        const input = document.getElementById('timeline-date-picker-input');
+        if(timelineWeekNavigationBusy || !modalElement || !input || !window.bootstrap?.Modal) return false;
+
+        timelineDatePickerSource = String(source || 'expanded');
+        timelineDatePickerPreviousTrigger = document.activeElement;
+        input.value = getTimelineDatePickerDefaultValue();
+        setTimelineDatePickerError('');
+        timelineDatePickerModalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+        timelineDatePickerModalInstance.show();
+        return true;
+    }
+
+    async function submitTimelineDatePicker(event){
+        if(event?.preventDefault) event.preventDefault();
+
+        const input = document.getElementById('timeline-date-picker-input');
+        const modalElement = document.getElementById('timeline-date-picker-modal');
+        const rawDate = String(input?.value || '').trim();
+        if(!rawDate){
+            setTimelineDatePickerError('Choose a date before continuing.');
+            input?.focus();
+            return false;
+        }
+
+        const targetDate = parseTimelineDateParam(rawDate);
+        if(!targetDate){
+            setTimelineDatePickerError('Enter a valid calendar date.');
+            input?.focus();
+            return false;
+        }
+
+        const targetWeekOffset = calculateTimelineWeekOffsetForDate(targetDate);
+        const useMobileFullCalendar = timelineDatePickerSource === 'mobile';
+        if(useMobileFullCalendar){
+            mobileFullCalendarLiteForced = true;
+            mobileEngineerDesktopForced = false;
+            setMobileDesktopGridSkippedState(true);
+            updateEngineerMobileViewMode();
+        }
+
+        if(timelineDatePickerModalInstance && modalElement){
+            timelineDatePickerModalInstance.hide();
+        }
+
+        const navigated = await navigateTimelineToWeekOffset(targetWeekOffset, {
+            mobileFullCalendar: useMobileFullCalendar
+        });
+        return navigated;
+    }
+
+    async function navigateTimelineToWeekOffset(targetWeekOffset, options={}){
+        const numericTarget = Number(targetWeekOffset);
         if(timelineWeekNavigationBusy) return false;
-        if(!Number.isFinite(numericDirection)) return false;
+        if(!Number.isFinite(numericTarget)) return false;
 
         const previousWeekOffset = weekOffset;
         const branchFilter = document.getElementById('branch-filter');
-        const previousViewState = loadTimelineViewState();
+        const previousBranch = branchFilter?.value || 'ALL';
 
         pendingMobileFilterAfterLoad = '';
         timelineWeekNavigationBusy = true;
         setTimelineWeekNavigationBusy(true);
-        weekOffset = (numericDirection === 0) ? 0 : weekOffset + numericDirection;
+        weekOffset = Math.trunc(numericTarget);
         saveTimelineViewState();
 
         try{
             await refreshTimelineGrid({forceRefresh: false, navigation: true});
+            if(options.mobileFullCalendar){
+                renderMobileFullCalendarLite();
+                setTimeout(() => scrollMobileFullCalendarLiteToTop(true), 0);
+            }
             return true;
         }catch(error){
             console.error('[Timeline] Week navigation failed:', error);
-            if(previousViewState && Number.isFinite(Number(previousViewState.weekOffset))){
-                weekOffset = Number(previousViewState.weekOffset);
-            }else{
-                weekOffset = previousWeekOffset;
-            }
-            if(branchFilter && previousViewState?.branch){
-                branchFilter.value = previousViewState.branch;
-            }
+            weekOffset = previousWeekOffset;
+            if(branchFilter) branchFilter.value = previousBranch;
             saveTimelineViewState();
             setTimelineWeekNavigationBusy(false, true);
             timelineAlert('Unable to load the selected calendar week. The previous week remains displayed.', 'error');
@@ -18001,6 +18302,15 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
             timelineWeekNavigationBusy = false;
             setTimelineWeekNavigationBusy(false);
         }
+    }
+
+    async function changeWeek(direction) {
+        const numericDirection = Number(direction);
+        if(!Number.isFinite(numericDirection)) return false;
+        const targetWeekOffset = numericDirection === 0
+            ? 0
+            : (Number(weekOffset) || 0) + numericDirection;
+        return navigateTimelineToWeekOffset(targetWeekOffset);
     }
 
     function exportToExcel() {
@@ -18108,6 +18418,33 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
 
         updateDurationLabel();
     }
+
+    document.addEventListener('DOMContentLoaded', function(){
+        const form = document.getElementById('timeline-date-picker-form');
+        const modalElement = document.getElementById('timeline-date-picker-modal');
+        const input = document.getElementById('timeline-date-picker-input');
+
+        if(form) form.addEventListener('submit', submitTimelineDatePicker);
+        if(input){
+            input.addEventListener('input', function(){
+                if(input.value) setTimelineDatePickerError('');
+            });
+        }
+        if(modalElement){
+            modalElement.addEventListener('shown.bs.modal', function(){
+                input?.focus();
+                input?.select?.();
+            });
+            modalElement.addEventListener('hidden.bs.modal', function(){
+                setTimelineDatePickerError('');
+                if(timelineDatePickerPreviousTrigger?.isConnected){
+                    timelineDatePickerPreviousTrigger.focus();
+                }
+                timelineDatePickerPreviousTrigger = null;
+                timelineDatePickerSource = '';
+            });
+        }
+    });
 
     document.addEventListener('DOMContentLoaded', async () => {
         // Schedule actions use explicit card buttons. Avoid whole-card click

@@ -20599,9 +20599,9 @@ def save_tsr_knowledge_entry():
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
-    # Navigation shell bump: medical-service-pwa-offline-navigation-v163-editable-pm-cadence
-    # -> v164 so installed clients refresh the eight-row focal-spot calibration report shell.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v164-calibration-eight-rows';
+    # Navigation shell bump: medical-service-pwa-offline-navigation-v164-calibration-eight-rows
+    # -> v165 so installed clients refresh the Calendar date-navigation controls.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v165-calendar-date-navigation';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

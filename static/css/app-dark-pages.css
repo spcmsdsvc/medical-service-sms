@@ -282,6 +282,76 @@
 :root[data-app-theme="dark"] .timeline-collapsed-week-range {
     color: var(--dark-text) !important;
 }
+:root[data-app-theme="dark"] .timeline-date-nav-trigger {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .timeline-date-nav-trigger:hover,
+:root[data-app-theme="dark"] .timeline-date-nav-trigger:focus-visible {
+    background: var(--dark-control-hover) !important;
+    color: #fff !important;
+    border-color: var(--app-primary) !important;
+}
+:root[data-app-theme="dark"] .timeline-date-nav-trigger:focus-visible {
+    outline: 3px solid var(--app-focus) !important;
+    outline-offset: 2px;
+}
+:root[data-app-theme="dark"] .timeline-date-nav-trigger:disabled,
+:root[data-app-theme="dark"] .timeline-date-nav-trigger.timeline-week-nav-loading {
+    background: var(--dark-input) !important;
+    color: var(--dark-muted) !important;
+    border-color: var(--dark-border) !important;
+    opacity: .68;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-modal .modal-content {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-header {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-header p,
+:root[data-app-theme="dark"] .timeline-date-picker-header .small,
+:root[data-app-theme="dark"] .timeline-date-picker-modal .form-label {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-header .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+    opacity: .86;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-header .btn-close:focus-visible {
+    outline: 3px solid var(--app-focus) !important;
+    outline-offset: 2px;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-input {
+    background: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+    color-scheme: dark;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-input:focus {
+    border-color: var(--app-focus) !important;
+    box-shadow: 0 0 0 0.2rem rgba(96, 165, 250, .25) !important;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-modal .btn-outline-secondary {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-modal .btn-outline-secondary:hover,
+:root[data-app-theme="dark"] .timeline-date-picker-modal .btn-outline-secondary:focus-visible {
+    background: var(--dark-control-hover) !important;
+    color: #fff !important;
+    border-color: var(--app-primary) !important;
+}
+:root[data-app-theme="dark"] .timeline-date-picker-modal .invalid-feedback,
+:root[data-app-theme="dark"] #timeline-date-picker-error {
+    color: #fda4af !important;
+}
 :root[data-app-theme="dark"] [data-timeline-week-nav].timeline-week-nav-loading {
     color: var(--dark-muted) !important;
 }
