@@ -1,5 +1,230 @@
 # Project Change Log
 
+codex changes - 2026-09-16
+
+- Recorded the owner's complete Editable PM cadence with future-plan rebuilding plan at the
+  top of `plans.md` with status **Approved — awaiting go-ahead**. The amendment adds durable
+  generated-plan identity and permits cadence changes from the selected visit onward, using
+  the edited target date while preserving earlier history. It requires transactional future-
+  sibling replacement, collision rejection, linked/completed-history protection, legacy-row
+  handling, an editable cadence/rebuild preview and confirmation UI, release/cache updates,
+  focused fail-first tests, full non-browser verification, and protected-worktree review.
+  No PM behavior, database, Railway setting, commit, push, or production state was changed
+  by this approval record.
+- Recorded the owner's complete Recurring PM generation and schedule matching plan at the
+  top of `plans.md` with status **Approved — awaiting go-ahead**. It amends the uncommitted
+  Genoray/Vieworks PM package with required Semi-Annual or Quarterly plan generation,
+  deterministic month-end clamping, transactional duplicate skipping, independent visit
+  management, cadence display, and schedule options limited to the visit's exact month/year,
+  Client ID, PM service task, and normalized Product/equipment name. The plan also specifies
+  historical-link preservation, fail-first coverage, additive schema handling, release and
+  cache updates, full non-browser verification, and protected-worktree safeguards. No PM
+  implementation, database, Railway, commit, push, or production behavior was changed by
+  this approval record.
+- Recorded the owner's complete Genoray and Vieworks PM monitoring plan at the top of
+  `plans.md` with status **Approved — awaiting go-ahead**. The plan specifies separate
+  administrator-only fiscal-year overviews and equipment details, manually entered exact
+  target dates, validated links to existing same-client PM service schedules, derived
+  completion/engineer/date and permitted file links, owner-change warnings, serial-edit
+  preservation, deletion blocking, isolated tests, release metadata, service-worker bump,
+  protected-worktree review, and separately gated implementation/publication. No PM code,
+  database, Railway setting, or production behavior was changed by this approval record.
+- Began the separately authorized Genoray and Vieworks PM monitoring implementation after
+  the owner's explicit 2026-09-16 go-ahead. Preflight confirmed the approved scope, the
+  existing standalone Genoray/Vieworks inventory implementation, the protected dirty
+  `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/` artifacts, and the restriction
+  against commit, push, deployment, production data, Railway changes, and browser/Codex UI
+  automation. Source changes and isolated disposable-database verification are in progress.
+- Added the isolated disposable SQLite PM monitoring test checkpoint at
+  `tests/test_inventory_pm.py`. The fail-first contract and route tests intentionally run
+  before the PM implementation so missing storage, routes, overview/detail data, schedule
+  validation, dynamic status, serial preservation, deletion blocking, and brand isolation
+  are observable without opening or modifying protected `scheduler.db`.
+- Fail-first checkpoint ran with `venv\\Scripts\\python.exe -m unittest
+  tests.test_inventory_pm` and produced the expected **2 errors** before PM code existed:
+  the template was absent and `ensure_inventory_pm_visit_table` was undefined. No source
+  behavior or protected database state changed during this checkpoint.
+- Added the additive `InventoryPmVisit` model in `app.py` with fixed Genoray/Vieworks
+  brand identity, equipment serial, exact target date, nullable schedule link, timestamps,
+  and lookup indexes. The model records PM history independently while leaving existing
+  Product and Shift relationships unchanged; PM table creation and routes are next.
+- Added the additive PM schema-ensure helper, fixed-brand authorization/item resolver,
+  April-March fiscal-year grouping, same-owner PM schedule validation, request-time
+  completion/overdue derivation, schedule engineer metadata, owner-change warnings, and
+  existing archive-file link serialization helpers in `app.py`. These helpers do not create
+  or modify calendar schedules or copy attachment files.
+- Registered the PM table ensure step in the normal SQLite compatibility-migration hook so
+  a fresh or existing database receives the additive table before any PM route reads it.
+  The helper remains one-time and commits pending migration writes before DDL to avoid
+  SQLite request-lock contention.
+- Added the shared eligible-schedule serializer for the PM link picker, including service
+  type, PM task, date, client, product, and assigned-engineer metadata while keeping the
+  existing Shift row read-only.
+- Corrected the PM visit serializer's live linked-shift ID resolution so schedule-option
+  serialization does not reference an undefined shift and deleted linked shifts return a
+  null current link plus their preserved historical ID.
+- Added guarded Genoray/Vieworks PM overview and equipment-detail pages plus JSON APIs for
+  fiscal-year data, visit list/add/edit/delete, item detail, and eligible schedule options.
+  Visit links validate service type, PM task, and current owner; one schedule may support
+  multiple visits, while status/date/engineers/files are derived from the current schedule
+  at request time and historical owner mismatches are flagged.
+- Added the equipment-detail visits compatibility endpoint for both GET and POST so callers
+  may list or add visits using the serial embedded in the brand-only URL while sharing the
+  same authorization and validation path as the general visit endpoint.
+- Included live item name and current owner metadata on serialized PM visits and recalculated
+  overview counts after server-side filters so API consumers receive the same equipment and
+  status context shown by the monitoring page.
+- Expanded the isolated PM test suite with detail-URL POST/GET coverage, invalid link
+  rejection, owner-change warnings, missing-schedule history retention, permitted TSR-file
+  links, and Vieworks serial-edit/delete protection. These checks continue to use a temporary
+  SQLite database and do not exercise the protected scheduler database.
+- Corrected the service-worker history comment to identify the v160-to-v161 navigation-shell
+  bump accurately while retaining the v161 PM-monitoring cache marker.
+- Added focused release-contract assertions for the PM manifest entry and service-worker
+  cache floor v161 so future cache changes cannot silently serve stale navigation markup.
+- Fixed PM overview refresh state so changing fiscal years updates the cached payload used by
+  subsequent local filters instead of rendering stale visits from the prior fiscal year.
+- Added a 375px PM layout breakpoint that stacks summary fields and preserves 44px tap targets
+  on narrow phones while retaining the desktop horizontal table and existing product layout.
+- Added a rendered-shell regression check proving authorized navigation exposes both guarded
+  PM links, standalone Genoray rows receive their brand endpoint, and Product Inventory keeps
+  an empty PM base URL.
+- Added the scheduled-month selector to the PM overview and aligned local/API filtering so
+  April-through-March month selection works alongside fiscal year, equipment, client, and
+  status filters.
+- Added an API assertion for the scheduled-month filter and filtered status count in the
+  disposable PM test suite.
+- Bound text PM filters to input events and status/month selectors to change events so
+  desktop and phone filter controls refresh predictably.
+- Pinned source-level PM UI contracts for the scheduled-month control, 375px breakpoint, and
+  44px narrow-phone tap target in the focused test suite.
+- Verification checkpoint: PM plus Genoray and Vieworks inventory tests passed (35/35);
+  Product and related coverage tests passed (11/11); calendar/service-file tests passed
+  (45/45); navigation/offline/service-worker tests passed (108/108); changelog workflow and
+  coverage tests passed (43 passed, 1 skipped). Isolated full discovery ran 1,175 tests with
+  1,153 passed, 20 unrelated baseline failures, and 2 skips; failures were existing changelog
+  marker/state, rate-limit, purchase-order setup, and staff-fixture issues outside PM scope.
+- Final focused PM/inventory rerun after the month-filter, detail-alias, and shell-state fixes
+  passed 36/36 tests in a fresh disposable SQLite database.
+- Marked the PM plan **Executed — uncommitted** in `plans.md` with the implementation files,
+  verification totals, baseline full-discovery limitations, and remaining commit/publication/
+  review gates. The protected dirty database, handoff, `.claude/`, `output/`, and `tmp/` work
+  remain untouched.
+- Updated Genoray and Vieworks item edits to carry PM visit serial references atomically
+  when a machine serial changes, and blocked item deletion while PM history exists with a
+  clear conflict response. Product Inventory deletion/edit behavior remains unchanged.
+- Added `templates/inventory_pm.html` with separate brand-aware overview and equipment-detail
+  layouts, April-March month sections, fiscal-year/status/client/equipment filters, counts,
+  print and horizontal-scroll table behavior, phone cards, visit editing, schedule linking,
+  owner-mismatch warnings, and permitted attachment links. Product Inventory's existing
+  presentation remains unchanged.
+- Added guarded PM links to Genoray and Vieworks inventory row/card actions in
+  `templates/products.html`, with a shared brand-specific detail URL and responsive action
+  styling. Product Inventory rows/cards do not render a PM action.
+- Added administrator-guarded Genoray PM and Vieworks PM submenu entries in
+  `templates/layout.html`, with active/open state for overview aliases and equipment-detail
+  paths while preserving the existing Product Inventory link and role visibility.
+- Corrected the new PM fixture to flush disposable test clients before assigning foreign-key
+  owner IDs to standalone inventory items; this only affects test setup and does not touch
+  application data.
+- Normalized the disposable PM fixture serial values to the same uppercase convention used
+  by the standalone inventory APIs, keeping the serial-edit regression focused on PM history
+  transfer rather than legacy mixed-case lookup behavior.
+- Corrected the PM regression expectation for a reopened schedule whose 2026-04-01 target
+  is already before Manila today: reopening removes Completed, then the defined derived
+  lifecycle correctly reports Overdue.
+- Added the published `2026-09-16-inventory-pm-monitoring` release item to
+  `static/changelog/releases.json` for the administrator-facing Genoray and Vieworks PM
+  monitoring pages and APIs.
+- Bumped the embedded service-worker navigation cache marker from v160 to
+  `v161-inventory-pm-monitoring` for the new PM navigation shell, and updated the existing
+  Vieworks source contract to accept monotonic cache-version assertions.
+- Began the separately authorized Recurring PM generation and schedule matching implementation.
+  Preflight confirmed the approved plan, the existing uncommitted Genoray/Vieworks PM package,
+  the protected dirty `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/` artifacts, and
+  the restrictions against commit, push, deployment, production data, Railway changes, and
+  browser/Codex UI automation. The plan is now **In progress**; recurring PM source, tests,
+  release metadata, service-worker marker, and final verification remain in this work cycle.
+- Extended `tests/test_inventory_pm.py` with the recurring-cadence, month-clamping, fiscal
+  crossover, duplicate/atomicity, cadence-preservation, exact schedule-match, historical-link,
+  migration, and both-brand contracts. The fail-first run used the disposable test database via
+  `venv\\Scripts\\python.exe -m unittest tests.test_inventory_pm` and correctly exposed the
+  missing cadence schema/helpers, recurring POST contract, target-date schedule filtering, and
+  current UI markers; protected `scheduler.db` was not opened or changed.
+- Implemented additive recurring PM storage and date helpers in `app.py`: `InventoryPmVisit`
+  now stores nullable cadence for legacy rows, the table migration adds the column safely and
+  creates a composite unique index when legacy duplicates do not prevent it, and deterministic
+  month shifts clamp invalid destination days. New PM POST requests validate `serial_number`,
+  `cadence`, and `start_date`, create Semi-Annual or Quarterly visits in one transaction, skip
+  preexisting equipment/date rows, return created/skipped date lists, and leave visits unlinked.
+- Updated individual PM edits to preserve cadence, restrict changes to the visit date and
+  schedule link/unlink behavior, reject equipment/date collisions, validate every replacement
+  against the visit's exact month and current equipment, and retain unchanged historical links.
+  Schedule options now require a target date and match only same-client service PM schedules
+  with a present Product whose trimmed case-insensitive name equals the standalone item name.
+- Updated `templates/inventory_pm.html` with required cadence/start-date controls, live two- or
+  four-date preview, created/skipped messaging, cadence display on overview/detail/phone rows,
+  per-visit schedule loading, and explicit keep-current/unlink handling for historical links.
+  The existing responsive, print, file-link, status, filter, and access surfaces remain in place.
+- Added PM regression checks for required cadence/start-date validation, unlinked batch rows, and
+  Vieworks-specific Product-name schedule matching; the focused PM suite now passes **21/21**.
+- Amended the existing `2026-09-16-inventory-pm-monitoring` release description in
+  `static/changelog/releases.json` to describe recurring plans and exact schedule matching, and
+  bumped the embedded navigation service-worker marker from v161 to
+  `v162-recurring-pm-matching`.
+- Completed the approved Recurring PM generation and schedule matching plan and marked it
+  **Executed — uncommitted** in `plans.md`. Final verification passed `tests.test_inventory_pm`
+  **21/21**, related PM/inventory/product/layout/offline suites **103/103**, calendar/file/HR
+  suites **61/61**, navigation/offline/theme suites **136/136**, and changelog workflow/
+  coverage **44 passed, 1 skipped**. Isolated full discovery ran **1185 tests: 1163 passed,
+  20 unrelated baseline failures, 2 skipped** (changelog manifest state, purchase-order
+  setup rate limits, staff fixtures, and stale TSR cache-marker expectations). Python AST,
+  Jinja, inline JavaScript, release JSON, and `git diff --check` checks passed; no browser,
+  commit, push, deployment, Railway, or production database action was performed, and the
+  protected dirty database, handoff, `.claude/`, `output/`, `tmp/`, and unrelated work remain
+  preserved.
+- Began the separately authorized Editable PM cadence with future-plan rebuilding implementation.
+  Preflight confirmed the approved cadence-rebuild scope, the existing uncommitted Genoray/
+  Vieworks recurring PM package, protected `scheduler.db`, handoff, `.claude/`, `output/`, and
+  `tmp/` artifacts, and the restrictions against commit, push, deployment, production data,
+  Railway changes, and browser/Codex UI automation. The plan is now **In progress**; additive
+  plan identity, transactional rebuilding, tests, UI, release metadata, service-worker marker,
+  and final verification remain in this work cycle.
+- Extended `tests/test_inventory_pm.py` with fail-first contracts for shared recurring-plan
+  keys, both cadence rebuild directions, edited-date anchoring, earlier-history preservation,
+  later-sibling replacement, legacy no-key rows, linked-visit protection, collision rejection,
+  atomic rollback, unchanged-cadence behavior, and the rebuild UI markers. The disposable
+  checkpoint ran 29 tests and correctly produced 5 assertion failures plus 4 expected setup/
+  contract errors against the current implementation; protected `scheduler.db` was not used.
+- Added nullable indexed `InventoryPmVisit.plan_key` with additive migration support and one
+  opaque key shared by every newly generated recurring batch. Individual PM PUT/PATCH requests
+  now accept supported cadence changes and rebuild only the selected visit plus later siblings
+  in one locked transaction, preserving earlier rows, rejecting linked selected/later visits,
+  rejecting retained-date collisions, rolling back all mutations on failure, and treating
+  legacy no-key rows as standalone new plan starts. Rebuild responses expose the updated row,
+  regenerated visits/dates, removed future dates, and precise protection/collision details;
+  unchanged-cadence edits retain the existing narrow date/link behavior.
+- Updated `templates/inventory_pm.html` with an edit-mode cadence selector, selected-date
+  rebuild preview, protected-link explanation, confirmation modal listing affected future dates,
+  and dynamic **Update and Rebuild Plan** action while preserving existing schedule matching,
+  historical-link controls, filters, responsive layout, and print behavior.
+- Amended the existing inventory PM release description in `static/changelog/releases.json`
+  and bumped the embedded navigation service-worker marker from v162 to
+  `v163-editable-pm-cadence` so installed clients receive the editable cadence UI.
+- Extended the PM additive-migration regression to verify legacy tables receive nullable
+  `plan_key` alongside `cadence` and preserve both fields as null for existing rows.
+- Completed the approved Editable PM cadence with future-plan rebuilding plan and marked it
+  **Executed — uncommitted** in `plans.md`. Final focused PM verification passed **29/29**;
+  affected inventory/Product/layout/HR/calendar-file/navigation/offline/service-worker and
+  changelog modules passed **358 tests with 1 skip**. Isolated full discovery ran **1193 tests:
+  1171 passed, 20 unrelated baseline failures, 2 skipped**; no PM test failed. Python AST,
+  Jinja, inline JavaScript, release JSON, and `git diff --check` checks passed. No browser,
+  commit, push, deployment, Railway, or production database action was performed, and the
+  protected dirty `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and unrelated work
+  remain preserved.
+- Updated the top plan status to **Executed — uncommitted** after implementation and
+  verification completed; no commit or publication was authorized in this cycle.
+
 codex changes - 2026-09-15
 
 - Committed the authorized Genoray and Vieworks standalone inventory package, automatic BSID

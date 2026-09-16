@@ -2580,6 +2580,51 @@ class VieworksBsidCounter(db.Model):
     next_number = db.Column(db.Integer, nullable=False)
 
 
+class InventoryPmVisit(db.Model):
+    """A manually planned preventive-maintenance visit for one standalone asset.
+
+    The fixed brand column is intentional. Genoray and Vieworks inventory share the
+    PM workflow shape but must never resolve one another's serial numbers. A visit
+    keeps only a nullable Shift id; schedule details and files are read live when a
+    PM page is requested so reopening or editing a schedule cannot leave stale PM
+    status data behind.
+    """
+    __tablename__ = 'inventory_pm_visit'
+
+    id = db.Column(db.Integer, primary_key=True)
+    brand = db.Column(db.String(20), nullable=False, index=True)
+    equipment_serial = db.Column(db.String(100), nullable=False, index=True)
+    target_date = db.Column(db.Date, nullable=False, index=True)
+    # Nullable keeps unreleased/manual legacy rows readable. New recurring plans
+    # always write one of the supported cadence keys.
+    cadence = db.Column(db.String(20), nullable=True, index=True)
+    # A stable opaque key groups only rows created in the same recurring plan.
+    # Nullable keeps legacy single visits readable without inferring history from dates.
+    plan_key = db.Column(db.String(64), nullable=True, index=True)
+    shift_id = db.Column(
+        db.Integer,
+        db.ForeignKey('shift.id', ondelete='SET NULL'),
+        nullable=True,
+        index=True,
+    )
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=get_manila_time,
+        onupdate=get_manila_time,
+        nullable=False,
+    )
+
+    __table_args__ = (
+        db.Index(
+            'uq_inventory_pm_visit_brand_equipment_target',
+            'brand', 'equipment_serial', 'target_date',
+            unique=True,
+        ),
+        db.Index('ix_inventory_pm_visit_shift', 'shift_id'),
+    )
+
+
 _product_contract_column_ready = False
 
 
@@ -3323,6 +3368,512 @@ def vieworks_bsid_duplicate(value, exclude_serial=None):
     if exclude_serial:
         query = query.filter(VieworksItem.serial_number != exclude_serial)
     return query.first()
+
+
+_inventory_pm_visit_table_ready = False
+INVENTORY_PM_BRANDS = ('genoray', 'vieworks')
+
+
+def ensure_inventory_pm_visit_table():
+    """Create or upgrade the additive PM visit table without destroying legacy rows."""
+    global _inventory_pm_visit_table_ready
+    if _inventory_pm_visit_table_ready:
+        return
+    try:
+        # Finish compatibility-migration writes before opening the DDL connection.
+        db.session.commit()
+        with db.engine.begin() as connection:
+            table_exists = connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_pm_visit'"
+            ).fetchone()
+            if not table_exists:
+                InventoryPmVisit.__table__.create(bind=connection, checkfirst=True)
+
+            columns = {
+                row[1] for row in connection.exec_driver_sql(
+                    "PRAGMA table_info(inventory_pm_visit)"
+                ).fetchall()
+            }
+            if 'cadence' not in columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE inventory_pm_visit ADD COLUMN cadence VARCHAR(20)"
+                )
+            if 'plan_key' not in columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE inventory_pm_visit ADD COLUMN plan_key VARCHAR(64)"
+                )
+
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_inventory_pm_visit_brand_equipment_target "
+                "ON inventory_pm_visit (brand, equipment_serial, target_date)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_inventory_pm_visit_shift "
+                "ON inventory_pm_visit (shift_id)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_inventory_pm_visit_plan_key "
+                "ON inventory_pm_visit (plan_key)"
+            )
+
+            duplicate_rows = connection.exec_driver_sql(
+                "SELECT brand, equipment_serial, target_date FROM inventory_pm_visit "
+                "GROUP BY brand, equipment_serial, target_date HAVING COUNT(*) > 1 LIMIT 1"
+            ).fetchone()
+            if duplicate_rows:
+                # Preserve legacy duplicates. Application checks still prevent new
+                # duplicates, and a later maintenance task can reconcile old rows.
+                print(
+                    '[InventoryPM] Existing duplicate visit keys detected; '
+                    'unique index creation skipped to preserve history.',
+                    flush=True,
+                )
+            else:
+                connection.exec_driver_sql(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_pm_visit_brand_equipment_target "
+                    "ON inventory_pm_visit (brand, equipment_serial, target_date)"
+                )
+        _inventory_pm_visit_table_ready = True
+    except Exception as table_error:
+        print(f"[InventoryPM] Unable to ensure inventory_pm_visit table: {table_error}", flush=True)
+        raise
+
+
+INVENTORY_PM_CADENCES = ('semi_annual', 'quarterly')
+INVENTORY_PM_CADENCE_OFFSETS = {
+    'semi_annual': (0, 6),
+    'quarterly': (0, 3, 6, 9),
+}
+
+
+def normalize_inventory_pm_cadence(value):
+    """Return a supported recurring cadence key or an empty value."""
+    normalized = (clean_str(value) or '').strip().lower().replace('-', '_').replace(' ', '_')
+    return normalized if normalized in INVENTORY_PM_CADENCES else ''
+
+
+def add_inventory_pm_months(start_date, months):
+    """Shift a date by calendar months, clamping to the destination month end."""
+    if not isinstance(start_date, date):
+        raise ValueError('start_date must be a date')
+    total_months = start_date.year * 12 + (start_date.month - 1) + int(months)
+    target_year, month_index = divmod(total_months, 12)
+    target_month = month_index + 1
+    last_day = calendar.monthrange(target_year, target_month)[1]
+    return date(target_year, target_month, min(start_date.day, last_day))
+
+
+def generate_inventory_pm_dates(start_date, cadence):
+    """Generate deterministic target dates for one supported recurring cadence."""
+    normalized_cadence = normalize_inventory_pm_cadence(cadence)
+    if not normalized_cadence:
+        raise ValueError('Cadence must be semi_annual or quarterly.')
+    if not isinstance(start_date, date):
+        raise ValueError('Start date must be a valid date.')
+    return [
+        add_inventory_pm_months(start_date, offset)
+        for offset in INVENTORY_PM_CADENCE_OFFSETS[normalized_cadence]
+    ]
+
+
+def normalize_inventory_pm_brand(brand):
+    """Return a supported PM brand key or an empty value."""
+    normalized = (clean_str(brand) or '').strip().lower()
+    return normalized if normalized in INVENTORY_PM_BRANDS else ''
+
+
+def inventory_pm_item_model(brand):
+    """Return the standalone inventory model for one fixed PM brand."""
+    return {
+        'genoray': GenorayItem,
+        'vieworks': VieworksItem,
+    }.get(normalize_inventory_pm_brand(brand))
+
+
+def can_access_inventory_pm(brand, user=None):
+    """Apply the same strict active-admin gate as the matching inventory page."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if normalized == 'genoray':
+        return bool(can_access_genoray_inventory(user))
+    if normalized == 'vieworks':
+        return bool(can_access_vieworks_inventory(user))
+    return False
+
+
+def resolve_inventory_pm_item(brand, serial_number):
+    """Resolve an item only inside the requested standalone brand table."""
+    model = inventory_pm_item_model(brand)
+    serial = (clean_str(serial_number) or '').upper()
+    if not model or not serial:
+        return None
+    item = db.session.get(model, serial)
+    if item:
+        return item
+    return model.query.filter(func.lower(model.serial_number) == serial.casefold()).first()
+
+
+def inventory_pm_fiscal_year(raw_year=None):
+    """Resolve an April-to-March fiscal year, defaulting to the current Manila FY."""
+    requested = clean_int(raw_year)
+    today = get_manila_today()
+    default_year = today.year if today.month >= 4 else today.year - 1
+    return requested if requested and 1900 <= requested <= 2200 else default_year
+
+
+def inventory_pm_fiscal_bounds(fiscal_year):
+    """Return inclusive start and exclusive end dates for an April-March FY."""
+    year = inventory_pm_fiscal_year(fiscal_year)
+    return date(year, 4, 1), date(year + 1, 4, 1)
+
+
+def inventory_pm_schedule_is_pm(shift):
+    """Return true when a service schedule task explicitly indicates PM work."""
+    title = clean_str(getattr(shift, 'title', None)) or ''
+    return bool(re.search(
+        r'(?i)(?:\bP\.?M\.?\b|\bpreventive\s+maintenance\b|\bpreventative\s+maintenance\b)',
+        title,
+    ))
+
+
+def inventory_pm_schedule_type(shift):
+    return (clean_str(getattr(shift, 'schedule_type', None)) or 'service').strip().lower()
+
+
+def inventory_pm_normalized_product_name(value):
+    """Normalize standalone equipment and Product names for schedule matching."""
+    return (clean_str(value) or '').strip().casefold()
+
+
+def inventory_pm_schedule_options_for_item(item, target_date=None):
+    """List eligible PM service schedules in the visit's exact calendar month."""
+    if not item or not item.client_id or not isinstance(target_date, date):
+        return []
+    month_start = target_date.replace(day=1)
+    next_month = add_inventory_pm_months(month_start, 1)
+    start_bound = datetime.combine(month_start, datetime.min.time())
+    end_bound = datetime.combine(next_month, datetime.min.time())
+    expected_product_name = inventory_pm_normalized_product_name(getattr(item, 'name', None))
+    if not expected_product_name:
+        return []
+    candidates = (
+        Shift.query
+        .options(joinedload(Shift.client), joinedload(Shift.product), joinedload(Shift.engineer))
+        .filter(
+            Shift.client_id == item.client_id,
+            Shift.start_time >= start_bound,
+            Shift.start_time < end_bound,
+        )
+        .order_by(Shift.start_time.asc(), Shift.id.asc())
+        .all()
+    )
+    return [
+        shift for shift in candidates
+        if (
+            inventory_pm_schedule_type(shift) == 'service'
+            and inventory_pm_schedule_is_pm(shift)
+            and getattr(shift, 'product', None)
+            and inventory_pm_normalized_product_name(getattr(shift.product, 'name', None)) == expected_product_name
+        )
+    ]
+
+
+def inventory_pm_schedule_to_dict(shift):
+    """Serialize one eligible service schedule for the PM link picker."""
+    try:
+        engineers = get_shift_engineer_records(shift)
+    except Exception:
+        engineers = []
+    engineer_ids = [engineer.id for engineer in engineers if engineer]
+    engineer_names = [engineer.name for engineer in engineers if engineer and engineer.name]
+    if not engineer_ids and getattr(shift, 'engineer_id', None):
+        engineer_ids = [shift.engineer_id]
+    if not engineer_names and getattr(shift, 'engineer', None):
+        engineer_names = [shift.engineer.name]
+    return {
+        'id': shift.id,
+        'shift_id': shift.id,
+        'date': shift.start_time.date().isoformat() if shift.start_time else '',
+        'start_time': shift.start_time.isoformat() if shift.start_time else '',
+        'end_time': shift.end_time.isoformat() if shift.end_time else '',
+        'title': shift.title or '',
+        'task': shift.title or '',
+        'status': shift.status or '',
+        'schedule_type': inventory_pm_schedule_type(shift),
+        'client_id': shift.client_id,
+        'client_name': shift.client.name if shift.client else 'N/A',
+        'product_id': shift.product_id or '',
+        'product_name': shift.product.name if shift.product else '',
+        'engineer_ids': engineer_ids,
+        'engineer_names': engineer_names,
+        'engineers': ', '.join(engineer_names) if engineer_names else '',
+    }
+
+
+def validate_inventory_pm_schedule_link(item, shift_id, target_date):
+    """Validate a new or replacement link against the item's current month and name."""
+    if not isinstance(target_date, date):
+        return None, 'A visit target date is required to link a schedule.'
+    shift_id = clean_int(shift_id)
+    if not shift_id:
+        return None, 'A schedule ID is required to create a link.'
+    shift = (
+        Shift.query
+        .options(joinedload(Shift.client), joinedload(Shift.product), joinedload(Shift.engineer), selectinload(Shift.files))
+        .filter(Shift.id == shift_id)
+        .first()
+    )
+    if not shift:
+        return None, 'The selected service schedule was not found.'
+    if inventory_pm_schedule_type(shift) != 'service':
+        return None, 'Only service schedules can be linked to PM visits.'
+    if not inventory_pm_schedule_is_pm(shift):
+        return None, 'Only schedules whose task indicates PM can be linked.'
+    if not item or not item.client_id or shift.client_id != item.client_id:
+        return None, 'The selected schedule must belong to the equipment owner.'
+    if shift not in inventory_pm_schedule_options_for_item(item, target_date):
+        return None, (
+            'The selected schedule must be a PM service schedule in the same month as the visit '
+            'and use the equipment Product name.'
+        )
+    return shift, None
+
+
+def inventory_pm_visible_file_links(shift):
+    """Return links for files already visible through the existing TSR archive guard."""
+    if not shift:
+        return []
+    try:
+        if not user_can_view_shift_tsr_archive(shift, 'all'):
+            return []
+        visible_files = get_user_visible_shift_file_records(shift)
+    except Exception as file_error:
+        print(f'[InventoryPM] Schedule file visibility skipped: {file_error}', flush=True)
+        return []
+
+    links = []
+    for file_record in visible_files:
+        display_name = get_shift_file_display_name(file_record) or file_record.filename
+        extension = schedule_attachment_extension(display_name)
+        if extension not in SCHEDULE_ATTACHMENT_EXTENSIONS and not is_tsr_filename(display_name):
+            continue
+        try:
+            download_url = url_for('download_tsr_archive_file', file_id=file_record.id, scope='all')
+            preview_url = url_for('preview_tsr_archive_file', file_id=file_record.id, scope='all')
+        except Exception:
+            continue
+        links.append({
+            'id': file_record.id,
+            'name': display_name,
+            'filename': display_name,
+            'preview_url': preview_url,
+            'download_url': download_url,
+            'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else '',
+        })
+    return links
+
+
+def inventory_pm_visit_to_dict(visit, item=None):
+    """Serialize a PM visit with request-time schedule status, staff, and files."""
+    brand = normalize_inventory_pm_brand(getattr(visit, 'brand', None))
+    item = item or resolve_inventory_pm_item(brand, getattr(visit, 'equipment_serial', None))
+    shift = db.session.get(Shift, clean_int(getattr(visit, 'shift_id', None))) if getattr(visit, 'shift_id', None) else None
+    if shift:
+        try:
+            # Loading through the normal query keeps dynamic file/engineer reads fresh
+            # even when this serializer receives a previously cached Shift instance.
+            shift = (
+                Shift.query
+                .options(joinedload(Shift.client), joinedload(Shift.product), joinedload(Shift.engineer), selectinload(Shift.files))
+                .filter(Shift.id == shift.id)
+                .first()
+            ) or shift
+        except Exception:
+            pass
+
+    target_date = getattr(visit, 'target_date', None)
+    schedule_status = clean_str(getattr(shift, 'status', None)) if shift else ''
+    is_completed = bool(shift and schedule_status and schedule_status.casefold() == 'completed')
+    derived_status = 'Completed' if is_completed else (
+        'Overdue' if target_date and target_date < get_manila_today() else 'Planned'
+    )
+    actual_date = shift.start_time.date().isoformat() if is_completed and shift.start_time else ''
+
+    engineer_ids = []
+    engineer_names = []
+    if shift:
+        try:
+            engineers = get_shift_engineer_records(shift)
+        except Exception:
+            engineers = []
+        engineer_ids = [engineer.id for engineer in engineers if engineer]
+        engineer_names = [engineer.name for engineer in engineers if engineer and engineer.name]
+        if not engineer_ids and getattr(shift, 'engineer_id', None):
+            engineer_ids = [shift.engineer_id]
+        if not engineer_names and getattr(shift, 'engineer', None):
+            engineer_names = [shift.engineer.name]
+
+    current_client_id = getattr(item, 'client_id', None) if item else None
+    shift_client_id = getattr(shift, 'client_id', None) if shift else None
+    owner_mismatch = bool(shift and current_client_id != shift_client_id)
+    mismatch_warning = (
+        'The equipment owner changed after this schedule was linked. Review the historical schedule owner before using it.'
+        if owner_mismatch else ''
+    )
+    file_links = inventory_pm_visible_file_links(shift) if shift else []
+    item_serial = getattr(visit, 'equipment_serial', None) or ''
+    item_owner = getattr(item, 'owner', None) if item else None
+    month_key = target_date.strftime('%Y-%m') if target_date else ''
+    month_label = target_date.strftime('%B %Y') if target_date else ''
+    schedule_payload = None
+    if shift:
+        schedule_payload = {
+            'id': shift.id,
+            'date': shift.start_time.date().isoformat() if shift.start_time else '',
+            'start_time': shift.start_time.isoformat() if shift.start_time else '',
+            'end_time': shift.end_time.isoformat() if shift.end_time else '',
+            'title': shift.title or '',
+            'task': shift.title or '',
+            'status': schedule_status,
+            'client_id': shift.client_id,
+            'client_name': shift.client.name if shift.client else 'N/A',
+            'product_id': shift.product_id or '',
+            'product_name': shift.product.name if shift.product else '',
+            'engineer_ids': engineer_ids,
+            'engineer_names': engineer_names,
+            'files': file_links,
+            'url': url_for('timeline_page', shift_id=shift.id) if 'timeline_page' in app.view_functions else '/timeline',
+        }
+    resolved_shift_id = shift.id if shift else None
+
+    return {
+        'id': visit.id,
+        'brand': brand,
+        'equipment_serial': item_serial,
+        'serial_number': item_serial,
+        'item_name': getattr(item, 'name', '') if item else '',
+        'client_id': getattr(item, 'client_id', None) if item else None,
+        'client_name': item_owner.name if item_owner else 'N/A',
+        'target_date': target_date.isoformat() if target_date else '',
+        'planned_date': target_date.isoformat() if target_date else '',
+        'cadence': normalize_inventory_pm_cadence(getattr(visit, 'cadence', None)) or None,
+        # The key is opaque and read-only; it lets PM clients correlate a response
+        # while the server remains the authority for plan membership and rebuilding.
+        'plan_key': getattr(visit, 'plan_key', None) or None,
+        'cadence_label': (
+            'Semi-Annual' if normalize_inventory_pm_cadence(getattr(visit, 'cadence', None)) == 'semi_annual'
+            else 'Quarterly' if normalize_inventory_pm_cadence(getattr(visit, 'cadence', None)) == 'quarterly'
+            else 'Legacy single visit'
+        ),
+        'scheduled_month': month_label,
+        'month': month_key,
+        'status': derived_status,
+        'derived_status': derived_status,
+        'actual_date': actual_date,
+        'engineer_ids': engineer_ids,
+        'engineer_names': engineer_names,
+        'engineers': ', '.join(engineer_names) if engineer_names else '',
+        'shift_id': resolved_shift_id,
+        'linked_schedule_id': resolved_shift_id,
+        'missing_shift_id': (
+            clean_int(getattr(visit, 'shift_id', None)) if getattr(visit, 'shift_id', None) and not shift else None
+        ),
+        'schedule': schedule_payload,
+        'linked_schedule': schedule_payload,
+        'owner_mismatch': owner_mismatch,
+        'mismatch_warning': mismatch_warning,
+        'warning': mismatch_warning,
+        'cadence_rebuild': inventory_pm_rebuild_metadata(visit),
+        'files': file_links,
+        'file_links': file_links,
+        'created_at': visit.created_at.isoformat() if getattr(visit, 'created_at', None) else '',
+        'updated_at': visit.updated_at.isoformat() if getattr(visit, 'updated_at', None) else '',
+    }
+
+
+def inventory_pm_item_to_dict(brand, item):
+    """Serialize item identity for PM overview/detail cards."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if not item:
+        return None
+    base = vieworks_item_to_dict(item) if normalized == 'vieworks' else genoray_item_to_dict(item)
+    base.update({
+        'brand': normalized,
+        'equipment_serial': item.serial_number,
+        'pm_url': url_for('inventory_pm_detail_page', brand=normalized, serial_number=item.serial_number),
+        'pm_detail_url': url_for('inventory_pm_detail_page', brand=normalized, serial_number=item.serial_number),
+    })
+    return base
+
+
+def inventory_pm_overview_payload(brand, fiscal_year=None):
+    """Build an April-March overview payload for exactly one inventory brand."""
+    normalized = normalize_inventory_pm_brand(brand)
+    year = inventory_pm_fiscal_year(fiscal_year)
+    start_date, end_date = inventory_pm_fiscal_bounds(year)
+    visits = (
+        InventoryPmVisit.query
+        .filter(
+            InventoryPmVisit.brand == normalized,
+            InventoryPmVisit.target_date >= start_date,
+            InventoryPmVisit.target_date < end_date,
+        )
+        .order_by(InventoryPmVisit.target_date.asc(), InventoryPmVisit.id.asc())
+        .all()
+    )
+    model = inventory_pm_item_model(normalized)
+    item_map = {item.serial_number: item for item in model.query.order_by(model.serial_number).all()} if model else {}
+    serialized_visits = [
+        inventory_pm_visit_to_dict(visit, item_map.get(visit.equipment_serial))
+        for visit in visits
+    ]
+
+    months = []
+    for offset in range(12):
+        month_number = ((4 - 1 + offset) % 12) + 1
+        month_year = year if month_number >= 4 else year + 1
+        month_start = date(month_year, month_number, 1)
+        next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        month_visits = [
+            visit for visit in serialized_visits
+            if visit.get('target_date') and month_start <= parse_date(visit['target_date']) < next_month
+        ]
+        months.append({
+            'key': month_start.strftime('%Y-%m'),
+            'month': month_start.strftime('%B'),
+            'month_name': month_start.strftime('%B'),
+            'label': month_start.strftime('%B %Y'),
+            'year': month_year,
+            'start_date': month_start.isoformat(),
+            'end_date': next_month.isoformat(),
+            'count': len(month_visits),
+            'visits': month_visits,
+        })
+
+    item_payloads = [inventory_pm_item_to_dict(normalized, item) for item in item_map.values()]
+    visit_item_serials = {visit.get('equipment_serial') for visit in serialized_visits}
+    counts = {
+        'total': len(serialized_visits),
+        'total_visits': len(serialized_visits),
+        'planned': sum(visit.get('status') == 'Planned' for visit in serialized_visits),
+        'overdue': sum(visit.get('status') == 'Overdue' for visit in serialized_visits),
+        'completed': sum(visit.get('status') == 'Completed' for visit in serialized_visits),
+        'equipment': len(visit_item_serials),
+        'items': len(item_payloads),
+    }
+    return {
+        'success': True,
+        'status': 'success',
+        'brand': normalized,
+        'brand_label': normalized.title(),
+        'fiscal_year': year,
+        'fiscal_year_label': f'FY {year}',
+        'start_date': start_date.isoformat(),
+        'end_date': (end_date - timedelta(days=1)).isoformat(),
+        'months': months,
+        'visits': serialized_visits,
+        'items': item_payloads,
+        'counts': counts,
+    }
 
 
 def ensure_tsr_knowledge_entry_table():
@@ -20048,9 +20599,9 @@ def save_tsr_knowledge_entry():
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
-    # Navigation shell bump: medical-service-pwa-offline-navigation-v159-genoray-inventory
-    # -> v160 so installed clients refresh the Vieworks Inventory submenu.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v160-vieworks-inventory';
+    # Navigation shell bump: medical-service-pwa-offline-navigation-v162-recurring-pm-matching
+    # -> v163 so installed clients refresh the editable PM cadence navigation shell.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v163-editable-pm-cadence';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -54343,6 +54894,671 @@ def delete_product(serial_number):
     return jsonify({'status': 'success'})
 
 
+def inventory_pm_filtered_overview_payload(payload):
+    """Apply optional overview filters while retaining the fiscal-month structure."""
+    query_status = (clean_str(request.args.get('status')) or '').casefold()
+    query_client = clean_int(request.args.get('client_id'))
+    query_month = clean_str(request.args.get('scheduled_month') or request.args.get('month')) or ''
+    query_serial = (clean_str(request.args.get('serial_number') or request.args.get('serial')) or '').casefold()
+
+    def visible(visit):
+        if query_status and (visit.get('status') or '').casefold() != query_status:
+            return False
+        if query_month:
+            month_values = {
+                (visit.get('month') or '').casefold(),
+                (visit.get('scheduled_month') or '').casefold(),
+            }
+            if not any(query_month.casefold() in value for value in month_values if value):
+                return False
+        if query_serial and query_serial not in (visit.get('equipment_serial') or '').casefold():
+            return False
+        if query_client:
+            item = next((
+                row for row in payload.get('items', [])
+                if row.get('serial_number') == visit.get('equipment_serial')
+            ), None)
+            if not item or clean_int(item.get('client_id')) != query_client:
+                return False
+        return True
+
+    visits = [visit for visit in payload.get('visits', []) if visible(visit)]
+    payload['visits'] = visits
+    for month in payload.get('months', []):
+        month['visits'] = [visit for visit in visits if visit.get('month') == month.get('key')]
+        month['count'] = len(month['visits'])
+    payload['filtered_count'] = len(visits)
+    payload['counts'] = {
+        'total': len(visits),
+        'total_visits': len(visits),
+        'planned': sum(visit.get('status') == 'Planned' for visit in visits),
+        'overdue': sum(visit.get('status') == 'Overdue' for visit in visits),
+        'completed': sum(visit.get('status') == 'Completed' for visit in visits),
+        'equipment': len({visit.get('equipment_serial') for visit in visits}),
+        'items': len(payload.get('items', [])),
+    }
+    payload['filters'] = {
+        'status': query_status,
+        'client_id': query_client,
+        'scheduled_month': query_month,
+        'serial_number': query_serial,
+    }
+    return payload
+
+
+@app.route('/<brand>/pm', methods=['GET'])
+@app.route('/<brand>/pm/', methods=['GET'])
+@app.route('/<brand>_pm', methods=['GET'])
+@login_required
+def inventory_pm_overview_page(brand):
+    """Render one administrator-only Genoray or Vieworks PM overview."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if not can_access_inventory_pm(normalized):
+        return Response('Access denied.', status=403, mimetype='text/plain')
+    ensure_inventory_pm_visit_table()
+    year = inventory_pm_fiscal_year(request.args.get('fiscal_year') or request.args.get('year'))
+    return render_template(
+        'inventory_pm.html',
+        brand=normalized,
+        brand_label=normalized.title(),
+        fiscal_year=year,
+        detail_serial='',
+        detail_item=None,
+    )
+
+
+@app.route('/<brand>/pm/<path:serial_number>', methods=['GET'])
+@app.route('/<brand>_pm/<path:serial_number>', methods=['GET'])
+@login_required
+def inventory_pm_detail_page(brand, serial_number):
+    """Render the PM detail page for one fixed-brand equipment serial."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if not can_access_inventory_pm(normalized):
+        return Response('Access denied.', status=403, mimetype='text/plain')
+    ensure_inventory_pm_visit_table()
+    item = resolve_inventory_pm_item(normalized, serial_number)
+    if not item:
+        return Response('Equipment not found.', status=404, mimetype='text/plain')
+    return render_template(
+        'inventory_pm.html',
+        brand=normalized,
+        brand_label=normalized.title(),
+        fiscal_year=inventory_pm_fiscal_year(request.args.get('fiscal_year') or request.args.get('year')),
+        detail_serial=item.serial_number,
+        detail_item=inventory_pm_item_to_dict(normalized, item),
+    )
+
+
+@app.route('/api/<brand>/pm', methods=['GET'])
+@app.route('/api/<brand>/pm/overview', methods=['GET'])
+@login_required
+def inventory_pm_overview_api(brand):
+    """Return a fiscal-year overview for exactly one standalone inventory brand."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if not can_access_inventory_pm(normalized):
+        return jsonify({'message': 'Denied'}), 403
+    ensure_inventory_pm_visit_table()
+    payload = inventory_pm_overview_payload(
+        normalized,
+        request.args.get('fiscal_year') or request.args.get('year'),
+    )
+    return jsonify(inventory_pm_filtered_overview_payload(payload))
+
+
+def inventory_pm_detail_payload(brand, item, fiscal_year=None):
+    """Build one equipment detail payload with editable visits and link options."""
+    normalized = normalize_inventory_pm_brand(brand)
+    year = inventory_pm_fiscal_year(fiscal_year)
+    start_date, end_date = inventory_pm_fiscal_bounds(year)
+    visits = (
+        InventoryPmVisit.query
+        .filter(
+            InventoryPmVisit.brand == normalized,
+            InventoryPmVisit.equipment_serial == item.serial_number,
+            InventoryPmVisit.target_date >= start_date,
+            InventoryPmVisit.target_date < end_date,
+        )
+        .order_by(InventoryPmVisit.target_date.asc(), InventoryPmVisit.id.asc())
+        .all()
+    )
+    serialized_visits = [inventory_pm_visit_to_dict(visit, item) for visit in visits]
+    # Schedule choices are visit-specific now. The detail payload remains useful for
+    # rendering the equipment, while the editor requests options with its target date.
+    schedules = []
+    return {
+        'success': True,
+        'status': 'success',
+        'brand': normalized,
+        'brand_label': normalized.title(),
+        'fiscal_year': year,
+        'fiscal_year_label': f'FY {year}',
+        'start_date': start_date.isoformat(),
+        'end_date': (end_date - timedelta(days=1)).isoformat(),
+        'item': inventory_pm_item_to_dict(normalized, item),
+        'equipment': inventory_pm_item_to_dict(normalized, item),
+        'visits': serialized_visits,
+        'schedules': schedules,
+        'schedule_options': schedules,
+    }
+
+
+@app.route('/api/<brand>/pm/items/<path:serial_number>', methods=['GET'])
+@app.route('/api/<brand>/pm/equipment/<path:serial_number>', methods=['GET'])
+@login_required
+def inventory_pm_detail_api(brand, serial_number):
+    """Return one fixed-brand equipment record and its PM visits."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if not can_access_inventory_pm(normalized):
+        return jsonify({'message': 'Denied'}), 403
+    ensure_inventory_pm_visit_table()
+    item = resolve_inventory_pm_item(normalized, serial_number)
+    if not item:
+        return jsonify({'message': 'Equipment not found.'}), 404
+    return jsonify(inventory_pm_detail_payload(
+        normalized,
+        item,
+        request.args.get('fiscal_year') or request.args.get('year'),
+    ))
+
+
+@app.route('/api/<brand>/pm/items/<path:serial_number>/visits', methods=['GET', 'POST'])
+@login_required
+def inventory_pm_item_visits_api(brand, serial_number):
+    """Compatibility endpoint returning or adding visits for one equipment serial."""
+    if request.method == 'POST':
+        return inventory_pm_visits_api(brand, serial_number)
+    response = inventory_pm_detail_api(brand, serial_number)
+    return response
+
+
+def inventory_pm_target_date_from_payload(payload, existing=None):
+    """Parse an exact YYYY-MM-DD PM target date."""
+    payload = payload or {}
+    existing = existing or None
+    key = next((candidate for candidate in ('target_date', 'planned_date', 'date') if candidate in payload), None)
+    if key is None:
+        return existing, None
+    raw_value = payload.get(key)
+    if isinstance(raw_value, datetime):
+        return raw_value.date(), None
+    if isinstance(raw_value, date):
+        return raw_value, None
+    parsed = parse_date(raw_value)
+    if not parsed:
+        return None, 'Target date must be a valid date in YYYY-MM-DD format.'
+    return parsed, None
+
+
+def inventory_pm_link_payload_value(payload):
+    """Return (present, value) for the accepted schedule-link field aliases."""
+    for key in ('shift_id', 'schedule_id', 'linked_shift_id', 'linked_schedule_id'):
+        if key in payload:
+            return True, payload.get(key)
+    return False, None
+
+
+def inventory_pm_plan_rows_for_visit(visit):
+    """Return a visit's stable plan rows, selected position, and replace set."""
+    query = InventoryPmVisit.query.filter(
+        InventoryPmVisit.brand == visit.brand,
+        InventoryPmVisit.equipment_serial == visit.equipment_serial,
+    )
+    if getattr(visit, 'plan_key', None):
+        query = query.filter(InventoryPmVisit.plan_key == visit.plan_key)
+    else:
+        # Legacy rows have no reliable group identity. They become a new plan start
+        # by themselves; never infer siblings from matching dates or cadence labels.
+        query = query.filter(InventoryPmVisit.id == visit.id)
+    rows = query.order_by(InventoryPmVisit.target_date.asc(), InventoryPmVisit.id.asc()).all()
+    selected_index = next((index for index, row in enumerate(rows) if row.id == visit.id), None)
+    if selected_index is None:
+        rows = [visit]
+        selected_index = 0
+    return rows, selected_index, rows[selected_index:]
+
+
+def inventory_pm_protected_visit_to_dict(visit):
+    """Return the safe identifying fields for a linked cadence-rebuild blocker."""
+    return {
+        'id': visit.id,
+        'target_date': visit.target_date.isoformat() if visit.target_date else '',
+        'shift_id': clean_int(getattr(visit, 'shift_id', None)),
+    }
+
+
+def inventory_pm_rebuild_metadata(visit):
+    """Describe the selected-onward rows that a cadence change would replace."""
+    rows, selected_index, replace_rows = inventory_pm_plan_rows_for_visit(visit)
+    protected = [
+        inventory_pm_protected_visit_to_dict(row)
+        for row in replace_rows
+        if getattr(row, 'shift_id', None)
+    ]
+    return {
+        'selected_position': selected_index,
+        'replace_visit_ids': [row.id for row in replace_rows],
+        'future_dates': [
+            row.target_date.isoformat() for row in replace_rows[1:] if row.target_date
+        ],
+        'protected_visits': protected,
+        'can_rebuild': not protected,
+    }
+
+
+def inventory_pm_rebuild_cadence(
+    brand, visit_id, target_date, requested_cadence, link_present=False, link_value=None
+):
+    """Rebuild one recurring plan from the selected visit inside one transaction."""
+    normalized = normalize_inventory_pm_brand(brand)
+    # Acquire the SQLite writer lock before re-reading plan membership. This keeps
+    # the selected position, protection check, deletes, and inserts one atomic unit
+    # when two administrators edit the same plan concurrently.
+    db.session.rollback()
+    db.session.connection().exec_driver_sql('BEGIN IMMEDIATE')
+    try:
+        visit = db.session.get(InventoryPmVisit, visit_id)
+        if not visit or visit.brand != normalized:
+            db.session.rollback()
+            return {'message': 'PM visit not found.'}, 404
+        item = resolve_inventory_pm_item(normalized, visit.equipment_serial)
+        if not item:
+            db.session.rollback()
+            return {'message': 'Equipment was not found in this inventory.'}, 404
+
+        rows, selected_index, replace_rows = inventory_pm_plan_rows_for_visit(visit)
+        protected = [
+            inventory_pm_protected_visit_to_dict(row)
+            for row in replace_rows
+            if getattr(row, 'shift_id', None)
+        ]
+        if protected:
+            db.session.rollback()
+            protected_dates = ', '.join(
+                f"#{row['id']} ({row['target_date']})" for row in protected
+            )
+            return {
+                'success': False,
+                'status': 'protected',
+                'message': (
+                    'Cadence cannot be rebuilt while the selected visit or a later plan visit '
+                    f'has a linked schedule: {protected_dates}. Unlink those schedules and retry.'
+                ),
+                'protected_visits': protected,
+            }, 409
+
+        try:
+            generated_dates = generate_inventory_pm_dates(target_date, requested_cadence)
+        except ValueError as date_error:
+            db.session.rollback()
+            return {'message': str(date_error)}, 400
+
+        replace_ids = {row.id for row in replace_rows}
+        collisions = (
+            InventoryPmVisit.query
+            .filter(
+                InventoryPmVisit.brand == normalized,
+                InventoryPmVisit.equipment_serial == visit.equipment_serial,
+                InventoryPmVisit.target_date.in_(generated_dates),
+                ~InventoryPmVisit.id.in_(replace_ids),
+            )
+            .order_by(InventoryPmVisit.target_date.asc(), InventoryPmVisit.id.asc())
+            .all()
+        )
+        if collisions:
+            conflicting_dates = [
+                target.isoformat() for target in generated_dates
+                if any(row.target_date == target for row in collisions)
+            ]
+            db.session.rollback()
+            return {
+                'success': False,
+                'status': 'conflict',
+                'message': (
+                    'The rebuilt PM dates conflict with retained visits for this equipment: '
+                    + ', '.join(conflicting_dates)
+                ),
+                'conflicting_retained_dates': conflicting_dates,
+                'conflicting_retained_visits': [
+                    inventory_pm_protected_visit_to_dict(row) for row in collisions
+                ],
+            }, 409
+
+        new_shift_id = visit.shift_id
+        if link_present:
+            new_shift_id = clean_int(link_value)
+            if new_shift_id:
+                _, link_error = validate_inventory_pm_schedule_link(item, new_shift_id, target_date)
+                if link_error:
+                    db.session.rollback()
+                    return {'message': link_error}, 400
+
+        previous_target_date = visit.target_date.isoformat() if visit.target_date else ''
+        removed_rows = list(replace_rows[1:])
+        removed_future_dates = [
+            row.target_date.isoformat() for row in removed_rows if row.target_date
+        ]
+        for row in removed_rows:
+            db.session.delete(row)
+
+        fresh_plan_key = secrets.token_hex(24)
+        visit.target_date = target_date
+        visit.cadence = requested_cadence
+        visit.plan_key = fresh_plan_key
+        visit.shift_id = new_shift_id
+        new_rows = [
+            InventoryPmVisit(
+                brand=normalized,
+                equipment_serial=visit.equipment_serial,
+                target_date=generated_date,
+                cadence=requested_cadence,
+                plan_key=fresh_plan_key,
+                shift_id=None,
+            )
+            for generated_date in generated_dates[1:]
+        ]
+        db.session.add_all(new_rows)
+        add_activity_log_entry(
+            f'Rebuilt {normalized.title()} PM plan from visit #{visit.id} '
+            f'to {requested_cadence}: {len(generated_dates)} visit(s)'
+        )
+        db.session.commit()
+
+        regenerated_rows = [visit, *new_rows]
+        serialized_rows = [inventory_pm_visit_to_dict(row, item) for row in regenerated_rows]
+        return {
+            'success': True,
+            'status': 'success',
+            'visit': serialized_rows[0],
+            'regenerated_visits': serialized_rows,
+            'regenerated_dates': [value.isoformat() for value in generated_dates],
+            'removed_future_dates': removed_future_dates,
+            'removed_visit_ids': [row.id for row in removed_rows],
+            'previous_target_date': previous_target_date,
+            'item': inventory_pm_item_to_dict(normalized, item),
+        }, 200
+    except IntegrityError as rebuild_error:
+        db.session.rollback()
+        print(f'[InventoryPM] Rebuild cadence failed: {rebuild_error}', flush=True)
+        return {
+            'success': False,
+            'status': 'conflict',
+            'message': 'Unable to rebuild the PM plan because a retained date already exists. No visits were changed.',
+        }, 409
+    except Exception as rebuild_error:
+        db.session.rollback()
+        print(f'[InventoryPM] Rebuild cadence failed: {rebuild_error}', flush=True)
+        return {
+            'success': False,
+            'status': 'error',
+            'message': 'Unable to rebuild the PM plan. No visits were changed.',
+        }, 500
+
+
+@app.route('/api/<brand>/pm/visits', methods=['GET', 'POST'])
+@app.route('/api/<brand>/pm-visits', methods=['GET', 'POST'])
+@login_required
+def inventory_pm_visits_api(brand, serial_number=None):
+    """List visits or create one recurring PM plan for one fixed-brand inventory."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if not can_access_inventory_pm(normalized):
+        return jsonify({'message': 'Denied'}), 403
+    ensure_inventory_pm_visit_table()
+
+    if request.method == 'GET':
+        serial = serial_number or request.args.get('equipment_serial') or request.args.get('serial_number') or request.args.get('serial')
+        query = InventoryPmVisit.query.filter(InventoryPmVisit.brand == normalized)
+        if serial:
+            query = query.filter(InventoryPmVisit.equipment_serial == (clean_str(serial) or '').upper())
+        year_value = request.args.get('fiscal_year') or request.args.get('year')
+        if year_value:
+            start_date, end_date = inventory_pm_fiscal_bounds(year_value)
+            query = query.filter(InventoryPmVisit.target_date >= start_date, InventoryPmVisit.target_date < end_date)
+        visits = query.order_by(InventoryPmVisit.target_date.asc(), InventoryPmVisit.id.asc()).all()
+        item_model = inventory_pm_item_model(normalized)
+        item_map = {item.serial_number: item for item in item_model.query.all()}
+        rows = [inventory_pm_visit_to_dict(visit, item_map.get(visit.equipment_serial)) for visit in visits]
+        return jsonify({
+            'success': True,
+            'status': 'success',
+            'brand': normalized,
+            'visits': rows,
+            'items': rows,
+            'count': len(rows),
+        })
+
+    payload = request.get_json(silent=True) or {}
+    serial = serial_number or payload.get('serial_number') or payload.get('equipment_serial')
+    item = resolve_inventory_pm_item(normalized, serial)
+    if not item:
+        return jsonify({'message': 'Equipment was not found in this inventory.'}), 404
+
+    cadence = normalize_inventory_pm_cadence(payload.get('cadence'))
+    if not cadence:
+        return jsonify({'message': 'Cadence must be semi_annual or quarterly.'}), 400
+    raw_start_date = payload.get('start_date')
+    start_date = raw_start_date if isinstance(raw_start_date, date) else parse_date(raw_start_date)
+    if not start_date:
+        return jsonify({'message': 'Start date must be a valid date in YYYY-MM-DD format.'}), 400
+    link_present, link_value = inventory_pm_link_payload_value(payload)
+    if link_present and clean_str(link_value):
+        return jsonify({'message': 'Schedule links are added to individual visits after plan creation.'}), 400
+
+    try:
+        generated_dates = generate_inventory_pm_dates(start_date, cadence)
+    except ValueError as date_error:
+        return jsonify({'message': str(date_error)}), 400
+
+    existing_rows = (
+        InventoryPmVisit.query
+        .filter(
+            InventoryPmVisit.brand == normalized,
+            InventoryPmVisit.equipment_serial == item.serial_number,
+            InventoryPmVisit.target_date.in_(generated_dates),
+        )
+        .all()
+    )
+    existing_dates = {row.target_date for row in existing_rows}
+    skipped_dates = [value for value in generated_dates if value in existing_dates]
+    missing_dates = [value for value in generated_dates if value not in existing_dates]
+    if not missing_dates:
+        return jsonify({
+            'success': False,
+            'status': 'conflict',
+            'message': 'All generated PM visit dates already exist for this equipment.',
+            'created_visits': [],
+            'created_dates': [],
+            'skipped_dates': [value.isoformat() for value in skipped_dates],
+        }), 409
+
+    plan_key = secrets.token_hex(24)
+    visits = [
+        InventoryPmVisit(
+            brand=normalized,
+            equipment_serial=item.serial_number,
+            target_date=target_date,
+            cadence=cadence,
+            plan_key=plan_key,
+            shift_id=None,
+        )
+        for target_date in missing_dates
+    ]
+    try:
+        db.session.add_all(visits)
+        add_activity_log_entry(
+            f'Added {normalized.title()} {cadence} PM plan for {item.serial_number}: '
+            f'{len(visits)} visit(s)'
+        )
+        db.session.commit()
+    except IntegrityError as visit_error:
+        db.session.rollback()
+        print(f'[InventoryPM] Add recurring plan failed: {visit_error}', flush=True)
+        return jsonify({
+            'success': False,
+            'status': 'conflict',
+            'message': 'One or more generated PM visit dates already exist. No visits were created.',
+            'created_visits': [],
+            'created_dates': [],
+            'skipped_dates': [value.isoformat() for value in skipped_dates],
+        }), 409
+    except Exception as visit_error:
+        db.session.rollback()
+        print(f'[InventoryPM] Add recurring plan failed: {visit_error}', flush=True)
+        return jsonify({'message': 'Unable to save the recurring PM plan. No visits were created.'}), 500
+
+    rows = [inventory_pm_visit_to_dict(visit, item) for visit in visits]
+    return jsonify({
+        'success': True,
+        'status': 'success',
+        'created_visits': rows,
+        'created_dates': [value.isoformat() for value in missing_dates],
+        'skipped_dates': [value.isoformat() for value in skipped_dates],
+        # Keep a compact alias for clients that already expect a visit list.
+        'visits': rows,
+        'item': inventory_pm_item_to_dict(normalized, item),
+    })
+
+
+@app.route('/api/<brand>/pm/visits/<int:visit_id>', methods=['PUT', 'PATCH', 'DELETE'])
+@app.route('/api/<brand>/pm-visits/<int:visit_id>', methods=['PUT', 'PATCH', 'DELETE'])
+@login_required
+def inventory_pm_visit_api(brand, visit_id):
+    """Edit or delete one PM visit, rebuilding future siblings only on cadence change."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if not can_access_inventory_pm(normalized):
+        return jsonify({'message': 'Denied'}), 403
+    ensure_inventory_pm_visit_table()
+    visit = db.session.get(InventoryPmVisit, visit_id)
+    if not visit or visit.brand != normalized:
+        return jsonify({'message': 'PM visit not found.'}), 404
+    item = resolve_inventory_pm_item(normalized, visit.equipment_serial)
+    if not item:
+        return jsonify({'message': 'Equipment was not found in this inventory.'}), 404
+
+    if request.method == 'DELETE':
+        db.session.delete(visit)
+        db.session.commit()
+        log_activity(f'Deleted {normalized.title()} PM visit #{visit_id}')
+        return jsonify({'success': True, 'status': 'success', 'deleted': visit_id})
+
+    payload = request.get_json(silent=True) or {}
+    requested_serial = payload.get('equipment_serial') or payload.get('serial_number')
+    if requested_serial is not None:
+        requested_item = resolve_inventory_pm_item(normalized, requested_serial)
+        if not requested_item:
+            return jsonify({'message': 'Equipment was not found in this inventory.'}), 404
+        if requested_item.serial_number != visit.equipment_serial:
+            return jsonify({'message': 'A PM visit can only be edited for its existing equipment.'}), 400
+        item = requested_item
+
+    target_date, date_error = inventory_pm_target_date_from_payload(payload, visit.target_date)
+    if date_error or not target_date:
+        return jsonify({'message': date_error or 'Target date is required.'}), 400
+
+    requested_cadence = normalize_inventory_pm_cadence(getattr(visit, 'cadence', None))
+    if 'cadence' in payload:
+        requested_cadence = normalize_inventory_pm_cadence(payload.get('cadence'))
+        if not requested_cadence:
+            return jsonify({'message': 'Cadence must be semi_annual or quarterly.'}), 400
+        stored_cadence = normalize_inventory_pm_cadence(getattr(visit, 'cadence', None))
+        if requested_cadence != stored_cadence:
+            link_present, link_value = inventory_pm_link_payload_value(payload)
+            rebuild_payload, rebuild_status = inventory_pm_rebuild_cadence(
+                normalized,
+                visit.id,
+                target_date,
+                requested_cadence,
+                link_present=link_present,
+                link_value=link_value,
+            )
+            return jsonify(rebuild_payload), rebuild_status
+
+    link_present, link_value = inventory_pm_link_payload_value(payload)
+    new_shift_id = visit.shift_id
+    if link_present:
+        new_shift_id = clean_int(link_value)
+        if new_shift_id and new_shift_id != visit.shift_id:
+            _, link_error = validate_inventory_pm_schedule_link(item, new_shift_id, target_date)
+            if link_error:
+                return jsonify({'message': link_error}), 400
+
+    collision = (
+        InventoryPmVisit.query
+        .filter(
+            InventoryPmVisit.brand == normalized,
+            InventoryPmVisit.equipment_serial == item.serial_number,
+            InventoryPmVisit.target_date == target_date,
+            InventoryPmVisit.id != visit.id,
+        )
+        .first()
+    )
+    if collision:
+        return jsonify({
+            'status': 'conflict',
+            'message': 'Another PM visit already exists for this equipment and target date.',
+        }), 409
+
+    try:
+        visit.target_date = target_date
+        visit.shift_id = new_shift_id
+        visit.updated_at = get_manila_time()
+        db.session.commit()
+    except IntegrityError as visit_error:
+        db.session.rollback()
+        print(f'[InventoryPM] Update visit failed: {visit_error}', flush=True)
+        return jsonify({'message': 'Unable to update the planned PM visit.'}), 409
+    except Exception as visit_error:
+        db.session.rollback()
+        print(f'[InventoryPM] Update visit failed: {visit_error}', flush=True)
+        return jsonify({'message': 'Unable to update the planned PM visit.'}), 500
+
+    log_activity(f'Updated {normalized.title()} PM visit #{visit.id}')
+    return jsonify({
+        'success': True,
+        'status': 'success',
+        'visit': inventory_pm_visit_to_dict(visit, item),
+    })
+
+
+@app.route('/api/<brand>/pm/schedule-options/<path:serial_number>', methods=['GET'])
+@app.route('/api/<brand>/pm/schedules/<path:serial_number>', methods=['GET'])
+@app.route('/api/<brand>/pm/schedule-options', methods=['GET'])
+@app.route('/api/<brand>/pm/schedules', methods=['GET'])
+@login_required
+def inventory_pm_schedule_options_api(brand, serial_number=None):
+    """Return only schedules eligible for this equipment and exact visit month."""
+    normalized = normalize_inventory_pm_brand(brand)
+    if not can_access_inventory_pm(normalized):
+        return jsonify({'message': 'Denied'}), 403
+    ensure_inventory_pm_visit_table()
+    serial = serial_number or request.args.get('serial_number') or request.args.get('equipment_serial')
+    item = resolve_inventory_pm_item(normalized, serial)
+    if not item:
+        return jsonify({'message': 'Equipment not found.'}), 404
+    raw_target_date = (
+        request.args.get('target_date') or
+        request.args.get('planned_date') or
+        request.args.get('date')
+    )
+    target_date = parse_date(raw_target_date)
+    if not target_date:
+        return jsonify({'message': 'A valid target_date is required to load schedule options.'}), 400
+    rows = [
+        inventory_pm_schedule_to_dict(shift)
+        for shift in inventory_pm_schedule_options_for_item(item, target_date)
+    ]
+    return jsonify({
+        'success': True,
+        'status': 'success',
+        'brand': normalized,
+        'equipment_serial': item.serial_number,
+        'target_date': target_date.isoformat(),
+        'schedules': rows,
+        'schedule_options': rows,
+        'options': rows,
+        'count': len(rows),
+    })
+
+
 @app.route('/api/vieworks/items', methods=['POST'])
 @login_required
 def add_vieworks_item():
@@ -54406,6 +55622,7 @@ def update_vieworks_item(serial_number):
     if not can_access_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
+    ensure_inventory_pm_visit_table()
     begin_vieworks_write_transaction()
     old_serial = (clean_str(serial_number) or '').upper()
     item = db.session.get(VieworksItem, old_serial)
@@ -54449,8 +55666,16 @@ def update_vieworks_item(serial_number):
             'message': f'BSID {values["bsid"]} already exists in Vieworks inventory.',
         }), 409
 
+    pm_visit_count = 0
     try:
         reserve_vieworks_manual_bsid(values['bsid'])
+        if new_serial != old_serial:
+            pm_visit_count = InventoryPmVisit.query.filter_by(
+                brand='vieworks', equipment_serial=old_serial
+            ).update(
+                {'equipment_serial': new_serial, 'updated_at': get_manila_time()},
+                synchronize_session=False,
+            )
         item.serial_number = new_serial
         item.name = values['name']
         item.bsid = values['bsid']
@@ -54483,6 +55708,7 @@ def update_vieworks_item(serial_number):
         'serial_changed': new_serial != old_serial,
         'old_serial': old_serial,
         'new_serial': new_serial,
+        'pm_visit_count': pm_visit_count,
         'item': vieworks_item_to_dict(item),
         **vieworks_item_to_dict(item),
     })
@@ -54495,9 +55721,22 @@ def delete_vieworks_item(serial_number):
     if not can_access_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
+    ensure_inventory_pm_visit_table()
     requested_serial = (clean_str(serial_number) or '').upper()
     item = db.session.get(VieworksItem, requested_serial)
     if item:
+        linked_pm_count = InventoryPmVisit.query.filter_by(
+            brand='vieworks', equipment_serial=item.serial_number
+        ).count()
+        if linked_pm_count:
+            return jsonify({
+                'status': 'blocked',
+                'message': (
+                    f'Cannot delete equipment while {linked_pm_count} '
+                    'planned PM visit(s) reference it.'
+                ),
+                'pm_visit_count': linked_pm_count,
+            }), 409
         item_name = item.name
         db.session.delete(item)
         db.session.commit()
@@ -54727,6 +55966,7 @@ def update_genoray_item(serial_number):
     if not can_access_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
+    ensure_inventory_pm_visit_table()
     begin_genoray_write_transaction()
     old_serial = (clean_str(serial_number) or '').upper()
     item = db.session.get(GenorayItem, old_serial)
@@ -54770,8 +56010,16 @@ def update_genoray_item(serial_number):
             'message': f'BSID {values["bsid"]} already exists in Genoray inventory.',
         }), 409
 
+    pm_visit_count = 0
     try:
         reserve_genoray_manual_bsid(values['bsid'])
+        if new_serial != old_serial:
+            pm_visit_count = InventoryPmVisit.query.filter_by(
+                brand='genoray', equipment_serial=old_serial
+            ).update(
+                {'equipment_serial': new_serial, 'updated_at': get_manila_time()},
+                synchronize_session=False,
+            )
         item.serial_number = new_serial
         item.name = values['name']
         item.bsid = values['bsid']
@@ -54804,6 +56052,7 @@ def update_genoray_item(serial_number):
         'serial_changed': new_serial != old_serial,
         'old_serial': old_serial,
         'new_serial': new_serial,
+        'pm_visit_count': pm_visit_count,
         'item': genoray_item_to_dict(item),
         **genoray_item_to_dict(item),
     })
@@ -54816,9 +56065,22 @@ def delete_genoray_item(serial_number):
     if not can_access_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
+    ensure_inventory_pm_visit_table()
     requested_serial = (clean_str(serial_number) or '').upper()
     item = db.session.get(GenorayItem, requested_serial)
     if item:
+        linked_pm_count = InventoryPmVisit.query.filter_by(
+            brand='genoray', equipment_serial=item.serial_number
+        ).count()
+        if linked_pm_count:
+            return jsonify({
+                'status': 'blocked',
+                'message': (
+                    f'Cannot delete equipment while {linked_pm_count} '
+                    'planned PM visit(s) reference it.'
+                ),
+                'pm_visit_count': linked_pm_count,
+            }), 409
         item_name = item.name
         db.session.delete(item)
         db.session.commit()
@@ -55301,6 +56563,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_shift_file_original_filename_column()
     ensure_product_contract_column()
     ensure_genoray_item_table()
+    ensure_inventory_pm_visit_table()
     ensure_calibration_certificate_approval_table()
     ensure_schedule_delete_indexes()
     ensure_approval_routing_schema()

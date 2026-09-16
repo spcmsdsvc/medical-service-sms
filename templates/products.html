@@ -10,6 +10,7 @@
 {% set inventory_summary_url = '/api/vieworks/summary' if is_vieworks_inventory else ('/api/genoray/summary' if is_genoray_inventory else '/get_products_summary') %}
 {% set inventory_import_url = '/vieworks/import' if is_vieworks_inventory else ('/genoray/import' if is_genoray_inventory else '/import_products') %}
 {% set inventory_export_url = '/vieworks/export' if is_vieworks_inventory else ('/genoray/export' if is_genoray_inventory else '/export_products') %}
+{% set inventory_pm_base_url = '/vieworks/pm' if is_vieworks_inventory else ('/genoray/pm' if is_genoray_inventory else '') %}
 
 {% block content %}
 <div class="container-fluid">
@@ -402,6 +403,7 @@
     const inventorySummaryUrl = {{ inventory_summary_url|tojson }};
     const inventoryImportUrl = {{ inventory_import_url|tojson }};
     const inventoryExportUrl = {{ inventory_export_url|tojson }};
+    const inventoryPMBaseUrl = {{ inventory_pm_base_url|tojson }};
     const PRODUCT_SORT_STORAGE_KEY = isVieworksInventory
         ? 'medicalServiceVieworksSortV1'
         : (isGenorayInventory ? 'medicalServiceGenoraySortV1' : 'medicalServiceProductSortV1');
@@ -935,6 +937,14 @@ function renderProductRowActions(product){
     const identity = escapeHtml(getProductIdentityLabel(product));
     let actions = `<div class="product-row-actions no-print" aria-label="Actions for ${identity}">`;
 
+    if(isStandaloneInventory){
+        const pmUrl = `${inventoryPMBaseUrl}/${encodeURIComponent(product.serial_number || '')}`;
+        actions += `
+            <a class="product-row-action product-row-pm" href="${pmUrl}" title="Open ${inventoryLabel} PM" aria-label="Open PM monitoring for ${identity}">
+                <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i>
+            </a>`;
+    }
+
     if(productCanEdit){
         actions += `
             <button type="button" class="product-row-action product-row-edit" onclick="openEditModal('${serial}')" title="Edit ${inventoryNoun}" aria-label="Edit ${identity}" aria-controls="prodModal">
@@ -982,6 +992,13 @@ function renderProductMobileCards(data){
 
         const identity = escapeHtml(getProductIdentityLabel(p));
         let actions = '';
+        if(isStandaloneInventory){
+            const pmUrl = `${inventoryPMBaseUrl}/${encodeURIComponent(p.serial_number || '')}`;
+            actions += `
+                <a class="product-mobile-btn product-mobile-pm" href="${pmUrl}" title="Open ${inventoryLabel} PM" aria-label="Open PM monitoring for ${identity}">
+                    <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i>PM
+                </a>`;
+        }
         if(productCanEdit){
             actions += `
                 <button type="button" class="product-mobile-btn product-mobile-edit" onclick="openEditModal('${escapeHtml(p.serial_number)}')" title="Edit ${inventoryNoun}" aria-label="Edit ${identity}" aria-controls="prodModal">
@@ -1950,6 +1967,12 @@ function openAddModal() {
         color: #b91c1c;
     }
 
+    .product-row-pm {
+        border-color: #99f6e4;
+        background: #f0fdfa;
+        color: #0f766e;
+    }
+
     .product-row-action:hover,
     .product-row-action:focus-visible {
         outline: none;
@@ -1973,6 +1996,13 @@ function openAddModal() {
         border-color: #f87171;
         background: #fee2e2;
         color: #991b1b;
+    }
+
+    .product-row-pm:hover,
+    .product-row-pm:focus-visible {
+        border-color: #2dd4bf;
+        background: #ccfbf1;
+        color: #115e59;
     }
 
     .product-table-state-row td {
@@ -2368,6 +2398,12 @@ function openAddModal() {
     .product-mobile-delete {
         background: #fee2e2;
         color: #b91c1c;
+    }
+
+    .product-mobile-pm {
+        background: #ccfbf1;
+        color: #115e59;
+        text-decoration: none;
     }
 
     .product-mobile-empty {

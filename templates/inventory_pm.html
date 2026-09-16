@@ -1,0 +1,679 @@
+{% extends "layout.html" %}
+
+{% block page_head %}
+<title>{{ brand_label }} PM Monitoring</title>
+{% endblock %}
+
+{% block content %}
+{% set is_detail = detail_serial|default('')|length > 0 %}
+<div class="container-fluid inventory-pm-page" data-brand="{{ brand }}">
+    <div id="pm-alert-stack" class="pm-alert-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <section class="pm-hero card border-0 shadow-sm mb-3">
+        <div class="pm-hero-main">
+            <div class="pm-eyebrow"><i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Records / Inventory</div>
+            <h1 class="pm-title">{{ brand_label }} PM Monitoring</h1>
+            <p class="pm-subtitle">Plan and track preventive maintenance visits across the April–March fiscal year.</p>
+        </div>
+        <div class="pm-hero-actions no-print">
+            {% if is_detail %}
+            <a class="btn btn-outline-secondary btn-sm pm-tap" href="/{{ brand }}/pm"><i class="fa-solid fa-arrow-left me-1" aria-hidden="true"></i>All {{ brand_label }} PM</a>
+            {% else %}
+            <a class="btn btn-outline-secondary btn-sm pm-tap" href="/{{ brand }}"><i class="fa-solid fa-boxes-stacked me-1" aria-hidden="true"></i>{{ brand_label }} Inventory</a>
+            {% endif %}
+            <button type="button" class="btn btn-outline-dark btn-sm pm-tap" id="pm-print-btn"><i class="fa-solid fa-print me-1" aria-hidden="true"></i>Print</button>
+        </div>
+    </section>
+
+    {% if is_detail %}
+    <section class="pm-equipment-card card border-0 shadow-sm mb-3" aria-labelledby="pm-equipment-heading">
+        <div class="pm-section-heading">
+            <div>
+                <div class="pm-eyebrow">Equipment detail</div>
+                <h2 id="pm-equipment-heading" class="h5 mb-1">{{ detail_item.name|default('Equipment') }}</h2>
+                <div class="text-muted small">S/N: {{ detail_serial }}</div>
+            </div>
+            <span class="pm-brand-pill">{{ brand_label }}</span>
+        </div>
+        <div id="pm-equipment-summary" class="pm-equipment-summary">
+            <div class="pm-detail-field"><span>Owner</span><strong>{{ detail_item.client_name|default('N/A') }}</strong></div>
+            <div class="pm-detail-field"><span>BSID</span><strong>{{ detail_item.bsid|default('Not assigned') or 'Not assigned' }}</strong></div>
+            <div class="pm-detail-field"><span>Warranty</span><strong>{{ detail_item.start_warranty|default('N/A') or 'N/A' }} → {{ detail_item.end_warranty|default('N/A') or 'N/A' }}</strong></div>
+            <div class="pm-detail-field"><span>Contract</span><strong>{{ 'Under Contract' if detail_item.under_contract|default(false) else 'No Contract' }}</strong></div>
+        </div>
+    </section>
+
+    <section class="pm-editor card border-0 shadow-sm mb-3 no-print" aria-labelledby="pm-editor-heading">
+        <div class="pm-section-heading">
+            <div>
+                <div class="pm-eyebrow">Recurring planning</div>
+                <h2 id="pm-editor-heading" class="h5 mb-1">Add recurring PM plan</h2>
+                <p id="pm-editor-help" class="small text-muted mb-0">Choose a cadence and initial date. Visits start unlinked and can be managed independently.</p>
+            </div>
+            <button type="button" id="pm-reset-form" class="btn btn-outline-secondary btn-sm pm-tap" hidden>Cancel edit</button>
+        </div>
+        <form id="pm-visit-form" class="row g-3 align-items-end">
+            <input type="hidden" id="pm-visit-id" value="">
+            <div id="pm-plan-fields" class="row g-3 col-12 col-md-8">
+                <div class="col-12 col-md-6">
+                    <label for="pm-cadence" class="form-label small fw-bold text-uppercase">Cadence</label>
+                    <select id="pm-cadence" class="form-select" required>
+                        <option value="quarterly">Quarterly (4 visits)</option>
+                        <option value="semi_annual">Semi-Annual (2 visits)</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-6">
+                    <label for="pm-start-date" class="form-label small fw-bold text-uppercase">Initial target date</label>
+                    <input id="pm-start-date" class="form-control" type="date" required>
+                    <div id="pm-date-preview" class="form-text" aria-live="polite">Choose a date to preview the plan.</div>
+                </div>
+            </div>
+            <div id="pm-edit-fields" class="row g-3 col-12 col-md-8" hidden>
+                <div class="col-12 col-md-4">
+                    <label for="pm-target-date" class="form-label small fw-bold text-uppercase">Target date</label>
+                    <input id="pm-target-date" class="form-control" type="date">
+                    <div id="pm-rebuild-preview" class="form-text" aria-live="polite"></div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label for="pm-edit-cadence" class="form-label small fw-bold text-uppercase">Cadence</label>
+                    <select id="pm-edit-cadence" class="form-select">
+                        <option value="">Legacy single visit</option>
+                        <option value="quarterly">Quarterly (4 visits)</option>
+                        <option value="semi_annual">Semi-Annual (2 visits)</option>
+                    </select>
+                    <div id="pm-cadence-rebuild" class="form-text" aria-live="polite">Changing cadence rebuilds this visit and its later plan siblings.</div>
+                </div>
+                <div class="col-12 col-md-5">
+                    <label for="pm-shift-id" class="form-label small fw-bold text-uppercase">Replacement PM schedule <span class="text-muted fw-normal">(optional)</span></label>
+                    <select id="pm-shift-id" class="form-select">
+                        <option value="">No linked schedule</option>
+                    </select>
+                    <div id="pm-schedule-help" class="form-text">Options match this visit's month, owner, PM task, and Product name.</div>
+                    <div id="pm-current-schedule" class="pm-current-schedule" role="status" hidden></div>
+                    <div id="pm-link-actions" class="pm-link-actions" hidden>
+                        <button type="button" id="pm-keep-current" class="btn btn-outline-secondary btn-sm pm-tap">Keep current schedule</button>
+                        <button type="button" id="pm-unlink-current" class="btn btn-outline-danger btn-sm pm-tap">Unlink schedule</button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-4 d-flex gap-2">
+                <button type="submit" id="pm-save-btn" class="btn btn-success pm-tap flex-grow-1"><i class="fa-solid fa-repeat me-1" aria-hidden="true"></i>Create Plan</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="pm-visits-card card border-0 shadow-sm" aria-labelledby="pm-visits-heading">
+        <div class="pm-section-heading">
+            <div>
+                <div class="pm-eyebrow">FY {{ fiscal_year }}</div>
+                <h2 id="pm-visits-heading" class="h5 mb-1">Planned visits</h2>
+                <p class="small text-muted mb-0">Status and schedule details refresh from the linked calendar record.</p>
+            </div>
+            <label class="pm-year-control no-print" for="pm-fiscal-year-detail">Fiscal year
+                <select id="pm-fiscal-year-detail" class="form-select form-select-sm">
+                    <option value="{{ fiscal_year }}">FY {{ fiscal_year }}</option>
+                </select>
+            </label>
+        </div>
+        <div id="pm-detail-state" class="pm-state" role="status">Loading planned visits…</div>
+        <div id="pm-detail-visits" class="pm-detail-visits"></div>
+    </section>
+    {% else %}
+    <section class="pm-controls card border-0 shadow-sm mb-3 no-print" aria-label="PM overview filters">
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-sm-6 col-lg-3">
+                <label for="pm-fiscal-year" class="form-label small fw-bold text-uppercase">Fiscal year</label>
+                <select id="pm-fiscal-year" class="form-select form-select-sm">
+                    <option value="{{ fiscal_year }}">FY {{ fiscal_year }}</option>
+                    <option value="{{ fiscal_year - 1 }}">FY {{ fiscal_year - 1 }}</option>
+                    <option value="{{ fiscal_year + 1 }}">FY {{ fiscal_year + 1 }}</option>
+                </select>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <label for="pm-search" class="form-label small fw-bold text-uppercase">Search equipment</label>
+                <input id="pm-search" class="form-control form-control-sm" type="search" placeholder="S/N or equipment name">
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <label for="pm-client-filter" class="form-label small fw-bold text-uppercase">Filter by client</label>
+                <input id="pm-client-filter" class="form-control form-control-sm" type="search" placeholder="Medical center">
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <label for="pm-status-filter" class="form-label small fw-bold text-uppercase">Visit status</label>
+                <select id="pm-status-filter" class="form-select form-select-sm">
+                    <option value="">All statuses</option>
+                    <option value="Planned">Planned</option>
+                    <option value="Overdue">Overdue</option>
+                    <option value="Completed">Completed</option>
+                </select>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <label for="pm-month-filter" class="form-label small fw-bold text-uppercase">Scheduled month</label>
+                <select id="pm-month-filter" class="form-select form-select-sm">
+                    <option value="">All months</option>
+                    <option value="April">April</option>
+                    <option value="May">May</option>
+                    <option value="June">June</option>
+                    <option value="July">July</option>
+                    <option value="August">August</option>
+                    <option value="September">September</option>
+                    <option value="October">October</option>
+                    <option value="November">November</option>
+                    <option value="December">December</option>
+                    <option value="January">January</option>
+                    <option value="February">February</option>
+                    <option value="March">March</option>
+                </select>
+            </div>
+        </div>
+    </section>
+
+    <section class="pm-summary-grid mb-3" id="pm-summary-grid" aria-label="PM visit counts">
+        <div class="pm-summary-card"><span>Total visits</span><strong id="pm-count-total">0</strong></div>
+        <div class="pm-summary-card pm-summary-planned"><span>Planned</span><strong id="pm-count-planned">0</strong></div>
+        <div class="pm-summary-card pm-summary-overdue"><span>Overdue</span><strong id="pm-count-overdue">0</strong></div>
+        <div class="pm-summary-card pm-summary-completed"><span>Completed</span><strong id="pm-count-completed">0</strong></div>
+    </section>
+
+    <section class="pm-overview-card card border-0 shadow-sm" aria-labelledby="pm-overview-heading">
+        <div class="pm-section-heading">
+            <div>
+                <div class="pm-eyebrow">April–March schedule</div>
+                <h2 id="pm-overview-heading" class="h5 mb-1">{{ brand_label }} PM visits</h2>
+                <p id="pm-overview-subtitle" class="small text-muted mb-0" role="status">Loading fiscal-year visits…</p>
+            </div>
+        </div>
+        <div id="pm-overview-state" class="pm-state" role="status">Loading fiscal-year visits…</div>
+        <div id="pm-month-grid" class="pm-month-grid"></div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+    const BRAND = {{ brand|tojson }};
+    const BRAND_LABEL = {{ brand_label|tojson }};
+    const DETAIL_SERIAL = {{ detail_serial|default('')|tojson }};
+    const INITIAL_FISCAL_YEAR = {{ fiscal_year|int }};
+    const PM_API = `/api/${BRAND}/pm`;
+    const PM_DETAIL_API = `${PM_API}/items/${encodeURIComponent(DETAIL_SERIAL)}`;
+    const MONTH_NAMES = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, match => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[match]));
+
+    function showPmNotice(message, tone = 'error') {
+        const stack = document.getElementById('pm-alert-stack');
+        if (!stack || !message) return;
+        const notice = document.createElement('div');
+        notice.className = `pm-alert ${tone}`;
+        notice.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" aria-label="Dismiss notice">×</button>`;
+        notice.querySelector('button')?.addEventListener('click', () => notice.remove());
+        stack.appendChild(notice);
+        window.setTimeout(() => notice.remove(), tone === 'error' ? 7000 : 4000);
+    }
+
+    function pmConfirm(message) {
+        return new Promise(resolve => {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'pm-confirm-backdrop';
+            backdrop.innerHTML = `<div class="pm-confirm" role="dialog" aria-modal="true" aria-labelledby="pm-confirm-heading">
+                <h2 id="pm-confirm-heading">Confirm action</h2><p>${escapeHtml(message)}</p>
+                <div class="pm-confirm-actions"><button type="button" class="btn btn-outline-secondary btn-sm pm-cancel">Cancel</button><button type="button" class="btn btn-danger btn-sm pm-ok">Continue</button></div>
+            </div>`;
+            document.body.appendChild(backdrop);
+            const close = value => { backdrop.remove(); resolve(value); };
+            backdrop.querySelector('.pm-cancel').addEventListener('click', () => close(false));
+            backdrop.querySelector('.pm-ok').addEventListener('click', () => close(true));
+            backdrop.addEventListener('click', event => { if (event.target === backdrop) close(false); });
+            backdrop.querySelector('.pm-ok').focus();
+        });
+    }
+
+    async function pmJson(url, options = {}) {
+        const response = await fetch(url, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            ...options,
+            headers: {
+                Accept: 'application/json',
+                ...(options.body ? {'Content-Type': 'application/json'} : {}),
+                ...(typeof getCSRFToken === 'function' ? {'X-CSRFToken': getCSRFToken()} : {}),
+                ...(options.headers || {})
+            }
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.message || data.error || `Request failed (HTTP ${response.status}).`);
+        return data;
+    }
+
+    function statusClass(status) {
+        return String(status || '').toLowerCase().replace(/[^a-z]+/g, '-');
+    }
+
+    function statusBadge(status) {
+        return `<span class="pm-status pm-status-${statusClass(status)}">${escapeHtml(status || 'Planned')}</span>`;
+    }
+
+    function fileLinks(files) {
+        if (!Array.isArray(files) || !files.length) return '<span class="text-muted">None</span>';
+        return files.map(file => {
+            const name = escapeHtml(file.name || file.filename || 'Schedule file');
+            const url = escapeHtml(file.preview_url || file.download_url || '#');
+            return `<a class="pm-file-link" href="${url}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip" aria-hidden="true"></i>${name}</a>`;
+        }).join('');
+    }
+
+    function scheduleLink(visit) {
+        const schedule = visit.schedule || visit.linked_schedule;
+        if (!schedule) return '<span class="text-muted">Not linked</span>';
+        return `<span class="pm-schedule-link"><strong>#${escapeHtml(schedule.id)}</strong> ${escapeHtml(schedule.date || '')}<br><small>${escapeHtml(schedule.title || schedule.task || '')}</small></span>`;
+    }
+
+    function visitMatchesFilters(visit) {
+        const search = (document.getElementById('pm-search')?.value || '').trim().toLowerCase();
+        const client = (document.getElementById('pm-client-filter')?.value || '').trim().toLowerCase();
+        const status = document.getElementById('pm-status-filter')?.value || '';
+        const month = (document.getElementById('pm-month-filter')?.value || '').trim().toLowerCase();
+        const haystack = `${visit.equipment_serial || ''} ${visit.item_name || ''} ${visit.client_name || ''}`.toLowerCase();
+        const visitStatus = visit.status || visit.derived_status || '';
+        const visitMonth = `${visit.month || ''} ${visit.scheduled_month || ''}`.toLowerCase();
+        return (!search || haystack.includes(search)) && (!client || haystack.includes(client)) && (!status || visitStatus === status) && (!month || visitMonth.includes(month));
+    }
+
+    function itemBySerial(data, serial) {
+        return (data.items || []).find(item => item.serial_number === serial) || {};
+    }
+
+    function decorateVisit(visit, data) {
+        const item = itemBySerial(data, visit.equipment_serial);
+        return {...visit, item_name: item.name || visit.equipment_serial, client_name: item.client_name || 'N/A'};
+    }
+
+    function renderMonthTable(month, visits, emptyText) {
+        const rows = visits.filter(visitMatchesFilters).map(visit => `
+            <tr>
+                <td><strong>${escapeHtml(visit.target_date)}</strong></td>
+                <td>${escapeHtml(visit.cadence_label || 'Legacy single visit')}</td>
+                <td>${escapeHtml(visit.equipment_serial)}<br><small>${escapeHtml(visit.item_name || '')}</small></td>
+                <td>${escapeHtml(visit.client_name || 'N/A')}</td>
+                <td>${statusBadge(visit.status)}</td>
+                <td>${escapeHtml(visit.actual_date || '—')}</td>
+                <td>${escapeHtml(visit.engineers || '—')}</td>
+                <td>${scheduleLink(visit)}${visit.mismatch_warning ? `<div class="pm-mismatch"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(visit.mismatch_warning)}</div>` : ''}<div class="pm-file-links">${fileLinks(visit.files)}</div></td>
+            </tr>`).join('');
+        return `<div class="pm-table-wrap" role="region" tabindex="0" aria-label="${escapeHtml(month.label)} PM visits. Scroll horizontally to view all columns.">
+            <table class="table table-hover align-middle pm-table"><thead><tr><th>Target date</th><th>Cadence</th><th>Equipment</th><th>Client</th><th>Status</th><th>Actual date</th><th>Engineer(s)</th><th>Schedule / files</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="8" class="pm-empty-cell">${escapeHtml(emptyText)}</td></tr>`}</tbody></table></div>`;
+    }
+
+    function renderMobileVisit(visit) {
+        return `<article class="pm-visit-card">
+            <div class="pm-visit-card-top"><div><strong>${escapeHtml(visit.equipment_serial)}</strong><div class="small text-muted">${escapeHtml(visit.item_name || '')}</div></div>${statusBadge(visit.status)}</div>
+            <dl class="pm-visit-facts"><div><dt>Target date</dt><dd>${escapeHtml(visit.target_date)}</dd></div><div><dt>Cadence</dt><dd>${escapeHtml(visit.cadence_label || 'Legacy single visit')}</dd></div><div><dt>Client</dt><dd>${escapeHtml(visit.client_name || 'N/A')}</dd></div><div><dt>Actual date</dt><dd>${escapeHtml(visit.actual_date || '—')}</dd></div><div><dt>Engineer(s)</dt><dd>${escapeHtml(visit.engineers || '—')}</dd></div></dl>
+            <div class="pm-visit-card-schedule">${scheduleLink(visit)}${visit.mismatch_warning ? `<div class="pm-mismatch"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(visit.mismatch_warning)}</div>` : ''}<div class="pm-file-links">${fileLinks(visit.files)}</div></div>
+        </article>`;
+    }
+
+    function renderOverview(data) {
+        const allVisits = (data.visits || []).map(visit => decorateVisit(visit, data));
+        const filteredVisits = allVisits.filter(visitMatchesFilters);
+        const counts = data.counts || {};
+        document.getElementById('pm-count-total').textContent = String(filteredVisits.length);
+        document.getElementById('pm-count-planned').textContent = String(filteredVisits.filter(v => v.status === 'Planned').length);
+        document.getElementById('pm-count-overdue').textContent = String(filteredVisits.filter(v => v.status === 'Overdue').length);
+        document.getElementById('pm-count-completed').textContent = String(filteredVisits.filter(v => v.status === 'Completed').length);
+        const subtitle = document.getElementById('pm-overview-subtitle');
+        if (subtitle) subtitle.textContent = `FY ${data.fiscal_year}: showing ${filteredVisits.length} of ${allVisits.length} planned visit${allVisits.length === 1 ? '' : 's'}.`;
+        const state = document.getElementById('pm-overview-state');
+        if (state) state.textContent = filteredVisits.length ? '' : (allVisits.length ? 'No visits match the selected filters.' : 'No PM visits planned for this fiscal year.');
+        const grid = document.getElementById('pm-month-grid');
+        if (!grid) return;
+        grid.innerHTML = (data.months || []).map(month => {
+            const monthVisits = (month.visits || []).map(visit => decorateVisit(visit, data));
+            const matching = monthVisits.filter(visitMatchesFilters);
+            return `<section class="pm-month-section" aria-labelledby="pm-month-${escapeHtml(month.key)}"><div class="pm-month-heading"><h3 id="pm-month-${escapeHtml(month.key)}">${escapeHtml(month.label)}</h3><span>${matching.length} visit${matching.length === 1 ? '' : 's'}</span></div>${renderMonthTable(month, monthVisits, 'No visits in this month.')}<div class="pm-mobile-visits">${matching.length ? matching.map(renderMobileVisit).join('') : `<div class="pm-empty-card">No visits match the current filters.</div>`}</div></section>`;
+        }).join('');
+    }
+
+    async function loadOverview() {
+        const year = document.getElementById('pm-fiscal-year')?.value || INITIAL_FISCAL_YEAR;
+        const state = document.getElementById('pm-overview-state');
+        if (state) state.textContent = 'Loading fiscal-year visits…';
+        try {
+            const data = await pmJson(`${PM_API}?fiscal_year=${encodeURIComponent(year)}`);
+            window.__pmOverviewData = data;
+            renderOverview(data);
+        } catch (error) {
+            if (state) state.textContent = 'Unable to load PM visits.';
+            showPmNotice(error.message || 'Unable to load PM visits.');
+        }
+    }
+
+    function renderDetailEquipment(item) {
+        const box = document.getElementById('pm-equipment-summary');
+        if (!box || !item) return;
+        box.innerHTML = `<div class="pm-detail-field"><span>Owner</span><strong>${escapeHtml(item.client_name || 'N/A')}</strong></div><div class="pm-detail-field"><span>BSID</span><strong>${escapeHtml(item.bsid || 'Not assigned')}</strong></div><div class="pm-detail-field"><span>Warranty</span><strong>${escapeHtml(item.start_warranty || 'N/A')} → ${escapeHtml(item.end_warranty || 'N/A')}</strong></div><div class="pm-detail-field"><span>Contract</span><strong>${item.under_contract ? 'Under Contract' : 'No Contract'}</strong></div>`;
+    }
+
+    function renderDetailVisits(data) {
+        const state = document.getElementById('pm-detail-state');
+        const container = document.getElementById('pm-detail-visits');
+        const visits = data.visits || [];
+        if (state) state.textContent = visits.length ? `${visits.length} planned visit${visits.length === 1 ? '' : 's'} in FY ${data.fiscal_year}.` : `No planned visits in FY ${data.fiscal_year}.`;
+        if (!container) return;
+        if (!visits.length) { container.innerHTML = '<div class="pm-empty-card">Choose a cadence and initial date above to start monitoring this equipment.</div>'; return; }
+         container.innerHTML = visits.map(visit => `<article class="pm-detail-visit" data-visit-id="${escapeHtml(visit.id)}"><div class="pm-detail-visit-main"><div class="pm-detail-date"><span>Target date</span><strong>${escapeHtml(visit.target_date)}</strong><small>${escapeHtml(visit.scheduled_month || '')}</small></div><div class="pm-detail-cadence"><span>Cadence</span><strong>${escapeHtml(visit.cadence_label || 'Legacy single visit')}</strong></div><div class="pm-detail-status">${statusBadge(visit.status)}${visit.actual_date ? `<span class="small text-muted">Actual: ${escapeHtml(visit.actual_date)}</span>` : ''}</div><div class="pm-detail-meta"><span><i class="fa-solid fa-user-gear" aria-hidden="true"></i>${escapeHtml(visit.engineers || 'Not assigned')}</span><span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>${scheduleLink(visit)}</span></div>${visit.mismatch_warning ? `<div class="pm-mismatch"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(visit.mismatch_warning)}</div>` : ''}<div class="pm-file-links">${fileLinks(visit.files)}</div></div><div class="pm-detail-actions no-print"><button type="button" class="btn btn-outline-primary btn-sm pm-tap pm-edit-visit" data-id="${escapeHtml(visit.id)}">Edit</button><button type="button" class="btn btn-outline-danger btn-sm pm-tap pm-delete-visit" data-id="${escapeHtml(visit.id)}">Delete</button></div></article>`).join('');
+        container.querySelectorAll('.pm-edit-visit').forEach(button => button.addEventListener('click', () => startVisitEdit(visits.find(v => String(v.id) === button.dataset.id))));
+        container.querySelectorAll('.pm-delete-visit').forEach(button => button.addEventListener('click', () => deleteVisit(button.dataset.id)));
+    }
+
+    let editState = {visit: null, currentShiftId: null, linkAction: 'replace', currentEligible: false};
+
+    function addMonthsClamped(isoDate, months) {
+        const parts = String(isoDate || '').split('-').map(Number);
+        if (parts.length !== 3 || parts.some(Number.isNaN)) return '';
+        const [year, month, day] = parts;
+        const shifted = new Date(Date.UTC(year, month - 1 + months, 1));
+        const lastDay = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 0)).getUTCDate();
+        const padded = value => String(value).padStart(2, '0');
+        return `${shifted.getUTCFullYear()}-${padded(shifted.getUTCMonth() + 1)}-${padded(Math.min(day, lastDay))}`;
+    }
+
+    function previewRecurringPlan() {
+        const preview = document.getElementById('pm-date-preview');
+        const startDate = document.getElementById('pm-start-date')?.value || '';
+        const cadence = document.getElementById('pm-cadence')?.value || 'quarterly';
+        if (!preview) return;
+        if (!startDate) { preview.textContent = 'Choose a date to preview the plan.'; return; }
+        const offsets = cadence === 'semi_annual' ? [0, 6] : [0, 3, 6, 9];
+        const dates = offsets.map(offset => addMonthsClamped(startDate, offset));
+        preview.textContent = `Creates ${dates.length} visits: ${dates.join(', ')}`;
+    }
+
+    function editCadencePreviewDates() {
+        const targetDate = document.getElementById('pm-target-date')?.value || '';
+        const cadence = document.getElementById('pm-edit-cadence')?.value || '';
+        if (!targetDate || !cadence) return [];
+        const offsets = cadence === 'semi_annual' ? [0, 6] : [0, 3, 6, 9];
+        return offsets.map(offset => addMonthsClamped(targetDate, offset));
+    }
+
+    function updateEditCadenceState() {
+        const visit = editState.visit;
+        const select = document.getElementById('pm-edit-cadence');
+        const help = document.getElementById('pm-cadence-rebuild');
+        const preview = document.getElementById('pm-rebuild-preview');
+        const save = document.getElementById('pm-save-btn');
+        if (!visit || !select || !save) return;
+        const storedCadence = visit.cadence || '';
+        const chosenCadence = select.value || '';
+        const protectedVisits = visit.cadence_rebuild?.protected_visits || [];
+        select.disabled = protectedVisits.length > 0;
+        if (protectedVisits.length) {
+            if (help) help.textContent = 'Cadence changes are disabled while the selected or later visits have linked schedules. Unlink them and retry.';
+        } else if (help) {
+            help.textContent = 'Changing cadence rebuilds this visit and replaces only its later plan siblings.';
+        }
+        if (chosenCadence && chosenCadence !== storedCadence) {
+            save.innerHTML = '<i class="fa-solid fa-arrows-rotate me-1" aria-hidden="true"></i>Update and Rebuild Plan';
+            const dates = editCadencePreviewDates();
+            if (preview) preview.textContent = dates.length ? `Rebuilds from the edited date: ${dates.join(', ')}` : 'Choose a target date to preview the rebuilt plan.';
+        } else {
+            save.innerHTML = '<i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Update Visit';
+            if (preview) preview.textContent = chosenCadence ? 'Cadence is unchanged; this edit affects only the selected visit.' : 'Legacy visit: choose a cadence to rebuild a recurring plan.';
+        }
+    }
+
+    function populateScheduleOptions(schedules, selectedId = '') {
+        const select = document.getElementById('pm-shift-id');
+        if (!select) return;
+        select.innerHTML = '<option value="">Choose a replacement schedule</option>' + (schedules || []).map(schedule => `<option value="${escapeHtml(schedule.id)}">${escapeHtml(schedule.date)} — ${escapeHtml(schedule.title || schedule.task || '')} (#${escapeHtml(schedule.id)})</option>`).join('');
+        select.value = selectedId ? String(selectedId) : '';
+    }
+
+    function renderCurrentSchedule(visit, eligible = false) {
+        const box = document.getElementById('pm-current-schedule');
+        const actions = document.getElementById('pm-link-actions');
+        const schedule = visit?.schedule || visit?.linked_schedule;
+        if (!box || !actions) return;
+        if (!schedule) {
+            box.hidden = true;
+            actions.hidden = true;
+            return;
+        }
+        box.hidden = false;
+        actions.hidden = false;
+        box.innerHTML = eligible
+            ? `<span>Current schedule <strong>#${escapeHtml(schedule.id)}</strong> is eligible for this visit.</span>`
+            : `<span>Current schedule <strong>#${escapeHtml(schedule.id)}</strong> is historical and outside the eligible replacement choices. Keep current schedule or unlink it.</span>`;
+    }
+
+    async function loadScheduleOptions(targetDate) {
+        if (!targetDate || !DETAIL_SERIAL) return;
+        const select = document.getElementById('pm-shift-id');
+        const help = document.getElementById('pm-schedule-help');
+        try {
+            const data = await pmJson(`${PM_API}/schedule-options/${encodeURIComponent(DETAIL_SERIAL)}?target_date=${encodeURIComponent(targetDate)}`);
+            const schedules = data.schedules || data.schedule_options || [];
+            editState.currentEligible = schedules.some(schedule => String(schedule.id) === String(editState.currentShiftId));
+            populateScheduleOptions(schedules, editState.currentEligible ? editState.currentShiftId : '');
+            renderCurrentSchedule(editState.visit, editState.currentEligible);
+            if (help) help.textContent = schedules.length ? 'Only this visit month, owner, PM task, and Product name are eligible.' : 'No eligible PM service schedules match this visit month and equipment Product name.';
+        } catch (error) {
+            populateScheduleOptions([], '');
+            editState.currentEligible = false;
+            renderCurrentSchedule(editState.visit, false);
+            if (help) help.textContent = 'No eligible PM service schedules could be loaded for this target date.';
+            showPmNotice(error.message || 'Unable to load PM schedule options.');
+        }
+    }
+
+    function startVisitEdit(visit) {
+        if (!visit) return;
+        editState = {visit, currentShiftId: visit.shift_id || null, linkAction: visit.shift_id ? 'keep' : 'replace', currentEligible: false};
+        document.getElementById('pm-visit-id').value = visit.id;
+        document.getElementById('pm-target-date').value = visit.target_date || '';
+        document.getElementById('pm-target-date').required = true;
+        document.getElementById('pm-cadence').disabled = true;
+        document.getElementById('pm-edit-cadence').value = visit.cadence || '';
+        document.getElementById('pm-start-date').disabled = true;
+        document.getElementById('pm-plan-fields').hidden = true;
+        document.getElementById('pm-edit-fields').hidden = false;
+        document.getElementById('pm-editor-heading').textContent = 'Edit planned PM visit';
+        document.getElementById('pm-editor-help').textContent = 'Change this visit date or linked schedule. A cadence change rebuilds this visit and its later siblings.';
+        document.getElementById('pm-reset-form').hidden = false;
+        populateScheduleOptions([], '');
+        renderCurrentSchedule(visit, false);
+        updateEditCadenceState();
+        loadScheduleOptions(visit.target_date || '');
+        document.getElementById('pm-target-date').focus();
+    }
+
+    function resetVisitForm() {
+        editState = {visit: null, currentShiftId: null, linkAction: 'replace', currentEligible: false};
+        document.getElementById('pm-visit-id').value = '';
+        document.getElementById('pm-start-date').value = '';
+        document.getElementById('pm-target-date').value = '';
+        document.getElementById('pm-target-date').required = false;
+        document.getElementById('pm-edit-cadence').value = '';
+        document.getElementById('pm-cadence').disabled = false;
+        document.getElementById('pm-start-date').disabled = false;
+        document.getElementById('pm-shift-id').value = '';
+        document.getElementById('pm-plan-fields').hidden = false;
+        document.getElementById('pm-edit-fields').hidden = true;
+        document.getElementById('pm-save-btn').innerHTML = '<i class="fa-solid fa-repeat me-1" aria-hidden="true"></i>Create Plan';
+        document.getElementById('pm-editor-heading').textContent = 'Add recurring PM plan';
+        document.getElementById('pm-editor-help').textContent = 'Choose a cadence and initial date. Visits start unlinked and can be managed independently.';
+        document.getElementById('pm-reset-form').hidden = true;
+        document.getElementById('pm-current-schedule').hidden = true;
+        document.getElementById('pm-link-actions').hidden = true;
+        previewRecurringPlan();
+    }
+
+    async function loadDetail() {
+        const year = document.getElementById('pm-fiscal-year-detail')?.value || INITIAL_FISCAL_YEAR;
+        const state = document.getElementById('pm-detail-state');
+        if (state) state.textContent = 'Loading planned visits…';
+        try {
+            const data = await pmJson(`${PM_DETAIL_API}?fiscal_year=${encodeURIComponent(year)}`);
+            renderDetailEquipment(data.item || data.equipment);
+            renderDetailVisits(data);
+            window.__pmDetailData = data;
+        } catch (error) {
+            if (state) state.textContent = 'Unable to load planned visits.';
+            showPmNotice(error.message || 'Unable to load planned visits.');
+        }
+    }
+
+    async function saveVisit(event) {
+        event.preventDefault();
+        const visitId = document.getElementById('pm-visit-id').value;
+        const url = visitId ? `${PM_API}/visits/${encodeURIComponent(visitId)}` : `${PM_API}/visits`;
+        let body;
+        if (visitId) {
+            body = {target_date: document.getElementById('pm-target-date').value};
+            if (!body.target_date) { showPmNotice('Target date is required.'); return; }
+            const storedCadence = editState.visit?.cadence || '';
+            const selectedCadence = document.getElementById('pm-edit-cadence').value || '';
+            const cadenceChanged = Boolean(selectedCadence && selectedCadence !== storedCadence);
+            if (cadenceChanged) {
+                const dates = editCadencePreviewDates();
+                const replacedDates = editState.visit?.cadence_rebuild?.future_dates || [];
+                const message = `This will rebuild the plan from ${body.target_date}, replacing later visits${replacedDates.length ? ` (${replacedDates.join(', ')})` : ''} with ${dates.join(', ')}. Continue?`;
+                if (!await pmConfirm(message)) return;
+                body.cadence = selectedCadence;
+            } else if (selectedCadence) {
+                body.cadence = selectedCadence;
+            }
+            if (editState.linkAction === 'unlink' || editState.linkAction === 'replace') {
+                body.shift_id = document.getElementById('pm-shift-id').value || null;
+            }
+        } else {
+            body = {
+                serial_number: DETAIL_SERIAL,
+                cadence: document.getElementById('pm-cadence').value,
+                start_date: document.getElementById('pm-start-date').value,
+            };
+            if (!body.start_date) { showPmNotice('Initial target date is required.'); return; }
+        }
+        try {
+            const result = await pmJson(url, {method: visitId ? 'PUT' : 'POST', body: JSON.stringify(body)});
+            if (visitId) {
+                showPmNotice(result.regenerated_visits ? 'PM plan rebuilt.' : 'PM visit updated.', 'success');
+            } else {
+                const created = (result.created_dates || []).length;
+                const skipped = (result.skipped_dates || []).length;
+                showPmNotice(`Created ${created} PM visit${created === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} existing date${skipped === 1 ? '' : 's'}.` : '.'}`, 'success');
+            }
+            resetVisitForm();
+            await loadDetail();
+        } catch (error) { showPmNotice(error.message || 'Unable to save PM visit.'); }
+    }
+
+    async function deleteVisit(visitId) {
+        if (!await pmConfirm('Delete this planned PM visit?')) return;
+        try {
+            await pmJson(`${PM_API}/visits/${encodeURIComponent(visitId)}`, {method: 'DELETE'});
+            showPmNotice('PM visit deleted.', 'success');
+            resetVisitForm();
+            await loadDetail();
+        } catch (error) { showPmNotice(error.message || 'Unable to delete PM visit.'); }
+    }
+
+    document.getElementById('pm-print-btn')?.addEventListener('click', () => window.print());
+    document.getElementById('pm-fiscal-year')?.addEventListener('change', loadOverview);
+    const refreshOverviewFilters = () => {
+        if (window.__pmOverviewData) renderOverview(window.__pmOverviewData);
+        else loadOverview();
+    };
+    ['pm-search', 'pm-client-filter'].forEach(id => document.getElementById(id)?.addEventListener('input', refreshOverviewFilters));
+    ['pm-status-filter', 'pm-month-filter'].forEach(id => document.getElementById(id)?.addEventListener('change', refreshOverviewFilters));
+    document.getElementById('pm-visit-form')?.addEventListener('submit', saveVisit);
+    document.getElementById('pm-reset-form')?.addEventListener('click', resetVisitForm);
+    document.getElementById('pm-fiscal-year-detail')?.addEventListener('change', loadDetail);
+    document.getElementById('pm-start-date')?.addEventListener('input', previewRecurringPlan);
+    document.getElementById('pm-cadence')?.addEventListener('change', previewRecurringPlan);
+    document.getElementById('pm-edit-cadence')?.addEventListener('change', updateEditCadenceState);
+    document.getElementById('pm-target-date')?.addEventListener('change', event => {
+        if (!editState.visit) return;
+        editState.linkAction = editState.currentShiftId ? 'keep' : 'replace';
+        updateEditCadenceState();
+        loadScheduleOptions(event.target.value);
+    });
+    document.getElementById('pm-shift-id')?.addEventListener('change', event => {
+        editState.linkAction = event.target.value ? 'replace' : (editState.currentShiftId ? 'keep' : 'replace');
+    });
+    document.getElementById('pm-keep-current')?.addEventListener('click', () => {
+        editState.linkAction = 'keep';
+        document.getElementById('pm-shift-id').value = editState.currentEligible ? String(editState.currentShiftId || '') : '';
+    });
+    document.getElementById('pm-unlink-current')?.addEventListener('click', () => {
+        editState.linkAction = 'unlink';
+        document.getElementById('pm-shift-id').value = '';
+    });
+
+    if (DETAIL_SERIAL) {
+        loadDetail();
+    } else {
+        window.__pmOverviewData = null;
+        // Keep the latest payload for instant local filter updates and year changes.
+        window.loadInventoryPmOverview = loadOverview;
+        window.loadInventoryPmOverview();
+    }
+})();
+</script>
+
+<style>
+    .inventory-pm-page { max-width: 1600px; margin: 0 auto; padding-bottom: 26px; }
+    .pm-hero, .pm-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .pm-hero { padding: 22px; background: linear-gradient(135deg, #0f3d56, #126e82); color: #fff; }
+    .pm-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pm-title { font-weight: 950; letter-spacing: -.02em; margin: 4px 0 6px; font-size: clamp(1.45rem, 3vw, 2.2rem); }
+    .pm-subtitle { margin: 0; color: rgba(255,255,255,.84); max-width: 700px; }
+    .pm-eyebrow { color: #0f766e; font-size: .72rem; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
+    .pm-hero .pm-eyebrow { color: #b5f3e9; }
+    .pm-hero .btn { color: #fff; border-color: rgba(255,255,255,.6); }
+    .pm-controls, .pm-editor, .pm-visits-card, .pm-overview-card, .pm-equipment-card { padding: 20px; }
+    .pm-section-heading { margin-bottom: 16px; }
+    .pm-brand-pill { border-radius: 999px; padding: 6px 12px; background: #ecfeff; color: #155e75; font-size: .78rem; font-weight: 900; }
+    .pm-equipment-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .pm-detail-field { border: 1px solid #e2e8f0; border-radius: 13px; padding: 12px; background: #f8fafc; min-width: 0; }
+    .pm-detail-field span, .pm-detail-date span { display: block; color: #64748b; font-size: .72rem; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; }
+    .pm-detail-field strong { display: block; margin-top: 5px; color: #0f172a; overflow-wrap: anywhere; }
+    .pm-tap { min-height: 42px; }
+    .pm-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .pm-summary-card { border: 1px solid #dbeafe; border-radius: 16px; background: #fff; box-shadow: 0 7px 22px rgba(15,23,42,.06); padding: 15px; }
+    .pm-summary-card span { display: block; color: #64748b; font-size: .77rem; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; }
+    .pm-summary-card strong { display: block; margin-top: 3px; color: #0f172a; font-size: 1.65rem; }
+    .pm-summary-planned { border-left: 5px solid #2563eb; }.pm-summary-overdue { border-left: 5px solid #dc2626; }.pm-summary-completed { border-left: 5px solid #059669; }
+    .pm-state { min-height: 24px; margin: -3px 0 12px; color: #64748b; font-weight: 750; }
+    .pm-month-grid { display: grid; gap: 20px; }
+    .pm-month-section { border-top: 1px solid #e2e8f0; padding-top: 16px; }
+    .pm-month-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+    .pm-month-heading h3 { font-size: 1.05rem; font-weight: 950; color: #0f172a; margin: 0; }
+    .pm-month-heading span { color: #64748b; font-size: .78rem; font-weight: 850; }
+    .pm-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 13px; }
+    .pm-table { min-width: 1100px; margin: 0; }
+    .pm-table th { white-space: nowrap; background: #0f3d56; color: #fff; font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; }
+    .pm-table td { font-size: .85rem; vertical-align: top; }
+    .pm-table small { color: #64748b; }.pm-empty-cell { text-align: center; color: #64748b; padding: 22px !important; }
+    .pm-status { display: inline-flex; align-items: center; min-height: 28px; border-radius: 999px; padding: 3px 9px; font-size: .74rem; font-weight: 950; white-space: nowrap; }
+    .pm-status-planned { color: #1d4ed8; background: #dbeafe; }.pm-status-overdue { color: #b91c1c; background: #fee2e2; }.pm-status-completed { color: #047857; background: #d1fae5; }
+    .pm-schedule-link { display: inline-block; line-height: 1.35; }.pm-schedule-link small { color: #475569; }.pm-file-links { display: grid; gap: 3px; margin-top: 5px; }
+    .pm-file-link { color: #0f766e; font-weight: 800; font-size: .78rem; overflow-wrap: anywhere; }.pm-file-link i { margin-right: 4px; }
+    .pm-mismatch { display: flex; gap: 5px; margin-top: 6px; color: #b45309; font-size: .75rem; font-weight: 800; line-height: 1.3; max-width: 340px; }
+    .pm-mobile-visits { display: none; }.pm-visit-card, .pm-detail-visit { border: 1px solid #e2e8f0; border-radius: 15px; padding: 14px; background: #fff; }
+    .pm-visit-card-top, .pm-detail-visit, .pm-detail-visit-main, .pm-detail-actions { display: flex; gap: 12px; }.pm-visit-card-top, .pm-detail-visit { justify-content: space-between; align-items: flex-start; }
+    .pm-visit-card-top strong { color: #0f172a; }.pm-visit-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 13px 0 0; }.pm-visit-facts div { background: #f8fafc; border-radius: 10px; padding: 8px; }.pm-visit-facts dt { color: #64748b; font-size: .68rem; font-weight: 900; text-transform: uppercase; }.pm-visit-facts dd { margin: 3px 0 0; font-size: .82rem; font-weight: 800; overflow-wrap: anywhere; }
+    .pm-visit-card-schedule { margin-top: 12px; }.pm-empty-card { border: 1px dashed #cbd5e1; border-radius: 14px; padding: 23px 16px; color: #64748b; text-align: center; font-weight: 800; }
+    .pm-detail-visits { display: grid; gap: 12px; }.pm-detail-visit-main { align-items: flex-start; flex: 1; min-width: 0; flex-wrap: wrap; }.pm-detail-date, .pm-detail-cadence { min-width: 130px; }.pm-detail-date strong, .pm-detail-cadence strong { display: block; color: #0f172a; margin-top: 4px; }.pm-detail-date span, .pm-detail-cadence span { display: block; color: #64748b; font-size: .72rem; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; }.pm-detail-date small { color: #64748b; }.pm-detail-status { display: grid; gap: 5px; }.pm-detail-meta { display: grid; gap: 5px; color: #475569; font-size: .82rem; font-weight: 800; min-width: 200px; }.pm-detail-meta i { width: 18px; color: #0f766e; }.pm-detail-actions { flex-wrap: wrap; }
+    .pm-current-schedule { margin-top: 7px; color: #92400e; font-size: .78rem; line-height: 1.35; }.pm-link-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .pm-alert-stack { position: fixed; right: 18px; top: 18px; z-index: 4100; display: grid; gap: 8px; width: min(380px, calc(100vw - 36px)); }.pm-alert { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; border-radius: 13px; padding: 12px 14px; background: #fff; border: 1px solid #fecaca; box-shadow: 0 12px 30px rgba(15,23,42,.2); color: #991b1b; font-weight: 800; }.pm-alert.success { border-color: #bbf7d0; color: #166534; }.pm-alert button { border: 0; background: transparent; color: inherit; font-size: 1.1rem; font-weight: 900; cursor: pointer; }
+    .pm-confirm-backdrop { position: fixed; inset: 0; z-index: 4200; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,.55); }.pm-confirm { width: min(440px, 100%); border-radius: 18px; padding: 20px; background: #fff; box-shadow: 0 24px 70px rgba(15,23,42,.3); }.pm-confirm h2 { margin: 0 0 8px; font-size: 1.1rem; }.pm-confirm p { color: #475569; line-height: 1.45; }.pm-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    @media (max-width: 900px) { .pm-equipment-summary, .pm-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.pm-detail-visit-main { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.pm-detail-meta { grid-column: 1 / -1; } }
+    @media (max-width: 620px) { .pm-hero, .pm-section-heading { flex-direction: column; }.pm-hero-actions { width: 100%; }.pm-hero-actions .btn { flex: 1; }.pm-controls, .pm-editor, .pm-visits-card, .pm-overview-card, .pm-equipment-card { padding: 15px; }.pm-equipment-summary, .pm-summary-grid { grid-template-columns: 1fr 1fr; gap: 8px; }.pm-summary-card { padding: 11px; }.pm-summary-card strong { font-size: 1.35rem; }.pm-table-wrap { display: none; }.pm-mobile-visits { display: grid; gap: 9px; }.pm-detail-visit { flex-direction: column; }.pm-detail-actions { width: 100%; }.pm-detail-actions .btn { flex: 1; }.pm-detail-visit-main { width: 100%; }.pm-month-heading h3 { font-size: .98rem; } }
+    @media (max-width: 375px) { .pm-equipment-summary, .pm-summary-grid { grid-template-columns: 1fr; }.pm-hero, .pm-controls, .pm-editor, .pm-visits-card, .pm-overview-card, .pm-equipment-card { padding: 12px; }.pm-tap { min-height: 44px; } }
+    @media print { .no-print, .pm-controls, .pm-alert-stack, .pm-detail-actions { display: none !important; }.inventory-pm-page { max-width: none; padding: 0; }.pm-hero { color: #000; background: #fff; border: 1px solid #cbd5e1 !important; box-shadow: none !important; }.pm-hero .pm-eyebrow, .pm-hero .pm-subtitle { color: #475569; }.pm-overview-card, .pm-visits-card, .pm-equipment-card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; }.pm-table-wrap { display: block !important; }.pm-mobile-visits { display: none !important; } }
+</style>
+{% endblock %}

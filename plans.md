@@ -1,5 +1,477 @@
 # Medical Service SMS — Approved Plans
 
+## Editable PM cadence with future-plan rebuilding
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-16 — the owner submitted the complete editable-cadence plan.
+**Detailed:** 2026-09-16.
+
+### Context and decisions
+
+Amend the current uncommitted recurring Genoray/Vieworks PM package so administrators can
+change cadence while editing a planned visit. Cadence changes are structural plan changes,
+not label-only edits. Use the target date currently entered in the edit form as the start
+of a rebuilt cycle. Preserve every earlier visit as historical data, update the selected
+visit, and replace only its later siblings from the same generated plan. Semi-Annual yields
+the selected/start visit plus one visit six months later; Quarterly yields the start plus
+visits three, six, and nine months later.
+
+Block a cadence rebuild if the selected visit or any later sibling being replaced has a
+linked schedule. This protects completed PM history as completion is derived from the linked
+schedule. Admins may use the existing individual edit workflow to unlink affected schedules,
+then retry the rebuild. Do not modify earlier visits, calendar rows, attachments, unrelated
+plans, or Product relationships. When cadence is unchanged, retain the current independent
+target-date and schedule-link edit behavior.
+
+### Investigation and approach
+
+- `app.py:2583-2624` stores cadence per `InventoryPmVisit` but has no generated-plan identity.
+  Add a nullable plan key so creation batches and later siblings can be identified without
+  inferring groups by dates. Extend the current additive table ensure/migration rather than
+  replacing the table.
+- `app.py:55064-55125` currently rejects a cadence value that differs from the stored value
+  and updates one visit only. Replace that rejection with a guarded transactional rebuild
+  path; leave unchanged-cadence edits on the existing narrow path.
+- `templates/inventory_pm.html:42-111` has a cadence selector only in creation fields, and
+  `startVisitEdit()` disables it while displaying “Cadence is fixed after creation.” Add an
+  edit-mode cadence control, rebuild preview/confirmation, and protection messaging while
+  preserving exact month/client/Product schedule filtering.
+- Existing PM tests in `tests/test_inventory_pm.py` assert independent edits preserve cadence.
+  Amend them with fail-first plan-key, rebuild, history-protection, rollback, and UI contracts
+  while retaining the existing recurrence and schedule-matching regressions.
+- The PM package remains uncommitted beside protected dirty `scheduler.db`, handoff,
+  `.claude/`, `output/`, and `tmp/` artifacts. Preserve all protected and unrelated work.
+
+### Numbered execution steps
+
+1. **Preflight and records.** After a separate owner go-ahead, reread all applicable
+   `AGENTS.md`, this plan, `changes.md`, current PM implementation/tests/release metadata,
+   service-worker marker, and Git status. Confirm the two earlier PM packages remain intact
+   and uncommitted. Set this plan **In progress** and record implementation start under
+   2026-09-16 in `changes.md`. Done when protected paths and authorized source boundaries
+   are confirmed before the first behavior edit.
+2. **Fail-first tests.** Extend `tests/test_inventory_pm.py` with expected failures for shared
+   plan keys, Quarterly→Semi-Annual and Semi-Annual→Quarterly rebuilds, edited-date anchoring,
+   earlier-history preservation, later-sibling replacement, legacy no-key rows, transactional
+   rollback, collision rejection, and unchanged-cadence behavior. Add linked selected/later/
+   completed protection and UI source contracts. Run the checkpoint on the isolated disposable
+   database and record truthful failures. Done when tests demonstrate the missing capability
+   without touching `scheduler.db`.
+3. **Plan identity — `app.py`.** Add nullable indexed `plan_key` to `InventoryPmVisit` and
+   its additive runtime migration. Generate one opaque key for every new recurring creation
+   batch and store it on all generated rows. Serialize it only as needed for the PM client;
+   do not expose it as user-editable data. Leave legacy rows with no key readable. Done when
+   new plans have one stable group identity and preexisting developer schemas start safely.
+4. **Transactional cadence rebuilding — `app.py`.** Accept cadence in individual PUT/PATCH.
+   If unchanged, use the current individual update path. If changed, identify later siblings
+   by the original plan key and original selected-date position; keep earlier siblings. Reject
+   the rebuild before mutation if the selected/later replace set contains any linked shift.
+   Generate replacement dates from the edited target with existing clamped month arithmetic,
+   validate uniqueness against every retained visit, and reject the whole operation on any
+   collision. In one transaction, update the selected row, delete replaceable later siblings,
+   create new later rows, and assign selected/new rows a fresh plan key. A no-key legacy row
+   becomes a new plan start without deleting other ungrouped rows. Done when unexpected errors
+   roll back every update/delete/insert and historical data is untouched.
+5. **API responses and audit behavior — `app.py`.** Return the updated visit, regenerated
+   visits/dates, and removed future dates after a rebuild, with precise errors listing linked
+   protected visits or conflicting retained dates. Keep existing creation response fields,
+   access checks, brand resolution, schedule matching, status/file derivation, serial carry-
+   forward, deletion blocking, and activity logging. Done when crafted requests cannot alter
+   another brand/equipment/plan or bypass link protection.
+6. **Edit interface — `templates/inventory_pm.html`.** Add a cadence selector to edit mode,
+   preselect the stored cadence, and replace fixed-cadence help with rebuild semantics. Preview
+   the dates from the edited target and selected cadence. When cadence differs, label the
+   action **Update and Rebuild Plan** and show the existing project modal with the affected
+   future dates before submission. Disable cadence changes and explain the required unlinking
+   when payload data shows the selected/later replace set is protected, while retaining normal
+   date/link editing. Keep responsive layout, 44px mobile controls, escaping, filters, print,
+   schedule option reload, historical-link display, and file links. Done when the UI reflects
+   server rules and ordinary edits remain unchanged.
+7. **Release records and verification.** Amend the PM entry in
+   `static/changelog/releases.json`, monotonically bump the embedded service-worker cache
+   marker in `app.py`, and update `changes.md` and this plan with actual outcomes. Run focused
+   PM tests, related inventory/Product/calendar/file/navigation/offline/service-worker and
+   changelog tests, isolated full discovery, Python/Jinja/JavaScript/JSON checks,
+   `git diff --check`, and a protected-worktree allowlist review. Record exact pass/fail/skip
+   counts and unrelated baselines. Leave the package uncommitted and unpublished, return one
+   consolidated implementation report, and stop.
+
+### Interfaces, exclusions, verification, and risks
+
+Add nullable `plan_key` (or equivalent) to PM visits. New recurring creation assigns it to
+the batch. Individual update accepts `cadence`; cadence-changing responses return the updated
+visit, regenerated visits/dates, and removed future dates. Validation errors identify linked
+protected visits or conflicting retained dates. Do not infer group membership for old no-key
+rows, rewrite earlier history, modify linked schedules/files, cascade a cadence change into
+another plan, add dependencies, or perform commit, push, deployment, Railway, or production
+database actions.
+
+Verification must cover both brands, all access roles, both cadence directions, ordinary and
+clamped dates, a selected visit in every series position, legacy rows, link/completion guards,
+collision and rollback behavior, schedule-link preservation, responsive UI, and Product/
+inventory isolation. Use Flask test-client and source checks; project instructions prohibit
+browser/Codex UI automation without separate permission. The material risks are deleting PM
+history, grouping unrelated visits, partially rebuilding a plan, bypassing protected links,
+and violating date uniqueness. Explicit plan keys, selected-onward boundaries, preflight
+validation, one database transaction, and focused regressions contain those risks. Formal
+review and publication remain separately owner-gated.
+
+### Implementation outcome
+
+Implemented after the owner's separate 2026-09-16 go-ahead and left uncommitted for the
+owner. The recurring PM package now has a nullable indexed `InventoryPmVisit.plan_key`
+with additive migration support; every newly created recurring batch shares one opaque key,
+while legacy rows remain readable with null cadence and plan key. Individual PUT/PATCH edits
+accept supported cadence changes and use the edited target date as the new cycle anchor. The
+selected visit and its later siblings are rebuilt transactionally, earlier visits stay in
+their original plan, selected/new rows receive a fresh key, and no-key legacy rows become
+standalone plan starts without deleting other ungrouped history. Linked selected/later visits
+block the rebuild, retained-date collisions are rejected before mutation, and unexpected
+failures roll back updates, deletes, inserts, and audit work together. Unchanged-cadence edits
+retain the existing narrow date/link behavior and historical-link preservation.
+
+The API returns `regenerated_visits`, `regenerated_dates`, `removed_future_dates`, and precise
+protected/collision details for rebuilds. The detail editor now preselects stored cadence,
+previews rebuilt dates, disables cadence changes when the selected-onward set is linked,
+confirms affected future dates through the existing modal, and labels changed submissions
+**Update and Rebuild Plan**. The PM release description was amended and the service-worker
+navigation marker was bumped to `medical-service-pwa-offline-navigation-v163-editable-pm-cadence`.
+
+Verification completed:
+
+- `venv\\Scripts\\python.exe -m unittest tests.test_inventory_pm` — **29/29 passed** in a
+  disposable SQLite database.
+- Affected inventory, Product, layout, HR, calendar/file, navigation/offline, service-worker,
+  and changelog modules — **358 passed, 1 skipped** across 359 tests.
+- Isolated full discovery — **1193 tests: 1171 passed, 20 unrelated baseline failures, 2
+  skipped**. Failures remained in the pre-existing changelog manifest-state, purchase-order
+  rate-limit/setup, staff-fixture, and stale TSR cache-marker areas; no PM test failed.
+- Python AST, Jinja template, inline JavaScript, release JSON, and `git diff --check` checks
+  passed. No browser/Codex UI automation, commit, push, deployment, Railway, or production
+  database operation was performed; protected dirty artifacts and unrelated work remain.
+
+## Recurring PM generation and schedule matching
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-16 — the owner submitted the complete recurring-PM plan.
+**Detailed:** 2026-09-16.
+
+### Context and decisions
+
+Amend the current uncommitted Genoray/Vieworks PM monitoring package so new PM plans are
+recurring rather than single manually created visits. An administrator selects an initial
+target date and either **Semi-Annual** or **Quarterly**. Semi-Annual creates the initial
+date and a second visit six months later; Quarterly creates the initial date plus visits
+three, six, and nine months later. Generation covers the next twelve months even when dates
+cross fiscal years. Month arithmetic preserves the selected day where possible and clamps
+invalid destination dates to that month's final day.
+
+Each generated visit remains independent after creation: admins may adjust its date, link
+or unlink a schedule, or delete it without recalculating other visits. Store and display
+the originating cadence on every generated row, but do not offer cadence changes during
+individual edits. New plans require one of the two recurring cadences. Preserve any
+unreleased legacy single visits already present in a developer database as readable rows.
+
+For schedule linking, show only service schedules with a PM task that fall in the same
+calendar month and year as that individual visit, have the same Client ID as the equipment
+owner, and reference a Product Inventory row whose trimmed case-insensitive product name
+equals the Genoray/Vieworks item name. Newly generated visits start unlinked and are linked
+individually. Keep a previously linked historical schedule visible if later item/date/
+schedule changes make it ineligible, but allow replacements only from currently eligible
+options and expose explicit keep-current or unlink behavior. These decisions replace the
+first PM package's broader same-client picker while preserving its access, status, file,
+brand-isolation, serial-edit, and deletion-protection rules.
+
+### Investigation and approach
+
+- `app.py:2583-2621` defines the new `InventoryPmVisit` model with brand, equipment serial,
+  one target date, optional Shift link, and timestamps. Extend it additively with cadence
+  and uniqueness for `(brand, equipment_serial, target_date)`; keep legacy rows readable.
+- `app.py:3462-3531` currently filters schedule choices only by owner, service type, and PM
+  title. `Shift.product_id` points to Product Inventory, whereas standalone Genoray/Vieworks
+  items have no Shift relationship. Match the loaded Shift Product's normalized name to
+  the standalone item name, plus exact calendar month/year and Client ID.
+- `app.py:54957-55151` currently creates one visit from `target_date`, validates links
+  without a visit month, and returns all eligible owner schedules. Replace POST creation
+  with transactional cadence generation; keep PUT/PATCH individual and date/link focused;
+  require a date on schedule-option requests and link validation.
+- `templates/inventory_pm.html:42-93` has one exact-date field and a page-wide schedule
+  dropdown. Replace add mode with cadence/start-date generation and date preview. In edit
+  mode, fetch schedule options for that visit date and handle historical current links
+  without including ineligible schedules as replacement choices.
+- Focused coverage is in `tests/test_inventory_pm.py`. The entire PM package remains
+  uncommitted beside protected dirty `scheduler.db`, handoff, `.claude/`, `output/`, and
+  `tmp/` artifacts; preserve all protected and unrelated work.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** After a separate owner go-ahead, reread all applicable
+   `AGENTS.md`, this plan, `changes.md`, current PM source/tests, release metadata, service-
+   worker marker, and Git status. Confirm the first PM implementation has not materially
+   changed and protected dirty files remain identifiable. Set this plan **In progress** and
+   record implementation start in the 2026-09-16 `changes.md` section. Done when scope and
+   dirty-work boundaries are safe before any source edit.
+2. **Fail-first contracts.** Extend `tests/test_inventory_pm.py` with failing tests for both
+   cadences, month-end/leap-year clamping, cross-fiscal-year dates, partial/all-duplicate
+   behavior, atomic creation, cadence serialization, independent edits/deletes, duplicate
+   edit rejection, and exact schedule filtering/validation. Run the new assertions against
+   current code and record truthful expected failures using only its disposable SQLite DB.
+   Done when tests demonstrate the requested behavior is absent without touching
+   `scheduler.db`.
+3. **Additive schema and recurrence helpers — `app.py`.** Add a cadence column accepted as
+   `semi_annual` or `quarterly`, plus safe additive migration handling for a previously
+   created unreleased table. Add deterministic month-shift helpers that clamp to the final
+   valid day. Enforce uniqueness by brand/equipment/date in model/schema and application
+   checks without destroying legacy data. Done when fresh and preexisting test schemas work
+   and generated dates are stable for ordinary, month-end, and leap dates.
+4. **Transactional plan creation — `app.py`.** Change PM POST creation to require
+   `serial_number`, `cadence`, and `start_date`, generate offsets `[0, 6]` or
+   `[0, 3, 6, 9]`, skip existing equipment/date rows, and insert all missing visits in one
+   commit. Return `created_visits`, `created_dates`, and `skipped_dates`; return a clear
+   conflict when all generated dates already exist. Keep new rows unlinked. On individual
+   PUT/PATCH, preserve cadence, permit date/link/unlink changes only, and reject collisions.
+   Done when partial duplicates create only missing dates and any unexpected failure rolls
+   the whole batch back.
+5. **Exact schedule matching — `app.py`.** Require target date (or an equivalent explicit
+   year/month) on the schedule-option API. Limit candidates by exact month bounds, same
+   Client ID, service type, PM-indicating title, present Product relationship, and normalized
+   Product-name equality with the standalone item. Pass the visit target date through
+   server-side link validation for creation/replacement so crafted payloads cannot bypass
+   the picker. Existing unchanged historical links remain readable even when no longer
+   eligible; any new/replacement link must pass current rules. Done when adjacent-month,
+   other-client, different-product, repair, travel, and missing-Product schedules are all
+   rejected while exact matches work for both brands.
+6. **Recurring-plan and per-visit UI — `templates/inventory_pm.html`.** Replace manual add
+   mode with required cadence and initial-date controls, live preview of two or four target
+   dates, and created/skipped result messaging. Do not link a schedule during batch creation.
+   Keep individual edit mode for target date and schedule. Load replacement options whenever
+   editing begins or the date changes; show an explanatory empty state. Represent an existing
+   ineligible historical link as keep-current information outside the eligible replacement
+   choices, with explicit keep and unlink actions. Display the cadence on overview rows,
+   phone cards, and equipment visit cards. Preserve responsiveness, printing, filters,
+   status/file links, escaping, and accessible controls. Done when the UI cannot submit an
+   unsupported cadence or stale ineligible replacement link.
+7. **Release records and verification.** Amend the existing PM release description in
+   `static/changelog/releases.json`, bump the embedded service-worker cache marker in
+   `app.py`, and update `changes.md` and this plan with the actual outcome. Run the expanded
+   PM tests and related Genoray/Vieworks, Product, calendar/file, navigation/offline, and
+   service-worker suites; then isolated full discovery, Python/Jinja/JavaScript/JSON checks,
+   `git diff --check`, and a final allowlist/protected-worktree review. Record exact pass/
+   fail/skip counts and unrelated baselines. Leave all work uncommitted and unpublished,
+   return one consolidated implementation report, and stop.
+
+### Interfaces, exclusions, verification, and risks
+
+PM creation accepts `serial_number`, `cadence`, and `start_date`; successful responses expose
+`created_visits`, `created_dates`, and `skipped_dates`. Individual updates retain
+`target_date` and `shift_id`. Schedule-option requests carry the visit date, and the server
+uses that same date when validating a submitted link. Do not modify Shift or Product
+relationships, generate or edit calendar schedules, add Product-mapping fields, cascade an
+individual visit edit across a generated series, add dependencies, or perform commit, push,
+deployment, Railway, or production database operations.
+
+Verification must cover both brands and all admin/denied roles, duplicate races at the
+database boundary, clamped dates, fiscal crossover, normalized name matching, current and
+historical schedule links, status/file behavior, and Product/inventory non-interference.
+Use Flask test-client and source checks. Browser/Codex UI automation remains prohibited by
+project instructions without separate owner permission. The material risks are duplicate
+dates under concurrent requests, non-atomic partial plans, surprising month-end arithmetic,
+cross-brand leakage, linking the wrong Product or month, and losing a historical link.
+Transactional creation, database uniqueness, deterministic clamping, fixed-brand item
+resolution, exact query/server validation, and explicit historical-link handling bound them.
+Formal review and publication remain separately owner-gated.
+
+### Implementation outcome
+
+Implemented after the owner's separate 2026-09-16 go-ahead and left uncommitted for the owner.
+The existing PM package was extended in `app.py`, `templates/inventory_pm.html`,
+`tests/test_inventory_pm.py`, and `static/changelog/releases.json`; this plan and
+`changes.md` were updated with the implementation record. `InventoryPmVisit.cadence` is a
+nullable additive field so unreleased legacy single visits remain readable. The schema ensure
+path adds that field and lookup indexes without dropping legacy data, and creates the composite
+brand/serial/date uniqueness constraint when existing rows permit it. Supported cadence values
+are `semi_annual` and `quarterly`; calendar arithmetic preserves the day where valid and clamps
+month-end dates. Plan creation validates the serial, cadence, and start date, creates the two or
+four generated visits in one transaction, skips existing equipment/date rows, returns created and
+skipped dates, and leaves new rows unlinked. Individual edits preserve cadence, allow only the
+visit date and link state to change, reject date collisions, and retain an unchanged historical
+link while validating every new or replacement link.
+
+Schedule options and server-side link validation now require the individual visit date and
+restrict candidates to the exact calendar month/year, same owner Client ID, PM service task,
+and a present Product Inventory row whose trimmed case-insensitive name matches the standalone
+Genoray or Vieworks item. The editor loads options per visit/date and exposes explicit
+keep-current and unlink actions for an ineligible historical link. The page previews generated
+dates, reports created/skipped results, and displays cadence in desktop, phone, and detail
+views. The existing access, status, file, brand-isolation, serial-edit, deletion-protection,
+responsive, and print behavior remains covered by the PM package. The release description was
+amended and the embedded navigation cache marker was bumped to
+`medical-service-pwa-offline-navigation-v162-recurring-pm-matching`.
+
+Verification completed:
+
+- `venv\\Scripts\\python.exe -m unittest tests.test_inventory_pm` — **21/21 passed** in the
+  disposable SQLite database configured by the test module.
+- Related PM/inventory/product/layout/offline/service-worker tests — **103/103 passed**.
+- Calendar/file/timeline/HR tests — **61/61 passed**.
+- Navigation/offline/theme tests — **136/136 passed**.
+- Changelog workflow/coverage tests — **44 passed, 1 skipped**.
+- Isolated full discovery — **1185 tests, 1163 passed, 20 unrelated baseline failures, 2
+  skipped**. The failures were the pre-existing changelog manifest-state assertion,
+  purchase-order setup rate limits, staff-creation fixture responses, and stale TSR contact
+  cache-marker expectations; no recurring PM test failed.
+- Python AST, Jinja template, inline JavaScript (`node` VM), release JSON, and `git diff
+  --check` checks passed. No browser/Codex UI automation, commit, push, deployment, Railway
+  change, or production database operation was performed. The protected dirty database,
+  handoff, `.claude/`, `output/`, `tmp/`, and unrelated worktree changes remain present.
+
+## Genoray and Vieworks PM monitoring
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-16 — the owner submitted the complete PM monitoring plan for implementation.
+**Detailed:** 2026-09-16.
+
+### Context and decisions
+
+Add separate **Genoray PM** and **Vieworks PM** pages under Records → Inventory. Each page
+shows its brand's equipment and manually planned PM visits across an April–March fiscal
+year. A PM action on each Genoray/Vieworks inventory item opens that machine's detail page.
+The supplied screenshots guide the overview and detail layout; this first version uses the
+existing equipment and customer information rather than adding all pictured contract,
+room, and system fields. FY 2026 means April 2026 through March 2027. Planned visits use
+exact target dates and are grouped into the twelve fiscal-year months.
+
+The owner settled the following behaviors during planning. Keep the two brand overviews
+separate, enter visits manually rather than generate them from a frequency, and permit only
+active generic admins, verified superadmins, and verified regional admins to view/manage
+the new pages and routes. Engineers and other roles remain denied. A visit may link to an
+existing **service** calendar schedule only when its task indicates PM and its client
+matches the machine's current medical-center owner. Product-linked schedules are eligible,
+and one schedule may support multiple equipment visits. The app must neither create nor
+modify schedules. A linked visit is completed automatically only while the schedule is
+`Completed`; its actual date and engineer(s) come from the schedule. Display existing
+permitted schedule attachments as links without copying files or broadening file access.
+Keep a historical schedule link, with a client-mismatch warning, if equipment ownership
+changes; new links must match the new owner. Block equipment deletion while PM visits exist.
+
+### Investigation and approach
+
+- `app.py:2527-2576` defines separate `GenorayItem` and `VieworksItem` records with serial,
+  name, Client owner, warranty dates, contract flag, and BSID. They currently have no
+  relationship to schedules; add one PM-visit table with a fixed brand plus item serial
+  rather than changing Product's machine relationship or the existing Shift schema.
+- `app.py:2803-2870` defines `Shift` with client, Product-only `product_id`, title, date,
+  status, engineer, and files; `app.py:2762-2796` defines `ShiftFile`. Link PM visits by
+  existing shift ID and validate brand/item/owner/task before linking. Product-linked PM
+  schedules remain eligible by the owner's explicit choice.
+- `app.py:6332-6376` defines the active Genoray/Vieworks admin gates. Apply the matching
+  gate to every PM page, overview/detail/list/CRUD route, and schedule-option route; do not
+  infer PM access from broader calendar or Product permissions.
+- `templates/products.html:1-16` selects Product/Genoray/Vieworks mode and
+  `templates/layout.html:167-323` holds Records and Inventory submenu paths. Add only
+  Genoray/Vieworks PM actions and guarded submenu entries. Existing schedule file
+  preview/download routes apply their own visibility rules and should be reused for links.
+- Git is on `main` with protected dirty `scheduler.db`, handoff, `.claude/`, `output/`,
+  and `tmp/` artifacts. Preserve them; tests must use disposable isolated databases.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read all applicable `AGENTS.md`, this complete plan,
+   `changes.md`, current Git status, affected source/tests, current service-worker marker,
+   and release manifest. Confirm the approved scope is still safe. After a separate owner
+   go-ahead, set this plan **In progress** and add a factual 2026-09-16 implementation
+   entry to `changes.md`. Done when protected dirty work is identified before any source
+   edit and no material state change invalidates the plan.
+2. **Fail-first tests.** Add focused disposable-SQLite Flask tests for the PM routes,
+   permissions, empty start, visit CRUD, fiscal boundaries, schedule eligibility/sharing,
+   live completion/reversion, file visibility, owner mismatch, serial edit, deletion block,
+   and brand/Product isolation. Run the new behavior assertions against the unchanged
+   implementation and record the expected failures, then retain positive controls for
+   existing inventory/calendar routes. Done when the tests demonstrably detect missing PM
+   behavior without touching `scheduler.db`.
+3. **Storage and guard — `app.py`.** Add an additive `inventory_pm_visit` table with
+   brand (`genoray` or `vieworks`), equipment serial, exact target date, nullable linked
+   Shift ID, and created/updated timestamps, plus lookup indexes. Provide a single guarded
+   brand/item resolver and an additive table-ensure helper that does not self-lock SQLite
+   request writes. Reuse each brand's existing active-admin gate. Done when both brands
+   start empty, their visit queries remain isolated, and denied roles cannot reach data.
+4. **PM routes and derived data — `app.py`.** Add separate brand overview and equipment
+   detail pages, guarded overview/detail/list/add/edit/delete APIs, and a guarded
+   schedule-option API. Validate exact dates, item existence, owner, service schedule,
+   PM-indicating task, and same-client link at creation or replacement. Allow one Shift ID
+   on multiple visits. Derive Completed only from the Shift's current `Completed` status;
+   otherwise derive Overdue from Manila today and target date or Planned. Read actual date,
+   assigned engineers, and authorized file links from the existing Shift/files at request
+   time. Retain old-owner links with a warning after an owner change. If a linked Shift is
+   missing, retain the visit and clear or treat the link as absent without deleting PM
+   history. Done when schedule edits/reopens and file changes update the PM display without
+   changing schedule rows or copying files.
+5. **Inventory integrity — `app.py`.** In Genoray/Vieworks item-edit routes, carry PM
+   visit serial references when a machine serial changes, in the same successful item-edit
+   transaction. In their delete routes, reject deletion while any PM visit exists with a
+   clear user-facing message; leave Product delete behavior unchanged. Done when PM history
+   cannot orphan on serial edits or disappear through an inventory delete.
+6. **UI — new PM overview/detail template(s), `templates/products.html`,
+   `templates/layout.html`.** Add brand-specific guarded submenu links and active/open
+   paths, plus an inventory-row/card PM action for Genoray/Vieworks only. Render separate
+   April–March twelve-month overviews with fiscal year, client, equipment, scheduled-month,
+   and status filters, counts, print, horizontal-scroll desktop table, and phone cards.
+   Equipment detail shows existing owner/name/S/N/BSID/warranty/contract information and
+   editable planned visits with target date, derived status, actual date, engineer(s),
+   linked schedule, mismatch warning, and permitted file links. Use the project's modal/
+   toast pattern and responsive controls. Done when all actions use brand-only endpoints,
+   authorized users can manage visits, and Product inventory presentation is unchanged.
+7. **Release and validation.** Add a PM release entry to
+   `static/changelog/releases.json`, monotonically bump the embedded service-worker cache
+   marker in `app.py` for the changed navigation shell, and update `changes.md` and this
+   plan with actual results. Self-review the diff, protected-worktree allowlist, role and
+   data boundaries, and a commit checklist that explicitly excludes DB/handoff/output/tmp
+   artifacts. Run focused PM, Genoray/Vieworks, Product, calendar, navigation, and service-
+   worker tests; isolated full discovery; Python/Jinja/JavaScript/JSON checks; and
+   `git diff --check`. Record exact pass/fail/skip counts, including unrelated baseline
+   failures. Done when the approved behavior has proportionate evidence and all release
+   records are accurate; leave work uncommitted/unpublished and stop.
+
+### Deliberate exclusions, verification, and risks
+
+Do not add the sample's room, system-type, contract-number, PM-count, or extended contract
+fields; existing inventory/Client data suffices for this first monitoring version. Do not
+generate PM visits from an interval, create calendar assignments, alter existing Product
+inventory relationships, copy or upload PM-specific files, add a new dependency, or perform
+production database, Railway, commit, push, or deployment actions. Those are outside the
+approved product scope or separately authorized operations.
+
+Verify the twelve-month FY boundary, 375 px responsive source contracts and tap targets,
+role denial on every new route, isolation, and dynamic schedule/file behavior with Flask
+test-client and source-level checks. Project `AGENTS.md` prohibits in-app browser automation
+or Codex app navigation without separate owner permission; if browser verification becomes
+essential, stop and ask rather than run it. The major risks are wrong-brand PM attribution,
+crediting a non-PM or other-client schedule, stale completion after schedule changes,
+accidental PM-history loss on item edits/deletes, file-access leakage, and SQLite schema
+contention. Fixed-brand route resolution, link validation, request-time derivation,
+inventory edit/delete guards, existing file permissions, isolated tests, and additive
+schema setup address those risks. Formal post-implementation review, commit, and
+publication remain separate owner-gated steps.
+
+### Implementation outcome
+
+Implementation authorized by the owner's separate 2026-09-16 go-ahead and completed in the
+protected working tree without a commit. The implementation adds the standalone
+`inventory_pm_visit` storage/guards, Genoray and Vieworks overview/detail pages and APIs,
+manual exact-date visit CRUD, current-owner PM schedule validation, live schedule-derived
+status/engineer/date/file details, owner-change warnings, missing-schedule retention, serial
+edit carry-forward, deletion blocking, guarded navigation/actions, responsive 375px layout,
+release metadata, and the v161 navigation-shell cache marker. Focused PM/inventory tests pass
+36/36 in a fresh disposable database; Product-related tests pass 11/11; calendar/service-file
+tests pass 45/45; navigation/offline/service-worker tests pass 108/108; changelog tests pass
+43 with 1 skip. Isolated full discovery was run before the final focused test additions and
+reported 1,153 passed, 20 unrelated baseline failures, and 2 skips. Python AST/compile,
+Jinja, JavaScript, JSON, cache-version, and `git diff --check` verification passed; the normal
+py_compile target was redirected to a disposable bytecode directory because the existing
+worktree `__pycache__` was protected. No approved-scope deviations remain. Commit, push,
+deployment, production database, Railway, browser automation, and formal post-implementation
+review remain separately gated.
+
 ## Vieworks Inventory page
 
 **Status:** Executed — implementation commit `ea5a84e` was pushed to `origin/main`; Railway deployed record commit `921a2b9` successfully.

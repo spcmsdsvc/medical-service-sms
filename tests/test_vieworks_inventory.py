@@ -17,6 +17,7 @@ os.environ.setdefault("MEDICAL_SERVICE_TEST_DB", str(TEST_DB_PATH))
 os.environ.setdefault("SECRET_KEY", "vieworks-inventory-tests")
 
 import app as app_module  # noqa: E402
+from tests.sw_cache_version import assert_cache_version_at_least  # noqa: E402
 
 
 class VieworksSourceContractTests(unittest.TestCase):
@@ -37,7 +38,7 @@ class VieworksSourceContractTests(unittest.TestCase):
             self.assertIn(marker, template if "medicalService" in marker or "isVieworks" in marker else source)
         self.assertIn("nav_can_access_vieworks_inventory", source)
         self.assertIn("nav_link('/vieworks'", layout)
-        self.assertIn("medical-service-pwa-offline-navigation-v160-vieworks-inventory", source)
+        assert_cache_version_at_least(self, 160, source)
 
         manifest = json.loads((ROOT / "static" / "changelog" / "releases.json").read_text(encoding="utf-8"))
         self.assertTrue(any(
