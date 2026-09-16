@@ -2,6 +2,11 @@
 
 codex changes - 2026-09-16
 
+- Committed the authorized eight-row Calibration Report focal-spot package as `977ac6a` on
+  local `main`. The commit contains only the eight intended implementation, test, release, and
+  project-record files; protected `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and
+  unrelated untracked artifacts remain excluded. The owner separately authorized pushing this
+  package to the Railway production branch; publication verification follows the record commit.
 - Began the separately authorized Eight-row focal-spot measurements with compact PDF output
   implementation after the owner's explicit `PLEASE IMPLEMENT THIS PLAN` go-ahead. Preflight
   read the applicable project instructions, the full change log, the current plan records, and

@@ -2,7 +2,7 @@
 
 ## Eight-row focal-spot measurements with compact PDF output
 
-**Status:** Executed — uncommitted
+**Status:** Executed — implementation commit `977ac6a`; publication authorized by the owner.
 **Approved:** 2026-09-16 — the owner submitted the complete implementation plan.
 **Execution authorized:** 2026-09-16 — the owner explicitly requested `PLEASE IMPLEMENT THIS PLAN`.
 **Detailed:** 2026-09-16.
