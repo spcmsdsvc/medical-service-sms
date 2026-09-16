@@ -2,6 +2,53 @@
 
 codex changes - 2026-09-16
 
+- Committed the Fast Calendar Date Navigation implementation, styles, release marker, and focused
+  tests as `989813a` (`Add calendar date navigation`). The commit contains exactly `app.py`,
+  `templates/timeline.html`, `static/css/app-dark-pages.css`,
+  `static/changelog/releases.json`, and `tests/test_timeline_week_navigation_cache.py`; protected
+  dirty database, handoff, `.claude/`, `output/`, `tmp/`, and unrelated artifacts were not staged.
+  The owner separately authorized pushing this package to `origin/main`; required plan/change
+  records are being committed separately so they can truthfully reference the implementation
+  commit.
+
+- Began the separately authorized Fast Calendar Date Navigation implementation after the
+  owner's explicit `PLEASE IMPLEMENT THIS PLAN` go-ahead. Preflight read the applicable project
+  instructions, current plan structure/entries, the full change log, and affected Timeline
+  sources/tests/configuration; confirmed the protected dirty `scheduler.db`, handoff,
+  `.claude/`, `output/`, and `tmp/` artifacts remain untouched. The package is in progress and
+  remains uncommitted, unpublished, outside browser/Codex UI automation, and limited to the
+  approved Timeline UI/controller, styling, service-worker marker, release, tests, and records.
+
+- Implemented Fast Calendar Date Navigation in `templates/timeline.html`: added compact
+  calendar-icon triggers to the expanded desktop toolbar, collapsed desktop rail, and mobile
+  Full Calendar toolbar; added one accessible Bootstrap date dialog with native date input,
+  Cancel, Go to date, keyboard-submit support, focus restoration, and inline empty/invalid
+  feedback; and routed valid dates to the containing Monday–Sunday week through one shared
+  cache-aware, persisted, busy-guarded navigation helper with failure rollback. Mobile date
+  navigation retains Full Calendar mode and scrolls the loaded week to its top; Previous,
+  Today/This Week, Next, filters, offline cache, exports, and schedule operations remain
+  unchanged.
+- Added compact desktop/collapsed-rail/mobile focus, loading/disabled, responsive, print-hidden,
+  and native date-error styling in the Timeline template, with matching dark-mode trigger,
+  dialog, input, focus, disabled, and error overrides in `static/css/app-dark-pages.css`.
+- Bumped the embedded Timeline shell service-worker marker in `app.py` from v164 to
+  `medical-service-pwa-offline-navigation-v165-calendar-date-navigation` and added the
+  published `2026-09-16-calendar-date-navigation` Calendar release to
+  `static/changelog/releases.json`.
+- Added focused date-trigger/modal/offset/cache/busy/rollback/responsive/dark/print/release
+  contracts in `tests/test_timeline_week_navigation_cache.py`. The pre-edit fail-first checkpoint
+  ran 11 tests with 5 expected failures. Final focused Timeline contracts passed 38/38;
+  broader Timeline contracts passed 51/51; related offline/service-file/changelog contracts
+  passed 132 with 1 skip; full discovery passed 1,178, failed 20 unrelated baseline cases, and
+  skipped 2 of 1,200. Inline JavaScript syntax, Jinja template parsing, Python AST, release JSON,
+  and `git diff --check` passed. Protected dirty scheduler DB, handoff, `.claude/`, `output/`,
+  and `tmp/` artifacts remained untouched; work is uncommitted and unpublished.
+
+- Finalized the Calendar date dialog hardening with explicit `dialog`/`aria-modal` semantics,
+  trigger `aria-haspopup`/`aria-controls` relationships, a busy-state open guard, hidden inline
+  error rendering, and dark-mode close-button focus/contrast treatment. The final focused
+  Timeline contracts remained green after these edits.
+
 - Committed the authorized eight-row Calibration Report focal-spot package as `977ac6a` on
   local `main`. The commit contains only the eight intended implementation, test, release, and
   project-record files; protected `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and

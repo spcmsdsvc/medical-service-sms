@@ -1,5 +1,195 @@
 # Medical Service SMS — Approved Plans
 
+## Fast Calendar Date Navigation
+
+**Status:** Executed — implementation commit `989813a`; publication authorized by the owner.
+**Approved:** 2026-09-16 — the owner submitted the complete implementation plan.
+**Execution authorized:** 2026-09-16 — the owner explicitly requested `PLEASE IMPLEMENT THIS PLAN`.
+**Detailed:** 2026-09-16.
+
+### Context
+
+Calendar users can currently move one week at a time with Previous, Today/This Week, and
+Next. Engineers, schedulers, approvers, and administrators who need a distant historical or
+future week must repeat that action many times, and the compact collapsed desktop rail and
+mobile Full Calendar have no direct date entry. Add one compact calendar-icon trigger to each
+navigation surface and one shared date dialog. Choosing a valid date loads the Monday–Sunday
+week that contains it while retaining the existing schedule data, permissions, branch filters,
+offline cache, saved view state, exports, and schedule operations.
+
+### Decisions taken
+
+1. Use one shared Bootstrap modal with a native `input[type="date"]`, accessible title and
+   description, Cancel, and Go to date actions. The date field defaults to today when the
+   displayed week is the current week and to the displayed week's Monday otherwise. Empty or
+   calendar-invalid input stays in the dialog with an inline accessible error and does not
+   change the visible week.
+2. Reuse `parseTimelineDateParam`, `getTimelineWeekStart`, and
+   `calculateTimelineWeekOffsetForDate` for strict local-date validation and Monday-based
+   offset conversion. A shared async navigation helper will preserve the existing relative
+   arrow/Today behavior, saved `weekOffset`/branch state, cache-first revalidation, busy guard,
+   failure rollback, and user-facing error handling.
+3. Keep the three surfaces synchronized through the existing `data-timeline-week-nav`
+   loading/disabled flow. The mobile date trigger will establish mobile Full Calendar mode
+   before navigation and reset the Full Calendar shell to the newly loaded week's top after a
+   successful load. No individual-day highlight, range limit, new dependency, API, database,
+   permission, schedule, or backend behavior is introduced.
+4. Add compact responsive/focus/loading/disabled/print styles in `templates/timeline.html` and
+   dark-theme overrides in `static/css/app-dark-pages.css`. Add a user-facing Calendar entry
+   to `static/changelog/releases.json` and monotonically bump the embedded service-worker
+   marker in `app.py` so installed clients receive the changed Timeline shell.
+
+### Investigation
+
+- `templates/timeline.html` contains the expanded desktop Previous/Today/Next group, the
+  collapsed desktop utility rail, the mobile Full Calendar toolbar, the shared timeline modal
+  patterns, inline Timeline CSS, and the inline JavaScript navigation/cache/mobile renderers.
+- The existing JavaScript already provides `calculateTimelineWeekOffsetForDate`, local date
+  parsing, saved Timeline view state, `timelineCache`/request deduplication, cache-first
+  navigation through `refreshTimelineGrid({forceRefresh: false, navigation: true})`, the
+  `timelineWeekNavigationBusy` rollback guard, and
+  `scrollMobileFullCalendarLiteToTop`; the implementation will compose those paths instead of
+  adding another data or state architecture.
+- `static/css/app-dark-pages.css` owns the post-template dark-mode overrides for Timeline
+  controls and must receive date-trigger/modal styles so dark mode remains readable.
+- `app.py` emits the service-worker source and current navigation cache marker; no route or API
+  change is needed. `static/changelog/releases.json` is the required user-visible release
+  record.
+- Existing focused contracts are in `tests/test_timeline_week_navigation_cache.py`,
+  `tests/test_timeline_desktop_collapse.py`, `tests/test_timeline_print_layout.py`, and
+  related offline/service-worker/changelog modules. The worktree is intentionally dirty in
+  protected `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/` paths; these remain
+  untouched. Browser/Codex UI automation, commit, push, deployment, Railway, production, and
+  database actions are excluded.
+
+### Numbered execution steps
+
+1. **Record control state.** Read the applicable project instructions, this plan structure and
+   current plan entries, `changes.md` in full, affected Timeline sources/tests/configuration,
+   and Git status. Add this complete plan at the top of `plans.md` with status **In progress**
+   and append factual implementation-start details to the existing 2026-09-16 `changes.md`
+   section. Done when the authorized file boundary and protected dirty paths are recorded
+   before behavior edits.
+2. **Fail-first focused coverage.** Extend the Timeline navigation/collapse contracts with
+   positive controls for expanded, collapsed, and mobile date triggers; shared modal title,
+   description, native date input, buttons, and keyboard semantics; empty/invalid handling;
+   Monday conversion across current/past/future/year-boundary/Sunday/Monday dates; cache-first
+   same-week navigation; busy rejection and rollback on failed load; mobile Full Calendar mode
+   and scroll reset; responsive, print, dark-mode, and service-worker/release markers. Run the
+   focused checkpoint against the current implementation when feasible and record truthful
+   failures in the journal.
+3. **Shared date navigation UI and controller.** In `templates/timeline.html`, add one
+   accessible calendar-icon trigger to the expanded desktop toolbar, collapsed desktop rail,
+   and mobile Full Calendar toolbar. Add one shared Bootstrap date-picker modal and wire
+   opening/default selection, native form submit/Enter, Cancel/Escape, inline invalid/empty
+   feedback, and trigger focus restoration. Refactor the existing relative navigation onto a
+   small common target-offset helper so date navigation reuses saved state, cache-aware refresh,
+   busy controls, and failure rollback while preserving Previous, Today/This Week, and Next.
+   Done when valid dates navigate to their containing week and invalid input cannot mutate the
+   current week.
+4. **Mobile and styling behavior.** Keep mobile Full Calendar forced state when its date
+   trigger is used, rerender the loaded seven-day shell, and scroll it to the top after success;
+   retain desktop/collapsed behavior and all existing filters/export/schedule operations. Extend
+   inline Timeline CSS for compact desktop/42px rail/mobile controls, focus, loading/disabled,
+   modal layout, responsive toolbar, print hiding, and native date-field error state. Add the
+   matching dark-mode rules to `static/css/app-dark-pages.css`. Done when the three surfaces
+   remain usable at their intended breakpoints and dark/print states do not leak unreadable or
+   printable controls.
+5. **Delivery records.** Bump the monotonic service-worker cache marker in `app.py` and keep
+   its existing shell assets intact. Add the user-visible Calendar date-navigation release in
+   `static/changelog/releases.json` without rewriting historical entries. Keep `plans.md` and
+   `changes.md` factual. Done when syntax/JSON/source checks identify the new delivery marker
+   and release entry.
+6. **Self-review and verification.** Run the focused Timeline navigation/collapse tests,
+   related offline/service-worker/changelog tests, proportionate full discovery, JavaScript and
+   Python syntax checks, release JSON parsing, `git diff --check`, and a protected-worktree
+   allowlist review. Use Flask/source/Node checks only; do not use browser or Codex UI
+   automation without separate owner permission. Record exact pass/fail/skip counts, baseline
+   failures, and tests not run.
+7. **Closeout.** Amend this plan to **Executed — uncommitted** with actual files, behavior,
+   verification totals, deviations, and limitations. Update the same-date change journal with
+   the outcome. Leave commit, push, deployment, Railway, production, database, and formal
+   post-implementation review gates untouched; confirm protected artifacts remain untouched.
+
+### Deliberately excluded
+
+- No backend route/API, schedule, permissions, database/schema, storage, or production changes.
+- No individual-day highlight, explicit date-range restriction, third-party date dependency,
+  alternate calendar implementation, or new navigation state store.
+- No unrelated Timeline cleanup, broad responsive redesign, changes to filters/exports/schedule
+  operations, official artifact changes, commit, push, Railway/deployment action, or database
+  access/modification.
+- No browser/Codex UI automation or visual browser verification because project instructions
+  require separate owner permission for that action.
+
+### Verification
+
+Focused source/Node contracts must show all three triggers share one accessible modal and one
+navigation flow; valid dates map to the correct Monday week including Sunday, Monday, year
+boundary, past, future, and current-week cases; empty/invalid input leaves state unchanged;
+same-week navigation retains cache-first behavior; busy clicks are ignored; failed loads roll
+back `weekOffset` and saved state; mobile mode and top scrolling are retained. CSS/source checks
+must cover compact desktop/collapsed rail/mobile dimensions, focus/loading/disabled states,
+print hiding, dark-mode readability, service-worker marker, and release JSON validity. Related
+offline/cache/changelog tests and proportionate full discovery must be reported truthfully.
+Protected-path review must confirm `scheduler.db`, handoff artifacts, `.claude/`, `output/`, and
+`tmp/` remain untouched. Browser/Codex UI and LibreOffice-style artifact checks are not part of
+this package.
+
+### After implementation
+
+Record the exact implementation outcome and test results in this plan and `changes.md`, including
+fail-first and final totals, skips, known unrelated baselines, and any limitations. Leave the
+package uncommitted and unpublished. Formal post-implementation review requires a separate
+owner instruction (`Review the implementation.`), and any correction requires a new focused plan
+and authorization.
+
+### Implementation outcome
+
+- **Files changed:** `templates/timeline.html` (three triggers, shared Bootstrap date dialog,
+  strict validation, shared target-offset navigation, mobile Full Calendar state/scroll, and
+  responsive/print styles); `static/css/app-dark-pages.css` (dark trigger/dialog/error states);
+  `app.py` (service-worker shell marker v165); `static/changelog/releases.json` (published
+  Calendar release); `tests/test_timeline_week_navigation_cache.py` (source, offset, busy,
+  rollback, cache, responsive, and release contracts); and the required `plans.md`/
+  `changes.md` records.
+- **Behavior delivered:** expanded desktop, collapsed desktop rail, and mobile Full Calendar
+  now expose one shared `Go to date` control. A valid native date input opens the containing
+  Monday–Sunday week through the existing cache-aware Timeline refresh and persisted view state;
+  empty/invalid input stays in the dialog with an accessible error. Previous, Today/This Week,
+  Next, branch filtering, offline/cache behavior, exports, and schedule operations remain on
+  their existing paths. Mobile date navigation retains Full Calendar mode and resets its week
+  view to the top after a successful load.
+- **Fail-first checkpoint:** the expanded focused module ran before behavior edits with 11 tests,
+  5 expected failures, and 6 passes for the newly required contracts. No protected artifact was
+  opened or modified.
+- **Final verification:** focused Timeline navigation/collapse/print/grid contracts — 38 passed;
+  broader Timeline contracts including product coverage and TSR file details — 51 passed;
+  related offline/service-file/changelog contracts — 132 passed, 1 skipped; full discovery —
+  1,178 passed, 20 failed, 2 skipped out of 1,200. The 20 full-suite failures were unrelated
+  existing changelog fixture state, purchase-order rate-limit/fixture assumptions, staff
+  creation fixture assumptions, and a stale v158 cache-marker assertion; no Timeline test failed.
+  Inline Timeline JavaScript syntax, `timeline.html` Jinja parsing, `app.py` AST parsing,
+  release JSON parsing, and `git diff --check` all passed.
+- **Deviations and limitations:** no browser/Codex UI automation or visual browser verification
+  was performed because the project instructions require separate owner permission. The five
+  implementation/test/release files were committed as `989813a`; the owner separately authorized
+  publication to `origin/main`. No backend/API, permission, database, storage, Railway-variable,
+  manual-redeploy, or production-data action was taken. Formal post-implementation review remains
+  separately gated by the owner.
+- **Protected-worktree check:** existing dirty `scheduler.db`, handoff artifacts,
+  `.claude/`, `output/`, and `tmp/` paths remain outside the implementation diff and were not
+  touched.
+
+### Risks
+
+The material risks are navigating to the wrong week due to timezone/date parsing, losing the
+currently visible week or saved branch on a failed request, bypassing cache-aware refresh or
+busy protection, accidentally exiting mobile Full Calendar mode, and making compact/dark/print
+controls inaccessible. Strict local-date parsing, existing Monday-offset math, one shared
+target-offset helper, saved-state rollback, existing request/cache guards, mobile top-scroll
+reset, and source-level responsive/accessibility contracts contain those risks.
+
 ## Eight-row focal-spot measurements with compact PDF output
 
 **Status:** Executed — implementation commit `977ac6a`; publication authorized by the owner.
