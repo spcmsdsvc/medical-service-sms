@@ -1,5 +1,161 @@
 # Medical Service SMS — Approved Plans
 
+## Eight-row focal-spot measurements with compact PDF output
+
+**Status:** Executed — uncommitted
+**Approved:** 2026-09-16 — the owner submitted the complete implementation plan.
+**Execution authorized:** 2026-09-16 — the owner explicitly requested `PLEASE IMPLEMENT THIS PLAN`.
+**Detailed:** 2026-09-16.
+
+### Context
+
+Calibration Report Page 3 currently exposes five editable measurement rows for each Small and
+Large focal-spot table. Engineers need up to eight measurements, but Page 3 must retain roughly
+its current on-screen footprint. The editor therefore needs exactly eight persisted/rendered rows
+inside a fixed-height scroll viewport, while generated sample and final DOCX/PDF output must omit
+unused rows so blank placeholders never appear in delivered reports.
+
+### Decisions taken
+
+1. Small and Large exposure arrays become exactly eight rows under a bumped client schema version.
+   Existing one-to-five-row drafts are normalized by preserving their values and appending blank
+   rows; values beyond eight are capped. No database migration is required.
+2. Each focal-spot editor keeps its existing horizontal overflow and adds vertical scrolling with
+   a maximum height approximately equal to the current header plus five measurement rows. The
+   page does not grow just because rows six through eight exist.
+3. A measurement row is blank only when all seven cells are empty after trimming whitespace. A
+   partially entered row remains included. Output rows preserve source order and compact after
+   blank rows, supporting zero through eight emitted rows for sample generation. Existing final
+   validation still requires at least one nonblank row for every selected focal spot.
+4. For each selected focal table, generation removes the five template placeholder rows and
+   inserts one cloned/formatted row per nonblank draft row, preserving centered values and table
+   furniture. Entirely unselected Small or Large tables are still removed, their draft data stays
+   retained, and Performance Criteria, signature, headers, footers, and three-page layout remain
+   intact. The official DOCX template, database schema, conversion API, approval workflow, and
+   historical generated artifacts are not changed.
+
+### Investigation
+
+- `static/js/app-calibration-report.js` currently defines the calibration report schema and
+  normalizes Small/Large exposure arrays to five rows; its focal-table renderer is the source of
+  the Page 3 editable rows and its save validation controls selected-spot completeness.
+- `static/css/app-calibration-report.css` currently provides horizontal table scrolling but no
+  fixed-height vertical viewport for the focal measurement block.
+- `app.py` contains the calibration-report DOCX generation and embedded service-worker cache
+  marker. The existing generator fills five template rows and removes unselected focal tables;
+  it must be changed to rebuild selected measurement blocks from cloned template-row formatting.
+- `tests/test_tsr_calibration_report.py` is the focused contract/fixture suite for editor state,
+  DOCX generation, output structure, and conversion behavior. It will be extended with fail-first
+  eight-row, migration, scrolling, and compact-row coverage.
+- `templates/offline_tsr.html` contains versioned calibration-report asset references, and
+  `static/changelog/releases.json` contains the user-visible release record.
+- The shared working tree is intentionally dirty. `scheduler.db`, handoff artifacts, `.claude/`,
+  `output/`, and `tmp/` are protected and must remain untouched; no browser/Codex UI automation,
+  commit, push, deployment, Railway, or production action is authorized.
+
+### Execution steps
+
+1. **Record control state.** Add this complete plan at the top of `plans.md` with status
+   **In progress**, read `changes.md` fully, append factual implementation-start details to the
+   current 2026-09-16 section, and confirm the protected dirty paths and relevant source/tests
+   before behavior edits. Done when the plan and journal identify the exact authorized scope.
+2. **Fail-first coverage.** Extend `tests/test_tsr_calibration_report.py` with positive controls
+   that require exactly eight persisted/rendered rows, legacy five-row preservation and padding,
+   an eight-row fixed-height scroll contract, blank/whitespace-only omission, partial-row inclusion,
+   one/five/eight-row output, interspersed-row compaction, row order/centering, both and single
+   focal tables, and intact criteria/signature/page furniture. Run the focused tests against the
+   current implementation before changing source when feasible and record truthful failures.
+3. **Draft normalization and editor.** In `static/js/app-calibration-report.js`, bump the report
+   schema version, normalize Small/Large arrays to exactly eight rows while preserving existing
+   values and padding blanks, cap excess rows, render eight accessible input rows, and retain final
+   selected-focal validation. In `static/css/app-calibration-report.css`, add a fixed/max-height
+   vertical viewport while preserving horizontal scrolling and the current approximate five-row
+   presentation. Done when source contracts and editor state match the eight-row model.
+4. **DOCX/PDF generation.** In `app.py`, classify rows by trimmed seven-cell content, compact
+   nonblank rows in original order, and rebuild each selected focal table's measurement-row block
+   by removing the five official placeholders and cloning their formatting for zero through eight
+   output rows. Populate and center all values, preserve unselected-table removal, retained drafts,
+   and document furniture, and keep sample/final conversion on the same DOCX source. Done when
+   generated DOCX fixtures cover one, five, eight, mixed, whitespace-only, partial, both, and
+   single focal-spot cases without changing the official template.
+5. **Delivery records.** Update calibration-report asset versions in `templates/offline_tsr.html`,
+   bump the monotonic service-worker precache/cache marker in `app.py`, add the user-visible entry
+   to `static/changelog/releases.json`, and keep `plans.md`/`changes.md` factual. Do not touch the
+   database schema or protected artifacts.
+6. **Self-review and verification.** Run the focused calibration suite, related offline,
+   service-worker, and changelog tests, full discovery proportionate to runtime, JavaScript/JSON/
+   Python syntax checks, `git diff --check`, and a protected-worktree allowlist review. Exercise
+   real DOCX generation and LibreOffice PDF conversion if available; if LibreOffice is unavailable,
+   record the conversion check as skipped. Do not use browser/Codex UI automation without separate
+   owner permission. Done when exact pass/fail/skip counts and any baseline failures are recorded.
+7. **Closeout.** Mark this plan **Executed — uncommitted** with actual files, verification totals,
+   deviations, and limitations. Leave commit, push, deployment, Railway, production, database,
+   historical-artifact, and formal post-implementation review gates untouched.
+
+### Deliberately excluded
+
+- No official DOCX template edit, database schema/migration, conversion API change, approval-flow
+  change, historical generated report rewrite, production/Railway operation, commit, push, or
+  deployment.
+- No browser/Codex app automation or visual browser verification because project instructions
+  require separate owner permission for that action.
+- No unrelated frontend/backend cleanup, new dependency, architecture redesign, or expansion of
+  other TSR/calibration workflows.
+
+### Verification
+
+The focused suite must prove the new contracts can fail on the current five-row implementation,
+then pass after the fix. DOCX inspection must verify output row count/order, omission of blank and
+whitespace-only rows, inclusion of partial rows, centered content, selected/unselected table
+behavior, criteria/signature/header/footer furniture, and page structure. The real conversion
+runtime is exercised when LibreOffice is installed; otherwise its absence is explicitly reported.
+Source-level checks cover eight-row normalization/rendering, fixed-height x/y scrolling, asset and
+cache version delivery, and release JSON validity. Protected-worktree review confirms no changes
+to `scheduler.db`, handoff artifacts, `.claude/`, `output/`, or `tmp/`.
+
+### After implementation
+
+Record the exact implementation outcome and test results in this plan and `changes.md`, including
+skips and unrelated baseline failures. Leave the worktree uncommitted and unpublished. Formal
+post-implementation review requires a separate owner instruction (`Review the implementation.`),
+and any correction requires a new focused plan and authorization.
+
+### Implementation outcome
+
+- Implemented the authorized eight-row calibration-report package in
+  `static/js/app-calibration-report.js`, `static/css/app-calibration-report.css`, `app.py`,
+  `templates/offline_tsr.html`, `static/changelog/releases.json`, and
+  `tests/test_tsr_calibration_report.py`. The client schema is version 4; legacy one-to-five-row
+  drafts preserve their values, pad to eight rows, and cap excess rows. Both focal editors render
+  exactly eight inputs in a fixed-height x/y scroll viewport.
+- Selected focal tables now rebuild their five-row measurement blocks from cloned official-template
+  row XML. Sample and final generation emit zero through eight trimmed-nonblank rows, retain
+  partial rows, omit whitespace-only rows, preserve original order, center populated values, and
+  retain focal selection/removal, criteria, signature, page furniture, and the official template.
+  Delivery asset versions are CSS 8 / JS 25 and service-worker cache v164; the release manifest has
+  the user-visible calibration-report entry.
+- Fail-first checkpoint: before source changes, the focused calibration module failed 3 of 18 new
+  contract checks as expected. Final focused suite: 18/18 passed. Related offline/service-worker/
+  changelog suite: 111 passed, 1 skipped. Full discovery: 1,195 tests, 1,173 passed, 20 known
+  unrelated baseline failures, and 2 skips (rate-limited purchase-order cases, existing staff/
+  changelog/environment expectations, and an older cache-marker expectation). JavaScript syntax,
+  app.py AST parsing, release JSON parsing, `git diff --check`, real DOCX fixture generation, and
+  protected-path review passed. `py_compile` could not write its pycache in the protected runtime,
+  so AST parsing was used instead.
+- LibreOffice/`soffice` was not installed, so the actual DOCX-to-PDF conversion/readability check
+  was skipped and is the only planned artifact verification unavailable locally. Browser/Codex UI
+  automation was not used. The official DOCX template and protected `scheduler.db`, handoff,
+  `.claude/`, `output/`, and `tmp/` artifacts remain untouched. No commit, push, deployment,
+  Railway, production, database, or historical-artifact action was performed.
+
+### Risks
+
+The material risks are losing legacy draft values during normalization, allowing the editor to
+expand Page 3 unexpectedly, emitting blank placeholders or dropping partial measurements, damaging
+official table formatting, and shifting page furniture during PDF conversion. Fixed-size padding,
+trimmed seven-cell classification, cloned template rows, focused fixture inspection, and protected
+artifact checks contain those risks.
+
 ## Editable PM cadence with future-plan rebuilding
 
 **Status:** Executed — implementation commit `58ea064` was pushed to `origin/main`; Railway deployed record commit `739c088` successfully.

@@ -2,6 +2,40 @@
 
 codex changes - 2026-09-16
 
+- Began the separately authorized Eight-row focal-spot measurements with compact PDF output
+  implementation after the owner's explicit `PLEASE IMPLEMENT THIS PLAN` go-ahead. Preflight
+  read the applicable project instructions, the full change log, the current plan records, and
+  affected calibration-report sources/tests; confirmed protected dirty `scheduler.db`, handoff,
+  `.claude/`, `output/`, and `tmp/` artifacts remain untouched. The package is in progress and
+  was kept uncommitted, unpublished, and outside browser/Codex UI automation.
+- Added fail-first eight-row editor/scroll and compact DOCX output contracts to
+  `tests/test_tsr_calibration_report.py`. The pre-change checkpoint ran the focused module
+  (`venv\\Scripts\\python.exe -m unittest tests.test_tsr_calibration_report`) and correctly
+  failed 3 of 18 tests: the new schema/row/scroll source contract, compact-row source contract,
+  and the Node DOCX fixture's compact-row assertion. Existing calibration-report behavior passed;
+  no protected artifact or database was opened or changed.
+- Implemented Calibration Report Page 3 Small and Large focal-spot support for exactly eight
+  persisted/editor rows under client schema version 4. Legacy one-to-five-row drafts retain their
+  entered values, gain blank rows through normalization, and cap excess rows; the editor keeps
+  the former approximate height with horizontal and vertical scrolling.
+- Updated sample/final DOCX generation to remove the five official placeholder measurement rows
+  and insert cloned/formatted rows for each trimmed-nonblank exposure row. Whitespace-only rows are
+  omitted, partial rows remain, later populated rows compact in original order, values are centered,
+  and both/single focal-spot selection behavior plus criteria/signature/page furniture are retained.
+  Focused real-template fixtures cover one, five, eight, mixed, whitespace-only, partial, both, and
+  single focal-spot output cases; the official DOCX template was not edited.
+- Bumped `templates/offline_tsr.html` to CSS v8 / JS v25, bumped the embedded service-worker shell
+  marker and precache entries in `app.py` to v164 with those asset versions, and added the published
+  user-visible entry to `static/changelog/releases.json`.
+- Verification completed: focused calibration suite 18 passed; related offline/service-worker/
+  changelog suite 111 passed and 1 skipped; JavaScript syntax, app.py AST, release JSON,
+  `git diff --check`, DOCX fixtures, and protected-path allowlist checks passed. Full discovery
+  ran 1,195 tests with 1,173 passed, 20 known unrelated baseline failures, and 2 skips. LibreOffice
+  PDF conversion was skipped because neither `soffice` nor `libreoffice` is installed; Python
+  `py_compile` was unable to write runtime pycache, so AST parsing supplied the syntax check.
+- Marked the plan Executed — uncommitted. The work remains unpublished; no commit, push, deployment,
+  Railway, production, database, historical-report, browser, or Codex UI action was performed.
+
 - Committed the authorized Genoray/Vieworks PM monitoring package, recurring cadence
   generation, exact schedule matching, and editable future-plan rebuilding as `58ea064` on
   local `main`. The nine-file commit excludes the protected `scheduler.db`, handoff files,

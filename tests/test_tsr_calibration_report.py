@@ -275,7 +275,7 @@ for (const marker of ['Shimadzu', 'Mobile Dart Evolution MX9', 'SN-1', '2026-08-
   if (!generatedDocument.includes(marker)) throw new Error(`generated DOCX is missing ${marker}`);
 }
 if ((generatedDocument.match(/<w:tbl\b/g) || []).length !== 5) throw new Error('generated DOCX changed source table count');
-if ((generatedDocument.match(/<w:tr\b/g) || []).length < 60) throw new Error('generated DOCX lost source table rows');
+if ((generatedDocument.match(/<w:tr\b/g) || []).length < 55) throw new Error('generated DOCX lost source table rows');
 if (!generatedDocument.includes('CALIBRATION REPORT') || !generatedDocument.includes('PERFORMANCE CRITERIA')) throw new Error('generated DOCX lost source wording');
 if (!generatedDocument.includes('RESULT: Pass') || !generatedDocument.includes('RESULT: Pass &amp; verified')) throw new Error('result lines were not filled');
 if (generatedDocument.includes('________________')) throw new Error('result underscores were not removed');
@@ -537,6 +537,8 @@ function setReadyFields(report) {
   api.create();
   if(entryLabel.textContent !== "Continue Calibration Report" || status.textContent !== "Draft") fail("draft card state is wrong");
   if(!overlay.classList.contains("is-open")) fail("create did not open the editor");
+  const exposureControls = editor.elements.filter(element => element.getAttribute("data-cr-exposure"));
+  if(exposureControls.length !== 112 || Math.max(...exposureControls.map(element => Number(String(element.getAttribute("data-cr-exposure")).split(":")[1]))) !== 7) fail("editor did not build exactly eight rows per focal spot");
 const draft = api.collect(); if(draft.facility.name !== "Scheduled Client" || draft.machine.model !== "Scheduled Model") fail("create did not autofill the schedule");
 if(draft.machine.manufacturer !== "Shimadzu") fail("blank report did not default the manufacturer");
 const manufacturerInput = editorControl("machine.manufacturer");
@@ -579,7 +581,7 @@ const backInput = editorControl("facility.name"); if(!backInput) fail("Back pers
    if(entryLabel.textContent !== "Open Calibration Report" || status.textContent !== "Final Saved" || downloadButton.classList.contains("d-none") || removeButton.classList.contains("d-none")) fail("ready card or toolbar state is wrong");
    if(!context.document.querySelector("#calibration-report-generate-label") || context.document.querySelector("#calibration-report-generate-label").textContent !== "Generate Sample PDF") fail("ready toolbar did not expose sample PDF generation");
   const ordinaryId = "ordinary-attachment"; records.set(ordinaryId, { blob:new Blob(["ordinary"]) }); await api.remove(); if(entryLabel.textContent !== "Create Calibration Report" || records.has(blobId) || !records.has(ordinaryId)) fail("Remove did not clean only the generated report");
-  console.log(JSON.stringify({ inactive:"Not Started", draft:"Draft", ready:"Ready", labels:["Create Calibration Report","Continue Calibration Report","Open Calibration Report"], autofill:true, backValueRestored:true, escapeValueRestored:true, scrollRestored:true, tabAria:true, forwardTabWrapped:true, backwardShiftTabWrapped:true, toolbar:true, narrowCleanup:true }));
+  console.log(JSON.stringify({ inactive:"Not Started", draft:"Draft", ready:"Ready", labels:["Create Calibration Report","Continue Calibration Report","Open Calibration Report"], exposureRows:true, autofill:true, backValueRestored:true, escapeValueRestored:true, scrollRestored:true, tabAria:true, forwardTabWrapped:true, backwardShiftTabWrapped:true, toolbar:true, narrowCleanup:true }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 
@@ -695,6 +697,21 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('compactPageThreeGap', self.script_source)
         self.assertIn('outline:2px solid rgba(37,99,235', self.css_source)
 
+    def test_eight_row_focal_editor_and_scroll_contract(self):
+        self.assertIn('CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8', self.script_source)
+        self.assertIn('schema_version: 4', self.script_source)
+        self.assertIn('base.schema_version = 4', self.script_source)
+        self.assertIn('Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }', self.script_source)
+        self.assertIn('overflow-y:auto', self.css_source)
+        self.assertRegex(self.css_source, r'\.calibration-report-exposure-scroll[^\{]*\{[^}]*max-height:\s*\d+px')
+        self.assertIn('overflow-x:auto', self.css_source)
+
+    def test_compact_output_contract_is_present(self):
+        self.assertIn('isNonblankExposureRow', self.script_source)
+        self.assertIn('replaceFocalMeasurementRows', self.script_source)
+        self.assertIn('measurementRows', self.script_source)
+        self.assertIn('whitespace-only', self.script_source)
+
     def test_certificate_catalog_and_final_save_contract(self):
         catalog_path = ROOT / 'static' / 'templates' / 'calibration-certificate' / 'calibration-certificate-catalog.json'
         catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
@@ -726,7 +743,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         result = subprocess.run([str(NODE), '-e', NODE_SAMPLE_FINAL_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
-        for key in ('legacyDefaults', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
+        for key in ('legacyDefaults', 'legacyRowsPadded', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
             self.assertTrue(payload[key], key)
 
     def test_entry_page_has_single_card_action_and_accessible_dialog_contract(self):
@@ -756,10 +773,10 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('focusDialog', self.script_source)
         self.assertIn("getAttribute('tabindex') !== '-1'", self.script_source)
         self.assertIn('getClientRects().length > 0', self.script_source)
-        self.assertIn("css/app-calibration-report.css') }}?v=7", self.template_source)
+        self.assertIn("css/app-calibration-report.css') }}?v=8", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=24", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=24'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=25", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=25'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -769,7 +786,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
         self.assertEqual(payload['labels'], ['Create Calibration Report', 'Continue Calibration Report', 'Open Calibration Report'])
-        for key in ('autofill', 'backValueRestored', 'escapeValueRestored', 'scrollRestored', 'tabAria', 'forwardTabWrapped', 'backwardShiftTabWrapped', 'toolbar', 'narrowCleanup'):
+        for key in ('exposureRows', 'autofill', 'backValueRestored', 'escapeValueRestored', 'scrollRestored', 'tabAria', 'forwardTabWrapped', 'backwardShiftTabWrapped', 'toolbar', 'narrowCleanup'):
             self.assertTrue(payload[key], key)
 
     def test_certificate_toolbar_state_release_and_cache_contract(self):
@@ -1043,13 +1060,13 @@ vm.runInContext(fs.readFileSync(runtimePath, 'utf8'), context);
 vm.runInContext(fs.readFileSync(path.join(root, 'static', 'js', 'app-calibration-report.js'), 'utf8'), context);
 
 function report(overrides = {}) {
-  const rows = [{ nominal_kvp:'80', measured_kvp:'80.2', ma_mas:'100mA', dose_mgy:'1.2', dose_rate:'2.4', time_msec:'10', measured_time:'0.010' }, {}, {}, {}, {}];
+  const rows = [{ nominal_kvp:'80', measured_kvp:'80.2', ma_mas:'100mA', dose_mgy:'1.2', dose_rate:'2.4', time_msec:'10', measured_time:'0.010' }, {}, {}, {}, {}, {}, {}, {}];
   const base = {
     status:'draft', facility:{ name:"St. Mary's & Niño Clinic", address:'123 Main Street', telephone:'Phone', email:'client@example.test', location:'Radiology' },
     machine:{ manufacturer:'Shimadzu', modality:'Mobile X-Ray System', model:'MobileDart Evolution MX9', serial_number:'SN-1' },
     technical:{}, calibration:{ machine_calibration_date:'2026-08-20', next_calibration_date:'2027-08-20', test_tool_manufacturer:'Tool Co', test_tool_model:'Tool 1', test_tool_serial:'TOOL-1', test_tool_calibration_date:'2026-08-01', engineer_name:'Engineer & Niño' },
     mechanical_checks:[{result:'Pass'}], generator_checks:[{result:'Pass'},{result:'Pass'},{result:'Pass'},{result:'Pass'}],
-    exposure:{ small:rows, large:[Object.assign({}, rows[0], { nominal_kvp:'100' }), {}, {}, {}, {}] }, performance_results:['Pass','Pass'], signature:{ name:'Engineer & Niño', image:png },
+    exposure:{ small:rows, large:[Object.assign({}, rows[0], { nominal_kvp:'100' }), {}, {}, {}, {}, {}, {}, {}] }, performance_results:['Pass','Pass'], signature:{ name:'Engineer & Niño', image:png },
     focal_spots:{ small:true, large:true }, focal_sizes:{ small:'0.6', large:'1.0' }
   };
   return Object.assign(base, overrides);
@@ -1057,14 +1074,16 @@ function report(overrides = {}) {
 
 (async () => {
   const api = context.calibrationReport;
-  const legacy = report(); delete legacy.focal_spots; delete legacy.focal_sizes;
+  const legacyRows = [{ nominal_kvp:'LEGACY-1' }, {}, {}, {}, { nominal_kvp:'LEGACY-5' }];
+  const legacy = report({ exposure:{ small:legacyRows, large:legacyRows.map(row => Object.assign({}, row)) } }); delete legacy.focal_spots; delete legacy.focal_sizes;
   api.apply(legacy);
   const migrated = api.collect();
   const legacyDefaults = migrated.focal_spots.small && migrated.focal_spots.large && migrated.focal_sizes.small === '0.6' && migrated.focal_sizes.large === '1.0';
+  const legacyRowsPadded = migrated.exposure.small.length === 8 && migrated.exposure.large.length === 8 && migrated.exposure.small[0].nominal_kvp === 'LEGACY-1' && migrated.exposure.small[4].nominal_kvp === 'LEGACY-5' && migrated.exposure.small.slice(5).every(row => Object.values(row).every(value => value === ''));
 
-  const smallOnly = report({ focal_spots:{small:true, large:false}, focal_sizes:{small:'0.72', large:'1.14'}, exposure:{small:report().exposure.small, large:[{}, {}, {}, {}, {}]} });
-  const largeOnly = report({ focal_spots:{small:false, large:true}, focal_sizes:{small:'0.72', large:'1.14'}, exposure:{small:[{}, {}, {}, {}, {}], large:report().exposure.large} });
-  const fullRows = Array.from({length:5}, () => ({ nominal_kvp:'12', measured_kvp:'12', ma_mas:'12', dose_mgy:'12', dose_rate:'12', time_msec:'12', measured_time:'12' }));
+  const smallOnly = report({ focal_spots:{small:true, large:false}, focal_sizes:{small:'0.72', large:'1.14'}, exposure:{small:report().exposure.small, large:[{}, {}, {}, {}, {}, {}, {}, {}]} });
+  const largeOnly = report({ focal_spots:{small:false, large:true}, focal_sizes:{small:'0.72', large:'1.14'}, exposure:{small:[{}, {}, {}, {}, {}, {}, {}, {}], large:report().exposure.large} });
+  const fullRows = Array.from({length:8}, () => ({ nominal_kvp:'12', measured_kvp:'12', ma_mas:'12', dose_mgy:'12', dose_rate:'12', time_msec:'12', measured_time:'12' }));
   const bothSelected = report({ focal_sizes:{ small:'0.72', large:'1.14' }, exposure:{ small:fullRows.map(row => Object.assign({}, row)), large:fullRows.map(row => Object.assign({}, row)) } });
   const smallValidation = api.validateForFinalSave({ calibration_report:smallOnly }).ok;
   const largeValidation = api.validateForFinalSave({ calibration_report:largeOnly }).ok;
@@ -1142,8 +1161,8 @@ function report(overrides = {}) {
   const page3FooterGapCompacted = (page3Gap.match(/<w:p\b/g) || []).length === 1;
   function measurementRowsAreCentered(tableBlock) {
     const tableXml = body.slice(tableBlock.start, tableBlock.end);
-    const rows = directBlocks(tableXml, 'tr').slice(4, 9);
-    return rows.length === 5 && rows.every(row => {
+    const rows = directBlocks(tableXml, 'tr').slice(4, 12);
+    return rows.length === 8 && rows.every(row => {
       const rowXml = tableXml.slice(row.start, row.end);
       const cells = directBlocks(rowXml, 'tc');
       return cells.length === 7 && cells.every(cell => {
@@ -1156,6 +1175,23 @@ function report(overrides = {}) {
     });
   }
   const page3MeasurementsCentered = page3Tables.length >= 4 && measurementRowsAreCentered(page3Tables[2]) && measurementRowsAreCentered(page3Tables[3]);
+
+  const compactDraft = report({ exposure:{
+    small:[Object.assign({}, fullRows[0], { nominal_kvp:'SMALL-FIRST' }), {}, { nominal_kvp:'   ' }, Object.assign({}, fullRows[0], { nominal_kvp:'SMALL-MIDDLE', measured_kvp:'' }), {}, {}, {}, Object.assign({}, fullRows[0], { nominal_kvp:'SMALL-LAST' })],
+    large:[{}, Object.assign({}, fullRows[0], { nominal_kvp:'LARGE-SECOND' }), {}, {}, { dose_mgy:'  ' }, {}, {}, {}]
+  }});
+  const compactXml = await conditionalOutput(compactDraft, 'compact-rows');
+  const compactBody = (compactXml.match(/<w:body>([\s\S]*)<\/w:body>/) || [])[1] || '';
+  const compactTables = directBlocks(compactBody, 'tbl');
+  const compactSmallRows = compactTables.length >= 4 ? directBlocks(compactBody.slice(compactTables[2].start, compactTables[2].end), 'tr').slice(4) : [];
+  const compactLargeRows = compactTables.length >= 4 ? directBlocks(compactBody.slice(compactTables[3].start, compactTables[3].end), 'tr').slice(4) : [];
+  const compactRows = compactSmallRows.length === 3 && compactLargeRows.length === 1 && compactXml.includes('SMALL-FIRST') && compactXml.includes('SMALL-MIDDLE') && compactXml.includes('SMALL-LAST') && compactXml.includes('LARGE-SECOND') && !compactXml.includes('   ')
+    && compactXml.indexOf('SMALL-FIRST') < compactXml.indexOf('SMALL-MIDDLE') && compactXml.indexOf('SMALL-MIDDLE') < compactXml.indexOf('SMALL-LAST');
+  const fiveRowsDraft = report({ exposure:{ small:fullRows.slice(0, 5).concat([{}, {}, {}]), large:fullRows.slice(0, 5).concat([{}, {}, {}]) } });
+  const fiveRowsXml = await conditionalOutput(fiveRowsDraft, 'five-rows');
+  const fiveRowsBody = (fiveRowsXml.match(/<w:body>([\s\S]*)<\/w:body>/) || [])[1] || '';
+  const fiveRowsTables = directBlocks(fiveRowsBody, 'tbl');
+  const fiveRowsOutput = fiveRowsTables.length >= 4 && directBlocks(fiveRowsBody.slice(fiveRowsTables[2].start, fiveRowsTables[2].end), 'tr').length === 9 && directBlocks(fiveRowsBody.slice(fiveRowsTables[3].start, fiveRowsTables[3].end), 'tr').length === 9;
   const signatureExtent = xml.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/><wp:effectExtent[^>]*\/\><wp:docPr id="2000000001"/);
   const signatureNameAboveSignature = signatureCellXml.includes('Engineer &amp; Niño') && signatureCellXml.indexOf('Engineer &amp; Niño') < signatureCellXml.indexOf('<wp:inline');
   const finalFilenameWithoutNcs = finalized.generated.filename.startsWith('CALIBRATION_REPORT_') && !finalized.generated.filename.includes('NCS_');
@@ -1172,7 +1208,7 @@ function report(overrides = {}) {
   await api.clearForm();
   const cleared = api.collect();
   const clearPreservesSchedule = cleared.facility.name === 'Schedule Client' && cleared.machine.model === 'Schedule Model' && cleared.focal_spots.small && cleared.focal_spots.large && cleared.focal_sizes.small === '0.6' && cleared.focal_sizes.large === '1.0' && documents.value === '';
-  console.log(JSON.stringify({ legacyDefaults, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
+  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

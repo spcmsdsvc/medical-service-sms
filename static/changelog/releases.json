@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-16-calibration-report-eight-focal-rows",
+      "release_date": "2026-09-16",
+      "title": "Calibration Report Eight-Row Measurements",
+      "summary": "Calibration Report focal-spot measurements now support eight compact, scrollable editor rows and cleaner PDF output.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-16-calibration-report-eight-focal-rows-engineers",
+          "category": "Calibration Reports",
+          "description": "Engineers can enter up to eight Small and Large focal-spot measurements in a fixed-height scrollable Page 3 editor. Sample and final PDFs omit wholly blank rows, retain partially completed rows, and compact populated measurements in their original order while preserving the supplied report layout.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-16-inventory-pm-monitoring",
       "release_date": "2026-09-16",
       "title": "Genoray and Vieworks PM Monitoring",

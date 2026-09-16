@@ -20599,9 +20599,9 @@ def save_tsr_knowledge_entry():
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
-    # Navigation shell bump: medical-service-pwa-offline-navigation-v162-recurring-pm-matching
-    # -> v163 so installed clients refresh the editable PM cadence navigation shell.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v163-editable-pm-cadence';
+    # Navigation shell bump: medical-service-pwa-offline-navigation-v163-editable-pm-cadence
+    # -> v164 so installed clients refresh the eight-row focal-spot calibration report shell.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v164-calibration-eight-rows';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -20619,13 +20619,13 @@ const APP_SHELL = [
   '/static/css/app-dashboard.css',
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
-  '/static/css/app-calibration-report.css',
+  '/static/css/app-calibration-report.css?v=8',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=24',
+  '/static/js/app-calibration-report.js?v=25',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

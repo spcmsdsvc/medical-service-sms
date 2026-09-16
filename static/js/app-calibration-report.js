@@ -23,6 +23,7 @@
     exposureHeadersLarge: ['Nominal kVP Settings', 'Measured kVP', 'mA / mAs', 'Dose (mGy)', 'Dose Rate (mGy/s)', 'Time Settings (msec)', 'Measured Exposure Time (msec)']
   };
   var EXPOSURE_KEYS = ['nominal_kvp','measured_kvp','ma_mas','dose_mgy','dose_rate','time_msec','measured_time'];
+  var CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8;
   var DEFAULT_MANUFACTURER = 'Shimadzu';
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   var PDF_MIME = 'application/pdf';
@@ -144,14 +145,14 @@
   }
 
   function blankRows(){
-    return [0,1,2,3,4].map(function(){
+    return Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }, function(){
       return { nominal_kvp:'', measured_kvp:'', ma_mas:'', dose_mgy:'', dose_rate:'', time_msec:'', measured_time:'' };
     });
   }
 
   function blankState(){
     return {
-      schema_version: 3,
+      schema_version: 4,
       source: 'docx-calibration-report',
       status: 'not_started',
       updated_at: '',
@@ -203,7 +204,7 @@
       small: Object.prototype.hasOwnProperty.call(rawFocalSizes, 'small') ? String(rawFocalSizes.small ?? '') : '0.6',
       large: Object.prototype.hasOwnProperty.call(rawFocalSizes, 'large') ? String(rawFocalSizes.large ?? '') : '1.0'
     };
-    base.schema_version = 3;
+    base.schema_version = 4;
     base.mechanical_checks = SOURCE.mechanical.map(function(item, index){
       var source = Array.isArray(raw.mechanical_checks) ? raw.mechanical_checks[index] : null;
       return { label:item.label, criteria:item.criteria, result:String(source && source.result || '') };
@@ -333,7 +334,7 @@
   }
 
   function exposureTable(key, title, headers){
-    var body = [0,1,2,3,4].map(function(row){
+    var body = Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }, function(_, row){
       return '<tr>' + headers.map(function(header, column){ var rule = fitRuleForPath('exposure.' + key + '.' + row + '.' + EXPOSURE_KEYS[column]); var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : ''; return '<td><input class="calibration-report-exposure-input" data-cr-exposure="' + escapeHtml(key + ':' + row + ':' + column) + '" aria-label="' + escapeHtml(title + ' row ' + (row + 1) + ' ' + header) + '"' + limit + '></td>'; }).join('') + '</tr>';
     }).join('');
     var label = key === 'small' ? 'SMALL' : 'LARGE';
@@ -750,6 +751,22 @@
     }
     return blocks;
   }
+  function isNonblankExposureRow(row){
+    // A whitespace-only exposure row is blank; any entered cell keeps the row.
+    return EXPOSURE_KEYS.some(function(field){ return String(row?.[field] ?? '').trim(); });
+  }
+  function nonblankExposureRows(rows){
+    return (Array.isArray(rows) ? rows : []).filter(isNonblankExposureRow);
+  }
+  function replaceFocalMeasurementRows(documentXml, tableIndex, measurementRows){
+    var tables = directXmlBlocks(documentXml, 'tbl'); if(!tables[tableIndex]) throw templateSlotError('table ' + tableIndex);
+    var table = tables[tableIndex]; var rows = directXmlBlocks(table.xml, 'tr');
+    if(rows.length < 9) throw templateSlotError('table ' + tableIndex + ' five measurement rows');
+    var measurementStart = rows[4].start; var measurementEnd = rows[8].end; var prototype = rows[4].xml;
+    var replacement = (measurementRows || []).map(function(){ return prototype; }).join('');
+    var tableXml = table.xml.slice(0, measurementStart) + replacement + table.xml.slice(measurementEnd);
+    return documentXml.slice(0, table.start) + tableXml + documentXml.slice(table.end);
+  }
   function templateSlotError(detail){ var error = new Error('The supplied Calibration Report template is missing an expected slot: ' + detail); error.code = 'calibration_report_template_slot_missing'; return error; }
   function relationshipTarget(relsXml, relId, relType){
     var matcher = /<Relationship\b[^>]*\/>/g; var match;
@@ -830,11 +847,12 @@
     return replaceFirstParagraph(cellXml, textRuns(value, firstRunProperties(paragraphs[0].xml)));
   }
   function compactPageThreeGap(documentXml){
-    var tables = directXmlBlocks(documentXml, 'tbl'); if(tables.length < 4) throw templateSlotError('page 3 performance table');
+    var tables = directXmlBlocks(documentXml, 'tbl'); if(tables.length < 3) throw templateSlotError('page 3 performance table');
     // With both focal tables present, preserve the supplied two-paragraph gap
     // before Large and compact only the three-paragraph gap before Performance
     // Criteria. When one focal table has been removed, its surrounding gaps
     // merge; keep one natural spacer between the surviving table and criteria.
+    if(tables.length < 4) return documentXml;
     var focalIndex = tables.length === 5 ? 3 : 2;
     var gap = documentXml.slice(tables[focalIndex].end, tables[focalIndex + 1].start); var paragraphs = directXmlBlocks(gap, 'p');
     if(paragraphs.length <= 1) return documentXml;
@@ -916,11 +934,13 @@
     [[0,1,1,report.mechanical_checks[0]?.result],[0,3,1,report.generator_checks[0]?.result],[0,4,1,report.generator_checks[1]?.result],[0,5,1,report.generator_checks[2]?.result],[0,6,1,report.generator_checks[3]?.result]].forEach(function(item){ documentXml = patchTableCell(documentXml, 1, item[1], item[2], function(cell){ return replaceResultLine(cell, item[3]); }); });
     [['calibration.machine_calibration_date',8],['calibration.next_calibration_date',9],['calibration.test_tool_manufacturer',10],['calibration.test_tool_model',11],['calibration.test_tool_serial',12],['calibration.test_tool_calibration_date',13]].forEach(function(field){ var value = getPath(report, field[0]); if(!String(value || '').trim()) return; documentXml = patchTableCell(documentXml, 1, field[1], 1, function(cell){ return appendTextToCell(cell, value); }); });
     [['small',2],['large',3]].forEach(function(table){
-      var key = table[0]; var selected = report.focal_spots?.[key] !== false; var rows = report.exposure[key] || [];
-      if(selected) documentXml = patchTableCell(documentXml, table[1], 1, 0, function(cell){ return replaceFocalSizeLine(cell, report.focal_sizes?.[key]); });
-      if(!selected) return;
-      rows.forEach(function(row, rowIndex){ EXPOSURE_KEYS.forEach(function(field, columnIndex){ var value = row[field]; if(!String(value || '').trim()) return; documentXml = patchTableCell(documentXml, table[1], rowIndex + 4, columnIndex, function(cell){ return appendTextToCell(cell, value, 'center'); }); }); });
-    });
+       var key = table[0]; var selected = report.focal_spots?.[key] !== false; var rows = report.exposure[key] || [];
+       if(selected) documentXml = patchTableCell(documentXml, table[1], 1, 0, function(cell){ return replaceFocalSizeLine(cell, report.focal_sizes?.[key]); });
+       if(!selected) return;
+       var measurementRows = nonblankExposureRows(rows);
+       documentXml = replaceFocalMeasurementRows(documentXml, table[1], measurementRows);
+       measurementRows.forEach(function(row, rowIndex){ EXPOSURE_KEYS.forEach(function(field, columnIndex){ var value = row[field]; if(!String(value || '').trim()) return; documentXml = patchTableCell(documentXml, table[1], rowIndex + 4, columnIndex, function(cell){ return appendTextToCell(cell, value, 'center'); }); }); });
+     });
     report.performance_results.forEach(function(value, index){ documentXml = patchTableCell(documentXml, 4, index + 1, 1, function(cell){ return appendTextToCell(cell, value); }); });
     // Remove unselected focal tables after all source-indexed writes are done.
     // Descending order keeps the original table indexes valid.

@@ -79,7 +79,7 @@
 .calibration-report-signature-actions{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;}
 .calibration-report-signature-actions .btn{min-height:44px;}
 .calibration-report-signature-status{font-size:12px;color:#64748b;font-weight:700;}
-.calibration-report-exposure-scroll{overflow-x:auto;padding:10px;}
+.calibration-report-exposure-scroll{overflow-x:auto;overflow-y:auto;max-height:300px;padding:10px;}
 .calibration-report-exposure-table{min-width:760px;}
 .calibration-report-exposure-table th{font-size:10px;line-height:1.15;}
 .calibration-report-exposure-table td{height:44px;padding:3px;}
