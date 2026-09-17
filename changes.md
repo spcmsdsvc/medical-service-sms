@@ -2,6 +2,19 @@
 
 codex changes - 2026-09-17
 
+- Fixed Calibration Report Page 3 current-unit headings so generated Small and Large focal-spot
+  tables explicitly center the selected `mA` or `mAs` label and remove the neutral template's
+  inherited underline formatting without changing measurements, focal sizes, table geometry, or
+  the official DOCX template.
+- Advanced the fail-closed Calibration Center historical repair marker to
+  `calibration-report-units-v3`; recognized generated reports whose selected current-unit heading
+  is misaligned or visibly underlined are now eligible for the existing in-place repair workflow,
+  while stable file IDs, approvals, delivery metadata, audit history, and rollback behavior remain
+  unchanged. No owner, Railway, or production repair was executed.
+- Added generated-OOXML and historical-repair assertions for centered, plain `mA`/`mAs` headings;
+  bumped the report script to v28, the service-worker navigation cache to v169, and published the
+  matching release-manifest entry. Focused Calibration Report, PDF, and Calibration Center suites
+  passed 43/43; JavaScript syntax, Python AST, release JSON, and `git diff --check` passed.
 - Committed the authorized Calibration Report Page 3 mA/mAs selector and v2 historical-repair
   package as `fd7a2ec` on local `main`. The commit contains only the approved application,
   styling, Calibration Center, test, release, and project-record files; protected

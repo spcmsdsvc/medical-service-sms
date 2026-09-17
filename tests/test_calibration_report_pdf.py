@@ -373,7 +373,7 @@ class CalibrationReportPdfTests(unittest.TestCase):
             self.assertEqual(resolution['target_units'], {'small': '', 'large': ''})
             self.assertEqual(resolution['unit_sources'], {'small': 'explicit', 'large': 'explicit'})
 
-    def test_v2_repairs_mixed_current_headers_and_preserves_every_other_cell(self):
+    def test_v3_repairs_mixed_current_headers_and_preserves_every_other_cell(self):
         source_id, submission_id, disk_name = self._create_source_fixture()
         with zipfile.ZipFile(io.BytesIO(self.docx_bytes), 'r') as package:
             entries = [(info, package.read(info.filename)) for info in package.infolist()]
@@ -440,6 +440,8 @@ class CalibrationReportPdfTests(unittest.TestCase):
         )
         self.assertEqual(repaired_states['status'], 'already_repaired')
         self.assertEqual([item['current_unit'] for item in repaired_states['table_states']], ['mA', 'mAs'])
+        self.assertTrue(all(item['current_unit_centered'] for item in repaired_states['table_states']))
+        self.assertFalse(any(item['current_unit_underlined'] for item in repaired_states['table_states']))
         after_tables = self._document_tables(repaired_bytes)
         for table_index, (before_table, after_table) in enumerate(zip(before_tables, after_tables)):
             self.assertEqual(len(before_table), len(after_table), table_index)

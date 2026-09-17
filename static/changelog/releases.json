@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-17-calibration-report-current-unit-alignment",
+      "release_date": "2026-09-17",
+      "title": "Calibration Report Current-Unit Alignment",
+      "summary": "Calibration Report Page 3 now centers the selected mA or mAs heading consistently in both focal-spot tables.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-17-calibration-report-current-unit-alignment-engineers",
+          "category": "Calibration Reports",
+          "description": "Generated and administrator-repaired Calibration Reports now render the selected mA or mAs third-column heading centered and without inherited underline formatting in both Small and Large focal-spot tables.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-17-calibration-report-current-units",
       "release_date": "2026-09-17",
       "title": "Calibration Report Current Units",

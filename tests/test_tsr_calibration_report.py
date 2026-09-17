@@ -758,7 +758,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         result = subprocess.run([str(NODE), '-e', NODE_SAMPLE_FINAL_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
-        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'mixedUnitsInDocx', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
+        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'mixedUnitsInDocx', 'mixedUnitHeadersCentered', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
             self.assertTrue(payload[key], key)
 
     def test_entry_page_has_single_card_action_and_accessible_dialog_contract(self):
@@ -790,8 +790,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=9", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=27", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=27'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=28", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=28'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1182,6 +1182,15 @@ function report(overrides = {}) {
     return cells[2] ? visibleXmlText(rowXml.slice(cells[2].start, cells[2].end)) : '';
   }
   const mixedUnitsInDocx = focalHeaderUnit(xml, 'SMALL') === 'mA' && focalHeaderUnit(xml, 'LARGE') === 'mAs';
+  function focalHeaderIsCenteredAndPlain(xmlText, focal) {
+    const table = directBlocks(xmlText, 'tbl').find(block => new RegExp('FOCAL SPOT\\s*:\\s*' + focal).test(visibleXmlText(xmlText.slice(block.start, block.end))));
+    if (!table) return false;
+    const tableXml = xmlText.slice(table.start, table.end); const rows = directBlocks(tableXml, 'tr'); const rowXml = rows[3] ? tableXml.slice(rows[3].start, rows[3].end) : ''; const cells = directBlocks(rowXml, 'tc');
+    if (!cells[2]) return false;
+    const cellXml = rowXml.slice(cells[2].start, cells[2].end);
+    return /<w:jc\b[^>]*w:val="center"[^>]*\/>/.test(cellXml) && !/<w:u\b[^>]*\/>/.test(cellXml);
+  }
+  const mixedUnitHeadersCentered = focalHeaderIsCenteredAndPlain(xml, 'SMALL') && focalHeaderIsCenteredAndPlain(xml, 'LARGE');
   async function conditionalOutput(report, ownerId){
     const preparedReport = await api.preparePayload({ calibration_report:report, attachments:[] }, ownerId, { regenerate:true, finalize:true });
     const record = records.get(preparedReport.calibration_report.generated.blob_id);
@@ -1276,7 +1285,7 @@ function report(overrides = {}) {
   await api.clearForm();
   const cleared = api.collect();
   const clearPreservesSchedule = cleared.facility.name === 'Schedule Client' && cleared.machine.model === 'Schedule Model' && cleared.focal_spots.small && cleared.focal_spots.large && cleared.focal_sizes.small === '0.6' && cleared.focal_sizes.large === '1.2' && documents.value === '';
-  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, mixedUnitsInDocx, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
+  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, mixedUnitsInDocx, mixedUnitHeadersCentered, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

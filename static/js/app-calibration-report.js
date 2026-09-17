@@ -902,7 +902,13 @@
       var replacement = node.xml.slice(0, openEnd + 1) + xmlEscape(replacements[index]) + '</w:t>';
       cellXml = cellXml.slice(0, node.start) + replacement + cellXml.slice(node.end);
     });
+    var paragraphs = directXmlBlocks(cellXml, 'p');
+    if(!paragraphs.length) throw templateSlotError('exposure current unit heading paragraph');
+    var paragraph = paragraphs[0];
+    var centeredParagraph = setParagraphAlignment(paragraph.xml, 'center').replace(/<w:u\b[^>]*\/>/g, '');
+    cellXml = cellXml.slice(0, paragraph.start) + centeredParagraph + cellXml.slice(paragraph.end);
     if(cellText(cellXml) !== normalized) throw templateSlotError('exposure current unit heading replacement');
+    if(!/<w:jc\b[^>]*w:val="center"[^>]*\/>/.test(centeredParagraph)) throw templateSlotError('exposure current unit heading alignment');
     return cellXml;
   }
   function compactPageThreeGap(documentXml){

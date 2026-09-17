@@ -17099,7 +17099,7 @@ CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS = 3
 CALIBRATION_REPORT_CONVERSION_RETRY_DELAYS = (60, 300, 1800)
 CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
 CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
-CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v2'
+CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v3'
 CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER = '_calibration_report_historical_repair'
 CALIBRATION_REPORT_EXPOSURE_CURRENT_UNITS = ('mA', 'mAs')
 
@@ -17396,6 +17396,24 @@ def _calibration_report_docx_focal_table_states(document_xml):
         focal_value = ''.join(
             node.text or '' for node in focal_cells[0].findall('.//w:t', _CALIBRATION_REPORT_DOCX_NS)
         )
+        current_paragraph = header_cells[2].find('w:p', _CALIBRATION_REPORT_DOCX_NS)
+        current_paragraph_properties = (
+            current_paragraph.find('w:pPr', _CALIBRATION_REPORT_DOCX_NS)
+            if current_paragraph is not None else None
+        )
+        current_alignment = (
+            current_paragraph_properties.find('w:jc', _CALIBRATION_REPORT_DOCX_NS)
+            if current_paragraph_properties is not None else None
+        )
+        current_unit_centered = bool(
+            current_alignment is not None and
+            current_alignment.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val') == 'center'
+        )
+        current_unit_underlined = any(
+            ''.join(node.text or '' for node in run.findall('.//w:t', _CALIBRATION_REPORT_DOCX_NS)).strip() and
+            run.find('w:rPr/w:u', _CALIBRATION_REPORT_DOCX_NS) is not None
+            for run in header_cells[2].findall('.//w:r', _CALIBRATION_REPORT_DOCX_NS)
+        )
         if (
             header_values[0:2] != list(_CALIBRATION_REPORT_DOCX_EXPECTED_HEADERS[0:2]) or
             header_values[4:6] != list(_CALIBRATION_REPORT_DOCX_EXPECTED_HEADERS[4:6]) or
@@ -17413,6 +17431,8 @@ def _calibration_report_docx_focal_table_states(document_xml):
             'rows': len(rows),
             'focal_size': focal_value,
             'current_unit': header_values[2],
+            'current_unit_centered': current_unit_centered,
+            'current_unit_underlined': current_unit_underlined,
             'dose': header_values[3],
             'measured_time': header_values[6],
         })
@@ -17459,8 +17479,12 @@ def _calibration_report_docx_repair_inspection(docx_bytes, target_units=None):
             (
                 target_units is None or
                 all(
-                    state['current_unit'] == _calibration_report_normalize_exposure_current_unit(
-                        target_units.get(state['focal'])
+                    (
+                        state['current_unit'] == _calibration_report_normalize_exposure_current_unit(
+                            target_units.get(state['focal'])
+                        ) and
+                        state['current_unit_centered'] and
+                        not state['current_unit_underlined']
                     )
                     for state in table_states
                 )
@@ -17532,7 +17556,7 @@ def _calibration_report_replace_cell_heading(cell_xml, kind):
 
 
 def _calibration_report_replace_current_unit_heading(cell_xml, target_unit):
-    """Replace only the visible third-column unit token, preserving its runs."""
+    """Replace and center the visible third-column unit token, preserving cell geometry."""
     target_unit = _calibration_report_normalize_exposure_current_unit(target_unit)
     if not target_unit:
         raise ValueError('Calibration Report exposure current unit target is blank or invalid.')
@@ -17552,8 +17576,32 @@ def _calibration_report_replace_current_unit_heading(cell_xml, target_unit):
         match = matches[index]
         replacement = match.group(1) + replacements[index] + match.group(3)
         cell_xml = cell_xml[:match.start()] + replacement + cell_xml[match.end():]
+    paragraph_match = re.search(r'(<w:p\b[^>]*>)(.*?)(</w:p>)', cell_xml, re.S)
+    if not paragraph_match:
+        raise ValueError('Calibration Report exposure current unit heading has no paragraph.')
+    paragraph_xml = paragraph_match.group(0)
+    paragraph_properties = re.search(r'<w:pPr\b[^>]*>.*?</w:pPr>', paragraph_xml, re.S)
+    alignment_xml = '<w:jc w:val="center"/>'
+    if paragraph_properties:
+        properties_xml = paragraph_properties.group(0)
+        if re.search(r'<w:jc\b[^>]*/>', properties_xml):
+            properties_xml = re.sub(r'<w:jc\b[^>]*/>', alignment_xml, properties_xml, count=1)
+        else:
+            properties_xml = properties_xml[:-len('</w:pPr>')] + alignment_xml + '</w:pPr>'
+        paragraph_xml = (
+            paragraph_xml[:paragraph_properties.start()] +
+            properties_xml +
+            paragraph_xml[paragraph_properties.end():]
+        )
+    else:
+        opening_end = paragraph_xml.find('>')
+        paragraph_xml = paragraph_xml[:opening_end + 1] + '<w:pPr>' + alignment_xml + '</w:pPr>' + paragraph_xml[opening_end + 1:]
+    paragraph_xml = re.sub(r'<w:u\b[^>]*/>', '', paragraph_xml)
+    cell_xml = cell_xml[:paragraph_match.start()] + paragraph_xml + cell_xml[paragraph_match.end():]
     if _calibration_report_xml_cell_text(cell_xml) != target_unit:
         raise ValueError('Calibration Report exposure current unit replacement was not exact.')
+    if not re.search(r'<w:jc\b[^>]*w:val="center"[^>]*/>', paragraph_xml):
+        raise ValueError('Calibration Report exposure current unit heading was not centered.')
     return cell_xml
 
 
@@ -21732,8 +21780,8 @@ def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
-    # Navigation shell bump: v167 Calibration Report units and repair center -> v168 explicit current units.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v168-calibration-report-current-units';
+    # Navigation shell bump: v168 explicit current units -> v169 centered current-unit headings.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v169-calibration-report-current-unit-alignment';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -21757,7 +21805,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=27',
+  '/static/js/app-calibration-report.js?v=28',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
