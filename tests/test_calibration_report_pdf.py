@@ -4,9 +4,11 @@ import io
 import json
 import os
 import pathlib
+import re
 import tempfile
 import unittest
 import uuid
+import zipfile
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -100,6 +102,352 @@ class CalibrationReportPdfTests(unittest.TestCase):
             self.db.session.commit()
             pathlib.Path(self.storage.name, disk_name).write_bytes(self.docx_bytes)
             return source_file.id, submission.id, disk_name
+
+    def _legacy_docx_bytes(self, focal_large='0'):
+        """Build a legacy generated package by changing only recognized visible cells."""
+        with zipfile.ZipFile(io.BytesIO(self.docx_bytes), 'r') as package:
+            entries = [(info, package.read(info.filename)) for info in package.infolist()]
+        document_index = next(
+            index for index, (info, _data) in enumerate(entries)
+            if info.filename == 'word/document.xml'
+        )
+        document_xml = entries[document_index][1].decode('utf-8')
+        operations = []
+
+        def update_cell(table_index, row_index, cell_index, transform):
+            table_start, table_end = app_module._calibration_report_xml_blocks(document_xml, 'tbl')[table_index]
+            table_xml = document_xml[table_start:table_end]
+            row_start, row_end = app_module._calibration_report_xml_blocks(table_xml, 'tr')[row_index]
+            row_xml = table_xml[row_start:row_end]
+            cell_start, cell_end = app_module._calibration_report_xml_blocks(row_xml, 'tc')[cell_index]
+            cell_xml = row_xml[cell_start:cell_end]
+            updated = transform(cell_xml)
+            operations.append((table_start + row_start + cell_start, table_start + row_start + cell_end, updated))
+
+        def legacy_dose(cell_xml):
+            updated, count = re.subn(
+                r'(<w:t\b[^>]*>)u(</w:t>)',
+                r'\1m\2',
+                cell_xml,
+                count=1,
+            )
+            self.assertEqual(count, 1)
+            return updated
+
+        def legacy_small_time(cell_xml):
+            updated, count = re.subn(
+                r'(<w:t\b[^>]*>)\(msec\)(</w:t>)',
+                r'\1(sec)\2',
+                cell_xml,
+                count=1,
+            )
+            self.assertEqual(count, 1)
+            return updated
+
+        def historical_focal_size(cell_xml):
+            updated, count = re.subn(
+                r'(<w:t\b[^>]*>)2(</w:t>)',
+                r'\g<1>' + str(focal_large) + r'\g<2>',
+                cell_xml,
+                count=1,
+            )
+            self.assertEqual(count, 1)
+            return updated
+
+        update_cell(2, 3, 3, legacy_dose)
+        update_cell(3, 3, 3, legacy_dose)
+        update_cell(2, 3, 6, legacy_small_time)
+        if focal_large:
+            update_cell(3, 1, 0, historical_focal_size)
+        for start, end, updated in sorted(operations, reverse=True):
+            document_xml = document_xml[:start] + updated + document_xml[end:]
+        entries[document_index] = (entries[document_index][0], document_xml.encode('utf-8'))
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as target:
+            for info, data in entries:
+                target.writestr(info, data)
+        return output.getvalue()
+
+    @staticmethod
+    def _document_texts(docx_bytes):
+        with zipfile.ZipFile(io.BytesIO(docx_bytes), 'r') as package:
+            import xml.etree.ElementTree as element_tree
+            root = element_tree.fromstring(package.read('word/document.xml'))
+        return [
+            node.text or ''
+            for node in root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
+        ]
+
+    def _compact_docx_bytes(self):
+        """Remove blank measurement rows as the browser generator does for saved reports."""
+        legacy_bytes = self._legacy_docx_bytes()
+        with zipfile.ZipFile(io.BytesIO(legacy_bytes), 'r') as package:
+            entries = [(info, package.read(info.filename)) for info in package.infolist()]
+        document_index = next(
+            index for index, (info, _data) in enumerate(entries)
+            if info.filename == 'word/document.xml'
+        )
+        document_xml = entries[document_index][1].decode('utf-8')
+        removals = []
+        for table_index in (2, 3):
+            table_start, table_end = app_module._calibration_report_xml_blocks(document_xml, 'tbl')[table_index]
+            table_xml = document_xml[table_start:table_end]
+            rows = app_module._calibration_report_xml_blocks(table_xml, 'tr')
+            for row_start, row_end in rows[5:]:
+                removals.append((table_start + row_start, table_start + row_end))
+        for start, end in sorted(removals, reverse=True):
+            document_xml = document_xml[:start] + document_xml[end:]
+        entries[document_index] = (entries[document_index][0], document_xml.encode('utf-8'))
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as target:
+            for info, data in entries:
+                target.writestr(info, data)
+        return output.getvalue()
+
+    def _single_focal_docx_bytes(self, removed_table_index):
+        """Build the browser's one-focal-table output variant for repair coverage."""
+        legacy_bytes = self._legacy_docx_bytes()
+        with zipfile.ZipFile(io.BytesIO(legacy_bytes), 'r') as package:
+            entries = [(info, package.read(info.filename)) for info in package.infolist()]
+        document_index = next(
+            index for index, (info, _data) in enumerate(entries)
+            if info.filename == 'word/document.xml'
+        )
+        document_xml = entries[document_index][1].decode('utf-8')
+        table_start, table_end = app_module._calibration_report_xml_blocks(document_xml, 'tbl')[removed_table_index]
+        document_xml = document_xml[:table_start] + document_xml[table_end:]
+        entries[document_index] = (entries[document_index][0], document_xml.encode('utf-8'))
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as target:
+            for info, data in entries:
+                target.writestr(info, data)
+        return output.getvalue()
+
+    def test_historical_docx_repair_is_fail_closed_and_header_only(self):
+        legacy_bytes = self._legacy_docx_bytes()
+        inspection = app_module._calibration_report_docx_repair_inspection(legacy_bytes)
+        self.assertEqual(inspection['status'], 'repairable')
+        self.assertEqual([item['focal_size'] for item in inspection['table_states']], ['FOCAL SIZE: 0.6', 'FOCAL SIZE: 1.0'])
+
+        repaired_bytes, repaired_inspection = app_module._calibration_report_repair_docx_bytes(legacy_bytes)
+        self.assertEqual(repaired_inspection['status'], 'already_repaired')
+        self.assertEqual([item['focal_size'] for item in repaired_inspection['table_states']], ['FOCAL SIZE: 0.6', 'FOCAL SIZE: 1.0'])
+        differences = [
+            (before, after)
+            for before, after in zip(self._document_texts(legacy_bytes), self._document_texts(repaired_bytes))
+            if before != after
+        ]
+        self.assertEqual(differences.count(('m', 'u')), 2)
+        self.assertEqual(differences.count(('(sec)', '(msec)')), 1)
+        self.assertEqual(len(differences), 3)
+        with zipfile.ZipFile(io.BytesIO(legacy_bytes), 'r') as old_package, zipfile.ZipFile(io.BytesIO(repaired_bytes), 'r') as new_package:
+            self.assertEqual(set(old_package.namelist()), set(new_package.namelist()))
+            for name in old_package.namelist():
+                if name != 'word/document.xml':
+                    self.assertEqual(old_package.read(name), new_package.read(name), name)
+
+        blocked = bytearray(legacy_bytes)
+        self.assertTrue(blocked)
+        self.assertEqual(
+            app_module._calibration_report_docx_repair_inspection(b'not-a-docx')['status'],
+            'blocked',
+        )
+        compact_legacy = self._compact_docx_bytes()
+        compact_inspection = app_module._calibration_report_docx_repair_inspection(compact_legacy)
+        self.assertEqual(compact_inspection['status'], 'repairable')
+        compact_repaired, compact_result = app_module._calibration_report_repair_docx_bytes(compact_legacy)
+        self.assertEqual(compact_result['status'], 'already_repaired')
+        self.assertEqual([item['rows'] for item in compact_result['table_states']], [5, 5])
+        self.assertEqual(
+            [item['focal_size'] for item in compact_result['table_states']],
+            ['FOCAL SIZE: 0.6', 'FOCAL SIZE: 1.0'],
+        )
+        for removed_table_index in (2, 3):
+            with self.subTest(removed_table_index=removed_table_index):
+                single_legacy = self._single_focal_docx_bytes(removed_table_index)
+                single_inspection = app_module._calibration_report_docx_repair_inspection(single_legacy)
+                self.assertEqual(single_inspection['status'], 'repairable')
+                _single_repaired, single_result = app_module._calibration_report_repair_docx_bytes(single_legacy)
+                self.assertEqual(single_result['status'], 'already_repaired')
+                self.assertEqual(len(single_result['table_states']), 1)
+
+    def test_historical_repair_preserves_file_ids_delivery_metadata_and_is_idempotent(self):
+        source_id, submission_id, disk_name = self._create_source_fixture()
+        legacy_bytes = self._legacy_docx_bytes()
+        source_path = pathlib.Path(self.storage.name, disk_name)
+        source_path.write_bytes(legacy_bytes)
+        fixed_emailed_at = datetime(2026, 1, 2, 3, 4, 5)
+        with self.app.app_context():
+            source_file = self.db.session.get(app_module.ShiftFile, source_id)
+            source_file.last_emailed_at = fixed_emailed_at
+            pdf_disk_name = f'legacy-linked-{source_id}.pdf'
+            pdf_file = app_module.ShiftFile(
+                shift_id=source_file.shift_id,
+                filename=pdf_disk_name,
+                original_filename='Legacy Linked Report.pdf',
+                upload_token=f'calibration-report-pdf-legacy-{source_id}',
+                online_tsr_submission_id=submission_id,
+                uploaded_at=datetime(2025, 12, 1),
+                last_emailed_at=fixed_emailed_at,
+            )
+            self.db.session.add(pdf_file)
+            self.db.session.flush()
+            pathlib.Path(self.storage.name, pdf_disk_name).write_bytes(self.pdf_bytes)
+            job = app_module.CalibrationReportConversion(
+                source_shift_file_id=source_id,
+                pdf_shift_file_id=pdf_file.id,
+                source_sha256='old-source-sha',
+                pdf_sha256='old-pdf-sha',
+                converter_version='legacy-converter',
+                state='ready',
+                attempts=1,
+                converted_at=datetime(2025, 12, 1),
+                updated_at=datetime(2025, 12, 1),
+            )
+            approval = app_module.CalibrationCertificateApproval(
+                shift_id=source_file.shift_id,
+                online_tsr_submission_id=submission_id,
+                revision_no=1,
+                is_latest=True,
+                status='Approved',
+                certificate_number=f'HIST-{source_id}',
+                mapped_data_json='{}',
+                template_sha256=app_module.CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
+                unsigned_artifact_path=f'calibration-certificates/hist-{source_id}.pdf',
+                approved_at=datetime(2025, 12, 1),
+            )
+            self.db.session.add_all([job, approval])
+            self.db.session.commit()
+            before_candidate = app_module._calibration_report_repair_candidate_for_file(source_file)
+            self.assertEqual(before_candidate['status'], 'repairable')
+            self.assertTrue(before_candidate['approved'])
+            self.assertTrue(before_candidate['emailed'])
+            app_module.ensure_universal_approval_audit_table()
+            audit_before = app_module.UniversalApprovalAuditTrail.query.count()
+
+            with patch.object(app_module, 'convert_calibration_report_docx_bytes', return_value=self.pdf_bytes) as converter:
+                first = app_module._calibration_report_apply_historical_repair(source_id)
+                second = app_module._calibration_report_apply_historical_repair(source_id)
+
+            self.assertEqual(first['status'], 'repaired')
+            self.assertEqual(second['status'], 'already_repaired')
+            self.assertEqual(converter.call_count, 1)
+            self.assertEqual(first['source_file_id'], source_id)
+            self.assertEqual(first['pdf_file_id'], pdf_file.id)
+            self.assertEqual(first['repair_id'], f'calibration-report-{source_id}')
+            refreshed_source = self.db.session.get(app_module.ShiftFile, source_id)
+            refreshed_pdf = self.db.session.get(app_module.ShiftFile, pdf_file.id)
+            refreshed_job = self.db.session.get(app_module.CalibrationReportConversion, job.id)
+            refreshed_approval = self.db.session.get(app_module.CalibrationCertificateApproval, approval.id)
+            submission = self.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            self.assertNotEqual(pathlib.Path(self.storage.name, disk_name).read_bytes(), legacy_bytes)
+            self.assertEqual(pathlib.Path(self.storage.name, pdf_disk_name).read_bytes(), self.pdf_bytes)
+            self.assertEqual(refreshed_source.id, source_id)
+            self.assertEqual(refreshed_pdf.id, pdf_file.id)
+            self.assertEqual(refreshed_source.original_filename, source_file.original_filename)
+            self.assertEqual(refreshed_pdf.original_filename, 'Legacy Linked Report.pdf')
+            self.assertEqual(refreshed_source.last_emailed_at, fixed_emailed_at)
+            self.assertEqual(refreshed_pdf.last_emailed_at, fixed_emailed_at)
+            self.assertEqual(refreshed_approval.status, 'Approved')
+            self.assertEqual(refreshed_job.state, 'ready')
+            marker = json.loads(submission.payload_json)[app_module.CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER]
+            self.assertEqual(marker['version'], app_module.CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION)
+            self.assertEqual(marker['source_file_id'], source_id)
+            self.assertEqual(marker['pdf_file_id'], pdf_file.id)
+            self.assertEqual(
+                app_module.UniversalApprovalAuditTrail.query.filter_by(
+                    module='calibration_report', record_id=source_id,
+                    action='historical_repair_repaired',
+                ).count(),
+                1,
+            )
+            self.assertGreaterEqual(
+                app_module.ActivityLog.query.filter(
+                    app_module.ActivityLog.action.ilike('%historical repair completed%')
+                ).count(),
+                1,
+            )
+            self.assertGreaterEqual(app_module.UniversalApprovalAuditTrail.query.count(), audit_before + 1)
+            manifest_approval = SimpleNamespace(
+                id=approval.id,
+                revision_no=approval.revision_no,
+                report_fingerprint='report-fingerprint',
+                certificate_fingerprint='certificate-fingerprint',
+            )
+            old_manifest = app_module.get_calibration_center_manifest_signature(
+                manifest_approval,
+                [{'id': pdf_file.id, 'source_type': 'calibration_report', 'display_name': 'Legacy Linked Report.pdf', 'file_size': len(self.pdf_bytes), 'content_fingerprint': 'before'}],
+            )
+            new_manifest = app_module.get_calibration_center_manifest_signature(
+                manifest_approval,
+                [{'id': pdf_file.id, 'source_type': 'calibration_report', 'display_name': 'Legacy Linked Report.pdf', 'file_size': len(self.pdf_bytes), 'content_fingerprint': first['pdf_sha256']}],
+            )
+            self.assertNotEqual(old_manifest, new_manifest)
+
+    def test_historical_repair_creates_missing_pdf_and_rolls_back_storage_failure(self):
+        source_id, submission_id, disk_name = self._create_source_fixture()
+        legacy_bytes = self._legacy_docx_bytes()
+        pathlib.Path(self.storage.name, disk_name).write_bytes(legacy_bytes)
+        with self.app.app_context():
+            with patch.object(app_module, 'convert_calibration_report_docx_bytes', return_value=self.pdf_bytes):
+                result = app_module._calibration_report_apply_historical_repair(source_id)
+            self.assertEqual(result['status'], 'repaired')
+            job = app_module.calibration_report_conversion_for_source(source_id)
+            self.assertIsNotNone(job)
+            pdf_file = self.db.session.get(app_module.ShiftFile, job.pdf_shift_file_id)
+            self.assertIsNotNone(pdf_file)
+            self.assertEqual(pdf_file.online_tsr_submission_id, submission_id)
+            self.assertTrue(pathlib.Path(self.storage.name, pdf_file.filename).is_file())
+
+        source_id, submission_id, disk_name = self._create_source_fixture()
+        legacy_bytes = self._legacy_docx_bytes()
+        source_path = pathlib.Path(self.storage.name, disk_name)
+        source_path.write_bytes(legacy_bytes)
+        with self.app.app_context():
+            source_file = self.db.session.get(app_module.ShiftFile, source_id)
+            pdf_disk_name = f'rollback-linked-{source_id}.pdf'
+            pdf_file = app_module.ShiftFile(
+                shift_id=source_file.shift_id,
+                filename=pdf_disk_name,
+                original_filename='Rollback Linked.pdf',
+                upload_token=f'calibration-report-pdf-rollback-{source_id}',
+                online_tsr_submission_id=submission_id,
+            )
+            self.db.session.add(pdf_file)
+            self.db.session.flush()
+            original_pdf = self.pdf_bytes
+            pathlib.Path(self.storage.name, pdf_disk_name).write_bytes(original_pdf)
+            job = app_module.CalibrationReportConversion(
+                source_shift_file_id=source_id,
+                pdf_shift_file_id=pdf_file.id,
+                state='ready', attempts=1,
+                source_sha256='rollback-source', pdf_sha256='rollback-pdf',
+                updated_at=datetime(2025, 12, 1),
+            )
+            self.db.session.add(job)
+            self.db.session.commit()
+            original_replace = app_module._calibration_report_replace_storage_snapshot
+            calls = {'count': 0}
+
+            def fail_on_pdf(snapshot, data, original_filename, content_type):
+                calls['count'] += 1
+                if calls['count'] == 2:
+                    raise OSError('simulated managed storage failure')
+                return original_replace(snapshot, data, original_filename, content_type)
+
+            with patch.object(app_module, 'convert_calibration_report_docx_bytes', return_value=self.pdf_bytes), \
+                    patch.object(app_module, '_calibration_report_replace_storage_snapshot', side_effect=fail_on_pdf):
+                result = app_module._calibration_report_apply_historical_repair(source_id)
+            self.assertEqual(result['status'], 'failed')
+            self.assertEqual(source_path.read_bytes(), legacy_bytes)
+            self.assertEqual(pathlib.Path(self.storage.name, pdf_disk_name).read_bytes(), original_pdf)
+            self.assertEqual(
+                app_module.UniversalApprovalAuditTrail.query.filter_by(
+                    module='calibration_report', record_id=source_id,
+                    action='historical_repair_failed',
+                ).count(),
+                1,
+            )
 
     def test_docx_and_pdf_validation_happens_before_conversion(self):
         self.assertTrue(app_module._calibration_report_pdf_bytes_are_valid(self.pdf_bytes))

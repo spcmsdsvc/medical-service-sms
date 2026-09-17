@@ -6,6 +6,7 @@ import re
 import subprocess
 import unittest
 import zipfile
+import xml.etree.ElementTree as ET
 
 from pypdf import PdfReader
 
@@ -21,7 +22,7 @@ CERT_RUNTIME_TEMPLATE = ROOT / 'static' / 'templates' / 'calibration-certificate
 CERT_DATA = ROOT / 'static' / 'templates' / 'calibration-certificate' / 'calibration-certificate-template-data.js'
 CERT_RUNTIME = ROOT / 'static' / 'vendor' / 'pdf-lib' / 'pdf-lib.min.js'
 CERT_LICENSE = ROOT / 'static' / 'vendor' / 'pdf-lib' / 'LICENSE'
-EXPECTED_TEMPLATE_SHA256 = '31B6FE282CBE227B407870F5893493C1B7C529685892CD1997E25C9D4CC5A79E'
+EXPECTED_TEMPLATE_SHA256 = '53749AE89A35A8387B89D45725CD755A5CEB7CADC358E447BBBD3D3EED24A26B'
 EXPECTED_CERT_TEMPLATE_SHA256 = 'C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC'
 EXPECTED_CERT_RUNTIME_SHA256 = '20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8'
 DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -610,8 +611,13 @@ class CalibrationReportContractTests(unittest.TestCase):
             self.assertEqual(len(re.findall(r'<w:footerReference\b', document)), 3)
             for footer in ('footer1.xml', 'footer2.xml', 'footer3.xml'):
                 self.assertIn(f'Target="{footer}"', relationships)
-            for marker in ('CALIBRATION REPORT', 'AVERAGE EXPOSURE OUTPUT', 'FOCAL SIZE', '0.6', '1.0', 'SID: 100cm', 'PERFORMANCE CRITERIA'):
-                self.assertIn(marker, document)
+            document_root = ET.fromstring(document)
+            document_text = ''.join(
+                node.text or ''
+                for node in document_root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
+            )
+            for marker in ('CALIBRATION REPORT', 'AVERAGE EXPOSURE OUTPUT', 'FOCAL SIZE', '0.6', '1.2', 'SID: 100cm', 'PERFORMANCE CRITERIA'):
+                self.assertIn(marker, document_text)
             for forbidden in ('<w:sdt', '<w:bookmarkStart', '<w:fldChar', '<w:instrText'):
                 self.assertNotIn(forbidden, document)
 
@@ -669,6 +675,10 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('JSZip.loadAsync', self.script_source)
         self.assertIn('application/vnd.openxmlformats-officedocument.wordprocessingml.document', self.script_source)
         self.assertIn('convertDocxToPdf', self.script_source)
+        self.assertIn('dose_ugy', self.script_source)
+        self.assertIn('dose_mgy', self.script_source)  # legacy values remain readable in memory
+        self.assertIn('Dose (uGy)', self.script_source)
+        self.assertIn('Measured Exposure Time (msec)', self.script_source)
         self.assertIn("/convert_calibration_report_sample", self.script_source)
         self.assertIn('application/pdf', self.script_source)
         self.assertIn('calibration-report-template.docx', self.template_source)
@@ -699,8 +709,8 @@ class CalibrationReportContractTests(unittest.TestCase):
 
     def test_eight_row_focal_editor_and_scroll_contract(self):
         self.assertIn('CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8', self.script_source)
-        self.assertIn('schema_version: 4', self.script_source)
-        self.assertIn('base.schema_version = 4', self.script_source)
+        self.assertIn('schema_version: 5', self.script_source)
+        self.assertIn('base.schema_version = 5', self.script_source)
         self.assertIn('Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }', self.script_source)
         self.assertIn('overflow-y:auto', self.css_source)
         self.assertRegex(self.css_source, r'\.calibration-report-exposure-scroll[^\{]*\{[^}]*max-height:\s*\d+px')
@@ -743,7 +753,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         result = subprocess.run([str(NODE), '-e', NODE_SAMPLE_FINAL_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
-        for key in ('legacyDefaults', 'legacyRowsPadded', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
+        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
             self.assertTrue(payload[key], key)
 
     def test_entry_page_has_single_card_action_and_accessible_dialog_contract(self):
@@ -775,8 +785,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=8", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=25", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=25'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=26", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=26'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1060,14 +1070,14 @@ vm.runInContext(fs.readFileSync(runtimePath, 'utf8'), context);
 vm.runInContext(fs.readFileSync(path.join(root, 'static', 'js', 'app-calibration-report.js'), 'utf8'), context);
 
 function report(overrides = {}) {
-  const rows = [{ nominal_kvp:'80', measured_kvp:'80.2', ma_mas:'100mA', dose_mgy:'1.2', dose_rate:'2.4', time_msec:'10', measured_time:'0.010' }, {}, {}, {}, {}, {}, {}, {}];
+  const rows = [{ nominal_kvp:'80', measured_kvp:'80.2', ma_mas:'100mA', dose_ugy:'1.2', dose_rate:'2.4', time_msec:'10', measured_time:'0.010' }, {}, {}, {}, {}, {}, {}, {}];
   const base = {
     status:'draft', facility:{ name:"St. Mary's & Niño Clinic", address:'123 Main Street', telephone:'Phone', email:'client@example.test', location:'Radiology' },
     machine:{ manufacturer:'Shimadzu', modality:'Mobile X-Ray System', model:'MobileDart Evolution MX9', serial_number:'SN-1' },
     technical:{}, calibration:{ machine_calibration_date:'2026-08-20', next_calibration_date:'2027-08-20', test_tool_manufacturer:'Tool Co', test_tool_model:'Tool 1', test_tool_serial:'TOOL-1', test_tool_calibration_date:'2026-08-01', engineer_name:'Engineer & Niño' },
     mechanical_checks:[{result:'Pass'}], generator_checks:[{result:'Pass'},{result:'Pass'},{result:'Pass'},{result:'Pass'}],
     exposure:{ small:rows, large:[Object.assign({}, rows[0], { nominal_kvp:'100' }), {}, {}, {}, {}, {}, {}, {}] }, performance_results:['Pass','Pass'], signature:{ name:'Engineer & Niño', image:png },
-    focal_spots:{ small:true, large:true }, focal_sizes:{ small:'0.6', large:'1.0' }
+    focal_spots:{ small:true, large:true }, focal_sizes:{ small:'0.6', large:'1.2' }
   };
   return Object.assign(base, overrides);
 }
@@ -1078,17 +1088,21 @@ function report(overrides = {}) {
   const legacy = report({ exposure:{ small:legacyRows, large:legacyRows.map(row => Object.assign({}, row)) } }); delete legacy.focal_spots; delete legacy.focal_sizes;
   api.apply(legacy);
   const migrated = api.collect();
-  const legacyDefaults = migrated.focal_spots.small && migrated.focal_spots.large && migrated.focal_sizes.small === '0.6' && migrated.focal_sizes.large === '1.0';
+  const legacyDefaults = migrated.focal_spots.small && migrated.focal_spots.large && migrated.focal_sizes.small === '0.6' && migrated.focal_sizes.large === '1.2';
   const legacyRowsPadded = migrated.exposure.small.length === 8 && migrated.exposure.large.length === 8 && migrated.exposure.small[0].nominal_kvp === 'LEGACY-1' && migrated.exposure.small[4].nominal_kvp === 'LEGACY-5' && migrated.exposure.small.slice(5).every(row => Object.values(row).every(value => value === ''));
+  const legacyDoseReport = report({ exposure:{ small:[{ dose_mgy:'LEGACY-DOSE-SMALL' }], large:[{ dose_mgy:'LEGACY-DOSE-LARGE' }] } });
+  api.apply(legacyDoseReport);
+  const legacyDoseMigrated = api.collect();
+  const legacyDoseUnchanged = legacyDoseMigrated.exposure.small[0].dose_mgy === 'LEGACY-DOSE-SMALL' && legacyDoseMigrated.exposure.large[0].dose_mgy === 'LEGACY-DOSE-LARGE' && legacyDoseMigrated.exposure.small[0].dose_ugy === 'LEGACY-DOSE-SMALL' && legacyDoseMigrated.exposure.large[0].dose_ugy === 'LEGACY-DOSE-LARGE';
 
   const smallOnly = report({ focal_spots:{small:true, large:false}, focal_sizes:{small:'0.72', large:'1.14'}, exposure:{small:report().exposure.small, large:[{}, {}, {}, {}, {}, {}, {}, {}]} });
   const largeOnly = report({ focal_spots:{small:false, large:true}, focal_sizes:{small:'0.72', large:'1.14'}, exposure:{small:[{}, {}, {}, {}, {}, {}, {}, {}], large:report().exposure.large} });
-  const fullRows = Array.from({length:8}, () => ({ nominal_kvp:'12', measured_kvp:'12', ma_mas:'12', dose_mgy:'12', dose_rate:'12', time_msec:'12', measured_time:'12' }));
+  const fullRows = Array.from({length:8}, () => ({ nominal_kvp:'12', measured_kvp:'12', ma_mas:'12', dose_ugy:'12', dose_rate:'12', time_msec:'12', measured_time:'12' }));
   const bothSelected = report({ focal_sizes:{ small:'0.72', large:'1.14' }, exposure:{ small:fullRows.map(row => Object.assign({}, row)), large:fullRows.map(row => Object.assign({}, row)) } });
   const smallValidation = api.validateForFinalSave({ calibration_report:smallOnly }).ok;
   const largeValidation = api.validateForFinalSave({ calibration_report:largeOnly }).ok;
   const bothValidation = api.validateForFinalSave({ calibration_report:bothSelected }).ok;
-  const missingSizeRejected = !api.validateForFinalSave({ calibration_report:report({ focal_sizes:{ small:'', large:'1.0' } }) }).ok;
+  const missingSizeRejected = !api.validateForFinalSave({ calibration_report:report({ focal_sizes:{ small:'', large:'1.2' } }) }).ok;
 
   const incomplete = report({ facility:Object.assign({}, report().facility, { address:'' }) });
   api.apply(incomplete);
@@ -1178,7 +1192,7 @@ function report(overrides = {}) {
 
   const compactDraft = report({ exposure:{
     small:[Object.assign({}, fullRows[0], { nominal_kvp:'SMALL-FIRST' }), {}, { nominal_kvp:'   ' }, Object.assign({}, fullRows[0], { nominal_kvp:'SMALL-MIDDLE', measured_kvp:'' }), {}, {}, {}, Object.assign({}, fullRows[0], { nominal_kvp:'SMALL-LAST' })],
-    large:[{}, Object.assign({}, fullRows[0], { nominal_kvp:'LARGE-SECOND' }), {}, {}, { dose_mgy:'  ' }, {}, {}, {}]
+    large:[{}, Object.assign({}, fullRows[0], { nominal_kvp:'LARGE-SECOND' }), {}, {}, { dose_ugy:'  ' }, {}, {}, {}]
   }});
   const compactXml = await conditionalOutput(compactDraft, 'compact-rows');
   const compactBody = (compactXml.match(/<w:body>([\s\S]*)<\/w:body>/) || [])[1] || '';
@@ -1207,8 +1221,8 @@ function report(overrides = {}) {
   await api.saveFinalReport();
   await api.clearForm();
   const cleared = api.collect();
-  const clearPreservesSchedule = cleared.facility.name === 'Schedule Client' && cleared.machine.model === 'Schedule Model' && cleared.focal_spots.small && cleared.focal_spots.large && cleared.focal_sizes.small === '0.6' && cleared.focal_sizes.large === '1.0' && documents.value === '';
-  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
+  const clearPreservesSchedule = cleared.facility.name === 'Schedule Client' && cleared.machine.model === 'Schedule Model' && cleared.focal_spots.small && cleared.focal_spots.large && cleared.focal_sizes.small === '0.6' && cleared.focal_sizes.large === '1.2' && documents.value === '';
+  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

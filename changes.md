@@ -2,6 +2,65 @@
 
 codex changes - 2026-09-17
 
+- Began the separately authorized Calibration Report Page 3 units, focal-size defaults, and
+  historical artifact-repair implementation after the owner’s explicit “PLEASE IMPLEMENT THIS
+  PLAN” instruction. The bounded package covers the calibration report editor/template, fail-closed
+  generated DOCX/PDF repair and audit workflow, strict admin Calibration Center repair preview/apply
+  UI/API, release/cache markers, tests, and plan/change records; protected `scheduler.db`, handoff
+  artifacts, `.claude/`, `output/`, `tmp/`, unrelated work, browser/Codex UI, commit, push,
+  deployment, Railway, and production repair actions remain excluded.
+- Hardened the supplied DOCX contract test to inspect visible Word text for split run content, so
+  the new Large focal-size value `1.2` is verified without weakening the raw package and forbidden
+  structure checks.
+- Extended the calibration report Node contract to assert that legacy `dose_mgy` values remain
+  unchanged while being exposed through canonical `dose_ugy` in memory; source assertions now
+  require both the new canonical field and the legacy compatibility path.
+- Added Calibration Center source/template contracts covering the historical repair preview and
+  single-report routes, their non-exempt CSRF boundary, and the typed sequential Repair All UI.
+- Added isolated DOCX/PDF repair tests for fail-closed structure recognition, exact heading-only
+  package diffs, historical Large focal size `1.0` preservation, linked-file IDs/filenames and
+  delivery metadata, missing-PDF linkage creation, idempotency, audit records, and storage rollback.
+- Corrected the historical-test fixture to preserve the template’s split Word run structure while
+  representing the legacy Large focal value as visible `1.0`; no production artifact behavior was
+  changed.
+- Adjusted the repair assertions to use the helper’s complete focal-size labels and explicit
+  additive audit-table setup, keeping the tests isolated and representative of the runtime.
+- Focused calibration/PDF and Calibration Center suites now pass 23/23; the Node migration,
+  editor, DOCX-generation, and legacy-dose compatibility checks pass, and the official DOCX
+  OOXML comparison confirms 25/25 non-document parts are unchanged with exactly four intended
+  visible changes (two Dose units, Small measured time, and blank Large focal default).
+- Added a manifest-signature regression assertion proving that a changed repaired PDF fingerprint
+  invalidates the prior Calibration Center email preview package.
+- Corrected generated-DOCX recognition to accept the browser’s valid compact focal tables (four
+  fixed rows plus zero through eight measurement rows) while still requiring seven cells in every
+  measurement row and the exact generated headings.
+- Extended the isolated repair regression to exercise a compact one-measurement-row legacy DOCX,
+  confirming repairability, fully migrated output, and unchanged historical focal sizes there too.
+- Added one-focal-table legacy variants to the repair regression, covering both Small-only and
+  Large-only generated reports after the browser removes the unselected table.
+- Updated the historical inspection documentation to describe the recognized four- or five-table
+  generated report shapes rather than implying every saved report retains both source tables.
+- Completed the authorized Calibration Report package: editor schema 5 and public `dose_ugy`
+  compatibility, Page 3 unit/default corrections, fail-closed historical DOCX header repair,
+  valid-PDF-before-overwrite conversion, rollback/idempotency/audit/storage metadata handling,
+  strict-admin Calibration Center preview/apply and typed sequential Repair All, monotonic cache
+  markers, release metadata, and focused regression coverage are implemented. The official DOCX
+  hash is `53749ae89a35a8387b89d45725cd755a5ceb7cadc358e447bbbd3d3eed24a26b`; no historical
+  repair was run against owner or production data.
+- Final verification for this package: calibration PDF/Center/editor suites passed 41/41
+  (10/10, 13/13, and 18/18 respectively); related approval/email/offline/cache suites passed
+  179/179; changelog coverage/workflow passed 43 with 1 expected skip out of 44; Python AST,
+  JavaScript syntax, Jinja, JSON, OOXML, and `git diff --check` validations passed. The PDF skill
+  marker was run exactly once before the DOCX edit. Representative DOCX-to-PDF Page 3 visual QA
+  was unavailable because this environment has no LibreOffice/Writer or other DOCX converter;
+  isolated valid-PDF conversion/validation paths passed and no PDF render is claimed.
+- Calibration implementation remains uncommitted and unpublished. Pre-existing protected
+  `scheduler.db`, handoff artifacts, `.claude/`, `output/`, and `tmp/` work were preserved.
+- Final self-review closed two in-scope failure paths: a newly created missing-PDF object is now
+  removed if a later repair transaction step fails, and Repair All re-enables itself after a
+  sequential run when retryable failures remain. The focused 41-test calibration suite was
+  rerun after these changes and remained fully passing.
+
 - Committed the authorized PM Schedule Linking and Permanent Machine History implementation as
   `1d3bf99`. The commit contains only `app.py`, `templates/inventory_pm.html`,
   `tests/test_inventory_pm.py`, `static/changelog/releases.json`, `plans.md`, and `changes.md`;

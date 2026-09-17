@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-17-calibration-report-units-repair",
+      "release_date": "2026-09-17",
+      "title": "Calibration Report Units and Historical Repair",
+      "summary": "Calibration Report Page 3 now labels dose and measured exposure time in the units used by saved values, with a controlled admin repair for older generated artifacts.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-17-calibration-report-units-repair-admins",
+          "category": "Calibration Reports",
+          "description": "New reports default to 0.6 Small and 1.2 Large focal sizes. Authorized system administrators can preview and sequentially repair recognized historical generated DOCX/PDF revisions; only the affected headings change, stable file/approval/delivery metadata is retained, and each outcome is audited.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-17-inventory-pm-history",
       "release_date": "2026-09-17",
       "title": "PM Schedule Linking and Machine History",

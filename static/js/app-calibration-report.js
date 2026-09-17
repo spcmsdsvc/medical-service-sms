@@ -19,10 +19,10 @@
       'The average kVp shall not differ from the nominal kVp by ±6% for voltages less than or equal to 100kVp, or 6kV for voltages greater than 100kVp.',
       'The actual time shall be within +-10% of the set time. For exposure time less than 100ms, +-20%'
     ],
-    exposureHeadersSmall: ['Nominal kVP Settings', 'Measured kVP', 'mA / mAs', 'Dose (mGy)', 'Dose Rate (mGy/s)', 'Time Settings (msec)', 'Measured Exposure Time (sec)'],
-    exposureHeadersLarge: ['Nominal kVP Settings', 'Measured kVP', 'mA / mAs', 'Dose (mGy)', 'Dose Rate (mGy/s)', 'Time Settings (msec)', 'Measured Exposure Time (msec)']
+    exposureHeadersSmall: ['Nominal kVP Settings', 'Measured kVP', 'mA / mAs', 'Dose (uGy)', 'Dose Rate (mGy/s)', 'Time Settings (msec)', 'Measured Exposure Time (msec)'],
+    exposureHeadersLarge: ['Nominal kVP Settings', 'Measured kVP', 'mA / mAs', 'Dose (uGy)', 'Dose Rate (mGy/s)', 'Time Settings (msec)', 'Measured Exposure Time (msec)']
   };
-  var EXPOSURE_KEYS = ['nominal_kvp','measured_kvp','ma_mas','dose_mgy','dose_rate','time_msec','measured_time'];
+  var EXPOSURE_KEYS = ['nominal_kvp','measured_kvp','ma_mas','dose_ugy','dose_rate','time_msec','measured_time'];
   var CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8;
   var DEFAULT_MANUFACTURER = 'Shimadzu';
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -146,13 +146,13 @@
 
   function blankRows(){
     return Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }, function(){
-      return { nominal_kvp:'', measured_kvp:'', ma_mas:'', dose_mgy:'', dose_rate:'', time_msec:'', measured_time:'' };
+      return { nominal_kvp:'', measured_kvp:'', ma_mas:'', dose_ugy:'', dose_rate:'', time_msec:'', measured_time:'' };
     });
   }
 
   function blankState(){
     return {
-      schema_version: 4,
+      schema_version: 5,
       source: 'docx-calibration-report',
       status: 'not_started',
       updated_at: '',
@@ -164,7 +164,7 @@
       calibration: { machine_calibration_date:'', next_calibration_date:'', test_tool_manufacturer:'', test_tool_model:'', test_tool_serial:'', test_tool_calibration_date:'', engineer_name:'' },
       exposure: { small:blankRows(), large:blankRows() },
       focal_spots: { small:true, large:true },
-      focal_sizes: { small:'0.6', large:'1.0' },
+      focal_sizes: { small:'0.6', large:'1.2' },
       performance_results: ['', ''],
       signature: { name:'', image:'' },
       certificate: { bsid:'', equipment_model:'' },
@@ -202,9 +202,9 @@
     };
     base.focal_sizes = {
       small: Object.prototype.hasOwnProperty.call(rawFocalSizes, 'small') ? String(rawFocalSizes.small ?? '') : '0.6',
-      large: Object.prototype.hasOwnProperty.call(rawFocalSizes, 'large') ? String(rawFocalSizes.large ?? '') : '1.0'
+      large: Object.prototype.hasOwnProperty.call(rawFocalSizes, 'large') ? String(rawFocalSizes.large ?? '') : '1.2'
     };
-    base.schema_version = 4;
+    base.schema_version = 5;
     base.mechanical_checks = SOURCE.mechanical.map(function(item, index){
       var source = Array.isArray(raw.mechanical_checks) ? raw.mechanical_checks[index] : null;
       return { label:item.label, criteria:item.criteria, result:String(source && source.result || '') };
@@ -215,7 +215,14 @@
     });
     ['small','large'].forEach(function(key){
       var rawRows = raw.exposure && Array.isArray(raw.exposure[key]) ? raw.exposure[key] : [];
-      base.exposure[key] = blankRows().map(function(row, index){ return Object.assign({}, row, rawRows[index] && typeof rawRows[index] === 'object' ? rawRows[index] : {}); });
+      base.exposure[key] = blankRows().map(function(row, index){
+        var rawRow = rawRows[index] && typeof rawRows[index] === 'object' ? rawRows[index] : {};
+        var normalized = Object.assign({}, row, rawRow);
+        // Keep the legacy field untouched for compatibility while exposing the
+        // canonical uGy value to the editor and generated document.
+        if(!Object.prototype.hasOwnProperty.call(rawRow, 'dose_ugy') && Object.prototype.hasOwnProperty.call(rawRow, 'dose_mgy')) normalized.dose_ugy = String(rawRow.dose_mgy ?? '');
+        return normalized;
+      });
     });
     base.performance_results = [0,1].map(function(index){ return String(Array.isArray(raw.performance_results) ? raw.performance_results[index] || '' : ''); });
     var rawSignature = raw.signature && typeof raw.signature === 'object' ? raw.signature : {};

@@ -127,6 +127,7 @@ import shutil
 import subprocess
 import sqlite3
 import unicodedata
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from functools import wraps
 from email.message import EmailMessage
@@ -17098,6 +17099,8 @@ CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS = 3
 CALIBRATION_REPORT_CONVERSION_RETRY_DELAYS = (60, 300, 1800)
 CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
 CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
+CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v1'
+CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER = '_calibration_report_historical_repair'
 
 
 def _calibration_report_now():
@@ -17294,6 +17297,667 @@ def _validate_calibration_report_docx_bytes(docx_bytes):
                 raise ValueError('The Calibration Report source is missing required DOCX parts.')
     except zipfile.BadZipFile as package_error:
         raise ValueError('The Calibration Report source is not a readable DOCX package.') from package_error
+
+
+_CALIBRATION_REPORT_DOCX_NS = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+_CALIBRATION_REPORT_DOCX_EXPECTED_HEADERS = (
+    'Nominal kVP Settings',
+    'Measured kVP',
+    'mA / mAs',
+    '',
+    'Dose Rate (mGy/s)',
+    'Time Settings (msec)',
+    '',
+)
+
+
+def _calibration_report_docx_focal_table_states(document_xml):
+    """Return recognized focal-table states from one generated document body."""
+    root = ET.fromstring(document_xml)
+    body = root.find('w:body', _CALIBRATION_REPORT_DOCX_NS)
+    tables = body.findall('w:tbl', _CALIBRATION_REPORT_DOCX_NS) if body is not None else []
+    if len(tables) not in {4, 5}:
+        raise ValueError('Generated Calibration Report table count was not recognized.')
+
+    table_states = []
+    for table_index, table in enumerate(tables):
+        rows = table.findall('w:tr', _CALIBRATION_REPORT_DOCX_NS)
+        # The browser generator removes blank measurement rows.  Four fixed rows plus
+        # zero through eight measurement rows are the only generated focal-table sizes.
+        if len(rows) < 4 or len(rows) > 12:
+            continue
+        header_cells = rows[3].findall('w:tc', _CALIBRATION_REPORT_DOCX_NS)
+        focal_cells = rows[1].findall('w:tc', _CALIBRATION_REPORT_DOCX_NS)
+        measurement_rows = rows[4:]
+        if (
+            len(header_cells) != 7 or
+            len(focal_cells) != 1 or
+            any(len(row.findall('w:tc', _CALIBRATION_REPORT_DOCX_NS)) != 7 for row in measurement_rows)
+        ):
+            continue
+        header_values = [
+            ''.join(node.text or '' for node in cell.findall('.//w:t', _CALIBRATION_REPORT_DOCX_NS))
+            for cell in header_cells
+        ]
+        focal_value = ''.join(
+            node.text or '' for node in focal_cells[0].findall('.//w:t', _CALIBRATION_REPORT_DOCX_NS)
+        )
+        if (
+            header_values[0:3] != list(_CALIBRATION_REPORT_DOCX_EXPECTED_HEADERS[0:3]) or
+            header_values[4:6] != list(_CALIBRATION_REPORT_DOCX_EXPECTED_HEADERS[4:6]) or
+            not re.fullmatch(r'FOCAL SIZE:\s*(?:\d+(?:\.\d*)?|\.\d+)', focal_value) or
+            header_values[3] not in {'Dose (mGy)', 'Dose (uGy)'} or
+            header_values[4] != 'Dose Rate (mGy/s)' or
+            header_values[6] not in {'Measured Exposure Time(sec)', 'Measured Exposure Time(msec)'}
+        ):
+            continue
+        table_states.append({
+            'table_index': table_index,
+            'rows': len(rows),
+            'focal_size': focal_value,
+            'dose': header_values[3],
+            'measured_time': header_values[6],
+        })
+
+    expected_indexes = [2, 3] if len(tables) == 5 else [2]
+    if [state['table_index'] for state in table_states] != expected_indexes:
+        raise ValueError('Generated Calibration Report focal table structure was not recognized.')
+    if len(table_states) == 2 and table_states[1]['measured_time'] != 'Measured Exposure Time(msec)':
+        raise ValueError('Large focal measured-time heading was changed unexpectedly.')
+    return table_states
+
+
+def _calibration_report_docx_repair_inspection(docx_bytes):
+    """Fail closed unless the bytes are a recognized generated report shape.
+
+    The repair intentionally uses the parsed table structure only for recognition.  The
+    actual edit below operates on the original XML bytes so Word geometry, run formatting,
+    page breaks, signatures, and every non-heading value remain byte-for-byte untouched.
+    """
+    try:
+        _validate_calibration_report_docx_bytes(docx_bytes)
+        with zipfile.ZipFile(io.BytesIO(docx_bytes), 'r') as package:
+            document_xml = package.read('word/document.xml').decode('utf-8')
+        table_states = _calibration_report_docx_focal_table_states(document_xml)
+
+        dose_states = {state['dose'] for state in table_states}
+        if len(dose_states) != 1:
+            return {'status': 'blocked', 'reason': 'Calibration Report Dose headings are only partially migrated.'}
+        all_repaired = (
+            next(iter(dose_states)) == 'Dose (uGy)' and
+            all(state['measured_time'] == 'Measured Exposure Time(msec)' for state in table_states)
+        )
+        return {
+            'status': 'already_repaired' if all_repaired else 'repairable',
+            'reason': '' if all_repaired else 'Calibration Report headings can be repaired safely.',
+            'document_xml': document_xml,
+            'table_states': table_states,
+        }
+    except (ET.ParseError, UnicodeDecodeError, KeyError, ValueError, zipfile.BadZipFile, OSError) as inspection_error:
+        return {'status': 'blocked', 'reason': 'Calibration Report DOCX validation failed closed: ' + clean_str(str(inspection_error))[:300]}
+
+
+def _calibration_report_xml_blocks(xml_text, element_name):
+    """Return balanced XML element ranges without reserializing the DOCX XML."""
+    token = re.compile(r'<(/?)w:' + re.escape(element_name) + r'(?=\s|>)')
+    ranges = []
+    depth = 0
+    start = None
+    for match in token.finditer(xml_text):
+        if match.group(1):
+            depth -= 1
+            if depth == 0 and start is not None:
+                ranges.append((start, match.end()))
+                start = None
+        else:
+            if depth == 0:
+                start = match.start()
+            depth += 1
+    if depth or start is not None:
+        raise ValueError('Unbalanced generated Calibration Report XML.')
+    return ranges
+
+
+def _calibration_report_xml_cell_text(cell_xml):
+    return ''.join(
+        match.group(2)
+        for match in re.finditer(r'(<w:t\b[^>]*>)(.*?)(</w:t>)', cell_xml, re.S)
+    )
+
+
+def _calibration_report_replace_cell_heading(cell_xml, kind):
+    """Change only the unit token in one recognized heading cell."""
+    text_pattern = re.compile(r'(<w:t\b[^>]*>)(.*?)(</w:t>)', re.S)
+    used = False
+
+    def replace_text(match):
+        nonlocal used
+        text = match.group(2)
+        replacement = text
+        if kind == 'dose':
+            if not used and 'mGy' in text:
+                replacement = text.replace('mGy', 'uGy', 1)
+                used = True
+            elif not used and text == 'm':
+                replacement = 'u'
+                used = True
+        elif kind == 'small-time' and '(sec)' in text:
+            replacement = text.replace('(sec)', '(msec)', 1)
+            used = True
+        if replacement == text:
+            return match.group(0)
+        return match.group(1) + replacement + match.group(3)
+
+    updated = text_pattern.sub(replace_text, cell_xml)
+    return updated, used
+
+
+def _calibration_report_repair_document_xml(document_xml):
+    """Return repaired document XML while changing only three visible headings."""
+    # ``inspection`` is performed by the caller against the complete package.  This helper
+    # still checks the raw structure and exact cell text before every byte replacement.  The
+    # table indexes come from the parsed generated shape so one-focal-spot compact reports
+    # (where the other table was removed by the browser) remain repairable.
+    table_states = _calibration_report_docx_focal_table_states(document_xml)
+    tables = _calibration_report_xml_blocks(document_xml, 'tbl')
+    operations = []
+    for table_state in table_states:
+        table_index = table_state['table_index']
+        table_start, table_end = tables[table_index]
+        table_xml = document_xml[table_start:table_end]
+        row_start, row_end = _calibration_report_xml_blocks(table_xml, 'tr')[3]
+        row_xml = table_xml[row_start:row_end]
+        cell_start, cell_end = _calibration_report_xml_blocks(row_xml, 'tc')[3]
+        cell_xml = row_xml[cell_start:cell_end]
+        before = _calibration_report_xml_cell_text(cell_xml)
+        if before not in {'Dose (mGy)', 'Dose (uGy)'}:
+            raise ValueError('Calibration Report heading does not match the recognized generated variant.')
+        updated, changed = _calibration_report_replace_cell_heading(cell_xml, 'dose')
+        after = _calibration_report_xml_cell_text(updated)
+        if after != 'Dose (uGy)':
+            raise ValueError('Calibration Report Dose heading replacement was not exact.')
+        if before != after and not changed:
+            raise ValueError('Calibration Report heading replacement was not exact.')
+        if changed:
+            operations.append((table_start + row_start + cell_start, table_start + row_start + cell_end, updated))
+
+        if table_state['measured_time'] == 'Measured Exposure Time(sec)':
+            time_cell_start, time_cell_end = _calibration_report_xml_blocks(row_xml, 'tc')[6]
+            time_cell_xml = row_xml[time_cell_start:time_cell_end]
+            time_before = _calibration_report_xml_cell_text(time_cell_xml)
+            time_updated, time_changed = _calibration_report_replace_cell_heading(time_cell_xml, 'small-time')
+            if (
+                time_before != 'Measured Exposure Time(sec)' or
+                _calibration_report_xml_cell_text(time_updated) != 'Measured Exposure Time(msec)' or
+                not time_changed
+            ):
+                raise ValueError('Calibration Report measured-time heading replacement was not exact.')
+            operations.append((table_start + row_start + time_cell_start, table_start + row_start + time_cell_end, time_updated))
+
+    for start, end, updated in sorted(operations, reverse=True):
+        document_xml = document_xml[:start] + updated + document_xml[end:]
+    return document_xml
+
+
+def _calibration_report_repair_docx_bytes(docx_bytes):
+    """Repair a generated report package and preserve every part except headings."""
+    inspection = _calibration_report_docx_repair_inspection(docx_bytes)
+    if inspection.get('status') == 'blocked':
+        raise ValueError(inspection.get('reason') or 'Calibration Report DOCX is not repairable.')
+    if inspection.get('status') == 'already_repaired':
+        return docx_bytes, inspection
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), 'r') as package:
+        entries = [(info, package.read(info.filename)) for info in package.infolist()]
+    document_index = next(index for index, (info, _data) in enumerate(entries) if info.filename == 'word/document.xml')
+    document_xml = entries[document_index][1].decode('utf-8')
+    repaired_xml = _calibration_report_repair_document_xml(document_xml)
+    entries[document_index] = (entries[document_index][0], repaired_xml.encode('utf-8'))
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w') as target:
+        for info, data in entries:
+            target.writestr(info, data)
+    repaired_bytes = output.getvalue()
+    repaired_inspection = _calibration_report_docx_repair_inspection(repaired_bytes)
+    if repaired_inspection.get('status') != 'already_repaired':
+        raise ValueError('Repaired Calibration Report DOCX did not validate as fully migrated.')
+    return repaired_bytes, repaired_inspection
+
+
+def _calibration_report_storage_snapshot(file_record):
+    """Capture every configured storage copy before replacing an existing object."""
+    disk_name = get_shift_file_disk_name(file_record)
+    if not disk_name:
+        raise FileNotFoundError('Calibration Report storage filename is missing.')
+    local_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+    key = managed_storage_key(STORAGE_PREFIX_REPORTS, disk_name)
+    volume_exists = bool(os.path.isfile(local_path))
+    volume_bytes = None
+    if volume_exists:
+        with open(local_path, 'rb') as source_handle:
+            volume_bytes = source_handle.read(CALIBRATION_REPORT_MAX_BYTES + 1)
+    bucket_exists = False
+    bucket_bytes = None
+    if file_storage.bucket_enabled:
+        try:
+            bucket_bytes = file_storage.download_bytes(key)
+            bucket_exists = True
+        except StorageObjectNotFound:
+            if not file_storage.volume_fallback:
+                raise
+        except Exception:
+            if not file_storage.volume_fallback:
+                raise
+    if not volume_exists and not bucket_exists:
+        raise FileNotFoundError(f'Calibration Report storage object {disk_name} is unavailable.')
+    return {
+        'record_id': clean_int(getattr(file_record, 'id', None)),
+        'local_path': local_path,
+        'key': key,
+        'volume_exists': volume_exists,
+        'volume_bytes': volume_bytes,
+        'bucket_exists': bucket_exists,
+        'bucket_bytes': bucket_bytes,
+    }
+
+
+def _calibration_report_replace_storage_snapshot(snapshot, data, original_filename, content_type):
+    """Write a replacement without registering it as a new DB-owned object."""
+    if file_storage.writes_bucket:
+        file_storage.upload_bytes(
+            snapshot['key'],
+            data,
+            content_type=content_type,
+            original_filename=original_filename,
+        )
+    if file_storage.writes_volume:
+        local_path = snapshot['local_path']
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        temporary = f'{local_path}.calibration-repairing-{secrets.token_hex(5)}'
+        try:
+            with open(temporary, 'wb') as target_file:
+                target_file.write(data)
+            os.replace(temporary, local_path)
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+
+
+def _calibration_report_restore_storage_snapshot(snapshot):
+    """Restore both storage copies after a failed repair."""
+    errors = []
+    if file_storage.writes_bucket:
+        try:
+            if snapshot['bucket_exists']:
+                file_storage.upload_bytes(
+                    snapshot['key'],
+                    snapshot['bucket_bytes'],
+                    content_type=managed_storage_content_type(snapshot['key']),
+                    original_filename=os.path.basename(snapshot['local_path']),
+                )
+            else:
+                try:
+                    file_storage.delete(snapshot['key'])
+                except StorageObjectNotFound:
+                    pass
+        except Exception as restore_error:
+            errors.append(restore_error)
+    if file_storage.writes_volume:
+        try:
+            local_path = snapshot['local_path']
+            if snapshot['volume_exists']:
+                temporary = f'{local_path}.calibration-restoring-{secrets.token_hex(5)}'
+                try:
+                    with open(temporary, 'wb') as target_file:
+                        target_file.write(snapshot['volume_bytes'])
+                    os.replace(temporary, local_path)
+                finally:
+                    if os.path.exists(temporary):
+                        os.remove(temporary)
+            elif os.path.exists(local_path):
+                os.remove(local_path)
+        except Exception as restore_error:
+            errors.append(restore_error)
+    if errors:
+        raise RuntimeError('Calibration Report storage rollback was incomplete.') from errors[0]
+
+
+def _calibration_report_repair_actor_metadata():
+    """Return non-sensitive actor identifiers for repair audit records."""
+    actor = current_user if getattr(current_user, 'is_authenticated', False) else None
+    return {
+        'admin_user_id': clean_int(getattr(actor, 'id', None)) if actor else None,
+        'admin_username': clean_str(getattr(actor, 'username', None))[:120] if actor else 'system',
+    }
+
+
+def _calibration_report_repair_id(source_file_id):
+    return f'calibration-report-{clean_int(source_file_id) or 0}'
+
+
+def _calibration_report_repair_pdf_state(source_file, job):
+    """Resolve a linked PDF without accepting a mismatched or unreadable object."""
+    if not job or not clean_int(getattr(job, 'pdf_shift_file_id', None)):
+        return None, 'missing', ''
+    pdf_file = db.session.get(ShiftFile, clean_int(job.pdf_shift_file_id))
+    if not pdf_file:
+        return None, 'blocked', 'The conversion points to a missing PDF record.'
+    if (
+        not calibration_report_filename_is_pdf(get_shift_file_display_name(pdf_file)) or
+        clean_int(getattr(pdf_file, 'shift_id', None)) != clean_int(getattr(source_file, 'shift_id', None)) or
+        clean_int(getattr(pdf_file, 'online_tsr_submission_id', None)) != clean_int(getattr(source_file, 'online_tsr_submission_id', None))
+    ):
+        return pdf_file, 'blocked', 'The linked PDF does not belong to this Calibration Report revision.'
+    try:
+        pdf_bytes = _calibration_report_file_bytes(pdf_file)
+    except Exception:
+        return pdf_file, 'blocked', 'The linked PDF is unavailable from managed storage.'
+    if not _calibration_report_pdf_bytes_are_valid(pdf_bytes):
+        return pdf_file, 'blocked', 'The linked PDF is not a valid readable PDF.'
+    return pdf_file, 'ready', ''
+
+
+def _calibration_report_repair_approval_context(source_file, pdf_file=None):
+    """Summarize every approval/delivery revision without changing any records."""
+    approvals = []
+    try:
+        ensure_calibration_certificate_approval_table()
+        approvals = CalibrationCertificateApproval.query.filter_by(
+            online_tsr_submission_id=clean_int(getattr(source_file, 'online_tsr_submission_id', None))
+        ).order_by(CalibrationCertificateApproval.revision_no.asc(), CalibrationCertificateApproval.id.asc()).all()
+    except Exception as approval_error:
+        print(f'[CalibrationReport] Repair approval lookup skipped: {approval_error}', flush=True)
+    approved = any(clean_str(getattr(item, 'status', None)) == 'Approved' for item in approvals)
+    emailed = bool(getattr(source_file, 'last_emailed_at', None) or getattr(pdf_file, 'last_emailed_at', None))
+    return {
+        'approval_ids': [clean_int(getattr(item, 'id', None)) for item in approvals if clean_int(getattr(item, 'id', None))],
+        'revision_nos': [clean_int(getattr(item, 'revision_no', None)) or 1 for item in approvals],
+        'approved': approved,
+        'emailed': emailed,
+        'warning': (
+            'Approved or emailed artifacts will change headings; numeric values, focal sizes, '
+            'file IDs, approval status, delivery status, and email history are preserved.'
+            if approved or emailed else
+            'Only the report headings will change; numeric values and focal sizes are preserved.'
+        ),
+    }
+
+
+def _calibration_report_repair_candidate_for_file(source_file):
+    """Build one stable repair candidate from a generated source file."""
+    if not source_file or not calibration_report_source_file_is_private(source_file):
+        return None
+    base = {
+        'repair_id': _calibration_report_repair_id(source_file.id),
+        'source_file_id': clean_int(source_file.id),
+        'submission_id': clean_int(getattr(source_file, 'online_tsr_submission_id', None)),
+        'shift_id': clean_int(getattr(source_file, 'shift_id', None)),
+        'filename': get_shift_file_display_name(source_file) or get_shift_file_disk_name(source_file),
+        'uploaded_at': source_file.uploaded_at.isoformat() if getattr(source_file, 'uploaded_at', None) else '',
+        'pdf_file_id': None,
+        'pdf_filename': '',
+        'source_sha256': '',
+        'pdf_sha256': '',
+        'status': 'blocked',
+        'reason': '',
+    }
+    try:
+        source_bytes = _calibration_report_source_bytes(source_file)
+        base['source_sha256'] = hashlib.sha256(source_bytes).hexdigest()
+        inspection = _calibration_report_docx_repair_inspection(source_bytes)
+    except Exception as source_error:
+        inspection = {'status': 'blocked', 'reason': 'The generated Calibration Report DOCX is unavailable from managed storage.'}
+        base['reason'] = clean_str(str(source_error))[:300]
+    if inspection.get('status') == 'blocked':
+        base['reason'] = base['reason'] or inspection.get('reason') or 'The generated Calibration Report DOCX is not safely recognized.'
+        approval_context = _calibration_report_repair_approval_context(source_file)
+        base.update(approval_context)
+        return base
+
+    job = calibration_report_conversion_for_source(source_file.id)
+    pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, job)
+    if pdf_file:
+        base['pdf_file_id'] = clean_int(pdf_file.id)
+        base['pdf_filename'] = get_shift_file_display_name(pdf_file) or get_shift_file_disk_name(pdf_file)
+        if pdf_state == 'ready':
+            try:
+                base['pdf_sha256'] = hashlib.sha256(_calibration_report_file_bytes(pdf_file)).hexdigest()
+            except Exception:
+                base['pdf_sha256'] = ''
+
+    if inspection.get('status') == 'already_repaired' and pdf_state == 'ready':
+        base['status'] = 'already_repaired'
+        base['reason'] = 'This report source and linked PDF already use the current headings.'
+    elif pdf_state == 'blocked':
+        base['status'] = 'blocked'
+        base['reason'] = pdf_reason or 'The linked PDF cannot be safely replaced.'
+    else:
+        base['status'] = 'repairable'
+        base['reason'] = inspection.get('reason') or 'Calibration Report headings can be repaired safely.'
+    base.update(_calibration_report_repair_approval_context(source_file, pdf_file))
+    return base
+
+
+def _calibration_report_historical_repair_candidates():
+    """Inventory every generated DOCX revision, including superseded approvals."""
+    candidates = []
+    files = ShiftFile.query.filter(
+        or_(
+            ShiftFile.original_filename.ilike('%.docx'),
+            ShiftFile.filename.ilike('%.docx'),
+        )
+    ).order_by(ShiftFile.id.asc()).all()
+    for source_file in files:
+        candidate = _calibration_report_repair_candidate_for_file(source_file)
+        if candidate:
+            candidates.append(candidate)
+    return candidates
+
+
+def _calibration_report_record_repair_failure(source_file, metadata):
+    """Best-effort append-only failure audit after a repair transaction rolls back."""
+    try:
+        record_universal_approval_audit(
+            'calibration_report',
+            clean_int(getattr(source_file, 'id', None)) or 0,
+            'historical_repair_failed',
+            actor_user=current_user,
+            metadata=dict(metadata or {}),
+        )
+        actor_name = universal_approval_actor_name(current_user)
+        db.session.add(ActivityLog(
+            user=actor_name[:100] or 'System',
+            action=f"Calibration Report historical repair failed | source #{clean_int(getattr(source_file, 'id', None)) or 0}",
+        ))
+        db.session.commit()
+    except Exception as audit_error:
+        db.session.rollback()
+        print(f'[CalibrationReport] Repair failure audit skipped: {audit_error}', flush=True)
+
+
+def _calibration_report_write_repair_marker(source_file, job, pdf_file, metadata):
+    """Add safe repair provenance while preserving the existing submission payload."""
+    submission = db.session.get(OnlineTsrSubmission, clean_int(getattr(source_file, 'online_tsr_submission_id', None)))
+    if not submission:
+        raise ValueError('The generated Calibration Report submission record is missing.')
+    payload = parse_online_tsr_payload_json(submission)
+    if not isinstance(payload, dict):
+        raise ValueError('The generated Calibration Report submission payload is not readable.')
+    marker = dict(payload.get(CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER) or {})
+    marker.update({
+        'version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
+        'status': 'repaired',
+        'repaired_at': _calibration_report_now().isoformat(),
+        'source_file_id': clean_int(source_file.id),
+        'pdf_file_id': clean_int(getattr(pdf_file, 'id', None)) if pdf_file else None,
+    })
+    marker.update(dict(metadata or {}))
+    payload[CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER] = marker
+    submission.payload_json = json.dumps(payload, ensure_ascii=False)
+    _update_calibration_report_conversion_marker(source_file, job, pdf_file)
+
+
+def _calibration_report_apply_historical_repair(source_file_id):
+    """Replace one source/PDF pair transactionally and return a stable outcome."""
+    source_file = db.session.get(ShiftFile, clean_int(source_file_id))
+    if not source_file or not calibration_report_source_file_is_private(source_file):
+        return {'status': 'failed', 'repair_id': _calibration_report_repair_id(source_file_id), 'source_file_id': clean_int(source_file_id), 'reason': 'Generated Calibration Report source not found.'}
+    # Create additive audit/index tables before this repair starts changing the source
+    # transaction.  SQLite cannot safely run DDL on a second connection while the repair
+    # transaction is holding its write lock.
+    ensure_universal_approval_audit_table()
+    candidate = _calibration_report_repair_candidate_for_file(source_file)
+    if not candidate:
+        return {'status': 'failed', 'repair_id': _calibration_report_repair_id(source_file.id), 'source_file_id': clean_int(source_file.id), 'reason': 'Generated Calibration Report source not found.'}
+    if candidate['status'] == 'already_repaired':
+        return dict(candidate, status='already_repaired')
+    if candidate['status'] == 'blocked':
+        metadata = {
+            'repair_version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
+            'source_file_id': clean_int(source_file.id),
+            'outcome': 'failed',
+            'reason': candidate.get('reason') or 'The report is blocked from repair.',
+            **_calibration_report_repair_actor_metadata(),
+        }
+        _calibration_report_record_repair_failure(source_file, metadata)
+        return dict(candidate, status='failed', reason=metadata['reason'])
+
+    source_snapshot = None
+    pdf_snapshot = None
+    created_pdf_file = None
+    created_pdf_storage_path = None
+    source_before_sha256 = candidate.get('source_sha256') or ''
+    pdf_before_sha256 = candidate.get('pdf_sha256') or ''
+    metadata = {
+        'repair_version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
+        'source_file_id': clean_int(source_file.id),
+        'pdf_file_id': candidate.get('pdf_file_id'),
+        'before_source_sha256': source_before_sha256,
+        'before_pdf_sha256': pdf_before_sha256,
+        **_calibration_report_repair_actor_metadata(),
+    }
+    try:
+        source_bytes = _calibration_report_source_bytes(source_file)
+        repaired_docx, inspection = _calibration_report_repair_docx_bytes(source_bytes)
+        source_after_sha256 = hashlib.sha256(repaired_docx).hexdigest()
+        job = calibration_report_conversion_for_source(source_file.id)
+        pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, job)
+        if pdf_state == 'blocked':
+            raise ValueError(pdf_reason or 'The linked PDF cannot be safely replaced.')
+        pdf_bytes = convert_calibration_report_docx_bytes(
+            repaired_docx,
+            get_shift_file_display_name(source_file) or 'Calibration_Report.docx',
+        )
+        if not _calibration_report_pdf_bytes_are_valid(pdf_bytes):
+            raise ValueError('The repaired Calibration Report conversion produced an unreadable PDF.')
+        pdf_after_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+        source_snapshot = _calibration_report_storage_snapshot(source_file)
+        if pdf_file:
+            pdf_snapshot = _calibration_report_storage_snapshot(pdf_file)
+        if source_after_sha256 != source_before_sha256:
+            _calibration_report_replace_storage_snapshot(
+                source_snapshot,
+                repaired_docx,
+                get_shift_file_display_name(source_file),
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            )
+
+        if not job:
+            job = _calibration_report_conversion_job_for_source(source_file.id, create=True)
+        if pdf_file:
+            _calibration_report_replace_storage_snapshot(
+                pdf_snapshot,
+                pdf_bytes,
+                get_shift_file_display_name(pdf_file) or _calibration_report_pdf_filename(source_file),
+                'application/pdf',
+            )
+        else:
+            pdf_name = _calibration_report_pdf_filename(source_file)
+            pdf_token = f'calibration-report-pdf-{source_file.id}-{source_after_sha256}'[:100]
+            existing_by_token = ShiftFile.query.filter_by(upload_token=pdf_token).first()
+            if existing_by_token:
+                pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, job)
+                if pdf_file or pdf_state == 'blocked':
+                    raise ValueError(pdf_reason or 'A linked PDF token already belongs to another object.')
+            disk_name = get_unique_upload_filename(pdf_name)
+            disk_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+            # Keep the path so a later DB/audit/storage failure cannot leave an
+            # orphaned managed-storage object after the transaction rolls back.
+            created_pdf_storage_path = disk_path
+            managed_storage_write_bytes(
+                STORAGE_PREFIX_REPORTS,
+                disk_path,
+                pdf_bytes,
+                original_filename=pdf_name,
+                content_type='application/pdf',
+            )
+            created_pdf_file = ShiftFile(
+                shift_id=source_file.shift_id,
+                filename=disk_name,
+                original_filename=pdf_name,
+                upload_token=pdf_token,
+                online_tsr_submission_id=source_file.online_tsr_submission_id,
+                uploaded_at=get_manila_time(),
+            )
+            db.session.add(created_pdf_file)
+            db.session.flush()
+            pdf_file = created_pdf_file
+
+        now = get_manila_time()
+        job.source_sha256 = source_after_sha256
+        job.pdf_sha256 = pdf_after_sha256
+        job.pdf_shift_file_id = clean_int(pdf_file.id)
+        job.converter_version = CALIBRATION_REPORT_CONVERTER_VERSION
+        job.state = 'ready'
+        job.claim_token = None
+        job.claimed_at = None
+        job.next_retry_at = None
+        job.last_error = None
+        job.converted_at = now
+        job.updated_at = now
+        metadata.update({
+            'after_source_sha256': source_after_sha256,
+            'after_pdf_sha256': pdf_after_sha256,
+            'outcome': 'repaired',
+            'pdf_file_id': clean_int(pdf_file.id),
+            'repaired_at': now.isoformat(),
+        })
+        _calibration_report_write_repair_marker(source_file, job, pdf_file, metadata)
+        record_universal_approval_audit(
+            'calibration_report',
+            clean_int(source_file.id),
+            'historical_repair_repaired',
+            actor_user=current_user,
+            metadata=metadata,
+        )
+        db.session.add(ActivityLog(
+            user=universal_approval_actor_name(current_user)[:100] or 'System',
+            action=f"Calibration Report historical repair completed | source #{source_file.id} | PDF #{pdf_file.id}",
+        ))
+        db.session.commit()
+        return dict(candidate, status='repaired', reason='Calibration Report headings and linked PDF were repaired.', pdf_file_id=clean_int(pdf_file.id), pdf_filename=get_shift_file_display_name(pdf_file) or get_shift_file_disk_name(pdf_file), source_sha256=source_after_sha256, pdf_sha256=pdf_after_sha256)
+    except Exception as repair_error:
+        db.session.rollback()
+        rollback_error = None
+        for snapshot in (pdf_snapshot, source_snapshot):
+            if not snapshot:
+                continue
+            try:
+                _calibration_report_restore_storage_snapshot(snapshot)
+            except Exception as restore_error:
+                rollback_error = rollback_error or restore_error
+        if created_pdf_storage_path:
+            try:
+                managed_storage_delete(STORAGE_PREFIX_REPORTS, created_pdf_storage_path)
+            except Exception as created_storage_error:
+                rollback_error = rollback_error or created_storage_error
+        reason = clean_str(str(repair_error))[:500] or 'Calibration Report repair failed.'
+        metadata.update({
+            'outcome': 'failed',
+            'reason': reason,
+            'rollback_warning': clean_str(str(rollback_error))[:300] if rollback_error else '',
+        })
+        _calibration_report_record_repair_failure(source_file, metadata)
+        return dict(candidate, status='failed', reason=reason, rollback_warning=metadata.get('rollback_warning', ''))
 
 
 def convert_calibration_report_docx_bytes(docx_bytes, original_filename='Calibration_Report.docx'):
@@ -19131,6 +19795,62 @@ def calibration_center_data():
     })
 
 
+@app.route('/admin/calibration-center/repair-preview')
+@app.route('/admin/calibration-center/repair-preview/data')
+@login_required
+def calibration_center_repair_preview():
+    """Preview every generated Calibration Report revision without writing files."""
+    if not can_access_calibration_center():
+        return denied('Only authorized system administrators can access Calibration Center.')
+    try:
+        candidates = _calibration_report_historical_repair_candidates()
+    except Exception as inventory_error:
+        return no_store_jsonify({
+            'status': 'failed',
+            'message': 'Calibration Report repair inventory could not be loaded.',
+            'reason': clean_str(str(inventory_error))[:300],
+            'repair_version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
+            'candidates': [],
+            'summary': {'total': 0, 'repairable': 0, 'already_repaired': 0, 'blocked': 0},
+        }, 500)
+    summary = {
+        'total': len(candidates),
+        'repairable': sum(1 for item in candidates if item.get('status') == 'repairable'),
+        'already_repaired': sum(1 for item in candidates if item.get('status') == 'already_repaired'),
+        'blocked': sum(1 for item in candidates if item.get('status') == 'blocked'),
+    }
+    return no_store_jsonify({
+        'status': 'success',
+        'repair_version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
+        'warning': (
+            'Repairing approved or emailed artifacts changes report headings. Numeric values, '
+            'focal sizes, file IDs, approval/delivery status, and email history remain unchanged; '
+            'existing email previews become stale and must be regenerated.'
+        ),
+        'summary': summary,
+        'candidates': candidates,
+    })
+
+
+@app.route('/admin/calibration-center/<int:source_file_id>/repair', methods=['POST'])
+@app.route('/admin/calibration-center/repair/<int:source_file_id>', methods=['POST'])
+@login_required
+def calibration_center_repair_apply(source_file_id):
+    """Apply one CSRF-protected historical Calibration Report repair."""
+    if not can_access_calibration_center():
+        return denied('Only authorized system administrators can access Calibration Center.')
+    try:
+        result = _calibration_report_apply_historical_repair(source_file_id)
+    except Exception as apply_error:
+        result = {
+            'status': 'failed',
+            'repair_id': _calibration_report_repair_id(source_file_id),
+            'source_file_id': clean_int(source_file_id),
+            'reason': clean_str(str(apply_error))[:500] or 'Calibration Report repair failed.',
+        }
+    return no_store_jsonify(result)
+
+
 def calibration_report_certificate_cc_group_for_branch(branch):
     """Select Calibration Center Settings CC from the calibration creator's branch."""
     normalized = str(branch or '').strip().lower()
@@ -20885,9 +21605,9 @@ def save_tsr_knowledge_entry():
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
-    # Navigation shell bump: medical-service-pwa-offline-navigation-v165-calendar-date-navigation
-    # -> v166 so installed clients refresh PM history and schedule-linking controls.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v166-inventory-pm-history';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
+    # Navigation shell bump: v166 PM history -> v167 Calibration Report units and repair center.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v167-calibration-report-units';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -20911,7 +21631,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=25',
+  '/static/js/app-calibration-report.js?v=26',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

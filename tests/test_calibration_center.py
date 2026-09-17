@@ -144,6 +144,16 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertIn("@app.route('/admin/calibration-center/<int:approval_id>/email'", APP_SOURCE)
         self.assertIn("@app.route('/admin/calibration-center/<int:approval_id>/email-preview'", APP_SOURCE)
         self.assertIn("@app.route('/admin/calibration-center/<int:approval_id>/send-email'", APP_SOURCE)
+        self.assertIn("@app.route('/admin/calibration-center/repair-preview'", APP_SOURCE)
+        self.assertIn("@app.route('/admin/calibration-center/<int:source_file_id>/repair'", APP_SOURCE)
+        repair_preview_block = APP_SOURCE.split("@app.route('/admin/calibration-center/repair-preview'", 1)[1].split(
+            "@app.route('/admin/calibration-center/<int:source_file_id>/repair'", 1
+        )[0]
+        repair_apply_block = APP_SOURCE.split("@app.route('/admin/calibration-center/<int:source_file_id>/repair'", 1)[1].split(
+            "def calibration_report_certificate_cc_group_for_branch", 1
+        )[0]
+        self.assertNotIn('@csrf.exempt', repair_preview_block)
+        self.assertNotIn('@csrf.exempt', repair_apply_block)
 
     def test_center_query_is_current_approved_only_and_paginated(self):
         self.assertIn("CalibrationCertificateApproval.status == 'Approved'", APP_SOURCE)
@@ -186,6 +196,11 @@ class CalibrationCenterContracts(unittest.TestCase):
             'calibration-center-preview-creator-copy',
             'Creator email unavailable',
             'Confirm',
+            'Historical Report Repair',
+            'Repair All',
+            'REPAIR ALL',
+            'repair-preview',
+            'repairRunning',
         ):
             self.assertIn(marker, template)
 

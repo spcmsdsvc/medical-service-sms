@@ -1,5 +1,173 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Report Page 3 units, defaults, and historical artifact repair
+
+**Status:** Executed — uncommitted
+**Approved:** 2026-09-17 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-17 — implementation is authorized for this bounded package only.
+**Detailed:** 2026-09-17.
+
+### Context and intended outcome
+
+Calibration Report Page 3 currently labels both Dose columns as mGy even though the existing
+entered values are in uGy, labels Small measured exposure time as seconds even though those
+values are in milliseconds, and defaults a new Large focal spot to 1.0 instead of 1.2. Correct
+the editor, supplied DOCX template, and generated-report compatibility contract without changing
+historical numeric values. New blank reports use Small 0.6 and Large 1.2; explicit saved focal
+values, including historical 1.0, remain unchanged.
+
+Existing generated DOCX/PDF report revisions need a guarded, administrator-only historical repair.
+The repair recognizes the generated DOCX table structure, changes only the two Dose headings and
+Small measured-time heading, preserves all numeric values/focal sizes and artifact metadata, and
+generates and validates a replacement PDF before any source or linked-PDF overwrite. Existing
+ShiftFile IDs, filenames, approval/delivery state, email history, links, and signatures remain
+stable. Failures restore originals and are reported; repeated runs are idempotent.
+
+### Decisions and authorized scope
+
+1. The client schema advances from version 4 to version 5. Exposure rows use `dose_ugy`; a raw
+   legacy `dose_mgy` field is copied/read in memory unchanged and is never mutated or treated as
+   a new canonical field. Explicit saved `focal_sizes.large` values are retained; only blank or
+   absent legacy values fall back to 1.2.
+2. The official DOCX is edited only for both Dose headings, Small measured-time heading, and the
+   blank/new Large focal-size value 1.2. Geometry, layout, furniture, signatures, relationships,
+   media, and page breaks remain intact. The supplied template remains the source of truth.
+3. Historical repair is fail-closed: only recognized generated Calibration Report DOCX sources
+   with the expected generated-report marker and recognized generated-report table structure are
+   eligible. It changes heading text in both focal tables and the Small measured-time heading
+   only; values, focal-size text, and all other XML are preserved. A valid replacement PDF is
+   produced before replacing either managed-storage object. If a linked PDF is absent, create it
+   through the existing conversion linkage; never create duplicate ShiftFiles when a valid linkage
+   exists.
+4. Repair audit data uses safe metadata only: version, before/after SHA-256 hashes, timestamp,
+   administrator identity, stable source/PDF IDs, and outcome. No report values, private payloads,
+   secrets, or customer data are copied into audit text. ActivityLog and the existing append-only
+   audit metadata both record successful and failed outcomes as appropriate.
+5. Calibration Center remains strict-admin only. Its preview inventories every recognized
+   generated report revision (including superseded/non-current revisions) and classifies each as
+   repairable, already repaired, or blocked with stable IDs and reasons. One-report apply is
+   CSRF-protected. Repair All is a typed-confirmation, sequential/resumable client flow that
+   submits one report at a time and skips repaired rows when reopened.
+
+### Numbered execution steps
+
+1. **Builder preflight and records.** Read all applicable instructions, the complete change log,
+   current plan records, Git status, affected calibration source/tests/configuration, and the PDF
+   skill. Preserve `scheduler.db`, handoff artifacts, `.claude/`, `output/`, `tmp/`, unrelated
+   worktree changes, and all existing ShiftFile/storage metadata. Record this plan at the top of
+   `plans.md` as In progress and append implementation-start facts to the current
+   `2026-09-17` section of `changes.md` before behavior edits.
+2. **Editor contract and compatibility.** In `static/js/app-calibration-report.js`, bump the
+   schema, replace canonical `dose_mgy` with `dose_ugy`, retain raw legacy `dose_mgy` unchanged
+   when present, update accessible/editor headings, and make new/absent-legacy Large focal size
+   default to 1.2 while retaining explicit saved values. Update focused editor/template tests for
+   exact units, migration behavior, and historical 1.0 preservation.
+3. **Official template edit and artifact QA.** Immediately before the first DOCX/PDF authoring
+   edit, run exactly once `node container_tools/mark_artifact_operation_started.mjs
+   --operation-kind edit --expected-output-count 1 --output-format pdf` using the bundled runtime.
+   Edit only the four approved Page 3 heading/default targets in
+   `static/templates/calibration-report/calibration-report-template.docx`, then inspect the
+   package/XML and representative rendered PDF page 3 with the PDF workflow. Preserve all table,
+   relationship, media, footer/header, signature, and page-break structure.
+4. **Historical repair primitives and safe storage.** In `app.py`, add fail-closed recognition of
+   generated Calibration Report DOCX table structure, heading-only XML repair, replacement PDF
+   conversion/validation, managed-storage read/write/restore helpers, stable source/PDF linkage,
+   and idempotency markers/version checks. Preserve ShiftFile IDs, filenames, approval/delivery
+   fields, `last_emailed_at`, payload markers, and email manifest hashes. No owner or production
+   database repair run is authorized.
+5. **Admin repair APIs and Center UI.** Extend the strict admin Calibration Center with a no-write
+   preview of all recognized generated revisions, repairable/already-repaired/blocked states,
+   stable identifiers, reasons, totals, and warning copy for approved/emailed artifacts. Add one
+   CSRF-protected single-report apply endpoint returning `repaired`, `already_repaired`, or
+   `failed`, with rollback and audit results. Add a responsive repair panel and typed Repair All
+   confirmation; execute sequential single-report requests, remain resumable, and skip rows that
+   reopened as repaired. Keep existing approval, preview, download, and email behavior intact.
+6. **Public and delivery contracts.** Preserve the public `dose_ugy`/legacy-readable contract and
+   stable repair endpoint identifiers. Bump the calibration script query and embedded service
+   worker marker monotonically, keep the shell assets intact, and add a user-facing release item
+   in `static/changelog/releases.json`.
+7. **Fail-first, focused, and artifact verification.** Add focused coverage for exact editor and
+   template units/defaults, legacy migration, historical 1.0 preservation, DOCX repair variants
+   and header-only diffs, strict admin/CSRF/preview no-write/idempotency/stable IDs/metadata/audit/
+   rollback, approval/email manifest invalidation, and representative DOCX-to-PDF page-3 output.
+   Run smallest reliable calibration/PDF/Center/approval/email checks first, then related
+   offline/cache/changelog checks, proportional full discovery, Python/Jinja/JavaScript/JSON/
+   OOXML/diff checks, and PDF rendering/visual inspection. Report exact pass/fail/skip totals and
+   truthful unavailable checks.
+8. **Closeout.** Update this plan to `Executed — uncommitted` with actual files, behavior,
+   verification totals, failures/skips, deviations, and limitations. Append factual implementation
+   and verification bullets to the same-date `changes.md` section. Do not commit, push, deploy,
+   change Railway variables, modify production/owner data, use browser/Codex UI automation, or
+   touch protected artifacts.
+
+### Deliberately excluded
+
+No repair execution against `scheduler.db`, Railway, production storage/database, or owner data;
+no deletion/recreation of ShiftFiles; no changes to approval decisions, signatures, email content,
+or ordinary attachments; no broad DOCX redesign or numeric/value normalization; no unrelated
+Calibration Center feature changes; no browser/Codex UI automation; and no commit, push, deploy,
+Railway operation, or destructive migration.
+
+### Verification and completion criteria
+
+The editor and official template show Dose (uGy), Small Measured Exposure Time (msec), and new
+Large focal size 1.2 while explicit legacy values remain. Historical repair changes only approved
+headings, produces a readable replacement PDF before overwrite, preserves IDs/names/statuses/
+email history/links, records safe audit metadata, rolls back on conversion/storage failure, and is
+idempotent. Strict-admin preview/apply/Repair All contracts expose stable per-report outcomes,
+CSRF protection, no-write preview behavior, stale manifest invalidation, and resumable progress.
+Protected dirty paths remain untouched and all verification results are recorded truthfully.
+
+### Execution outcome
+
+Implemented on 2026-09-17 in the authorized working tree, without commit, push, deployment,
+Railway/production access, owner-data repair, browser automation, or changes to protected
+artifacts. The implementation stayed within this package; generated-report recognition was
+deliberately extended to valid four-table compact and one-focal-table revisions because those
+are produced when the browser removes an unselected focal table, while numeric values and focal
+size text remain untouched.
+
+- `static/js/app-calibration-report.js`: advanced the calibration schema to 5; canonicalized
+  exposure data on `dose_ugy`; retained raw legacy `dose_mgy` unchanged in memory; corrected
+  Page 3 Dose, Dose Rate, and measured-time labels; defaulted blank/absent-legacy focal sizes to
+  Small `0.6` and Large `1.2`; retained explicit saved values such as historical `1.0`.
+- `static/templates/calibration-report/calibration-report-template.docx`: changed only the two
+  Dose headings, Small measured-time heading, and blank Large focal-size text. Package inspection
+  found 26 parts, 25/25 unchanged non-document parts, one `sectPr`, five tables, and exactly four
+  intended visible text changes. Resulting SHA-256 is
+  `53749ae89a35a8387b89d45725cd755a5ceb7cadc358e447bbbd3d3eed24a26b`.
+- `app.py`: added fail-closed generated-DOCX recognition and heading-only repair, valid-PDF
+  conversion/validation before managed-storage replacement, rollback, idempotent version/hash
+  markers, stable source/PDF identifiers, preserved ShiftFile and delivery metadata, email
+  manifest invalidation, safe audit metadata, ActivityLog outcomes, and strict-admin preview and
+  CSRF-protected single-report repair endpoints. Missing linked PDFs use the existing linkage;
+  existing IDs and filenames are preserved.
+- `templates/calibration_center.html`: added no-store repair inventory, repairable/already
+  repaired/blocked totals and reasons, approved/emailed warning, failure progress, and typed
+  sequential/resumable Repair All requests that skip already-repaired reports.
+- `templates/offline_tsr.html`, the embedded service worker in `app.py`, and
+  `static/changelog/releases.json`: advanced calibration script/cache markers monotonically and
+  recorded the user-facing release. Focused source and regression tests were expanded for the
+  public compatibility contract, repair variants, metadata/rollback/audit, CSRF/admin gates,
+  idempotency, stale previews, and stable identifiers.
+
+Verification completed:
+
+- `tests.test_calibration_report_pdf`, `tests.test_calibration_center`, and
+  `tests.test_tsr_calibration_report`: 41/41 passed (10 PDF, 13 Center, 18 editor/report).
+- Related approval/email/offline/cache suites: 179/179 passed.
+- Changelog coverage/workflow suites: 43 passed, 1 expected skip (44 total), exit 0.
+- Python AST, JavaScript `--check`, Jinja template compilation, release-manifest JSON parsing,
+  OOXML package comparison, and `git diff --check`: passed.
+- The required artifact-operation marker was run exactly once before the DOCX edit. Poppler was
+  available, but no LibreOffice/Writer/other DOCX-to-PDF converter is installed in this
+  environment, so representative Page 3 PDF rendering/visual QA could not be executed; no
+  claim of that unavailable check is made. The conversion and PDF validation paths were covered
+  with isolated valid-PDF test fixtures.
+
+No historical repair was run against `scheduler.db`, Railway, production storage, or owner data;
+the pre-existing protected dirty paths remain untouched and all changes are uncommitted.
+
 ## PM Schedule Linking and Permanent Machine History
 
 **Status:** Executed — implementation commit `1d3bf99`; publication authorized by the owner.
