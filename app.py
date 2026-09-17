@@ -2586,8 +2586,8 @@ class InventoryPmVisit(db.Model):
     The fixed brand column is intentional. Genoray and Vieworks inventory share the
     PM workflow shape but must never resolve one another's serial numbers. A visit
     keeps only a nullable Shift id; schedule details and files are read live when a
-    PM page is requested so reopening or editing a schedule cannot leave stale PM
-    status data behind.
+    PM page is requested.  Once a linked schedule is completed, immutable completion
+    fields preserve the machine-history record even if that Shift later changes.
     """
     __tablename__ = 'inventory_pm_visit'
 
@@ -2601,6 +2601,11 @@ class InventoryPmVisit(db.Model):
     # A stable opaque key groups only rows created in the same recurring plan.
     # Nullable keeps legacy single visits readable without inferring history from dates.
     plan_key = db.Column(db.String(64), nullable=True, index=True)
+    # Completion is intentionally stored on the PM visit rather than derived forever
+    # from Shift.  This keeps machine history stable when a calendar record is later
+    # reopened, edited, or removed.
+    completed_at = db.Column(db.DateTime, nullable=True, index=True)
+    completion_snapshot_json = db.Column(db.Text, nullable=True)
     shift_id = db.Column(
         db.Integer,
         db.ForeignKey('shift.id', ondelete='SET NULL'),
@@ -3402,6 +3407,14 @@ def ensure_inventory_pm_visit_table():
                 connection.exec_driver_sql(
                     "ALTER TABLE inventory_pm_visit ADD COLUMN plan_key VARCHAR(64)"
                 )
+            if 'completed_at' not in columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE inventory_pm_visit ADD COLUMN completed_at DATETIME"
+                )
+            if 'completion_snapshot_json' not in columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE inventory_pm_visit ADD COLUMN completion_snapshot_json TEXT"
+                )
 
             connection.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS ix_inventory_pm_visit_brand_equipment_target "
@@ -3414,6 +3427,10 @@ def ensure_inventory_pm_visit_table():
             connection.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS ix_inventory_pm_visit_plan_key "
                 "ON inventory_pm_visit (plan_key)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_inventory_pm_visit_completed_at "
+                "ON inventory_pm_visit (completed_at)"
             )
 
             duplicate_rows = connection.exec_driver_sql(
@@ -3434,6 +3451,11 @@ def ensure_inventory_pm_visit_table():
                     "ON inventory_pm_visit (brand, equipment_serial, target_date)"
                 )
         _inventory_pm_visit_table_ready = True
+        # Existing PM rows may point at schedules that were already completed before
+        # immutable history existed.  Backfill once per additive ensure call; the
+        # helper is deliberately best-effort per row so one stale schedule cannot
+        # prevent the application from starting.
+        backfill_inventory_pm_completion_history()
     except Exception as table_error:
         print(f"[InventoryPM] Unable to ensure inventory_pm_visit table: {table_error}", flush=True)
         raise
@@ -3539,11 +3561,6 @@ def inventory_pm_schedule_type(shift):
     return (clean_str(getattr(shift, 'schedule_type', None)) or 'service').strip().lower()
 
 
-def inventory_pm_normalized_product_name(value):
-    """Normalize standalone equipment and Product names for schedule matching."""
-    return (clean_str(value) or '').strip().casefold()
-
-
 def inventory_pm_schedule_options_for_item(item, target_date=None):
     """List eligible PM service schedules in the visit's exact calendar month."""
     if not item or not item.client_id or not isinstance(target_date, date):
@@ -3552,9 +3569,6 @@ def inventory_pm_schedule_options_for_item(item, target_date=None):
     next_month = add_inventory_pm_months(month_start, 1)
     start_bound = datetime.combine(month_start, datetime.min.time())
     end_bound = datetime.combine(next_month, datetime.min.time())
-    expected_product_name = inventory_pm_normalized_product_name(getattr(item, 'name', None))
-    if not expected_product_name:
-        return []
     candidates = (
         Shift.query
         .options(joinedload(Shift.client), joinedload(Shift.product), joinedload(Shift.engineer))
@@ -3571,8 +3585,6 @@ def inventory_pm_schedule_options_for_item(item, target_date=None):
         if (
             inventory_pm_schedule_type(shift) == 'service'
             and inventory_pm_schedule_is_pm(shift)
-            and getattr(shift, 'product', None)
-            and inventory_pm_normalized_product_name(getattr(shift.product, 'name', None)) == expected_product_name
         )
     ]
 
@@ -3592,6 +3604,7 @@ def inventory_pm_schedule_to_dict(shift):
     return {
         'id': shift.id,
         'shift_id': shift.id,
+        'schedule_id': shift.id,
         'date': shift.start_time.date().isoformat() if shift.start_time else '',
         'start_time': shift.start_time.isoformat() if shift.start_time else '',
         'end_time': shift.end_time.isoformat() if shift.end_time else '',
@@ -3602,15 +3615,17 @@ def inventory_pm_schedule_to_dict(shift):
         'client_id': shift.client_id,
         'client_name': shift.client.name if shift.client else 'N/A',
         'product_id': shift.product_id or '',
+        'serial_number': shift.product_id or '',
         'product_name': shift.product.name if shift.product else '',
         'engineer_ids': engineer_ids,
         'engineer_names': engineer_names,
         'engineers': ', '.join(engineer_names) if engineer_names else '',
+        'engineer': ', '.join(engineer_names) if engineer_names else '',
     }
 
 
 def validate_inventory_pm_schedule_link(item, shift_id, target_date):
-    """Validate a new or replacement link against the item's current month and name."""
+    """Validate a new or replacement link against the item's owner and visit month."""
     if not isinstance(target_date, date):
         return None, 'A visit target date is required to link a schedule.'
     shift_id = clean_int(shift_id)
@@ -3633,7 +3648,7 @@ def validate_inventory_pm_schedule_link(item, shift_id, target_date):
     if shift not in inventory_pm_schedule_options_for_item(item, target_date):
         return None, (
             'The selected schedule must be a PM service schedule in the same month as the visit '
-            'and use the equipment Product name.'
+            'and belong to the equipment owner.'
         )
     return shift, None
 
@@ -3672,11 +3687,226 @@ def inventory_pm_visible_file_links(shift):
     return links
 
 
+def inventory_pm_snapshot_file_metadata(shift, enforce_permissions=True):
+    """Capture stable file identities without copying attachment data."""
+    if not shift:
+        return []
+    try:
+        if enforce_permissions:
+            # Completion normally happens inside a request.  A migration/backfill
+            # has no request user, so it records non-private file metadata and the
+            # history serializer still applies the current request's link guard.
+            if not has_request_context() or not user_can_view_shift_tsr_archive(shift, 'all'):
+                return []
+            # Calendar and online-TSR completion can attach a file immediately before
+            # this snapshot while the parent collection is already loaded.  Refresh
+            # that relationship so the newly available file is not omitted.
+            db.session.expire(shift, ['files'])
+            visible_files = get_user_visible_shift_file_records(shift)
+        else:
+            db.session.expire(shift, ['files'])
+            visible_files = get_user_visible_shift_file_records(shift)
+    except Exception as file_error:
+        print(f'[InventoryPM] Completion file metadata skipped: {file_error}', flush=True)
+        return []
+
+    files = []
+    for file_record in visible_files:
+        display_name = get_shift_file_display_name(file_record) or file_record.filename
+        extension = schedule_attachment_extension(display_name)
+        if extension not in SCHEDULE_ATTACHMENT_EXTENSIONS and not is_tsr_filename(display_name):
+            continue
+        file_id = clean_int(getattr(file_record, 'id', None))
+        if not file_id:
+            continue
+        files.append({
+            'id': file_id,
+            'name': display_name,
+            'filename': display_name,
+        })
+    return files
+
+
+def inventory_pm_completion_snapshot(shift, enforce_file_permissions=True):
+    """Build the immutable, display-safe snapshot for a completed schedule."""
+    if not shift:
+        return None
+    try:
+        engineers = get_shift_engineer_records(shift)
+    except Exception:
+        engineers = []
+    engineer_ids = [engineer.id for engineer in engineers if engineer]
+    engineer_names = [engineer.name for engineer in engineers if engineer and engineer.name]
+    if not engineer_ids and getattr(shift, 'engineer_id', None):
+        engineer_ids = [shift.engineer_id]
+    if not engineer_names and getattr(shift, 'engineer', None):
+        engineer_names = [shift.engineer.name]
+    schedule_date = shift.start_time.date().isoformat() if getattr(shift, 'start_time', None) else ''
+    return {
+        'schedule_id': clean_int(getattr(shift, 'id', None)),
+        'date': schedule_date,
+        'schedule_date': schedule_date,
+        'actual_date': schedule_date,
+        'start_time': shift.start_time.isoformat() if getattr(shift, 'start_time', None) else '',
+        'end_time': shift.end_time.isoformat() if getattr(shift, 'end_time', None) else '',
+        'title': clean_str(getattr(shift, 'title', None)) or '',
+        'task': clean_str(getattr(shift, 'title', None)) or '',
+        'status': 'Completed',
+        'client_id': clean_int(getattr(shift, 'client_id', None)),
+        'client_name': getattr(getattr(shift, 'client', None), 'name', None) or 'N/A',
+        'product_id': clean_str(getattr(shift, 'product_id', None)) or '',
+        'product_name': getattr(getattr(shift, 'product', None), 'name', None) or '',
+        'engineer_ids': engineer_ids,
+        'engineer_names': engineer_names,
+        'engineers': ', '.join(engineer_names) if engineer_names else '',
+        'files': inventory_pm_snapshot_file_metadata(
+            shift, enforce_permissions=enforce_file_permissions
+        ),
+        'captured_at': get_manila_time().isoformat(),
+    }
+
+
+def inventory_pm_capture_completion(visit, shift=None, force_completed=False, enforce_file_permissions=True):
+    """Capture one linked visit exactly once; callers own the surrounding transaction."""
+    if not visit or getattr(visit, 'completed_at', None):
+        return False
+    shift = shift or (
+        db.session.get(Shift, clean_int(getattr(visit, 'shift_id', None)))
+        if getattr(visit, 'shift_id', None) else None
+    )
+    if not shift:
+        return False
+    is_completed = (clean_str(getattr(shift, 'status', None)) or '').casefold() == 'completed'
+    if not force_completed and not is_completed:
+        return False
+    snapshot = inventory_pm_completion_snapshot(
+        shift, enforce_file_permissions=enforce_file_permissions
+    )
+    if not snapshot:
+        return False
+    completed_at = get_manila_time()
+    visit.completed_at = completed_at
+    visit.completion_snapshot_json = json.dumps(snapshot, ensure_ascii=False)
+    visit.updated_at = completed_at
+    return True
+
+
+def capture_inventory_pm_histories_for_shifts(
+    shifts, force_completed=False, enforce_file_permissions=True
+):
+    """Capture every PM visit linked to the supplied schedule rows."""
+    shift_map = {
+        clean_int(getattr(shift, 'id', None)): shift
+        for shift in (shifts or [])
+        if clean_int(getattr(shift, 'id', None))
+    }
+    if not shift_map:
+        return 0
+    try:
+        rows = InventoryPmVisit.query.filter(
+            InventoryPmVisit.shift_id.in_(list(shift_map)),
+            InventoryPmVisit.completed_at.is_(None),
+        ).all()
+    except Exception as history_error:
+        # PM is additive; a transient/unmigrated PM table must never block an
+        # otherwise valid Calendar or online TSR completion.
+        print(f'[InventoryPM] Completion-history capture skipped: {history_error}', flush=True)
+        return 0
+    captured = 0
+    for visit in rows:
+        if inventory_pm_capture_completion(
+            visit,
+            shift=shift_map.get(clean_int(visit.shift_id)),
+            force_completed=force_completed,
+            enforce_file_permissions=enforce_file_permissions,
+        ):
+            captured += 1
+    return captured
+
+
+def backfill_inventory_pm_completion_history():
+    """Backfill links that were already completed before snapshot columns existed."""
+    try:
+        rows = InventoryPmVisit.query.filter(
+            InventoryPmVisit.shift_id.isnot(None),
+            InventoryPmVisit.completed_at.is_(None),
+        ).all()
+        captured = 0
+        for visit in rows:
+            shift = db.session.get(Shift, clean_int(visit.shift_id))
+            if shift and inventory_pm_capture_completion(
+                visit,
+                shift=shift,
+                enforce_file_permissions=False,
+            ):
+                captured += 1
+        if captured:
+            db.session.commit()
+    except Exception as backfill_error:
+        db.session.rollback()
+        print(f'[InventoryPM] Completion-history backfill skipped: {backfill_error}', flush=True)
+
+
+def inventory_pm_load_completion_snapshot(visit):
+    """Parse a stored snapshot, tolerating a manually damaged legacy value."""
+    raw = getattr(visit, 'completion_snapshot_json', None)
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+        return value if isinstance(value, dict) else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def inventory_pm_history_file_links(snapshot, shift=None):
+    """Return current permitted links, or unavailable metadata for old files."""
+    metadata = snapshot.get('files') if isinstance(snapshot, dict) else []
+    if not isinstance(metadata, list):
+        return []
+    visible_by_id = {}
+    if shift:
+        try:
+            visible_by_id = {
+                clean_int(link.get('id')): link
+                for link in inventory_pm_visible_file_links(shift)
+                if clean_int(link.get('id'))
+            }
+        except Exception:
+            visible_by_id = {}
+    links = []
+    for file_metadata in metadata:
+        if not isinstance(file_metadata, dict):
+            continue
+        file_id = clean_int(file_metadata.get('id'))
+        if not file_id:
+            continue
+        current = visible_by_id.get(file_id)
+        if current:
+            link = dict(current)
+            link['available'] = True
+            links.append(link)
+        else:
+            name = clean_str(file_metadata.get('name') or file_metadata.get('filename')) or 'Schedule file'
+            links.append({
+                'id': file_id,
+                'name': name,
+                'filename': name,
+                'preview_url': '',
+                'download_url': '',
+                'uploaded_at': '',
+                'available': False,
+                'unavailable_reason': 'File is no longer available or you do not have permission to view it.',
+            })
+    return links
+
+
 def inventory_pm_visit_to_dict(visit, item=None):
-    """Serialize a PM visit with request-time schedule status, staff, and files."""
+    """Serialize a PM visit using immutable history when it has been completed."""
     brand = normalize_inventory_pm_brand(getattr(visit, 'brand', None))
     item = item or resolve_inventory_pm_item(brand, getattr(visit, 'equipment_serial', None))
-    shift = db.session.get(Shift, clean_int(getattr(visit, 'shift_id', None))) if getattr(visit, 'shift_id', None) else None
+    original_shift_id = clean_int(getattr(visit, 'shift_id', None))
+    shift = db.session.get(Shift, original_shift_id) if original_shift_id else None
     if shift:
         try:
             # Loading through the normal query keeps dynamic file/engineer reads fresh
@@ -3690,61 +3920,106 @@ def inventory_pm_visit_to_dict(visit, item=None):
         except Exception:
             pass
 
+    snapshot = inventory_pm_load_completion_snapshot(visit)
+    is_history = bool(getattr(visit, 'completed_at', None) and snapshot)
     target_date = getattr(visit, 'target_date', None)
-    schedule_status = clean_str(getattr(shift, 'status', None)) if shift else ''
-    is_completed = bool(shift and schedule_status and schedule_status.casefold() == 'completed')
-    derived_status = 'Completed' if is_completed else (
-        'Overdue' if target_date and target_date < get_manila_today() else 'Planned'
-    )
-    actual_date = shift.start_time.date().isoformat() if is_completed and shift.start_time else ''
+    item_serial = getattr(visit, 'equipment_serial', None) or ''
+    item_owner = getattr(item, 'owner', None) if item else None
 
-    engineer_ids = []
-    engineer_names = []
-    if shift:
-        try:
-            engineers = get_shift_engineer_records(shift)
-        except Exception:
-            engineers = []
-        engineer_ids = [engineer.id for engineer in engineers if engineer]
-        engineer_names = [engineer.name for engineer in engineers if engineer and engineer.name]
-        if not engineer_ids and getattr(shift, 'engineer_id', None):
-            engineer_ids = [shift.engineer_id]
-        if not engineer_names and getattr(shift, 'engineer', None):
-            engineer_names = [shift.engineer.name]
+    if is_history:
+        schedule_status = 'Completed'
+        derived_status = 'Completed'
+        actual_date = clean_str(snapshot.get('actual_date') or snapshot.get('date')) or ''
+        engineer_ids = list(snapshot.get('engineer_ids') or [])
+        engineer_names = list(snapshot.get('engineer_names') or [])
+        file_links = inventory_pm_history_file_links(snapshot, shift)
+        snapshot_shift_id = clean_int(snapshot.get('schedule_id')) or original_shift_id
+        schedule_payload = {
+            'id': snapshot_shift_id,
+            'date': clean_str(snapshot.get('date') or snapshot.get('schedule_date')) or '',
+            'start_time': clean_str(snapshot.get('start_time')) or '',
+            'end_time': clean_str(snapshot.get('end_time')) or '',
+            'title': clean_str(snapshot.get('title') or snapshot.get('task')) or '',
+            'task': clean_str(snapshot.get('task') or snapshot.get('title')) or '',
+            'status': 'Completed',
+            'client_id': clean_int(snapshot.get('client_id')),
+            'client_name': clean_str(snapshot.get('client_name')) or 'N/A',
+            'product_id': clean_str(snapshot.get('product_id')) or '',
+            'product_name': clean_str(snapshot.get('product_name')) or '',
+            'engineer_ids': engineer_ids,
+            'engineer_names': engineer_names,
+            'engineers': ', '.join(engineer_names) if engineer_names else '',
+            'files': file_links,
+            'url': (
+                url_for('timeline_page', shift_id=shift.id)
+                if shift and 'timeline_page' in app.view_functions else '/timeline'
+            ),
+        }
+        history_client_id = clean_int(snapshot.get('client_id'))
+        owner_mismatch = bool(history_client_id and history_client_id != getattr(item, 'client_id', None))
+        product_id = schedule_payload['product_id']
+        product_name = schedule_payload['product_name']
+        resolved_linked_schedule_id = snapshot_shift_id
+    else:
+        schedule_status = clean_str(getattr(shift, 'status', None)) if shift else ''
+        is_completed = bool(shift and schedule_status and schedule_status.casefold() == 'completed')
+        derived_status = 'Completed' if is_completed else (
+            'Overdue' if target_date and target_date < get_manila_today() else 'Planned'
+        )
+        actual_date = shift.start_time.date().isoformat() if is_completed and shift.start_time else ''
 
-    current_client_id = getattr(item, 'client_id', None) if item else None
-    shift_client_id = getattr(shift, 'client_id', None) if shift else None
-    owner_mismatch = bool(shift and current_client_id != shift_client_id)
+        engineer_ids = []
+        engineer_names = []
+        if shift:
+            try:
+                engineers = get_shift_engineer_records(shift)
+            except Exception:
+                engineers = []
+            engineer_ids = [engineer.id for engineer in engineers if engineer]
+            engineer_names = [engineer.name for engineer in engineers if engineer and engineer.name]
+            if not engineer_ids and getattr(shift, 'engineer_id', None):
+                engineer_ids = [shift.engineer_id]
+            if not engineer_names and getattr(shift, 'engineer', None):
+                engineer_names = [shift.engineer.name]
+
+        current_client_id = getattr(item, 'client_id', None) if item else None
+        shift_client_id = getattr(shift, 'client_id', None) if shift else None
+        owner_mismatch = bool(shift and current_client_id != shift_client_id)
+        file_links = inventory_pm_visible_file_links(shift) if shift else []
+        schedule_payload = None
+        product_id = ''
+        product_name = ''
+        resolved_linked_schedule_id = shift.id if shift else None
+        if shift:
+            product_id = shift.product_id or ''
+            product_name = shift.product.name if shift.product else ''
+            schedule_payload = {
+                'id': shift.id,
+                'date': shift.start_time.date().isoformat() if shift.start_time else '',
+                'start_time': shift.start_time.isoformat() if shift.start_time else '',
+                'end_time': shift.end_time.isoformat() if shift.end_time else '',
+                'title': shift.title or '',
+                'task': shift.title or '',
+                'status': schedule_status,
+                'client_id': shift.client_id,
+                'client_name': shift.client.name if shift.client else 'N/A',
+                'product_id': product_id,
+                'product_name': product_name,
+                'engineer_ids': engineer_ids,
+                'engineer_names': engineer_names,
+                'engineers': ', '.join(engineer_names) if engineer_names else '',
+                'files': file_links,
+                'url': url_for('timeline_page', shift_id=shift.id) if 'timeline_page' in app.view_functions else '/timeline',
+            }
+
     mismatch_warning = (
         'The equipment owner changed after this schedule was linked. Review the historical schedule owner before using it.'
         if owner_mismatch else ''
     )
-    file_links = inventory_pm_visible_file_links(shift) if shift else []
-    item_serial = getattr(visit, 'equipment_serial', None) or ''
-    item_owner = getattr(item, 'owner', None) if item else None
     month_key = target_date.strftime('%Y-%m') if target_date else ''
     month_label = target_date.strftime('%B %Y') if target_date else ''
-    schedule_payload = None
-    if shift:
-        schedule_payload = {
-            'id': shift.id,
-            'date': shift.start_time.date().isoformat() if shift.start_time else '',
-            'start_time': shift.start_time.isoformat() if shift.start_time else '',
-            'end_time': shift.end_time.isoformat() if shift.end_time else '',
-            'title': shift.title or '',
-            'task': shift.title or '',
-            'status': schedule_status,
-            'client_id': shift.client_id,
-            'client_name': shift.client.name if shift.client else 'N/A',
-            'product_id': shift.product_id or '',
-            'product_name': shift.product.name if shift.product else '',
-            'engineer_ids': engineer_ids,
-            'engineer_names': engineer_names,
-            'files': file_links,
-            'url': url_for('timeline_page', shift_id=shift.id) if 'timeline_page' in app.view_functions else '/timeline',
-        }
     resolved_shift_id = shift.id if shift else None
-
+    historical_schedule_id = clean_int(snapshot.get('schedule_id')) if snapshot else None
     return {
         'id': visit.id,
         'brand': brand,
@@ -3772,16 +4047,23 @@ def inventory_pm_visit_to_dict(visit, item=None):
         'engineer_ids': engineer_ids,
         'engineer_names': engineer_names,
         'engineers': ', '.join(engineer_names) if engineer_names else '',
+        'product_id': product_id,
+        'product_name': product_name,
         'shift_id': resolved_shift_id,
-        'linked_schedule_id': resolved_shift_id,
+        'linked_schedule_id': historical_schedule_id or resolved_linked_schedule_id,
         'missing_shift_id': (
-            clean_int(getattr(visit, 'shift_id', None)) if getattr(visit, 'shift_id', None) and not shift else None
+            original_shift_id if original_shift_id and not shift else
+            historical_schedule_id if is_history and not shift else None
         ),
         'schedule': schedule_payload,
         'linked_schedule': schedule_payload,
         'owner_mismatch': owner_mismatch,
         'mismatch_warning': mismatch_warning,
         'warning': mismatch_warning,
+        'is_history': is_history,
+        'completed_at': visit.completed_at.isoformat() if getattr(visit, 'completed_at', None) else '',
+        'completion_snapshot': snapshot,
+        'history_snapshot': snapshot,
         'cadence_rebuild': inventory_pm_rebuild_metadata(visit),
         'files': file_links,
         'file_links': file_links,
@@ -12945,6 +13227,10 @@ def complete_schedules_for_online_tsr(shift, completion_scope='linked_all'):
         if (linked_shift.status or '') != 'Completed':
             linked_shift.status = 'Completed'
         completed.append(linked_shift.id)
+    # PM history is captured in the same transaction as the TSR completion so a
+    # successful online save cannot leave a completed schedule without its machine
+    # record.  The caller commits the surrounding TSR transaction.
+    capture_inventory_pm_histories_for_shifts(shifts)
     return sorted(set(completed))
 
 
@@ -20599,9 +20885,9 @@ def save_tsr_knowledge_entry():
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
-    # Navigation shell bump: medical-service-pwa-offline-navigation-v164-calibration-eight-rows
-    # -> v165 so installed clients refresh the Calendar date-navigation controls.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v165-calendar-date-navigation';
+    # Navigation shell bump: medical-service-pwa-offline-navigation-v165-calendar-date-navigation
+    # -> v166 so installed clients refresh PM history and schedule-linking controls.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v166-inventory-pm-history';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -52994,6 +53280,11 @@ def update_shift(id):
         if saved_files:
             sync_override_files_from_parent(parent_shift, override_shift)
 
+        capture_inventory_pm_histories_for_shifts(
+            [parent_shift, override_shift],
+            force_completed=(clean_str(new_status) or '').casefold() == 'completed',
+        )
+
         eng = db.session.get(Engineer, override_engineer_id)
         log_activity(
             f"Added custom time override: {parent_shift.title} for {eng.name if eng else 'Engineer'} on {start_d.isoformat()}"
@@ -53137,6 +53428,11 @@ def update_shift(id):
         for override in linked_day_overrides:
             sync_override_shared_fields_preserve_time(override, day_shift)
 
+        capture_inventory_pm_histories_for_shifts(
+            [day_shift, *linked_day_overrides],
+            force_completed=(clean_str(new_status) or '').casefold() == 'completed',
+        )
+
         engineer_names = [
             db.session.get(Engineer, e_id).name
             for e_id in engineers
@@ -53276,6 +53572,11 @@ def update_shift(id):
             for existing_shift in existing_chain_for_fast_update:
                 sync_linked_time_overrides(existing_shift)
 
+            capture_inventory_pm_histories_for_shifts(
+                [*existing_chain_for_fast_update, *linked_overrides_for_fast_update],
+                force_completed=(clean_str(new_status) or '').casefold() == 'completed',
+            )
+
             date_label = start_d.isoformat() if start_d == end_d else f"{start_d.isoformat()} to {end_d.isoformat()}"
             if not include_weekends and has_weekend_between(start_d, end_d):
                 date_label += " (weekends skipped)"
@@ -53387,6 +53688,27 @@ def update_shift(id):
                 if collision_response:
                     return collision_response
 
+    # Capture PM links before a full-chain rebuild deletes their source rows.  Apply
+    # the submitted shared details first so a schedule completed during this edit
+    # gets the final title/client/Product labels, while retaining the exact source
+    # schedule IDs rather than substituting newly rebuilt rows.
+    completing_full_chain = (clean_str(new_status) or '').casefold() == 'completed'
+    if completing_full_chain:
+        for old_shift in old_chain:
+            old_shift.title = shift_title
+            old_shift.client_id = clean_int(payload.get('client_id'))
+            old_shift.product_id = clean_str(payload.get('product_id'))
+            old_shift.status = new_status
+        for override in linked_time_overrides:
+            override.title = shift_title
+            override.client_id = clean_int(payload.get('client_id'))
+            override.product_id = clean_str(payload.get('product_id'))
+            override.status = new_status
+    capture_inventory_pm_histories_for_shifts(
+        [*old_chain, *linked_time_overrides],
+        force_completed=completing_full_chain,
+    )
+
     for old_shift in old_chain:
         delete_shift_engineer_links(old_shift.id)
         db.session.delete(old_shift)
@@ -53455,6 +53777,11 @@ def update_shift(id):
             continue
 
         sync_override_shared_fields_preserve_time(override, new_parent)
+
+    capture_inventory_pm_histories_for_shifts(
+        [*new_shift_by_date.values(), *linked_time_overrides],
+        force_completed=(clean_str(new_status) or '').casefold() == 'completed',
+    )
 
     date_label = start_d.isoformat() if start_d == end_d else f"{start_d.isoformat()} to {end_d.isoformat()}"
     if not include_weekends and has_weekend_between(start_d, end_d):
@@ -55010,7 +55337,7 @@ def inventory_pm_detail_payload(brand, item, fiscal_year=None):
     normalized = normalize_inventory_pm_brand(brand)
     year = inventory_pm_fiscal_year(fiscal_year)
     start_date, end_date = inventory_pm_fiscal_bounds(year)
-    visits = (
+    fiscal_visits = (
         InventoryPmVisit.query
         .filter(
             InventoryPmVisit.brand == normalized,
@@ -55021,7 +55348,23 @@ def inventory_pm_detail_payload(brand, item, fiscal_year=None):
         .order_by(InventoryPmVisit.target_date.asc(), InventoryPmVisit.id.asc())
         .all()
     )
-    serialized_visits = [inventory_pm_visit_to_dict(visit, item) for visit in visits]
+    serialized_visits = [inventory_pm_visit_to_dict(visit, item) for visit in fiscal_visits]
+    planned_visits = [visit for visit in serialized_visits if not visit.get('is_history')]
+    history_rows = (
+        InventoryPmVisit.query
+        .filter(
+            InventoryPmVisit.brand == normalized,
+            InventoryPmVisit.equipment_serial == item.serial_number,
+            InventoryPmVisit.completed_at.isnot(None),
+        )
+        .order_by(
+            InventoryPmVisit.completed_at.desc(),
+            InventoryPmVisit.target_date.desc(),
+            InventoryPmVisit.id.desc(),
+        )
+        .all()
+    )
+    serialized_history = [inventory_pm_visit_to_dict(visit, item) for visit in history_rows]
     # Schedule choices are visit-specific now. The detail payload remains useful for
     # rendering the equipment, while the editor requests options with its target date.
     schedules = []
@@ -55037,6 +55380,8 @@ def inventory_pm_detail_payload(brand, item, fiscal_year=None):
         'item': inventory_pm_item_to_dict(normalized, item),
         'equipment': inventory_pm_item_to_dict(normalized, item),
         'visits': serialized_visits,
+        'planned_visits': planned_visits,
+        'history': serialized_history,
         'schedules': schedules,
         'schedule_options': schedules,
     }
@@ -55123,6 +55468,8 @@ def inventory_pm_protected_visit_to_dict(visit):
         'id': visit.id,
         'target_date': visit.target_date.isoformat() if visit.target_date else '',
         'shift_id': clean_int(getattr(visit, 'shift_id', None)),
+        'completed_at': visit.completed_at.isoformat() if getattr(visit, 'completed_at', None) else '',
+        'is_history': bool(getattr(visit, 'completed_at', None)),
     }
 
 
@@ -55132,7 +55479,7 @@ def inventory_pm_rebuild_metadata(visit):
     protected = [
         inventory_pm_protected_visit_to_dict(row)
         for row in replace_rows
-        if getattr(row, 'shift_id', None)
+        if getattr(row, 'shift_id', None) or getattr(row, 'completed_at', None)
     ]
     return {
         'selected_position': selected_index,
@@ -55169,7 +55516,7 @@ def inventory_pm_rebuild_cadence(
         protected = [
             inventory_pm_protected_visit_to_dict(row)
             for row in replace_rows
-            if getattr(row, 'shift_id', None)
+            if getattr(row, 'shift_id', None) or getattr(row, 'completed_at', None)
         ]
         if protected:
             db.session.rollback()
@@ -55181,7 +55528,8 @@ def inventory_pm_rebuild_cadence(
                 'status': 'protected',
                 'message': (
                     'Cadence cannot be rebuilt while the selected visit or a later plan visit '
-                    f'has a linked schedule: {protected_dates}. Unlink those schedules and retry.'
+                    f'has a linked schedule or completed history: {protected_dates}. '
+                    'Completed history is immutable; unlink any remaining planned schedules and retry.'
                 ),
                 'protected_visits': protected,
             }, 409
@@ -55434,6 +55782,14 @@ def inventory_pm_visit_api(brand, visit_id):
     if not item:
         return jsonify({'message': 'Equipment was not found in this inventory.'}), 404
 
+    if getattr(visit, 'completed_at', None):
+        return jsonify({
+            'success': False,
+            'status': 'protected',
+            'message': 'Completed PM history is immutable and cannot be edited, unlinked, rebuilt, or deleted.',
+            'visit_id': visit.id,
+        }), 409
+
     if request.method == 'DELETE':
         db.session.delete(visit)
         db.session.commit()
@@ -55501,6 +55857,9 @@ def inventory_pm_visit_api(brand, visit_id):
         visit.target_date = target_date
         visit.shift_id = new_shift_id
         visit.updated_at = get_manila_time()
+        if new_shift_id:
+            linked_shift = db.session.get(Shift, new_shift_id)
+            inventory_pm_capture_completion(visit, shift=linked_shift)
         db.session.commit()
     except IntegrityError as visit_error:
         db.session.rollback()

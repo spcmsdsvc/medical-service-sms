@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-17-inventory-pm-history",
+      "release_date": "2026-09-17",
+      "title": "PM Schedule Linking and Machine History",
+      "summary": "Genoray and Vieworks PM visits can link the right same-client schedule and keep a permanent completed history.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-17-inventory-pm-history-admins",
+          "category": "Inventory",
+          "description": "Genoray and Vieworks PM schedule choices now use the same-client visit month, current equipment owner, service type, and PM task while showing Product, serial, engineer, date, and schedule ID details. Completed linked visits are captured as a permanent immutable machine history with permission-checked or unavailable file metadata, including completions from Calendar and online TSR workflows.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-16-calendar-date-navigation",
       "release_date": "2026-09-16",
       "title": "Calendar Go to Date",
@@ -47,7 +65,7 @@
         {
           "item_key": "2026-09-16-inventory-pm-monitoring-admins",
           "category": "Inventory",
-      "description": "Added separate Genoray PM and Vieworks PM fiscal-year overviews and equipment details with Semi-Annual or Quarterly recurring plans, clamped month arithmetic, editable cadence with selected-onward future-plan rebuilding, earlier-history preservation, linked-visit protection, independent visit edits, live status from linked PM service schedules, exact month/client/Product-name matching, owner validation, schedule engineer and permitted file links, historical-link handling, and protected PM history.",
+      "description": "Added separate Genoray PM and Vieworks PM fiscal-year overviews and equipment details with Semi-Annual or Quarterly recurring plans, clamped month arithmetic, editable cadence with selected-onward future-plan rebuilding, earlier-history preservation, linked-visit protection, independent visit edits, live status from linked PM service schedules, exact month/client matching with Product details for administrator selection, owner validation, schedule engineer and permitted file links, historical-link handling, and protected PM history.",
           "audiences": [
             "admins"
           ],

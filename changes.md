@@ -1,5 +1,53 @@
 # Project Change Log
 
+codex changes - 2026-09-17
+
+- Began the separately authorized PM Schedule Linking and Permanent Machine History
+  implementation after the owner’s explicit `PLEASE IMPLEMENT THIS PLAN` go-ahead. Preflight
+  read the applicable project instructions, the complete 646,514-character change log, current
+  plan structure, affected PM/Calendar/online-TSR sources and tests, release metadata, and Git
+  status. The package is limited to PM schedule eligibility, additive completion snapshots,
+  PM APIs/UI/tests, release/cache records, and plan/journal updates; protected `scheduler.db`,
+  handoff artifacts, `.claude/`, `output/`, `tmp/`, unrelated work, browser/Codex UI, commit,
+  push, deployment, Railway, and production actions remain excluded.
+- Implemented additive PM completion history in `app.py`: `InventoryPmVisit` now stores nullable
+  indexed `completed_at` and `completion_snapshot_json`; the existing table-upgrade helper adds
+  those columns/indexes and backfills linked rows whose schedules are already Completed. Snapshots
+  retain source schedule ID/date/title, client and Product labels, engineer IDs/names, and the
+  permitted file IDs/names available at capture time. Captures occur when a completed schedule is
+  linked from PM, when any Calendar edit path completes a linked schedule, and when online TSR
+  completion marks linked schedules Completed. Captured rows remain Completed and immutable even
+  when the Calendar source is reopened, edited, rebuilt, or deleted.
+- Broadened Genoray/Vieworks PM schedule options to exact visit month + current equipment owner +
+  `service` schedule type + PM-indicating task, removing standalone Product-name equality and the
+  Product-presence gate. Option payloads and picker labels now expose schedule ID/date, Product and
+  serial, and engineer details so an administrator can choose among same-client schedules safely.
+  Existing validator ownership/month/type/task checks remain enforced server-side.
+- Extended PM detail payloads with fiscal-year non-history `planned_visits`, all-time newest-first
+  `history`, and compatibility `visits`; snapshot status wins over live schedule status. Completed
+  visits are rejected by normal edit, unlink, cadence rebuild, and delete APIs. History file links
+  continue to use the existing archive permission check and return unavailable metadata without
+  URLs when a file is removed or inaccessible; equipment serial carry-forward and deletion
+  blocking remain unchanged.
+- Updated `templates/inventory_pm.html` with accurate empty-state eligibility text, identifiable
+  schedule choices, editable Planned visits, and a read-only PM History section showing actual and
+  planned dates, schedule reference, client/Product and serial information, engineers, and
+  permitted/unavailable files. Advanced the embedded PWA service-worker marker from v165 to v166
+  and added the user-facing `2026-09-17-inventory-pm-history` release to
+  `static/changelog/releases.json` (including the corrected Product-independent wording in the
+  prior PM release entry).
+- Added fail-first/focused contracts in `tests/test_inventory_pm.py` for mismatch/missing-Product
+  eligibility, metadata, both completion paths, full-chain source snapshots, online TSR capture,
+  additive backfill, immutable history, fiscal-year/all-time API separation, brand isolation, and
+  file permission/unavailable metadata. The pre-edit checkpoint ran 32 PM tests with 6 expected
+  failures and 2 expected errors; the finished PM suite passed 35/35. Related inventory,
+  Calendar, TSR, offline, and changelog suites passed 308 tests with 1 skip. Full discovery ran
+  1,206 tests with 20 unrelated baseline failures and 2 skips (manifest ordering, rate-limited
+  purchase-order setup, staff fixtures, and stale v158 marker assertion); no PM test failed.
+  Python AST, Jinja, inline JavaScript, release JSON, and `git diff --check` checks passed.
+  Protected dirty database, handoff, `.claude/`, `output/`, `tmp/`, and unrelated files remain
+  untouched; the implementation is uncommitted and unpublished.
+
 codex changes - 2026-09-16
 
 - Committed the Fast Calendar Date Navigation implementation, styles, release marker, and focused

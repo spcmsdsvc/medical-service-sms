@@ -88,7 +88,7 @@
                     <select id="pm-shift-id" class="form-select">
                         <option value="">No linked schedule</option>
                     </select>
-                    <div id="pm-schedule-help" class="form-text">Options match this visit's month, owner, PM task, and Product name.</div>
+                    <div id="pm-schedule-help" class="form-text">Options match this visit's month, current equipment owner, service type, and PM task. Product and engineer details are shown for selection.</div>
                     <div id="pm-current-schedule" class="pm-current-schedule" role="status" hidden></div>
                     <div id="pm-link-actions" class="pm-link-actions" hidden>
                         <button type="button" id="pm-keep-current" class="btn btn-outline-secondary btn-sm pm-tap">Keep current schedule</button>
@@ -117,6 +117,18 @@
         </div>
         <div id="pm-detail-state" class="pm-state" role="status">Loading planned visits…</div>
         <div id="pm-detail-visits" class="pm-detail-visits"></div>
+    </section>
+
+    <section class="pm-history-card card border-0 shadow-sm mt-3" aria-labelledby="pm-history-heading">
+        <div class="pm-section-heading">
+            <div>
+                <div class="pm-eyebrow">Permanent machine record</div>
+                <h2 id="pm-history-heading" class="h5 mb-1">PM History</h2>
+                <p class="small text-muted mb-0">Completed PM visits are kept here permanently, even if the source calendar schedule changes.</p>
+            </div>
+        </div>
+        <div id="pm-history-state" class="pm-state" role="status">Loading PM history…</div>
+        <div id="pm-history-visits" class="pm-detail-visits"></div>
     </section>
     {% else %}
     <section class="pm-controls card border-0 shadow-sm mb-3 no-print" aria-label="PM overview filters">
@@ -259,6 +271,9 @@
         if (!Array.isArray(files) || !files.length) return '<span class="text-muted">None</span>';
         return files.map(file => {
             const name = escapeHtml(file.name || file.filename || 'Schedule file');
+            if (file.available === false || !(file.preview_url || file.download_url)) {
+                return `<span class="pm-file-unavailable"><i class="fa-solid fa-paperclip" aria-hidden="true"></i>${name} <small>(unavailable)</small></span>`;
+            }
             const url = escapeHtml(file.preview_url || file.download_url || '#');
             return `<a class="pm-file-link" href="${url}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip" aria-hidden="true"></i>${name}</a>`;
         }).join('');
@@ -359,13 +374,31 @@
     function renderDetailVisits(data) {
         const state = document.getElementById('pm-detail-state');
         const container = document.getElementById('pm-detail-visits');
-        const visits = data.visits || [];
+        const visits = (data.planned_visits || data.visits || []).filter(visit => !visit.is_history);
         if (state) state.textContent = visits.length ? `${visits.length} planned visit${visits.length === 1 ? '' : 's'} in FY ${data.fiscal_year}.` : `No planned visits in FY ${data.fiscal_year}.`;
         if (!container) return;
         if (!visits.length) { container.innerHTML = '<div class="pm-empty-card">Choose a cadence and initial date above to start monitoring this equipment.</div>'; return; }
-         container.innerHTML = visits.map(visit => `<article class="pm-detail-visit" data-visit-id="${escapeHtml(visit.id)}"><div class="pm-detail-visit-main"><div class="pm-detail-date"><span>Target date</span><strong>${escapeHtml(visit.target_date)}</strong><small>${escapeHtml(visit.scheduled_month || '')}</small></div><div class="pm-detail-cadence"><span>Cadence</span><strong>${escapeHtml(visit.cadence_label || 'Legacy single visit')}</strong></div><div class="pm-detail-status">${statusBadge(visit.status)}${visit.actual_date ? `<span class="small text-muted">Actual: ${escapeHtml(visit.actual_date)}</span>` : ''}</div><div class="pm-detail-meta"><span><i class="fa-solid fa-user-gear" aria-hidden="true"></i>${escapeHtml(visit.engineers || 'Not assigned')}</span><span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>${scheduleLink(visit)}</span></div>${visit.mismatch_warning ? `<div class="pm-mismatch"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(visit.mismatch_warning)}</div>` : ''}<div class="pm-file-links">${fileLinks(visit.files)}</div></div><div class="pm-detail-actions no-print"><button type="button" class="btn btn-outline-primary btn-sm pm-tap pm-edit-visit" data-id="${escapeHtml(visit.id)}">Edit</button><button type="button" class="btn btn-outline-danger btn-sm pm-tap pm-delete-visit" data-id="${escapeHtml(visit.id)}">Delete</button></div></article>`).join('');
+        container.innerHTML = visits.map(visit => `<article class="pm-detail-visit" data-visit-id="${escapeHtml(visit.id)}"><div class="pm-detail-visit-main"><div class="pm-detail-date"><span>Target date</span><strong>${escapeHtml(visit.target_date)}</strong><small>${escapeHtml(visit.scheduled_month || '')}</small></div><div class="pm-detail-cadence"><span>Cadence</span><strong>${escapeHtml(visit.cadence_label || 'Legacy single visit')}</strong></div><div class="pm-detail-status">${statusBadge(visit.status)}${visit.actual_date ? `<span class="small text-muted">Actual: ${escapeHtml(visit.actual_date)}</span>` : ''}</div><div class="pm-detail-meta"><span><i class="fa-solid fa-user-gear" aria-hidden="true"></i>${escapeHtml(visit.engineers || 'Not assigned')}</span><span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>${scheduleLink(visit)}</span></div>${visit.mismatch_warning ? `<div class="pm-mismatch"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(visit.mismatch_warning)}</div>` : ''}<div class="pm-file-links">${fileLinks(visit.files)}</div></div><div class="pm-detail-actions no-print"><button type="button" class="btn btn-outline-primary btn-sm pm-tap pm-edit-visit" data-id="${escapeHtml(visit.id)}">Edit</button><button type="button" class="btn btn-outline-danger btn-sm pm-tap pm-delete-visit" data-id="${escapeHtml(visit.id)}">Delete</button></div></article>`).join('');
         container.querySelectorAll('.pm-edit-visit').forEach(button => button.addEventListener('click', () => startVisitEdit(visits.find(v => String(v.id) === button.dataset.id))));
         container.querySelectorAll('.pm-delete-visit').forEach(button => button.addEventListener('click', () => deleteVisit(button.dataset.id)));
+    }
+
+    function renderHistoryVisits(data) {
+        const state = document.getElementById('pm-history-state');
+        const container = document.getElementById('pm-history-visits');
+        const history = data.history || [];
+        if (state) state.textContent = history.length ? `${history.length} completed PM record${history.length === 1 ? '' : 's'} (newest first).` : 'No completed PM history for this equipment.';
+        if (!container) return;
+        if (!history.length) {
+            container.innerHTML = '<div class="pm-empty-card">Completed PM visits will appear here after a linked schedule is finished.</div>';
+            return;
+        }
+        container.innerHTML = history.map(visit => {
+            const schedule = visit.schedule || visit.linked_schedule || {};
+            const product = visit.product_name || schedule.product_name || 'Not recorded';
+            const historyClient = schedule.client_name || visit.client_name || 'N/A';
+            return `<article class="pm-detail-visit pm-history-visit" data-history-id="${escapeHtml(visit.id)}"><div class="pm-detail-visit-main"><div class="pm-detail-date"><span>Completed</span><strong>${escapeHtml(visit.actual_date || visit.completed_at || '—')}</strong><small>Planned: ${escapeHtml(visit.target_date || '—')}</small></div><div class="pm-detail-status">${statusBadge('Completed')}<span class="small text-muted">Recorded ${escapeHtml(visit.completed_at || '—')}</span></div><div class="pm-detail-meta"><span><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Schedule #${escapeHtml(schedule.id || visit.linked_schedule_id || '—')} ${escapeHtml(schedule.date || '')}</span><span><i class="fa-solid fa-hospital" aria-hidden="true"></i>${escapeHtml(historyClient)}</span><span><i class="fa-solid fa-box" aria-hidden="true"></i>${escapeHtml(product)}${schedule.product_id ? ` (${escapeHtml(schedule.product_id)})` : ''}</span><span><i class="fa-solid fa-user-gear" aria-hidden="true"></i>${escapeHtml(visit.engineers || schedule.engineers || 'Not assigned')}</span></div><div class="pm-history-task"><strong>${escapeHtml(schedule.title || schedule.task || 'Preventive maintenance')}</strong></div><div class="pm-file-links">${fileLinks(visit.files)}</div></div></article>`;
+        }).join('');
     }
 
     let editState = {visit: null, currentShiftId: null, linkAction: 'replace', currentEligible: false};
@@ -428,7 +461,13 @@
     function populateScheduleOptions(schedules, selectedId = '') {
         const select = document.getElementById('pm-shift-id');
         if (!select) return;
-        select.innerHTML = '<option value="">Choose a replacement schedule</option>' + (schedules || []).map(schedule => `<option value="${escapeHtml(schedule.id)}">${escapeHtml(schedule.date)} — ${escapeHtml(schedule.title || schedule.task || '')} (#${escapeHtml(schedule.id)})</option>`).join('');
+        select.innerHTML = '<option value="">Choose a replacement schedule</option>' + (schedules || []).map(schedule => {
+            const product = schedule.product_name || 'No Product';
+            const serial = schedule.serial_number || schedule.product_id || 'No S/N';
+            const engineers = schedule.engineers || schedule.engineer || 'Unassigned';
+            const label = `${schedule.date || ''} — ${schedule.title || schedule.task || ''} — ${product} (${serial}) — ${engineers} (#${schedule.schedule_id || schedule.id})`;
+            return `<option value="${escapeHtml(schedule.id)}">${escapeHtml(label)}</option>`;
+        }).join('');
         select.value = selectedId ? String(selectedId) : '';
     }
 
@@ -459,7 +498,7 @@
             editState.currentEligible = schedules.some(schedule => String(schedule.id) === String(editState.currentShiftId));
             populateScheduleOptions(schedules, editState.currentEligible ? editState.currentShiftId : '');
             renderCurrentSchedule(editState.visit, editState.currentEligible);
-            if (help) help.textContent = schedules.length ? 'Only this visit month, owner, PM task, and Product name are eligible.' : 'No eligible PM service schedules match this visit month and equipment Product name.';
+            if (help) help.textContent = schedules.length ? 'Only this visit month, current equipment owner, service type, and PM task are eligible. Product and engineer details help you choose the correct schedule.' : 'No eligible PM service schedules match this visit month, current equipment owner, service type, and PM task.';
         } catch (error) {
             populateScheduleOptions([], '');
             editState.currentEligible = false;
@@ -471,6 +510,10 @@
 
     function startVisitEdit(visit) {
         if (!visit) return;
+        if (visit.is_history) {
+            showPmNotice('Completed PM history is read-only.');
+            return;
+        }
         editState = {visit, currentShiftId: visit.shift_id || null, linkAction: visit.shift_id ? 'keep' : 'replace', currentEligible: false};
         document.getElementById('pm-visit-id').value = visit.id;
         document.getElementById('pm-target-date').value = visit.target_date || '';
@@ -519,6 +562,7 @@
             const data = await pmJson(`${PM_DETAIL_API}?fiscal_year=${encodeURIComponent(year)}`);
             renderDetailEquipment(data.item || data.equipment);
             renderDetailVisits(data);
+            renderHistoryVisits(data);
             window.__pmDetailData = data;
         } catch (error) {
             if (state) state.textContent = 'Unable to load planned visits.';
@@ -634,7 +678,7 @@
     .pm-eyebrow { color: #0f766e; font-size: .72rem; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
     .pm-hero .pm-eyebrow { color: #b5f3e9; }
     .pm-hero .btn { color: #fff; border-color: rgba(255,255,255,.6); }
-    .pm-controls, .pm-editor, .pm-visits-card, .pm-overview-card, .pm-equipment-card { padding: 20px; }
+    .pm-controls, .pm-editor, .pm-visits-card, .pm-history-card, .pm-overview-card, .pm-equipment-card { padding: 20px; }
     .pm-section-heading { margin-bottom: 16px; }
     .pm-brand-pill { border-radius: 999px; padding: 6px 12px; background: #ecfeff; color: #155e75; font-size: .78rem; font-weight: 900; }
     .pm-equipment-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
@@ -662,18 +706,20 @@
     .pm-status-planned { color: #1d4ed8; background: #dbeafe; }.pm-status-overdue { color: #b91c1c; background: #fee2e2; }.pm-status-completed { color: #047857; background: #d1fae5; }
     .pm-schedule-link { display: inline-block; line-height: 1.35; }.pm-schedule-link small { color: #475569; }.pm-file-links { display: grid; gap: 3px; margin-top: 5px; }
     .pm-file-link { color: #0f766e; font-weight: 800; font-size: .78rem; overflow-wrap: anywhere; }.pm-file-link i { margin-right: 4px; }
+    .pm-file-unavailable { color: #64748b; font-size: .78rem; overflow-wrap: anywhere; }.pm-file-unavailable i { margin-right: 4px; }.pm-file-unavailable small { font-weight: 800; }
     .pm-mismatch { display: flex; gap: 5px; margin-top: 6px; color: #b45309; font-size: .75rem; font-weight: 800; line-height: 1.3; max-width: 340px; }
     .pm-mobile-visits { display: none; }.pm-visit-card, .pm-detail-visit { border: 1px solid #e2e8f0; border-radius: 15px; padding: 14px; background: #fff; }
     .pm-visit-card-top, .pm-detail-visit, .pm-detail-visit-main, .pm-detail-actions { display: flex; gap: 12px; }.pm-visit-card-top, .pm-detail-visit { justify-content: space-between; align-items: flex-start; }
     .pm-visit-card-top strong { color: #0f172a; }.pm-visit-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 13px 0 0; }.pm-visit-facts div { background: #f8fafc; border-radius: 10px; padding: 8px; }.pm-visit-facts dt { color: #64748b; font-size: .68rem; font-weight: 900; text-transform: uppercase; }.pm-visit-facts dd { margin: 3px 0 0; font-size: .82rem; font-weight: 800; overflow-wrap: anywhere; }
     .pm-visit-card-schedule { margin-top: 12px; }.pm-empty-card { border: 1px dashed #cbd5e1; border-radius: 14px; padding: 23px 16px; color: #64748b; text-align: center; font-weight: 800; }
     .pm-detail-visits { display: grid; gap: 12px; }.pm-detail-visit-main { align-items: flex-start; flex: 1; min-width: 0; flex-wrap: wrap; }.pm-detail-date, .pm-detail-cadence { min-width: 130px; }.pm-detail-date strong, .pm-detail-cadence strong { display: block; color: #0f172a; margin-top: 4px; }.pm-detail-date span, .pm-detail-cadence span { display: block; color: #64748b; font-size: .72rem; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; }.pm-detail-date small { color: #64748b; }.pm-detail-status { display: grid; gap: 5px; }.pm-detail-meta { display: grid; gap: 5px; color: #475569; font-size: .82rem; font-weight: 800; min-width: 200px; }.pm-detail-meta i { width: 18px; color: #0f766e; }.pm-detail-actions { flex-wrap: wrap; }
+    .pm-history-visit { border-left: 5px solid #059669; }.pm-history-task { flex: 1 1 100%; color: #334155; line-height: 1.35; }
     .pm-current-schedule { margin-top: 7px; color: #92400e; font-size: .78rem; line-height: 1.35; }.pm-link-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
     .pm-alert-stack { position: fixed; right: 18px; top: 18px; z-index: 4100; display: grid; gap: 8px; width: min(380px, calc(100vw - 36px)); }.pm-alert { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; border-radius: 13px; padding: 12px 14px; background: #fff; border: 1px solid #fecaca; box-shadow: 0 12px 30px rgba(15,23,42,.2); color: #991b1b; font-weight: 800; }.pm-alert.success { border-color: #bbf7d0; color: #166534; }.pm-alert button { border: 0; background: transparent; color: inherit; font-size: 1.1rem; font-weight: 900; cursor: pointer; }
     .pm-confirm-backdrop { position: fixed; inset: 0; z-index: 4200; display: grid; place-items: center; padding: 18px; background: rgba(15,23,42,.55); }.pm-confirm { width: min(440px, 100%); border-radius: 18px; padding: 20px; background: #fff; box-shadow: 0 24px 70px rgba(15,23,42,.3); }.pm-confirm h2 { margin: 0 0 8px; font-size: 1.1rem; }.pm-confirm p { color: #475569; line-height: 1.45; }.pm-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
     @media (max-width: 900px) { .pm-equipment-summary, .pm-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.pm-detail-visit-main { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }.pm-detail-meta { grid-column: 1 / -1; } }
-    @media (max-width: 620px) { .pm-hero, .pm-section-heading { flex-direction: column; }.pm-hero-actions { width: 100%; }.pm-hero-actions .btn { flex: 1; }.pm-controls, .pm-editor, .pm-visits-card, .pm-overview-card, .pm-equipment-card { padding: 15px; }.pm-equipment-summary, .pm-summary-grid { grid-template-columns: 1fr 1fr; gap: 8px; }.pm-summary-card { padding: 11px; }.pm-summary-card strong { font-size: 1.35rem; }.pm-table-wrap { display: none; }.pm-mobile-visits { display: grid; gap: 9px; }.pm-detail-visit { flex-direction: column; }.pm-detail-actions { width: 100%; }.pm-detail-actions .btn { flex: 1; }.pm-detail-visit-main { width: 100%; }.pm-month-heading h3 { font-size: .98rem; } }
-    @media (max-width: 375px) { .pm-equipment-summary, .pm-summary-grid { grid-template-columns: 1fr; }.pm-hero, .pm-controls, .pm-editor, .pm-visits-card, .pm-overview-card, .pm-equipment-card { padding: 12px; }.pm-tap { min-height: 44px; } }
+    @media (max-width: 620px) { .pm-hero, .pm-section-heading { flex-direction: column; }.pm-hero-actions { width: 100%; }.pm-hero-actions .btn { flex: 1; }.pm-controls, .pm-editor, .pm-visits-card, .pm-history-card, .pm-overview-card, .pm-equipment-card { padding: 15px; }.pm-equipment-summary, .pm-summary-grid { grid-template-columns: 1fr 1fr; gap: 8px; }.pm-summary-card { padding: 11px; }.pm-summary-card strong { font-size: 1.35rem; }.pm-table-wrap { display: none; }.pm-mobile-visits { display: grid; gap: 9px; }.pm-detail-visit { flex-direction: column; }.pm-detail-actions { width: 100%; }.pm-detail-actions .btn { flex: 1; }.pm-detail-visit-main { width: 100%; }.pm-month-heading h3 { font-size: .98rem; } }
+    @media (max-width: 375px) { .pm-equipment-summary, .pm-summary-grid { grid-template-columns: 1fr; }.pm-hero, .pm-controls, .pm-editor, .pm-visits-card, .pm-history-card, .pm-overview-card, .pm-equipment-card { padding: 12px; }.pm-tap { min-height: 44px; } }
     @media print { .no-print, .pm-controls, .pm-alert-stack, .pm-detail-actions { display: none !important; }.inventory-pm-page { max-width: none; padding: 0; }.pm-hero { color: #000; background: #fff; border: 1px solid #cbd5e1 !important; box-shadow: none !important; }.pm-hero .pm-eyebrow, .pm-hero .pm-subtitle { color: #475569; }.pm-overview-card, .pm-visits-card, .pm-equipment-card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; }.pm-table-wrap { display: block !important; }.pm-mobile-visits { display: none !important; } }
 </style>
 {% endblock %}

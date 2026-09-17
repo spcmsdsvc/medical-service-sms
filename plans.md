@@ -1,5 +1,122 @@
 # Medical Service SMS — Approved Plans
 
+## PM Schedule Linking and Permanent Machine History
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-17 — the owner submitted the complete implementation plan.
+**Execution authorized:** 2026-09-17 — the owner explicitly requested `PLEASE IMPLEMENT THIS PLAN`.
+**Detailed:** 2026-09-17.
+
+### Summary and decisions
+
+The Genoray and Vieworks PM schedule picker is currently over-filtered by exact Product-name
+equality, so a same-client PM service schedule can disappear when its Product is blank or named
+differently. Keep the exact visit month, current equipment-owner Client ID, `service` schedule
+type, and PM-indicating task requirements, but let the administrator choose among those
+same-client schedules after showing Product, serial, engineer, date, and schedule ID details.
+
+When a linked schedule is completed, capture an immutable PM-history snapshot. The snapshot keeps
+the schedule ID/date/title, client and Product labels, engineer IDs/names, and file IDs/names
+available through the existing file-visibility rules at capture time. Capture on linking an
+already-completed schedule, Calendar completion, online TSR completion, and additive-upgrade
+backfill of already-completed links. Planned visits remain fiscal-year scoped; completed history
+is all-time and newest-first. Reopening, editing, or deleting the source schedule cannot remove
+or downgrade a captured history row. Missing or inaccessible files remain metadata without dead
+links.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Read all applicable instructions, the complete change log,
+   current plan structure, Git status, and affected PM/Calendar/TSR sources. Record this plan as
+   In progress and append implementation-start facts to the current `changes.md` section before
+   behavior edits. Preserve `scheduler.db`, handoff artifacts, `.claude/`, `output/`, `tmp/`, and
+   unrelated worktree changes.
+2. **Fail-first focused coverage.** Extend `tests/test_inventory_pm.py` with disposable-DB
+   contracts for same-client/month/service/PM schedule choices without Product-name equality,
+   identifiable option metadata, completed-link capture, Calendar and online-TSR completion,
+   legacy backfill, immutable history after source reopen/edit/delete, protected PM mutations,
+   fiscal-year `planned_visits`, all-time newest-first `history`, file permissions/unavailable
+   metadata, and both-brand isolation. Run the new assertions before source edits where feasible.
+3. **Schedule eligibility.** In `app.py`, remove Product-name equality and the Product-presence
+   gate from `inventory_pm_schedule_options_for_item` and its server validator while retaining
+   exact month, current owner, service type, and PM-task checks. Keep Product ID/name, serial,
+   engineer, date, title, client, and schedule ID in option payloads. Update the template's
+   empty/help text to describe the actual criteria.
+4. **Additive history storage and capture.** Add nullable indexed `completed_at` and
+   `completion_snapshot_json` to `InventoryPmVisit` and the existing additive table upgrade.
+   Implement snapshot serialization and backfill without destructive schema/data operations.
+   Invoke capture from PM linking, all Calendar status-completion paths, and online TSR linked
+   completion. Snapshot exactly once; retain current file permission checks and report deleted or
+   inaccessible files as unavailable metadata.
+5. **History protection and API/UI.** Make captured rows immutable to normal PM edit, unlink,
+   cadence rebuild, and delete operations, including selected/later rebuild siblings. Keep serial
+   carry-forward and equipment-delete blocking. Extend detail data with fiscal-year non-history
+   `planned_visits`, all-time newest-first `history`, and compatibility `visits`; make snapshot
+   status win over live schedule status. Split `inventory_pm.html` into editable Planned visits
+   and read-only PM History with actual date, schedule reference, engineers, Product information,
+   and permitted/unavailable files.
+6. **Delivery and verification.** Add focused tests, a user-facing release entry, and a
+   monotonic service-worker marker. Run PM and related inventory/Calendar/TSR/offline/changelog
+   suites, proportional full discovery, Python/Jinja/JavaScript/JSON/diff checks, and a
+   protected-worktree review. Update this plan to Executed — uncommitted and `changes.md` with
+   exact evidence. Do not commit, push, deploy, change Railway/production, open a browser, or
+   modify protected artifacts.
+
+### Deliberately excluded
+
+No Product/Shift relationship redesign, new schedule creation or Calendar behavior changes,
+attachment copying, correction/void workflow, production or Railway operation, commit/push,
+browser/Codex UI automation, or unrelated cleanup is part of this package.
+
+### Implementation outcome
+
+Implemented on 2026-09-17 in the authorized working tree, without commit, push, deployment,
+Railway/production access, browser automation, or protected-artifact changes.
+
+- `app.py`: removed the standalone Product-name/presence gate from PM schedule eligibility while
+  retaining exact target month, current Client owner, `service` type, and PM-task checks; option
+  payloads now expose Product/serial, engineer, date, title, client, and schedule ID context.
+  Added nullable indexed `completed_at` and `completion_snapshot_json` through the additive
+  migration helper, including best-effort backfill of existing links to completed schedules.
+  Completion snapshots preserve source schedule/client/Product/engineer/file metadata and are
+  captured on completed linking, every Calendar update path, and online TSR completion. Snapshot
+  status takes precedence over live schedule state; completed rows are protected from PM edit,
+  unlink, cadence rebuild, and delete while existing inventory serial carry-forward and delete
+  blocking remain unchanged. Detail responses retain `visits` and now include fiscal-year
+  `planned_visits` plus all-time newest-first `history`, with current file permission checks and
+  unavailable metadata for removed/inaccessible files.
+- `templates/inventory_pm.html`: clarified the schedule-picker eligibility and empty state,
+  expanded safe option labels, and split equipment details into editable Planned visits and a
+  read-only PM History section showing actual/planned dates, source schedule, client/Product,
+  engineers, and permitted/unavailable files.
+- `tests/test_inventory_pm.py`: added fail-first and focused coverage for Product mismatch and
+  missing Product options, option metadata, immutable completed history, Calendar in-place and
+  full-chain completion, online TSR completion, additive backfill, brand isolation, mutation
+  protection, fiscal-year/all-time detail separation, and file permission/unavailable metadata.
+- `static/changelog/releases.json`: added the 2026-09-17 user-facing PM linking/history release
+  and corrected the prior PM release description to describe Product-independent matching.
+  `app.py`'s embedded service-worker marker advanced from v165 to v166.
+
+### Verification outcome
+
+- Fail-first checkpoint before the behavior implementation: `python -m unittest
+  tests.test_inventory_pm` ran 32 tests with 6 expected failures and 2 expected errors for the
+  not-yet-present history fields, marker, matcher, and status behavior.
+- Final focused PM suite: `python -m unittest tests.test_inventory_pm` — 35 tests passed.
+- Related inventory/Calendar/TSR/offline/changelog suites: 308 tests passed, 1 skipped.
+- Full discovery: 1,206 tests ran, 20 failures, 2 skipped. No PM test failed; the failures are
+  existing unrelated baseline cases (manifest-sync ordering, rate-limit-sensitive purchase-order
+  setup, staff-fixture validation, and a stale exact v158 service-worker assertion).
+- Python AST, Jinja template parsing, inline JavaScript syntax, release JSON parsing, and
+  `git diff --check` all passed. Browser/Codex UI verification was intentionally not run under
+  the project safety rule.
+
+### Protected-worktree outcome
+
+The pre-existing dirty `scheduler.db`, handoff artifacts, `.claude/`, `output/`, `tmp/`, and
+unrelated files remain unmodified by this package. No production data, Railway settings, Calendar
+schedule behavior, or attachment storage was manually changed.
+
 ## Fast Calendar Date Navigation
 
 **Status:** Executed — implementation commit `989813a`; publication authorized by the owner.

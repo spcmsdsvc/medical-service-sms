@@ -47,14 +47,20 @@ class InventoryPmSourceContractTests(unittest.TestCase):
         self.assertIn('.pm-tap { min-height: 44px; }', template)
         self.assertIn("Genoray PM", layout)
         self.assertIn("Vieworks PM", layout)
-        assert_cache_version_at_least(self, 163, source)
+        assert_cache_version_at_least(self, 166, source)
         releases = json.loads((ROOT / "static" / "changelog" / "releases.json").read_text(encoding="utf-8"))
         release = next(
             release for release in releases.get("releases", [])
-            if release.get("release_key") == "2026-09-16-inventory-pm-monitoring"
+            if release.get("release_key") == "2026-09-17-inventory-pm-history"
         )
-        self.assertIn("Semi-Annual", release["items"][0]["description"])
-        self.assertIn("Product-name matching", release["items"][0]["description"])
+        self.assertIn("same-client", release["summary"])
+        self.assertIn("same-client", release["items"][0]["description"])
+        self.assertIn("history", release["items"][0]["description"].lower())
+        self.assertIn("permanent", release["items"][0]["description"].lower())
+        self.assertIn("completed_at", source)
+        self.assertIn("completion_snapshot_json", source)
+        self.assertIn("planned_visits", source)
+        self.assertIn("history", source)
 
 
 class InventoryPmTests(unittest.TestCase):
@@ -329,17 +335,28 @@ class InventoryPmTests(unittest.TestCase):
             shift = app_module.db.session.get(app_module.Shift, shift_id)
             shift.status = "In Progress"
             app_module.db.session.commit()
-        reopened = client.get("/api/genoray/pm/items/" + self.gen_serial).get_json()["visits"][0]
-        self.assertEqual(reopened["status"], "Overdue")
+        reopened = client.get("/api/genoray/pm/items/" + self.gen_serial).get_json()
+        self.assertEqual(reopened["visits"][0]["status"], "Completed")
+        self.assertEqual(len(reopened["planned_visits"]), 1)
+        self.assertEqual(len(reopened["history"]), 1)
+        self.assertEqual(reopened["history"][0]["status"], "Completed")
         updated = client.put(f"/api/genoray/pm/visits/{visit['id']}", json={"target_date": "2027-03-31"})
-        self.assertEqual(updated.status_code, 200, updated.get_data(as_text=True))
+        self.assertEqual(updated.status_code, 409, updated.get_data(as_text=True))
         deleted = client.delete(f"/api/genoray/pm/visits/{visit['id']}")
-        self.assertEqual(deleted.status_code, 200, deleted.get_data(as_text=True))
+        self.assertEqual(deleted.status_code, 409, deleted.get_data(as_text=True))
 
     def test_schedule_options_require_service_pm_and_same_owner_and_are_shareable(self):
         client = self.client_for(self.ids["admin"])
         target = date(2026, 4, 15)
         eligible = self.make_shift(title="Preventive Maintenance PM", client_id=self.gen_client_id, start_date=date(2026, 4, 2))
+        mismatched_product = self.make_shift(
+            title="Preventive Maintenance PM", client_id=self.gen_client_id,
+            product_id=self.view_product_serial, start_date=date(2026, 4, 5),
+        )
+        missing_product = self.make_shift(
+            title="Preventive Maintenance PM", client_id=self.gen_client_id,
+            product_id="", start_date=date(2026, 4, 6),
+        )
         non_pm = self.make_shift(title="Repair visit", client_id=self.gen_client_id, start_date=date(2026, 4, 3))
         wrong_owner = self.make_shift(title="Preventive Maintenance PM", client_id=self.other_client_id, start_date=date(2026, 4, 4))
         options = client.get(
@@ -347,12 +364,258 @@ class InventoryPmTests(unittest.TestCase):
         ).get_json()["schedules"]
         ids = {row["id"] for row in options}
         self.assertIn(eligible, ids)
+        self.assertIn(mismatched_product, ids)
+        self.assertIn(missing_product, ids)
         self.assertNotIn(non_pm, ids)
         self.assertNotIn(wrong_owner, ids)
+        option = next(row for row in options if row["id"] == mismatched_product)
+        self.assertEqual(option["product_id"], self.view_product_serial)
+        self.assertEqual(option["product_name"], " Vieworks PM Unit ")
+        self.assertEqual(option["engineer_ids"], [self.engineer_id])
+        self.assertEqual(option["date"], "2026-04-05")
 
         response = self.create_plan(client, cadence="semi_annual", start_date="2026-04-02")
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(len(client.get("/api/genoray/pm/items/" + self.gen_serial).get_json()["visits"]), 2)
+
+    def test_completed_snapshot_is_immutable_and_detail_splits_planned_history(self):
+        client = self.client_for(self.ids["admin"])
+        completed_shift = self.make_shift(
+            title="Preventive Maintenance PM", status="Completed",
+            client_id=self.gen_client_id, product_id=self.view_product_serial,
+            start_date=date(2026, 4, 18),
+        )
+        created = self.create_plan(client, cadence="semi_annual", start_date="2026-04-18")
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        first_id = created.get_json()["created_visits"][0]["id"]
+        linked = client.put(f"/api/genoray/pm/visits/{first_id}", json={"shift_id": completed_shift})
+        self.assertEqual(linked.status_code, 200, linked.get_data(as_text=True))
+        linked_visit = linked.get_json()["visit"]
+        self.assertEqual(linked_visit["status"], "Completed")
+        self.assertTrue(linked_visit["completed_at"])
+        self.assertEqual(linked_visit["completion_snapshot"]["schedule_id"], completed_shift)
+        self.assertEqual(linked_visit["completion_snapshot"]["product_name"], " Vieworks PM Unit ")
+
+        detail = client.get(f"/api/genoray/pm/items/{self.gen_serial}?fiscal_year=2026").get_json()
+        self.assertEqual(len(detail["planned_visits"]), 1)
+        self.assertEqual(len(detail["visits"]), 2)
+        self.assertEqual(len(detail["history"]), 1)
+        self.assertEqual(detail["history"][0]["schedule"]["id"], completed_shift)
+        self.assertEqual(detail["history"][0]["product_name"], "Vieworks PM Unit")
+
+        with self.app.app_context():
+            shift = app_module.db.session.get(app_module.Shift, completed_shift)
+            shift.status = "In Progress"
+            shift.title = "Changed after completion"
+            shift.product_id = self.product_serial
+            app_module.db.session.commit()
+        after_reopen = client.get(f"/api/genoray/pm/items/{self.gen_serial}?fiscal_year=2026").get_json()
+        self.assertEqual(after_reopen["history"][0]["status"], "Completed")
+        self.assertEqual(after_reopen["history"][0]["schedule"]["title"], "Preventive Maintenance PM")
+        self.assertEqual(after_reopen["history"][0]["product_name"], "Vieworks PM Unit")
+
+        with self.app.app_context():
+            shift = app_module.db.session.get(app_module.Shift, completed_shift)
+            app_module.db.session.delete(shift)
+            app_module.db.session.commit()
+        after_delete = client.get(f"/api/genoray/pm/items/{self.gen_serial}?fiscal_year=2026").get_json()
+        self.assertEqual(after_delete["history"][0]["status"], "Completed")
+        self.assertEqual(after_delete["history"][0]["linked_schedule_id"], completed_shift)
+        self.assertIsNone(after_delete["history"][0]["shift_id"])
+        self.assertEqual(client.put(f"/api/genoray/pm/visits/{first_id}", json={"shift_id": None}).status_code, 409)
+        self.assertEqual(client.put(f"/api/genoray/pm/visits/{first_id}", json={"cadence": "quarterly"}).status_code, 409)
+        self.assertEqual(client.delete(f"/api/genoray/pm/visits/{first_id}").status_code, 409)
+
+    def test_history_files_are_permission_checked_and_missing_files_stay_metadata_only(self):
+        completed_shift = self.make_shift(
+            title="Preventive Maintenance PM", status="Completed",
+            client_id=self.gen_client_id, start_date=date(2026, 4, 19),
+        )
+        with self.app.app_context():
+            file_record = app_module.ShiftFile(
+                shift_id=completed_shift,
+                filename="TSR_history_permissions.pdf",
+                original_filename="TSR_history_permissions.pdf",
+            )
+            app_module.db.session.add(file_record)
+            app_module.db.session.commit()
+            file_id = file_record.id
+
+        admin_client = self.client_for(self.ids["superadmin"])
+        created = self.create_plan(admin_client, start_date="2026-04-19", cadence="semi_annual")
+        visit_id = created.get_json()["created_visits"][0]["id"]
+        linked = admin_client.put(
+            f"/api/genoray/pm/visits/{visit_id}",
+            json={"shift_id": completed_shift},
+        )
+        self.assertEqual(linked.status_code, 200, linked.get_data(as_text=True))
+        snapshot_file = linked.get_json()["visit"]["completion_snapshot"]["files"][0]
+        self.assertEqual(snapshot_file["id"], file_id)
+        self.assertEqual(snapshot_file["name"], "TSR_history_permissions.pdf")
+
+        restricted = self.client_for(self.ids["admin"])
+        restricted_history = restricted.get(
+            f"/api/genoray/pm/items/{self.gen_serial}?fiscal_year=2026"
+        ).get_json()["history"][0]["files"][0]
+        self.assertFalse(restricted_history["available"])
+        self.assertEqual(restricted_history["id"], file_id)
+        self.assertEqual(restricted_history["name"], "TSR_history_permissions.pdf")
+        self.assertEqual(restricted_history["preview_url"], "")
+        self.assertEqual(restricted_history["download_url"], "")
+
+        with self.app.app_context():
+            record = app_module.db.session.get(app_module.ShiftFile, file_id)
+            app_module.db.session.delete(record)
+            app_module.db.session.commit()
+        missing_history = admin_client.get(
+            f"/api/genoray/pm/items/{self.gen_serial}?fiscal_year=2026"
+        ).get_json()["history"][0]["files"][0]
+        self.assertFalse(missing_history["available"])
+        self.assertEqual(missing_history["id"], file_id)
+        self.assertEqual(missing_history["name"], "TSR_history_permissions.pdf")
+        self.assertEqual(missing_history["preview_url"], "")
+        self.assertEqual(missing_history["download_url"], "")
+
+    def test_online_tsr_completion_captures_linked_pm_history(self):
+        with self.app.app_context():
+            shift_id = self.make_shift(
+                title="Preventive Maintenance PM", status="In Progress",
+                client_id=self.gen_client_id, start_date=date(2026, 4, 20),
+            )
+            visit = app_module.InventoryPmVisit(
+                brand="genoray", equipment_serial=self.gen_serial,
+                target_date=date(2026, 4, 20), shift_id=shift_id,
+            )
+            app_module.db.session.add(visit)
+            app_module.db.session.commit()
+            shift = app_module.db.session.get(app_module.Shift, shift_id)
+            completed_ids = app_module.complete_schedules_for_online_tsr(shift, completion_scope="current_day")
+            app_module.db.session.commit()
+            refreshed = app_module.db.session.get(app_module.InventoryPmVisit, visit.id)
+            self.assertEqual(completed_ids, [shift_id])
+            self.assertEqual(shift.status, "Completed")
+            self.assertIsNotNone(refreshed.completed_at)
+            self.assertTrue(refreshed.completion_snapshot_json)
+
+    def test_calendar_completion_captures_linked_pm_history(self):
+        shift_id = self.make_shift(
+            title="Preventive Maintenance PM", status="In Progress",
+            client_id=self.gen_client_id, start_date=date(2026, 4, 21),
+        )
+        with self.app.app_context():
+            app_module.db.session.add(app_module.ShiftFile(
+                shift_id=shift_id, filename="TSR_calendar_completion.pdf",
+                original_filename="TSR_calendar_completion.pdf",
+            ))
+            visit = app_module.InventoryPmVisit(
+                brand="genoray", equipment_serial=self.gen_serial,
+                target_date=date(2026, 4, 21), shift_id=shift_id,
+            )
+            app_module.db.session.add(visit)
+            app_module.db.session.commit()
+            visit_id = visit.id
+        client = self.client_for(self.ids["superadmin"])
+        update_payload = {
+            "title": "Preventive Maintenance PM",
+            "client_id": self.gen_client_id,
+            "product_id": self.product_serial,
+            "engineers": [self.engineer_id],
+            "engineer_id": self.engineer_id,
+            "status": "Completed",
+            "start_date": "2026-04-21",
+            "end_date": "2026-04-21",
+            "start_time": "09:00",
+            "end_time": "11:00",
+            "edit_scope": "entire_schedule",
+            "include_weekends": True,
+        }
+        with patch.object(app_module, "get_shift_payload", return_value=update_payload), \
+             patch.object(app_module, "send_schedule_event_notification_async"):
+            response = client.post(f"/update_shift/{shift_id}")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        with self.app.app_context():
+            refreshed = app_module.db.session.get(app_module.InventoryPmVisit, visit_id)
+            self.assertIsNotNone(refreshed.completed_at)
+            self.assertTrue(refreshed.completion_snapshot_json)
+
+    def test_calendar_full_chain_completion_preserves_source_schedule_snapshot(self):
+        shift_id = self.make_shift(
+            title="PM source schedule", status="In Progress",
+            client_id=self.gen_client_id, start_date=date(2026, 4, 23),
+        )
+        with self.app.app_context():
+            app_module.db.session.add(app_module.ShiftFile(
+                shift_id=shift_id,
+                filename="TSR_full_chain_completion.pdf",
+                original_filename="TSR_full_chain_completion.pdf",
+            ))
+            visit = app_module.InventoryPmVisit(
+                brand="genoray", equipment_serial=self.gen_serial,
+                target_date=date(2026, 4, 23), shift_id=shift_id,
+            )
+            app_module.db.session.add(visit)
+            app_module.db.session.commit()
+            visit_id = visit.id
+
+        client = self.client_for(self.ids["superadmin"])
+        update_payload = {
+            "title": "Preventive Maintenance PM",
+            "client_id": self.gen_client_id,
+            "product_id": self.view_product_serial,
+            "engineers": [self.engineer_id],
+            "engineer_id": self.engineer_id,
+            "status": "Completed",
+            "start_date": "2026-04-24",
+            "end_date": "2026-04-24",
+            "start_time": "09:00",
+            "end_time": "11:00",
+            "edit_scope": "entire_schedule",
+            "include_weekends": True,
+        }
+        with patch.object(app_module, "get_shift_payload", return_value=update_payload), \
+             patch.object(app_module, "send_schedule_event_notification_async"):
+            response = client.post(f"/update_shift/{shift_id}")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+
+        with self.app.app_context():
+            refreshed = app_module.db.session.get(app_module.InventoryPmVisit, visit_id)
+            snapshot = json.loads(refreshed.completion_snapshot_json)
+            self.assertEqual(snapshot["schedule_id"], shift_id)
+            self.assertEqual(snapshot["title"], "Preventive Maintenance PM")
+            self.assertEqual(snapshot["product_id"], self.view_product_serial)
+            self.assertIsNotNone(refreshed.completed_at)
+
+    def test_completed_link_backfill_runs_during_additive_upgrade(self):
+        with self.app.app_context():
+            completed_shift_id = self.make_shift(
+                title="Preventive Maintenance PM", status="Completed",
+                client_id=self.gen_client_id, start_date=date(2026, 4, 22),
+            )
+            app_module.db.session.remove()
+            with app_module.db.engine.begin() as connection:
+                connection.exec_driver_sql("DROP TABLE IF EXISTS inventory_pm_visit")
+                connection.exec_driver_sql("""
+                    CREATE TABLE inventory_pm_visit (
+                        id INTEGER PRIMARY KEY,
+                        brand VARCHAR(20) NOT NULL,
+                        equipment_serial VARCHAR(100) NOT NULL,
+                        target_date DATE NOT NULL,
+                        shift_id INTEGER,
+                        created_at DATETIME NOT NULL,
+                        updated_at DATETIME NOT NULL
+                    )
+                """)
+                connection.exec_driver_sql(
+                    "INSERT INTO inventory_pm_visit "
+                    "(id, brand, equipment_serial, target_date, shift_id, created_at, updated_at) "
+                    "VALUES (1, 'genoray', ?, '2026-04-22', ?, '2026-01-01', '2026-01-01')",
+                    (self.gen_serial, completed_shift_id),
+                )
+            app_module._inventory_pm_visit_table_ready = False
+            app_module.ensure_inventory_pm_visit_table()
+            legacy = app_module.db.session.get(app_module.InventoryPmVisit, 1)
+            self.assertIsNotNone(legacy.completed_at)
+            self.assertEqual(json.loads(legacy.completion_snapshot_json)["schedule_id"], completed_shift_id)
 
     def test_recurring_generation_clamps_month_end_and_crosses_fiscal_year(self):
         client = self.client_for(self.ids["admin"])
@@ -593,7 +856,7 @@ class InventoryPmTests(unittest.TestCase):
             ("2026-07-31", "quarterly"), ("2026-10-31", "quarterly"),
         ])
 
-    def test_exact_schedule_matching_and_server_link_validation(self):
+    def test_schedule_matching_uses_same_client_month_service_and_pm_only(self):
         client = self.client_for(self.ids["admin"])
         target = "2026-04-15"
         eligible = self.make_shift(title="Preventive Maintenance PM", client_id=self.gen_client_id, start_date=date(2026, 4, 2))
@@ -605,14 +868,13 @@ class InventoryPmTests(unittest.TestCase):
             app_module.db.session.add(wrong_product)
             app_module.db.session.commit()
             wrong_product_serial = wrong_product.serial_number
-        missing_product = self.make_shift(title="Preventive Maintenance PM", client_id=self.gen_client_id, product_id="", start_date=date(2026, 4, 5))
         wrong_product_shift = self.make_shift(title="Preventive Maintenance PM", client_id=self.gen_client_id, product_id=wrong_product_serial, start_date=date(2026, 4, 6))
         other_owner = self.make_shift(title="Preventive Maintenance PM", client_id=self.other_client_id, start_date=date(2026, 4, 7))
         options_response = client.get(f"/api/genoray/pm/schedule-options/{self.gen_serial}?target_date={target}")
         self.assertEqual(options_response.status_code, 200, options_response.get_data(as_text=True))
         option_ids = {row["id"] for row in options_response.get_json()["schedules"]}
-        self.assertEqual(option_ids, {eligible})
-        for rejected_id in (adjacent, repair, travel, wrong_product_shift, other_owner, missing_product):
+        self.assertEqual(option_ids, {eligible, wrong_product_shift})
+        for rejected_id in (adjacent, repair, travel, other_owner):
             response = client.post(f"/api/genoray/pm/visits", json={
                 "serial_number": self.gen_serial,
                 "cadence": "semi_annual",
@@ -627,6 +889,9 @@ class InventoryPmTests(unittest.TestCase):
         visit_id = created.get_json()["created_visits"][0]["id"]
         linked = client.put(f"/api/genoray/pm/visits/{visit_id}", json={"shift_id": eligible})
         self.assertEqual(linked.status_code, 200, linked.get_data(as_text=True))
+        replacement = client.put(f"/api/genoray/pm/visits/{visit_id}", json={"shift_id": wrong_product_shift})
+        self.assertEqual(replacement.status_code, 200, replacement.get_data(as_text=True))
+        self.assertEqual(replacement.get_json()["visit"]["shift_id"], wrong_product_shift)
         wrong_month = client.put(f"/api/genoray/pm/visits/{visit_id}", json={"target_date": "2026-05-15", "shift_id": repair})
         self.assertEqual(wrong_month.status_code, 400, wrong_month.get_data(as_text=True))
 
@@ -637,9 +902,9 @@ class InventoryPmTests(unittest.TestCase):
             app_module.db.session.commit()
         preserved = client.put(f"/api/genoray/pm/visits/{visit_id}", json={"target_date": target})
         self.assertEqual(preserved.status_code, 200, preserved.get_data(as_text=True))
-        self.assertEqual(preserved.get_json()["visit"]["shift_id"], eligible)
+        self.assertEqual(preserved.get_json()["visit"]["shift_id"], wrong_product_shift)
         options_after_change = client.get(f"/api/genoray/pm/schedule-options/{self.gen_serial}?target_date={target}").get_json()["schedules"]
-        self.assertNotIn(eligible, {row["id"] for row in options_after_change})
+        self.assertIn(eligible, {row["id"] for row in options_after_change})
         unlinked = client.put(f"/api/genoray/pm/visits/{visit_id}", json={"shift_id": None})
         self.assertEqual(unlinked.status_code, 200, unlinked.get_data(as_text=True))
         self.assertIsNone(unlinked.get_json()["visit"]["shift_id"])
@@ -651,13 +916,13 @@ class InventoryPmTests(unittest.TestCase):
         self.assertEqual(response.get_json()["created_dates"], ["2026-03-31", "2026-09-30"])
         self.assertEqual({row["cadence"] for row in response.get_json()["created_visits"]}, {"semi_annual"})
 
-    def test_vieworks_schedule_matching_uses_vieworks_product_name(self):
+    def test_vieworks_schedule_matching_is_same_client_and_product_label_is_visible(self):
         client = self.client_for(self.ids["admin"])
         exact = self.make_shift(
             title="Preventive Maintenance PM", client_id=self.gen_client_id,
             product_id=self.view_product_serial, start_date=date(2026, 4, 2),
         )
-        wrong_product = self.make_shift(
+        different_product = self.make_shift(
             title="Preventive Maintenance PM", client_id=self.gen_client_id,
             product_id=self.product_serial, start_date=date(2026, 4, 3),
         )
@@ -666,8 +931,9 @@ class InventoryPmTests(unittest.TestCase):
         )
         self.assertEqual(options.status_code, 200, options.get_data(as_text=True))
         option_ids = {row["id"] for row in options.get_json()["schedules"]}
-        self.assertEqual(option_ids, {exact})
-        self.assertNotIn(wrong_product, option_ids)
+        self.assertEqual(option_ids, {exact, different_product})
+        labels = {row["id"]: row["product_name"] for row in options.get_json()["schedules"]}
+        self.assertEqual(labels[different_product], "  genoray pm unit  ")
 
     def test_detail_visits_alias_reuses_link_validation(self):
         client = self.client_for(self.ids["admin"])
