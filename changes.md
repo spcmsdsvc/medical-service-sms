@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-17
 
+- Committed the authorized Calibration Report Page 3 units/defaults and historical repair
+  workflow as `ff4effc` on local `main`. The commit contains only the approved application,
+  template, Calibration Center, test, release, and project-record files; protected
+  `scheduler.db`, handoff artifacts, `.claude/`, `output/`, `tmp/`, and unrelated work remain
+  excluded. The owner separately authorized publication to `origin/main`; remote and Railway
+  verification follow this record closeout.
 - Began the separately authorized Calibration Report Page 3 units, focal-size defaults, and
   historical artifact-repair implementation after the owner’s explicit “PLEASE IMPLEMENT THIS
   PLAN” instruction. The bounded package covers the calibration report editor/template, fail-closed

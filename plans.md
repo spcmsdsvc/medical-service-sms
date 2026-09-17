@@ -2,7 +2,7 @@
 
 ## Calibration Report Page 3 units, defaults, and historical artifact repair
 
-**Status:** Executed — uncommitted
+**Status:** Executed — implementation commit `ff4effc`; publication authorized by the owner.
 **Approved:** 2026-09-17 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-17 — implementation is authorized for this bounded package only.
 **Detailed:** 2026-09-17.
