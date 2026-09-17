@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-17
 
+- Committed the authorized PM Schedule Linking and Permanent Machine History implementation as
+  `1d3bf99`. The commit contains only `app.py`, `templates/inventory_pm.html`,
+  `tests/test_inventory_pm.py`, `static/changelog/releases.json`, `plans.md`, and `changes.md`;
+  protected `scheduler.db`, handoff artifacts, `.claude/`, `output/`, `tmp/`, and unrelated
+  untracked work remain excluded. The owner separately authorized publishing these changes to
+  `origin/main`; remote and Railway deployment verification follow this record update.
 - Began the separately authorized PM Schedule Linking and Permanent Machine History
   implementation after the owner’s explicit `PLEASE IMPLEMENT THIS PLAN` go-ahead. Preflight
   read the applicable project instructions, the complete 646,514-character change log, current

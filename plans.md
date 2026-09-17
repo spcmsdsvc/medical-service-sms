@@ -2,7 +2,7 @@
 
 ## PM Schedule Linking and Permanent Machine History
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `1d3bf99`; publication authorized by the owner.
 **Approved:** 2026-09-17 — the owner submitted the complete implementation plan.
 **Execution authorized:** 2026-09-17 — the owner explicitly requested `PLEASE IMPLEMENT THIS PLAN`.
 **Detailed:** 2026-09-17.
