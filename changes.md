@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-17
 
+- Committed the authorized Calibration Report Page 3 mA/mAs selector and v2 historical-repair
+  package as `fd7a2ec` on local `main`. The commit contains only the approved application,
+  styling, Calibration Center, test, release, and project-record files; protected
+  `scheduler.db`, handoff artifacts, `.claude/`, `output/`, `tmp/`, and unrelated work remain
+  excluded. The owner separately authorized publication to `origin/main`; remote and Railway
+  verification follow this record closeout.
 - Began the separately authorized Calibration Report Page 3 explicit-current-unit and v2
   historical-repair implementation after the owner’s explicit “PLEASE IMPLEMENT THIS PLAN”
   instruction. The bounded package covers schema 6 `exposure_current_units`, independent Small/
