@@ -12,6 +12,7 @@ import zipfile
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
+import xml.etree.ElementTree as ET
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -178,6 +179,25 @@ class CalibrationReportPdfTests(unittest.TestCase):
             for node in root.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')
         ]
 
+    @staticmethod
+    def _document_tables(docx_bytes):
+        """Return direct table/row/cell visible text for heading-only assertions."""
+        with zipfile.ZipFile(io.BytesIO(docx_bytes), 'r') as package:
+            root = ET.fromstring(package.read('word/document.xml'))
+        namespace = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        body = root.find('w:body', namespace)
+        tables = body.findall('w:tbl', namespace) if body is not None else []
+        return [
+            [
+                [
+                    ''.join(node.text or '' for node in cell.findall('.//w:t', namespace))
+                    for cell in row.findall('w:tc', namespace)
+                ]
+                for row in table.findall('w:tr', namespace)
+            ]
+            for table in tables
+        ]
+
     def _compact_docx_bytes(self):
         """Remove blank measurement rows as the browser generator does for saved reports."""
         legacy_bytes = self._legacy_docx_bytes()
@@ -270,6 +290,171 @@ class CalibrationReportPdfTests(unittest.TestCase):
                 _single_repaired, single_result = app_module._calibration_report_repair_docx_bytes(single_legacy)
                 self.assertEqual(single_result['status'], 'already_repaired')
                 self.assertEqual(len(single_result['table_states']), 1)
+                target_inspection = app_module._calibration_report_docx_repair_inspection(
+                    single_legacy,
+                    target_units={'small': 'mA', 'large': 'mAs'},
+                )
+                self.assertEqual(target_inspection['status'], 'repairable')
+                target_repaired, target_result = app_module._calibration_report_repair_docx_bytes(
+                    single_legacy,
+                    target_units={'small': 'mA', 'large': 'mAs'},
+                )
+                self.assertEqual(target_result['status'], 'already_repaired')
+                focal = target_result['table_states'][0]['focal']
+                self.assertEqual(target_result['table_states'][0]['current_unit'], {'small': 'mA', 'large': 'mAs'}[focal])
+                self.assertNotEqual(target_repaired, single_legacy)
+
+    def test_exposure_unit_resolution_uses_model_rule_or_explicit_units(self):
+        source_id, submission_id, _disk_name = self._create_source_fixture()
+        with self.app.app_context():
+            source_file = self.db.session.get(app_module.ShiftFile, source_id)
+            submission = self.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            catalog = json.loads(
+                (ROOT / 'static' / 'templates' / 'calibration-certificate' / 'calibration-certificate-catalog.json').read_text(
+                    encoding='utf-8'
+                )
+            )
+            cases = []
+            for catalog_model in catalog['models']:
+                expected = 'mA' if any(token in re.sub(r'[^a-z0-9]+', '', catalog_model.casefold()) for token in ('radspeed', 'flexavision')) else 'mAs'
+                variants = {catalog_model, catalog_model.upper(), catalog_model.replace(' ', '  ')}
+                if 'Flexavision' in catalog_model:
+                    variants.update({
+                        catalog_model.replace('Flexavision', 'Flexa Vision'),
+                        catalog_model.replace('Flexavision', 'FLEX-A VISION'),
+                    })
+                if 'Radspeed' in catalog_model:
+                    variants.update({
+                        catalog_model.replace('Radspeed', 'Rad Speed'),
+                        catalog_model.replace('Radspeed', 'RAD-SPEED'),
+                    })
+                cases.extend((variant, expected) for variant in variants)
+            cases.extend((model, expected) for model, expected in (
+                ('Some unrelated model', 'mAs'),
+                ('', 'mAs'),
+                (None, 'mAs'),
+            ))
+            for model, expected in cases:
+                report = {'machine': {'model': model}} if model is not None else {'machine': {}}
+                submission.payload_json = json.dumps({'calibration_report': report})
+                resolution = app_module._calibration_report_exposure_unit_resolution(source_file)
+                self.assertEqual(resolution['target_units'], {'small': expected, 'large': expected})
+                self.assertEqual(resolution['unit_sources'], {'small': 'model_rule', 'large': 'model_rule'})
+                self.assertEqual(resolution['model_rule_unit'], expected)
+                self.assertFalse(resolution['explicit'])
+
+            submission.payload_json = json.dumps({
+                '_generated_calibration_report': {
+                    'source': 'generated_calibration_report',
+                    'file_id': source_id,
+                    'filename': source_file.original_filename,
+                },
+                'calibration_report': {
+                    'machine': {'model': 'Radspeed'},
+                    'exposure_current_units': {'small': 'mA', 'large': 'mAs'},
+                    'generated': {
+                        'attachment_id': source_file.upload_token,
+                        'filename': source_file.original_filename,
+                    },
+                },
+            })
+            resolution = app_module._calibration_report_exposure_unit_resolution(source_file)
+            self.assertEqual(resolution['target_units'], {'small': 'mA', 'large': 'mAs'})
+            self.assertEqual(resolution['unit_sources'], {'small': 'explicit', 'large': 'explicit'})
+            self.assertTrue(resolution['explicit'])
+
+            submission.payload_json = json.dumps({
+                'calibration_report': {
+                    'machine': {'model': 'Radspeed'},
+                    'exposure_current_units': {'small': '', 'large': 'invalid'},
+                },
+            })
+            resolution = app_module._calibration_report_exposure_unit_resolution(source_file)
+            self.assertEqual(resolution['target_units'], {'small': '', 'large': ''})
+            self.assertEqual(resolution['unit_sources'], {'small': 'explicit', 'large': 'explicit'})
+
+    def test_v2_repairs_mixed_current_headers_and_preserves_every_other_cell(self):
+        source_id, submission_id, disk_name = self._create_source_fixture()
+        with zipfile.ZipFile(io.BytesIO(self.docx_bytes), 'r') as package:
+            entries = [(info, package.read(info.filename)) for info in package.infolist()]
+        document_index = next(
+            index for index, (info, _data) in enumerate(entries)
+            if info.filename == 'word/document.xml'
+        )
+        document_xml = entries[document_index][1].decode('utf-8')
+        operations = []
+
+        def update_cell(table_index, row_index, cell_index, transform):
+            tables = app_module._calibration_report_xml_blocks(document_xml, 'tbl')
+            table_start, table_end = tables[table_index]
+            table_xml = document_xml[table_start:table_end]
+            row_start, row_end = app_module._calibration_report_xml_blocks(table_xml, 'tr')[row_index]
+            row_xml = table_xml[row_start:row_end]
+            cell_start, cell_end = app_module._calibration_report_xml_blocks(row_xml, 'tc')[cell_index]
+            cell_xml = row_xml[cell_start:cell_end]
+            operations.append((table_start + row_start + cell_start, table_start + row_start + cell_end, transform(cell_xml)))
+
+        update_cell(2, 3, 2, lambda cell: app_module._calibration_report_replace_current_unit_heading(cell, 'mAs'))
+        update_cell(3, 3, 2, lambda cell: app_module._calibration_report_replace_current_unit_heading(cell, 'mA'))
+        for start, end, updated in sorted(operations, reverse=True):
+            document_xml = document_xml[:start] + updated + document_xml[end:]
+        entries[document_index] = (entries[document_index][0], document_xml.encode('utf-8'))
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, 'w') as target:
+            for info, data in entries:
+                target.writestr(info, data)
+        mixed_bytes = output.getvalue()
+        pathlib.Path(self.storage.name, disk_name).write_bytes(mixed_bytes)
+
+        with self.app.app_context():
+            source_file = self.db.session.get(app_module.ShiftFile, source_id)
+            submission = self.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            submission.payload_json = json.dumps({
+                '_generated_calibration_report': {
+                    'source': 'generated_calibration_report',
+                    'file_id': source_id,
+                    'filename': source_file.original_filename,
+                },
+                'calibration_report': {
+                    'machine': {'model': 'Radspeed'},
+                    'exposure_current_units': {'small': 'mA', 'large': 'mAs'},
+                    'generated': {
+                        'attachment_id': source_file.upload_token,
+                        'filename': source_file.original_filename,
+                    },
+                },
+            })
+            self.db.session.commit()
+            candidate = app_module._calibration_report_repair_candidate_for_file(source_file)
+            self.assertEqual(candidate['status'], 'repairable')
+            self.assertEqual(candidate['target_units'], {'small': 'mA', 'large': 'mAs'})
+            self.assertEqual(candidate['unit_sources'], {'small': 'explicit', 'large': 'explicit'})
+
+        before_tables = self._document_tables(mixed_bytes)
+        before_states = app_module._calibration_report_docx_repair_inspection(mixed_bytes, {'small': 'mA', 'large': 'mAs'})
+        self.assertEqual(before_states['status'], 'repairable')
+        self.assertEqual([item['current_unit'] for item in before_states['table_states']], ['mAs', 'mA'])
+        repaired_bytes, repaired_states = app_module._calibration_report_repair_docx_bytes(
+            mixed_bytes,
+            target_units={'small': 'mA', 'large': 'mAs'},
+        )
+        self.assertEqual(repaired_states['status'], 'already_repaired')
+        self.assertEqual([item['current_unit'] for item in repaired_states['table_states']], ['mA', 'mAs'])
+        after_tables = self._document_tables(repaired_bytes)
+        for table_index, (before_table, after_table) in enumerate(zip(before_tables, after_tables)):
+            self.assertEqual(len(before_table), len(after_table), table_index)
+            for row_index, (before_row, after_row) in enumerate(zip(before_table, after_table)):
+                self.assertEqual(len(before_row), len(after_row), (table_index, row_index))
+                for cell_index, (before_cell, after_cell) in enumerate(zip(before_row, after_row)):
+                    if table_index in (2, 3) and row_index == 3 and cell_index == 2:
+                        continue
+                    self.assertEqual(before_cell, after_cell, (table_index, row_index, cell_index))
+        second_bytes, second_states = app_module._calibration_report_repair_docx_bytes(
+            repaired_bytes,
+            target_units={'small': 'mA', 'large': 'mAs'},
+        )
+        self.assertEqual(second_states['status'], 'already_repaired')
+        self.assertEqual(second_bytes, repaired_bytes)
 
     def test_historical_repair_preserves_file_ids_delivery_metadata_and_is_idempotent(self):
         source_id, submission_id, disk_name = self._create_source_fixture()

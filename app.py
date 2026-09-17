@@ -17099,8 +17099,57 @@ CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS = 3
 CALIBRATION_REPORT_CONVERSION_RETRY_DELAYS = (60, 300, 1800)
 CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
 CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
-CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v1'
+CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v2'
 CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER = '_calibration_report_historical_repair'
+CALIBRATION_REPORT_EXPOSURE_CURRENT_UNITS = ('mA', 'mAs')
+
+
+def _calibration_report_normalize_exposure_current_unit(value):
+    """Normalize one persisted current-unit value without inventing a default."""
+    value = (clean_str(value) or '').strip()
+    if value.casefold() == 'ma':
+        return 'mA'
+    if value.casefold() == 'mas':
+        return 'mAs'
+    return ''
+
+
+def _calibration_report_model_rule_unit(model):
+    """Resolve the legacy current unit from the saved model name only."""
+    normalized = re.sub(r'[^a-z0-9]+', '', (clean_str(model) or '').casefold())
+    return 'mA' if ('radspeed' in normalized or 'flexavision' in normalized) else 'mAs'
+
+
+def _calibration_report_exposure_unit_resolution(source_file):
+    """Return safe per-focal repair targets and their provenance.
+
+    The resolver deliberately returns only unit labels and source labels. It never returns
+    measurement rows or other payload values to the Calibration Center preview.
+    """
+    submission_id = clean_int(getattr(source_file, 'online_tsr_submission_id', None)) if source_file else None
+    submission = db.session.get(OnlineTsrSubmission, submission_id) if submission_id else None
+    payload = parse_online_tsr_payload_json(submission)
+    report = payload.get('calibration_report') if isinstance(payload, dict) else None
+    report = report if isinstance(report, dict) else {}
+    raw_units = report.get('exposure_current_units')
+    explicit_units = isinstance(raw_units, dict)
+    machine = report.get('machine') if isinstance(report.get('machine'), dict) else {}
+    model_rule_unit = _calibration_report_model_rule_unit(machine.get('model'))
+    target_units = {}
+    unit_sources = {}
+    for focal in ('small', 'large'):
+        if explicit_units:
+            target_units[focal] = _calibration_report_normalize_exposure_current_unit(raw_units.get(focal))
+            unit_sources[focal] = 'explicit'
+        else:
+            target_units[focal] = model_rule_unit
+            unit_sources[focal] = 'model_rule'
+    return {
+        'target_units': target_units,
+        'unit_sources': unit_sources,
+        'model_rule_unit': model_rule_unit,
+        'explicit': explicit_units,
+    }
 
 
 def _calibration_report_now():
@@ -17339,22 +17388,31 @@ def _calibration_report_docx_focal_table_states(document_xml):
             ''.join(node.text or '' for node in cell.findall('.//w:t', _CALIBRATION_REPORT_DOCX_NS))
             for cell in header_cells
         ]
+        focal_label = ''.join(
+            node.text or ''
+            for node in rows[0].findall('.//w:t', _CALIBRATION_REPORT_DOCX_NS)
+        )
+        focal_match = re.fullmatch(r'FOCAL SPOT:\s*(SMALL|LARGE)', focal_label, re.IGNORECASE)
         focal_value = ''.join(
             node.text or '' for node in focal_cells[0].findall('.//w:t', _CALIBRATION_REPORT_DOCX_NS)
         )
         if (
-            header_values[0:3] != list(_CALIBRATION_REPORT_DOCX_EXPECTED_HEADERS[0:3]) or
+            header_values[0:2] != list(_CALIBRATION_REPORT_DOCX_EXPECTED_HEADERS[0:2]) or
             header_values[4:6] != list(_CALIBRATION_REPORT_DOCX_EXPECTED_HEADERS[4:6]) or
+            not focal_match or
             not re.fullmatch(r'FOCAL SIZE:\s*(?:\d+(?:\.\d*)?|\.\d+)', focal_value) or
             header_values[3] not in {'Dose (mGy)', 'Dose (uGy)'} or
+            header_values[2] not in {'mA / mAs', 'mA', 'mAs'} or
             header_values[4] != 'Dose Rate (mGy/s)' or
             header_values[6] not in {'Measured Exposure Time(sec)', 'Measured Exposure Time(msec)'}
         ):
             continue
         table_states.append({
             'table_index': table_index,
+            'focal': focal_match.group(1).lower(),
             'rows': len(rows),
             'focal_size': focal_value,
+            'current_unit': header_values[2],
             'dose': header_values[3],
             'measured_time': header_values[6],
         })
@@ -17362,12 +17420,14 @@ def _calibration_report_docx_focal_table_states(document_xml):
     expected_indexes = [2, 3] if len(tables) == 5 else [2]
     if [state['table_index'] for state in table_states] != expected_indexes:
         raise ValueError('Generated Calibration Report focal table structure was not recognized.')
-    if len(table_states) == 2 and table_states[1]['measured_time'] != 'Measured Exposure Time(msec)':
-        raise ValueError('Large focal measured-time heading was changed unexpectedly.')
+    if len(table_states) == 2 and [state['focal'] for state in table_states] != ['small', 'large']:
+        raise ValueError('Generated Calibration Report focal table order was not recognized.')
+    if len(table_states) == 1 and table_states[0]['focal'] not in {'small', 'large'}:
+        raise ValueError('Generated Calibration Report focal table identity was not recognized.')
     return table_states
 
 
-def _calibration_report_docx_repair_inspection(docx_bytes):
+def _calibration_report_docx_repair_inspection(docx_bytes, target_units=None):
     """Fail closed unless the bytes are a recognized generated report shape.
 
     The repair intentionally uses the parsed table structure only for recognition.  The
@@ -17383,9 +17443,28 @@ def _calibration_report_docx_repair_inspection(docx_bytes):
         dose_states = {state['dose'] for state in table_states}
         if len(dose_states) != 1:
             return {'status': 'blocked', 'reason': 'Calibration Report Dose headings are only partially migrated.'}
+        if target_units is not None:
+            for state in table_states:
+                target_unit = _calibration_report_normalize_exposure_current_unit(
+                    target_units.get(state['focal']) if isinstance(target_units, dict) else None
+                )
+                if not target_unit:
+                    return {
+                        'status': 'blocked',
+                        'reason': f"Saved {state['focal'].capitalize()} exposure current unit is blank or invalid.",
+                    }
         all_repaired = (
             next(iter(dose_states)) == 'Dose (uGy)' and
-            all(state['measured_time'] == 'Measured Exposure Time(msec)' for state in table_states)
+            all(state['measured_time'] == 'Measured Exposure Time(msec)' for state in table_states) and
+            (
+                target_units is None or
+                all(
+                    state['current_unit'] == _calibration_report_normalize_exposure_current_unit(
+                        target_units.get(state['focal'])
+                    )
+                    for state in table_states
+                )
+            )
         )
         return {
             'status': 'already_repaired' if all_repaired else 'repairable',
@@ -17452,8 +17531,34 @@ def _calibration_report_replace_cell_heading(cell_xml, kind):
     return updated, used
 
 
-def _calibration_report_repair_document_xml(document_xml):
-    """Return repaired document XML while changing only three visible headings."""
+def _calibration_report_replace_current_unit_heading(cell_xml, target_unit):
+    """Replace only the visible third-column unit token, preserving its runs."""
+    target_unit = _calibration_report_normalize_exposure_current_unit(target_unit)
+    if not target_unit:
+        raise ValueError('Calibration Report exposure current unit target is blank or invalid.')
+    current = _calibration_report_xml_cell_text(cell_xml)
+    if current not in {'mA / mAs', 'mA', 'mAs'}:
+        raise ValueError('Calibration Report exposure current unit heading was not recognized.')
+    text_pattern = re.compile(r'(<w:t\b[^>]*>)(.*?)(</w:t>)', re.S)
+    matches = list(text_pattern.finditer(cell_xml))
+    if not matches:
+        raise ValueError('Calibration Report exposure current unit heading has no text run.')
+    replacements = [''] * len(matches)
+    if len(matches) == 1:
+        replacements[0] = target_unit
+    else:
+        replacements[0 if target_unit == 'mA' else len(matches) - 1] = target_unit
+    for index in range(len(matches) - 1, -1, -1):
+        match = matches[index]
+        replacement = match.group(1) + replacements[index] + match.group(3)
+        cell_xml = cell_xml[:match.start()] + replacement + cell_xml[match.end():]
+    if _calibration_report_xml_cell_text(cell_xml) != target_unit:
+        raise ValueError('Calibration Report exposure current unit replacement was not exact.')
+    return cell_xml
+
+
+def _calibration_report_repair_document_xml(document_xml, target_units=None):
+    """Return repaired document XML while changing only approved visible headings."""
     # ``inspection`` is performed by the caller against the complete package.  This helper
     # still checks the raw structure and exact cell text before every byte replacement.  The
     # table indexes come from the parsed generated shape so one-focal-spot compact reports
@@ -17481,6 +17586,14 @@ def _calibration_report_repair_document_xml(document_xml):
         if changed:
             operations.append((table_start + row_start + cell_start, table_start + row_start + cell_end, updated))
 
+        if target_units is not None:
+            target_unit = target_units.get(table_state['focal']) if isinstance(target_units, dict) else None
+            current_cell_start, current_cell_end = _calibration_report_xml_blocks(row_xml, 'tc')[2]
+            current_cell_xml = row_xml[current_cell_start:current_cell_end]
+            current_updated = _calibration_report_replace_current_unit_heading(current_cell_xml, target_unit)
+            if current_updated != current_cell_xml:
+                operations.append((table_start + row_start + current_cell_start, table_start + row_start + current_cell_end, current_updated))
+
         if table_state['measured_time'] == 'Measured Exposure Time(sec)':
             time_cell_start, time_cell_end = _calibration_report_xml_blocks(row_xml, 'tc')[6]
             time_cell_xml = row_xml[time_cell_start:time_cell_end]
@@ -17499,9 +17612,9 @@ def _calibration_report_repair_document_xml(document_xml):
     return document_xml
 
 
-def _calibration_report_repair_docx_bytes(docx_bytes):
+def _calibration_report_repair_docx_bytes(docx_bytes, target_units=None):
     """Repair a generated report package and preserve every part except headings."""
-    inspection = _calibration_report_docx_repair_inspection(docx_bytes)
+    inspection = _calibration_report_docx_repair_inspection(docx_bytes, target_units=target_units)
     if inspection.get('status') == 'blocked':
         raise ValueError(inspection.get('reason') or 'Calibration Report DOCX is not repairable.')
     if inspection.get('status') == 'already_repaired':
@@ -17510,14 +17623,14 @@ def _calibration_report_repair_docx_bytes(docx_bytes):
         entries = [(info, package.read(info.filename)) for info in package.infolist()]
     document_index = next(index for index, (info, _data) in enumerate(entries) if info.filename == 'word/document.xml')
     document_xml = entries[document_index][1].decode('utf-8')
-    repaired_xml = _calibration_report_repair_document_xml(document_xml)
+    repaired_xml = _calibration_report_repair_document_xml(document_xml, target_units=target_units)
     entries[document_index] = (entries[document_index][0], repaired_xml.encode('utf-8'))
     output = io.BytesIO()
     with zipfile.ZipFile(output, 'w') as target:
         for info, data in entries:
             target.writestr(info, data)
     repaired_bytes = output.getvalue()
-    repaired_inspection = _calibration_report_docx_repair_inspection(repaired_bytes)
+    repaired_inspection = _calibration_report_docx_repair_inspection(repaired_bytes, target_units=target_units)
     if repaired_inspection.get('status') != 'already_repaired':
         raise ValueError('Repaired Calibration Report DOCX did not validate as fully migrated.')
     return repaired_bytes, repaired_inspection
@@ -17686,6 +17799,7 @@ def _calibration_report_repair_candidate_for_file(source_file):
     """Build one stable repair candidate from a generated source file."""
     if not source_file or not calibration_report_source_file_is_private(source_file):
         return None
+    unit_resolution = _calibration_report_exposure_unit_resolution(source_file)
     base = {
         'repair_id': _calibration_report_repair_id(source_file.id),
         'source_file_id': clean_int(source_file.id),
@@ -17697,13 +17811,20 @@ def _calibration_report_repair_candidate_for_file(source_file):
         'pdf_filename': '',
         'source_sha256': '',
         'pdf_sha256': '',
+        'target_units': dict(unit_resolution['target_units']),
+        'exposure_current_units': dict(unit_resolution['target_units']),
+        'unit_sources': dict(unit_resolution['unit_sources']),
+        'unit_resolution_source': dict(unit_resolution['unit_sources']),
         'status': 'blocked',
         'reason': '',
     }
     try:
         source_bytes = _calibration_report_source_bytes(source_file)
         base['source_sha256'] = hashlib.sha256(source_bytes).hexdigest()
-        inspection = _calibration_report_docx_repair_inspection(source_bytes)
+        inspection = _calibration_report_docx_repair_inspection(
+            source_bytes,
+            target_units=unit_resolution['target_units'],
+        )
     except Exception as source_error:
         inspection = {'status': 'blocked', 'reason': 'The generated Calibration Report DOCX is unavailable from managed storage.'}
         base['reason'] = clean_str(str(source_error))[:300]
@@ -17831,13 +17952,18 @@ def _calibration_report_apply_historical_repair(source_file_id):
         'repair_version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
         'source_file_id': clean_int(source_file.id),
         'pdf_file_id': candidate.get('pdf_file_id'),
+        'target_units': dict(candidate.get('target_units') or {}),
+        'unit_sources': dict(candidate.get('unit_sources') or {}),
         'before_source_sha256': source_before_sha256,
         'before_pdf_sha256': pdf_before_sha256,
         **_calibration_report_repair_actor_metadata(),
     }
     try:
         source_bytes = _calibration_report_source_bytes(source_file)
-        repaired_docx, inspection = _calibration_report_repair_docx_bytes(source_bytes)
+        repaired_docx, inspection = _calibration_report_repair_docx_bytes(
+            source_bytes,
+            target_units=candidate.get('target_units') or {},
+        )
         source_after_sha256 = hashlib.sha256(repaired_docx).hexdigest()
         job = calibration_report_conversion_for_source(source_file.id)
         pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, job)
@@ -21606,8 +21732,8 @@ def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
-    # Navigation shell bump: v166 PM history -> v167 Calibration Report units and repair center.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v167-calibration-report-units';
+    # Navigation shell bump: v167 Calibration Report units and repair center -> v168 explicit current units.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v168-calibration-report-current-units';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -21625,13 +21751,13 @@ const APP_SHELL = [
   '/static/css/app-dashboard.css',
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
-  '/static/css/app-calibration-report.css?v=8',
+  '/static/css/app-calibration-report.css?v=9',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=26',
+  '/static/js/app-calibration-report.js?v=27',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

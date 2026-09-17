@@ -1,5 +1,171 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Report Page 3 explicit current units and v2 historical repair
+
+**Status:** Executed — uncommitted
+**Approved:** 2026-09-17 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-17 — implementation is authorized for this bounded package only.
+**Detailed:** 2026-09-17.
+
+### Implementation outcome (2026-09-17)
+
+- Implemented the approved Page 3 schema-6 `exposure_current_units` state, independent Small/Large
+  mA/mAs radio groups, disabled-state retention, dynamic third headers/aria labels, included-only
+  final-save validation, and generated-final invalidation in `static/js/app-calibration-report.js`
+  and `static/css/app-calibration-report.css`. Existing `ma_mas` and all measurement values remain
+  unchanged; legacy payloads without units remain blank in the editor.
+- Kept `static/templates/calibration-report/calibration-report-template.docx` unchanged because its
+  neutral third-header slots were present and valid. Runtime generation now patches included focal
+  headers independently, and representative mixed Small `mA` / Large `mAs` OOXML was verified. No
+  artifact-operation marker was run because no official template/artifact edit was required.
+- Implemented v2 fail-closed historical recognition/resolution in `app.py`, including explicit-unit
+  authority, normalized Radspeed/Flexavision model rules, compact/one-focal/mixed-header handling,
+  target/source preview metadata, third-header-only changes for already-v1 reports while retaining
+  prior Dose/time compatibility for older recognized shapes, PDF validation-before-overwrite, stable
+  artifact metadata, rollback, idempotency, and append-only safe audit metadata. No owner/production
+  data or `scheduler.db` repair was executed.
+- Added Calibration Center target-unit/source rendering, release metadata, CSS/JS query bumps, and
+  the monotonic service-worker cache marker v168; protected dirty paths remain preserved.
+- Verification: focused report/PDF/Center suites passed 43/43; `tests.test_tsr_draft_sync` passed
+  11/11; the related suite without the known temporary-engine ordering interaction passed 167/167;
+  the combined related suite passed 180 with 1 skip and 1 pre-existing manifest-sync ordering
+  failure; full discovery ran 1211 tests with 2 skips and 20 unrelated existing/environment/order
+  failures. JavaScript syntax, Python AST, Jinja, release JSON, OOXML ZIP/XML, and `git diff --check`
+  checks passed. LibreOffice/soffice was unavailable, so DOCX-to-PDF Page 3 visual rendering could
+  not be performed; Poppler `pdftoppm`/`pdfinfo` were available. Python bytecode compilation was
+  unavailable because the existing `__pycache__` was permission-locked, while AST/imported tests
+  passed.
+
+### Context
+
+The current Calibration Report editor stores the third Page 3 exposure column as the neutral
+`mA / mAs` label for both focal spots. That is safe for a draft but does not record which current
+unit the entered `ma_mas` values represent, so the generated report and later historical repair
+cannot make an independent Small/Large choice. The preceding package already moved the payload to
+schema 5, corrected Dose/measured-time labels, retained the official neutral DOCX header slot,
+and added a strict-admin repair at `calibration-report-units-v1`. This package adds explicit
+per-focal current-unit selection, advances the payload and repair contracts, and keeps all entered
+measurement values and historical artifact metadata unchanged.
+
+### Decisions taken
+
+1. Page 3 keeps the existing Include Small/Include Large controls and adds one independent radio
+   group beside each focal control. Each group has `mA` and `mAs`; a new report starts with both
+   units blank. Radio selection is required only for an included focal table. Excluding a table
+   removes its final-save requirement but retains its prior selection while disabled so re-enabling
+   restores it. Selecting a unit is a normal editor change and invalidates generated-final state.
+2. The client payload advances from schema 5 to schema 6 and adds
+   `exposure_current_units: {small, large}`. Each value is `mA`, `mAs`, or blank in a draft.
+   Measurement rows continue to use `ma_mas`; numeric and other measurement values are not
+   converted. Missing/legacy units remain blank in the engineer editor and are never silently
+   defaulted there.
+3. The supplied official DOCX already contains the neutral `mA / mAs` third-header patch slot.
+   Runtime DOCX authoring patches only the included focal table's third header to its saved unit;
+   mixed Small `mA` / Large `mAs` output is supported. Unselected tables, signatures, geometry,
+   page breaks, focal-size text, and all measurements remain as currently handled. No official
+   template edit or artifact marker is needed unless inspection proves a real template/artifact
+   edit is required; in that event the PDF-skill marker is run exactly once immediately before it.
+4. Historical repair advances the current marker from `calibration-report-units-v1` to
+   `calibration-report-units-v2`. A payload with no explicit `exposure_current_units` uses the
+   model rule: normalized saved `machine.model` containing `radspeed` or `flexavision` maps to
+   `mA`; blank, missing, and all other models map to `mAs`. An explicit per-focal value is
+   authoritative. Repair recognition accepts neutral `mA / mAs`, `mA`, and `mAs` independently
+   per focal table, then changes only the third header needed for the target; it never changes
+   measurements or focal sizes. Existing v1 Dose/measured-time compatibility remains recognized.
+5. Calibration Center remains strict-admin and no-write for preview. Preview/apply inventories all
+   recognized revisions (including compact, Small-only/Large-only, current, approved, emailed,
+   superseded, and missing-PDF cases), exposes only target unit and resolution source (`explicit`
+   or `model_rule`), and retains stable IDs, filenames, approvals, delivery/email history, audit,
+   rollback, stale-manifest invalidation, and idempotent sequential Repair All behavior. No repair
+   is executed against `scheduler.db`, owner data, or production storage.
+
+### Investigation
+
+- `static/js/app-calibration-report.js:15-25,149-230,343-483,640-691,929-974` currently has
+  schema 5, neutral third-column headers, focal include/size controls, and final validation that
+  does not require a current unit; `stableText()` already invalidates generated metadata when a
+  persisted report field changes.
+- `app.py:17089-17103,17306-17521,17685-17960` currently defines the v1 repair marker, recognizes
+  only `mA / mAs` in the generated-table shape, and patches Dose/measured-time headings. The
+  existing helpers preserve source/PDF IDs and storage rollback; the follow-on must add target
+  unit resolution and third-header patching without weakening those guards.
+- `templates/offline_tsr.html` serves the report script and cache-busted CSS; `app.py:21607-21636`
+  embeds the current v167 worker cache and script/CSS shell entries. `templates/calibration_center.html`
+  renders the strict-admin repair inventory and sequential client flow.
+- Existing focused contracts are in `tests/test_tsr_calibration_report.py`,
+  `tests/test_calibration_report_pdf.py`, `tests/test_calibration_center.py`, and related
+  approval/email/offline/cache tests. The protected dirty paths are `scheduler.db`, handoff
+  artifacts, `.claude/`, `output/`, and `tmp/`; none overlap the authorized files.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read all applicable instructions, the complete plans/change records,
+   Git status, current calibration sources/tests/configuration, and the PDF skill. Preserve
+   protected/unrelated work. Keep this plan at the top with `Status: In progress` and append
+   implementation-start facts to the existing 2026-09-17 `changes.md` section before behavior edits.
+2. **Editor payload and Page 3 UI.** In `static/js/app-calibration-report.js`, add schema 6 and
+   normalized `exposure_current_units`, render independent accessible `mA`/`mAs` radio groups
+   beside each Include control, update the third header and third-column aria labels immediately
+   from each group, retain selections while disabled, invalidate generated output through the
+   existing input lifecycle, and require units for included focal spots only. Add focused Node/
+   source contracts for blank new units, legacy blank migration, mutual exclusion, dynamic labels,
+   included/excluded validation, retention, mixed output, and unchanged `ma_mas`/measurements.
+3. **Generated DOCX contract.** Keep the official neutral template unchanged unless a real missing
+   slot is found. Patch the third header independently in `buildDocx()` using saved explicit units,
+   preserve neutral text for sample drafts with blank units, and retain existing table removal,
+   compact rows, signatures, geometry, and values. Inspect representative generated OOXML; if an
+   actual DOCX/PDF authoring edit is required, run the PDF-skill marker once immediately before
+   that first edit and follow render/verification requirements.
+4. **v2 historical repair and resolver.** In `app.py`, advance the repair version, add normalized
+   model-rule/explicit-unit resolution and per-focal source metadata, recognize neutral/mA/mAs
+   third headers independently (including compact and one-focal shapes), and patch only the third
+   header needed for the target while preserving prior v1 labels and existing fail-closed checks.
+   Keep conversion validation before overwrite, stable source/PDF linkage and names, approvals,
+   signatures, delivery/email history, idempotency, rollback, and safe audit metadata. Do not run
+   repair against owner/production data.
+5. **Calibration Center presentation.** Extend `templates/calibration_center.html` to display target
+   Small/Large units and `explicit`/`model_rule` source without exposing measurements. Preserve
+   strict-admin/CSRF routes, no-write preview, stable identifiers, warning text, and typed
+   sequential/resumable Repair All; add source/template contracts as needed.
+6. **Delivery records.** Bump the calibration script cache query and any edited report CSS query
+   monotonically, advance the embedded service-worker marker monotonically, and add a user-facing
+   item to `static/changelog/releases.json`. Do not modify protected artifact directories.
+7. **Verification and closeout.** Run fail-first focused report/PDF/Center checks where feasible,
+   then focused approval/email/offline/cache checks and a proportional full suite. Run Python AST,
+   JavaScript syntax, Jinja, JSON, OOXML/package, and `git diff --check` checks; perform artifact
+   Page 3 rendering if a DOCX converter exists, otherwise report the exact unavailable check.
+   Update this plan to `Executed — uncommitted` with actual outcomes and append exact factual
+   implementation/verification bullets to the same-date `changes.md` section. Do not commit, push,
+   deploy, use browser/Codex UI automation, or change Railway/production state.
+
+### Deliberately excluded
+
+No measurement or focal-size normalization; no canonical replacement of `ma_mas`; no default unit
+in the engineer editor; no changes to the official DOCX template when its neutral slot is valid;
+no ordinary approval/email/signature behavior changes; no deletion/recreation of ShiftFiles; no
+repair execution against `scheduler.db`, owner data, production storage, Railway, or deployment;
+no browser/Codex UI automation; no broad Calibration Center redesign; and no commit, push, merge,
+rebase, or destructive database/storage operation.
+
+### Verification and completion criteria
+
+New reports expose two independent unselected unit groups; included focal tables cannot be finally
+saved without a unit, excluded tables have no unit requirement, and changing a unit clears the
+generated-final lifecycle. Payload schema 6 preserves all measurement fields. Generated mixed-unit
+DOCX output has exactly the requested third headers and unchanged values/focal sizes. v2 repair
+resolves explicit units or the model rule across Radspeed/Flexavision case/space variants and
+unrelated/missing models, recognizes all supported table shapes/headers, updates only third-header
+text, generates and validates PDF before overwrite, and preserves stable records, audit,
+idempotency, rollback, and stale delivery manifests. Protected dirty paths remain untouched and
+all test pass/fail/skip results are recorded truthfully.
+
+### After implementation
+
+The Builder performs a final self-review against this package, records deviations and unavailable
+artifact checks, and stops with an uncommitted working tree. Formal post-implementation review,
+correction, commit/push, Railway verification, and any production/owner-data action require separate
+owner authorization under project rules.
+
 ## Calibration Report Page 3 units, defaults, and historical artifact repair
 
 **Status:** Executed — implementation commit `ff4effc`; publication authorized by the owner.

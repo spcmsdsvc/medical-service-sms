@@ -213,6 +213,7 @@ const complete = {
   mechanical_checks: [{ result:'Pass' }],
   generator_checks: [{ result:'Pass' }, { result:'Pass & verified' }, { result:'Pass' }, { result:'Pass' }],
   exposure: { small:[{ nominal_kvp:'80', measured_kvp:'80.2', ma_mas:'100mA', dose_mgy:'1.2', dose_rate:'2.4', time_msec:'10', measured_time:'0.010' }], large:[{ nominal_kvp:'100' }] },
+  exposure_current_units: { small:'mA', large:'mAs' },
   performance_results: ['Pass', 'Pass'],
   signature: { name:'Engineer', image: png }
 };
@@ -530,7 +531,7 @@ function setReadyFields(report) {
    Object.assign(report.machine, { manufacturer:"Shimadzu", modality:"Digital Angiography System", model:"Mobile Dart Evolution MX9", serial_number:"READY-1" });
   Object.assign(report.calibration, { machine_calibration_date:"2026-08-19", next_calibration_date:"2027-08-19", test_tool_manufacturer:"Tool Co", test_tool_model:"Tool 1", test_tool_serial:"TOOL-1", test_tool_calibration_date:"2026-08-01", engineer_name:"Engineer" });
   report.mechanical_checks.forEach(item => { item.result = "Pass"; }); report.generator_checks.forEach(item => { item.result = "Pass"; });
-  report.exposure.small[0].nominal_kvp = "80"; report.exposure.large[0].nominal_kvp = "100"; report.performance_results = report.performance_results.map(() => "Pass"); report.signature = { name:"Engineer", image:png }; return report;
+  report.exposure.small[0].nominal_kvp = "80"; report.exposure.large[0].nominal_kvp = "100"; report.performance_results = report.performance_results.map(() => "Pass"); report.signature = { name:"Engineer", image:png }; report.exposure_current_units = { small:"mA", large:"mAs" }; return report;
 }
 (async () => {
   const api = context.calibrationReport;
@@ -701,6 +702,10 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('Clear Form', self.template_source)
         self.assertIn('focal_spots', self.script_source)
         self.assertIn('focal_sizes', self.script_source)
+        self.assertIn('exposure_current_units', self.script_source)
+        self.assertIn('data-cr-exposure-unit', self.script_source)
+        self.assertIn('mA / mAs', self.script_source)
+        self.assertIn('exposure current unit', self.script_source)
         self.assertIn('SAMPLE_', self.script_source)
         self.assertIn('calibration_report_not_finalized', self.script_source)
         self.assertIn('FOCAL SIZE:', self.script_source)
@@ -709,8 +714,8 @@ class CalibrationReportContractTests(unittest.TestCase):
 
     def test_eight_row_focal_editor_and_scroll_contract(self):
         self.assertIn('CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8', self.script_source)
-        self.assertIn('schema_version: 5', self.script_source)
-        self.assertIn('base.schema_version = 5', self.script_source)
+        self.assertIn('schema_version: 6', self.script_source)
+        self.assertIn('base.schema_version = 6', self.script_source)
         self.assertIn('Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }', self.script_source)
         self.assertIn('overflow-y:auto', self.css_source)
         self.assertRegex(self.css_source, r'\.calibration-report-exposure-scroll[^\{]*\{[^}]*max-height:\s*\d+px')
@@ -753,7 +758,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         result = subprocess.run([str(NODE), '-e', NODE_SAMPLE_FINAL_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
-        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
+        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'mixedUnitsInDocx', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
             self.assertTrue(payload[key], key)
 
     def test_entry_page_has_single_card_action_and_accessible_dialog_contract(self):
@@ -783,10 +788,10 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('focusDialog', self.script_source)
         self.assertIn("getAttribute('tabindex') !== '-1'", self.script_source)
         self.assertIn('getClientRects().length > 0', self.script_source)
-        self.assertIn("css/app-calibration-report.css') }}?v=8", self.template_source)
+        self.assertIn("css/app-calibration-report.css') }}?v=9", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=26", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=26'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=27", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=27'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1014,9 +1019,18 @@ let currentTSR = {};
 let schedule = { client_name:'Schedule Client', client_address:'Schedule Address', product_name:'Schedule Model', product_id:'SCHEDULE-SERIAL', date_iso:'2026-08-20', serviced_by:'Schedule Engineer', client_contact:{} };
 
 class FakeElement {
-  constructor(attributes = {}) { this.attributes = attributes; this.value = ''; this.listeners = {}; this.classList = { toggle:()=>{}, contains:()=>false }; }
+  constructor(attributes = {}) { this.attributes = attributes; this.value = attributes.value || ''; this.checked = false; this.disabled = false; this.textContent = ''; this.listeners = {}; this.classList = { toggle:()=>{}, contains:()=>false }; }
   getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
   matches(selector) { const match = String(selector).match(/^\[([^\]=]+)\]$/); return !!(match && this.getAttribute(match[1]) !== null); }
+  querySelectorAll(selector) {
+    const group = this.getAttribute('data-cr-focal-group');
+    if (!group) return [];
+    const match = String(selector).match(/^\[([^\]=]+)\]$/); if (!match) return [];
+    const attribute = match[1];
+    return editor.elements.filter(element => element.getAttribute(attribute) === group || String(element.getAttribute(attribute) || '').startsWith(group + ':'));
+  }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   addEventListener(name, handler) { (this.listeners[name] ||= []).push(handler); }
   dispatch(name, event = { target:this }) { for (const handler of this.listeners[name] || []) handler(event); }
   focus() {}
@@ -1027,10 +1041,10 @@ Object.defineProperty(editor, 'innerHTML', {
   set(value) {
     this.html = value;
     this.elements = [];
-    for (const attribute of ['data-cr-field', 'data-cr-check', 'data-cr-exposure', 'data-cr-performance', 'data-cr-focal-spot', 'data-cr-focal-size']) {
-      const pattern = new RegExp('<(?:input|textarea)\\b[^>]*' + attribute + '="([^"]+)"[^>]*>', 'g');
-      let match;
-      while ((match = pattern.exec(value))) this.elements.push(new FakeElement({ [attribute]:match[1] }));
+    const tagPattern = /<([a-z]+)\b([^>]*)>/gi; let match;
+    while ((match = tagPattern.exec(value))) {
+      const attributes = {}; for (const item of match[2].matchAll(/([:\w-]+)(?:="([^"]*)")?/g)) attributes[item[1]] = item[2] || '';
+      if (Object.keys(attributes).some(key => key.indexOf('data-cr-') === 0)) this.elements.push(new FakeElement(attributes));
     }
   },
   get() { return this.html || ''; }
@@ -1077,13 +1091,45 @@ function report(overrides = {}) {
     technical:{}, calibration:{ machine_calibration_date:'2026-08-20', next_calibration_date:'2027-08-20', test_tool_manufacturer:'Tool Co', test_tool_model:'Tool 1', test_tool_serial:'TOOL-1', test_tool_calibration_date:'2026-08-01', engineer_name:'Engineer & Niño' },
     mechanical_checks:[{result:'Pass'}], generator_checks:[{result:'Pass'},{result:'Pass'},{result:'Pass'},{result:'Pass'}],
     exposure:{ small:rows, large:[Object.assign({}, rows[0], { nominal_kvp:'100' }), {}, {}, {}, {}, {}, {}, {}] }, performance_results:['Pass','Pass'], signature:{ name:'Engineer & Niño', image:png },
-    focal_spots:{ small:true, large:true }, focal_sizes:{ small:'0.6', large:'1.2' }
+    focal_spots:{ small:true, large:true }, focal_sizes:{ small:'0.6', large:'1.2' }, exposure_current_units:{ small:'mA', large:'mAs' }
   };
   return Object.assign(base, overrides);
 }
 
 (async () => {
   const api = context.calibrationReport;
+  api.apply({ status:'draft' });
+  const fresh = api.collect();
+  if (fresh.schema_version !== 6 || fresh.exposure_current_units.small !== '' || fresh.exposure_current_units.large !== '') throw new Error('new report did not start with blank exposure current units');
+  const unitInputs = editor.elements.filter(element => element.getAttribute('data-cr-exposure-unit'));
+  if (unitInputs.length !== 4) throw new Error('Page 3 did not render four exposure current unit radios');
+  const unitNames = new Set(unitInputs.map(element => element.getAttribute('name')));
+  if (unitNames.size !== 2 || unitInputs.some(element => !element.getAttribute('name'))) throw new Error('exposure current unit groups are not independent');
+  if (unitInputs.some(element => element.checked)) throw new Error('new report selected an exposure current unit by default');
+  const unitHeadings = editor.elements.filter(element => element.getAttribute('data-cr-exposure-unit-heading'));
+  if (unitHeadings.length !== 2 || unitHeadings.some(element => element.textContent !== 'mA / mAs')) throw new Error('neutral exposure current unit headings were not rendered');
+  const smallMa = unitInputs.find(element => element.getAttribute('data-cr-exposure-unit') === 'small' && element.value === 'mA');
+  const smallMas = unitInputs.find(element => element.getAttribute('data-cr-exposure-unit') === 'small' && element.value === 'mAs');
+  const largeMas = unitInputs.find(element => element.getAttribute('data-cr-exposure-unit') === 'large' && element.value === 'mAs');
+  if (!smallMa || !smallMas || !largeMas) throw new Error('exposure current unit radio values were not rendered');
+  smallMa.checked = true; editor.dispatch('change', { target:smallMa });
+  if (api.collect().exposure_current_units.small !== 'mA' || unitHeadings.find(element => element.getAttribute('data-cr-exposure-unit-heading') === 'small').textContent !== 'mA' || unitHeadings.find(element => element.getAttribute('data-cr-exposure-unit-heading') === 'large').textContent !== 'mA / mAs') throw new Error('Small unit selection did not update its heading independently');
+  smallMa.checked = false; smallMas.checked = true; editor.dispatch('change', { target:smallMas });
+  largeMas.checked = true; editor.dispatch('change', { target:largeMas });
+  const mixedSelection = api.collect();
+  const smallMeasurement = editor.elements.find(element => element.getAttribute('data-cr-exposure-unit-input') === 'small');
+  if (mixedSelection.exposure_current_units.small !== 'mAs' || mixedSelection.exposure_current_units.large !== 'mAs' || !smallMas.checked || smallMa.checked || !smallMeasurement?.getAttribute('aria-label')?.endsWith('mAs')) throw new Error('radio selection, heading, or accessibility label was not updated independently');
+  const largeToggle = editor.elements.find(element => element.getAttribute('data-cr-focal-spot') === 'large');
+  if (!largeToggle) throw new Error('large focal include control was not rendered');
+  largeToggle.checked = false; editor.dispatch('change', { target:largeToggle });
+  if (!editor.elements.filter(element => element.getAttribute('data-cr-exposure-unit') === 'large').every(element => element.disabled) || api.collect().exposure_current_units.large !== 'mAs') throw new Error('excluded Large focal unit selection was not disabled and retained');
+  largeToggle.checked = true; editor.dispatch('change', { target:largeToggle });
+  if (editor.elements.filter(element => element.getAttribute('data-cr-exposure-unit') === 'large').some(element => element.disabled) || api.collect().exposure_current_units.large !== 'mAs') throw new Error('re-enabled Large focal unit selection was not restored');
+  const incompleteUnits = report({ exposure_current_units:{ small:'', large:'mAs' } });
+  const includedUnitValidation = api.validateForFinalSave({ calibration_report:incompleteUnits });
+  if (includedUnitValidation.ok || !includedUnitValidation.missing.some(item => item.path === 'exposure_current_units.small')) throw new Error('included focal spot without a unit was accepted');
+  incompleteUnits.focal_spots.large = false; incompleteUnits.exposure_current_units.small = 'mA'; incompleteUnits.exposure_current_units.large = '';
+  if (!api.validateForFinalSave({ calibration_report:incompleteUnits }).ok) throw new Error('excluded focal spot still required a unit');
   const legacyRows = [{ nominal_kvp:'LEGACY-1' }, {}, {}, {}, { nominal_kvp:'LEGACY-5' }];
   const legacy = report({ exposure:{ small:legacyRows, large:legacyRows.map(row => Object.assign({}, row)) } }); delete legacy.focal_spots; delete legacy.focal_sizes;
   api.apply(legacy);
@@ -1128,6 +1174,14 @@ function report(overrides = {}) {
   if (process.env.CALIBRATION_REPORT_PROOF_PATH) fs.writeFileSync(process.env.CALIBRATION_REPORT_PROOF_PATH, Buffer.from(await finalRecord.blob.arrayBuffer()));
   const zip = await context.JSZip.loadAsync(await finalRecord.blob.arrayBuffer());
   const xml = await zip.file('word/document.xml').async('string');
+  function visibleXmlText(fragment) { return fragment.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/\s+/g, ' ').trim(); }
+  function focalHeaderUnit(xmlText, focal) {
+    const table = directBlocks(xmlText, 'tbl').find(block => new RegExp('FOCAL SPOT\\s*:\\s*' + focal).test(visibleXmlText(xmlText.slice(block.start, block.end))));
+    if (!table) return '';
+    const tableXml = xmlText.slice(table.start, table.end); const rows = directBlocks(tableXml, 'tr'); const rowXml = rows[3] ? tableXml.slice(rows[3].start, rows[3].end) : ''; const cells = directBlocks(rowXml, 'tc');
+    return cells[2] ? visibleXmlText(rowXml.slice(cells[2].start, cells[2].end)) : '';
+  }
+  const mixedUnitsInDocx = focalHeaderUnit(xml, 'SMALL') === 'mA' && focalHeaderUnit(xml, 'LARGE') === 'mAs';
   async function conditionalOutput(report, ownerId){
     const preparedReport = await api.preparePayload({ calibration_report:report, attachments:[] }, ownerId, { regenerate:true, finalize:true });
     const record = records.get(preparedReport.calibration_report.generated.blob_id);
@@ -1222,7 +1276,7 @@ function report(overrides = {}) {
   await api.clearForm();
   const cleared = api.collect();
   const clearPreservesSchedule = cleared.facility.name === 'Schedule Client' && cleared.machine.model === 'Schedule Model' && cleared.focal_spots.small && cleared.focal_spots.large && cleared.focal_sizes.small === '0.6' && cleared.focal_sizes.large === '1.2' && documents.value === '';
-  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
+  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, mixedUnitsInDocx, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

@@ -2,6 +2,48 @@
 
 codex changes - 2026-09-17
 
+- Began the separately authorized Calibration Report Page 3 explicit-current-unit and v2
+  historical-repair implementation after the owner’s explicit “PLEASE IMPLEMENT THIS PLAN”
+  instruction. The bounded package covers schema 6 `exposure_current_units`, independent Small/
+  Large mA/mAs radios and validation, mixed-unit generated DOCX headers, v2 fail-closed historical
+  repair and Calibration Center resolution metadata, release/cache markers, tests, and project
+  records. The existing neutral official template, protected `scheduler.db`, handoff artifacts,
+  `.claude/`, `output/`, `tmp/`, unrelated work, browser/Codex UI, commit, push, deployment,
+  Railway, and owner/production repair actions remain excluded unless a real artifact edit proves
+  necessary.
+- Implemented schema-6 Calibration Report Page 3 current-unit state in
+  `static/js/app-calibration-report.js`: independent accessible Small/Large `mA` and `mAs` radio
+  groups start blank for new/legacy editor state, retain selections while a focal table is disabled,
+  update only the matching third heading and measurement-input aria labels, invalidate generated
+  final output through the existing edit lifecycle, and require a unit only for included focal
+  tables. The existing `ma_mas` field and every measurement value remain unchanged.
+- Kept the official neutral DOCX template
+  (`static/templates/calibration-report/calibration-report-template.docx`) byte-for-byte unchanged;
+  runtime authoring patches each included focal table's neutral third-header slot independently and
+  supports mixed Small `mA` / Large `mAs` output. Representative generated OOXML passed ZIP/XML
+  validation with focal sizes, measurements, signatures, and table structure preserved. No
+  artifact-operation marker was run because no official template/artifact edit was required.
+- Advanced historical Calibration Report repair in `app.py` to
+  `calibration-report-units-v2`. Explicit saved per-focal units are authoritative; legacy payloads
+  resolve `radspeed`/`flexavision` model variants to `mA` and blank/missing/unrelated models to
+  `mAs`. Recognition remains fail-closed across neutral, independent, compact, and one-focal
+  headers; already-v1 reports receive only required third-header changes while older recognized
+  shapes retain prior Dose/time compatibility. Candidate/apply responses expose only target units
+  and `explicit`/`model_rule` provenance, with stable IDs/metadata, PDF validation-before-overwrite,
+  rollback, idempotency, stale-link handling, and safe audit metadata retained. No owner,
+  production, or protected `scheduler.db` repair was executed.
+- Added the Calibration Center target-unit/source column, release item
+  `2026-09-17-calibration-report-current-units`, calibration CSS/JS query bumps (v9/v27), and
+  monotonic service-worker cache marker v168. Protected handoff files, `scheduler.db`, `.claude/`,
+  `output/`, and `tmp/` remain untouched by this package.
+- Verification completed: report/PDF/Center focused suites passed 43/43; TSR draft-sync passed
+  11/11; related approval/email/offline/cache coverage without the known temporary-engine ordering
+  interaction passed 167/167; the combined related invocation passed 180 with 1 skip and 1 existing
+  manifest-sync ordering failure. Full discovery ran 1211 tests with 2 skips and 20 unrelated
+  existing/environment/order failures. JavaScript syntax, Python AST, Jinja, release JSON, OOXML
+  ZIP/XML, and `git diff --check` passed. LibreOffice/soffice was unavailable for DOCX-to-PDF Page
+  3 rendering; Poppler `pdftoppm`/`pdfinfo` were available. Python bytecode compilation was blocked
+  by the existing permission-locked `__pycache__`, while imports and AST validation passed.
 - Committed the authorized Calibration Report Page 3 units/defaults and historical repair
   workflow as `ff4effc` on local `main`. The commit contains only the approved application,
   template, Calibration Center, test, release, and project-record files; protected

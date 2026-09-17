@@ -37,7 +37,7 @@
     .calibration-center-repair-summary { display:flex; gap:.75rem; flex-wrap:wrap; }
     .calibration-center-repair-summary .badge { font-size:.78rem; }
     .calibration-center-repair-table-wrap { overflow-x:auto; border:1px solid rgba(100,116,139,.2); border-radius:12px; }
-    .calibration-center-repair-table { min-width:760px; margin:0; }
+    .calibration-center-repair-table { min-width:900px; margin:0; }
     .calibration-center-repair-table th { white-space:nowrap; color:#64748b; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
     .calibration-center-repair-confirm { border:1px solid rgba(180,83,9,.28); border-radius:12px; background:#fff7ed; }
     @media (max-width: 1100px) { .calibration-center-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } }
@@ -92,7 +92,7 @@
             <div id="calibration-center-repair-error" class="alert alert-danger small d-none" role="alert"></div>
             <div id="calibration-center-repair-empty" class="small text-muted d-none">No generated Calibration Report revisions were found.</div>
             <div id="calibration-center-repair-table-wrap" class="calibration-center-repair-table-wrap d-none">
-                <table class="table table-sm table-hover calibration-center-repair-table mb-0"><thead><tr><th>Revision</th><th>Source</th><th>Linked PDF</th><th>Impact</th><th>Status</th><th>Action</th></tr></thead><tbody id="calibration-center-repair-table-body"></tbody></table>
+                <table class="table table-sm table-hover calibration-center-repair-table mb-0"><thead><tr><th>Revision</th><th>Source</th><th>Linked PDF</th><th>Target units / source</th><th>Impact</th><th>Status</th><th>Action</th></tr></thead><tbody id="calibration-center-repair-table-body"></tbody></table>
             </div>
             <div id="calibration-center-repair-confirm" class="calibration-center-repair-confirm d-none mt-3 p-3" role="dialog" aria-labelledby="calibration-center-repair-confirm-title" aria-modal="false">
                 <div id="calibration-center-repair-confirm-title" class="fw-bold mb-1">Confirm Repair All</div>
@@ -201,7 +201,11 @@
         body.innerHTML = state.repairCandidates.map((candidate) => {
             const impact = candidate.approved || candidate.emailed ? 'Approved/emailed' : 'Draft/unsent';
             const action = candidate.status === 'repairable' ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 fw-bold js-calibration-repair" data-source-file-id="${escapeHtml(candidate.source_file_id)}">Apply</button>` : '<span class="text-muted small">No action</span>';
-            return `<tr><td><strong>${escapeHtml(candidate.repair_id)}</strong><div class="small text-muted">${escapeHtml((candidate.revision_nos || []).map((item) => `REV${item}`).join(', ') || 'No approval')}</div></td><td><span class="small">${escapeHtml(candidate.filename)}</span><div class="small text-muted">Source #${escapeHtml(candidate.source_file_id)}</div></td><td><span class="small">${escapeHtml(candidate.pdf_filename || 'Not linked')}</span><div class="small text-muted">${candidate.pdf_file_id ? `PDF #${escapeHtml(candidate.pdf_file_id)}` : 'PDF will be created'}</div></td><td><span class="small ${candidate.approved || candidate.emailed ? 'text-warning-emphasis' : 'text-muted'}">${escapeHtml(impact)}</span></td><td><span class="badge ${candidate.status === 'repairable' ? 'text-bg-warning' : candidate.status === 'already_repaired' ? 'text-bg-success' : 'text-bg-danger'}">${escapeHtml(candidate.status)}</span><div class="small text-muted">${escapeHtml(candidate.reason || '')}</div></td><td>${action}</td></tr>`;
+            const targets = candidate.target_units || candidate.exposure_current_units || {};
+            const sources = candidate.unit_sources || candidate.unit_resolution_source || {};
+            const targetText = `Small ${targets.small || 'blank'} · Large ${targets.large || 'blank'}`;
+            const sourceText = `Small ${sources.small || 'unknown'} · Large ${sources.large || 'unknown'}`;
+            return `<tr><td><strong>${escapeHtml(candidate.repair_id)}</strong><div class="small text-muted">${escapeHtml((candidate.revision_nos || []).map((item) => `REV${item}`).join(', ') || 'No approval')}</div></td><td><span class="small">${escapeHtml(candidate.filename)}</span><div class="small text-muted">Source #${escapeHtml(candidate.source_file_id)}</div></td><td><span class="small">${escapeHtml(candidate.pdf_filename || 'Not linked')}</span><div class="small text-muted">${candidate.pdf_file_id ? `PDF #${escapeHtml(candidate.pdf_file_id)}` : 'PDF will be created'}</div></td><td><span class="small">${escapeHtml(targetText)}</span><div class="small text-muted">${escapeHtml(sourceText)}</div></td><td><span class="small ${candidate.approved || candidate.emailed ? 'text-warning-emphasis' : 'text-muted'}">${escapeHtml(impact)}</span></td><td><span class="badge ${candidate.status === 'repairable' ? 'text-bg-warning' : candidate.status === 'already_repaired' ? 'text-bg-success' : 'text-bg-danger'}">${escapeHtml(candidate.status)}</span><div class="small text-muted">${escapeHtml(candidate.reason || '')}</div></td><td>${action}</td></tr>`;
         }).join('');
         body.querySelectorAll('.js-calibration-repair').forEach((button) => button.addEventListener('click', () => applyRepair(Number(button.dataset.sourceFileId), button)));
         const repairAll = byId('calibration-center-repair-all'); if (repairAll) repairAll.disabled = state.repairRunning || !state.repairCandidates.some((item) => item.status === 'repairable');

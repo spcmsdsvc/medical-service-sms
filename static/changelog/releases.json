@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-17-calibration-report-current-units",
+      "release_date": "2026-09-17",
+      "title": "Calibration Report Current Units",
+      "summary": "Calibration Report Page 3 now records the current unit for each included focal spot and carries that choice into generated and repaired reports.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-17-calibration-report-current-units-engineers",
+          "category": "Calibration Reports",
+          "description": "Engineers select mA or mAs independently for Small and Large focal spots when saving a final report. The selections label each Page 3 table, remain independent for mixed reports, and are preserved for a disabled focal table; older generated revisions use their saved explicit units or a safe model-based mA/mAs rule in the administrator repair center.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-17-calibration-report-units-repair",
       "release_date": "2026-09-17",
       "title": "Calibration Report Units and Historical Repair",

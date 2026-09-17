@@ -23,6 +23,7 @@
     exposureHeadersLarge: ['Nominal kVP Settings', 'Measured kVP', 'mA / mAs', 'Dose (uGy)', 'Dose Rate (mGy/s)', 'Time Settings (msec)', 'Measured Exposure Time (msec)']
   };
   var EXPOSURE_KEYS = ['nominal_kvp','measured_kvp','ma_mas','dose_ugy','dose_rate','time_msec','measured_time'];
+  var EXPOSURE_CURRENT_UNITS = ['mA','mAs'];
   var CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8;
   var DEFAULT_MANUFACTURER = 'Shimadzu';
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -150,9 +151,18 @@
     });
   }
 
+  function normalizeExposureCurrentUnit(value){
+    var text = String(value === undefined || value === null ? '' : value).trim();
+    if(text === 'mA' || text.toLowerCase() === 'ma') return 'mA';
+    if(text === 'mAs' || text.toLowerCase() === 'mas') return 'mAs';
+    return '';
+  }
+
+  function exposureCurrentUnitLabel(value){ return normalizeExposureCurrentUnit(value) || 'mA / mAs'; }
+
   function blankState(){
     return {
-      schema_version: 5,
+      schema_version: 6,
       source: 'docx-calibration-report',
       status: 'not_started',
       updated_at: '',
@@ -163,6 +173,7 @@
       generator_checks: SOURCE.generator.map(function(item){ return { label:item.label, criteria:item.criteria, result:'' }; }),
       calibration: { machine_calibration_date:'', next_calibration_date:'', test_tool_manufacturer:'', test_tool_model:'', test_tool_serial:'', test_tool_calibration_date:'', engineer_name:'' },
       exposure: { small:blankRows(), large:blankRows() },
+      exposure_current_units: { small:'', large:'' },
       focal_spots: { small:true, large:true },
       focal_sizes: { small:'0.6', large:'1.2' },
       performance_results: ['', ''],
@@ -204,7 +215,12 @@
       small: Object.prototype.hasOwnProperty.call(rawFocalSizes, 'small') ? String(rawFocalSizes.small ?? '') : '0.6',
       large: Object.prototype.hasOwnProperty.call(rawFocalSizes, 'large') ? String(rawFocalSizes.large ?? '') : '1.2'
     };
-    base.schema_version = 5;
+    var rawExposureUnits = raw.exposure_current_units && typeof raw.exposure_current_units === 'object' ? raw.exposure_current_units : {};
+    base.exposure_current_units = {
+      small: normalizeExposureCurrentUnit(rawExposureUnits.small),
+      large: normalizeExposureCurrentUnit(rawExposureUnits.large)
+    };
+    base.schema_version = 6;
     base.mechanical_checks = SOURCE.mechanical.map(function(item, index){
       var source = Array.isArray(raw.mechanical_checks) ? raw.mechanical_checks[index] : null;
       return { label:item.label, criteria:item.criteria, result:String(source && source.result || '') };
@@ -342,10 +358,13 @@
 
   function exposureTable(key, title, headers){
     var body = Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }, function(_, row){
-      return '<tr>' + headers.map(function(header, column){ var rule = fitRuleForPath('exposure.' + key + '.' + row + '.' + EXPOSURE_KEYS[column]); var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : ''; return '<td><input class="calibration-report-exposure-input" data-cr-exposure="' + escapeHtml(key + ':' + row + ':' + column) + '" aria-label="' + escapeHtml(title + ' row ' + (row + 1) + ' ' + header) + '"' + limit + '></td>'; }).join('') + '</tr>';
+      return '<tr>' + headers.map(function(header, column){ var rule = fitRuleForPath('exposure.' + key + '.' + row + '.' + EXPOSURE_KEYS[column]); var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : ''; var label = title + ' row ' + (row + 1) + ' ' + header; var unitAttrs = column === 2 ? ' data-cr-exposure-unit-input="' + escapeHtml(key) + '" data-cr-exposure-label-base="' + escapeHtml(title + ' row ' + (row + 1)) + '"' : ''; return '<td><input class="calibration-report-exposure-input" data-cr-exposure="' + escapeHtml(key + ':' + row + ':' + column) + '" aria-label="' + escapeHtml(label) + '"' + unitAttrs + limit + '></td>'; }).join('') + '</tr>';
     }).join('');
     var label = key === 'small' ? 'SMALL' : 'LARGE';
-    return '<div class="calibration-report-section calibration-report-focal-group" data-cr-focal-group="' + key + '"><div class="calibration-report-section-title">' + escapeHtml(title) + '</div><div class="calibration-report-reference-bar"><label class="calibration-report-focal-toggle"><input type="checkbox" data-cr-focal-spot="' + key + '" aria-label="Include ' + label + ' focal spot"> <span>Include ' + label + '</span></label><label class="calibration-report-focal-size">FOCAL SIZE: <input type="text" inputmode="decimal" maxlength="12" data-cr-focal-size="' + key + '" aria-label="' + label + ' focal size"></label><span>SID: 100cm</span></div><div class="calibration-report-exposure-scroll"><table class="calibration-report-exposure-table"><thead><tr>' + headers.map(function(header){ return '<th>' + escapeHtml(header) + '</th>'; }).join('') + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+    var unitName = 'calibration-report-exposure-unit-' + key;
+    var unitOptions = EXPOSURE_CURRENT_UNITS.map(function(unit){ return '<label class="calibration-report-exposure-unit-option"><input type="radio" name="' + unitName + '" value="' + unit + '" data-cr-exposure-unit="' + key + '" aria-label="' + escapeHtml(label + ' exposure current unit ' + unit) + '"> <span>' + unit + '</span></label>'; }).join('');
+    var tableHeaders = headers.map(function(header, column){ return '<th' + (column === 2 ? ' data-cr-exposure-unit-heading="' + key + '"' : '') + '>' + escapeHtml(header) + '</th>'; }).join('');
+    return '<div class="calibration-report-section calibration-report-focal-group" data-cr-focal-group="' + key + '"><div class="calibration-report-section-title">' + escapeHtml(title) + '</div><div class="calibration-report-reference-bar"><label class="calibration-report-focal-toggle"><input type="checkbox" data-cr-focal-spot="' + key + '" aria-label="Include ' + label + ' focal spot"> <span>Include ' + label + '</span></label><fieldset class="calibration-report-exposure-unit" data-cr-exposure-unit-group="' + key + '"><legend>Current unit</legend>' + unitOptions + '</fieldset><label class="calibration-report-focal-size">FOCAL SIZE: <input type="text" inputmode="decimal" maxlength="12" data-cr-focal-size="' + key + '" aria-label="' + label + ' focal size"></label><span>SID: 100cm</span></div><div class="calibration-report-exposure-scroll"><table class="calibration-report-exposure-table"><thead><tr>' + tableHeaders + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
   }
 
   function buildEditor(){
@@ -420,6 +439,17 @@
   }
   function fieldElement(path){ return qa('[data-cr-field]').find(function(element){ return element.getAttribute('data-cr-field') === path; }) || null; }
 
+  function updateExposureUnitDom(key){
+    var unit = normalizeExposureCurrentUnit(state.exposure_current_units?.[key]);
+    var label = exposureCurrentUnitLabel(unit);
+    qa('[data-cr-exposure-unit-heading]').forEach(function(element){ if(String(element.getAttribute('data-cr-exposure-unit-heading')) === key) element.textContent = label; });
+    qa('[data-cr-exposure-unit-input]').forEach(function(element){
+      if(String(element.getAttribute('data-cr-exposure-unit-input')) !== key) return;
+      var base = String(element.getAttribute('data-cr-exposure-label-base') || '').trim();
+      if(base) element.setAttribute('aria-label', base + ' ' + label);
+    });
+  }
+
   function ensureLegacyEquipmentOption(value){
     var select = q('#calibration-report-equipment-name'); if(!select) return;
     if(typeof select.appendChild !== 'function') return;
@@ -459,8 +489,9 @@
     qa('[data-cr-field]').forEach(function(element){ element.value = String(getPath(state, element.getAttribute('data-cr-field')) || ''); });
     qa('[data-cr-check]').forEach(function(element){ var parts = String(element.getAttribute('data-cr-check')).split(':'); var list = parts[0] === 'mechanical' ? state.mechanical_checks : state.generator_checks; element.value = String(list[Number(parts[1])]?.result || ''); });
     qa('[data-cr-focal-spot]').forEach(function(element){ var key = String(element.getAttribute('data-cr-focal-spot')); element.checked = state.focal_spots?.[key] !== false; });
+    qa('[data-cr-exposure-unit]').forEach(function(element){ var key = String(element.getAttribute('data-cr-exposure-unit')); element.checked = normalizeExposureCurrentUnit(state.exposure_current_units?.[key]) === normalizeExposureCurrentUnit(element.value); });
     qa('[data-cr-focal-size]').forEach(function(element){ var key = String(element.getAttribute('data-cr-focal-size')); element.value = String(state.focal_sizes?.[key] || ''); });
-    qa('[data-cr-focal-group]').forEach(function(group){ var key = String(group.getAttribute('data-cr-focal-group')); var selected = state.focal_spots?.[key] !== false; group.classList.toggle('is-disabled', !selected); group.querySelectorAll?.('[data-cr-exposure]').forEach(function(element){ element.disabled = !selected; }); var size = group.querySelector?.('[data-cr-focal-size]'); if(size) size.disabled = !selected; });
+    qa('[data-cr-focal-group]').forEach(function(group){ var key = String(group.getAttribute('data-cr-focal-group')); var selected = state.focal_spots?.[key] !== false; group.classList.toggle('is-disabled', !selected); group.querySelectorAll?.('[data-cr-exposure]').forEach(function(element){ element.disabled = !selected; }); group.querySelectorAll?.('[data-cr-exposure-unit]').forEach(function(element){ element.disabled = !selected; }); var unitGroup = group.querySelector?.('[data-cr-exposure-unit-group]'); if(unitGroup) unitGroup.disabled = !selected; var size = group.querySelector?.('[data-cr-focal-size]'); if(size) size.disabled = !selected; updateExposureUnitDom(key); });
     qa('[data-cr-exposure]').forEach(function(element){ var parts = String(element.getAttribute('data-cr-exposure')).split(':'); element.value = String(state.exposure?.[parts[0]]?.[Number(parts[1])]?.[EXPOSURE_KEYS[Number(parts[2])]] || ''); });
     qa('[data-cr-performance]').forEach(function(element){ element.value = String(state.performance_results[Number(element.getAttribute('data-cr-performance'))] || ''); });
     drawSignature();
@@ -473,7 +504,8 @@
     var element = event.target;
     if(element.matches('[data-cr-field]')) setPath(state, element.getAttribute('data-cr-field'), element.value);
     if(element.matches('[data-cr-check]')){ var check = String(element.getAttribute('data-cr-check')).split(':'); var list = check[0] === 'mechanical' ? state.mechanical_checks : state.generator_checks; if(list[Number(check[1])]) list[Number(check[1])].result = element.value; }
-    if(element.matches('[data-cr-focal-spot]')){ var focalSpot = String(element.getAttribute('data-cr-focal-spot')); state.focal_spots[focalSpot] = !!element.checked; }
+    if(element.matches('[data-cr-focal-spot]')){ var focalSpot = String(element.getAttribute('data-cr-focal-spot')); state.focal_spots[focalSpot] = !!element.checked; applyDomFromState(); }
+    if(element.matches('[data-cr-exposure-unit]')){ var exposureUnit = String(element.getAttribute('data-cr-exposure-unit')); state.exposure_current_units[exposureUnit] = normalizeExposureCurrentUnit(element.value); updateExposureUnitDom(exposureUnit); }
     if(element.matches('[data-cr-focal-size]')){ var focalSize = String(element.getAttribute('data-cr-focal-size')); state.focal_sizes[focalSize] = element.value; }
     if(element.matches('[data-cr-exposure]')){ var exposure = String(element.getAttribute('data-cr-exposure')).split(':'); if(state.exposure?.[exposure[0]]?.[Number(exposure[1])]) state.exposure[exposure[0]][Number(exposure[1])][EXPOSURE_KEYS[Number(exposure[2])]] = element.value; }
     if(element.matches('[data-cr-performance]')) state.performance_results[Number(element.getAttribute('data-cr-performance'))] = element.value;
@@ -692,6 +724,7 @@
     if(!selectedSpots.length) missing.push({ path:'focal_spots.small', label:'At least one focal spot' });
     selectedSpots.forEach(function(key){
       if(!String(report.focal_sizes?.[key] || '').trim()) missing.push({ path:'focal_sizes.' + key, label:(key === 'small' ? 'Small' : 'Large') + ' focal size' });
+      if(!normalizeExposureCurrentUnit(report.exposure_current_units?.[key])) missing.push({ path:'exposure_current_units.' + key, label:(key === 'small' ? 'Small' : 'Large') + ' exposure current unit (mA or mAs)' });
       var hasRow = report.exposure[key].some(function(row){ return Object.keys(row).some(function(field){ return String(row[field] || '').trim(); }); });
       if(!hasRow) missing.push({ path:'exposure.' + key + '.0.nominal_kvp', label:(key === 'small' ? 'Small' : 'Large') + ' focal spot measurements' });
     });
@@ -718,7 +751,7 @@
   function focusMissing(missing, options){
     if(options?.explicit !== true) return false;
     var first = missing?.[0]; if(!first) return false; open(); if(first.path.indexOf('mechanical_checks') === 0 || first.path.indexOf('generator_checks') === 0 || first.path.indexOf('calibration.') === 0) setEditorPage(2); else if(first.path.indexOf('exposure') === 0 || first.path.indexOf('performance_results') === 0) setEditorPage(3); else setEditorPage(1);
-    setTimeout(function(){ var element = first.path.indexOf('mechanical_checks') === 0 ? q('[data-cr-check="mechanical:' + first.path.split('.')[1] + '"]') : (first.path.indexOf('generator_checks') === 0 ? q('[data-cr-check="generator:' + first.path.split('.')[1] + '"]') : fieldElement(first.path)); if(!element && first.path.indexOf('exposure') === 0){ var parts = first.path.split('.'); element = q('[data-cr-exposure="' + parts[1] + ':' + parts[2] + ':0"]'); } if(!element && first.path.indexOf('performance_results') === 0) element = q('[data-cr-performance="' + first.path.split('.')[1] + '"]'); element?.scrollIntoView({ behavior:'auto', block:'center' }); try{ element?.focus({ preventScroll:true }); }catch(err){ element?.focus(); } }, 50);
+    setTimeout(function(){ var element = first.path.indexOf('mechanical_checks') === 0 ? q('[data-cr-check="mechanical:' + first.path.split('.')[1] + '"]') : (first.path.indexOf('generator_checks') === 0 ? q('[data-cr-check="generator:' + first.path.split('.')[1] + '"]') : fieldElement(first.path)); if(!element && first.path.indexOf('exposure_current_units.') === 0){ element = q('[data-cr-exposure-unit="' + first.path.split('.')[1] + '"]'); } if(!element && first.path.indexOf('exposure') === 0){ var parts = first.path.split('.'); element = q('[data-cr-exposure="' + parts[1] + ':' + parts[2] + ':0"]'); } if(!element && first.path.indexOf('performance_results') === 0) element = q('[data-cr-performance="' + first.path.split('.')[1] + '"]'); element?.scrollIntoView({ behavior:'auto', block:'center' }); try{ element?.focus({ preventScroll:true }); }catch(err){ element?.focus(); } }, 50);
     return true;
   }
 
@@ -853,6 +886,25 @@
     }
     return replaceFirstParagraph(cellXml, textRuns(value, firstRunProperties(paragraphs[0].xml)));
   }
+  function replaceExposureCurrentUnitHeading(cellXml, unit){
+    var normalized = normalizeExposureCurrentUnit(unit);
+    if(!normalized) return cellXml;
+    var current = cellText(cellXml);
+    if(current !== 'mA / mAs' && current !== 'mA' && current !== 'mAs') throw templateSlotError('exposure current unit heading');
+    var nodes = textBlocks(cellXml);
+    if(!nodes.length) throw templateSlotError('exposure current unit heading text');
+    var replacements = nodes.map(function(){ return ''; });
+    if(nodes.length === 1) replacements[0] = normalized;
+    else replacements[normalized === 'mA' ? 0 : nodes.length - 1] = normalized;
+    nodes.slice().reverse().forEach(function(node, reverseIndex){
+      var index = nodes.length - reverseIndex - 1;
+      var openEnd = node.xml.indexOf('>');
+      var replacement = node.xml.slice(0, openEnd + 1) + xmlEscape(replacements[index]) + '</w:t>';
+      cellXml = cellXml.slice(0, node.start) + replacement + cellXml.slice(node.end);
+    });
+    if(cellText(cellXml) !== normalized) throw templateSlotError('exposure current unit heading replacement');
+    return cellXml;
+  }
   function compactPageThreeGap(documentXml){
     var tables = directXmlBlocks(documentXml, 'tbl'); if(tables.length < 3) throw templateSlotError('page 3 performance table');
     // With both focal tables present, preserve the supplied two-paragraph gap
@@ -942,7 +994,10 @@
     [['calibration.machine_calibration_date',8],['calibration.next_calibration_date',9],['calibration.test_tool_manufacturer',10],['calibration.test_tool_model',11],['calibration.test_tool_serial',12],['calibration.test_tool_calibration_date',13]].forEach(function(field){ var value = getPath(report, field[0]); if(!String(value || '').trim()) return; documentXml = patchTableCell(documentXml, 1, field[1], 1, function(cell){ return appendTextToCell(cell, value); }); });
     [['small',2],['large',3]].forEach(function(table){
        var key = table[0]; var selected = report.focal_spots?.[key] !== false; var rows = report.exposure[key] || [];
-       if(selected) documentXml = patchTableCell(documentXml, table[1], 1, 0, function(cell){ return replaceFocalSizeLine(cell, report.focal_sizes?.[key]); });
+       if(selected){
+         documentXml = patchTableCell(documentXml, table[1], 1, 0, function(cell){ return replaceFocalSizeLine(cell, report.focal_sizes?.[key]); });
+         documentXml = patchTableCell(documentXml, table[1], 3, 2, function(cell){ return replaceExposureCurrentUnitHeading(cell, report.exposure_current_units?.[key]); });
+       }
        if(!selected) return;
        var measurementRows = nonblankExposureRows(rows);
        documentXml = replaceFocalMeasurementRows(documentXml, table[1], measurementRows);

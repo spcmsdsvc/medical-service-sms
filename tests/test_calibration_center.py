@@ -139,6 +139,9 @@ class CalibrationCenterContracts(unittest.TestCase):
 
     def test_strict_center_authority_and_all_routes_are_declared(self):
         self.assertIn('def can_access_calibration_center(user=None):', APP_SOURCE)
+        self.assertIn("CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v2'", APP_SOURCE)
+        self.assertIn('def _calibration_report_exposure_unit_resolution(source_file):', APP_SOURCE)
+        self.assertIn("'unit_sources':", APP_SOURCE)
         self.assertIn("@app.route('/admin/calibration-center'", APP_SOURCE)
         self.assertIn("@app.route('/admin/calibration-center/data'", APP_SOURCE)
         self.assertIn("@app.route('/admin/calibration-center/<int:approval_id>/email'", APP_SOURCE)
@@ -201,6 +204,9 @@ class CalibrationCenterContracts(unittest.TestCase):
             'REPAIR ALL',
             'repair-preview',
             'repairRunning',
+            'candidate.target_units',
+            'candidate.unit_sources',
+            'Target units / source',
         ):
             self.assertIn(marker, template)
 
