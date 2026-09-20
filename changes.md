@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-20
 
+- Published the authorized Stable TSR number reservation implementation commit `67ee107` and its
+  records closeout `d0e7ede` to `origin/main`. Remote verification resolved `refs/heads/main` to
+  `d0e7ede48c395bd696e59b9bcc42b0f63d425cd5`; Railway accepted that exact commit as production
+  deployment `4a7df07d-5750-4a7d-b57e-79cb5bd5a851`, which was building at the time of verification.
+  No Railway variable, manual redeploy, production database/storage operation, browser, or Codex UI
+  action was performed, and all protected pre-existing dirty paths remained excluded.
 - Committed the owner-authorized Stable TSR number reservation package on local `main` as
   `67ee107`. The commit contains only the intended application, focused test, release/cache, and
   required plan/change-record files. Protected `scheduler.db`, the handoff artifact, `.claude/`,
