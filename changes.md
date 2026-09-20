@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-20
 
+- Committed the owner-authorized Stable TSR number reservation package on local `main` as
+  `67ee107`. The commit contains only the intended application, focused test, release/cache, and
+  required plan/change-record files. Protected `scheduler.db`, the handoff artifact, `.claude/`,
+  `output/`, `tmp/`, the separate detailed handoff file, and unrelated work remain excluded. The
+  owner separately authorized publication to `origin/main`; remote and Railway verification
+  follow this records closeout.
 - Executed the Stable TSR number reservation package as uncommitted owner-authorized work. Added
   the additive `TsrNumberReservation` schema, owner/token-scoped allocation with unique-number
   retry, authenticated reservation/release endpoints, draft reservation persistence, explicit

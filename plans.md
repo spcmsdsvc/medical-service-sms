@@ -2,7 +2,7 @@
 
 ## Stable TSR number reservation
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `67ee107`; publication authorized by the owner.
 **Approved:** 2026-09-20 — the owner explicitly approved the presented plan by requesting its implementation.
 **Execution authorized:** 2026-09-20 — the owner separately said “go ahead” after the approved plan was recorded.
 **Detailed:** 2026-09-20.
