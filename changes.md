@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-20
 
+- Pushed the authorized accounting branch-code implementation commit `5db9413` and its
+  records-only closeout commit `f4e6d26` to `origin/main`. Remote verification resolved
+  `refs/heads/main` to `f4e6d2611c720f1a11b233ba6eaed5c9252a8f40`; Railway accepted that exact
+  commit as deployment `5f1257c0-4a87-4d40-9670-6d38ca119931`, which was building at the time of
+  verification. No Railway variable, manual redeploy, database repair, production data/storage,
+  browser, or Codex UI action was performed.
 - Committed the authorized Engineer-profile accounting branch-code package on local `main` as
   `5db9413`. The commit contains only `app.py`, the two liquidation templates, focused branch-code
   tests, release metadata, and required plan/change records. The owner separately authorized
