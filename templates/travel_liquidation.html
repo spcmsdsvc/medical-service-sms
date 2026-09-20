@@ -132,7 +132,9 @@
                 <div class="col-md-3"><div class="liq-label">Travel Request</div><div class="liq-value" id="trNo">—</div></div>
                 <div class="col-md-3"><div class="liq-label">Submitted By</div><div class="liq-value" id="requesterName">—</div></div>
                 <div class="col-md-3"><div class="liq-label">Travel Period</div><div class="liq-value" id="travelPeriod">—</div></div>
+                <div class="col-md-3"><div class="liq-label">Derived Branch</div><div class="liq-value" id="derivedBranchCode">—</div><div class="mini-help">Locked to the request creator's Engineer profile.</div></div>
             </div>
+            <div class="alert alert-warning small mt-3 mb-0 d-none" id="branchResolutionNote" role="alert"></div>
             <div class="row g-3 mt-2" id="tripContextCards">
                 <div class="col-12"><div class="trip-context-card"><div class="text-muted small">Loading travel context...</div></div></div>
             </div>
@@ -246,7 +248,8 @@
                     </div>
                     <div class="col-md-3">
                         <label class="form-label fw-bold">Branch Code</label>
-                        <input id="rowBranchCode" class="form-control" value="BC01" placeholder="Branch">
+                        <input id="rowBranchCode" class="form-control" value="" placeholder="Derived branch" readonly aria-readonly="true">
+                        <div class="mini-help mt-1">Derived from the request creator's Engineer profile; client edits are ignored.</div>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label fw-bold">Class Code</label>
@@ -485,9 +488,10 @@ function updateWorkflowButtons(){
     const meta = getStatusMeta(currentLiquidation?.status);
     const isDraft = isDraftLiquidation();
     const isReturned = isReturnedLiquidation();
-    ['saveDraftTopBtn','clearDraftTopBtn','submitLiquidationTopBtn','addExpenseRowBtn'].forEach(id=>{const btn=document.getElementById(id); if(btn) btn.disabled=!isDraft;});
+    const branchAvailable = Boolean(currentLiquidation?.derived_branch_code || currentLiquidation?.branch_code);
+    ['saveDraftTopBtn','clearDraftTopBtn','submitLiquidationTopBtn','addExpenseRowBtn','previewTemplateTopBtn'].forEach(id=>{const btn=document.getElementById(id); if(btn) btn.disabled=!isDraft || !branchAvailable;});
     const note=document.getElementById('liqActionNote');
-    if(note) note.textContent = isReturned ? 'Returned for correction. Review the manager remarks, revise, then submit again.' : (isDraft ? 'Draft changes are saved when rows or receipts are added.' : meta.text);
+    if(note) note.textContent = !branchAvailable ? (currentLiquidation?.branch_resolution_error || "Update the request creator's Engineer profile to Manila/Main, Cebu, or Davao before continuing.") : (isReturned ? 'Returned for correction. Review the manager remarks, revise, then submit again.' : (isDraft ? 'Draft changes are saved when rows or receipts are added.' : meta.text));
     const banner=document.getElementById('liqLockBanner');
     const bannerTitle=document.getElementById('liqLockBannerTitle');
     const bannerText=document.getElementById('liqLockBannerText');
@@ -693,6 +697,15 @@ function renderLiquidation(item){
     document.getElementById('trNo').textContent=item.travel_request_no || '—';
     document.getElementById('requesterName').textContent=item.requester_name || '—';
     document.getElementById('travelPeriod').textContent=formatTravelPeriodLabel(item.departure_date, item.return_date, item.travel_dates || item.period || '');
+    const branchCode = item.derived_branch_code || item.branch_code || '';
+    const branchLabel = item.branch_label ? `${branchCode} — ${item.branch_label}` : branchCode;
+    const branchEl = document.getElementById('derivedBranchCode');
+    if(branchEl) branchEl.textContent = branchLabel || 'Unresolved';
+    const branchNote = document.getElementById('branchResolutionNote');
+    if(branchNote){
+        branchNote.textContent = item.branch_resolution_error || "Branch is derived from the request creator's Engineer profile and cannot be edited here.";
+        branchNote.classList.toggle('d-none', Boolean(branchCode));
+    }
     const ratePanel=document.getElementById('currencyRatePanel');
     const rateInput=document.getElementById('usdToPhpRate');
     if(ratePanel) ratePanel.classList.toggle('d-none', liqCurrency() !== 'USD');
@@ -760,7 +773,7 @@ function openRowModal(rowId=null){
     }
     expenseTypeSelect.value = expenseTypeValue;
     document.getElementById('rowParticulars').value=row?.particulars || '';
-    document.getElementById('rowBranchCode').value=row?.branch_code || 'BC01';
+    document.getElementById('rowBranchCode').value=currentLiquidation?.derived_branch_code || currentLiquidation?.branch_code || row?.branch_code || '';
     document.getElementById('rowClassCode').value=row?.class_code || 'CC04';
     document.getElementById('rowDeptCode').value=row?.dept_code || 'DC03';
     document.getElementById('rowProductCode').value=row?.product_code || 'PC18/PC22';
@@ -783,7 +796,7 @@ function collectRowPayload(){
         expense_date: document.getElementById('rowExpenseDate').value,
         expense_type: document.getElementById('rowExpenseType').value,
         particulars: document.getElementById('rowParticulars').value.trim(),
-        branch_code: document.getElementById('rowBranchCode').value.trim() || 'BC01',
+        branch_code: currentLiquidation?.derived_branch_code || currentLiquidation?.branch_code || '',
         class_code: document.getElementById('rowClassCode').value.trim() || 'CC04',
         dept_code: document.getElementById('rowDeptCode').value.trim() || 'DC03',
         product_code: document.getElementById('rowProductCode').value.trim() || 'PC18/PC22',

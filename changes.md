@@ -1,5 +1,49 @@
 # Project Change Log
 
+codex changes - 2026-09-20
+
+- Recorded the owner-approved Engineer-profile accounting branch-code plan at the top of
+  `plans.md` with status `Approved — awaiting go-ahead`. The approved scope makes Manila/Main,
+  Cebu, and Davao resolve to `BC01`, `BC02`, and `BC03` for Travel Liquidation, Cash Advance
+  Liquidation, and Reimbursement RFP output; adds a separately operated strict-superadmin
+  historical repair; locks branch values to the creator profile; blocks unresolved profiles; and
+  excludes both LPR workflows, automatic repair execution, production/Railway actions, commit,
+  push, and deployment. No application behavior, test, database, artifact, or system state was
+  changed in this approval-recording step.
+- Began the separately authorized Engineer-profile branch-code implementation after the owner’s
+  explicit “go ahead” instruction. The bounded package covers branch resolution and locked
+  Travel Liquidation, Cash Advance Liquidation, and Reimbursement RFP behavior, strict-superadmin
+  historical repair preview/apply code, focused verification, release/cache records, and plan/
+  change-log closeout. Protected `scheduler.db`, handoff artifacts, `.claude/`, `output/`, and
+  `tmp/`, both LPR workflows, official PDF templates, production/Railway state, and commit,
+  push, deployment, browser, and Codex UI actions remain excluded.
+- Implemented the shared Engineer-profile accounting branch resolver in `app.py`: Manila/Main map
+  to `BC01`, Cebu to `BC02`, and Davao to `BC03`; stored `engineer_id` is authoritative, owner
+  profile fallback is explicit, and missing/unsupported values fail closed without a Manila
+  default. Stock Inventory delegates to this resolver while retaining its existing permission
+  behavior.
+- Applied authoritative branch storage, spoof-resistant row parsing, response metadata, read-only
+  derived-branch UI, and branch-dependent guards across Travel Liquidation and standalone Cash
+  Advance Liquidation. Liquidation form payloads, HTML/Excel exports, summaries, approval
+  manifests, and RFP generation now use the resolved branch; Reimbursement submission and RFP
+  generation validate it while draft saving remains available. Existing LPR workflows and other
+  accounting codes were not changed.
+- Added strict-superadmin, CSRF-protected `/admin/repair_accounting_branch_codes` preview/apply
+  logic with workflow/target-code summaries, all-status transactional repair, unresolved-row
+  reporting, audit/activity records, rollback on failure, and idempotent repeat behavior. The
+  historical repair was implemented but not executed against `scheduler.db`, Railway, or
+  production data.
+- Added `tests/test_accounting_branch_codes.py`, release-manifest entry
+  `2026-09-20-accounting-branch-codes`, and service-worker/cache marker v170. Focused accounting
+  and related verification passed 168/168 tests; AST, JSON, Jinja, and `git diff --check` passed.
+  A repository-wide discovery run was also attempted (1,221 tests, 1 skipped, 20 unrelated
+  fixture/rate-limit/legacy-marker failures); no focused accounting tests failed.
+- Ran the PDF artifact marker once before authoring. Generated representative Manila Travel,
+  Cebu Cash Advance, and Davao Reimbursement RFP PDFs in a temporary QA directory; pypdf field
+  inspection confirmed `BC01`, `BC02`, and `BC03`, Poppler rendered each one-page PDF, and visual
+  inspection showed no layout regression. The official RFP template and all protected dirty files
+  remain unchanged; no commit, push, deployment, browser, or Codex UI operation was performed.
+
 codex changes - 2026-09-17
 
 - Fixed Calibration Report Page 3 current-unit headings so generated Small and Large focal-spot

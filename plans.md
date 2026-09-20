@@ -1,5 +1,165 @@
 # Medical Service SMS — Approved Plans
 
+## Engineer-profile branch codes for accounting workflows
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-20 — the owner supplied the complete plan and requested implementation.
+**Execution authorized:** 2026-09-20 — the owner separately said “go ahead” after the approved plan was recorded.
+**Detailed:** 2026-09-20.
+
+### Summary
+
+Make the request creator’s Engineer-profile branch authoritative:
+
+- Manila/Main → `BC01`
+- Cebu → `BC02`
+- Davao → `BC03`
+
+Apply this to Travel Liquidation, Cash Advance Liquidation, and Reimbursement RFP generation.
+Branch codes will be automatic and locked. Standalone and embedded LPR workflows remain unchanged.
+
+All existing liquidation records are eligible for correction through a strict-superadmin
+preview/apply repair. Previously emailed attachments are immutable and will not be resent or
+replaced automatically.
+
+### Decisions taken
+
+1. The accounting branch is controlled by the request creator's linked Engineer profile and is
+   not user-editable. Old clients may continue sending a branch value, but the server ignores it.
+2. Missing or unsupported Engineer branch data never falls back to Manila/`BC01`. The relevant
+   accounting action is blocked with an actionable Personnel-profile error.
+3. All resolvable historical Travel and Cash Advance Liquidation rows, including approved,
+   completed, and sent-to-accounting records, are eligible for an explicit repair. The repair is
+   never automatic at startup and is not run merely because its implementation is authorized.
+4. Historical repair uses a strict-superadmin preview/apply workflow. Unresolved records are
+   reported and skipped. Previously emailed files are not mutated or resent; later regenerated or
+   resent packages use the corrected values.
+5. Both standalone and embedded LPR workflows are excluded. Travel Request and Cash Advance
+   headers do not gain a duplicated branch column; downstream accounting records resolve their
+   creator relationship when the code is required.
+
+### Implementation changes
+
+1. **Canonical branch resolver.** In `app.py`, introduce a workflow-neutral Engineer-profile
+   branch resolver supporting the existing normalized names and codes. Make Stock Inventory
+   delegate to that resolver without changing its permission behavior. Resolve from a record's
+   stored `engineer_id`, falling back to the owning user's linked Engineer profile only when the
+   stored link is absent. Return no code for missing or unsupported profiles.
+2. **Travel Liquidation.** Derive and store the creator's branch on auto-created Per Diem/Airfare
+   rows and manually added or updated rows. Ignore client-supplied `branch_code`, expose the
+   derived code in liquidation responses, and render the Branch Code control read-only in
+   `templates/travel_liquidation.html`. Generate Excel, HTML, liquidation forms, and RFPs from
+   the authoritative branch rather than a `BC01` fallback or first-row heuristic. Existing drafts
+   remain viewable, but creation, row changes, submission, and document generation fail clearly
+   when no branch can be resolved.
+3. **Cash Advance Liquidation.** Apply the same server-controlled behavior to draft creation, row
+   creation/update, UI display in `templates/cash_advance_liquidation.html`, summaries, Excel,
+   and RFP output. Remove visible `BC01` defaults and block branch-dependent actions when the
+   requester lacks a recognized Engineer branch.
+4. **Reimbursement.** Replace the hard-coded `BC01` in Request for Payment generation with the
+   reimbursement creator's resolved branch. Validate the branch before submission and RFP
+   generation while allowing ordinary draft saving. Preserve all class, department, and product
+   code behavior.
+5. **Historical repair.** Add strict-superadmin `/admin/repair_accounting_branch_codes`
+   preview/apply behavior following the existing repair-route pattern. Preview classifies every
+   Travel and Cash Advance Liquidation row as `change`, `already correct`, or `unresolved`, grouped
+   by workflow and target code, without writing. Apply overwrites every resolvable row across all
+   statuses in one transaction, records safe audit/activity summaries, skips and reports
+   unresolved records, and is idempotent. Reimbursement needs no stored-row repair because its RFP
+   code is generated dynamically. Implementing this endpoint does not authorize running preview
+   or apply against `scheduler.db`, Railway, or production data.
+6. **Interfaces and compatibility.** Add `branch_code`/`derived_branch_code` to Travel and Cash
+   Advance liquidation response metadata for the locked UI. Retain row `branch_code` columns for
+   exports and compatibility. Accept but distrust legacy branch payload fields. Do not change LPR,
+   official PDF templates, other accounting codes, approval routing, or email recipients.
+7. **Delivery records.** Add a concise user-facing entry to
+   `static/changelog/releases.json`, bump the embedded service-worker/cache marker monotonically
+   for the changed accounting templates, and update `changes.md` and this plan truthfully during
+   implementation. Preserve protected dirty files and unrelated owner work.
+
+### Verification and completion criteria
+
+1. Add fail-first focused tests proving unchanged code assigns `BC01` to Cebu/Davao accounting
+   output, then implement the fix. Cover Manila/Main/BC01, Cebu/BC02, Davao/BC03, case/spacing
+   variants, and missing/unknown branches.
+2. Prove Travel and Cash Advance Liquidation auto rows, manual rows, exports, summaries, and RFPs
+   use the creator's branch and cannot be spoofed by client payloads.
+3. Prove Reimbursement RFP fields use the creator's `BC01`/`BC02`/`BC03` while all other
+   accounting codes remain unchanged. Prove unresolved profiles block branch-dependent actions
+   without mutating data.
+4. Prove repair preview is read-only, apply covers every status, unresolved records are skipped,
+   rollback is atomic, authorization and CSRF are enforced, and a second apply changes nothing.
+5. Generate representative Manila, Cebu, and Davao RFPs. Immediately before the first PDF
+   authoring verification command, run the PDF artifact marker exactly once. Reopen each PDF,
+   inspect canonical AcroForm and widget values, render pages through Poppler, and verify no layout
+   regression. Keep official templates unchanged.
+6. Run focused accounting and related approval/email tests, Python syntax, Jinja/JSON checks,
+   `git diff --check`, and the proportional full suite. Do not use browser or Codex UI automation.
+
+### Deliberately excluded
+
+No LPR changes; no branch columns on Travel Request or Cash Advance headers; no official PDF
+template edits; no changes to class, department, product, approval-routing, or email-recipient
+rules; no automatic startup migration; no modification or resend of previously emailed packages;
+no repair execution against local owner or production data; no Railway change, deployment,
+commit, push, merge, rebase, browser automation, or Codex app navigation.
+
+### After implementation
+
+The Builder performs a final self-review, records exact test/PDF results and any deviations, marks
+this plan `Executed — uncommitted`, and stops. Formal review, historical repair preview/apply,
+commit/push, Railway verification, and production/database/storage actions each require their
+separate owner authorization.
+
+### Implementation outcome (2026-09-20)
+
+- Added the shared strict Engineer-profile resolver and record-level authoritative lookup in
+  `app.py`. Manila/Main, Cebu, and Davao (including normalized code and branch-label variants)
+  resolve to `BC01`, `BC02`, and `BC03`; missing and unsupported profiles return no branch and
+  produce an actionable Personnel-profile blocker. Stock Inventory now delegates to the shared
+  resolver without changing its assignment or permission path.
+- Applied the resolver to Travel Liquidation, Cash Advance Liquidation, and Reimbursement RFP
+  submission/generation. Auto-seeded and manually edited liquidation rows use the resolved branch;
+  legacy client branch values are accepted but ignored; response manifests expose branch metadata;
+  and the two liquidation templates show a read-only derived branch with unresolved-action
+  warnings. Excel, HTML, official liquidation form payloads, summaries, and RFPs no longer use a
+  `BC01` fallback. Ordinary Reimbursement draft saving remains available; branch validation is
+  enforced at submission and RFP generation.
+- Added strict-superadmin, CSRF-protected
+  `/admin/repair_accounting_branch_codes` preview/apply support. Preview is read-only and groups
+  candidates by workflow and target code; apply rescans, updates all resolvable statuses in one
+  transaction, records universal-audit/activity summaries, skips unresolved rows, and is
+  idempotent. The endpoint was not run against `scheduler.db`, Railway, or production data.
+- Added `tests/test_accounting_branch_codes.py`, the release-manifest entry, and service-worker
+  cache marker `v170-accounting-branch-codes`. The official RFP PDF template was not modified.
+
+### Verification outcome (2026-09-20)
+
+- Focused accounting/cache command passed: 52 tests before the final focused additions, followed
+  by 10/10 tests in `tests.test_accounting_branch_codes`.
+- Proportional related command passed 168/168 tests:
+  `tests.test_accounting_branch_codes`, `tests.test_stock_inventory`,
+  `tests.test_sw_cache_version`, `tests.test_accounting_form_reliability`,
+  `tests.test_accounting_handoff_recipient_routing`, `tests.test_reimbursement_readiness`,
+  `tests.test_reimbursement_tracker`, `tests.test_approval_center_wording`,
+  `tests.test_offline_api_status`, and `tests.test_changelog_workflow`.
+- Python AST, release-manifest JSON, Jinja template parsing, and `git diff --check` passed. The
+  repository-wide discovery run completed 1,221 tests with 1 skip and 20 unrelated failures
+  (rate-limited purchase-order fixtures, pre-existing staff/changelog/sidebar-marker assumptions);
+  none were in the focused accounting package. The system Python lacked Flask, so the project
+  `venv` was used. `py_compile` was not used because managed permissions reject `__pycache__`
+  writes; AST parsing provided the syntax check.
+- Immediately before PDF authoring, the PDF skill artifact marker succeeded once using its
+  absolute skill path (the repository-relative helper path did not exist). Representative Travel
+  Manila (`BC01`), Cash Advance Cebu (`BC02`), and Reimbursement Davao (`BC03`) RFPs were written
+  to a temporary QA directory, reopened with pypdf to verify canonical branch field values,
+  rendered with Poppler to one-page PNGs, and visually checked for intact geometry. Poppler
+  emitted only missing-display-font warnings while rendering; the official template remained
+  unchanged.
+- No commit, push, deploy, Railway change, browser/Codex UI action, historical repair execution,
+  production action, or protected-file cleanup was performed. Formal review remains separately
+  authorized by the owner.
+
 ## Calibration Report Page 3 explicit current units and v2 historical repair
 
 **Status:** Executed — implementation commit `fd7a2ec`; publication authorized by the owner.

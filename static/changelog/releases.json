@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-20-accounting-branch-codes",
+      "release_date": "2026-09-20",
+      "title": "Accounting Branch Codes from Engineer Profiles",
+      "summary": "Travel Liquidation, Cash Advance Liquidation, and Reimbursement RFP accounting outputs now use the request creator's Engineer profile branch.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-20-accounting-branch-codes-engineers-admins",
+          "category": "Accounting",
+          "description": "Manila/Main, Cebu, and Davao resolve to BC01, BC02, and BC03 respectively. The derived branch is read-only, missing or unsupported profiles block branch-dependent actions, generated forms and RFPs use the authoritative value, and strict superadmins have an audited preview/apply repair for resolvable historical liquidation rows.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-17-calibration-report-current-unit-alignment",
       "release_date": "2026-09-17",
       "title": "Calibration Report Current-Unit Alignment",

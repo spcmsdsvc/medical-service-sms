@@ -7005,6 +7005,8 @@ STOCK_INVENTORY_ASSIGNMENT_VIEW_BRANCHES = {
 STOCK_INVENTORY_BRANCH_ALIASES = {
     'MANILA': 'BC01',
     'MAIN': 'BC01',
+    'MANILABRANCH': 'BC01',
+    'MAINBRANCH': 'BC01',
     'MANILAMAIN': 'BC01',
     'BC01MANILAMAIN': 'BC01',
     'CEBU': 'BC02',
@@ -7059,13 +7061,70 @@ def stock_inventory_branch_from_engineer_profile(profile):
     `Engineer.branch` holds human labels -- 'Manila', 'Cebu', 'Davao' -- so a read-only
     engineer viewer has to be mapped onto BC01/BC02/BC03. Deliberately separate from
     `normalize_stock_inventory_branch` so this tolerance cannot leak into the assigned-code
-    path. An unrecognised branch returns empty and access is denied rather than defaulted.
+    path. The shared resolver reads `STOCK_INVENTORY_BRANCH_ALIASES`; an unrecognised
+    branch returns empty and access is denied rather than defaulted.
+    """
+    return resolve_engineer_profile_branch_code(profile)
+
+
+def resolve_engineer_profile_branch_code(profile):
+    """Resolve the authoritative Engineer branch to the accounting branch code.
+
+    Engineer.branch is a human-facing profile value.  Accounting workflows must use
+    this one strict mapping and must never infer BC01 when the profile is blank or
+    unsupported.  The resolver is intentionally workflow-neutral so Inventory and
+    accounting records cannot drift into separate branch rules.
     """
     raw_value = (clean_str(getattr(profile, 'branch', None)) or '').strip().upper()
     if raw_value in STOCK_INVENTORY_BRANCHES:
         return raw_value
     compact = re.sub(r'[^A-Z0-9]+', '', raw_value)
     return STOCK_INVENTORY_BRANCH_ALIASES.get(compact, '')
+
+
+def resolve_accounting_branch_code(record):
+    """Resolve a record's authoritative Engineer branch for accounting output.
+
+    A stored engineer link is authoritative.  Only records without that link may
+    fall back to the owning user's current Engineer profile, which keeps historical
+    rows repairable without silently replacing an explicit engineer assignment.
+    """
+    if not record:
+        return ''
+
+    engineer_id = clean_int(getattr(record, 'engineer_id', None))
+    engineer = getattr(record, 'engineer', None) if engineer_id else None
+    if engineer_id and not engineer:
+        engineer = db.session.get(Engineer, engineer_id)
+    if engineer_id:
+        return resolve_engineer_profile_branch_code(engineer)
+
+    owner = getattr(record, 'requester', None)
+    owner_id = clean_int(getattr(record, 'user_id', None))
+    if not owner and owner_id:
+        owner = db.session.get(User, owner_id)
+    profile = getattr(owner, 'engineer_profile', None) if owner else None
+    return resolve_engineer_profile_branch_code(profile)
+
+
+def accounting_branch_label(branch_code):
+    return STOCK_INVENTORY_BRANCHES.get(clean_str(branch_code) or '', '')
+
+
+def accounting_branch_resolution_error(record=None, action='continue'):
+    """Return the actionable error shown when an accounting branch is unresolved."""
+    return (
+        "The request creator's Personnel/Engineer profile is missing or has an "
+        "unsupported branch. Update it to Manila/Main, Cebu, or Davao before you "
+        f"can {action}."
+    )
+
+
+def require_accounting_branch_code(record, action='continue'):
+    branch_code = resolve_accounting_branch_code(record)
+    if not branch_code:
+        raise ValueError(accounting_branch_resolution_error(record, action=action))
+    return branch_code
 
 
 def can_manage_stock_inventory(user=None):
@@ -21780,8 +21839,8 @@ def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
-    # Navigation shell bump: v168 explicit current units -> v169 centered current-unit headings.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v169-calibration-report-current-unit-alignment';
+    # Navigation shell bump: v169 calibration report alignment -> v170 authoritative accounting branch codes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v170-accounting-branch-codes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -29526,6 +29585,10 @@ def reimbursement_header_approval_meta(header):
     approved_by = db.session.get(User, header.approved_by_id) if getattr(header, 'approved_by_id', None) else None
     rejected_by = db.session.get(User, header.rejected_by_id) if getattr(header, 'rejected_by_id', None) else None
     approval_meta = {
+        'branch_code': resolve_accounting_branch_code(header),
+        'derived_branch_code': resolve_accounting_branch_code(header),
+        'branch_label': accounting_branch_label(resolve_accounting_branch_code(header)),
+        'branch_resolution_error': accounting_branch_resolution_error(header, action='use reimbursement accounting workflows') if not resolve_accounting_branch_code(header) else '',
         'approved_at': header.approved_at.isoformat() if getattr(header, 'approved_at', None) else None,
         'approved_by': getattr(approved_by, 'username', '') if approved_by else '',
         'rejected_at': header.rejected_at.isoformat() if getattr(header, 'rejected_at', None) else None,
@@ -30670,8 +30733,8 @@ def reimbursement_prepare_rfp_field_values(header):
     covering = f"REIMBURSEMENT FOR {reimbursement_join_summary_labels(covering_labels)}" if covering_labels else 'REIMBURSEMENT'
     generated_date = get_manila_time().strftime('%m-%d-%Y')
 
-    # Dynamic employee/payment values plus constant accounting codes.
-    # Branch/Class/Dept/Product are fixed accounting codes for this RFP form.
+    # Dynamic employee/payment values plus authoritative branch and template
+    # class/dept/product codes.
     field_values = {
         'CHECK PAYABLE TO': employee_name,
         'DATE': generated_date,
@@ -30688,8 +30751,9 @@ def reimbursement_prepare_rfp_field_values(header):
     #
     # Fill common possible field names for the static accounting-code boxes.
     # This keeps the generator tolerant if the fillable PDF uses mixed naming.
+    branch_code = require_accounting_branch_code(header, action='generate the reimbursement RFP')
     accounting_code_aliases = {
-        'BC01': ['BRANCH', 'Branch', 'branch', 'Branch Code', 'BRANCH CODE'],
+        branch_code: ['BRANCH', 'Branch', 'branch', 'Branch Code', 'BRANCH CODE'],
         'CC04': ['CLASS', 'Class', 'class', 'Class Code', 'CLASS CODE'],
         'DC03': ['DEPT', 'Dept', 'DEPARTMENT', 'Department', 'dept', 'Dept Code', 'DEPT CODE'],
         'PC26': ['PRODUCT', 'Product', 'product', 'Product Code', 'PRODUCT CODE'],
@@ -33950,6 +34014,7 @@ def clear_travel_liquidation(liquidation_id):
         return jsonify({'success': False, 'error': message}), 403
 
     try:
+        require_accounting_branch_code(liquidation, action='clear a liquidation draft')
         rows = TravelLiquidationRow.query.filter_by(liquidation_id=liquidation.id).all()
         receipts = TravelLiquidationReceipt.query.filter_by(liquidation_id=liquidation.id).all()
         deleted_file_count = 0
@@ -34018,6 +34083,9 @@ def clear_travel_liquidation(liquidation_id):
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
         })
 
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidation] Clear draft failed: {exc}", flush=True)
@@ -34069,6 +34137,9 @@ def submit_travel_liquidation(liquidation_id):
         }), 400
 
     try:
+        authoritative_branch_code = require_accounting_branch_code(liquidation, action='submit a liquidation')
+        for row in rows:
+            row.branch_code = authoritative_branch_code
         previous_liquidation_status = normalize_travel_liquidation_status(getattr(liquidation, 'status', None))
         previous_travel_status = travel_request_normalize_status(getattr(request_rec, 'status', None))
         now = get_manila_time()
@@ -40020,6 +40091,11 @@ def travel_liquidation_seed_per_diem_airfare_rows(liquidation, commit=False):
     request_rec = getattr(liquidation, 'travel_request', None)
     if not request_rec:
         return 0
+    branch_code = resolve_accounting_branch_code(liquidation)
+    if not branch_code:
+        # Keep an unresolved draft viewable, but never create a branch-dependent
+        # auto row until the authoritative Engineer profile is fixed.
+        return 0
     liquidation.currency_code = normalize_travel_currency_code(getattr(request_rec, 'currency_code', None) or getattr(liquidation, 'currency_code', None) or 'PHP')
 
     liquidation_id = clean_int(getattr(liquidation, 'id', None))
@@ -40092,7 +40168,7 @@ def travel_liquidation_seed_per_diem_airfare_rows(liquidation, commit=False):
             expense_date=getattr(line, 'line_date', None) or getattr(request_rec, 'departure_date', None),
             expense_type=label,
             particulars=description,
-            branch_code=TRAVEL_LIQUIDATION_DEFAULT_BRANCH_CODE,
+            branch_code=branch_code,
             class_code=TRAVEL_LIQUIDATION_DEFAULT_CLASS_CODE,
             dept_code=TRAVEL_LIQUIDATION_DEFAULT_DEPT_CODE,
             product_code=TRAVEL_LIQUIDATION_DEFAULT_PRODUCT_CODE,
@@ -40365,6 +40441,7 @@ def travel_liquidation_row_to_dict(row):
     receipts = travel_liquidation_row_receipts(row)
     liquidation = getattr(row, 'liquidation', None)
     request_rec = getattr(liquidation, 'travel_request', None) if liquidation else None
+    branch_code = resolve_accounting_branch_code(liquidation) if liquidation else ''
     currency_code = normalize_travel_currency_code(
         getattr(liquidation, 'currency_code', None) or
         getattr(request_rec, 'currency_code', None) or
@@ -40378,7 +40455,7 @@ def travel_liquidation_row_to_dict(row):
         'expense_type': clean_str(getattr(row, 'expense_type', None)) or '',
         'particulars': clean_str(getattr(row, 'particulars', None)) or '',
         # Official Shimadzu liquidation summary template fields.
-        'branch_code': clean_str(getattr(row, 'branch_code', None)) or '',
+        'branch_code': branch_code or clean_str(getattr(row, 'branch_code', None)) or '',
         'class_code': clean_str(getattr(row, 'class_code', None)) or '',
         'dept_code': clean_str(getattr(row, 'dept_code', None)) or '',
         'product_code': clean_str(getattr(row, 'product_code', None)) or '',
@@ -40402,6 +40479,7 @@ def travel_liquidation_to_dict(liquidation, include_rows=True):
     request_rec = getattr(liquidation, 'travel_request', None)
     requester = db.session.get(User, liquidation.user_id) if getattr(liquidation, 'user_id', None) else None
     engineer = db.session.get(Engineer, liquidation.engineer_id) if getattr(liquidation, 'engineer_id', None) else None
+    derived_branch_code = resolve_accounting_branch_code(liquidation)
     status = normalize_travel_liquidation_status(getattr(liquidation, 'status', None))
     completed_at = getattr(liquidation, 'completed_at', None)
     completed_by_user = db.session.get(User, clean_int(getattr(liquidation, 'completed_by_id', None))) if clean_int(getattr(liquidation, 'completed_by_id', None)) else None
@@ -40434,6 +40512,10 @@ def travel_liquidation_to_dict(liquidation, include_rows=True):
             ''
         ),
         'engineer_id': liquidation.engineer_id,
+        'branch_code': derived_branch_code,
+        'derived_branch_code': derived_branch_code,
+        'branch_label': accounting_branch_label(derived_branch_code),
+        'branch_resolution_error': accounting_branch_resolution_error(liquidation, action='use accounting workflows') if not derived_branch_code else '',
         'status': status,
         'accounting_status': clean_str(getattr(liquidation, 'accounting_status', None)) or '',
         'currency_code': currency_code,
@@ -40560,6 +40642,7 @@ def build_travel_liquidation_form_payload(liquidation):
     if not liquidation:
         return {}
 
+    derived_branch_code = require_accounting_branch_code(liquidation, action='generate the liquidation form')
     travel_liquidation_recalculate_totals(liquidation)
 
     request_rec = getattr(liquidation, 'travel_request', None)
@@ -40591,7 +40674,7 @@ def build_travel_liquidation_form_payload(liquidation):
             'template_row': 10 + index if index <= 17 else None,
             'particulars': clean_str(getattr(row, 'particulars', None)) or clean_str(getattr(row, 'expense_type', None)) or '',
             'expense_type': clean_str(getattr(row, 'expense_type', None)) or '',
-            'branch_code': clean_str(getattr(row, 'branch_code', None)) or 'BC01',
+            'branch_code': derived_branch_code,
             'class_code': clean_str(getattr(row, 'class_code', None)) or 'CC04',
             'dept_code': clean_str(getattr(row, 'dept_code', None)) or 'DC03',
             'product_code': clean_str(getattr(row, 'product_code', None)) or 'PC18/PC22',
@@ -40640,6 +40723,9 @@ def build_travel_liquidation_form_payload(liquidation):
             'status': status,
             'accounting_status': clean_str(getattr(liquidation, 'accounting_status', None)) or '',
             'currency_code': currency_code,
+            'branch_code': derived_branch_code,
+            'derived_branch_code': derived_branch_code,
+            'branch_label': accounting_branch_label(derived_branch_code),
             'travel_request_id': clean_int(getattr(liquidation, 'travel_request_id', None)),
             'travel_request_no': clean_str(getattr(request_rec, 'request_no', None)) or (f"TR-{request_rec.id}" if request_rec else ''),
             'destination': clean_str(getattr(request_rec, 'destination', None)) or '',
@@ -40920,7 +41006,7 @@ def build_travel_liquidation_excel_workbook(liquidation):
             particulars_cell = ws.cell(row_idx, 2)
             particulars_cell.value = row.get('particulars') or ''
             particulars_cell.alignment = Alignment(horizontal='left', vertical='center')
-            ws.cell(row_idx, 8).value = row.get('branch_code') or 'BC01'
+            ws.cell(row_idx, 8).value = row.get('branch_code') or ''
             ws.cell(row_idx, 9).value = row.get('class_code') or 'CC04'
             ws.cell(row_idx, 10).value = row.get('dept_code') or 'DC03'
             ws.cell(row_idx, 11).value = row.get('product_code') or 'PC18/PC22'
@@ -41018,10 +41104,14 @@ def get_or_create_travel_liquidation_draft(request_rec, actor_user=None, commit=
 
     ensure_travel_liquidation_tables()
 
+    authoritative_branch_code = require_accounting_branch_code(request_rec, action='create or load a liquidation draft')
+
     existing = TravelLiquidationHeader.query.filter_by(travel_request_id=request_rec.id).first()
     if existing:
         existing.currency_code = normalize_travel_currency_code(getattr(request_rec, 'currency_code', None) or getattr(existing, 'currency_code', None) or 'PHP')
         seeded_auto_rows = travel_liquidation_seed_per_diem_airfare_rows(existing, commit=False)
+        for row in list(getattr(existing, 'rows', None) or []):
+            row.branch_code = authoritative_branch_code
         travel_liquidation_recalculate_totals(existing)
         if commit or seeded_auto_rows:
             db.session.commit()
@@ -41289,6 +41379,9 @@ def mark_travel_completed_ready_for_liquidation(travel_request_id):
             'liquidation_created': bool(liquidation_created),
             'item': item_payload
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         import traceback
@@ -41343,6 +41436,9 @@ def create_travel_liquidation_draft_endpoint(travel_request_id):
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True),
             'item': accounting_center_travel_request_item_to_dict(request_rec)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidation] Create draft failed: {exc}", flush=True)
@@ -41438,6 +41534,9 @@ def get_travel_liquidation_form_payload(liquidation_id):
             'liquidation_id': liquidation.id,
             'form_payload': build_travel_liquidation_form_payload(liquidation)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidationForm] Payload failed: {exc}", flush=True)
@@ -41482,7 +41581,7 @@ def travel_liquidation_preview_html(liquidation):
             row_html += f"""
                 <tr>
                     <td class="particular">{html.escape(clean_str(row.get('particulars')) or '')}</td>
-                    <td>{html.escape(clean_str(row.get('branch_code')) or 'BC01')}</td>
+                    <td>{html.escape(clean_str(row.get('branch_code')) or '')}</td>
                     <td>{html.escape(clean_str(row.get('class_code')) or 'CC04')}</td>
                     <td>{html.escape(clean_str(row.get('dept_code')) or 'DC03')}</td>
                     <td>{html.escape(clean_str(row.get('product_code')) or 'PC18/PC22')}</td>
@@ -41821,6 +41920,9 @@ def preview_travel_liquidation_excel(liquidation_id):
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
         return response
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidationPreview] Preview failed: {exc}", flush=True)
@@ -41880,6 +41982,9 @@ def download_travel_liquidation_excel(liquidation_id):
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
         return response
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidationExcel] Generation failed: {exc}", flush=True)
@@ -42292,6 +42397,7 @@ def build_travel_liquidation_approval_package_manifest(liquidation):
         return {}
 
     request_rec = getattr(liquidation, 'travel_request', None)
+    derived_branch_code = resolve_accounting_branch_code(liquidation)
     travel_liquidation_recalculate_totals(liquidation)
 
     liquidation_id = clean_int(getattr(liquidation, 'id', None)) or 0
@@ -42403,6 +42509,10 @@ def build_travel_liquidation_approval_package_manifest(liquidation):
         'travel_request_id': travel_request_id,
         'request_no': request_no or f"TR-{travel_request_id}",
         'status': clean_str(getattr(liquidation, 'status', None)) or '',
+        'branch_code': derived_branch_code,
+        'derived_branch_code': derived_branch_code,
+        'branch_label': accounting_branch_label(derived_branch_code),
+        'branch_resolution_error': accounting_branch_resolution_error(liquidation, action='use accounting workflows') if not derived_branch_code else '',
         'summary': {
             'cash_advance_amount': cash_advance,
             'total_actual_expenses': total_expenses,
@@ -42413,7 +42523,8 @@ def build_travel_liquidation_approval_package_manifest(liquidation):
             'total_expenses_label': format_travel_currency_amount(total_expenses, currency_code),
             'due_to_shimadzu_label': format_travel_currency_amount(due_to_shimadzu, currency_code),
             'due_to_employee_label': format_travel_currency_amount(due_to_employee, currency_code),
-            'rfp_required': bool(rfp_required)
+            'rfp_required': bool(rfp_required),
+            'branch_code': derived_branch_code
         },
         'documents': documents,
         'receipt_count': len(receipt_items),
@@ -42545,6 +42656,7 @@ def travel_liquidation_prepare_rfp_field_values(liquidation):
         'Employee'
     ).upper()
 
+    branch_code = require_accounting_branch_code(liquidation, action='generate the Travel Liquidation RFP')
     travel_liquidation_recalculate_totals(liquidation)
     amount = travel_liquidation_money(getattr(liquidation, 'due_to_employee', 0))
     liquidation_no = clean_str(getattr(liquidation, 'liquidation_no', None)) or f"TL-{clean_int(getattr(liquidation, 'id', None)) or 0}"
@@ -42575,7 +42687,7 @@ def travel_liquidation_prepare_rfp_field_values(liquidation):
     }
 
     code_aliases = {
-        clean_str(getattr(first_row, 'branch_code', None)) or 'BC01': ['BRANCH', 'Branch', 'branch', 'Branch Code', 'BRANCH CODE'],
+        branch_code: ['BRANCH', 'Branch', 'branch', 'Branch Code', 'BRANCH CODE'],
         clean_str(getattr(first_row, 'class_code', None)) or 'CC04': ['CLASS', 'Class', 'class', 'Class Code', 'CLASS CODE'],
         clean_str(getattr(first_row, 'dept_code', None)) or 'DC03': ['DEPT', 'Dept', 'DEPARTMENT', 'Department', 'dept', 'Dept Code', 'DEPT CODE'],
         clean_str(getattr(first_row, 'product_code', None)) or 'PC18/PC22': ['PRODUCT', 'Product', 'product', 'Product Code', 'PRODUCT CODE'],
@@ -42689,6 +42801,9 @@ def preview_travel_liquidation_rfp(liquidation_id):
             pdf_bytes=pdf_buffer,
             filename=filename
         )
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidationRFP] Preview failed: {exc}", flush=True)
@@ -42718,7 +42833,7 @@ def can_edit_travel_liquidation(liquidation):
     return False, 'You can only edit your own Travel Liquidation or a request where you are a participant.'
 
 
-def travel_liquidation_parse_row_payload(payload, target_currency_code='PHP', usd_to_php_rate=0):
+def travel_liquidation_parse_row_payload(payload, target_currency_code='PHP', usd_to_php_rate=0, authoritative_branch_code=''):
     """Parse S13C row payload while keeping official template fields intact."""
     payload = payload or {}
     target_currency = normalize_travel_currency_code(payload.get('currency_code') or target_currency_code or 'PHP')
@@ -42737,7 +42852,8 @@ def travel_liquidation_parse_row_payload(payload, target_currency_code='PHP', us
         'expense_date': parse_date(payload.get('expense_date') or payload.get('date') or payload.get('row_date')),
         'expense_type': (clean_str(payload.get('expense_type') or payload.get('type')) or 'Others')[:80],
         'particulars': (clean_str(payload.get('particulars') or payload.get('description') or payload.get('item_name')) or 'Travel expense')[:255],
-        'branch_code': (clean_str(payload.get('branch_code')) or TRAVEL_LIQUIDATION_DEFAULT_BRANCH_CODE)[:50],
+        # The legacy client field is accepted for compatibility but ignored.
+        'branch_code': (clean_str(authoritative_branch_code) or '')[:50],
         'class_code': (clean_str(payload.get('class_code')) or TRAVEL_LIQUIDATION_DEFAULT_CLASS_CODE)[:50],
         'dept_code': (clean_str(payload.get('dept_code')) or TRAVEL_LIQUIDATION_DEFAULT_DEPT_CODE)[:50],
         'product_code': (clean_str(payload.get('product_code')) or TRAVEL_LIQUIDATION_DEFAULT_PRODUCT_CODE)[:50],
@@ -42850,10 +42966,12 @@ def save_travel_liquidation_row(row_id):
         return jsonify({'success': False, 'error': message}), 403
 
     try:
+        authoritative_branch_code = require_accounting_branch_code(liquidation, action='save a liquidation row')
         data = travel_liquidation_parse_row_payload(
             request.get_json(silent=True) or {},
             normalize_travel_currency_code(getattr(liquidation, 'currency_code', None) or getattr(getattr(liquidation, 'travel_request', None), 'currency_code', None) or 'PHP'),
-            travel_usd_to_php_rate(getattr(liquidation, 'usd_to_php_rate', 0))
+            travel_usd_to_php_rate(getattr(liquidation, 'usd_to_php_rate', 0)),
+            authoritative_branch_code
         )
         if data['expense_date'] is not None:
             row.expense_date = data['expense_date']
@@ -42928,10 +43046,12 @@ def add_travel_liquidation_row(liquidation_id):
 
     try:
         payload = request.get_json(silent=True) or {}
+        authoritative_branch_code = require_accounting_branch_code(liquidation, action='add a liquidation row')
         data = travel_liquidation_parse_row_payload(
             payload,
             normalize_travel_currency_code(getattr(liquidation, 'currency_code', None) or getattr(getattr(liquidation, 'travel_request', None), 'currency_code', None) or 'PHP'),
-            travel_usd_to_php_rate(getattr(liquidation, 'usd_to_php_rate', 0))
+            travel_usd_to_php_rate(getattr(liquidation, 'usd_to_php_rate', 0)),
+            authoritative_branch_code
         )
         existing_max_sort = (
             db.session.query(func.max(TravelLiquidationRow.sort_order))
@@ -43017,6 +43137,7 @@ def save_travel_liquidation_currency_rate(liquidation_id):
         return jsonify({'success': False, 'error': message}), 403
 
     try:
+        require_accounting_branch_code(liquidation, action='save the currency rate')
         payload = request.get_json(silent=True) or {}
         request_rec = getattr(liquidation, 'travel_request', None)
         liquidation.currency_code = normalize_travel_currency_code(getattr(request_rec, 'currency_code', None) or getattr(liquidation, 'currency_code', None) or 'PHP')
@@ -43037,6 +43158,9 @@ def save_travel_liquidation_currency_rate(liquidation_id):
             'message': 'Travel Liquidation currency rate saved.',
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidation] Save currency rate failed: {exc}", flush=True)
@@ -43064,6 +43188,7 @@ def delete_travel_liquidation_row(row_id):
         return jsonify({'success': False, 'error': message}), 403
 
     try:
+        require_accounting_branch_code(liquidation, action='delete a liquidation row')
         row_label = clean_str(getattr(row, 'particulars', None)) or f'Row #{row.id}'
         receipt_rows = TravelLiquidationReceipt.query.filter_by(row_id=row.id).all()
         receipt_file_paths = []
@@ -43121,6 +43246,9 @@ def delete_travel_liquidation_row(row_id):
             ),
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidation] Delete row failed: {exc}", flush=True)
@@ -44397,6 +44525,8 @@ def submit_reimbursement():
         if row_count <= 0:
             return jsonify({'success': False, 'error': 'No reimbursement rows to submit.'}), 400
 
+        authoritative_branch_code = require_accounting_branch_code(header, action='submit reimbursement')
+
         if not reimbursement_engineer_has_saved_signature(profile):
             print(
                 f"[Reimbursement] Submit blocked: missing saved signature for user={current_user.id} engineer={profile.id} range={start_date}..{end_date}",
@@ -44489,7 +44619,8 @@ def submit_reimbursement():
                 'row_count': row_count,
                 'excluded_zero_rows': excluded_zero_rows,
                 'engineer_id': profile.id,
-                'engineer_name': getattr(profile, 'name', '')
+                'engineer_name': getattr(profile, 'name', ''),
+                'branch_code': authoritative_branch_code
             }
         )
 
@@ -44557,6 +44688,9 @@ def submit_reimbursement():
             **reimbursement_header_approval_meta(header)
         })
 
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[Reimbursement] Submit failed: {exc}", flush=True)
@@ -60991,9 +61125,9 @@ def cash_advance_liquidation_receipt_mimetype(receipt, file_path=''):
     return 'application/octet-stream'
 
 
-def cash_advance_liquidation_parse_row_payload(payload):
+def cash_advance_liquidation_parse_row_payload(payload, authoritative_branch_code=''):
     payload = payload or {}
-    data = travel_liquidation_parse_row_payload(payload)
+    data = travel_liquidation_parse_row_payload(payload, authoritative_branch_code=authoritative_branch_code)
     data['particulars'] = (clean_str(payload.get('particulars') or payload.get('description') or payload.get('item_name')) or 'Cash Advance expense')[:255]
     return data
 
@@ -61027,12 +61161,14 @@ def cash_advance_liquidation_row_receipts(row):
 
 def cash_advance_liquidation_row_to_dict(row):
     receipts = cash_advance_liquidation_row_receipts(row)
+    liquidation = getattr(row, 'liquidation', None)
+    branch_code = resolve_accounting_branch_code(liquidation) if liquidation else ''
     return {
         'id': row.id,
         'expense_date': row.expense_date.isoformat() if getattr(row, 'expense_date', None) else '',
         'expense_type': clean_str(getattr(row, 'expense_type', None)) or '',
         'particulars': clean_str(getattr(row, 'particulars', None)) or '',
-        'branch_code': clean_str(getattr(row, 'branch_code', None)) or '',
+        'branch_code': branch_code or clean_str(getattr(row, 'branch_code', None)) or '',
         'class_code': clean_str(getattr(row, 'class_code', None)) or '',
         'dept_code': clean_str(getattr(row, 'dept_code', None)) or '',
         'product_code': clean_str(getattr(row, 'product_code', None)) or '',
@@ -61070,6 +61206,7 @@ def cash_advance_liquidation_to_dict(liquidation, include_rows=True):
     approver = db.session.get(User, clean_int(getattr(liquidation, 'approved_by_id', None))) if clean_int(getattr(liquidation, 'approved_by_id', None)) else None
     rejector = db.session.get(User, clean_int(getattr(liquidation, 'rejected_by_id', None))) if clean_int(getattr(liquidation, 'rejected_by_id', None)) else None
     completed_by = db.session.get(User, clean_int(getattr(liquidation, 'completed_by_id', None))) if clean_int(getattr(liquidation, 'completed_by_id', None)) else None
+    derived_branch_code = resolve_accounting_branch_code(liquidation)
     status = cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None))
     payload = {
         'id': liquidation.id,
@@ -61086,6 +61223,10 @@ def cash_advance_liquidation_to_dict(liquidation, include_rows=True):
             cash_advance_requester_name(header)
         ),
         'engineer_id': liquidation.engineer_id,
+        'branch_code': derived_branch_code,
+        'derived_branch_code': derived_branch_code,
+        'branch_label': accounting_branch_label(derived_branch_code),
+        'branch_resolution_error': accounting_branch_resolution_error(liquidation, action='use accounting workflows') if not derived_branch_code else '',
         'status': status,
         'accounting_status': clean_str(getattr(liquidation, 'accounting_status', None)) or '',
         'sent_to_accounting_at': liquidation.sent_to_accounting_at.isoformat() if getattr(liquidation, 'sent_to_accounting_at', None) else '',
@@ -61145,8 +61286,12 @@ def get_or_create_cash_advance_liquidation_draft(header, actor_user=None, commit
     ensure_cash_advance_tables()
     ensure_cash_advance_liquidation_tables()
 
+    authoritative_branch_code = require_accounting_branch_code(header, action='create or load a liquidation draft')
+
     existing = CashAdvanceLiquidationHeader.query.filter_by(cash_advance_id=header.id).first()
     if existing:
+        for row in list(getattr(existing, 'rows', None) or []):
+            row.branch_code = authoritative_branch_code
         cash_advance_liquidation_recalculate_totals(existing)
         if commit:
             db.session.commit()
@@ -61366,7 +61511,8 @@ def add_cash_advance_liquidation_row(liquidation_id):
 
     try:
         payload = request.get_json(silent=True) or {}
-        data = cash_advance_liquidation_parse_row_payload(payload)
+        authoritative_branch_code = require_accounting_branch_code(liquidation, action='add a liquidation row')
+        data = cash_advance_liquidation_parse_row_payload(payload, authoritative_branch_code)
         existing_max_sort = (
             db.session.query(func.max(CashAdvanceLiquidationRow.sort_order))
             .filter(CashAdvanceLiquidationRow.liquidation_id == liquidation.id)
@@ -61409,6 +61555,9 @@ def add_cash_advance_liquidation_row(liquidation_id):
             'row': cash_advance_liquidation_row_to_dict(row),
             'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidation] Add row failed: {exc}", flush=True)
@@ -61435,7 +61584,8 @@ def save_cash_advance_liquidation_row(row_id):
 
     try:
         payload = request.get_json(silent=True) or {}
-        data = cash_advance_liquidation_parse_row_payload(payload)
+        authoritative_branch_code = require_accounting_branch_code(liquidation, action='save a liquidation row')
+        data = cash_advance_liquidation_parse_row_payload(payload, authoritative_branch_code)
         row.expense_date = data['expense_date'] or row.expense_date
         row.expense_type = data['expense_type']
         row.particulars = data['particulars']
@@ -61467,6 +61617,9 @@ def save_cash_advance_liquidation_row(row_id):
             'row': cash_advance_liquidation_row_to_dict(row),
             'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidation] Save row failed: {exc}", flush=True)
@@ -61492,6 +61645,7 @@ def delete_cash_advance_liquidation_row(row_id):
         return jsonify({'success': False, 'error': message}), 403
 
     try:
+        require_accounting_branch_code(liquidation, action='delete a liquidation row')
         row_label = clean_str(getattr(row, 'particulars', None)) or f'Row #{row.id}'
         receipts = CashAdvanceLiquidationReceipt.query.filter_by(row_id=row.id).all()
         receipt_file_paths = []
@@ -61539,6 +61693,9 @@ def delete_cash_advance_liquidation_row(row_id):
             ),
             'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidation] Delete row failed: {exc}", flush=True)
@@ -61818,6 +61975,9 @@ def submit_cash_advance_liquidation(liquidation_id):
         return jsonify({'success': False, 'error': 'Please add at least one actual expense row before submitting liquidation.'}), 400
 
     try:
+        authoritative_branch_code = require_accounting_branch_code(liquidation, action='submit a liquidation')
+        for row in rows:
+            row.branch_code = authoritative_branch_code
         now = get_manila_time()
         previous_liquidation_status = cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None))
         previous_cash_status = cash_advance_normalize_status(getattr(header, 'status', None))
@@ -61946,6 +62106,9 @@ def submit_cash_advance_liquidation(liquidation_id):
                 'email': approval_email_result
             }
         })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidation] Submit failed: {exc}", flush=True)
@@ -62315,6 +62478,7 @@ def cash_advance_liquidation_prepare_rfp_field_values(liquidation):
         'Employee'
     ).upper()
 
+    branch_code = require_accounting_branch_code(liquidation, action='generate the Cash Advance Liquidation RFP')
     cash_advance_liquidation_recalculate_totals(liquidation)
     amount = cash_advance_liquidation_money(getattr(liquidation, 'due_to_employee', 0))
     covering = cash_advance_liquidation_rfp_covering_text(liquidation)
@@ -62334,7 +62498,7 @@ def cash_advance_liquidation_prepare_rfp_field_values(liquidation):
     }
 
     code_aliases = {
-        clean_str(getattr(first_row, 'branch_code', None)) or 'BC01': ['BRANCH', 'Branch', 'branch', 'Branch Code', 'BRANCH CODE'],
+        branch_code: ['BRANCH', 'Branch', 'branch', 'Branch Code', 'BRANCH CODE'],
         clean_str(getattr(first_row, 'class_code', None)) or 'CC04': ['CLASS', 'Class', 'class', 'Class Code', 'CLASS CODE'],
         clean_str(getattr(first_row, 'dept_code', None)) or 'DC03': ['DEPT', 'Dept', 'DEPARTMENT', 'Department', 'dept', 'Dept Code', 'DEPT CODE'],
         clean_str(getattr(first_row, 'product_code', None)) or 'PC18/PC22': ['PRODUCT', 'Product', 'product', 'Product Code', 'PRODUCT CODE'],
@@ -62397,6 +62561,7 @@ def build_cash_advance_liquidation_approval_package_manifest(liquidation):
         return {}
 
     header = getattr(liquidation, 'cash_advance', None)
+    derived_branch_code = resolve_accounting_branch_code(liquidation)
     cash_advance_liquidation_recalculate_totals(liquidation)
 
     liquidation_id = clean_int(getattr(liquidation, 'id', None)) or 0
@@ -62462,6 +62627,10 @@ def build_cash_advance_liquidation_approval_package_manifest(liquidation):
         'request_no': cash_advance_no,
         'source_label': 'Cash Advance',
         'status': clean_str(getattr(liquidation, 'status', None)) or '',
+        'branch_code': derived_branch_code,
+        'derived_branch_code': derived_branch_code,
+        'branch_label': accounting_branch_label(derived_branch_code),
+        'branch_resolution_error': accounting_branch_resolution_error(liquidation, action='use accounting workflows') if not derived_branch_code else '',
         'summary': {
             'cash_advance_amount': cash_advance_amount,
             'total_actual_expenses': total_expenses,
@@ -62471,7 +62640,8 @@ def build_cash_advance_liquidation_approval_package_manifest(liquidation):
             'total_expenses_label': f"PHP {total_expenses:,.2f}",
             'due_to_shimadzu_label': f"PHP {due_to_shimadzu:,.2f}",
             'due_to_employee_label': f"PHP {due_to_employee:,.2f}",
-            'rfp_required': bool(rfp_required)
+            'rfp_required': bool(rfp_required),
+            'branch_code': derived_branch_code
         },
         'documents': documents,
         'receipt_count': len(receipt_items),
@@ -62568,6 +62738,9 @@ def preview_cash_advance_liquidation_rfp(liquidation_id):
             filename=filename
         )
 
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidationRFP] Preview failed: {exc}", flush=True)
@@ -62604,6 +62777,192 @@ def cash_advance_liquidation_accounting_settings_warning_payload():
     }
 
 
+ACCOUNTING_BRANCH_REPAIR_VERSION = 'accounting-branch-codes-v1'
+
+
+def _accounting_branch_repair_row_item(row, workflow, liquidation=None):
+    liquidation = liquidation or getattr(row, 'liquidation', None)
+    if not liquidation:
+        if workflow == 'travel_liquidation':
+            liquidation = db.session.get(
+                TravelLiquidationHeader,
+                clean_int(getattr(row, 'liquidation_id', None))
+            )
+        else:
+            liquidation = db.session.get(
+                CashAdvanceLiquidationHeader,
+                clean_int(getattr(row, 'liquidation_id', None))
+            )
+
+    expected_branch_code = resolve_accounting_branch_code(liquidation)
+    stored_branch_code = clean_str(getattr(row, 'branch_code', None)) or ''
+    return {
+        'workflow': workflow,
+        'row_id': clean_int(getattr(row, 'id', None)),
+        'liquidation_id': clean_int(getattr(row, 'liquidation_id', None)),
+        'liquidation_no': clean_str(getattr(liquidation, 'liquidation_no', None)) if liquidation else '',
+        'status': clean_str(getattr(liquidation, 'status', None)) if liquidation else '',
+        'stored_branch_code': stored_branch_code,
+        'expected_branch_code': expected_branch_code,
+        'expected_branch_label': accounting_branch_label(expected_branch_code),
+        'action': 'unresolved' if not expected_branch_code else ('repair' if stored_branch_code != expected_branch_code else 'already_correct'),
+    }
+
+
+def _accounting_branch_repair_scan():
+    """Inventory all historical liquidation rows without changing any data."""
+    items = []
+    for row in TravelLiquidationRow.query.order_by(TravelLiquidationRow.id.asc()).all():
+        items.append(_accounting_branch_repair_row_item(row, 'travel_liquidation'))
+    for row in CashAdvanceLiquidationRow.query.order_by(CashAdvanceLiquidationRow.id.asc()).all():
+        items.append(_accounting_branch_repair_row_item(row, 'cash_advance_liquidation'))
+
+    summary = {
+        'total': len(items),
+        'repairable': sum(1 for item in items if item['action'] == 'repair'),
+        'already_correct': sum(1 for item in items if item['action'] == 'already_correct'),
+        'unresolved': sum(1 for item in items if item['action'] == 'unresolved'),
+        'by_workflow': {},
+        'by_target_code': {},
+    }
+    for workflow in ('travel_liquidation', 'cash_advance_liquidation'):
+        workflow_items = [item for item in items if item['workflow'] == workflow]
+        summary['by_workflow'][workflow] = {
+            'total': len(workflow_items),
+            'repairable': sum(1 for item in workflow_items if item['action'] == 'repair'),
+            'already_correct': sum(1 for item in workflow_items if item['action'] == 'already_correct'),
+            'unresolved': sum(1 for item in workflow_items if item['action'] == 'unresolved'),
+        }
+    for item in items:
+        target_code = item['expected_branch_code'] or 'UNRESOLVED'
+        target_summary = summary['by_target_code'].setdefault(
+            target_code,
+            {'total': 0, 'repairable': 0, 'already_correct': 0, 'unresolved': 0},
+        )
+        target_summary['total'] += 1
+        if item['action'] == 'repair':
+            target_summary['repairable'] += 1
+        elif item['action'] == 'already_correct':
+            target_summary['already_correct'] += 1
+        else:
+            target_summary['unresolved'] += 1
+    return items, summary
+
+
+def _accounting_branch_repair_apply(actor_user=None):
+    """Apply one fresh repair scan atomically and return an audit summary."""
+    items, preview_summary = _accounting_branch_repair_scan()
+    repaired = []
+    try:
+        for item in items:
+            if item['action'] != 'repair':
+                continue
+            model = TravelLiquidationRow if item['workflow'] == 'travel_liquidation' else CashAdvanceLiquidationRow
+            row = db.session.get(model, item['row_id'])
+            if not row:
+                continue
+            liquidation = getattr(row, 'liquidation', None)
+            expected_branch_code = resolve_accounting_branch_code(liquidation)
+            if not expected_branch_code:
+                continue
+            current_branch_code = clean_str(getattr(row, 'branch_code', None)) or ''
+            if current_branch_code == expected_branch_code:
+                continue
+            row.branch_code = expected_branch_code
+            row.updated_at = get_manila_time()
+            repaired.append({
+                'workflow': item['workflow'],
+                'row_id': item['row_id'],
+                'liquidation_id': item['liquidation_id'],
+                'old_branch_code': current_branch_code,
+                'new_branch_code': expected_branch_code,
+            })
+
+        ensure_universal_approval_audit_table()
+        record_universal_approval_audit(
+            'accounting_branch_repair',
+            0,
+            'applied',
+            actor_user=actor_user or current_user,
+            status_from=None,
+            status_to=None,
+            remarks='Applied authoritative Engineer-profile branch codes to historical liquidation rows.',
+            metadata={
+                'repair_version': ACCOUNTING_BRANCH_REPAIR_VERSION,
+                'changed_count': len(repaired),
+                'unresolved_count': preview_summary['unresolved'],
+                'changes': repaired,
+            }
+        )
+        actor_name = universal_approval_actor_name(actor_user or current_user)
+        db.session.add(ActivityLog(
+            user=actor_name,
+            action=f"Accounting branch repair applied: {len(repaired)} row(s) changed; {preview_summary['unresolved']} unresolved row(s) skipped."
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+    items_after, summary_after = _accounting_branch_repair_scan()
+    return {
+        'status': 'applied',
+        'repair_version': ACCOUNTING_BRANCH_REPAIR_VERSION,
+        'preview_summary': preview_summary,
+        'summary': summary_after,
+        'changed_count': len(repaired),
+        'changes': repaired,
+        'unresolved': [item for item in items_after if item['action'] == 'unresolved'],
+    }
+
+
+@app.route('/admin/repair_accounting_branch_codes', methods=['GET', 'POST'])
+@login_required
+def admin_repair_accounting_branch_codes():
+    """Preview/apply historical liquidation branch repair for strict superadmins."""
+    if not is_superadmin_user():
+        return jsonify({'status': 'error', 'message': 'Superadmin access required.'}), 403
+
+    # The repair is deliberately explicit, but it should inventory legacy
+    # databases whose liquidation tables have not yet been created in this
+    # process. These helpers only ensure the workflow schema; they do not
+    # mutate liquidation data or run the repair automatically.
+    ensure_travel_liquidation_tables()
+    ensure_cash_advance_liquidation_tables()
+
+    if request.is_json:
+        values = request.get_json(silent=True) or {}
+    else:
+        values = request.values.to_dict(flat=True)
+    dry_run = request.method == 'GET' or (
+        (clean_str(values.get('mode')) or '').lower() != 'apply' and
+        not parse_bool_flag(values.get('apply'))
+    )
+
+    try:
+        if dry_run:
+            items, summary = _accounting_branch_repair_scan()
+            return no_store_jsonify({
+                'status': 'preview',
+                'repair_version': ACCOUNTING_BRANCH_REPAIR_VERSION,
+                'summary': summary,
+                'candidates': [item for item in items if item['action'] == 'repair'],
+                'already_correct': [item for item in items if item['action'] == 'already_correct'],
+                'unresolved': [item for item in items if item['action'] == 'unresolved'],
+                'note': 'Preview only. No historical data was changed.',
+            })
+        return no_store_jsonify(_accounting_branch_repair_apply(actor_user=current_user))
+    except Exception as repair_error:
+        db.session.rollback()
+        print(f"[AccountingBranchRepair] Repair failed: {repair_error}", flush=True)
+        return no_store_jsonify({
+            'status': 'failed',
+            'repair_version': ACCOUNTING_BRANCH_REPAIR_VERSION,
+            'message': 'Accounting branch repair failed; no changes were committed.',
+            'reason': clean_str(str(repair_error))[:300],
+        }, 500)
+
+
 def cash_advance_liquidation_accounting_package_filename(liquidation):
     """Safe ZIP filename for the approved standalone CA Liquidation Accounting package."""
     liquidation_no = clean_str(getattr(liquidation, 'liquidation_no', None)) or f"CAL-{getattr(liquidation, 'id', '')}"
@@ -62632,6 +62991,7 @@ def build_cash_advance_liquidation_summary_pdf_bytes(liquidation, approved_by_us
         return b''
 
     header = getattr(liquidation, 'cash_advance', None)
+    branch_code = require_accounting_branch_code(liquidation, action='generate the Cash Advance Liquidation summary')
     engineer = getattr(liquidation, 'engineer', None)
     requester = getattr(liquidation, 'requester', None)
     cash_advance_liquidation_recalculate_totals(liquidation)
@@ -62670,7 +63030,7 @@ def build_cash_advance_liquidation_summary_pdf_bytes(liquidation, approved_by_us
 
     summary_data = [
         ['Liquidation No.', liquidation_no, 'Cash Advance No.', cash_advance_no],
-        ['Employee', employee_name, 'Status', cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None))],
+        ['Employee', employee_name, 'Branch', f'{branch_code} - {accounting_branch_label(branch_code)}'],
         ['Cash Advance Amount', f"PHP {cash_advance_liquidation_money(getattr(liquidation, 'cash_advance_amount', 0)):,.2f}", 'Actual Expenses', f"PHP {cash_advance_liquidation_money(getattr(liquidation, 'total_actual_expenses', 0)):,.2f}"],
         ['Due to Shimadzu', f"PHP {cash_advance_liquidation_money(getattr(liquidation, 'due_to_shimadzu', 0)):,.2f}", 'Due to Employee', f"PHP {cash_advance_liquidation_money(getattr(liquidation, 'due_to_employee', 0)):,.2f}"],
         ['Approved By', approved_by, 'Approved At', getattr(liquidation, 'approved_at', None).strftime('%m/%d/%Y %I:%M %p') if getattr(liquidation, 'approved_at', None) else ''],
@@ -62697,7 +63057,7 @@ def build_cash_advance_liquidation_summary_pdf_bytes(liquidation, approved_by_us
     for row in rows:
         expense_date = getattr(row, 'expense_date', None)
         codes = ' / '.join([part for part in [
-            clean_str(getattr(row, 'branch_code', None)),
+            branch_code,
             clean_str(getattr(row, 'class_code', None)),
             clean_str(getattr(row, 'dept_code', None)),
             clean_str(getattr(row, 'product_code', None))
@@ -62957,6 +63317,7 @@ def build_cash_advance_liquidation_excel_payload(liquidation):
     if not liquidation:
         return {}
 
+    derived_branch_code = require_accounting_branch_code(liquidation, action='generate the liquidation form')
     cash_advance_liquidation_recalculate_totals(liquidation)
 
     header = getattr(liquidation, 'cash_advance', None)
@@ -62992,7 +63353,7 @@ def build_cash_advance_liquidation_excel_payload(liquidation):
             'row_id': clean_int(getattr(row, 'id', None)),
             'particulars': clean_str(getattr(row, 'particulars', None)) or clean_str(getattr(row, 'expense_type', None)) or '',
             'expense_type': clean_str(getattr(row, 'expense_type', None)) or '',
-            'branch_code': clean_str(getattr(row, 'branch_code', None)) or 'BC01',
+            'branch_code': derived_branch_code,
             'class_code': clean_str(getattr(row, 'class_code', None)) or 'CC04',
             'dept_code': clean_str(getattr(row, 'dept_code', None)) or 'DC03',
             'product_code': clean_str(getattr(row, 'product_code', None)) or 'PC18/PC22',
@@ -63012,6 +63373,9 @@ def build_cash_advance_liquidation_excel_payload(liquidation):
             'date': travel_liquidation_form_date_label(submitted_at),
             'submitted_at': submitted_at.isoformat() if submitted_at else ''
         },
+        'branch_code': derived_branch_code,
+        'derived_branch_code': derived_branch_code,
+        'branch_label': accounting_branch_label(derived_branch_code),
         'rows': expense_rows,
         'totals': {
             'cash_advance': travel_liquidation_form_money(getattr(liquidation, 'cash_advance_amount', 0)),
@@ -63140,7 +63504,7 @@ def build_cash_advance_liquidation_excel_workbook(liquidation):
             particulars_cell = ws.cell(row_idx, 2)
             particulars_cell.value = row.get('particulars') or ''
             particulars_cell.alignment = Alignment(horizontal='left', vertical='center')
-            ws.cell(row_idx, 8).value = row.get('branch_code') or 'BC01'
+            ws.cell(row_idx, 8).value = row.get('branch_code') or ''
             ws.cell(row_idx, 9).value = row.get('class_code') or 'CC04'
             ws.cell(row_idx, 10).value = row.get('dept_code') or 'DC03'
             ws.cell(row_idx, 11).value = row.get('product_code') or 'PC18/PC22'
@@ -63228,7 +63592,7 @@ def cash_advance_liquidation_preview_html(liquidation):
             row_html += f"""
                 <tr>
                     <td class="particular">{html.escape(clean_str(row.get('particulars')) or '')}</td>
-                    <td>{html.escape(clean_str(row.get('branch_code')) or 'BC01')}</td>
+                    <td>{html.escape(clean_str(row.get('branch_code')) or '')}</td>
                     <td>{html.escape(clean_str(row.get('class_code')) or 'CC04')}</td>
                     <td>{html.escape(clean_str(row.get('dept_code')) or 'DC03')}</td>
                     <td>{html.escape(clean_str(row.get('product_code')) or 'PC18/PC22')}</td>
@@ -63343,6 +63707,9 @@ def preview_cash_advance_liquidation_excel(liquidation_id):
         response = Response(cash_advance_liquidation_preview_html(liquidation), mimetype='text/html')
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         return response
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidationExcel] Preview failed: {exc}", flush=True)
@@ -63368,6 +63735,9 @@ def download_cash_advance_liquidation_excel(liquidation_id):
             as_attachment=True,
             download_name=filename
         )
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidationExcel] Download failed: {exc}", flush=True)

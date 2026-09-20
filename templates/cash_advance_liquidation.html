@@ -101,7 +101,9 @@
                 <div class="col-md-3"><div class="ca-liq-label">Cash Advance</div><div class="ca-liq-value" id="caNo">—</div></div>
                 <div class="col-md-3"><div class="ca-liq-label">Submitted By</div><div class="ca-liq-value" id="requesterName">—</div></div>
                 <div class="col-md-3"><div class="ca-liq-label">Received Reference</div><div class="ca-liq-value" id="receivedReference">—</div></div>
+                <div class="col-md-3"><div class="ca-liq-label">Derived Branch</div><div class="ca-liq-value" id="derivedBranchCode">—</div><div class="mini-help">Locked to the request creator's Engineer profile.</div></div>
             </div>
+            <div class="alert alert-warning small mt-3 mb-0 d-none" id="branchResolutionNote" role="alert"></div>
             <div class="row g-3 mt-3" id="referenceCards">
                 <div class="col-12 text-muted small">Loading Cash Advance reference...</div>
             </div>
@@ -160,7 +162,7 @@
                     <div class="col-md-4"><label class="form-label fw-bold">Expense Type</label><select id="rowExpenseType" class="form-select"><option value="Transportation">Transportation</option><option value="Meals">Meals</option><option value="Supplies">Supplies</option><option value="Representation">Representation</option><option value="Others">Others</option></select></div>
                     <div class="col-md-4"><label class="form-label fw-bold">Actual Amount</label><input type="number" step="0.01" min="0" id="rowActualAmount" class="form-control" placeholder="0.00"></div>
                     <div class="col-12"><label class="form-label fw-bold">Particulars</label><input id="rowParticulars" class="form-control" placeholder="Description / particulars"><div class="mini-help mt-1">This maps to the official liquidation form Particulars column.</div></div>
-                    <div class="col-md-3"><label class="form-label fw-bold">Branch Code</label><input id="rowBranchCode" class="form-control" value="BC01" placeholder="Branch"></div>
+                    <div class="col-md-3"><label class="form-label fw-bold">Branch Code</label><input id="rowBranchCode" class="form-control" value="" placeholder="Derived branch" readonly aria-readonly="true"><div class="mini-help mt-1">Derived from the request creator's Engineer profile; client edits are ignored.</div></div>
                     <div class="col-md-3"><label class="form-label fw-bold">Class Code</label><input id="rowClassCode" class="form-control" value="CC04" placeholder="Class"></div>
                     <div class="col-md-3"><label class="form-label fw-bold">Dept Code</label><input id="rowDeptCode" class="form-control" value="DC03" placeholder="Dept"></div>
                     <div class="col-md-3"><label class="form-label fw-bold">Product Code</label><input id="rowProductCode" class="form-control" value="PC26" placeholder="Product"></div>
@@ -229,9 +231,10 @@ function saveDraftNotice(){showLiqAlert('Draft rows and receipts are saved immed
 function updateWorkflowButtons(){
     const meta=getStatusMeta(currentLiquidation?.status);
     const isDraft=isDraftLiquidation();
-    ['saveDraftTopBtn','submitLiquidationTopBtn','addExpenseRowBtn'].forEach(id=>{const btn=document.getElementById(id); if(btn) btn.disabled=!isDraft;});
+    const branchAvailable=Boolean(currentLiquidation?.derived_branch_code || currentLiquidation?.branch_code);
+    ['saveDraftTopBtn','submitLiquidationTopBtn','addExpenseRowBtn'].forEach(id=>{const btn=document.getElementById(id); if(btn) btn.disabled=!isDraft || !branchAvailable;});
     const note=document.getElementById('liqActionNote');
-    if(note) note.textContent=isDraft ? 'Draft rows and receipts are saved immediately.' : meta.text;
+    if(note) note.textContent=!branchAvailable ? (currentLiquidation?.branch_resolution_error || "Update the request creator's Engineer profile to Manila/Main, Cebu, or Davao before continuing.") : (isDraft ? 'Draft rows and receipts are saved immediately.' : meta.text);
     const banner=document.getElementById('liqLockBanner');
     const bannerTitle=document.getElementById('liqLockBannerTitle');
     const bannerText=document.getElementById('liqLockBannerText');
@@ -308,6 +311,12 @@ function renderLiquidation(liq){
     const meta=getStatusMeta(liq?.status);
     document.getElementById('liqTitle').textContent=liq?.liquidation_no || 'Cash Advance Liquidation';
     document.getElementById('liqSubtitle').textContent=`${liq?.cash_advance_no || 'Cash Advance'} • ${liq?.requester_name || ''}`;
+    const branchCode=liq?.derived_branch_code || liq?.branch_code || '';
+    const branchLabel=liq?.branch_label ? `${branchCode} — ${liq.branch_label}` : branchCode;
+    const branchEl=document.getElementById('derivedBranchCode');
+    if(branchEl) branchEl.textContent=branchLabel || 'Unresolved';
+    const branchNote=document.getElementById('branchResolutionNote');
+    if(branchNote){branchNote.textContent=liq?.branch_resolution_error || "Branch is derived from the request creator's Engineer profile and cannot be edited here.";branchNote.classList.toggle('d-none',Boolean(branchCode));}
     const status=document.getElementById('liqStatus');
     status.className=`ca-liq-status ${meta.cls}`;
     status.innerHTML=`<i class="fa-solid fa-circle"></i>${esc(meta.label)}`;
@@ -345,7 +354,7 @@ function openRowModal(rowId=0){
     document.getElementById('rowExpenseType').value=row?.expense_type || 'Others';
     document.getElementById('rowActualAmount').value=row ? Number(row.actual_amount || row.amount || 0).toFixed(2) : '';
     document.getElementById('rowParticulars').value=row?.particulars || '';
-    document.getElementById('rowBranchCode').value=row?.branch_code || 'BC01';
+    document.getElementById('rowBranchCode').value=currentLiquidation?.derived_branch_code || currentLiquidation?.branch_code || row?.branch_code || '';
     document.getElementById('rowClassCode').value=row?.class_code || 'CC04';
     document.getElementById('rowDeptCode').value=row?.dept_code || 'DC03';
     document.getElementById('rowProductCode').value=row?.product_code || 'PC26';
@@ -362,7 +371,7 @@ async function saveRow(){
         expense_type:document.getElementById('rowExpenseType').value,
         actual_amount:document.getElementById('rowActualAmount').value,
         particulars:document.getElementById('rowParticulars').value.trim(),
-        branch_code:document.getElementById('rowBranchCode').value.trim(),
+        branch_code:currentLiquidation?.derived_branch_code || currentLiquidation?.branch_code || '',
         class_code:document.getElementById('rowClassCode').value.trim(),
         dept_code:document.getElementById('rowDeptCode').value.trim(),
         product_code:document.getElementById('rowProductCode').value.trim(),
