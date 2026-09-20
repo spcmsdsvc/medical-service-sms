@@ -2,6 +2,11 @@
 
 codex changes - 2026-09-20
 
+- Committed the authorized Engineer-profile accounting branch-code package on local `main` as
+  `5db9413`. The commit contains only `app.py`, the two liquidation templates, focused branch-code
+  tests, release metadata, and required plan/change records. The owner separately authorized
+  publication to `origin/main`; protected `scheduler.db`, handoff artifacts, `.claude/`, `output/`,
+  `tmp/`, and unrelated files remain excluded.
 - Recorded the owner-approved Engineer-profile accounting branch-code plan at the top of
   `plans.md` with status `Approved — awaiting go-ahead`. The approved scope makes Manila/Main,
   Cebu, and Davao resolve to `BC01`, `BC02`, and `BC03` for Travel Liquidation, Cash Advance

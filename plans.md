@@ -2,7 +2,7 @@
 
 ## Engineer-profile branch codes for accounting workflows
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `5db9413`; publication authorized by the owner.
 **Approved:** 2026-09-20 — the owner supplied the complete plan and requested implementation.
 **Execution authorized:** 2026-09-20 — the owner separately said “go ahead” after the approved plan was recorded.
 **Detailed:** 2026-09-20.
