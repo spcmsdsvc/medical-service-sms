@@ -7,6 +7,17 @@
 **Execution authorized:** 2026-09-20 — the owner separately said “go ahead” after the approved plan was recorded.
 **Detailed:** 2026-09-20.
 
+### Production repair outcome (2026-09-20)
+
+- After a separately authorized read-only production preview reported 354 liquidation rows,
+  241 repairable Travel Liquidation rows, 113 already-correct rows, and zero unresolved profiles,
+  the owner separately authorized stage-two apply. The guarded `accounting-branch-codes-v1`
+  transaction changed exactly 241 rows: 210 to `BC02` and 31 to `BC03`.
+- Independent post-apply read-only verification found all 354 rows correct, zero repairable, and
+  zero unresolved. The universal repair audit records `changed_count: 241` and
+  `unresolved_count: 0`, and the Activity Log entry exists. No previously emailed package was
+  rewritten or resent, and no Railway variable, deployment, or storage artifact was changed.
+
 ### Summary
 
 Make the request creator’s Engineer-profile branch authoritative:

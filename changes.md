@@ -2,6 +2,16 @@
 
 codex changes - 2026-09-20
 
+- Executed the separately authorized production `accounting-branch-codes-v1` historical repair
+  after a fresh guard matched the approved preview baseline exactly: 354 total liquidation rows,
+  241 repairable, 113 already correct, and zero unresolved. The single transaction corrected all
+  241 affected Travel Liquidation rows—210 from `BC01` to `BC02` and 31 from `BC01` to `BC03`—
+  across 17 Draft, Submitted, Approved, and Completed liquidation records. Cash Advance
+  Liquidation's one historical row was already correct and was unchanged. Independent read-only
+  verification found all 354 rows correct with zero repairable or unresolved rows and confirmed
+  both the universal audit (`changed_count: 241`, `unresolved_count: 0`) and Activity Log record.
+  No email was sent, no historical attachment was rewritten, and no Railway variable, deployment,
+  application file, or production storage artifact was changed by the repair.
 - Pushed the authorized accounting branch-code implementation commit `5db9413` and its
   records-only closeout commit `f4e6d26` to `origin/main`. Remote verification resolved
   `refs/heads/main` to `f4e6d2611c720f1a11b233ba6eaed5c9252a8f40`; Railway accepted that exact
