@@ -2,6 +2,57 @@
 
 codex changes - 2026-09-20
 
+- Executed the Stable TSR number reservation package as uncommitted owner-authorized work. Added
+  the additive `TsrNumberReservation` schema, owner/token-scoped allocation with unique-number
+  retry, authenticated reservation/release endpoints, draft reservation persistence, explicit
+  release, and atomic final-submission consumption in `app.py`; existing finalized submissions
+  and revision numbers remain compatible.
+- Updated `templates/offline_tsr.html` so new TSRs remain Pending until a server reservation
+  exists and never receive a provisional browser number. Stable reservation tokens now survive
+  autosave, account-backed draft saves, reload/hydration, reconnect, offline queue transfer, and
+  retries; explicit unfinished-draft or queue deletion releases only the matching owner's claim,
+  including a reservation created before a server draft row exists.
+- Updated `static/js/app-calibration-report.js` so Calibration Report sample, certificate, final,
+  and download actions require the shared authoritative reservation while report draft editing
+  remains available offline; reservation failures now trigger a best-effort local TSR draft save
+  before the actionable Pending/connection error is shown. The service worker and calibration-
+  report asset markers were bumped to the stable-reservation versions.
+- Added release-manifest item
+  `2026-09-20-stable-tsr-number-reservations-engineers` describing stable owner-scoped TSR
+  numbering, explicit release, atomic consumption, queue/revision behavior, and legacy support.
+- Added/updated focused fail-first, allocator, route, draft, calibration, offline queue, and
+  Node harness coverage. Passing verification: `test_online_tsr_numbering` 17/17,
+  `test_tsr_draft_sync` 11/11, `test_tsr_calibration_report` 18/18,
+  `test_tsr_offline_followup` 12/12, offline resilience/pending-schedule 78/78, signature/
+  revision 23/23, and cache/accounting/changelog/certificate checks 98 passed with 1 skipped.
+  The broader offline resilience/pending-schedule/signature/sync/contact group had 124/125
+  passing; its sole failure is an unrelated stale v158 assertion in
+  `tests/test_tsr_contact_suggestions.py` that reads another test source file.
+- Proportional full discovery ran 1,225 tests with 20 unrelated baseline failures and 2 skips;
+  failures were changelog fixture lookup, purchase-order rate limiting, staff-creation fixtures,
+  and the same stale cache-marker assertion. AST parsing of `app.py`, Jinja parsing of
+  `templates/offline_tsr.html`, JSON parsing of `static/changelog/releases.json`, Node syntax
+  checking of `static/js/app-calibration-report.js`, and `git diff --check` all passed.
+- No commit, push, deployment, Railway/production operation, browser/Codex UI action, or change
+  to protected `scheduler.db`, handoff artifacts, `.claude/`, `output/`, or `tmp/` was made by
+  this package; those pre-existing protected dirty paths remain untouched.
+
+- Began the separately authorized Stable TSR number reservation implementation after the owner’s
+  explicit “go ahead” instruction. The bounded package covers owner-scoped additive reservations,
+  stable draft/calibration/offline queue numbering, explicit-release/final-consumption lifecycle,
+  legacy/revision compatibility, focused fail-first and concurrency/ownership verification, release
+  metadata, service-worker cache advancement, and truthful plan/change-log closeout. Protected
+  `scheduler.db`, handoff artifacts, `.claude/`, `output/`, and `tmp/`, production/Railway state,
+  commit, push, deployment, browser, and Codex UI actions remain excluded.
+- Recorded the owner-approved Stable TSR Number Reservation plan at the top of `plans.md` with
+  status `Approved — awaiting go-ahead`. The approved scope replaces provisional mutable TSR
+  previews with owner-scoped server reservations created on the first successful account-backed
+  draft save; preserves one number across Calibration Report work, autosave, reopen, reconnect,
+  offline queue retries, and final submission; releases it only on explicit unfinished-draft or
+  queue deletion; retains revision numbers and legacy compatibility; and requires focused
+  concurrency, authorization, offline, calibration, release/cache, and full-suite verification.
+  No application code, database, artifact, test behavior, Railway/production state, commit, push,
+  deployment, browser, or Codex UI action was changed in this approval-recording step.
 - Executed the separately authorized production `accounting-branch-codes-v1` historical repair
   after a fresh guard matched the approved preview baseline exactly: 354 total liquidation rows,
   241 repairable, 113 already correct, and zero unresolved. The single transaction corrected all

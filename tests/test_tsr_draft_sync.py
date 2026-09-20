@@ -182,17 +182,44 @@ class TsrDraftRouteTests(unittest.TestCase):
                 session['_user_id'] = str(user_two_id)
                 session['_fresh'] = True
 
+            reservation_response = client_one.post('/reserve_tsr_number', json={
+                'draft_key': 'draft-owner-one',
+                'service_date': '2026-08-07',
+            })
+            self.assertEqual(reservation_response.status_code, 200)
+            reservation_payload = reservation_response.get_json()
+            first_reservation_token = reservation_payload['reservation_token']
+            first_tsr_number = reservation_payload['tsr_number']
+            with app_module.app.app_context():
+                self.assertIsNotNone(app_module.TsrNumberReservation.query.filter_by(
+                    reservation_token=first_reservation_token
+                ).first())
+
+            payload['payload']['tsr-number'] = first_tsr_number
+            payload['payload']['reservation_token'] = first_reservation_token
             first = client_one.post('/save_tsr_draft', json=payload)
             self.assertEqual(first.status_code, 200)
+            first_payload = first.get_json()
+            self.assertEqual(first_payload['reservation_token'], first_reservation_token)
+            self.assertEqual(first_payload['tsr_number'], first_tsr_number)
+            self.assertGreaterEqual(len(first_reservation_token), 12)
+            self.assertRegex(first_tsr_number, r'^\d{8}-\d{2}-[A-Z0-9]{1,5}$')
             second = client_one.post('/save_tsr_draft', json=dict(payload, payload={'tsr-complaint': 'older value'}, device_updated_at='2026-08-07T07:00:00+00:00'))
             self.assertEqual(second.status_code, 200)
-            self.assertTrue(second.get_json()['stale_ignored'])
-            self.assertEqual(second.get_json()['draft']['payload']['tsr-complaint'], 'newer value')
+            second_payload = second.get_json()
+            self.assertTrue(second_payload['stale_ignored'])
+            self.assertEqual(second_payload['draft']['payload']['tsr-complaint'], 'newer value')
+            self.assertEqual(second_payload['draft']['reservation_token'], first_reservation_token)
+            self.assertEqual(second_payload['draft']['tsr_number'], first_tsr_number)
 
             self.assertEqual(client_two.get('/get_tsr_drafts').get_json()['drafts'], [])
             self.assertEqual(client_two.post('/delete_tsr_draft', json={'draft_key': 'draft-owner-one'}).status_code, 404)
             self.assertEqual(client_one.post('/delete_tsr_draft', json={'draft_key': 'draft-owner-one'}).status_code, 200)
             self.assertEqual(client_one.get('/get_tsr_drafts').get_json()['drafts'], [])
+            with app_module.app.app_context():
+                self.assertIsNone(app_module.TsrNumberReservation.query.filter_by(
+                    reservation_token=first_reservation_token
+                ).first())
         finally:
             if extension is not None and app_module is not None:
                 with app_module.app.app_context():

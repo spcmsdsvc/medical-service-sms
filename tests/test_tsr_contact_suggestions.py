@@ -137,7 +137,7 @@ class TSRContactSuggestionSourceTests(unittest.TestCase):
         listener = (
             "document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>{"
             + self.tsr_source.split("document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>{", 1)[1]
-            .split("\n  const serviceDateField", 1)[0]
+            .split("\n  const complaintField", 1)[0]
         )
         invalidate = ''
         if 'function invalidateAcknowledgedTSRSignature(' in self.tsr_source:
@@ -204,6 +204,7 @@ let offlineTSRAttachments = [];
 let selectedStandaloneScheduleId = '';
 let selectedStandaloneScheduleSnapshot = null;
 let standaloneCurrentDraftId = 'draft-1';
+let standaloneTSRReservationToken = '';
 let standaloneTSRActiveContextVersion = 1;
 let standaloneTSRAutosavePaused = false;
 let standaloneScheduleOptions = [];
@@ -220,6 +221,8 @@ function getParts() {{ return []; }}
 function getStandaloneScheduleRealId() {{ return ''; }}
 function getTSRScheduleCoverageRows() {{ return []; }}
 function selectedScheduleNeedsEquipmentEntry() {{ return false; }}
+function normalizeTSRReservationToken(value) {{ return String(value || '').replace(/[^A-Za-z0-9_-]+/g, '').slice(0, 120); }}
+function ensureTSRReservationToken(existing) {{ return existing || 'stable-reservation-token-001'; }}
 function normalizeQueuedAttachments(value) {{ return value || []; }}
 function isSameScheduleSelection() {{ return false; }}
 function getStandaloneScheduleRuntimeId() {{ return ''; }}

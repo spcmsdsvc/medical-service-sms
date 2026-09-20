@@ -304,6 +304,50 @@
     return next;
   }
   function currentTSRData(){ try{ return typeof window.collectTSRData === 'function' ? window.collectTSRData() : {}; }catch(err){ return {}; } }
+  async function preserveTSRDraftAfterNumberFailure(){
+    if(typeof window.saveStandaloneTSRDraft !== 'function') return;
+    try{ await window.saveStandaloneTSRDraft(true); }
+    catch(error){ console.warn('[Calibration Report] TSR draft preservation after number failure skipped', error); }
+  }
+  async function ensureAuthoritativeTSRNumber(payload, actionLabel){
+    var next = Object.assign({}, payload || {});
+    var number = String(next['tsr-number'] || next.tsr_number || '').trim();
+    var token = String(next.reservation_token || next.tsr_reservation_token || '').trim();
+    var isRevision = !!(next._revision_of_submission_id || next.parent_submission_id || next.revision_reason);
+    if(number && token) return next;
+    // A completed TSR revision carries the original server-assigned number but has no active
+    // reservation to consume. Preserve that historical number without reserving a new one.
+    if(number && isRevision) return next;
+    if(typeof window.reserveTSRNumberForDraft !== 'function'){
+      if(number) return next;
+      await preserveTSRDraftAfterNumberFailure();
+      var unavailable = new Error((actionLabel || 'This action') + ' needs an authoritative TSR number. Save the TSR draft while connected, then try again.');
+      unavailable.code = 'calibration_report_number_pending';
+      throw unavailable;
+    }
+    try{
+      var reserved = await window.reserveTSRNumberForDraft(next, { required:true });
+      var reservedNumber = String(reserved?.['tsr-number'] || reserved?.tsr_number || '').trim();
+      var reservedToken = String(reserved?.reservation_token || reserved?.tsr_reservation_token || '').trim();
+      if(reservedNumber && reservedToken){
+        next['tsr-number'] = reservedNumber;
+        next.tsr_number = reservedNumber;
+        next.reservation_token = reservedToken;
+        next.tsr_reservation_token = reservedToken;
+        return next;
+      }
+    }catch(error){
+      await preserveTSRDraftAfterNumberFailure();
+      if(error?.code === 'reservation_requires_connection' || error?.code === 'number_reservation_failed'){
+        error.code = 'calibration_report_number_pending';
+      }
+      throw error;
+    }
+    await preserveTSRDraftAfterNumberFailure();
+    var pending = new Error((actionLabel || 'This action') + ' needs an authoritative TSR number. Connect to the server and save the TSR draft once, then try again.');
+    pending.code = 'calibration_report_number_pending';
+    throw pending;
+  }
   function currentSchedule(){ try{ return typeof window.getSelectedStandaloneSchedule === 'function' ? window.getSelectedStandaloneSchedule() : null; }catch(err){ return null; } }
   function showStatus(message, tone, options){
     var normalized = ['success','info','warning','danger'].indexOf(tone || 'info') >= 0 ? (tone || 'info') : 'info';
@@ -1150,7 +1194,7 @@
   }
   async function generateCertificateSample(){
     try{
-      var payload = currentTSRData(); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state);
+      var payload = await ensureAuthoritativeTSRNumber(currentTSRData(), 'Calibration Certificate sample'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state);
       var built = await buildCertificatePdf(payload, report); downloadBlob(built.blob, built.filename);
       showStatus('Sample Calibration Certificate PDF downloaded. It is not attached to the TSR.', 'success');
       if(built.missing.length) showStatus('Sample Calibration Certificate PDF downloaded. It is not attached. Some values are still missing: ' + built.missing.slice(0,4).join(', ') + (built.missing.length > 4 ? ', and more.' : '.'), 'warning');
@@ -1160,7 +1204,7 @@
 
   async function generateSample(){
     try{
-      var payload = currentTSRData(); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); report = normalizeReportFitValues(report);
+      var payload = await ensureAuthoritativeTSRNumber(currentTSRData(), 'Calibration Report sample'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); report = normalizeReportFitValues(report);
       var fit = exactFitViolations(report);
       if(fit.length){ var fitError = new Error(fit[0].message + (fit.length > 1 ? ' Fix the marked fields before generating the PDF.' : '')); fitError.code = 'calibration_report_exact_fit'; fitError.missing = fit.map(function(item){ return { path:item.path, label:item.label }; }); throw fitError; }
       var missing = missingFields(report);
@@ -1170,7 +1214,7 @@
   }
   async function saveFinalReport(){
     try{
-      var ready = await preparePayload(currentTSRData(), 'calibration-final', { regenerate:true, finalize:true });
+      var ready = await preparePayload(await ensureAuthoritativeTSRNumber(currentTSRData(), 'Final Calibration Report'), 'calibration-final', { regenerate:true, finalize:true });
       state.certificate_approval = Object.assign({}, state.certificate_approval || {}, { status: String(state.certificate?.bsid || '').trim() ? 'queued' : 'not_ready', error: '' });
       var persisted = typeof window.saveStandaloneTSRDraft === 'function' ? await window.saveStandaloneTSRDraft(true) : null;
       var persistenceSource = String(persisted?.source || '').toLowerCase();
@@ -1182,7 +1226,7 @@
   }
   async function download(){
     try{
-      var payload = currentTSRData(); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); var attachment = attachmentFromPayload({ calibration_report:report });
+      var payload = await ensureAuthoritativeTSRNumber(currentTSRData(), 'Final Calibration Report download'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); var attachment = attachmentFromPayload({ calibration_report:report });
       if(!attachment || !hasGeneratedMetadata(report)){ throw notFinalizedError(); }
       var blob = await resolveAttachmentBlob(attachment); if(!blob){ generatedBlobState = 'missing'; renderCard(); syncAutoDocument(); throw missingGeneratedBlobError(); }
       var pdf = await convertDocxToPdf(blob, attachment.filename || report.generated.filename || 'Calibration_Report.docx'); downloadBlob(pdf.blob, pdf.filename); showStatus('Final Calibration Report PDF downloaded.', 'success');

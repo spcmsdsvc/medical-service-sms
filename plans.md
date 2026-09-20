@@ -1,5 +1,177 @@
 # Medical Service SMS — Approved Plans
 
+## Stable TSR number reservation
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-20 — the owner explicitly approved the presented plan by requesting its implementation.
+**Execution authorized:** 2026-09-20 — the owner separately said “go ahead” after the approved plan was recorded.
+**Detailed:** 2026-09-20.
+
+### Summary
+
+Replace the mutable TSR-number preview with a server-backed reservation. A new TSR shows
+`Pending` until its first successful server-backed draft save. Once the server assigns a numeric
+TSR number, that number remains unchanged through Calibration Report work, later draft saves,
+reopening, reconnecting, offline retries, and final submission.
+
+Explicit deletion of an unfinished draft or unsent queue item releases its reservation. Ordinary
+autosave, account backup, draft hydration, Calibration Report activity, and queue transfer do not
+release or recalculate it.
+
+### Decisions taken
+
+1. A displayed numeric TSR number is authoritative, not a preview. `Pending` is the only state
+   shown before a server reservation exists; the browser never invents a provisional `01`.
+2. The first successful server-backed draft save creates the reservation. Schedule selection
+   alone does not consume a number for an untouched TSR.
+3. Reservations do not expire automatically. They persist until final submission or an explicit
+   draft/queue deletion, so an older restorable draft cannot silently receive a different number.
+4. Explicit draft deletion releases the reservation. Existing highest-plus-one allocation remains
+   unchanged, so an interior released gap need not be backfilled while a released highest number
+   may naturally be reused.
+5. TSR revisions preserve their original number and bypass new-number reservation. Offline drafts
+   remain editable while Pending; number-dependent output waits for one successful reservation.
+6. A legacy draft may claim its stored number when it is still available. If that old preview
+   conflicts with a finalized submission or another reservation, its first post-upgrade server
+   save assigns one authoritative replacement; that replacement is then immutable.
+
+### Interfaces and data rules
+
+- Add a small `TsrNumberReservation` table in `app.py` with a unique stable reservation/submission
+  token, owner user ID, service date, engineer initials, unique TSR number, and timestamps. Add a
+  safe additive ensure-schema path and indexes without modifying existing finalized submissions.
+- Centralize reservation allocation so it considers both `OnlineTsrSubmission` rows and active
+  reservations. Concurrent claims use the unique-number constraint plus bounded retry rather than
+  allowing duplicates.
+- Add an authenticated, CSRF-protected reservation endpoint accepting the stable token, draft key,
+  and service date and returning the token plus authoritative `tsr_number`. Repeating the same
+  owner/token request returns the same reservation.
+- Enhance `/save_tsr_draft` to use the same helper on the first server-backed save, canonicalize the
+  saved payload to the reserved number, and return the reservation fields. Keep
+  `/get_next_online_tsr_number` for old clients, include active reservations in its calculation,
+  and stop the current Create TSR page from treating it as a mutable preview.
+- Final `/save_offline_tsr_online` processing accepts only a reservation owned by the submitting
+  user/token, saves that exact number, and consumes the reservation in the same successful
+  transaction. A legacy/offline final save without a reservation reserves once through the same
+  helper before number-dependent output is generated. Idempotent submission-token replay retains
+  the original completed result.
+- `/delete_tsr_draft` and queue deletion release only the matching owner's reservation when the
+  user explicitly abandons the work. Draft-to-queue transfer preserves it, and successful final
+  submission already consumes it. Cross-account lookup, reuse, or release is forbidden.
+- Numbers retain `YYYYMMDD-NN-INITIALS` and the existing per-engineer/service-date scope. Service
+  date remains locked to the selected schedule; selecting a different schedule creates a different
+  draft context instead of renumbering the active one.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first proof.** Re-read applicable instructions, this complete plan,
+   `changes.md`, Git status, and the affected numbering/draft/calibration tests. Add a focused
+   regression that reproduces the reported `01` to `02` change through Calibration Report and TSR
+   draft saves, and demonstrate that it fails on the unchanged behavior before implementing.
+   **Done when:** the failure proves `collectTSRData()` or a draft save can mutate a displayed
+   number, without touching `scheduler.db` or protected owner files.
+2. **Reservation persistence and allocator.** In `app.py`, add the reservation model, safe schema
+   initialization, serialization/ownership helpers, and one allocation function used by previews,
+   draft saves, queue sync, and final submission. Count finalized numbers and active reservations,
+   return an existing same-token claim idempotently, accept an available legacy preferred number,
+   and retry bounded uniqueness conflicts. **Done when:** two independent tokens cannot receive the
+   same number and the same token always receives its original number.
+3. **Server routes and lifecycle.** Add the protected reservation endpoint; update
+   `/save_tsr_draft`, `/get_next_online_tsr_number`, `/delete_tsr_draft`, and
+   `/save_offline_tsr_online` to enforce ownership, preserve queue transfers, release explicit
+   deletions, and consume final reservations atomically. Preserve revision numbering and existing
+   submission-token idempotency. **Done when:** final save cannot accept an unowned/spoofed number,
+   cannot renumber a valid reservation, and leaves no active reservation after a committed final
+   submission.
+4. **Create TSR state.** In `templates/offline_tsr.html`, remove number generation/refresh from
+   `collectTSRData()` and stop showing a local provisional number. Persist the stable token in
+   local drafts and queue payloads, show `Pending` until reservation succeeds, and reconcile a
+   returned number only when the response still matches the active draft/context. Patch the local
+   IndexedDB/localStorage record after assignment so reload and hydration retain the same value.
+   **Done when:** autosave, manual Save Draft, reopen, reconnect, and account hydration never change
+   an already numeric field.
+5. **Offline and queue behavior.** Make final preview/queue sync reserve before generating a
+   number-dependent vector TSR. Preserve a reservation when a draft becomes a queue item, reuse it
+   on every retry, and release it only when the unsent item is explicitly removed. A completely
+   offline draft stays Pending and editable. **Done when:** reconnect assigns exactly once and the
+   regenerated TSR payload/PDF and final server row all carry the same number.
+6. **Calibration Report integration.** In `static/js/app-calibration-report.js`, keep report draft
+   editing independent of number availability, but require the authoritative reserved value for
+   certificate/sample/final actions that embed a TSR number. Attempt the shared reservation path
+   first; if the server is unreachable, preserve the report/TSR draft and show an actionable
+   connection message rather than generating an artifact with a provisional number. **Done when:**
+   leaving, saving, and reopening the report cannot renumber the TSR, and every produced numbered
+   certificate agrees with the finalized TSR.
+7. **Focused verification.** Extend `tests/test_online_tsr_numbering.py`,
+   `tests/test_tsr_draft_sync.py`, `tests/test_tsr_calibration_report.py`, and the relevant offline
+   queue tests. Cover repeat saves, two independent drafts, simulated concurrent claims, ownership,
+   explicit release, final consumption, reload/hydration, reconnect, queue retries/removal, legacy
+   drafts/queues, revisions, and spoofed client values. **Done when:** all focused tests pass and
+   the original fail-first regression passes because the product behavior changed.
+8. **Delivery records and cache.** Add a concise engineer-facing item to
+   `static/changelog/releases.json`, monotonically bump the service-worker/cache marker, and update
+   `changes.md` and this plan with the truthful implementation outcome. Do not alter official
+   Calibration Report or certificate templates. **Done when:** release JSON, cache-version tests,
+   and changelog controls agree with the implemented behavior.
+9. **Final verification and self-review.** Run focused TSR numbering, draft-sync, offline queue,
+   Calibration Report/certificate, service-worker, and changelog tests; Python syntax, Jinja/JSON,
+   JavaScript syntax where supported, and `git diff --check`; then run the proportional full suite.
+   Review the diff for number stability, authorization, concurrency, offline recovery, unrelated
+   edits, debug leftovers, and protected artifacts. Browser/Codex UI automation is prohibited by
+   project rules, so verification uses test clients and source/runtime harnesses. Record exact
+   pass/fail/skip counts and any unrelated baseline failures. **Done when:** the implementation
+   report is truthful and no material requirement remains unverified.
+
+### Acceptance criteria
+
+- The reported sequence is fixed: after an authoritative `01` appears, Calibration Report work
+  and any TSR draft save still show and persist `01`, even if later reservations/submissions exist.
+- Untouched or offline-only drafts show Pending, never a numeric guess.
+- Two drafts cannot share a reservation; a client cannot choose or steal another draft's number.
+- Final TSR, TSR PDF, Calibration Report/certificate data, saved draft, and archive metadata agree
+  on the same number.
+- Explicit deletion releases the reservation; autosave, reload, reconnect, and queue transfer do
+  not. Revisions and existing completed TSRs retain their historical numbers.
+
+### Deliberately excluded
+
+No production database operation, historical bulk rewrite, Railway variable/storage change,
+deployment, commit, push, merge, rebase, browser/Codex UI automation, official PDF/DOCX template
+edit, unrelated cleanup, or protected `scheduler.db`, handoff, `.claude/`, `output/`, or `tmp/`
+change is authorized.
+
+### After implementation
+
+The fresh Builder performs the bounded implementation, proportional verification, final
+self-review, and updates this status to `Executed — uncommitted`, then stops. Formal review,
+commit/push, deployment/Railway verification, and any production data action require separate
+owner authorization.
+
+### Implementation outcome (2026-09-20)
+
+- Added the additive owner-scoped reservation model/schema, authenticated reservation and
+  release routes, stable draft/queue payload fields, bounded unique allocation, explicit release,
+  and atomic final consumption in `app.py`. Existing finalized submissions remain unchanged;
+  revision saves retain their original TSR number.
+- Updated `templates/offline_tsr.html` to keep new TSRs Pending until a server reservation exists,
+  remove mutable local number previews, reconcile only the active draft, persist tokens through
+  IndexedDB/localStorage/server drafts/queue retries, regenerate vector PDFs after reservation,
+  and release only explicitly deleted unfinished drafts or queue items. Calibration Report
+  numbered actions now use the shared reservation path in `static/js/app-calibration-report.js`.
+- Added the engineer-facing release-manifest item and service-worker/app-calibration cache bumps.
+  No official report/certificate template, production database, Railway state, protected artifact,
+  commit, push, deployment, or browser/Codex UI action was changed.
+- Focused verification passed: numbering 17/17, draft sync 11/11, calibration report 18/18,
+  offline follow-up 12/12, cache/accounting/changelog/certificate checks 98 passed with one
+  documented skip; offline resilience/pending-schedule 78/78 and signature/revision 23/23 also
+  passed. The broader offline queue/signature/sync/contact group was 124/125 with one unrelated
+  stale historical-marker assertion in `test_tsr_contact_suggestions.py`.
+- Repository-wide discovery ran 1,225 tests with 20 failures and 2 skips. The failures are
+  unrelated baseline issues (changelog fixture lookup, purchase-order rate limiting, staff
+  creation fixtures, and the stale historical-marker assertion); no TSR reservation, draft,
+  calibration, offline queue, or revision failure remained. AST, Jinja, JSON, JavaScript syntax,
+  and `git diff --check` verification passed.
+
 ## Engineer-profile branch codes for accounting workflows
 
 **Status:** Executed — implementation commit `5db9413`; publication authorized by the owner.

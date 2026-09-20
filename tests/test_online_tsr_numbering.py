@@ -134,7 +134,7 @@ class OnlineTsrNumberRouteTests(unittest.TestCase):
 
 
 class OnlineTsrNumberPreviewTests(unittest.TestCase):
-    """The blank Create TSR form must show the next server-backed number."""
+    """The blank Create TSR form must wait for one stable server reservation."""
 
     @classmethod
     def setUpClass(cls):
@@ -151,43 +151,39 @@ class OnlineTsrNumberPreviewTests(unittest.TestCase):
 
         with app_module.app.app_context():
             with patch.object(app_module, 'ensure_online_tsr_submission_table'), \
-                    patch.object(app_module.OnlineTsrSubmission, 'query', FakeQuery()):
+                    patch.object(app_module, 'ensure_tsr_number_reservation_schema'), \
+                    patch.object(app_module.OnlineTsrSubmission, 'query', FakeQuery()), \
+                    patch.object(app_module.TsrNumberReservation, 'query', FakeQuery()):
                 next_number = app_module.online_tsr_next_number_for_date(date(2099, 1, 2), 'ENG')
 
         self.assertEqual(next_number, '20990102-02-ENG')
 
-    def test_each_blank_form_invalidates_cached_preview_before_generating(self):
+    def test_each_blank_form_starts_pending_without_local_number(self):
         start = self.template.index('function initializeBlankStandaloneTSR(){')
         end = self.template.index('\nasync function clearStandaloneTSRPage', start)
         initialize = self.template[start:end]
-        self.assertIn('invalidateTSRNumberPreview();', initialize)
-        self.assertLess(
-            initialize.index('invalidateTSRNumberPreview();'),
-            initialize.index('generateTSRNumber();'),
-        )
+        self.assertIn("standaloneTSRReservationToken = '';", initialize)
+        self.assertNotIn('generateTSRNumber();', initialize)
+        self.assertIn('Pending — assigned after draft save', self.template)
 
-    def test_inflight_old_preview_cannot_overwrite_the_new_blank_form(self):
-        start = self.template.index('let tsrNumberPreviewRefreshPending = false;')
-        end = self.template.index('\nfunction selectedScheduleHasLinkedSchedules', start)
-        preview = self.template[start:end]
-        self.assertIn('tsrNumberPreviewGeneration', preview)
-        self.assertIn('tsrNumberPreviewNeedsRefresh', preview)
-        self.assertIn('if(requestGeneration !== tsrNumberPreviewGeneration)', preview)
-        self.assertIn('tsrNumberPreviewNeedsRefresh = true;', preview)
-        self.assertIn("void refreshTSRNumberPreviewFromServer('', initials);", preview)
+    def test_reservation_reconciliation_is_scoped_to_active_draft(self):
+        start = self.template.index('async function reconcileTSRReservationFromServer')
+        end = self.template.index('\nasync function reserveTSRNumberForDraft', start)
+        reconcile = self.template[start:end]
+        self.assertIn('sourceDraftId === activeDraftId', reconcile)
+        self.assertIn('saveStandaloneTSRDraftToIndexedDB', reconcile)
+        self.assertNotIn('get_next_online_tsr_number', self.template)
 
-    def test_reconnect_retries_a_provisional_preview(self):
+    def test_reconnect_flushes_releases_without_recalculating_a_number(self):
         start = self.template.index('function scheduleOfflineTSRAutoSync(){')
         end = self.template.index('\nasync function submitStandaloneTSROnline', start)
         auto_sync = self.template[start:end]
-        self.assertLess(
-            auto_sync.index('return syncOfflineTSRQueue({ silent:false });'),
-            auto_sync.index('invalidateTSRNumberPreview();'),
-        )
-        self.assertIn("void refreshTSRNumberPreviewFromServer('', getEngineerInitialsSafe());", auto_sync)
+        self.assertIn('flushTSRReservationReleaseQueue();', auto_sync)
+        self.assertNotIn('refreshTSRNumberPreviewFromServer', auto_sync)
+        self.assertNotIn('invalidateTSRNumberPreview', auto_sync)
 
-    def test_service_worker_cache_is_bumped_for_the_preview_fix(self):
-        assert_cache_version_at_least(self, 117, self.app_source)
+    def test_service_worker_cache_is_bumped_for_stable_reservations(self):
+        assert_cache_version_at_least(self, 171, self.app_source)
 
 
 class OnlineTsrNumberManifestTests(unittest.TestCase):
@@ -200,6 +196,110 @@ class OnlineTsrNumberManifestTests(unittest.TestCase):
             item['item_key'] == '2026-08-26-tsr-number-preview-refresh'
             for item in release['items']
         ))
+
+    def test_release_manifest_mentions_stable_reservations(self):
+        import json
+
+        manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+        release = next(item for item in manifest['releases'] if item['release_key'] == '2026-09-20-accounting-branch-codes')
+        self.assertTrue(any(
+            item['item_key'] == '2026-09-20-stable-tsr-number-reservations-engineers'
+            for item in release['items']
+        ))
+
+
+class StableTsrNumberReservationRegressionTests(unittest.TestCase):
+    """Calibration Report/draft snapshots must not mutate an authoritative TSR number."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.template = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+
+    def test_collect_tsr_data_keeps_authoritative_number_stable(self):
+        """Regression for the reported 01 -> 02 change after Calibration Report saves."""
+        start = self.template.index('function collectTSRData(){')
+        end = self.template.index('\n}\nconst OFFLINE_TSR_QUEUE_KEY', start) + 2
+        collect = self.template[start:end]
+        self.assertIn('calibration_report:', collect)
+        self.assertNotIn('generateTSRNumber();', collect)
+        self.assertNotIn('refreshTSRNumberPreviewFromServer', collect)
+
+
+class StableTsrNumberReservationAllocatorTests(unittest.TestCase):
+    """The additive allocator must be stable, owner-scoped, and explicitly releasable."""
+
+    SEQUENCE_DATE = date(2099, 1, 2)
+    FIRST_TOKEN = 'stable-reservation-token-001'
+    SECOND_TOKEN = 'stable-reservation-token-002'
+
+    def setUp(self):
+        with app_module.app.app_context():
+            app_module.ensure_tsr_number_reservation_schema()
+            app_module.TsrNumberReservation.query.filter_by(
+                service_date=self.SEQUENCE_DATE.isoformat()
+            ).delete(synchronize_session=False)
+            app_module.db.session.commit()
+
+    def tearDown(self):
+        with app_module.app.app_context():
+            app_module.TsrNumberReservation.query.filter_by(
+                service_date=self.SEQUENCE_DATE.isoformat()
+            ).delete(synchronize_session=False)
+            app_module.db.session.commit()
+
+    def test_reservation_is_idempotent_and_owner_scoped(self):
+        with app_module.app.app_context():
+            first = app_module.reserve_online_tsr_number(
+                700001, self.FIRST_TOKEN, 'draft-a', self.SEQUENCE_DATE, initials='ENG'
+            )
+            app_module.db.session.commit()
+            repeated = app_module.reserve_online_tsr_number(
+                700001, self.FIRST_TOKEN, 'draft-a', self.SEQUENCE_DATE, initials='ENG'
+            )
+            self.assertEqual(repeated.tsr_number, first.tsr_number)
+            with self.assertRaises(PermissionError):
+                app_module.reserve_online_tsr_number(
+                    700002, self.FIRST_TOKEN, 'draft-a', self.SEQUENCE_DATE, initials='ENG'
+                )
+
+            second = app_module.reserve_online_tsr_number(
+                700002, self.SECOND_TOKEN, 'draft-b', self.SEQUENCE_DATE, initials='ENG'
+            )
+            app_module.db.session.commit()
+            self.assertNotEqual(second.tsr_number, first.tsr_number)
+
+    def test_release_allows_explicit_reuse_and_consume_is_exact(self):
+        with app_module.app.app_context():
+            first = app_module.reserve_online_tsr_number(
+                700003, self.FIRST_TOKEN, 'draft-a', self.SEQUENCE_DATE, initials='ENG'
+            )
+            app_module.db.session.commit()
+            with self.assertRaises(ValueError):
+                app_module.consume_online_tsr_number_reservation(
+                    700003, self.FIRST_TOKEN, '20990102-99-ENG'
+                )
+            app_module.db.session.rollback()
+            self.assertTrue(app_module.release_online_tsr_number_reservation(
+                700003, self.FIRST_TOKEN, 'draft-a'
+            ))
+            app_module.db.session.commit()
+            reused = app_module.reserve_online_tsr_number(
+                700004,
+                self.SECOND_TOKEN,
+                'draft-b',
+                self.SEQUENCE_DATE,
+                initials='ENG',
+                preferred_number=first.tsr_number,
+            )
+            app_module.db.session.commit()
+            self.assertEqual(reused.tsr_number, first.tsr_number)
+            app_module.consume_online_tsr_number_reservation(
+                700004, self.SECOND_TOKEN, reused.tsr_number
+            )
+            app_module.db.session.commit()
+            self.assertIsNone(app_module.TsrNumberReservation.query.filter_by(
+                reservation_token=self.SECOND_TOKEN
+            ).first())
 
 
 if __name__ == '__main__':

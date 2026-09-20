@@ -3035,6 +3035,7 @@ class TsrDraft(db.Model):
     draft_key = db.Column(db.String(140), nullable=False)
     schedule_id = db.Column(db.String(140), nullable=True, index=True)
     tsr_number = db.Column(db.String(120), nullable=True)
+    reservation_token = db.Column(db.String(120), nullable=True, index=True)
     client_name = db.Column(db.String(200), nullable=True)
     service_date = db.Column(db.String(40), nullable=True, index=True)
     title = db.Column(db.String(255), nullable=True)
@@ -3050,10 +3051,31 @@ class TsrDraft(db.Model):
     )
 
 
+class TsrNumberReservation(db.Model):
+    """Owner-scoped, durable TSR number reservation for a draft or queue item.
+
+    Reservations are intentionally a separate additive table.  A row lives until the owner
+    explicitly abandons the unfinished work or a successful final submission consumes it; no
+    startup cleanup or time-based expiry is allowed to silently renumber a recoverable draft.
+    """
+    __tablename__ = 'tsr_number_reservation'
+
+    id = db.Column(db.Integer, primary_key=True)
+    reservation_token = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    draft_key = db.Column(db.String(140), nullable=True, index=True)
+    service_date = db.Column(db.String(40), nullable=False, index=True)
+    engineer_initials = db.Column(db.String(20), nullable=False, index=True)
+    tsr_number = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False, index=True)
+
+
 _tsr_knowledge_entry_table_ready = False
 _online_tsr_submission_table_ready = False
 _calibration_certificate_approval_table_ready = False
 _tsr_draft_table_ready = False
+_tsr_number_reservation_table_ready = False
 _engineer_signature_column_ready = False
 _contact_designation_column_ready = False
 _universal_approval_audit_table_ready = False
@@ -4361,10 +4383,19 @@ def ensure_tsr_draft_schema():
     try:
         TsrDraft.__table__.create(db.engine, checkfirst=True)
         with db.engine.begin() as connection:
+            existing_columns = {
+                row[1]
+                for row in connection.exec_driver_sql("PRAGMA table_info(tsr_draft)").fetchall()
+            }
+            if 'reservation_token' not in existing_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE tsr_draft ADD COLUMN reservation_token VARCHAR(120)"
+                )
             index_statements = (
                 "CREATE INDEX IF NOT EXISTS idx_tsr_draft_user_id ON tsr_draft (user_id)",
                 "CREATE INDEX IF NOT EXISTS idx_tsr_draft_updated_at ON tsr_draft (updated_at)",
                 "CREATE INDEX IF NOT EXISTS idx_tsr_draft_schedule_id ON tsr_draft (schedule_id)",
+                "CREATE INDEX IF NOT EXISTS idx_tsr_draft_reservation_token ON tsr_draft (reservation_token)",
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_tsr_draft_user_key ON tsr_draft (user_id, draft_key)",
             )
             for statement in index_statements:
@@ -4377,6 +4408,40 @@ def ensure_tsr_draft_schema():
     except Exception as table_error:
         db.session.rollback()
         print(f"[TSR-DRAFT] Unable to ensure tsr_draft table: {table_error}", flush=True)
+        return False
+
+
+def ensure_tsr_number_reservation_schema():
+    """Create the additive TSR reservation table and its lookup indexes safely."""
+    global _tsr_number_reservation_table_ready
+    if _tsr_number_reservation_table_ready:
+        return True
+
+    try:
+        TsrNumberReservation.__table__.create(db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            index_statements = (
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_tsr_number_reservation_token "
+                "ON tsr_number_reservation (reservation_token)",
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_tsr_number_reservation_number "
+                "ON tsr_number_reservation (tsr_number)",
+                "CREATE INDEX IF NOT EXISTS idx_tsr_number_reservation_owner "
+                "ON tsr_number_reservation (user_id, service_date, engineer_initials)",
+                "CREATE INDEX IF NOT EXISTS idx_tsr_number_reservation_draft "
+                "ON tsr_number_reservation (user_id, draft_key)",
+            )
+            for statement in index_statements:
+                try:
+                    connection.exec_driver_sql(statement)
+                except Exception as index_error:
+                    # Existing legacy duplicates must not make every TSR unavailable. The
+                    # table's unique ORM constraints still protect new rows on clean data.
+                    print(f"[TSR-RESERVATION] Index step skipped ({index_error}): {statement}", flush=True)
+        _tsr_number_reservation_table_ready = True
+        return True
+    except Exception as table_error:
+        db.session.rollback()
+        print(f"[TSR-RESERVATION] Unable to ensure reservation table: {table_error}", flush=True)
         return False
 
 
@@ -5992,6 +6057,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_user_hr_schedule_view_column()
     ensure_user_admin_capability_columns()
     ensure_online_tsr_submission_table()
+    ensure_tsr_number_reservation_schema()
     ensure_shift_file_last_emailed_at_column()
     ensure_contact_designation_column()
     ensure_system_notification_table()
@@ -13324,8 +13390,249 @@ def parse_online_tsr_sequence_date(value):
     return None
 
 
+def normalize_tsr_number_reservation_token(value):
+    """Normalize a stable browser reservation token without making it guessable."""
+    token = re.sub(r'[^A-Za-z0-9_-]+', '', clean_str(value) or '')[:120]
+    return token if len(token) >= 12 else ''
+
+
+def tsr_number_reservation_to_dict(reservation):
+    if not reservation:
+        return {}
+    return {
+        'id': clean_int(getattr(reservation, 'id', None)),
+        'reservation_token': clean_str(getattr(reservation, 'reservation_token', None)),
+        'user_id': clean_int(getattr(reservation, 'user_id', None)),
+        'draft_key': clean_str(getattr(reservation, 'draft_key', None)),
+        'service_date': clean_str(getattr(reservation, 'service_date', None)),
+        'engineer_initials': clean_str(getattr(reservation, 'engineer_initials', None)),
+        'tsr_number': clean_str(getattr(reservation, 'tsr_number', None)),
+        'created_at': reservation.created_at.isoformat() if getattr(reservation, 'created_at', None) else '',
+        'updated_at': reservation.updated_at.isoformat() if getattr(reservation, 'updated_at', None) else '',
+    }
+
+
+def _tsr_number_reservation_initials(user=None):
+    if user is None:
+        return online_tsr_engineer_initials()
+    engineer = getattr(user, 'engineer_profile', None)
+    initials = clean_str(getattr(engineer, 'initials', None)) if engineer else ''
+    if not initials:
+        name = clean_str(getattr(engineer, 'name', None)) if engineer else ''
+        if not name:
+            name = clean_str(getattr(user, 'username', None))
+        parts = [part for part in re.split(r'[\s._-]+', name or '') if part]
+        initials = ''.join(part[0] for part in parts[:3]) if parts else 'ENG'
+    initials = re.sub(r'[^A-Za-z0-9]+', '', initials or '').upper()
+    return (initials or 'ENG')[:5]
+
+
+def _tsr_number_reservation_query_by_token(reservation_token):
+    token = normalize_tsr_number_reservation_token(reservation_token)
+    if not token:
+        return None
+    return TsrNumberReservation.query.filter_by(reservation_token=token).first()
+
+
+def _tsr_number_matches_scope(tsr_number, sequence_date, initials):
+    value = (clean_str(tsr_number) or '').upper()
+    if not value:
+        return False
+    sequence_date = sequence_date or online_tsr_daily_sequence_date()
+    initials = (clean_str(initials) or online_tsr_engineer_initials()).upper()
+    prefix = sequence_date.strftime('%Y%m%d')
+    return bool(re.match(
+        rf'^{re.escape(prefix)}-(\d{{1,4}})-{re.escape(initials)}$',
+        value,
+        re.IGNORECASE,
+    ))
+
+
+def _tsr_number_is_reserved_or_submitted(tsr_number):
+    value = (clean_str(tsr_number) or '').upper()
+    if not value:
+        return True
+    try:
+        existing_submission = (
+            OnlineTsrSubmission.query
+            .filter(db.func.upper(OnlineTsrSubmission.tsr_number) == value)
+            .first()
+        )
+    except Exception:
+        # Direct allocator callers/tests may use a database that predates the optional
+        # submission table. The final unique reservation index still protects this claim.
+        db.session.rollback()
+        existing_submission = None
+    if existing_submission:
+        return True
+    try:
+        existing_reservation = (
+            TsrNumberReservation.query
+            .filter(db.func.upper(TsrNumberReservation.tsr_number) == value)
+            .first()
+        )
+    except Exception:
+        db.session.rollback()
+        existing_reservation = None
+    return existing_reservation is not None
+
+
+def _tsr_number_reservation_candidate(sequence_date, initials, preferred_number=None):
+    """Return a free number in the existing YYYYMMDD-NN-INITIALS scope."""
+    preferred = (clean_str(preferred_number) or '').upper()
+    if preferred and _tsr_number_matches_scope(preferred, sequence_date, initials):
+        if not _tsr_number_is_reserved_or_submitted(preferred):
+            return preferred
+
+    sequence_date = sequence_date or online_tsr_daily_sequence_date()
+    initials = (clean_str(initials) or online_tsr_engineer_initials()).upper()
+    prefix = sequence_date.strftime('%Y%m%d')
+    pattern = re.compile(rf'^{re.escape(prefix)}-(\d{{1,4}})-{re.escape(initials)}$', re.IGNORECASE)
+    highest = 0
+    try:
+        submissions = (
+            OnlineTsrSubmission.query
+            .filter(OnlineTsrSubmission.tsr_number.like(f"{prefix}-%-{initials}"))
+            .all()
+        )
+    except Exception:
+        db.session.rollback()
+        submissions = []
+    for submission in submissions:
+        match = pattern.match(clean_str(getattr(submission, 'tsr_number', None)) or '')
+        if match:
+            highest = max(highest, clean_int(match.group(1)) or 0)
+    try:
+        reservations = (
+            TsrNumberReservation.query
+            .filter(
+                TsrNumberReservation.service_date == sequence_date.isoformat(),
+                db.func.upper(TsrNumberReservation.engineer_initials) == initials,
+            )
+            .all()
+        )
+    except Exception:
+        db.session.rollback()
+        reservations = []
+    for reservation in reservations:
+        match = pattern.match(clean_str(getattr(reservation, 'tsr_number', None)) or '')
+        if match:
+            highest = max(highest, clean_int(match.group(1)) or 0)
+    return f"{prefix}-{highest + 1:02d}-{initials}"
+
+
+def reserve_online_tsr_number(
+    user_id,
+    reservation_token=None,
+    draft_key=None,
+    sequence_date=None,
+    initials=None,
+    preferred_number=None,
+):
+    """Claim one stable owner-scoped number, retrying unique races safely.
+
+    The helper does not commit. Callers include the reservation row in their draft/final-save
+    transaction, so a failed save rolls the claim back and a successful final save consumes it
+    atomically.
+    """
+    if not ensure_tsr_number_reservation_schema():
+        raise RuntimeError('TSR number reservation is temporarily unavailable.')
+    owner_id = clean_int(user_id)
+    if not owner_id:
+        raise PermissionError('A signed-in owner is required to reserve a TSR number.')
+    token = normalize_tsr_number_reservation_token(reservation_token)
+    if not token:
+        token = f"tsr-res-{secrets.token_urlsafe(32)}"[:120]
+    sequence_date = sequence_date or online_tsr_daily_sequence_date()
+    if not isinstance(sequence_date, date):
+        sequence_date = parse_online_tsr_sequence_date(sequence_date) or online_tsr_daily_sequence_date()
+    initials = (clean_str(initials) or online_tsr_engineer_initials()).upper()[:5]
+    draft_key = tsr_draft_text(draft_key, 140)
+
+    existing = _tsr_number_reservation_query_by_token(token)
+    if existing:
+        if clean_int(existing.user_id) != owner_id:
+            raise PermissionError('This TSR number reservation belongs to another account.')
+        if existing.draft_key and draft_key and existing.draft_key != draft_key:
+            raise ValueError('This TSR number reservation belongs to a different draft.')
+        if not existing.draft_key and draft_key:
+            existing.draft_key = draft_key
+            existing.updated_at = get_manila_time()
+        return existing
+
+    preferred = clean_str(preferred_number)[:120] if preferred_number else ''
+    for _attempt in range(5):
+        candidate = _tsr_number_reservation_candidate(sequence_date, initials, preferred)
+        # A preferred legacy preview is allowed once. If it lost a race, fall through to the
+        # normal highest-plus-one candidate on the next bounded attempt.
+        preferred = ''
+        reservation = TsrNumberReservation(
+            reservation_token=token,
+            user_id=owner_id,
+            draft_key=draft_key,
+            service_date=sequence_date.isoformat(),
+            engineer_initials=initials,
+            tsr_number=candidate,
+            created_at=get_manila_time(),
+            updated_at=get_manila_time(),
+        )
+        db.session.add(reservation)
+        try:
+            db.session.flush()
+            return reservation
+        except IntegrityError:
+            db.session.rollback()
+            # Another request may have won with this same stable token. Return that exact
+            # reservation; otherwise recompute against the newly occupied number.
+            existing = _tsr_number_reservation_query_by_token(token)
+            if existing:
+                if clean_int(existing.user_id) != owner_id:
+                    raise PermissionError('This TSR number reservation belongs to another account.')
+                return existing
+    raise RuntimeError('Unable to reserve a unique TSR number. Please retry.')
+
+
+def release_online_tsr_number_reservation(user_id, reservation_token=None, draft_key=None):
+    """Release only a matching owner's active reservation; return whether one was removed."""
+    if not ensure_tsr_number_reservation_schema():
+        return False
+    owner_id = clean_int(user_id)
+    token = normalize_tsr_number_reservation_token(reservation_token)
+    if not owner_id or not token:
+        return False
+    reservation = _tsr_number_reservation_query_by_token(token)
+    if not reservation or clean_int(reservation.user_id) != owner_id:
+        return False
+    draft_key = tsr_draft_text(draft_key, 140)
+    if draft_key and reservation.draft_key and reservation.draft_key != draft_key:
+        return False
+    db.session.delete(reservation)
+    return True
+
+
+def consume_online_tsr_number_reservation(user_id, reservation_token=None, tsr_number=None):
+    """Delete a matching reservation inside the caller's successful final-save transaction."""
+    if not ensure_tsr_number_reservation_schema():
+        raise RuntimeError('TSR number reservation is temporarily unavailable.')
+    owner_id = clean_int(user_id)
+    token = normalize_tsr_number_reservation_token(reservation_token)
+    if not owner_id or not token:
+        raise PermissionError('A TSR number reservation token is required.')
+    reservation = _tsr_number_reservation_query_by_token(token)
+    if not reservation:
+        raise PermissionError('The TSR number reservation was not found or has already been consumed.')
+    if clean_int(reservation.user_id) != owner_id:
+        raise PermissionError('This TSR number reservation belongs to another account.')
+    requested = (clean_str(tsr_number) or '').upper()
+    if requested and requested != clean_str(reservation.tsr_number).upper():
+        raise ValueError('The submitted TSR number does not match its reservation.')
+    db.session.delete(reservation)
+    return reservation
+
+
 def online_tsr_next_number_for_date(sequence_date=None, initials=None):
     ensure_online_tsr_submission_table()
+    ensure_tsr_number_reservation_schema()
     sequence_date = sequence_date or online_tsr_daily_sequence_date()
     initials = (clean_str(initials) or online_tsr_engineer_initials()).upper()
     prefix = sequence_date.strftime('%Y%m%d')
@@ -13340,11 +13647,23 @@ def online_tsr_next_number_for_date(sequence_date=None, initials=None):
         match = pattern.match(clean_str(getattr(submission, 'tsr_number', None)) or '')
         if match:
             highest = max(highest, clean_int(match.group(1)) or 0)
+    try:
+        reservations = TsrNumberReservation.query.filter_by(
+            service_date=sequence_date.isoformat(),
+            engineer_initials=initials,
+        ).all()
+    except Exception:
+        reservations = []
+    for reservation in reservations:
+        match = pattern.match(clean_str(getattr(reservation, 'tsr_number', None)) or '')
+        if match:
+            highest = max(highest, clean_int(match.group(1)) or 0)
     return f"{prefix}-{highest + 1:02d}-{initials}"
 
 
 def online_tsr_submitted_number_is_available(tsr_number, sequence_date=None, initials=None):
     ensure_online_tsr_submission_table()
+    ensure_tsr_number_reservation_schema()
     tsr_number = clean_str(tsr_number).upper()
     if not tsr_number:
         return False
@@ -13354,12 +13673,7 @@ def online_tsr_submitted_number_is_available(tsr_number, sequence_date=None, ini
     pattern = re.compile(rf'^{re.escape(prefix)}-(\d{{1,4}})-{re.escape(initials)}$', re.IGNORECASE)
     if not pattern.match(tsr_number):
         return False
-    existing = (
-        OnlineTsrSubmission.query
-        .filter(db.func.upper(OnlineTsrSubmission.tsr_number) == tsr_number)
-        .first()
-    )
-    return existing is None
+    return not _tsr_number_is_reserved_or_submitted(tsr_number)
 
 
 @app.route('/get_next_online_tsr_number')
@@ -16503,6 +16817,7 @@ def completed_online_tsr_response(submission, duplicate=False):
         ),
         'submission_id': submission.id,
         'submission_token': clean_str(getattr(submission, 'submission_token', None)),
+        'reservation_token': clean_str(payload.get('reservation_token') or payload.get('tsr_reservation_token')),
         'schedule_id': submission.shift_id,
         'completed_shift_ids': payload.get('_completed_shift_ids') or [],
         'completion_scope': payload.get('_completion_scope') or payload.get('completion_scope') or 'linked_all',
@@ -16599,6 +16914,57 @@ def tsr_draft_attachment_manifest(payload):
     return names[:TSR_DRAFT_MAX_ATTACHMENT_COUNT]
 
 
+@app.route('/reserve_tsr_number', methods=['POST'])
+@login_required
+def reserve_tsr_number():
+    """Reserve one authoritative TSR number for the signed-in draft owner."""
+    if not can_back_up_tsr_drafts():
+        return denied()
+    if not ensure_tsr_number_reservation_schema():
+        return jsonify({'status': 'error', 'message': 'TSR number reservation is temporarily unavailable.'}), 503
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({'status': 'error', 'message': 'Invalid TSR reservation payload.'}), 400
+    draft_key = normalize_tsr_draft_key(body.get('draft_key') or body.get('id'))
+    reservation_token = normalize_tsr_number_reservation_token(
+        body.get('reservation_token') or body.get('tsr_reservation_token') or body.get('token')
+    )
+    if not draft_key:
+        return jsonify({'status': 'error', 'message': 'A TSR draft key is required.'}), 400
+    sequence_date = parse_online_tsr_sequence_date(
+        body.get('service_date') or body.get('tsr_service_date') or body.get('date')
+    ) or online_tsr_daily_sequence_date()
+    try:
+        reservation = reserve_online_tsr_number(
+            getattr(current_user, 'id', None),
+            reservation_token=reservation_token,
+            draft_key=draft_key,
+            sequence_date=sequence_date,
+            initials=_tsr_number_reservation_initials(current_user),
+            preferred_number=body.get('tsr_number') or body.get('tsr-number'),
+        )
+    except PermissionError as reservation_error:
+        return jsonify({'status': 'error', 'message': str(reservation_error)}), 409
+    except ValueError as reservation_error:
+        return jsonify({'status': 'error', 'message': str(reservation_error)}), 409
+    except Exception as reservation_error:
+        print(f"[TSR-RESERVATION] Reserve failed for user={getattr(current_user, 'id', None)}: {reservation_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'TSR number reservation is temporarily unavailable.'}), 503
+    try:
+        db.session.commit()
+    except Exception as reservation_commit_error:
+        db.session.rollback()
+        print(f"[TSR-RESERVATION] Commit failed for user={getattr(current_user, 'id', None)}: {reservation_commit_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'TSR number reservation is temporarily unavailable.'}), 503
+    return jsonify({
+        'status': 'success',
+        'success': True,
+        'reservation_token': reservation.reservation_token,
+        'tsr_number': reservation.tsr_number,
+        'reservation': tsr_number_reservation_to_dict(reservation),
+    })
+
+
 def tsr_draft_to_dict(draft, stale_ignored=False):
     try:
         payload = json.loads(draft.payload_json or '{}')
@@ -16610,6 +16976,7 @@ def tsr_draft_to_dict(draft, stale_ignored=False):
         'draft_key': draft.draft_key,
         'schedule_id': draft.schedule_id or '',
         'tsr_number': draft.tsr_number or '',
+        'reservation_token': draft.reservation_token or payload.get('reservation_token') or payload.get('tsr_reservation_token') or '',
         'client_name': draft.client_name or '',
         'service_date': draft.service_date or '',
         'title': draft.title or '',
@@ -16678,6 +17045,75 @@ def save_tsr_draft():
         draft = TsrDraft(user_id=getattr(current_user, 'id', None), draft_key=draft_key)
         db.session.add(draft)
 
+    # The reservation lookup may autoflush a newly-created draft. Seed the required payload
+    # column before that lookup; the canonical number fields are filled immediately after the
+    # reservation returns.
+    draft.payload_json = payload_json
+
+    # A server-backed draft save is the first authoritative numbering event. The browser may
+    # carry a legacy preview, but only this owner-scoped reservation decides the canonical value.
+    reservation_token = normalize_tsr_number_reservation_token(
+        body.get('reservation_token') or
+        body.get('tsr_reservation_token') or
+        projected_payload.get('reservation_token') or
+        projected_payload.get('tsr_reservation_token') or
+        getattr(existing, 'reservation_token', None)
+    )
+    preferred_number = (
+        tsr_draft_text(body.get('tsr_number'), 120) or
+        tsr_draft_text(projected_payload.get('tsr-number'), 120) or
+        tsr_draft_text(projected_payload.get('tsr_number'), 120) or
+        tsr_draft_text(getattr(existing, 'tsr_number', None), 120)
+    )
+    selected_schedule = projected_payload.get('selectedSchedule') if isinstance(projected_payload.get('selectedSchedule'), dict) else {}
+    sequence_date = (
+        parse_online_tsr_sequence_date(body.get('service_date')) or
+        parse_online_tsr_sequence_date(projected_payload.get('tsr-service-date')) or
+        parse_online_tsr_sequence_date(projected_payload.get('service_date')) or
+        parse_online_tsr_sequence_date(selected_schedule.get('date_iso')) or
+        parse_online_tsr_sequence_date(selected_schedule.get('date_label')) or
+        online_tsr_daily_sequence_date()
+    )
+    try:
+        reservation = reserve_online_tsr_number(
+            getattr(current_user, 'id', None),
+            reservation_token=reservation_token,
+            draft_key=draft_key,
+            sequence_date=sequence_date,
+            initials=_tsr_number_reservation_initials(current_user),
+            preferred_number=preferred_number,
+        )
+    except PermissionError as reservation_error:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(reservation_error)}), 409
+    except ValueError as reservation_error:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(reservation_error)}), 409
+    except Exception as reservation_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] Reservation failed for user={getattr(current_user, 'id', None)} key={draft_key}: {reservation_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'TSR draft backup could not reserve a stable number.'}), 503
+
+    reservation_token = reservation.reservation_token
+    projected_payload['reservation_token'] = reservation_token
+    projected_payload['tsr_reservation_token'] = reservation_token
+    projected_payload['tsr-number'] = reservation.tsr_number
+    projected_payload['tsr_number'] = reservation.tsr_number
+    try:
+        payload_json = json.dumps(projected_payload, ensure_ascii=False, separators=(',', ':'))
+    except (TypeError, ValueError):
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': 'TSR draft payload could not be serialized.'}), 400
+    if len(payload_json.encode('utf-8')) > TSR_DRAFT_MAX_PAYLOAD_BYTES:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'TSR draft is too large for server backup. Supporting files remain local to this device.'
+        }), 413
+
+    # A concurrent unique-number race may have rolled back the session while the helper
+    # retried. Re-attach the draft before applying the canonical reservation snapshot.
+    db.session.add(draft)
     attachment_names = tsr_draft_attachment_manifest(projected_payload)
     try:
         attachment_count = int(body.get('attachment_count') or len(attachment_names) or 0)
@@ -16689,9 +17125,10 @@ def save_tsr_draft():
         140,
     )
     draft.tsr_number = tsr_draft_text(
-        body.get('tsr_number') or projected_payload.get('tsr-number') or projected_payload.get('tsr_number'),
+        reservation.tsr_number,
         120,
     )
+    draft.reservation_token = reservation_token
     draft.client_name = tsr_draft_text(body.get('client_name') or projected_payload.get('tsr-customer-name'), 200)
     draft.service_date = tsr_draft_text(body.get('service_date') or projected_payload.get('tsr-service-date'), 40)
     draft.title = tsr_draft_text(body.get('title'), 255)
@@ -16711,6 +17148,8 @@ def save_tsr_draft():
     return jsonify({
         'status': 'success',
         'success': True,
+        'reservation_token': reservation_token,
+        'tsr_number': reservation.tsr_number,
         'draft': tsr_draft_to_dict(draft),
         'message': 'TSR draft backed up to your account.'
     })
@@ -16750,6 +17189,19 @@ def delete_tsr_draft():
     if not draft:
         return jsonify({'status': 'error', 'message': 'TSR draft was not found for this account.'}), 404
     try:
+        try:
+            draft_payload = json.loads(draft.payload_json or '{}')
+        except (TypeError, ValueError):
+            draft_payload = {}
+        release_online_tsr_number_reservation(
+            getattr(current_user, 'id', None),
+            reservation_token=(
+                getattr(draft, 'reservation_token', None) or
+                draft_payload.get('reservation_token') or
+                draft_payload.get('tsr_reservation_token')
+            ),
+            draft_key=draft_key,
+        )
         db.session.delete(draft)
         db.session.commit()
     except Exception as delete_error:
@@ -16757,6 +17209,33 @@ def delete_tsr_draft():
         print(f"[TSR-DRAFT] Delete failed for user={getattr(current_user, 'id', None)} key={draft_key}: {delete_error}", flush=True)
         return jsonify({'status': 'error', 'message': 'TSR draft backup could not be deleted.'}), 500
     return jsonify({'status': 'success', 'success': True, 'draft_key': draft_key, 'message': 'TSR draft backup deleted.'})
+
+
+@app.route('/release_tsr_number_reservation', methods=['POST'])
+@login_required
+def release_tsr_number_reservation():
+    """Release an unfinished draft/queue reservation only for its matching owner."""
+    if not can_back_up_tsr_drafts():
+        return denied()
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({'status': 'error', 'message': 'Invalid TSR reservation payload.'}), 400
+    token = body.get('reservation_token') or body.get('tsr_reservation_token') or body.get('token')
+    draft_key = normalize_tsr_draft_key(body.get('draft_key') or body.get('id'))
+    if not normalize_tsr_number_reservation_token(token):
+        return jsonify({'status': 'error', 'message': 'A TSR reservation token is required.'}), 400
+    try:
+        released = release_online_tsr_number_reservation(
+            getattr(current_user, 'id', None),
+            reservation_token=token,
+            draft_key=draft_key,
+        )
+        db.session.commit()
+    except Exception as release_error:
+        db.session.rollback()
+        print(f"[TSR-RESERVATION] Release failed for user={getattr(current_user, 'id', None)}: {release_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'TSR number reservation could not be released.'}), 500
+    return jsonify({'status': 'success', 'success': True, 'released': bool(released)})
 
 
 @app.route('/offline_tsr_sync_ping', methods=['GET'])
@@ -16784,6 +17263,7 @@ def save_offline_tsr_online():
         return denied()
 
     ensure_online_tsr_submission_table()
+    ensure_tsr_number_reservation_schema()
 
     if request.is_json:
         payload = request.get_json(silent=True) or {}
@@ -16939,15 +17419,44 @@ def save_offline_tsr_online():
         online_tsr_daily_sequence_date()
     )
     is_vector_pdf_submission = clean_str(payload.get('_tsr_form_version')).lower() == 'vector-pdf-v2'
-    if submitted_tsr_number and online_tsr_submitted_number_is_available(submitted_tsr_number, sequence_date):
-        tsr_number = submitted_tsr_number.upper()
-    elif submitted_tsr_number and (not preserve_uploaded_pdf or is_vector_pdf_submission):
+    reservation_token = normalize_tsr_number_reservation_token(
+        payload.get('reservation_token') or
+        payload.get('tsr_reservation_token') or
+        request.form.get('reservation_token') or
+        request.form.get('tsr_reservation_token') or
+        submission_token
+    )
+    reservation_draft_key = normalize_tsr_draft_key(
+        payload.get('_draft_id') or payload.get('draft_key') or payload.get('draft_key_id')
+    )
+    try:
+        reservation = reserve_online_tsr_number(
+            getattr(current_user, 'id', None),
+            reservation_token=reservation_token,
+            draft_key=reservation_draft_key,
+            sequence_date=sequence_date,
+            initials=_tsr_number_reservation_initials(current_user),
+            preferred_number=submitted_tsr_number,
+        )
+    except PermissionError as reservation_error:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(reservation_error)}), 409
+    except ValueError as reservation_error:
+        db.session.rollback()
+        return jsonify({'status': 'error', 'message': str(reservation_error)}), 409
+    except Exception as reservation_error:
+        db.session.rollback()
+        print(f"[ONLINE-TSR] Reservation failed token={submission_token}: {reservation_error}", flush=True)
         return jsonify({
             'status': 'error',
-            'message': 'The previewed TSR number is no longer available. Please preview the TSR again before saving.'
-        }), 409
-    else:
-        tsr_number = online_tsr_next_number_for_date(sequence_date)
+            'message': 'TSR number reservation is temporarily unavailable. Retry safely.',
+            'submission_token': submission_token,
+            'retryable': True,
+        }), 503
+    reservation_token = reservation.reservation_token
+    tsr_number = reservation.tsr_number
+    payload['reservation_token'] = reservation_token
+    payload['tsr_reservation_token'] = reservation_token
     payload['tsr-number'] = tsr_number
     payload['tsr_number'] = tsr_number
     completion_scope = normalize_online_tsr_completion_scope(payload.get('completion_scope') or payload.get('_completion_scope') or 'linked_all')
@@ -16991,7 +17500,10 @@ def save_offline_tsr_online():
                 request.files.get('report_file')
             )
 
-        if uploaded_pdf and getattr(uploaded_pdf, 'filename', '') and (preserve_uploaded_pdf or not submitted_tsr_number or submitted_tsr_number == tsr_number):
+        if uploaded_pdf and getattr(uploaded_pdf, 'filename', '') and (
+            submitted_tsr_number == tsr_number or
+            (preserve_uploaded_pdf and not is_vector_pdf_submission)
+        ):
             pdf_filename = build_online_tsr_pdf_filename(submission, shift, tsr_number, payload=payload)
             uploaded_pdf.stream.seek(0)
             uploaded_pdf_bytes = uploaded_pdf.read()
@@ -17053,6 +17565,11 @@ def save_offline_tsr_online():
             ensure_ascii=False,
         )
         submission.status = 'completed'
+        consume_online_tsr_number_reservation(
+            getattr(current_user, 'id', None),
+            reservation_token=reservation_token,
+            tsr_number=tsr_number,
+        )
         db.session.add(ActivityLog(
             user=(getattr(current_user, 'username', '') or submitted_by or 'System').capitalize(),
             action=f"Generated online TSR PDF and completed schedule scope '{completion_scope}': {pdf_filename} for schedule #{shift.id} (+{len(extra_attached_files)} extra attachment(s))"
@@ -17111,6 +17628,7 @@ def save_offline_tsr_online():
         'message': 'TSR saved online, PDF generated, attached to schedule, and linked schedule status completed.',
         'submission_id': submission.id,
         'submission_token': submission_token,
+        'reservation_token': reservation_token,
         'schedule_id': shift.id,
         'completed_shift_ids': completed_shift_ids,
         'completion_scope': completion_scope,
@@ -21568,7 +22086,11 @@ def revise_online_tsr_submission(submission_id):
     payload['_revision_of_submission_id'] = original.id
 
     selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
-    tsr_number = (clean_str(payload.get('tsr-number')) or clean_str(payload.get('tsr_number')) or clean_str(original.tsr_number) or '')[:120]
+    # Revisions retain the historical TSR number and never claim a new reservation. Ignore any
+    # client-supplied replacement so a corrected TSR cannot fork the number sequence.
+    tsr_number = (clean_str(original.tsr_number) or '')[:120]
+    payload['tsr-number'] = tsr_number
+    payload['tsr_number'] = tsr_number
     client_name = (clean_str(payload.get('tsr-customer-name')) or clean_str(selected_schedule.get('client_name')) or clean_str(original.client_name) or '')[:200]
     product_name = (clean_str(payload.get('tsr-equipment-model')) or clean_str(selected_schedule.get('product_name')) or clean_str(original.product_name) or '')[:200]
     serial_number = (clean_str(payload.get('tsr-serial-no')) or clean_str(selected_schedule.get('product_id')) or '')[:120]
@@ -21839,8 +22361,9 @@ def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
-    # Navigation shell bump: v169 calibration report alignment -> v170 authoritative accounting branch codes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v170-accounting-branch-codes';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v170-accounting-branch-codes.
+    # Navigation shell bump: v170 authoritative accounting branch codes -> v171 stable TSR reservations.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v171-stable-tsr-reservations';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -21864,7 +22387,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=28',
+  '/static/js/app-calibration-report.js?v=29',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
@@ -58174,6 +58697,7 @@ def initialize_database():
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
         ensure_online_tsr_submission_table()
+        ensure_tsr_number_reservation_schema()
         ensure_shift_file_last_emailed_at_column()
         ensure_product_contract_column()
         ensure_calibration_certificate_approval_table()

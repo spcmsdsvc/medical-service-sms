@@ -60,6 +60,7 @@ class TsrOfflineFollowupSourceTests(unittest.TestCase):
         segment = self._save_segment()
         script = f"""
 let standaloneCurrentDraftId = 'draft-1';
+let standaloneTSRReservationToken = '';
 let standaloneTSRActiveContextVersion = 1;
 let offlineTSRAttachments = [];
 let standaloneTSRLocalSaveChain = Promise.resolve();
@@ -73,6 +74,7 @@ const localStorage = {{
   getItem() {{ return this.value ? JSON.stringify(this.value) : null; }}
 }};
 function resolveStandaloneTSRDraftId(data) {{ return String(data?._draft_id || 'draft-1'); }}
+function normalizeTSRReservationToken(value) {{ return String(value || '').replace(/[^A-Za-z0-9_-]+/g, '').slice(0, 120); }}
 function getStandaloneTSRDraftTitle() {{ return 'TSR draft'; }}
 function getStandaloneTSRDraftSubtitle() {{ return 'TSR'; }}
 function advanceStandaloneTSRActiveContext() {{ standaloneTSRActiveContextVersion += 1; }}

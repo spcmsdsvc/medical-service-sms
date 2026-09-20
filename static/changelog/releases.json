@@ -16,6 +16,16 @@
             "admins"
           ],
           "sort_order": 5
+        },
+        {
+          "item_key": "2026-09-20-stable-tsr-number-reservations-engineers",
+          "category": "TSR",
+          "description": "Each signed-in engineer receives one owner-scoped authoritative reservation per unfinished TSR. Pending drafts keep their number through calibration reports, queue transfer, reconnect, and revisions; explicit deletion releases unfinished reservations, while final submission consumes them atomically and legacy clients remain compatible.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 6
         }
       ]
     },

@@ -20,7 +20,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=28"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=29"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page">
   <div class="offline-tsr-hero no-print">
@@ -214,7 +214,7 @@ window.CalibrationReportConfig = {
           </div>
           <div class="col-md-4">
             <label class="small fw-bold text-muted text-uppercase">TSR No.</label>
-            <input id="tsr-number" class="form-control tsr-field" placeholder="Auto generated">
+            <input id="tsr-number" class="form-control tsr-field" placeholder="Pending — assigned after draft save" readonly aria-readonly="true">
           </div>
           <div class="col-12">
             <label class="small fw-bold text-muted text-uppercase">Address</label>
@@ -793,6 +793,7 @@ let mySavedSignatureLoadingPromise = null;
 let offlineTSRAttachments = [];
 let onlineTSRRevisionContext = null;
 let standaloneCurrentDraftId = '';
+let standaloneTSRReservationToken = '';
 let standaloneTSRActiveContextVersion = 0;
 let standaloneTSRLocalSaveChain = Promise.resolve();
 let standaloneTSRAutosavePaused = false;
@@ -815,37 +816,19 @@ function getTSRSequenceDateISO(data=null){
   return /^\d{4}-\d{2}-\d{2}$/.test(serviceDate) ? serviceDate : todayISO();
 }
 function yyyymmddFromISO(dateIso){ return String(dateIso || todayISO()).slice(0,10).replaceAll('-',''); }
+function normalizeTSRReservationToken(existing=''){
+  return String(existing || '').replace(/[^A-Za-z0-9_-]+/g, '').slice(0, 120);
+}
+function ensureTSRReservationToken(existing=''){
+  const normalized = normalizeTSRReservationToken(existing);
+  if(normalized.length >= 12) return normalized;
+  if(globalThis.crypto?.randomUUID) return `tsr-res-${globalThis.crypto.randomUUID()}`;
+  return `tsr-res-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
 function generateTSRNumber(){
-  const el = document.getElementById('tsr-number');
-  if(!el) return;
-
-  const initials = getEngineerInitialsSafe();
-  const sequenceDate = getTSRSequenceDateISO();
-  const sequencePrefix = yyyymmddFromISO(sequenceDate);
-  const existing = String(el.value || '').trim();
-
-  // Preserve manually typed TSR numbers, but repair old auto-generated numbers
-  // such as 20260514-01-ENG when the logged-in engineer has real initials.
-  const autoPattern = /^(\d{8})-(\d{1,3})-([A-Z0-9]{2,5})$/i;
-  const match = existing.match(autoPattern);
-
-  if(existing && !match) return;
-
-  if(match){
-    const currentInitials = String(match[3] || '').toUpperCase();
-    if(currentInitials === initials && String(match[1] || '') === sequencePrefix){
-      refreshTSRNumberPreviewFromServer(existing, initials);
-      return;
-    }
-    el.value = `${sequencePrefix}-${String(match[2]).padStart(2,'0')}-${initials}`;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    refreshTSRNumberPreviewFromServer(el.value, initials);
-    return;
-  }
-
-  el.value = `${sequencePrefix}-01-${initials}`;
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  refreshTSRNumberPreviewFromServer(el.value, initials);
+  // Number assignment is server-authoritative. Kept as a harmless compatibility shim for
+  // older cached handlers; it must never write a provisional value into the form.
+  return false;
 }
 
 function makeTSRSyncError(message, options={}){
@@ -929,66 +912,91 @@ async function checkOfflineTSRSyncHealth(){
   return result;
 }
 
-async function fetchNextOnlineTSRNumber(serviceDate=null){
-  const dateParam = encodeURIComponent(serviceDate || getTSRSequenceDateISO());
-  const { result } = await fetchTSRSyncJSON(`/get_next_online_tsr_number?service_date=${dateParam}&_=${Date.now()}`, {
-    headers:{ 'Accept':'application/json' },
-    cache:'no-store'
-  }, { phase:'assigning_tsr_number', timeoutMs:15000 });
-  if(!result.success || !result.tsr_number){
-    throw makeTSRSyncError(result.message || result.error || 'Unable to assign the next TSR number.', {
-      phase:'assigning_tsr_number',
-      errorCode:'number_assignment_failed',
-      retryable:false
-    });
+async function reconcileTSRReservationFromServer(result, sourceData=null){
+  const reservation = result?.reservation || {};
+  const token = normalizeTSRReservationToken(
+    result?.reservation_token ||
+    reservation.reservation_token ||
+    result?.draft?.reservation_token ||
+    result?.draft?.payload?.reservation_token ||
+    result?.draft?.payload?.tsr_reservation_token ||
+    sourceData?.reservation_token ||
+    sourceData?.tsr_reservation_token
+  );
+  const number = String(
+    result?.tsr_number ||
+    reservation.tsr_number ||
+    result?.draft?.tsr_number ||
+    result?.draft?.payload?.['tsr-number'] ||
+    ''
+  ).trim();
+  if(!token || !number) return sourceData || null;
+
+  const sourceDraftId = String(sourceData?._draft_id || sourceData?.draft_id || '').trim();
+  const activeDraftId = String(standaloneCurrentDraftId || '').trim();
+  const active = !sourceDraftId || !activeDraftId || sourceDraftId === activeDraftId;
+  if(active){
+    standaloneTSRReservationToken = token;
+    const field = document.getElementById('tsr-number');
+    if(field && String(field.value || '').trim() !== number) field.value = number;
   }
-  return result.tsr_number;
+
+  const payload = Object.assign({}, sourceData || {});
+  payload.reservation_token = token;
+  payload.tsr_reservation_token = token;
+  payload['tsr-number'] = number;
+  payload.tsr_number = number;
+  if(active && sourceDraftId){
+    try{
+      await saveStandaloneTSRDraftToIndexedDB(payload, { updateActiveState:false });
+      saveStandaloneTSRDraftToLocalStorageFallback(payload);
+    }catch(err){
+      console.warn('[Offline TSR] Authoritative TSR reservation could not update local draft', err);
+    }
+  }
+  return payload;
 }
 
-let tsrNumberPreviewRefreshPending = false;
-let tsrNumberPreviewLastServerValue = '';
-let tsrNumberPreviewNeedsRefresh = false;
-let tsrNumberPreviewGeneration = 0;
-function invalidateTSRNumberPreview(){
-  tsrNumberPreviewLastServerValue = '';
-  tsrNumberPreviewNeedsRefresh = true;
-  tsrNumberPreviewGeneration += 1;
-}
-async function refreshTSRNumberPreviewFromServer(previousValue='', initials=''){
-  if(tsrNumberPreviewRefreshPending || !navigator.onLine) return;
-  const el = document.getElementById('tsr-number');
-  if(!el) return;
-  const currentValue = String(el.value || '').trim();
-  const autoPattern = /^(\d{8})-(\d{1,4})-([A-Z0-9]{1,8})$/i;
-  if(currentValue && !autoPattern.test(currentValue)) return;
-  const forceRefresh = tsrNumberPreviewNeedsRefresh;
-  if(!forceRefresh && currentValue && currentValue === tsrNumberPreviewLastServerValue) return;
-  const requestGeneration = tsrNumberPreviewGeneration;
-  tsrNumberPreviewNeedsRefresh = false;
-  tsrNumberPreviewRefreshPending = true;
-  try{
-    const nextNumber = await fetchNextOnlineTSRNumber(getTSRSequenceDateISO());
-    if(requestGeneration !== tsrNumberPreviewGeneration){
-      tsrNumberPreviewNeedsRefresh = true;
-      return;
+async function reserveTSRNumberForDraft(data, { required=true } = {}){
+  const payload = Object.assign({}, data || {});
+  const draftKey = resolveStandaloneTSRDraftId(payload);
+  const token = ensureTSRReservationToken(
+    payload.reservation_token || payload.tsr_reservation_token || standaloneTSRReservationToken
+  );
+  payload.reservation_token = token;
+  payload.tsr_reservation_token = token;
+  standaloneTSRReservationToken = token;
+  if(!navigator.onLine){
+    if(required){
+      throw makeTSRSyncError('Connect to the server once to reserve the authoritative TSR number. Your Pending draft remains safe on this device.', {
+        phase:'assigning_tsr_number', errorCode:'reservation_requires_connection', retryable:true
+      });
     }
-    const latestValue = String(el.value || '').trim();
-    const latestMatch = latestValue.match(autoPattern);
-    const expectedInitials = String(initials || getEngineerInitialsSafe()).toUpperCase();
-    if(!latestValue || (latestMatch && String(latestMatch[3] || '').toUpperCase() === expectedInitials)){
-      el.value = nextNumber;
-      tsrNumberPreviewLastServerValue = nextNumber;
-      el.dispatchEvent(new Event('input', { bubbles:true }));
-    }
-  }catch(err){
-    console.warn('[Offline TSR] TSR number preview refresh skipped', err);
-  }finally{
-    tsrNumberPreviewRefreshPending = false;
-    if(tsrNumberPreviewNeedsRefresh && navigator.onLine){
-      void refreshTSRNumberPreviewFromServer('', initials);
-    }
+    return payload;
   }
+  const headers = { 'Content-Type':'application/json', Accept:'application/json' };
+  try{
+    const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+    if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+  }catch(tokenError){}
+  const { result } = await fetchTSRSyncJSON('/reserve_tsr_number', {
+    method:'POST',
+    headers,
+    body:JSON.stringify({
+      draft_key:draftKey,
+      reservation_token:token,
+      service_date:getTSRSequenceDateISO(payload),
+      tsr_number:payload['tsr-number'] || payload.tsr_number || ''
+    })
+  }, { phase:'assigning_tsr_number', timeoutMs:15000 });
+  if(result.status !== 'success' || !result.tsr_number){
+    throw makeTSRSyncError(result.message || 'Unable to reserve the authoritative TSR number.', {
+      phase:'assigning_tsr_number', errorCode:'number_reservation_failed', retryable:false, result
+    });
+  }
+  return (await reconcileTSRReservationFromServer(result, Object.assign({}, payload, { _draft_id:draftKey }))) || payload;
 }
+window.reserveTSRNumberForDraft = reserveTSRNumberForDraft;
 
 function selectedScheduleHasLinkedSchedules(schedule){
   const selected = schedule || getSelectedStandaloneSchedule() || {};
@@ -1020,14 +1028,7 @@ async function prepareTSRForFinalSave(data, { assignNumber=true, completionScope
   payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
   payload.completion_scope = completionScope || payload.completion_scope || await chooseTSRCompletionScope(selectedSchedule);
   if(assignNumber){
-    const tsrNumber = await fetchNextOnlineTSRNumber(getTSRSequenceDateISO(payload));
-    payload['tsr-number'] = tsrNumber;
-    payload.tsr_number = tsrNumber;
-    const field = document.getElementById('tsr-number');
-    if(field){
-      field.value = tsrNumber;
-      field.dispatchEvent(new Event('input', { bubbles:true }));
-    }
+    Object.assign(payload, await reserveTSRNumberForDraft(payload));
   }
   return payload;
 }
@@ -1259,6 +1260,7 @@ function initializeBlankStandaloneTSR(){
   standaloneTSRAutosavePaused = true;
   try{
     standaloneCurrentDraftId = '';
+    standaloneTSRReservationToken = '';
     document.querySelectorAll('.tsr-field').forEach(el => {
       if(el.type === 'hidden') return;
       el.value = '';
@@ -1287,8 +1289,6 @@ function initializeBlankStandaloneTSR(){
     setFieldValue('tsr-department', 'Radiology', true);
     setFieldValue('tsr-machine-type', 'Medical', true);
     setFieldValue('tsr-serviced-by', LOGGED_IN_ENGINEER_NAME, true);
-    invalidateTSRNumberPreview();
-    generateTSRNumber();
     addTSRPartRow();
     renderDocs();
     renderTSRAttachments();
@@ -2989,8 +2989,8 @@ function collectTSRData(){
   commitPendingTSRActionInput();
   syncActionsText();
   syncPartsText();
-  generateTSRNumber();
   const selectedSchedule = getSelectedStandaloneSchedule();
+  standaloneTSRReservationToken = ensureTSRReservationToken(standaloneTSRReservationToken);
   const data={
     documents:standaloneDocuments,
     signatures:signatureData,
@@ -3008,6 +3008,8 @@ function collectTSRData(){
     original_schedule_time_end:selectedSchedule?.time_end || '',
     calibration_report: window.calibrationReport?.collect?.() || null,
     _draft_id:standaloneCurrentDraftId,
+    reservation_token:standaloneTSRReservationToken,
+    tsr_reservation_token:standaloneTSRReservationToken,
     savedAt:new Date().toISOString(),
     _tsr_form_version:'vector-pdf-v2',
     _tsr_filename_template:activeTSRFilenameTemplate
@@ -3053,6 +3055,7 @@ const OFFLINE_TSR_DB_STORES = {
 
 const OFFLINE_TSR_STORAGE_PERSISTENCE_KEY = 'phase6_storage_persistence';
 const STANDALONE_TSR_SERVER_DELETE_KEY = 'medicalServiceStandaloneTSRServerDraftDeletesV1';
+const STANDALONE_TSR_RESERVATION_RELEASE_KEY = 'medicalServiceStandaloneTSRReservationReleasesV1';
 const STANDALONE_TSR_SERVER_DRAFT_DEBOUNCE_MS = 15 * 1000;
 let standaloneTSRServerDraftSyncTimer = null;
 let standaloneTSRServerDraftSyncChain = Promise.resolve();
@@ -3420,6 +3423,7 @@ async function buildOfflineTSRDraftRecord(data){
     service_date: durablePayload?.['tsr-service-date'] || durablePayload?.selectedSchedule?.date_iso || '',
     client_name: durablePayload?.['tsr-customer-name'] || durablePayload?.selectedSchedule?.client_name || '',
     tsr_number: durablePayload?.['tsr-number'] || '',
+    reservation_token: durablePayload?.reservation_token || durablePayload?.tsr_reservation_token || '',
     payload: durablePayload,
     updated_at: now,
     created_at: data?.created_at || data?.savedAt || now,
@@ -3442,6 +3446,7 @@ function buildStandaloneTSRServerDraftRequest(record){
     draft_key: String(record?.id || payload._draft_id || '').trim(),
     schedule_id: record?.schedule_id || payload.schedule_id || payload.selectedScheduleId || '',
     tsr_number: record?.tsr_number || payload['tsr-number'] || payload.tsr_number || '',
+    reservation_token: record?.reservation_token || payload.reservation_token || payload.tsr_reservation_token || '',
     client_name: record?.client_name || payload['tsr-customer-name'] || '',
     service_date: record?.service_date || payload['tsr-service-date'] || '',
     title: record?.title || getStandaloneTSRDraftTitle(payload),
@@ -3483,6 +3488,9 @@ async function syncStandaloneTSRDraftToServer(record){
       error.httpStatus = response.status;
       error.requiresLogin = response.status === 401 || response.status === 403;
       throw error;
+    }
+    if(result.reservation_token || result.tsr_number || result.draft?.reservation_token){
+      await reconcileTSRReservationFromServer(result, record?.payload || {});
     }
     return result;
   }catch(err){
@@ -3577,6 +3585,66 @@ async function deleteStandaloneTSRServerDraftRemote(id){
     throw error;
   }
   return result;
+}
+
+function readTSRReservationReleaseQueue(){
+  try{
+    const values = JSON.parse(localStorage.getItem(STANDALONE_TSR_RESERVATION_RELEASE_KEY) || '[]');
+    return Array.isArray(values) ? values.filter(item => item && String(item.reservation_token || '').trim()) : [];
+  }catch(err){ return []; }
+}
+function writeTSRReservationReleaseQueue(values){
+  try{
+    const unique = [];
+    const seen = new Set();
+    (values || []).forEach(item => {
+      const token = normalizeTSRReservationToken(item?.reservation_token);
+      if(!token || seen.has(token)) return;
+      seen.add(token);
+      unique.push({ reservation_token:token, draft_key:String(item?.draft_key || '').trim() });
+    });
+    if(unique.length) localStorage.setItem(STANDALONE_TSR_RESERVATION_RELEASE_KEY, JSON.stringify(unique));
+    else localStorage.removeItem(STANDALONE_TSR_RESERVATION_RELEASE_KEY);
+  }catch(err){ console.warn('[Offline TSR] Unable to persist reservation release queue', err); }
+}
+async function releaseTSRReservationRemote(item){
+  const token = normalizeTSRReservationToken(item?.reservation_token || item?.payload?.reservation_token || item?.payload?.tsr_reservation_token);
+  if(!token) return { skipped:true, reason:'missing_reservation_token' };
+  const headers = { 'Content-Type':'application/json', Accept:'application/json' };
+  try{
+    const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+    if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+  }catch(tokenError){}
+  const response = await fetch('/release_tsr_number_reservation', {
+    method:'POST', credentials:'same-origin', cache:'no-store', headers,
+    body:JSON.stringify({
+      reservation_token:token,
+      draft_key:String(item?.draft_key || item?.payload?._draft_id || item?.id || '').trim()
+    })
+  });
+  const result = await response.json().catch(() => ({}));
+  if(!response.ok || result.status !== 'success') throw new Error(result.message || `TSR reservation release failed (${response.status}).`);
+  return result;
+}
+function queueTSRReservationRelease(item){
+  const pending = readTSRReservationReleaseQueue();
+  pending.push({
+    reservation_token:item?.reservation_token || item?.payload?.reservation_token || item?.payload?.tsr_reservation_token,
+    draft_key:item?.draft_key || item?.payload?._draft_id || item?.id || ''
+  });
+  writeTSRReservationReleaseQueue(pending);
+}
+async function flushTSRReservationReleaseQueue(){
+  if(!navigator.onLine) return { skipped:true, reason:'offline' };
+  const pending = readTSRReservationReleaseQueue();
+  if(!pending.length) return { released:0 };
+  const remaining = []; let released = 0;
+  for(const item of pending){
+    try{ await releaseTSRReservationRemote(item); released += 1; }
+    catch(err){ remaining.push(item); console.warn('[Offline TSR] Pending reservation release failed', err); }
+  }
+  writeTSRReservationReleaseQueue(remaining);
+  return { released, remaining:remaining.length };
 }
 
 async function flushStandaloneTSRServerDraftDeletes(){
@@ -3701,6 +3769,7 @@ async function mergeServerStandaloneTSRDrafts(){
         service_date: remote.service_date || payload['tsr-service-date'] || '',
         client_name: remote.client_name || payload['tsr-customer-name'] || '',
         tsr_number: remote.tsr_number || payload['tsr-number'] || '',
+        reservation_token: remote.reservation_token || payload.reservation_token || payload.tsr_reservation_token || '',
         payload,
         updated_at: remote.updated_at || remote.device_updated_at || new Date().toISOString(),
         created_at: remote.created_at || remote.updated_at || new Date().toISOString(),
@@ -3819,7 +3888,10 @@ function applyStandaloneTSRDraftData(data){
   standaloneTSRAutosavePaused = true;
   try{
     standaloneCurrentDraftId = String(data._draft_id || data.draft_id || standaloneCurrentDraftId || '').trim();
+    standaloneTSRReservationToken = normalizeTSRReservationToken(data.reservation_token || data.tsr_reservation_token || '');
     document.querySelectorAll('.tsr-field').forEach(el=>{ if(data[el.id]!==undefined) el.value=data[el.id]; });
+    const numberField = document.getElementById('tsr-number');
+    if(numberField && data['tsr-number'] === undefined && data.tsr_number === undefined) numberField.value = '';
     const storedScheduleId = data.selectedScheduleId || data.schedule_id || data.selectedSchedule?.id || '';
     selectedStandaloneScheduleSnapshot=data.selectedSchedule ? Object.assign({}, data.selectedSchedule) : null;
 
@@ -4090,6 +4162,18 @@ async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = 
 async function clearStandaloneTSRDraftLocally(id=null){
   const targetId = id || standaloneCurrentDraftId || OFFLINE_TSR_ACTIVE_DRAFT_ID;
   const serverDelete = await deleteStandaloneTSRDraftOnServer(targetId);
+  const reservationToken = normalizeTSRReservationToken(standaloneTSRReservationToken);
+  const activeDraftId = String(standaloneCurrentDraftId || '').trim();
+  const clearingActiveDraft = !id || (activeDraftId && String(targetId) === activeDraftId);
+  if(reservationToken && clearingActiveDraft){
+    const reservationItem = { reservation_token:reservationToken, draft_key:targetId };
+    if(navigator.onLine){
+      try{ await releaseTSRReservationRemote(reservationItem); }
+      catch(err){ queueTSRReservationRelease(reservationItem); }
+    }else{
+      queueTSRReservationRelease(reservationItem);
+    }
+  }
   await clearStandaloneTSRDraftFromIndexedDB(id);
   return serverDelete;
 }
@@ -5086,6 +5170,9 @@ async function prepareOfflineTSRQueueItemBlobs(queueItem, pdfBlob, attachments){
   preparedItem.payload = sanitizeTSRPayloadForTransport(payload);
   preparedItem.submission_token = ensureTSRSubmissionToken(payload.submission_token || preparedItem.submission_token || preparedItem.id);
   preparedItem.payload.submission_token = preparedItem.submission_token;
+  preparedItem.reservation_token = ensureTSRReservationToken(payload.reservation_token || payload.tsr_reservation_token || preparedItem.reservation_token || preparedItem.id);
+  preparedItem.payload.reservation_token = preparedItem.reservation_token;
+  preparedItem.payload.tsr_reservation_token = preparedItem.reservation_token;
   return preparedItem;
 }
 
@@ -5119,6 +5206,8 @@ function sanitizeTSRPayloadForTransport(payload){
   delete cleanPayload.pdf_data_url;
   delete cleanPayload.pdf_blob;
   cleanPayload.submission_token = ensureTSRSubmissionToken(cleanPayload.submission_token);
+  cleanPayload.reservation_token = ensureTSRReservationToken(cleanPayload.reservation_token || cleanPayload.tsr_reservation_token);
+  cleanPayload.tsr_reservation_token = cleanPayload.reservation_token;
   return cleanPayload;
 }
 
@@ -6118,10 +6207,16 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', 
     : transportPayload;
   const submissionToken = ensureTSRSubmissionToken(persistedQueuePayload.submission_token || options.submissionToken);
   persistedQueuePayload.submission_token = submissionToken;
+  const reservationToken = ensureTSRReservationToken(
+    persistedQueuePayload.reservation_token || persistedQueuePayload.tsr_reservation_token || options.reservationToken
+  );
+  persistedQueuePayload.reservation_token = reservationToken;
+  persistedQueuePayload.tsr_reservation_token = reservationToken;
   persistedQueuePayload.pending_schedule_token = payload?.pending_schedule_token || selectedSchedule?.pending_schedule_token || '';
   let queueItem = {
     id: `offline-tsr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     submission_token: submissionToken,
+    reservation_token: reservationToken,
     status: 'pending',
     reason,
     queued_at: queuedAt,
@@ -6370,8 +6465,10 @@ async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
 
   const payload = sanitizeTSRPayloadForTransport(Object.assign({}, item?.payload || {}));
   payload.submission_token = ensureTSRSubmissionToken(item?.submission_token || payload.submission_token || item?.id);
+  payload.reservation_token = ensureTSRReservationToken(item?.reservation_token || payload.reservation_token || payload.tsr_reservation_token || item?.id);
+  payload.tsr_reservation_token = payload.reservation_token;
   const isVectorQueue = String(payload._tsr_form_version || '').toLowerCase() === 'vector-pdf-v2';
-  const finalizedPayload = Object.assign({}, payload, {
+  let finalizedPayload = Object.assign({}, payload, {
     // item.schedule_id only ever holds a real numeric id now. The old fallback chain reached
     // for selectedScheduleId, which is the composite runtime picker id, and that is exactly
     // what the server rejected.
@@ -6386,10 +6483,17 @@ async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
   if(!result?.submission_id){
     await patchOfflineTSRQueueItem(item.id, { sync_phase:'assigning_tsr_number', last_error:'' });
     if(isVectorQueue){
-      const serviceDate = finalizedPayload['tsr-service-date'] || finalizedPayload.service_date || finalizedPayload.selectedSchedule?.date_iso || todayISO();
-      const finalNumber = await fetchNextOnlineTSRNumber(serviceDate);
-      finalizedPayload['tsr-number'] = finalNumber;
-      finalizedPayload.tsr_number = finalNumber;
+      const reservedPayload = await reserveTSRNumberForDraft(Object.assign({}, finalizedPayload, {
+        reservation_token:payload.reservation_token,
+        tsr_reservation_token:payload.reservation_token,
+        _draft_id:payload._draft_id || item?.draft_key || item?.id
+      }));
+      finalizedPayload = Object.assign({}, finalizedPayload, reservedPayload);
+      await patchOfflineTSRQueueItem(item.id, {
+        reservation_token:finalizedPayload.reservation_token,
+        payload:finalizedPayload,
+        tsr_number:finalizedPayload['tsr-number'] || ''
+      });
     }else{
       delete finalizedPayload['tsr-number'];
       delete finalizedPayload.tsr_number;
@@ -6699,6 +6803,14 @@ async function removeOfflineTSRQueueItem(itemId){
     return;
   }
 
+  if(item.reservation_token || item.payload?.reservation_token || item.payload?.tsr_reservation_token){
+    if(navigator.onLine){
+      try{ await releaseTSRReservationRemote(item); }
+      catch(err){ queueTSRReservationRelease(item); }
+    }else{
+      queueTSRReservationRelease(item);
+    }
+  }
   await deleteOfflineTSRBlobRecordsForQueueItem(item);
   const updatedQueue = queue.filter(entry => entry.id !== itemId);
   await writeOfflineTSRQueueAsync(updatedQueue);
@@ -6719,15 +6831,17 @@ async function verifyOfflineTSRQueuePersistence(){
 }
 
 function scheduleOfflineTSRAutoSync(){
+  void flushTSRReservationReleaseQueue();
   window.addEventListener('online', () => {
     clearOfflineTSRSyncRetryTimer();
+    void flushTSRReservationReleaseQueue();
     refreshOfflineTSRQueueStore().then(() => {
       updateOfflineTSRStatusIntelligence();
       showTSRStatus('Internet connection restored. Checking pending offline TSR queue...', 'info');
       return syncOfflineTSRQueue({ silent:false });
     }).then(() => {
-      invalidateTSRNumberPreview();
-      void refreshTSRNumberPreviewFromServer('', getEngineerInitialsSafe());
+      // A reconnect may sync a pending reservation, but it must never recalculate a displayed
+      // TSR number locally. The server draft/queue response is the only source of assignment.
     });
     void mergeServerStandaloneTSRDrafts().then(() => renderStandaloneTSRDraftPanel());
   });
@@ -7032,12 +7146,15 @@ async function beginStandaloneTSRFinalPreview(data){
       // has handled this since 709106c; this is the TSR side catching up.
       const buildOfflineShapedPayload = async () => {
         const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
-        return Object.assign({}, data || {}, {
+        const offlinePayload = Object.assign({}, data || {}, {
           schedule_id: getStandaloneScheduleRealId(selectedSchedule) || data?.schedule_id || '',
           pending_schedule_token: selectedSchedule?.pending_schedule_token || data?.pending_schedule_token || '',
           selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
           completion_scope: data?.completion_scope || await chooseTSRCompletionScope(selectedSchedule)
         });
+        offlinePayload.reservation_token = ensureTSRReservationToken(offlinePayload.reservation_token || offlinePayload.tsr_reservation_token || standaloneTSRReservationToken);
+        offlinePayload.tsr_reservation_token = offlinePayload.reservation_token;
+        return offlinePayload;
       };
 
       if(navigator.onLine){
@@ -7055,10 +7172,21 @@ async function beginStandaloneTSRFinalPreview(data){
         payload = await buildOfflineShapedPayload();
       }
     }
+    const authoritativeNumber = String(payload?.['tsr-number'] || payload?.tsr_number || '').trim();
+    const reservationToken = normalizeTSRReservationToken(payload?.reservation_token || payload?.tsr_reservation_token);
+    if(!isRevision && (!authoritativeNumber || !reservationToken)){
+      const draftResult = await saveStandaloneTSRDraftLocally(payload);
+      showTSRFinalSaveRecovery(
+        'This TSR is still Pending. Connect to the server once to reserve its authoritative number; your editable draft remains safe on this device.',
+        null,
+        draftResult?.failed || draftResult?.source === 'none' ? 'danger' : 'warning'
+      );
+      return;
+    }
     payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
     const pdfPackage = await buildStandaloneTSRPDFBlobForUpload(payload);
     const offlineNote = (!navigator.onLine || queuedForWeakSignal) && !isRevision
-      ? 'Offline mode: this exact PDF will be queued now. The TSR number may be reconfirmed during sync.'
+      ? 'Offline mode: this exact reserved-number PDF will be queued now.'
       : '';
     await showFinalTSRPreview(payload, pdfPackage, { isRevision, revisionReason, note: offlineNote });
   }catch(err){
@@ -8894,10 +9022,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>{
     saveStandaloneTSRDraft(true);
   }));
-  const serviceDateField=document.getElementById('tsr-service-date');
-  if(serviceDateField){
-    serviceDateField.addEventListener('change',()=>generateTSRNumber());
-  }
   const complaintField=document.getElementById('tsr-complaint');
   if(complaintField) complaintField.addEventListener('input',()=>queueInlineTSRKnowledgeSearch('complaint'));
   const actionField=document.getElementById('tsr-action-input');

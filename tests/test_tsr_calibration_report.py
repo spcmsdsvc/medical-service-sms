@@ -146,6 +146,12 @@ context.deleteOfflineTSRBlobRecord = async id => { deletedBlobIds.push(id); reco
 context.addTSRDocument = label => { addedDocuments += 1; documents.value = documents.value ? `${documents.value},${label}` : label; };
 context.removeTSRDocument = label => { removedDocuments += 1; documents.value = documents.value.split(',').filter(item => item !== label).join(','); };
 context.collectTSRData = () => currentTSR;
+context.reserveTSRNumberForDraft = async payload => Object.assign({}, payload, {
+  'tsr-number':payload?.['tsr-number'] || '20260920-01-ENG',
+  tsr_number:payload?.tsr_number || payload?.['tsr-number'] || '20260920-01-ENG',
+  reservation_token:payload?.reservation_token || 'calibration-test-reservation-001',
+  tsr_reservation_token:payload?.tsr_reservation_token || payload?.reservation_token || 'calibration-test-reservation-001'
+});
 context.getSelectedStandaloneSchedule = () => selectedSchedule;
 context.showTSRStatus = message => { finalStatus = String(message || ''); };
 context.saveStandaloneTSRDraft = async () => finalPersisted;
@@ -497,6 +503,10 @@ context.CalibrationReportConfig = {
 };
 context.getTSRAttachmentCapacity = () => ({ total:0, max:10 });
 context.collectTSRData = () => ({});
+context.reserveTSRNumberForDraft = async payload => Object.assign({}, payload, {
+  'tsr-number':'20260920-01-ENG', tsr_number:'20260920-01-ENG',
+  reservation_token:'calibration-test-reservation-001', tsr_reservation_token:'calibration-test-reservation-001'
+});
 context.getSelectedStandaloneSchedule = () => ({ client_name:"Scheduled Client", client_address:"Scheduled Address", client_contact:{ phone:"0917-schedule", email:"schedule@example.test" }, product_name:"Scheduled Model", product_id:"SCHEDULED-1", date_iso:"2026-08-19", serviced_by:"Scheduled Engineer" });
 context.showTSRStatus = () => {};
 context.offlineTSRConfirm = async () => true;
@@ -790,8 +800,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=9", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=28", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=28'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=29", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=29'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1076,7 +1086,13 @@ const context = {
   offlineTSRConfirm: async () => true,
   showTSRStatus: () => {},
   getSelectedStandaloneSchedule: () => schedule,
-  collectTSRData: () => currentTSR
+  collectTSRData: () => currentTSR,
+  reserveTSRNumberForDraft: async payload => Object.assign({}, payload, {
+    'tsr-number':payload?.['tsr-number'] || '20260920-01-ENG',
+    tsr_number:payload?.tsr_number || payload?.['tsr-number'] || '20260920-01-ENG',
+    reservation_token:payload?.reservation_token || 'calibration-test-reservation-001',
+    tsr_reservation_token:payload?.tsr_reservation_token || payload?.reservation_token || 'calibration-test-reservation-001'
+  })
 };
 context.window = context; context.self = context; context.globalThis = context;
 vm.createContext(context);
@@ -1362,6 +1378,12 @@ const context = {
   CalibrationReportConfig: { certificateCatalog:JSON.parse(fs.readFileSync(path.join(root, 'static', 'templates', 'calibration-certificate', 'calibration-certificate-catalog.json'), 'utf8')) },
   fetch: async url => { rawFetchCalls.push(String(url)); throw new Error('raw certificate fetch should never run'); },
   collectTSRData: () => currentTSR,
+  reserveTSRNumberForDraft: async payload => Object.assign({}, payload, {
+    'tsr-number':payload?.['tsr-number'] || '20260920-01-ENG',
+    tsr_number:payload?.tsr_number || payload?.['tsr-number'] || '20260920-01-ENG',
+    reservation_token:payload?.reservation_token || 'calibration-test-reservation-001',
+    tsr_reservation_token:payload?.tsr_reservation_token || payload?.reservation_token || 'calibration-test-reservation-001'
+  }),
   getEngineerInitialsSafe: () => 'JA',
   showTSRStatus: (message, tone) => statuses.push({ message, tone }),
   getSelectedStandaloneSchedule: () => null,
@@ -1439,7 +1461,7 @@ function report(overrides = {}) {
   context.calibrationReport.apply({ status:'draft' });
   currentTSR = { calibration_report:context.calibrationReport.collect() };
   const incompleteBuilt = await context.calibrationReport.generateCertificateSample();
-  const incompleteSample = incompleteBuilt && incompleteBuilt.filename === 'SAMPLE_Calibration_Certificate.pdf' && incompleteBuilt.missing.length === 8 && downloads.length === 2 && statuses.at(-1)?.tone === 'warning';
+  const incompleteSample = incompleteBuilt && incompleteBuilt.filename === 'SAMPLE_Calibration_Certificate.pdf' && incompleteBuilt.missing.length === 7 && downloads.length === 2 && statuses.at(-1)?.tone === 'warning';
 
   const savedPdfLib = context.PDFLib;
   context.PDFLib = null;
@@ -1482,7 +1504,11 @@ function run(catalog){
     CalibrationReportConfig:{ certificateCatalog:catalog },
     document:{ querySelector:() => null, querySelectorAll:() => [], createElement:() => ({}), addEventListener:() => {} },
     showTSRStatus:(message, tone) => statuses.push({ message:String(message || ''), tone }),
-    collectTSRData:() => ({})
+    collectTSRData:() => ({}),
+    reserveTSRNumberForDraft: async payload => Object.assign({}, payload, {
+      'tsr-number':'20260920-01-ENG', tsr_number:'20260920-01-ENG',
+      reservation_token:'calibration-test-reservation-001', tsr_reservation_token:'calibration-test-reservation-001'
+    })
   };
   context.window = context; context.self = context; context.globalThis = context;
   vm.createContext(context);

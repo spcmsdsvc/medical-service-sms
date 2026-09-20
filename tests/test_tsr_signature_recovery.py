@@ -654,6 +654,9 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             self.assertNotIn("acknowledged", persisted["signatures"])
             self.assertEqual(persisted["signatures"]["serviced"], payload["signatures"]["serviced"])
             self.assertEqual(persisted["_generated_pdf_filename"], "signed-online.pdf")
+            self.assertIsNone(app_module.TsrNumberReservation.query.filter_by(
+                reservation_token=response.get_json()["reservation_token"]
+            ).first())
 
             replay = self.client.post("/save_offline_tsr_online", json=payload)
             self.assertEqual(replay.status_code, 200, replay.get_json())
