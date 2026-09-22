@@ -26,6 +26,7 @@
   var EXPOSURE_CURRENT_UNITS = ['mA','mAs'];
   var CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8;
   var DEFAULT_MANUFACTURER = 'Shimadzu';
+  var CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH = 40;
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   var PDF_MIME = 'application/pdf';
   var EXACT_FIT_CAPACITIES = {
@@ -40,6 +41,7 @@
   var CERTIFICATE_CATALOG = CONFIG.certificateCatalog && typeof CONFIG.certificateCatalog === 'object' ? CONFIG.certificateCatalog : {};
   var CERTIFICATE_EQUIPMENT_NAMES = Array.isArray(CERTIFICATE_CATALOG.equipment_names) ? CERTIFICATE_CATALOG.equipment_names.map(String) : [];
   var CERTIFICATE_MODELS = Array.isArray(CERTIFICATE_CATALOG.models) ? CERTIFICATE_CATALOG.models.map(String) : [];
+  var CERTIFICATE_APPROVED_MODELS = Array.isArray(CERTIFICATE_CATALOG.approved_models) ? CERTIFICATE_CATALOG.approved_models : [];
   var CERTIFICATE_CATALOG_ERROR = '';
   var CERTIFICATE_CATALOG_AVAILABLE = false;
   var EXACT_FIT_FIELD_PATHS = [
@@ -82,7 +84,7 @@
     if(!catalog || typeof catalog !== 'object' || catalog.available === false) return 'The Calibration Certificate catalog is unavailable.';
     var names = catalog.equipment_names; var models = catalog.models;
     if(!Array.isArray(names) || names.length !== 6) return 'The Calibration Certificate catalog has an invalid Equipment Name list.';
-    if(!Array.isArray(models) || models.length !== 47) return 'The Calibration Certificate catalog has an invalid Equipment Model list.';
+    if(!Array.isArray(models) || models.length < 47) return 'The Calibration Certificate catalog has an invalid Equipment Model list.';
     var values = names.concat(models);
     if(values.some(function(value){ return typeof value !== 'string' || !normalizeCatalogText(value) || normalizeCatalogText(value) !== value; })) return 'The Calibration Certificate catalog contains an invalid value.';
     var normalized = values.map(normalizeCertificateModel);
@@ -91,6 +93,20 @@
   }
   CERTIFICATE_CATALOG_ERROR = validateCertificateCatalog(CERTIFICATE_CATALOG);
   CERTIFICATE_CATALOG_AVAILABLE = !CERTIFICATE_CATALOG_ERROR;
+  function certificateModelCatalogId(value){
+    var key = normalizeCertificateModel(value);
+    var item = CERTIFICATE_APPROVED_MODELS.find(function(candidate){ return candidate && String(candidate.normalized_model_key || '') === key; });
+    return item && item.id ? String(item.id) : '';
+  }
+  function temporaryModelValidation(value){
+    var raw = String(value === undefined || value === null ? '' : value);
+    if(raw !== raw.trim()) return 'Enter the temporary model without leading or trailing whitespace.';
+    if(!raw) return 'Enter a temporary model name before opting in.';
+    if(raw.length > CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH) return 'Temporary model names must be 40 characters or fewer.';
+    if(/[\r\n\t]/.test(raw)) return 'Temporary model names must be a single line without tabs.';
+    if(!normalizeCertificateModel(raw)) return 'Temporary model names must contain at least one letter or number.';
+    return '';
+  }
   function damerauLevenshtein(first, second){
     first = String(first || ''); second = String(second || '');
     if(first === second) return 0;
@@ -141,7 +157,21 @@
     if(!report || typeof report !== 'object') return { status:'empty', value:'' };
     report.certificate = report.certificate && typeof report.certificate === 'object' ? report.certificate : {};
     var match = certificateModelMatch(report.machine?.model);
-    report.certificate.equipment_model = match.value || '';
+    var raw = String(report.machine?.model === undefined || report.machine?.model === null ? '' : report.machine.model);
+    var temporary = String(report.certificate.model_source || '').toLowerCase() === 'temporary';
+    if(match.status === 'exact' || match.status === 'accepted'){
+      report.certificate.equipment_model = match.value || '';
+      report.certificate.model_source = 'catalog';
+      report.certificate.model_catalog_id = certificateModelCatalogId(match.value);
+    }else if(temporary){
+      report.certificate.model_source = 'temporary';
+      report.certificate.model_catalog_id = '';
+      report.certificate.equipment_model = temporaryModelValidation(raw) ? '' : raw.trim();
+    }else{
+      report.certificate.equipment_model = '';
+      report.certificate.model_source = 'catalog';
+      report.certificate.model_catalog_id = '';
+    }
     return match;
   }
 
@@ -178,7 +208,7 @@
       focal_sizes: { small:'0.6', large:'1.2' },
       performance_results: ['', ''],
       signature: { name:'', image:'' },
-      certificate: { bsid:'', equipment_model:'' },
+      certificate: { bsid:'', equipment_model:'', model_source:'catalog', model_catalog_id:'' },
       certificate_approval: { status:'queued', submission_id:'', revision_no:0, remarks:'', approver_name:'', approver_title:'', approved_at:'', signed_url:'', error:'' },
       auto_fill: { applied:false, fields:[] },
       generated: { fingerprint:'', attachment_id:'', blob_id:'', filename:'', size:0 },
@@ -195,7 +225,13 @@
     });
     if(!String(base.machine.manufacturer || '').trim()) base.machine.manufacturer = DEFAULT_MANUFACTURER;
     var rawCertificate = raw.certificate && typeof raw.certificate === 'object' ? raw.certificate : {};
-    base.certificate = { bsid:String(rawCertificate.bsid || '').replace(/[\r\n]/g,'').trim().slice(0,40), equipment_model:'' };
+    var rawModelSource = String(rawCertificate.model_source || '').toLowerCase() === 'temporary' ? 'temporary' : 'catalog';
+    base.certificate = {
+      bsid:String(rawCertificate.bsid || '').replace(/[\r\n]/g,'').trim().slice(0,40),
+      equipment_model:rawModelSource === 'temporary' ? String(rawCertificate.equipment_model || raw.machine?.model || '').trim().slice(0,40) : '',
+      model_source:rawModelSource,
+      model_catalog_id:rawModelSource === 'catalog' ? String(rawCertificate.model_catalog_id || '') : ''
+    };
     var rawApproval = raw.certificate_approval && typeof raw.certificate_approval === 'object' ? raw.certificate_approval : {};
     base.certificate_approval = Object.assign({}, base.certificate_approval, rawApproval);
     var rawCleanup = raw.generated_cleanup && typeof raw.generated_cleanup === 'object' ? raw.generated_cleanup : {};
@@ -389,7 +425,7 @@
   }
   function modelMarkup(){
     var options = CERTIFICATE_MODELS.map(function(model){ return '<option value="' + escapeHtml(model) + '"></option>'; }).join('');
-    return '<div class="calibration-report-field calibration-report-catalog-field"><label for="calibration-report-model">2.3 Model</label><input id="calibration-report-model" data-cr-field="machine.model" list="calibration-report-model-catalog" autocomplete="off" aria-describedby="calibration-report-model-match"><datalist id="calibration-report-model-catalog">' + options + '</datalist><div id="calibration-report-model-match" class="calibration-report-model-match" role="status" aria-live="polite"></div></div>';
+    return '<div class="calibration-report-field calibration-report-catalog-field"><label for="calibration-report-model">2.3 Model</label><input id="calibration-report-model" data-cr-field="machine.model" list="calibration-report-model-catalog" autocomplete="off" maxlength="40" aria-describedby="calibration-report-model-match"><datalist id="calibration-report-model-catalog">' + options + '</datalist><div id="calibration-report-model-match" class="calibration-report-model-match" role="status" aria-live="polite"></div></div>';
   }
 
   function checkRows(kind, source){
@@ -507,6 +543,8 @@
   function renderModelMatch(){
     var element = q('#calibration-report-model-match'); if(!element) return;
     var match = certificateModelMatch(state?.machine?.model);
+    var rawModel = String(state?.machine?.model === undefined || state?.machine?.model === null ? '' : state.machine.model);
+    var temporarySelected = String(state?.certificate?.model_source || '').toLowerCase() === 'temporary';
     element.className = 'calibration-report-model-match';
     if(match.status === 'exact' || match.status === 'accepted'){
       element.classList.add('is-accepted');
@@ -521,9 +559,38 @@
     if(match.status === 'empty'){
       element.classList.add('is-empty'); element.textContent = 'Enter a model to match the certificate catalog.'; return;
     }
+    if(temporarySelected){
+      var temporaryError = temporaryModelValidation(rawModel);
+      element.classList.add('is-warning');
+      if(temporaryError){
+        element.textContent = temporaryError;
+      }else{
+        element.innerHTML = '<span>Temporary model selected: <strong>' + escapeHtml(rawModel.trim()) + '</strong></span><small>Certificate approval waits for model approval. An assigned Calibration approver must approve this report before the model enters the shared catalog.</small><button type="button" class="calibration-report-model-suggestion" data-cr-model-clear-temporary="true">Clear temporary selection</button>';
+        var clearButton = element.querySelector?.('[data-cr-model-clear-temporary]');
+        if(clearButton) clearButton.addEventListener('click', function(){
+          state.certificate.model_source = 'catalog';
+          state.certificate.model_catalog_id = '';
+          state.certificate.equipment_model = '';
+          state.status = 'draft'; state.updated_at = new Date().toISOString();
+          invalidateGenerated(); renderCard(); scheduleDraftSave(); renderModelMatch();
+        });
+      }
+      return;
+    }
     element.classList.add('is-warning');
     var suggestionButtons = (match.suggestions || []).map(function(model){ return '<button type="button" class="calibration-report-model-suggestion" data-cr-model-suggestion="' + escapeHtml(model) + '">' + escapeHtml(model) + '</button>'; }).join('');
-    element.innerHTML = '<span>Select an exact catalog model before final save.</span><small>Closest suggestions:</small><div class="calibration-report-model-suggestions">' + suggestionButtons + '</div>';
+    var temporaryButton = temporaryModelValidation(rawModel) ? '' : '<button type="button" class="calibration-report-model-suggestion" data-cr-model-temporary="true">Use as temporary model</button>';
+    element.innerHTML = '<span>Select an exact catalog model before final save, or opt in to a temporary model.</span><small>Closest suggestions:</small><div class="calibration-report-model-suggestions">' + suggestionButtons + temporaryButton + '</div>';
+    var temporaryAction = element.querySelector?.('[data-cr-model-temporary]');
+    if(temporaryAction) temporaryAction.addEventListener('click', function(){
+      var validationError = temporaryModelValidation(rawModel.trim());
+      if(validationError){ element.textContent = validationError; return; }
+      state.certificate.model_source = 'temporary';
+      state.certificate.model_catalog_id = '';
+      state.certificate.equipment_model = rawModel.trim();
+      state.status = 'draft'; state.updated_at = new Date().toISOString();
+      invalidateGenerated(); renderCard(); scheduleDraftSave(); renderModelMatch();
+    });
     qa('[data-cr-model-suggestion]').forEach(function(button){ button.addEventListener('click', function(){ var input = q('#calibration-report-model'); if(input){ input.value = button.getAttribute('data-cr-model-suggestion') || ''; input.dispatchEvent(new Event('input', { bubbles:true })); input.focus(); } }); });
   }
 
@@ -553,7 +620,16 @@
     if(element.matches('[data-cr-focal-size]')){ var focalSize = String(element.getAttribute('data-cr-focal-size')); state.focal_sizes[focalSize] = element.value; }
     if(element.matches('[data-cr-exposure]')){ var exposure = String(element.getAttribute('data-cr-exposure')).split(':'); if(state.exposure?.[exposure[0]]?.[Number(exposure[1])]) state.exposure[exposure[0]][Number(exposure[1])][EXPOSURE_KEYS[Number(exposure[2])]] = element.value; }
     if(element.matches('[data-cr-performance]')) state.performance_results[Number(element.getAttribute('data-cr-performance'))] = element.value;
-    if(element.matches('[data-cr-field="machine.model"]')) syncCertificateModel(state);
+    if(element.matches('[data-cr-field="machine.model"]')){
+      var enteredModel = String(element.value || '').trim();
+      var priorTemporaryModel = String(state.certificate?.equipment_model || '').trim();
+      if(String(state.certificate?.model_source || '') === 'temporary' && enteredModel !== priorTemporaryModel){
+        state.certificate.model_source = 'catalog';
+        state.certificate.model_catalog_id = '';
+        state.certificate.equipment_model = '';
+      }
+      syncCertificateModel(state);
+    }
     if(element.matches('[data-cr-field="machine.modality"]')) syncCertificateModel(state);
     state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); updateSignatureStatus(); renderCertificateControls(); renderCard(); syncAutoDocument(); scheduleDraftSave();
     renderModelMatch();
@@ -787,10 +863,19 @@
       return { ok:false, missing:[{ path:'machine.modality', label:'Approved Equipment Name' }], message:'Select an approved Equipment Name before saving the final report.' };
     }
     var match = certificateModelMatch(report.machine?.model);
+    if(String(report.certificate?.model_source || '') === 'temporary'){
+      var temporaryError = temporaryModelValidation(String(report.machine?.model || ''));
+      if(temporaryError){
+        return { ok:false, missing:[{ path:'machine.model', label:'Valid temporary Equipment Model' }], match:match, message:temporaryError };
+      }
+      if(match.status !== 'exact' && match.status !== 'accepted'){
+        return { ok:true, missing:[], match:match, model_source:'temporary' };
+      }
+    }
     if(match.status !== 'exact' && match.status !== 'accepted'){
       return { ok:false, missing:[{ path:'machine.model', label:'Exact catalog Equipment Model' }], match:match, message:'Select an exact catalog Equipment Model before saving the final report.' + (match.suggestions?.length ? ' Closest suggestions: ' + match.suggestions.join(', ') + '.' : '') };
     }
-    return { ok:true, missing:[], match:match };
+    return { ok:true, missing:[], match:match, model_source:String(report.certificate?.model_source || 'catalog') };
   }
   function focusMissing(missing, options){
     if(options?.explicit !== true) return false;
@@ -1248,6 +1333,7 @@
     var certStatusKey = String(cert.status || '').trim().toLowerCase().replace(/\s+/g, '_');
     var certStatus = 'Certificate queued until TSR sync.';
     if(!String(state.certificate?.bsid || '').trim()) certStatus = 'Certificate not ready: update Product Inventory with a BSID.';
+    else if(String(state.certificate?.model_source || '') === 'temporary') certStatus = 'Certificate approval waits for model approval. The exact temporary model enters the shared catalog only after an assigned Calibration approver approves this report and certificate.';
     else if(certStatusKey === 'returned') certStatus = 'Certificate returned for correction: ' + (cert.remarks || 'See Approval Center.');
     else if(certStatusKey === 'approved') certStatus = 'Certificate approved by ' + (cert.approver_name || 'approver') + (cert.approved_at ? ' on ' + cert.approved_at : '') + '.';
     else if(certStatusKey === 'pending') certStatus = 'Certificate pending approval.';
@@ -1333,6 +1419,6 @@
   }
   function ensureEditor(){ if(!editorBuilt) buildEditor(); }
 
-  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice() }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
+  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
   document.addEventListener('DOMContentLoaded', function(){ ensureEditor(); renderCard(); q('#calibration-report-close')?.addEventListener('click', close); q('#calibration-report-save')?.addEventListener('click', saveReportDraft); q('#calibration-report-generate')?.addEventListener('click', generateSample); q('#calibration-report-certificate-generate')?.addEventListener('click', generateCertificateSample); q('#calibration-report-final-save')?.addEventListener('click', saveFinalReport); q('#calibration-report-download')?.addEventListener('click', download); q('#calibration-report-clear')?.addEventListener('click', clearForm); q('#calibration-report-create-btn')?.addEventListener('click', createReport); q('#calibration-report-toolbar-remove')?.addEventListener('click', removeReport); document.addEventListener('keydown', handleDialogKeydown); });
 })();

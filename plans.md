@@ -1,5 +1,114 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Report Temporary Model Approval
+
+**Status:** Executed — uncommitted
+**Approved:** 2026-09-22 — the owner approved the complete package in the implementation request.
+**Execution authorized:** 2026-09-22 — the owner explicitly authorized the sole implementation worker to own and execute this package in the current workspace.
+**Detailed:** 2026-09-22.
+
+### Summary
+
+Allow an engineer to enter an unlisted Equipment Model explicitly as a temporary model. The
+Calibration Report and TSR may be saved and queued, but the certificate remains Pending until
+an existing routed Calibration approver approves it. That one approval promotes the exact model
+into the shared approved model list for future reports and releases the signed certificate and
+normal delivery workflow. The committed 47-model catalog remains unchanged as the canonical base
+catalog.
+
+### Scope and decisions
+
+1. Add an additive `calibration_certificate_model` table in `app.py` with the exact model name,
+   normalized model key, `Pending`/`Approved`/`Rejected` status, requester and approver IDs,
+   requested/approved/rejected/updated timestamps, return remarks, and a unique normalized key.
+   Add `model_source` and `model_catalog_id` to `CalibrationCertificateApproval`. Keep
+   `calibration_certificate_catalog()` strict at exactly the existing 47 models; add a separate
+   effective-catalog helper that appends only approved database models.
+2. Update `static/js/app-calibration-report.js` and `templates/offline_tsr.html` so the canonical
+   datalist remains available, an unmatched model shows the explicit inline `Use as temporary
+   model` action, and final save requires that opt-in. Preserve the exact single-line model name
+   (maximum 40 characters) and its source/id through state normalization, IndexedDB/offline
+   queueing, TSR synchronization, reload, and correction. Clear temporary state when the engineer
+   changes back to a catalog model. Serve approved dynamic models on the next online load and
+   display that model approval is required before certificate approval.
+3. In `submit_calibration_certificate_for_submission()` and its mapping helpers, accept an
+   unlisted model only when the explicit temporary marker passes server-side length, whitespace,
+   and normalized-key validation. Reuse or create one Pending global model row by normalized key,
+   preserve the raw snapshot in the normal certificate approval, retain the unsigned review
+   artifact, and keep signed/no-signature/delivery fields empty while the approval is Pending.
+   Continue rejecting unlisted models without opt-in.
+4. Extend `calibration_certificate_approval_to_dict()` and the existing Approval Center module
+   in `templates/approvals.html` with the exact temporary name/status and an explicit message that
+   approving the report adds that model to the shared catalog. Reuse the existing routed
+   `calibration_certificate` permission. In the existing approve route, promote the model and
+   approve the report atomically. In the existing return route, require remarks, mark the model
+   Rejected without promotion, and retain prior decisions in the universal audit history so a
+   later submission can create a new Pending decision for the same normalized name.
+5. Bump the Calibration Report script query from v29 to v30 and the service-worker shell from
+   v172 to `v173-calibration-model-approval`. Add a user-facing release entry for engineers,
+   approvers, and admins. Update this plan and `changes.md` with truthful implementation and
+   verification results.
+
+### Numbered execution steps
+
+1. Inspect the current dirty worktree, all applicable `AGENTS.md` files, `changes.md`, current
+   plan records, the strict catalog loader, approval schema/migration helpers, offline report
+   state normalization, TSR submission path, approval serializer/routes, Approval Center template,
+   service-worker shell, release manifest, and focused tests. Preserve `scheduler.db`, handoff
+   files, `.claude/`, `output/`, `tmp/`, and unrelated pre-existing changes.
+2. In `app.py`, add `CalibrationCertificateModel` beside the existing certificate approval model;
+   add the two approval columns and additive schema/index migration helpers; add temporary-model
+   validation, effective-catalog, model-resolution, and normalized get-or-create helpers near the
+   existing catalog matcher. Done means the strict loader still returns the unchanged 47-model
+   payload while effective matching can include approved rows and duplicate normalized requests
+   reuse one row.
+3. In `app.py` certificate mapping/submission/serialization/approval functions, wire temporary
+   resolution into `calibration_certificate_values()`, catalog errors, submission, approval-center
+   JSON, `approve_calibration_certificate()`, and `return_calibration_certificate()`. Done means
+   implicit custom models fail, valid opted-in models create/reuse Pending rows and unsigned
+   approvals, routed approvers can approve/return through the existing permission, approval
+   promotes the model and creates signed artifacts in one transaction, return requires remarks and
+   never promotes, and Pending rows have no signed/delivery artifact.
+4. In `static/js/app-calibration-report.js`, update catalog validation, state schema/defaults,
+   normalization, model matching/temporary validation, model editor markup, inline opt-in/clear
+   actions, final-save validation, status messaging, and catalog export. In
+   `templates/offline_tsr.html`, use v30. Done means explicit opt-in is required, invalid
+   newline/overlong/blank values are rejected, temporary state survives normalize/apply/collect,
+   catalog selection clears it, and approved dynamic entries can be rendered after online load.
+5. In `templates/approvals.html`, show temporary exact name/status in queue cards and detail, and
+   explain promotion/release behavior. In `app.py`, bump the service-worker cache marker and shell
+   script query. In `static/changelog/releases.json`, add the dated release for engineers,
+   approvers, and admins. Done means no protected path is touched and cache/version records agree.
+6. Add focused tests in `tests/test_calibration_temporary_model.py` and adjust only affected
+   expectations in existing Calibration Report/release tests. Cover strict/effective catalog,
+   normalized duplicate handling, temporary submission and invalid validation, routed permission,
+   atomic promotion, return/no-promotion, Pending artifact gating, and JavaScript opt-in/rejection,
+   normalization/reload persistence, dynamic catalog, and clearing temporary state.
+7. After code is written, self-review the diff against this plan, run the smallest focused suites
+   first with `venv/Scripts/python.exe` and isolated temporary database/storage paths, then run the
+   focused Calibration Report/certificate approval/Approval Center/draft-sync/cache-version/Python
+   AST/JSON/template/git-diff-check validations. Record exact pass/fail/skip results and note any
+   unrelated pre-existing failures; do not use browser or Codex UI automation.
+
+### Deliberately excluded
+
+- No change to the committed 47-model catalog file or its canonical checksum.
+- No new approval permission, routing model, browser workflow, or separate delivery subsystem.
+- No destructive migration, database reset, production/Railway/storage change, commit, push,
+  deploy, or edits to protected/unrelated dirty artifacts.
+- No signed certificate or normal delivery while the temporary model approval remains Pending.
+
+### Verification and completion checklist
+
+- Prove the current unlisted flow rejected an unlisted model before the fix where feasible.
+- Run the focused Python and JavaScript tests, isolated database/storage checks, Python AST,
+  JSON, template, cache/version, and `git diff --check` checks.
+- Confirm the strict catalog remains exactly 47 entries and dynamic models are DB-derived only
+  after approval.
+- Confirm generated/review artifact behavior and absence of signed/delivery fields while Pending.
+- Review the final diff for protected-path safety, update `changes.md`, and leave the plan status
+  as `Executed — uncommitted` only after the implementation and verification are complete.
+
 ## Operational Genoray/Vieworks equipment in schedules, TSRs, and calibration
 
 **Status:** Executed — uncommitted

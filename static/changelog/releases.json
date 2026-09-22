@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-22-calibration-model-approval",
+      "release_date": "2026-09-22",
+      "title": "Calibration Report Temporary Model Approval",
+      "summary": "Engineers can submit an explicitly marked temporary Calibration Report model for routed approval without changing the committed 47-model base catalog.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-22-calibration-model-approval-engineers-approvers-admins",
+          "category": "Calibration Reports",
+          "description": "Engineers opt in to an exact single-line temporary model that survives draft, offline queueing, synchronization, reload, and correction. Assigned Calibration approvers see the exact pending model; approving the report promotes it to the shared catalog and releases the signed certificate and normal delivery workflow, while returning it preserves the decision history without promotion. Admins retain the approval-center audit visibility.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-22-operational-equipment-workflows",
       "release_date": "2026-09-22",
       "title": "Genoray and Vieworks Equipment in Service Workflows",

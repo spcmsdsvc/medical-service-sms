@@ -2,6 +2,44 @@
 
 codex changes - 2026-09-22
 
+- Recorded the owner-authorized `Calibration Report Temporary Model Approval` plan in
+  `plans.md`, including the additive model table, strict 47-model base-catalog boundary,
+  explicit engineer opt-in, routed approval/promotion behavior, offline persistence, cache and
+  release updates, focused verification, and protected-path exclusions.
+- Added the additive `CalibrationCertificateModel` schema and approval metadata in `app.py`.
+  Temporary model names are validated as exact single-line values up to 40 characters, indexed
+  by a unique normalized key, and tracked through Pending/Approved/Rejected decisions with
+  requester/approver timestamps and return remarks. The committed catalog loader remains strict
+  at its original 47 models; approved database rows are exposed only by the effective catalog.
+- Updated Calibration Report mapping and TSR certificate submission in `app.py` to require the
+  explicit temporary source marker for an unlisted model, reuse normalized pending/rejected
+  requests, preserve the exact model in the unsigned approval snapshot, and keep signed and
+  delivery artifacts unavailable until approval. Approval-center JSON now exposes source, exact
+  name, catalog row, status, and promotion messaging; approve atomically promotes the model with
+  the signed certificate workflow, while return requires remarks and records rejection without
+  promotion.
+- Updated `static/js/app-calibration-report.js` and `templates/offline_tsr.html` to retain the
+  approved datalist, offer the inline `Use as temporary model` opt-in for unmatched values,
+  validate one-line/max-40 input, preserve temporary source state through normalization and
+  offline draft payloads, clear it when returning to a catalog model, and explain that model
+  approval is required. Approved dynamic models are supplied on the next online load.
+- Updated `templates/approvals.html` with temporary exact-name/status and the shared-catalog
+  promotion warning; bumped the Calibration Report script to v30 and the service-worker shell to
+  `v173-calibration-model-approval`; added the engineer/approver/admin release entry in
+  `static/changelog/releases.json`.
+- Baseline verification before this implementation: `tests.test_tsr_calibration_report` passed
+  18/18 and `tests.test_calibration_certificate_approval_workflow` passed 28/28 using isolated
+  temporary databases. A fail-first probe confirmed an unlisted model was rejected by the prior
+  catalog-only flow.
+- Completed local verification for this implementation: Calibration Report 18/18; temporary-model
+  server coverage 5/5; certificate approval workflow 28/28; Approval Center pagination and
+  notifications 14/14; accounting/changelog/approval-wording/draft-sync regression group 75/75;
+  and service-worker cache/version checks 5/5. All reported focused suites passed.
+- Completed source/artifact checks: Python AST parsing passed for the changed application and test
+  modules, release JSON parsing passed, and `git diff --check` passed. No browser or Codex UI
+  automation, commit, push, deploy, Railway/production action, or protected-path operation was
+  performed; pre-existing protected and unrelated dirty work remains preserved.
+
 - Recorded the owner-authorized Operational Genoray/Vieworks equipment integration plan in
   `plans.md` with status `In progress`. The approved scope adds source-aware schedule identity,
   an operational equipment projection, schedule/TSR/calibration resolution, focused tests,

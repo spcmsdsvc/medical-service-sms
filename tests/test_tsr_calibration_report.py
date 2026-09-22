@@ -768,7 +768,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         result = subprocess.run([str(NODE), '-e', NODE_SAMPLE_FINAL_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
-        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'mixedUnitsInDocx', 'mixedUnitHeadersCentered', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
+        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'mixedUnitsInDocx', 'mixedUnitHeadersCentered', 'compactRows', 'fiveRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule', 'implicitTemporaryRejected', 'explicitTemporaryAccepted', 'temporaryPersistsAfterReload', 'temporaryClearedForCatalog'):
             self.assertTrue(payload[key], key)
 
     def test_entry_page_has_single_card_action_and_accessible_dialog_contract(self):
@@ -800,8 +800,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=9", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=29", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=29'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=30", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=30'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1116,6 +1116,19 @@ function report(overrides = {}) {
   const api = context.calibrationReport;
   api.apply({ status:'draft' });
   const fresh = api.collect();
+  const temporaryCandidate = report({ machine:Object.assign({}, report().machine, { model:'Temporary Model 9000' }), certificate:{ bsid:'B-42' } });
+  api.apply(temporaryCandidate);
+  const implicitTemporaryValidation = api.validateForFinalSave({ calibration_report:api.collect() });
+  const optedTemporary = report({ machine:Object.assign({}, report().machine, { model:'Temporary Model 9000' }), certificate:{ bsid:'B-42', model_source:'temporary', equipment_model:'Temporary Model 9000' } });
+  api.apply(optedTemporary);
+  const optedTemporaryState = api.collect();
+  const explicitTemporaryValidation = api.validateForFinalSave({ calibration_report:optedTemporaryState });
+  api.apply(optedTemporaryState);
+  const temporaryReloaded = api.collect();
+  const catalogAfterTemporary = report({ machine:Object.assign({}, report().machine, { model:'MobileDart Evolution MX9' }), certificate:{ bsid:'B-42', model_source:'temporary', equipment_model:'MobileDart Evolution MX9' } });
+  api.apply(catalogAfterTemporary);
+  const temporaryClearedForCatalog = api.collect().certificate.model_source === 'catalog' && api.collect().certificate.equipment_model === 'MobileDart Evolution MX9';
+  api.apply({ status:'draft' });
   if (fresh.schema_version !== 6 || fresh.exposure_current_units.small !== '' || fresh.exposure_current_units.large !== '') throw new Error('new report did not start with blank exposure current units');
   const unitInputs = editor.elements.filter(element => element.getAttribute('data-cr-exposure-unit'));
   if (unitInputs.length !== 4) throw new Error('Page 3 did not render four exposure current unit radios');
@@ -1301,7 +1314,7 @@ function report(overrides = {}) {
   await api.clearForm();
   const cleared = api.collect();
   const clearPreservesSchedule = cleared.facility.name === 'Schedule Client' && cleared.machine.model === 'Schedule Model' && cleared.focal_spots.small && cleared.focal_spots.large && cleared.focal_sizes.small === '0.6' && cleared.focal_sizes.large === '1.2' && documents.value === '';
-  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, mixedUnitsInDocx, mixedUnitHeadersCentered, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
+  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, mixedUnitsInDocx, mixedUnitHeadersCentered, compactRows, fiveRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule, implicitTemporaryRejected:!implicitTemporaryValidation.ok && /catalog Equipment Model/i.test(implicitTemporaryValidation.message), explicitTemporaryAccepted:explicitTemporaryValidation.ok && explicitTemporaryValidation.model_source === 'temporary', temporaryPersistsAfterReload:temporaryReloaded.certificate.model_source === 'temporary' && temporaryReloaded.certificate.equipment_model === 'Temporary Model 9000', temporaryClearedForCatalog }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

@@ -118,8 +118,8 @@ class AccountingPayloadAndUIContractsTests(unittest.TestCase):
     def test_release_entry_is_present(self):
         self.assertTrue(self.releases)
         newest = self.releases['releases'][0]
-        self.assertEqual(newest.get('release_key'), '2026-09-22-operational-equipment-workflows')
-        self.assertIn('equipment', (newest.get('title') or '').lower())
+        self.assertEqual(newest.get('release_key'), '2026-09-22-calibration-model-approval')
+        self.assertIn('temporary model', (newest.get('title') or '').lower())
         accounting_release = next(
             release for release in self.releases['releases']
             if release.get('release_key') == '2026-09-20-accounting-branch-codes'

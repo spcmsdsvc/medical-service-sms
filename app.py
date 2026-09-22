@@ -3117,6 +3117,27 @@ class CalibrationReportConversion(db.Model):
     updated_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
 
 
+class CalibrationCertificateModel(db.Model):
+    """Shared model catalog entries requested from Calibration Reports."""
+    __tablename__ = 'calibration_certificate_model'
+
+    id = db.Column(db.Integer, primary_key=True)
+    model_name = db.Column(db.String(40), nullable=False)
+    normalized_model_key = db.Column(db.String(80), nullable=False, unique=True, index=True)
+    status = db.Column(db.String(20), nullable=False, default='Pending', index=True)
+    requester_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    approver_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    requested_at = db.Column(db.DateTime, nullable=True, index=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    rejected_at = db.Column(db.DateTime, nullable=True)
+    return_remarks = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False, index=True)
+
+    requester = db.relationship('User', foreign_keys=[requester_user_id])
+    approver = db.relationship('User', foreign_keys=[approver_user_id])
+
+
 class CalibrationCertificateApproval(db.Model):
     """Revision-aware approval record for a finalized Calibration Report."""
     __tablename__ = 'calibration_certificate_approval'
@@ -3133,6 +3154,8 @@ class CalibrationCertificateApproval(db.Model):
     status = db.Column(db.String(20), nullable=False, default='Pending', index=True)
     report_fingerprint = db.Column(db.String(80), nullable=True, index=True)
     certificate_fingerprint = db.Column(db.String(80), nullable=True, index=True)
+    model_source = db.Column(db.String(20), nullable=False, default='catalog', index=True)
+    model_catalog_id = db.Column(db.Integer, db.ForeignKey('calibration_certificate_model.id'), nullable=True, index=True)
     certificate_number = db.Column(db.String(180), nullable=False, index=True)
     mapped_data_json = db.Column(db.Text, nullable=False, default='{}')
     template_sha256 = db.Column(db.String(64), nullable=False)
@@ -3156,6 +3179,7 @@ class CalibrationCertificateApproval(db.Model):
     online_tsr_submission = db.relationship('OnlineTsrSubmission', foreign_keys=[online_tsr_submission_id])
     requester = db.relationship('User', foreign_keys=[requester_user_id])
     approver = db.relationship('User', foreign_keys=[approver_user_id])
+    model_catalog = db.relationship('CalibrationCertificateModel', foreign_keys=[model_catalog_id])
     signed_shift_file = db.relationship('ShiftFile', foreign_keys=[signed_shift_file_id])
     no_signature_shift_file = db.relationship('ShiftFile', foreign_keys=[no_signature_shift_file_id])
 
@@ -3212,6 +3236,7 @@ class TsrNumberReservation(db.Model):
 
 _tsr_knowledge_entry_table_ready = False
 _online_tsr_submission_table_ready = False
+_calibration_certificate_model_table_ready = False
 _calibration_certificate_approval_table_ready = False
 _tsr_draft_table_ready = False
 _tsr_number_reservation_table_ready = False
@@ -4421,12 +4446,56 @@ def ensure_online_tsr_submission_table():
         raise
 
 
+def ensure_calibration_certificate_model_table():
+    """Create/migrate the shared temporary-model catalog additively."""
+    global _calibration_certificate_model_table_ready
+    if _calibration_certificate_model_table_ready:
+        return
+    try:
+        CalibrationCertificateModel.__table__.create(db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            existing_columns = {
+                row[1] for row in connection.exec_driver_sql(
+                    "PRAGMA table_info(calibration_certificate_model)"
+                ).fetchall()
+            }
+            migrations = {
+                'model_name': "ALTER TABLE calibration_certificate_model ADD COLUMN model_name VARCHAR(40) DEFAULT '' NOT NULL",
+                'normalized_model_key': "ALTER TABLE calibration_certificate_model ADD COLUMN normalized_model_key VARCHAR(80) DEFAULT '' NOT NULL",
+                'status': "ALTER TABLE calibration_certificate_model ADD COLUMN status VARCHAR(20) DEFAULT 'Pending' NOT NULL",
+                'requester_user_id': "ALTER TABLE calibration_certificate_model ADD COLUMN requester_user_id INTEGER",
+                'approver_user_id': "ALTER TABLE calibration_certificate_model ADD COLUMN approver_user_id INTEGER",
+                'requested_at': "ALTER TABLE calibration_certificate_model ADD COLUMN requested_at DATETIME",
+                'approved_at': "ALTER TABLE calibration_certificate_model ADD COLUMN approved_at DATETIME",
+                'rejected_at': "ALTER TABLE calibration_certificate_model ADD COLUMN rejected_at DATETIME",
+                'return_remarks': "ALTER TABLE calibration_certificate_model ADD COLUMN return_remarks TEXT",
+                'created_at': "ALTER TABLE calibration_certificate_model ADD COLUMN created_at DATETIME",
+                'updated_at': "ALTER TABLE calibration_certificate_model ADD COLUMN updated_at DATETIME",
+            }
+            for name, statement in migrations.items():
+                if name not in existing_columns:
+                    connection.exec_driver_sql(statement)
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_calibration_certificate_model_key "
+                "ON calibration_certificate_model (normalized_model_key)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_calibration_certificate_model_status "
+                "ON calibration_certificate_model (status)"
+            )
+        _calibration_certificate_model_table_ready = True
+    except Exception as model_schema_error:
+        print(f"[CalibrationCertificate] Model schema migration failed: {model_schema_error}", flush=True)
+        raise
+
+
 def ensure_calibration_certificate_approval_table():
     """Create/migrate the certificate approval table additively."""
     global _calibration_certificate_approval_table_ready
     if _calibration_certificate_approval_table_ready:
         return
     try:
+        ensure_calibration_certificate_model_table()
         CalibrationCertificateApproval.__table__.create(db.engine, checkfirst=True)
         with db.engine.begin() as connection:
             existing_columns = {
@@ -4440,6 +4509,8 @@ def ensure_calibration_certificate_approval_table():
                 'status': "ALTER TABLE calibration_certificate_approval ADD COLUMN status VARCHAR(20) DEFAULT 'Pending' NOT NULL",
                 'report_fingerprint': "ALTER TABLE calibration_certificate_approval ADD COLUMN report_fingerprint VARCHAR(80)",
                 'certificate_fingerprint': "ALTER TABLE calibration_certificate_approval ADD COLUMN certificate_fingerprint VARCHAR(80)",
+                'model_source': "ALTER TABLE calibration_certificate_approval ADD COLUMN model_source VARCHAR(20) DEFAULT 'catalog' NOT NULL",
+                'model_catalog_id': "ALTER TABLE calibration_certificate_approval ADD COLUMN model_catalog_id INTEGER",
                 'certificate_number': "ALTER TABLE calibration_certificate_approval ADD COLUMN certificate_number VARCHAR(180) DEFAULT '' NOT NULL",
                 'mapped_data_json': "ALTER TABLE calibration_certificate_approval ADD COLUMN mapped_data_json TEXT DEFAULT '{}' NOT NULL",
                 'template_sha256': "ALTER TABLE calibration_certificate_approval ADD COLUMN template_sha256 VARCHAR(64) DEFAULT '' NOT NULL",
@@ -4473,6 +4544,10 @@ def ensure_calibration_certificate_approval_table():
             connection.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS idx_calibration_certificate_no_signature_file "
                 "ON calibration_certificate_approval (no_signature_shift_file_id)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_calibration_certificate_model_catalog "
+                "ON calibration_certificate_approval (model_catalog_id)"
             )
         _calibration_certificate_approval_table_ready = True
     except Exception as certificate_schema_error:
@@ -12641,7 +12716,7 @@ def offline_tsr_page():
         return redirect(url_for('dashboard_page'))
     filename_template = get_email_template_value('tsr_pdf_filename')
     try:
-        certificate_catalog = calibration_certificate_catalog()
+        certificate_catalog = calibration_certificate_effective_catalog()
     except Exception as catalog_error:
         app.logger.warning('Calibration Certificate catalog unavailable for offline TSR: %s', catalog_error)
         certificate_catalog = {
@@ -19535,6 +19610,8 @@ CALIBRATION_CERTIFICATE_DATA_FIELD_WIDTHS = {
 }
 CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING = 6.0
 CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME = 'CalibrationCertificateHumanist777Light'
+CALIBRATION_CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH = 40
+CALIBRATION_CERTIFICATE_MODEL_SOURCES = {'catalog', 'temporary'}
 _calibration_certificate_humanist_metrics_cache = None
 CALIBRATION_CERTIFICATE_CATALOG_SOURCE_SHA256 = '1AAB589266A30E6E70FE93E951C86C997D23B1EA1332373EE756E989A97A21BA'
 CALIBRATION_CERTIFICATE_CATALOG_PAYLOAD_SHA256 = 'A3B0DF1616AC5DDAB53F3B6C142294D1ECDB2928AA7E85121A98C7BCA6FC969E'
@@ -19600,6 +19677,34 @@ def calibration_certificate_model_normalize(value):
     return re.sub(r'[^a-z0-9]', '', without_marks.lower())
 
 
+def calibration_certificate_effective_catalog():
+    """Return the strict committed catalog plus approved database models."""
+    catalog = calibration_certificate_catalog()
+    ensure_calibration_certificate_model_table()
+    approved_models = CalibrationCertificateModel.query.filter_by(status='Approved').order_by(
+        CalibrationCertificateModel.id.asc()
+    ).all()
+    canonical_keys = {
+        calibration_certificate_model_normalize(model)
+        for model in catalog['models']
+    }
+    dynamic = []
+    for model in approved_models:
+        model_key = calibration_certificate_model_normalize(model.model_name)
+        if model_key and model_key not in canonical_keys:
+            dynamic.append({
+                'id': model.id,
+                'model_name': model.model_name,
+                'normalized_model_key': model.normalized_model_key,
+            })
+            canonical_keys.add(model_key)
+    return {
+        'equipment_names': list(catalog['equipment_names']),
+        'models': list(catalog['models']) + [item['model_name'] for item in dynamic],
+        'approved_models': dynamic,
+    }
+
+
 def _calibration_certificate_catalog_for_matching(catalog=None):
     """Return a structurally safe catalog for matching, or fail closed."""
     catalog = calibration_certificate_catalog() if catalog is None else catalog
@@ -19609,8 +19714,8 @@ def _calibration_certificate_catalog_for_matching(catalog=None):
     models = catalog.get('models')
     if not isinstance(equipment_names, list) or len(equipment_names) != 6:
         raise RuntimeError('Calibration Certificate catalog must contain exactly six equipment names.')
-    if not isinstance(models, list) or len(models) != 47:
-        raise RuntimeError('Calibration Certificate catalog must contain exactly 47 equipment models.')
+    if not isinstance(models, list) or len(models) < 47:
+        raise RuntimeError('Calibration Certificate catalog must contain at least 47 equipment models.')
     values = equipment_names + models
     if any(not isinstance(value, str) or not _calibration_certificate_catalog_text(value) for value in values):
         raise RuntimeError('Calibration Certificate catalog contains a blank or invalid value.')
@@ -19619,7 +19724,10 @@ def _calibration_certificate_catalog_for_matching(catalog=None):
     normalized = [calibration_certificate_model_normalize(value) for value in values]
     if any(not value for value in normalized) or len(set(normalized)) != len(normalized):
         raise RuntimeError('Calibration Certificate catalog contains duplicate normalized values.')
-    return {'equipment_names': list(equipment_names), 'models': list(models)}
+    safe_catalog = {'equipment_names': list(equipment_names), 'models': list(models)}
+    if isinstance(catalog.get('approved_models'), list):
+        safe_catalog['approved_models'] = list(catalog['approved_models'])
+    return safe_catalog
 
 
 def calibration_certificate_model_distance(first, second):
@@ -19691,6 +19799,130 @@ def calibration_certificate_model_match(value, catalog=None):
     }
 
 
+def _calibration_certificate_temporary_model_validation(value):
+    """Validate the exact single-line model text used by temporary requests."""
+    raw = str(value or '')
+    if raw != raw.strip():
+        return 'Enter the temporary model without leading or trailing whitespace.'
+    if not raw:
+        return 'Enter a temporary model name before opting in.'
+    if len(raw) > CALIBRATION_CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH:
+        return f'Temporary model names must be {CALIBRATION_CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH} characters or fewer.'
+    if any(character in raw for character in '\r\n\t'):
+        return 'Temporary model names must be a single line without tabs.'
+    if not calibration_certificate_model_normalize(raw):
+        return 'Temporary model names must contain at least one letter or number.'
+    return ''
+
+
+def _calibration_certificate_approved_model_id(catalog, normalized_key):
+    for item in (catalog.get('approved_models') or []):
+        if not isinstance(item, dict):
+            continue
+        if item.get('normalized_model_key') == normalized_key:
+            return clean_int(item.get('id'))
+    return None
+
+
+def calibration_certificate_model_resolution(report, catalog=None):
+    """Resolve a catalog or explicitly opted-in temporary certificate model."""
+    catalog = _calibration_certificate_catalog_for_matching(catalog)
+    report = report if isinstance(report, dict) else {}
+    machine = report.get('machine') if isinstance(report.get('machine'), dict) else {}
+    certificate = report.get('certificate') if isinstance(report.get('certificate'), dict) else {}
+    raw = clean_str(machine.get('model')) or ''
+    source = clean_str(certificate.get('model_source')) or 'catalog'
+    match = calibration_certificate_model_match(raw, catalog=catalog)
+    if source not in CALIBRATION_CERTIFICATE_MODEL_SOURCES:
+        return {
+            'ok': False,
+            'source': 'catalog',
+            'value': '',
+            'normalized_key': calibration_certificate_model_normalize(raw),
+            'catalog_id': None,
+            'match': match,
+            'errors': ['The certificate model source is invalid.'],
+        }
+    if match['status'] in {'exact', 'accepted'}:
+        normalized_key = calibration_certificate_model_normalize(match['value'])
+        return {
+            'ok': True,
+            'source': 'catalog',
+            'value': match['value'],
+            'normalized_key': normalized_key,
+            'catalog_id': _calibration_certificate_approved_model_id(catalog, normalized_key),
+            'match': match,
+            'errors': [],
+        }
+    if source != 'temporary':
+        suggestions = ', '.join(match.get('suggestions') or [])
+        suffix = f' Closest catalog models: {suggestions}.' if suggestions else ''
+        return {
+            'ok': False,
+            'source': 'catalog',
+            'value': '',
+            'normalized_key': calibration_certificate_model_normalize(raw),
+            'catalog_id': None,
+            'match': match,
+            'errors': ['Select an exact catalog Equipment Model before submitting the certificate.' + suffix],
+        }
+    validation_error = _calibration_certificate_temporary_model_validation(raw)
+    if validation_error:
+        return {
+            'ok': False,
+            'source': 'temporary',
+            'value': raw,
+            'normalized_key': calibration_certificate_model_normalize(raw),
+            'catalog_id': None,
+            'match': match,
+            'errors': [validation_error],
+        }
+    return {
+        'ok': True,
+        'source': 'temporary',
+        'value': raw,
+        'normalized_key': calibration_certificate_model_normalize(raw),
+        'catalog_id': None,
+        'match': match,
+        'errors': [],
+    }
+
+
+def get_or_create_calibration_certificate_model(model_name, requester_user_id=None):
+    """Reuse one normalized pending/rejected row for a new temporary request."""
+    raw = str(model_name or '').strip()
+    validation_error = _calibration_certificate_temporary_model_validation(raw)
+    if validation_error:
+        raise ValueError(validation_error)
+    normalized_key = calibration_certificate_model_normalize(raw)
+    ensure_calibration_certificate_model_table()
+    now = get_manila_time()
+    model = CalibrationCertificateModel.query.filter_by(normalized_model_key=normalized_key).first()
+    if model is None:
+        model = CalibrationCertificateModel(
+            model_name=raw,
+            normalized_model_key=normalized_key,
+            status='Pending',
+            requester_user_id=requester_user_id,
+            requested_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        db.session.add(model)
+    elif model.status != 'Approved':
+        model.model_name = raw
+        model.status = 'Pending'
+        model.requester_user_id = requester_user_id
+        model.approver_user_id = None
+        model.requested_at = now
+        model.approved_at = None
+        model.rejected_at = None
+        model.return_remarks = None
+        model.updated_at = now
+    db.session.flush()
+    return model
+
+
 def calibration_certificate_catalog_errors(report, catalog=None):
     """Return actionable validation errors for a new certificate request."""
     catalog = _calibration_certificate_catalog_for_matching(catalog)
@@ -19700,12 +19932,9 @@ def calibration_certificate_catalog_errors(report, catalog=None):
     errors = []
     if equipment_name not in catalog['equipment_names']:
         errors.append('Select an approved Equipment Name from the Calibration Report list.')
-    match = calibration_certificate_model_match(machine.get('model'), catalog=catalog)
-    if match['status'] not in {'exact', 'accepted'}:
-        suggestions = ', '.join(match.get('suggestions') or [])
-        suffix = f' Closest catalog models: {suggestions}.' if suggestions else ''
-        errors.append('Select an exact catalog Equipment Model before submitting the certificate.' + suffix)
-    return errors, match
+    resolution = calibration_certificate_model_resolution(report, catalog=catalog)
+    errors.extend(resolution['errors'])
+    return errors, resolution['match']
 
 
 def calibration_certificate_template_path():
@@ -19913,11 +20142,12 @@ def calibration_certificate_values(payload, shift=None, certificate_number_overr
         clean_str(certificate_number_override) or
         (f'{number_date}-{bsid}' if number_date and bsid else '')
     )
-    match = calibration_certificate_model_match(machine.get('model'), catalog=catalog)
+    resolution = calibration_certificate_model_resolution(report, catalog=catalog)
+    match = resolution['match']
     values = {
         'Textfield': certificate_number,
         'Text1': clean_str(machine.get('modality')) or '',
-        'Text2': match.get('value') or '',
+        'Text2': resolution.get('value') if resolution.get('ok') else (match.get('value') or ''),
         'Text3': clean_str(machine.get('serial_number')) or '',
         'Text4': date,
         'Text5': next_date,
@@ -20393,6 +20623,16 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
             'last_error': '',
         }
     )
+    model_record = (
+        db.session.get(CalibrationCertificateModel, approval.model_catalog_id)
+        if clean_int(getattr(approval, 'model_catalog_id', None)) else None
+    )
+    model_source = clean_str(getattr(approval, 'model_source', None)) or 'catalog'
+    temporary_model_name = (
+        model_record.model_name if model_record else
+        (payload.get('Text2', '') if model_source == 'temporary' else '')
+    )
+    temporary_model_status = model_record.status if model_record else ('Pending' if model_source == 'temporary' else '')
     item = {
         'id': approval.id,
         'module': 'calibration_certificate',
@@ -20404,6 +20644,16 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         'status': approval.status or 'Pending',
         'report_fingerprint': approval.report_fingerprint or '',
         'certificate_fingerprint': approval.certificate_fingerprint or '',
+        'model_source': model_source,
+        'model_catalog_id': getattr(approval, 'model_catalog_id', None),
+        'model_name': temporary_model_name,
+        'temporary_model': temporary_model_name,
+        'temporary_model_status': temporary_model_status,
+        'temporary_model_pending': bool(model_source == 'temporary' and temporary_model_status == 'Pending'),
+        'model_approval_message': (
+            'Approving this report adds this temporary model to the shared approved Calibration Certificate catalog.'
+            if model_source == 'temporary' else ''
+        ),
         'mapped_data': payload,
         'machine': product.name if product else '',
         'bsid': getattr(product, 'bsid', None) or payload.get('bsid', ''),
@@ -21446,9 +21696,10 @@ def submit_calibration_certificate_for_submission(submission):
     shift = db.session.get(Shift, submission.shift_id)
     payload = parse_online_tsr_payload_json(submission)
     try:
-        catalog = calibration_certificate_catalog()
+        catalog = calibration_certificate_effective_catalog()
         values, missing, report = calibration_certificate_values(payload, shift=shift, catalog=catalog)
         catalog_errors, _ = calibration_certificate_catalog_errors(report, catalog=catalog)
+        model_resolution = calibration_certificate_model_resolution(report, catalog=catalog)
     except Exception as catalog_error:
         return {
             'ok': False,
@@ -21467,7 +21718,13 @@ def submit_calibration_certificate_for_submission(submission):
     stored_name = f'private_calibration_certificate_{submission.id}_{secrets.token_hex(8)}.pdf'
     local_path = calibration_certificate_private_path(stored_name)
     report_certificate = report.get('certificate') if isinstance(report.get('certificate'), dict) else {}
+    model_catalog = None
     try:
+        if model_resolution['source'] == 'temporary':
+            model_catalog = get_or_create_calibration_certificate_model(
+                model_resolution['value'],
+                requester_user_id=submission.submitted_by_user_id,
+            )
         managed_storage_write_bytes(
             STORAGE_PREFIX_CALIBRATION_CERTIFICATES_PRIVATE,
             local_path,
@@ -21489,6 +21746,10 @@ def submit_calibration_certificate_for_submission(submission):
             status='Pending',
             report_fingerprint=clean_str(report.get('generated', {}).get('fingerprint')) if isinstance(report.get('generated'), dict) else '',
             certificate_fingerprint=certificate_fingerprint,
+            model_source=model_resolution['source'],
+            model_catalog_id=(
+                model_catalog.id if model_catalog is not None else model_resolution.get('catalog_id')
+            ),
             certificate_number=values['Textfield'],
             mapped_data_json=json.dumps({**values, 'bsid': normalize_product_bsid(report_certificate.get('bsid')) or normalize_product_bsid(getattr(resolve_shift_equipment(shift), 'bsid', None))}, ensure_ascii=False),
             template_sha256=CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
@@ -21499,13 +21760,31 @@ def submit_calibration_certificate_for_submission(submission):
         )
         db.session.add(approval)
         db.session.flush()
-        record_universal_approval_audit('calibration_certificate', approval.id, 'submitted', actor_user=db.session.get(User, submission.submitted_by_user_id), status_from='', status_to='Pending', metadata={'submission_id': submission.id, 'revision_no': approval.revision_no})
+        record_universal_approval_audit(
+            'calibration_certificate', approval.id, 'submitted',
+            actor_user=db.session.get(User, submission.submitted_by_user_id),
+            status_from='', status_to='Pending',
+            metadata={
+                'submission_id': submission.id,
+                'revision_no': approval.revision_no,
+                'model_source': approval.model_source,
+                'model_catalog_id': approval.model_catalog_id,
+                'model_name': model_resolution['value'],
+            },
+        )
         requester = db.session.get(User, submission.submitted_by_user_id) if submission.submitted_by_user_id else None
         approvers = get_assigned_approvers_for_requester(submission.submitted_by_user_id, 'calibration_certificate') if submission.submitted_by_user_id else []
+        approval_subject = 'Calibration Report & Certificate awaiting approval'
+        approval_message = f'{values["Textfield"]} is ready for report and certificate review.'
+        requester_message = (
+            'Your Calibration Report & Certificate is awaiting model and report approval.'
+            if model_resolution['source'] == 'temporary' else
+            ('Your Calibration Report & Certificate is awaiting approver assignment.' if not approvers else 'Your Calibration Report & Certificate is pending approval.')
+        )
         for approver_user in approvers:
-            create_system_notification(approver_user.id, 'Calibration Report & Certificate awaiting approval', f'{values["Textfield"]} is ready for report and certificate review.', module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id})
+            create_system_notification(approver_user.id, approval_subject, approval_message, module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': approval.model_source})
         if requester:
-            create_system_notification(requester.id, 'Calibration Report & Certificate submitted', 'Your Calibration Report & Certificate is awaiting approver assignment.' if not approvers else 'Your Calibration Report & Certificate is pending approval.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'submitted', 'approval_id': approval.id})
+            create_system_notification(requester.id, 'Calibration Report & Certificate submitted', requester_message, module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': approval.model_source})
         db.session.commit()
         return {'ok': True, 'duplicate': False, 'approval': approval}
     except IntegrityError:
@@ -21739,6 +22018,22 @@ def approve_calibration_certificate(approval_id):
             'message': 'This Pending Calibration Report & Certificate has an incomplete historical mapped snapshot. It remains Pending; return it for correction and submit a new revision.',
             'retryable': True,
         }), 400
+    temporary_model = None
+    if (clean_str(getattr(approval, 'model_source', None)) or 'catalog') == 'temporary':
+        temporary_model = db.session.get(CalibrationCertificateModel, approval.model_catalog_id)
+        expected_key = calibration_certificate_model_normalize(mapped_snapshot.get('Text2'))
+        if (
+            not temporary_model or
+            temporary_model.status not in {'Pending', 'Approved'} or
+            temporary_model.normalized_model_key != expected_key or
+            clean_str(temporary_model.model_name) != clean_str(mapped_snapshot.get('Text2'))
+        ):
+            return jsonify({
+                'success': False,
+                'code': 'temporary_model_record_invalid',
+                'message': 'The temporary model record is missing or no longer matches this report. Return it for correction and submit a new revision.',
+                'retryable': True,
+            }), 400
     signature = get_user_signature_snapshot(current_user)
     required = approval_signature_required_response(current_user, 'Calibration Report & Certificate')
     if required:
@@ -21774,6 +22069,13 @@ def approve_calibration_certificate(approval_id):
     if updated != 1:
         db.session.rollback()
         return jsonify({'success': False, 'message': 'This Calibration Report & Certificate was already decided by another approver.'}), 409
+    if temporary_model is not None:
+        temporary_model.status = 'Approved'
+        temporary_model.approver_user_id = current_user.id
+        temporary_model.approved_at = get_manila_time()
+        temporary_model.rejected_at = None
+        temporary_model.return_remarks = None
+        temporary_model.updated_at = get_manila_time()
     safe_number = secure_filename(approval.certificate_number) or f'CERT-{approval.id}'
     revision_suffix = f'_REV{approval.revision_no}' if (approval.revision_no or 1) > 1 else ''
     display_name = f'Calibration_Certificate_{safe_number}{revision_suffix}.pdf'
@@ -21806,7 +22108,18 @@ def approve_calibration_certificate(approval_id):
         approval.certificate_fingerprint = signed_fingerprint
         approval.artifact_created_at = get_manila_time()
         approval.return_remarks = None
-        record_universal_approval_audit('calibration_certificate', approval.id, 'approved', actor_user=current_user, status_from='Pending', status_to='Approved', metadata={'signed_shift_file_id': file_rec.id, 'no_signature_shift_file_id': no_signature_file_rec.id, 'revision_no': approval.revision_no})
+        record_universal_approval_audit(
+            'calibration_certificate', approval.id, 'approved', actor_user=current_user,
+            status_from='Pending', status_to='Approved', metadata={
+                'signed_shift_file_id': file_rec.id,
+                'no_signature_shift_file_id': no_signature_file_rec.id,
+                'revision_no': approval.revision_no,
+                'model_source': getattr(approval, 'model_source', 'catalog'),
+                'model_catalog_id': getattr(approval, 'model_catalog_id', None),
+                'model_name': temporary_model.model_name if temporary_model else '',
+                'model_promoted': bool(temporary_model),
+            }
+        )
         requester = db.session.get(User, approval.requester_user_id) if approval.requester_user_id else None
         if requester:
             create_system_notification(requester.id, 'Calibration Report & Certificate approved', f'{approval.certificate_number} report and certificate were approved by {approver_name}.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'approved', 'approval_id': approval.id})
@@ -21850,7 +22163,26 @@ def return_calibration_certificate(approval_id):
     if updated != 1:
         db.session.rollback()
         return jsonify({'success': False, 'message': 'This Calibration Report & Certificate was already decided by another approver.'}), 409
-    record_universal_approval_audit('calibration_certificate', approval.id, 'returned', actor_user=current_user, status_from='Pending', status_to='Returned', remarks=remarks)
+    temporary_model = None
+    if (clean_str(getattr(approval, 'model_source', None)) or 'catalog') == 'temporary':
+        temporary_model = db.session.get(CalibrationCertificateModel, approval.model_catalog_id)
+        if temporary_model:
+            temporary_model.status = 'Rejected'
+            temporary_model.approver_user_id = current_user.id
+            temporary_model.rejected_at = get_manila_time()
+            temporary_model.approved_at = None
+            temporary_model.return_remarks = remarks[:4000]
+            temporary_model.updated_at = get_manila_time()
+    record_universal_approval_audit(
+        'calibration_certificate', approval.id, 'returned', actor_user=current_user,
+        status_from='Pending', status_to='Returned', remarks=remarks,
+        metadata={
+            'model_source': getattr(approval, 'model_source', 'catalog'),
+            'model_catalog_id': getattr(approval, 'model_catalog_id', None),
+            'model_name': temporary_model.model_name if temporary_model else '',
+            'model_promoted': False,
+        },
+    )
     requester = db.session.get(User, approval.requester_user_id) if approval.requester_user_id else None
     if requester:
         create_system_notification(
@@ -22608,8 +22940,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v170-accounting-branch-codes.
-    # Navigation shell bump: v171 stable TSR reservations -> v172 operational equipment.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v172-operational-equipment';
+    # Navigation shell bump: v172 operational equipment -> v173 calibration model approval.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v173-calibration-model-approval';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -22633,7 +22965,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=29',
+  '/static/js/app-calibration-report.js?v=30',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
