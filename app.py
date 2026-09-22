@@ -2691,6 +2691,141 @@ def normalize_product_bsid(value):
     return clean_str(value)[:40] if clean_str(value) else ''
 
 
+OPERATIONAL_EQUIPMENT_SOURCES = ('product', 'genoray', 'vieworks')
+OPERATIONAL_EQUIPMENT_SOURCE_LABELS = {
+    'product': 'Product Inventory',
+    'genoray': 'Genoray',
+    'vieworks': 'Vieworks',
+}
+
+
+def normalize_equipment_source(value, default='product'):
+    """Return the canonical operational equipment source key."""
+    raw = (clean_str(value) or '').strip().lower()
+    if not raw:
+        return default
+    aliases = {
+        'product_inventory': 'product',
+        'product-inventory': 'product',
+        'productinventory': 'product',
+        'genoray_item': 'genoray',
+        'genoray-inventory': 'genoray',
+        'vieworks_item': 'vieworks',
+        'vieworks-inventory': 'vieworks',
+    }
+    normalized = aliases.get(raw, raw)
+    return normalized if normalized in OPERATIONAL_EQUIPMENT_SOURCES else ''
+
+
+def operational_equipment_model(source):
+    """Return the inventory model for one operational equipment source."""
+    return {
+        'product': Product,
+        'genoray': GenorayItem,
+        'vieworks': VieworksItem,
+    }.get(normalize_equipment_source(source, default=''))
+
+
+def resolve_operational_equipment(serial_number, source='product'):
+    """Resolve one equipment row only inside its declared inventory table."""
+    normalized_source = normalize_equipment_source(source, default='')
+    serial = (clean_str(serial_number) or '').strip()
+    model = operational_equipment_model(normalized_source)
+    if not model or not serial:
+        return None
+
+    if normalized_source == 'genoray':
+        ensure_genoray_item_table()
+    elif normalized_source == 'vieworks':
+        ensure_vieworks_item_table()
+
+    record = db.session.get(model, serial)
+    if record:
+        return record
+    return model.query.filter(func.lower(model.serial_number) == serial.casefold()).first()
+
+
+def operational_equipment_to_dict(record, source, certificate=None):
+    """Serialize the small shared equipment projection used by field pickers."""
+    source = normalize_equipment_source(source, default='')
+    owner = getattr(record, 'owner', None) if record else None
+    end_date = getattr(record, 'end_warranty_date', None) if record else None
+    under_contract = bool(getattr(record, 'under_contract', False)) if record else False
+    return {
+        'serial_number': clean_str(getattr(record, 'serial_number', None)) or '',
+        'name': clean_str(getattr(record, 'name', None)) or '',
+        'bsid': normalize_product_bsid(getattr(record, 'bsid', None)) if record else '',
+        'client_id': clean_int(getattr(record, 'client_id', None)) if record else None,
+        'client_name': clean_str(getattr(owner, 'name', None)) or 'N/A',
+        'start_warranty': getattr(record, 'start_warranty_date', None).isoformat() if record and getattr(record, 'start_warranty_date', None) else '',
+        'end_warranty': end_date.isoformat() if end_date else '',
+        'under_contract': under_contract,
+        'computed_status': product_contract_status(record) if source == 'product' else product_contract_status(
+            end_date=end_date,
+            under_contract=under_contract,
+        ),
+        'equipment_source': source,
+        'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS.get(source, source),
+        'calibration_certificate': certificate,
+    }
+
+
+def resolve_shift_equipment(shift):
+    """Resolve a Shift's equipment across Product, Genoray, and Vieworks tables."""
+    if not shift:
+        return None
+    product = getattr(shift, 'product', None)
+    serial = clean_str(getattr(shift, 'product_id', None)) or clean_str(
+        getattr(product, 'serial_number', None)
+    ) or ''
+    if not serial:
+        return None
+    source = normalize_equipment_source(getattr(shift, 'equipment_source', None))
+    if source == 'product':
+        if product and clean_str(getattr(product, 'serial_number', None)) == serial:
+            return product
+    return resolve_operational_equipment(serial, source)
+
+
+def resolve_schedule_equipment_payload(payload, client_id=None):
+    """Validate and resolve the equipment selected by a schedule create/update."""
+    payload = payload or {}
+    serial = (
+        clean_str(payload.get('product_id')) or
+        clean_str(payload.get('product')) or
+        clean_str(payload.get('selected_product_id')) or
+        clean_str(payload.get('selectedProductId')) or
+        clean_str(payload.get('serial_number')) or
+        clean_str(payload.get('serial')) or
+        ''
+    )[:100]
+    raw_source = clean_str(payload.get('equipment_source') or payload.get('product_source'))
+    source = normalize_equipment_source(raw_source, default='product')
+    if raw_source and not source:
+        return None, 'The selected equipment source is invalid.'
+    if not serial:
+        return {
+            'serial_number': '',
+            'equipment_source': 'product',
+            'record': None,
+        }, None
+
+    record = resolve_operational_equipment(serial, source)
+    if not record:
+        return None, 'The selected equipment was not found. Refresh the equipment list and try again.'
+
+    owner_id = clean_int(getattr(record, 'client_id', None))
+    selected_client_id = clean_int(client_id)
+    if owner_id and selected_client_id and owner_id != selected_client_id:
+        return None, 'The selected equipment is linked to a different medical center.'
+
+    return {
+        'serial_number': clean_str(getattr(record, 'serial_number', None)) or serial,
+        'equipment_source': source,
+        'record': record,
+    }, None
+
+
 def product_bsid_duplicate(value, exclude_serial=None):
     """Return an existing product using this BSID case-insensitively."""
     normalized = normalize_product_bsid(value)
@@ -2869,6 +3004,10 @@ class Shift(db.Model):
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'))
     
     product_id = db.Column(db.String(100), db.ForeignKey('product.serial_number'))
+
+    # Operational equipment may come from Product, Genoray, or Vieworks inventory.
+    # product_id remains the historical serial field; this source disambiguates tables.
+    equipment_source = db.Column(db.String(20), nullable=False, default='product', index=True)
     
     status = db.Column(db.String(50), default='In Progress')
 
@@ -3099,6 +3238,7 @@ _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
 _shift_creation_token_ready = False
+_shift_equipment_source_ready = False
 _travel_liquidation_tables_ready = False
 _stock_inventory_tables_ready = False
 _genoray_item_table_ready = False
@@ -3624,6 +3764,7 @@ def inventory_pm_schedule_to_dict(shift):
         engineer_ids = [shift.engineer_id]
     if not engineer_names and getattr(shift, 'engineer', None):
         engineer_names = [shift.engineer.name]
+    equipment = resolve_shift_equipment(shift)
     return {
         'id': shift.id,
         'shift_id': shift.id,
@@ -3639,7 +3780,8 @@ def inventory_pm_schedule_to_dict(shift):
         'client_name': shift.client.name if shift.client else 'N/A',
         'product_id': shift.product_id or '',
         'serial_number': shift.product_id or '',
-        'product_name': shift.product.name if shift.product else '',
+        'product_name': getattr(equipment, 'name', None) or '',
+        'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
         'engineer_ids': engineer_ids,
         'engineer_names': engineer_names,
         'engineers': ', '.join(engineer_names) if engineer_names else '',
@@ -3765,6 +3907,7 @@ def inventory_pm_completion_snapshot(shift, enforce_file_permissions=True):
     if not engineer_names and getattr(shift, 'engineer', None):
         engineer_names = [shift.engineer.name]
     schedule_date = shift.start_time.date().isoformat() if getattr(shift, 'start_time', None) else ''
+    equipment = resolve_shift_equipment(shift)
     return {
         'schedule_id': clean_int(getattr(shift, 'id', None)),
         'date': schedule_date,
@@ -3778,7 +3921,8 @@ def inventory_pm_completion_snapshot(shift, enforce_file_permissions=True):
         'client_id': clean_int(getattr(shift, 'client_id', None)),
         'client_name': getattr(getattr(shift, 'client', None), 'name', None) or 'N/A',
         'product_id': clean_str(getattr(shift, 'product_id', None)) or '',
-        'product_name': getattr(getattr(shift, 'product', None), 'name', None) or '',
+        'product_name': getattr(equipment, 'name', None) or '',
+        'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
         'engineer_ids': engineer_ids,
         'engineer_names': engineer_names,
         'engineers': ', '.join(engineer_names) if engineer_names else '',
@@ -4014,8 +4158,9 @@ def inventory_pm_visit_to_dict(visit, item=None):
         product_name = ''
         resolved_linked_schedule_id = shift.id if shift else None
         if shift:
+            equipment = resolve_shift_equipment(shift)
             product_id = shift.product_id or ''
-            product_name = shift.product.name if shift.product else ''
+            product_name = getattr(equipment, 'name', None) or ''
             schedule_payload = {
                 'id': shift.id,
                 'date': shift.start_time.date().isoformat() if shift.start_time else '',
@@ -4028,6 +4173,8 @@ def inventory_pm_visit_to_dict(visit, item=None):
                 'client_name': shift.client.name if shift.client else 'N/A',
                 'product_id': product_id,
                 'product_name': product_name,
+                'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
+                'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
                 'engineer_ids': engineer_ids,
                 'engineer_names': engineer_names,
                 'engineers': ', '.join(engineer_names) if engineer_names else '',
@@ -5937,6 +6084,43 @@ def ensure_shift_creation_token_column():
         raise
 
 
+def ensure_shift_equipment_source_column():
+    """Add the source discriminator needed for standalone operational equipment."""
+    global _shift_equipment_source_ready
+
+    if _shift_equipment_source_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            shift_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(shift)").fetchall()
+            }
+            if not shift_columns:
+                # The runtime migration hook may run before db.create_all() on a
+                # brand-new test/development database. Leave the flag unset so the
+                # later hook can apply this additive migration after the table exists.
+                return
+            if 'equipment_source' not in shift_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE shift ADD COLUMN equipment_source VARCHAR(20) DEFAULT 'product'"
+                )
+                print("[DB MIGRATION] Added shift.equipment_source", flush=True)
+
+            connection.exec_driver_sql(
+                "UPDATE shift SET equipment_source = 'product' "
+                "WHERE equipment_source IS NULL OR trim(equipment_source) = ''"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_shift_equipment_source ON shift (equipment_source)"
+            )
+
+        _shift_equipment_source_ready = True
+    except Exception as equipment_source_error:
+        print(f"[Schedule] Unable to ensure shift.equipment_source: {equipment_source_error}", flush=True)
+        raise
+
+
 def ensure_travel_liquidation_tables():
     """S13B safe live SQLite migration for Travel Liquidation drafts."""
     global _travel_liquidation_tables_ready
@@ -6066,6 +6250,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_email_template_setting_table()
     ensure_shift_travel_block_columns()
     ensure_shift_creation_token_column()
+    ensure_shift_equipment_source_column()
     ensure_stock_inventory_tables()
 
     if new_workflows_enabled():
@@ -10670,8 +10855,9 @@ def get_schedule_email_recipients(engineer_ids):
 def format_schedule_email_text(shift, assigned_engineers, created_by):
     """Plain-text email body for newly created schedules."""
     client_name = shift.client.name if shift and shift.client else "N/A"
-    product_name = shift.product.name if shift and shift.product else "N/A"
-    product_serial = shift.product.serial_number if shift and shift.product else ""
+    equipment = resolve_shift_equipment(shift)
+    product_name = getattr(equipment, 'name', None) if equipment else "N/A"
+    product_serial = getattr(equipment, 'serial_number', None) if equipment else ""
     product_label = product_name
     if product_serial:
         product_label = f"{product_serial} / {product_name}"
@@ -10695,8 +10881,9 @@ def format_schedule_email_text(shift, assigned_engineers, created_by):
 def format_schedule_email_html(shift, assigned_engineers, created_by):
     """HTML email body for newly created schedules."""
     client_name = shift.client.name if shift and shift.client else "N/A"
-    product_name = shift.product.name if shift and shift.product else "N/A"
-    product_serial = shift.product.serial_number if shift and shift.product else ""
+    equipment = resolve_shift_equipment(shift)
+    product_name = getattr(equipment, 'name', None) if equipment else "N/A"
+    product_serial = getattr(equipment, 'serial_number', None) if equipment else ""
     product_label = product_name
     if product_serial:
         product_label = f"{product_serial} / {product_name}"
@@ -10736,8 +10923,9 @@ def format_schedule_email_html(shift, assigned_engineers, created_by):
 def format_schedule_event_email_text(action_label, shift, assigned_engineers, actor_name, extra_note=None):
     """Plain-text email body for schedule create/update/move/delete notifications."""
     client_name = shift.client.name if shift and shift.client else "N/A"
-    product_name = shift.product.name if shift and shift.product else "N/A"
-    product_serial = shift.product.serial_number if shift and shift.product else ""
+    equipment = resolve_shift_equipment(shift)
+    product_name = getattr(equipment, 'name', None) if equipment else "N/A"
+    product_serial = getattr(equipment, 'serial_number', None) if equipment else ""
     product_label = product_name
     if product_serial:
         product_label = f"{product_serial} / {product_name}"
@@ -10766,8 +10954,9 @@ def format_schedule_event_email_text(action_label, shift, assigned_engineers, ac
 def format_schedule_event_email_html(action_label, shift, assigned_engineers, actor_name, extra_note=None):
     """HTML email body for schedule create/update/move/delete notifications."""
     client_name = shift.client.name if shift and shift.client else "N/A"
-    product_name = shift.product.name if shift and shift.product else "N/A"
-    product_serial = shift.product.serial_number if shift and shift.product else ""
+    equipment = resolve_shift_equipment(shift)
+    product_name = getattr(equipment, 'name', None) if equipment else "N/A"
+    product_serial = getattr(equipment, 'serial_number', None) if equipment else ""
     product_label = product_name
     if product_serial:
         product_label = f"{product_serial} / {product_name}"
@@ -11399,6 +11588,10 @@ def build_schedule_activity_context_from_payload(payload, shift=None):
         clean_str(payload.get('serial_number')) or
         clean_str(payload.get('serial'))
     )
+    equipment_source = normalize_equipment_source(
+        payload.get('equipment_source') or payload.get('product_source'),
+        default='product',
+    )
 
     client_label = (
         clean_str(payload.get('client_name')) or
@@ -11422,7 +11615,7 @@ def build_schedule_activity_context_from_payload(payload, shift=None):
     if client_rec and clean_str(client_rec.name):
         client_label = clean_str(client_rec.name)
 
-    product_rec = db.session.get(Product, product_id) if product_id else None
+    product_rec = resolve_operational_equipment(product_id, equipment_source) if product_id else None
     if product_rec:
         product_name = clean_str(product_rec.name) or ''
         product_serial = clean_str(product_rec.serial_number) or clean_str(product_id) or ''
@@ -11432,18 +11625,26 @@ def build_schedule_activity_context_from_payload(payload, shift=None):
             product_label = product_name or product_serial or product_label
 
     if shift:
+        if not product_id:
+            product_id = clean_str(getattr(shift, 'product_id', None)) or ''
+        equipment_source = normalize_equipment_source(
+            getattr(shift, 'equipment_source', None),
+            default=equipment_source,
+        )
+        shift_equipment = resolve_shift_equipment(shift)
         if not client_label and getattr(shift, 'client', None):
             client_label = clean_str(shift.client.name) or ''
-        if not product_label and getattr(shift, 'product', None):
-            product_name = clean_str(shift.product.name) or ''
-            product_serial = clean_str(shift.product.serial_number) or ''
+        if not product_label and shift_equipment:
+            product_name = clean_str(getattr(shift_equipment, 'name', None)) or ''
+            product_serial = clean_str(getattr(shift_equipment, 'serial_number', None)) or product_id
             product_label = f"{product_name} ({product_serial})" if product_name and product_serial else (product_name or product_serial)
 
     return {
         'client_id': client_id,
         'client_label': client_label or '',
         'product_id': product_id or '',
-        'product_label': product_label or ''
+        'product_label': product_label or '',
+        'equipment_source': equipment_source,
     }
 
 
@@ -12634,7 +12835,7 @@ def get_offline_tsr_schedule_options():
             serviced_engineer = shift.engineer or (assigned_engineers[0] if assigned_engineers else None)
 
         client = shift.client
-        product = shift.product
+        product = resolve_shift_equipment(shift)
         client_contact = offline_tsr_client_contact_payload(client)
         client_contacts = offline_tsr_client_contacts_payload(client)
         linked_shifts = get_tsr_completion_linked_shifts(shift)
@@ -12662,6 +12863,7 @@ def get_offline_tsr_schedule_options():
             'product_name': product.name if product else '',
             'product_id': shift.product_id or '',
             'product_bsid': (getattr(product, 'bsid', None) or '') if product else '',
+            'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
             'engineers': assigned_ids,
             'engineer_names': [eng.name for eng in assigned_engineers],
             'serviced_by': serviced_engineer.name if serviced_engineer else '',
@@ -14512,13 +14714,23 @@ def ensure_product_from_tsr_payload(shift, payload):
         return {'status': 'blocked', 'reason': 'invalid_context'}
 
     current_serial = (clean_str(getattr(shift, 'product_id', None)) or '').upper()
-    current_product = db.session.get(Product, current_serial) if current_serial else None
-    if current_product:
+    current_equipment = resolve_shift_equipment(shift) if current_serial else None
+    current_source = normalize_equipment_source(getattr(shift, 'equipment_source', None))
+    if current_equipment:
+        selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
+        selected_schedule['product_id'] = current_serial
+        selected_schedule['product_name'] = getattr(current_equipment, 'name', None) or ''
+        selected_schedule['equipment_source'] = current_source
+        payload['selectedSchedule'] = selected_schedule
+        payload['tsr-equipment-model'] = getattr(current_equipment, 'name', None) or payload.get('tsr-equipment-model', '')
+        payload['tsr-serial-no'] = current_serial
         return {
             'status': 'existing',
-            'serial_number': current_product.serial_number,
-            'product_name': current_product.name,
-            'client_id': current_product.client_id
+            'serial_number': current_serial,
+            'product_name': getattr(current_equipment, 'name', None) or '',
+            'client_id': getattr(current_equipment, 'client_id', None),
+            'equipment_source': current_source,
+            'bsid': normalize_product_bsid(getattr(current_equipment, 'bsid', None)),
         }
 
     client_id = clean_int(getattr(shift, 'client_id', None))
@@ -14536,6 +14748,41 @@ def ensure_product_from_tsr_payload(shift, payload):
                     ('Serial No.', serial_number)
                 ) if not value
             ]
+        }
+
+    selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
+    requested_source = normalize_equipment_source(
+        selected_schedule.get('equipment_source') or payload.get('equipment_source'),
+        default='product',
+    )
+    existing_equipment = resolve_operational_equipment(serial_number, requested_source)
+    if existing_equipment:
+        linked_shift_ids = []
+        for linked_shift in get_tsr_completion_linked_shifts(shift):
+            if not linked_shift or clean_int(getattr(linked_shift, 'client_id', None)) != client_id:
+                continue
+            if not clean_str(getattr(linked_shift, 'product_id', None)):
+                linked_shift.product_id = serial_number
+                linked_shift.equipment_source = requested_source
+                linked_shift_ids.append(linked_shift.id)
+        if not clean_str(getattr(shift, 'product_id', None)):
+            shift.product_id = serial_number
+            shift.equipment_source = requested_source
+            linked_shift_ids.append(shift.id)
+        selected_schedule['product_id'] = serial_number
+        selected_schedule['product_name'] = getattr(existing_equipment, 'name', None) or product_name
+        selected_schedule['equipment_source'] = requested_source
+        payload['selectedSchedule'] = selected_schedule
+        payload['tsr-equipment-model'] = getattr(existing_equipment, 'name', None) or product_name
+        payload['tsr-serial-no'] = serial_number
+        return {
+            'status': 'existing',
+            'serial_number': serial_number,
+            'product_name': getattr(existing_equipment, 'name', None) or product_name,
+            'client_id': getattr(existing_equipment, 'client_id', None) or client_id,
+            'equipment_source': requested_source,
+            'bsid': normalize_product_bsid(getattr(existing_equipment, 'bsid', None)),
+            'linked_shift_ids': sorted(set(linked_shift_ids)),
         }
 
     existing_product = db.session.get(Product, serial_number)
@@ -14612,9 +14859,8 @@ def get_online_tsr_missing_core_details(shift, payload):
     if not clean_str(payload.get('tsr-actions-taken')):
         missing.append('Actions Taken')
 
-    current_serial = clean_str(getattr(shift, 'product_id', None)) if shift else None
-    current_product = db.session.get(Product, current_serial) if current_serial else None
-    if not current_product:
+    current_equipment = resolve_shift_equipment(shift) if shift else None
+    if not current_equipment:
         if not clean_str(payload.get('tsr-equipment-model')):
             missing.append('Equipment / Model')
         if not clean_str(payload.get('tsr-serial-no')):
@@ -19654,7 +19900,7 @@ def calibration_certificate_values(payload, shift=None, certificate_number_overr
     facility = report.get('facility') if isinstance(report.get('facility'), dict) else {}
     calibration = report.get('calibration') if isinstance(report.get('calibration'), dict) else {}
     certificate = report.get('certificate') if isinstance(report.get('certificate'), dict) else {}
-    product = getattr(shift, 'product', None) if shift else None
+    product = resolve_shift_equipment(shift) if shift else None
     # The report carries the offline/finalized BSID snapshot. Prefer it when
     # present so a later inventory edit cannot rewrite an already-saved TSR's
     # certificate number; use the selected product only as the live fallback.
@@ -20071,7 +20317,7 @@ def product_calibration_certificate_to_dict(approval):
 def products_page_calibration_certificate_can_view(approval):
     """Authorize Product-page viewers for current approved signed certificates only."""
     shift = getattr(approval, 'shift', None) if approval else None
-    product = getattr(shift, 'product', None) if shift else None
+    product = resolve_shift_equipment(shift) if shift else None
     signed_file_id = clean_int(getattr(approval, 'signed_shift_file_id', None)) if approval else None
     signed_file = db.session.get(ShiftFile, signed_file_id) if signed_file_id else None
     return bool(
@@ -20132,7 +20378,7 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
     except (TypeError, ValueError):
         payload = {}
     shift = getattr(approval, 'shift', None)
-    product = getattr(shift, 'product', None) if shift else None
+    product = resolve_shift_equipment(shift) if shift else None
     generated_report_source = calibration_certificate_generated_report_source_file(approval)
     generated_report_file = calibration_report_pdf_file_for_source(generated_report_source.id) if generated_report_source else None
     report_conversion_state = (
@@ -20393,7 +20639,7 @@ def get_calibration_center_manifest_signature(approval, artifacts):
 def _calibration_center_record(approval):
     """Serialize one current-approved center row without materializing files."""
     shift = getattr(approval, 'shift', None) or db.session.get(Shift, approval.shift_id)
-    product = getattr(shift, 'product', None) if shift else None
+    product = resolve_shift_equipment(shift) if shift else None
     client = getattr(shift, 'client', None) if shift else None
     try:
         mapped = json.loads(approval.mapped_data_json or '{}')
@@ -21244,7 +21490,7 @@ def submit_calibration_certificate_for_submission(submission):
             report_fingerprint=clean_str(report.get('generated', {}).get('fingerprint')) if isinstance(report.get('generated'), dict) else '',
             certificate_fingerprint=certificate_fingerprint,
             certificate_number=values['Textfield'],
-            mapped_data_json=json.dumps({**values, 'bsid': normalize_product_bsid(report_certificate.get('bsid')) or normalize_product_bsid(getattr(getattr(shift, 'product', None), 'bsid', None))}, ensure_ascii=False),
+            mapped_data_json=json.dumps({**values, 'bsid': normalize_product_bsid(report_certificate.get('bsid')) or normalize_product_bsid(getattr(resolve_shift_equipment(shift), 'bsid', None))}, ensure_ascii=False),
             template_sha256=CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
             unsigned_artifact_path=stored_name,
             submitted_at=get_manila_time(),
@@ -22362,8 +22608,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v170-accounting-branch-codes.
-    # Navigation shell bump: v170 authoritative accounting branch codes -> v171 stable TSR reservations.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v171-stable-tsr-reservations';
+    # Navigation shell bump: v171 stable TSR reservations -> v172 operational equipment.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v172-operational-equipment';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27939,6 +28185,37 @@ def quick_add_timeline_client():
     })
 
 
+def operational_equipment_rows():
+    """Return the read-only equipment projection used by schedule/field workflows."""
+    ensure_product_contract_column()
+    ensure_genoray_item_table()
+    ensure_vieworks_item_table()
+
+    products = Product.query.order_by(Product.serial_number).all()
+    certificate_approvals = (
+        latest_approved_calibration_certificates_for_products(products)
+        if can_access_products_page()
+        else {}
+    )
+    rows = [
+        operational_equipment_to_dict(
+            product,
+            'product',
+            certificate=certificate_approvals.get(product.serial_number),
+        )
+        for product in products
+    ]
+    rows.extend(
+        operational_equipment_to_dict(item, 'genoray')
+        for item in GenorayItem.query.order_by(GenorayItem.serial_number).all()
+    )
+    rows.extend(
+        operational_equipment_to_dict(item, 'vieworks')
+        for item in VieworksItem.query.order_by(VieworksItem.serial_number).all()
+    )
+    return rows
+
+
 @app.route('/get_products')
 @login_required
 def get_products():
@@ -27946,6 +28223,8 @@ def get_products():
     ensure_product_contract_column()
     if is_hr_schedule_only_user():
         return jsonify([])
+    if (clean_str(request.args.get('operational')) or '').lower() in {'1', 'true', 'yes'}:
+        return jsonify(operational_equipment_rows())
     products = Product.query.all()
     certificate_approvals = (
         latest_approved_calibration_certificates_for_products(products)
@@ -27966,6 +28245,8 @@ def get_products():
             'under_contract': bool(p.under_contract),
             'computed_status': product_contract_status(p),
             'calibration_certificate': certificate_approvals.get(p.serial_number),
+            'equipment_source': 'product',
+            'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS['product'],
         })
 
     return jsonify(results)
@@ -28388,6 +28669,7 @@ def get_open_tasks():
         assigned_engineers = [engineer for engineer in assigned_engineers if engineer]
 
         eng_names = [engineer.name for engineer in assigned_engineers]
+        equipment = resolve_shift_equipment(s)
 
         results.append({
             'id': s.id,
@@ -28398,10 +28680,10 @@ def get_open_tasks():
             'engineer_names': eng_names,
             'client': s.client.name if s.client else "N/A",
             'client_id': s.client_id,
-            'product': s.product.name if s.product else "",
-            'product_name': s.product.name if s.product else "",
+            'product': getattr(equipment, 'name', None) or "",
+            'product_name': getattr(equipment, 'name', None) or "",
             'product_id': s.product_id or '',
-            'serial': s.product.serial_number if s.product else (s.product_id or ''),
+            'serial': getattr(equipment, 'serial_number', None) or (s.product_id or ''),
             'task': s.title,
             'status': s.status
         })
@@ -28416,14 +28698,15 @@ def dashboard_team_shift_row(shift):
     start_date = shift.start_time.date() if getattr(shift, 'start_time', None) else None
     today = get_manila_today()
     age_days = (today - start_date).days if start_date else 0
+    equipment = resolve_shift_equipment(shift)
 
     return {
         'id': shift.id,
         'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
         'age_days': max(age_days, 0),
         'client': shift.client.name if shift.client else 'N/A',
-        'product': shift.product.name if shift.product else '',
-        'serial': shift.product.serial_number if shift.product else (shift.product_id or ''),
+        'product': getattr(equipment, 'name', None) or '',
+        'serial': getattr(equipment, 'serial_number', None) or (shift.product_id or ''),
         'task': shift.title or '',
         'status': shift.status or '',
         'engineers': ', '.join([engineer.name for engineer in engineers]) or 'N/A',
@@ -28441,14 +28724,15 @@ def dashboard_team_shift_row(shift):
 def scheduler_dashboard_shift_row(shift):
     """Serialize one schedule row for the scheduler dispatch queue."""
     engineers = get_shift_engineer_records(shift)
+    equipment = resolve_shift_equipment(shift)
     return {
         'id': shift.id,
         'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
         'time_start': shift.start_time.strftime('%I:%M %p') if shift.start_time else '',
         'time_end': shift.end_time.strftime('%I:%M %p') if shift.end_time else '',
         'client': shift.client.name if shift.client else 'N/A',
-        'product': shift.product.name if shift.product else '',
-        'serial': shift.product.serial_number if shift.product else (shift.product_id or ''),
+        'product': getattr(equipment, 'name', None) or '',
+        'serial': getattr(equipment, 'serial_number', None) or (shift.product_id or ''),
         'task': shift.title or '',
         'status': shift.status or '',
         'engineers': ', '.join([engineer.name for engineer in engineers]) or 'Unassigned',
@@ -28781,6 +29065,7 @@ def scheduler_coordination_shift_row(shift):
     """
     engineers = get_shift_engineer_records(shift)
     assigned_ids = [engineer.id for engineer in engineers if engineer]
+    equipment = resolve_shift_equipment(shift)
 
     return {
         'id': shift.id,
@@ -28788,8 +29073,8 @@ def scheduler_coordination_shift_row(shift):
         'time_start': shift.start_time.strftime('%I:%M %p') if shift.start_time else '',
         'time_end': shift.end_time.strftime('%I:%M %p') if shift.end_time else '',
         'client': shift.client.name if shift.client else 'N/A',
-        'product': shift.product.name if shift.product else '',
-        'serial': shift.product.serial_number if shift.product else (shift.product_id or ''),
+        'product': getattr(equipment, 'name', None) or '',
+        'serial': getattr(equipment, 'serial_number', None) or (shift.product_id or ''),
         'task': shift.title or '',
         'status': shift.status or '',
         'engineers': ', '.join([engineer.name for engineer in engineers]) or 'Unassigned',
@@ -29450,11 +29735,13 @@ def get_manager_overview():
         shift = row['shift']
         if not row['date'] or not shift.product_id:
             continue
-        serial_label = shift.product.serial_number if shift.product else (shift.product_id or '')
-        key = f"{shift.client_id or 'no-client'}::{serial_label or shift.product_id}"
+        equipment = resolve_shift_equipment(shift)
+        serial_label = getattr(equipment, 'serial_number', None) or (shift.product_id or '')
+        source_label = normalize_equipment_source(getattr(shift, 'equipment_source', None))
+        key = f"{shift.client_id or 'no-client'}::{source_label}::{serial_label or shift.product_id}"
         entry = repeat_map.setdefault(key, {
             'client': shift.client.name if shift.client else 'N/A',
-            'product': shift.product.name if shift.product else (shift.product_id or 'Unknown Equipment'),
+            'product': getattr(equipment, 'name', None) or (shift.product_id or 'Unknown Equipment'),
             'serial': serial_label,
             'service_count': 0
         })
@@ -29604,8 +29891,9 @@ def reimbursement_shift_row(shift, display_engineer_names=None):
     - Admin/all-scope views can omit it and retain the original full assigned-engineer list.
     """
     client_name = shift.client.name if getattr(shift, 'client', None) else ''
-    product_name = shift.product.name if getattr(shift, 'product', None) else ''
-    serial_number = shift.product.serial_number if getattr(shift, 'product', None) else (shift.product_id or '')
+    equipment = resolve_shift_equipment(shift)
+    product_name = getattr(equipment, 'name', None) or ''
+    serial_number = getattr(equipment, 'serial_number', None) or (shift.product_id or '')
 
     if display_engineer_names is not None:
         engineer_names = [name for name in display_engineer_names if name]
@@ -35308,7 +35596,7 @@ def travel_request_conflict_item_to_dict(request_rec):
 
 def travel_request_schedule_conflict_to_dict(shift):
     client_name = getattr(getattr(shift, 'client', None), 'name', '') or ''
-    product = getattr(shift, 'product', None)
+    product = resolve_shift_equipment(shift)
     product_label = ''
     if product:
         product_label = travel_request_product_label(product, getattr(shift, 'product_id', '') or '')
@@ -45812,17 +46100,20 @@ def get_timeline_data():
                 .get('tsr', {})
                 .get('total_count', 0)
             )
+            equipment = resolve_shift_equipment(shift)
 
             payload = {
                 'id': shift.id,
                 'client_name': shift.client.name if shift.client else "",
                 'client_address': shift.client.address if shift.client else "",
-                'product_name': shift.product.name if shift.product else "",
+                'product_name': getattr(equipment, 'name', None) or "",
                 'task': shift.title,
                 'time_start': shift.start_time.strftime("%H:%M"),
                 'time_end': shift.end_time.strftime("%H:%M"),
                 'client_id': shift.client_id,
                 'product_id': shift.product_id,
+                'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
+                'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
                 'status': shift.status,
                 # Keep default legacy payload unchanged.
                 # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
@@ -45977,6 +46268,7 @@ def get_shift_details(shift_id):
         calibration_report_context,
     )
     service_file_delivery = get_shift_service_file_delivery_summary(shift)
+    equipment = resolve_shift_equipment(shift)
 
     return jsonify({
         'status': 'success',
@@ -45984,12 +46276,14 @@ def get_shift_details(shift_id):
             'id': shift.id,
             'client_name': shift.client.name if shift.client else "",
             'client_address': shift.client.address if shift.client else "",
-            'product_name': shift.product.name if shift.product else "",
+            'product_name': getattr(equipment, 'name', None) or "",
             'task': shift.title,
             'time_start': shift.start_time.strftime("%H:%M") if shift.start_time else '',
             'time_end': shift.end_time.strftime("%H:%M") if shift.end_time else '',
             'client_id': shift.client_id,
             'product_id': shift.product_id,
+            'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
+            'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
             'status': shift.status,
             'files': [
                 get_shift_file_display_name(file_record) or file_record.filename
@@ -46762,13 +47056,14 @@ def tsr_archive_shift_to_dict(shift):
         })
 
     engineers = get_shift_engineer_records(shift)
+    equipment = resolve_shift_equipment(shift)
 
     return {
         'id': shift.id,
         'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
         'client': shift.client.name if shift.client else 'N/A',
-        'product': shift.product.name if shift.product else 'N/A',
-        'serial': shift.product.serial_number if shift.product else '',
+        'product': getattr(equipment, 'name', None) or 'N/A',
+        'serial': getattr(equipment, 'serial_number', None) or '',
         'task': shift.title or '',
         'status': shift.status or '',
         'engineers': ', '.join([engineer.name for engineer in engineers]) or 'N/A',
@@ -46936,13 +47231,14 @@ def get_tsr_archive():
             calibration_certificate_no_signature_admin_can_view(certificate_approval)
         )
 
+        equipment = resolve_shift_equipment(shift)
         row = {
             'id': file_rec.id,
             'shift_id': shift.id,
             'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
             'client': shift.client.name if shift.client else 'N/A',
-            'product': shift.product.name if shift.product else 'N/A',
-            'serial': shift.product.serial_number if shift.product else '',
+            'product': getattr(equipment, 'name', None) or 'N/A',
+            'serial': getattr(equipment, 'serial_number', None) or '',
             'task': shift.title or '',
             'status': shift.status or '',
             'engineers': engineer_label,
@@ -47539,12 +47835,13 @@ def get_reports_summary():
     missing_rows = []
     for shift in missing_tsr[:15]:
         engineers = get_shift_engineer_records(shift)
+        equipment = resolve_shift_equipment(shift)
         missing_rows.append({
             'id': shift.id,
             'date': shift.start_time.strftime('%Y-%m-%d'),
             'client': shift.client.name if shift.client else 'N/A',
-            'product': shift.product.name if shift.product else 'N/A',
-            'serial': shift.product.serial_number if shift.product else '',
+            'product': getattr(equipment, 'name', None) or 'N/A',
+            'serial': getattr(equipment, 'serial_number', None) or '',
             'task': shift.title or '',
             'engineers': ', '.join([eng.name for eng in engineers]) or 'N/A'
         })
@@ -47555,8 +47852,9 @@ def get_reports_summary():
 
     for shift in tsr_attached:
         client_name = shift.client.name if shift.client else 'N/A'
-        product_name = shift.product.name if shift.product else 'N/A'
-        product_serial = shift.product.serial_number if shift.product else ''
+        equipment = resolve_shift_equipment(shift)
+        product_name = getattr(equipment, 'name', None) or 'N/A'
+        product_serial = getattr(equipment, 'serial_number', None) or ''
         product_label = product_name if not product_serial else f"{product_name} ({product_serial})"
         tsr_by_client[client_name] = tsr_by_client.get(client_name, 0) + 1
         tsr_by_product[product_label] = tsr_by_product.get(product_label, 0) + 1
@@ -47710,11 +48008,12 @@ def export_reports_summary():
             filenames.append(get_shift_file_display_name(file_rec))
             filenames.append(get_shift_file_disk_name(file_rec))
         engineers = get_shift_engineer_records(shift)
+        equipment = resolve_shift_equipment(shift)
         writer.writerow([
             shift.start_time.strftime('%Y-%m-%d'),
             shift.client.name if shift.client else '',
-            shift.product.name if shift.product else '',
-            shift.product.serial_number if shift.product else '',
+            getattr(equipment, 'name', None) or '',
+            getattr(equipment, 'serial_number', None) or '',
             shift.title or '',
             shift.status or '',
             'Yes' if shift_has_tsr_file(shift) else 'No',
@@ -47749,13 +48048,14 @@ def export_analytics_summary():
 
     for shift in shifts:
         assigned_engineers = get_shift_engineer_records(shift)
+        equipment = resolve_shift_equipment(shift)
         writer.writerow([
             shift.start_time.strftime('%Y-%m-%d'),
             shift.start_time.strftime('%H:%M'),
             shift.end_time.strftime('%H:%M'),
             shift.client.name if shift.client else '',
             shift.title,
-            shift.product.name if shift.product else '',
+            getattr(equipment, 'name', None) or '',
             shift.status or '',
             classify_schedule_type(shift),
             ', '.join([eng.name for eng in assigned_engineers]),
@@ -47906,7 +48206,8 @@ def export_timeline():
                     # HR keeps the client name and the timing; the free-text title and the
                     # equipment are the two fields the calendar redacts, so the download
                     # redacts them too.
-                    product_label = '' if hr_export else (s.product.name if s.product else '')
+                    equipment = resolve_shift_equipment(s)
+                    product_label = '' if hr_export else (getattr(equipment, 'name', None) or '')
                     title_label = (
                         hr_schedule_display_label(getattr(s, 'schedule_type', None))
                         if hr_export else s.title
@@ -51555,6 +51856,9 @@ def copy_shared_schedule_fields(target_shift, source_shift):
     target_shift.title = source_shift.title
     target_shift.client_id = source_shift.client_id
     target_shift.product_id = source_shift.product_id
+    target_shift.equipment_source = normalize_equipment_source(
+        getattr(source_shift, 'equipment_source', None)
+    )
     target_shift.status = source_shift.status
     target_shift.group_id = source_shift.group_id
 
@@ -51627,6 +51931,9 @@ def create_or_update_time_override(parent_shift, engineer_id, start_dt, end_dt):
             engineer_id=engineer_id,
             client_id=parent_shift.client_id,
             product_id=parent_shift.product_id,
+            equipment_source=normalize_equipment_source(
+                getattr(parent_shift, 'equipment_source', None)
+            ),
             status=parent_shift.status,
             created_at=parent_shift.created_at or get_manila_time(),
             group_id=parent_shift.group_id,
@@ -53560,8 +53867,9 @@ def get_tsr_subject_context_for_shift(shift, tsr_files=None, subject_scenario=No
     service_date_obj = shift.start_time.date() if shift and getattr(shift, 'start_time', None) else get_manila_today()
     service_date = service_date_obj.strftime('%B %d, %Y')
     task = shift.title if shift else 'Service'
-    product_name = shift.product.name if shift and getattr(shift, 'product', None) else ''
-    serial = shift.product.serial_number if shift and getattr(shift, 'product', None) else (getattr(shift, 'product_id', '') if shift else '')
+    equipment = resolve_shift_equipment(shift)
+    product_name = getattr(equipment, 'name', None) if equipment else ''
+    serial = getattr(equipment, 'serial_number', None) if equipment else (getattr(shift, 'product_id', '') if shift else '')
 
     if tsr_files is None:
         try:
@@ -53629,8 +53937,9 @@ def build_tsr_client_email_subject(shift, subject_scenario=None, tsr_files=None)
 
 def build_tsr_client_email_bodies(shift, sender_name, font_key=None):
     client_name = shift.client.name if shift and shift.client else 'Valued Client'
-    product_name = shift.product.name if shift and shift.product else ''
-    product_serial = shift.product.serial_number if shift and shift.product else ''
+    equipment = resolve_shift_equipment(shift)
+    product_name = getattr(equipment, 'name', None) if equipment else ''
+    product_serial = getattr(equipment, 'serial_number', None) if equipment else ''
     service_date = shift.start_time.strftime('%B %d, %Y') if shift and shift.start_time else ''
     task = shift.title if shift else ''
 
@@ -53703,7 +54012,7 @@ def get_calibration_email_context(shift):
     client_name = clean_str(
         getattr(getattr(shift, 'client', None), 'name', None)
     ) or 'Valued Client'
-    product = getattr(shift, 'product', None)
+    product = resolve_shift_equipment(shift)
     equipment = clean_str(getattr(product, 'name', None)) if product else ''
     if not equipment:
         equipment = clean_str(getattr(shift, 'product_id', None)) or 'Equipment'
@@ -54564,7 +54873,11 @@ def add_shift():
 
     schedule_activity_context = build_schedule_activity_context_from_payload(payload)
     selected_client_id = schedule_activity_context.get('client_id')
-    selected_product_id = schedule_activity_context.get('product_id')
+    selected_equipment, equipment_error = resolve_schedule_equipment_payload(payload, selected_client_id)
+    if equipment_error:
+        return jsonify({'message': equipment_error}), 400
+    selected_product_id = selected_equipment.get('serial_number') if selected_equipment else ''
+    selected_equipment_source = selected_equipment.get('equipment_source', 'product') if selected_equipment else 'product'
 
     is_work_schedule = bool(selected_client_id)
     if is_work_schedule and requested_status == 'Completed' and not uploaded_files_have_tsr():
@@ -54601,6 +54914,7 @@ def add_shift():
             engineer_id=engineers[0],
             client_id=selected_client_id,
             product_id=selected_product_id,
+            equipment_source=selected_equipment_source,
             status=requested_status,
             created_at=created_at,
             group_id=group_id
@@ -54735,6 +55049,12 @@ def update_shift(id):
         return jsonify({'message': billing_tags_error}), 400
 
     new_status = clean_str(payload.get('status')) or master_shift.status
+    selected_client_id = clean_int(payload.get('client_id'))
+    selected_equipment, equipment_error = resolve_schedule_equipment_payload(payload, selected_client_id)
+    if equipment_error:
+        return jsonify({'message': equipment_error}), 400
+    selected_product_id = selected_equipment.get('serial_number') if selected_equipment else ''
+    selected_equipment_source = selected_equipment.get('equipment_source', 'product') if selected_equipment else 'product'
     start_d = parse_date(payload.get('start_date'))
     end_d = parse_date(payload.get('end_date'))
     new_start_time = payload.get('start_time')
@@ -54816,8 +55136,9 @@ def update_shift(id):
         # Only time/date is customized here. Shared job fields stay tied to parent.
         # If the frontend submitted new shared details, update the parent first.
         parent_shift.title = shift_title
-        parent_shift.client_id = clean_int(payload.get('client_id'))
-        parent_shift.product_id = clean_str(payload.get('product_id'))
+        parent_shift.client_id = selected_client_id
+        parent_shift.product_id = selected_product_id
+        parent_shift.equipment_source = selected_equipment_source
         parent_shift.status = new_status
         apply_editable_travel_block_state(parent_shift, payload, source_shift=parent_shift)
 
@@ -54957,8 +55278,9 @@ def update_shift(id):
         day_shift.title = shift_title
         day_shift.start_time = day_start
         day_shift.end_time = day_end
-        day_shift.client_id = clean_int(payload.get('client_id'))
-        day_shift.product_id = clean_str(payload.get('product_id'))
+        day_shift.client_id = selected_client_id
+        day_shift.product_id = selected_product_id
+        day_shift.equipment_source = selected_equipment_source
         day_shift.status = new_status
         apply_editable_travel_block_state(day_shift, payload, source_shift=day_shift)
 
@@ -55100,8 +55422,9 @@ def update_shift(id):
 
             for existing_shift in existing_chain_for_fast_update:
                 existing_shift.title = shift_title
-                existing_shift.client_id = clean_int(payload.get('client_id'))
-                existing_shift.product_id = clean_str(payload.get('product_id'))
+                existing_shift.client_id = selected_client_id
+                existing_shift.product_id = selected_product_id
+                existing_shift.equipment_source = selected_equipment_source
                 existing_shift.status = new_status
                 existing_shift.group_id = existing_group_id_for_fast_update or existing_shift.group_id or str(uuid.uuid4())
                 apply_editable_travel_block_state(existing_shift, payload, source_shift=existing_shift)
@@ -55247,13 +55570,15 @@ def update_shift(id):
     if completing_full_chain:
         for old_shift in old_chain:
             old_shift.title = shift_title
-            old_shift.client_id = clean_int(payload.get('client_id'))
-            old_shift.product_id = clean_str(payload.get('product_id'))
+            old_shift.client_id = selected_client_id
+            old_shift.product_id = selected_product_id
+            old_shift.equipment_source = selected_equipment_source
             old_shift.status = new_status
         for override in linked_time_overrides:
             override.title = shift_title
-            override.client_id = clean_int(payload.get('client_id'))
-            override.product_id = clean_str(payload.get('product_id'))
+            override.client_id = selected_client_id
+            override.product_id = selected_product_id
+            override.equipment_source = selected_equipment_source
             override.status = new_status
     capture_inventory_pm_histories_for_shifts(
         [*old_chain, *linked_time_overrides],
@@ -55283,8 +55608,9 @@ def update_shift(id):
             start_time=st_obj,
             end_time=et_obj,
             engineer_id=base_engineers_for_date[0],
-            client_id=clean_int(payload.get('client_id')),
-            product_id=clean_str(payload.get('product_id')),
+            client_id=selected_client_id,
+            product_id=selected_product_id,
+            equipment_source=selected_equipment_source,
             status=new_status,
             group_id=group_id,
             created_at=original_created_at
@@ -55315,8 +55641,9 @@ def update_shift(id):
             # No base schedule remains for this date. Keep the child schedule visible and
             # preserve its custom time/engineer assignment instead of deleting/orphaning it.
             override.title = shift_title
-            override.client_id = clean_int(payload.get('client_id'))
-            override.product_id = clean_str(payload.get('product_id'))
+            override.client_id = selected_client_id
+            override.product_id = selected_product_id
+            override.equipment_source = selected_equipment_source
             override.status = new_status
             override.group_id = group_id
             override.override_kind = 'time_override'
@@ -55519,6 +55846,7 @@ def serialize_shift_delete_preview(shift):
     assigned_engineers = get_shift_engineer_records(shift)
     assigned_ids = [engineer.id for engineer in assigned_engineers]
     assigned_names = [engineer.name for engineer in assigned_engineers]
+    equipment = resolve_shift_equipment(shift)
 
     return {
         'id': shift.id,
@@ -55527,7 +55855,7 @@ def serialize_shift_delete_preview(shift):
         'time_label': f"{shift.start_time.strftime('%I:%M %p')} - {shift.end_time.strftime('%I:%M %p')}" if shift.start_time and shift.end_time else '',
         'task': shift.title,
         'client_name': shift.client.name if shift.client else '',
-        'product_name': shift.product.name if shift.product else '',
+        'product_name': getattr(equipment, 'name', None) or '',
         'status': shift.status or '',
         'engineer_ids': assigned_ids,
         'engineer_names': assigned_names,
@@ -55645,6 +55973,7 @@ def build_delete_preview_payload(candidates, delete_mode):
 
 def build_deleted_shift_snapshot(shift):
     """Create a stable notification snapshot before mutating/deleting a shift."""
+    equipment = resolve_shift_equipment(shift)
     return {
         'id': shift.id,
         'title': shift.title,
@@ -55652,7 +55981,7 @@ def build_deleted_shift_snapshot(shift):
         'date_label': shift.start_time.strftime('%B %d, %Y') if shift.start_time else '',
         'time_label': f"{shift.start_time.strftime('%I:%M %p')} - {shift.end_time.strftime('%I:%M %p')}" if shift.start_time and shift.end_time else '',
         'client_name': shift.client.name if shift.client else 'N/A',
-        'product_name': shift.product.name if shift.product else 'N/A'
+        'product_name': getattr(equipment, 'name', None) or 'N/A'
     }
 
 
@@ -58473,6 +58802,8 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_shift_file_original_filename_column()
     ensure_product_contract_column()
     ensure_genoray_item_table()
+    ensure_vieworks_item_table()
+    ensure_shift_equipment_source_column()
     ensure_inventory_pm_visit_table()
     ensure_calibration_certificate_approval_table()
     ensure_schedule_delete_indexes()

@@ -1,5 +1,47 @@
 # Project Change Log
 
+codex changes - 2026-09-22
+
+- Recorded the owner-authorized Operational Genoray/Vieworks equipment integration plan in
+  `plans.md` with status `In progress`. The approved scope adds source-aware schedule identity,
+  an operational equipment projection, schedule/TSR/calibration resolution, focused tests,
+  release/cache records, and explicit preservation of the separate inventory tables and their
+  admin-only CRUD boundaries. No application behavior, database data, production/Railway state,
+  commit, push, deployment, browser, or protected dirty artifact was changed in this planning
+  record step.
+- Executed the approved operational equipment integration locally and left it uncommitted. Added
+  the additive `Shift.equipment_source` field/migration and source-aware Product, Genoray, and
+  Vieworks resolution in `app.py`; existing schedules default to Product Inventory and the
+  separate inventory tables and CRUD permissions remain unchanged.
+- Added `/get_products?operational=1` for the schedule/field workflow. It returns Product,
+  Genoray, and Vieworks rows with source, serial, model name, client, BSID, warranty/contract
+  status, and source label, while the legacy `/get_products` response remains Product-only.
+  Schedule create/update now validates the selected source, equipment, and client, persists the
+  source through multi-day/time-override propagation, rejects unknown sources and wrong-client
+  equipment, and preserves historical serials without mirroring standalone rows into Product.
+- Updated Timeline and Offline TSR selection/queue/edit payloads to retain source-aware equipment
+  identity and distinguish duplicate serials across inventory tables. Create TSR schedule options,
+  TSR existing-equipment recognition, PM snapshots, calibration certificate BSID fallback,
+  schedule/service emails, dashboards, archives, reimbursement, and report serializers now use
+  the selected standalone equipment name/serial/BSID where applicable. Restored a legacy
+  `shift.product` fallback for schedule objects that do not expose `product_id`.
+- Added isolated `tests/test_operational_equipment_workflows.py` coverage for the three-source
+  operational list, Product-only legacy behavior, schedule source persistence, client/source
+  validation, standalone TSR recognition without Product duplication, and calibration BSID
+  mapping. Updated the release-head contract to account for the new release manifest entry.
+- Bumped the embedded service-worker navigation marker from v171 to
+  `medical-service-pwa-offline-navigation-v172-operational-equipment` and added release item
+  `2026-09-22-operational-equipment-workflows` for engineers/admins in
+  `static/changelog/releases.json`.
+- Verification: operational focused tests 5/5; isolated calibration approval 28/28; related
+  TSR/offline/numbering/report and dashboard tests 142/142; related timeline/schedule/email tests
+  37/37; changelog tests 41/41; service-email compatibility regression 1/1; release-head
+  contract 1/1; Python AST, release JSON, and `git diff --check` passed. Repository-wide
+  discovery completed 1,230 tests with 2 skips and 20 remaining failures outside these workflows:
+  one isolated-vs-discovery changelog fixture, purchase-order rate-limit setup responses, two
+  staff-fixture responses, and one stale historical cache-marker contract. No browser,
+  production/Railway, commit/push, or protected dirty path was changed.
+
 codex changes - 2026-09-20
 
 - Published the authorized Stable TSR number reservation implementation commit `67ee107` and its

@@ -415,7 +415,7 @@ window.CalibrationReportConfig = {
       <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-save"><i class="fa-solid fa-bookmark me-1"></i>Save Draft</button>
       <button type="button" class="btn btn-primary fw-bold" id="calibration-report-generate"><i class="fa-solid fa-file-pdf me-1"></i><span id="calibration-report-generate-label">Generate Sample PDF</span></button>
       <div id="calibration-report-certificate-controls" class="calibration-report-certificate-controls" role="group" aria-label="Calibration Certificate sample">
-        <label class="calibration-report-certificate-field"><span>BSID (from Product Inventory)</span><input id="calibration-report-bsid" type="text" maxlength="40" autocomplete="off" inputmode="text" readonly aria-readonly="true" aria-describedby="calibration-report-certificate-number-help" placeholder="Select a machine with BSID"></label>
+        <label class="calibration-report-certificate-field"><span>BSID (from Equipment Inventory)</span><input id="calibration-report-bsid" type="text" maxlength="40" autocomplete="off" inputmode="text" readonly aria-readonly="true" aria-describedby="calibration-report-certificate-number-help" placeholder="Select a machine with BSID"></label>
         <label class="calibration-report-certificate-preview"><span>Certificate No.</span><output id="calibration-report-certificate-number" aria-live="polite">Incomplete certificate number</output><small id="calibration-report-certificate-number-help">YYYY-MMDD-BSID</small></label>
         <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-certificate-generate"><i class="fa-solid fa-file-pdf me-1"></i>Generate Sample Certificate PDF</button>
       </div>
@@ -1321,8 +1321,10 @@ async function clearStandaloneTSRPage(skipConfirm=false){
 function getScheduleProductLabel(schedule){
   const serial = schedule?.product_id || '';
   const name = schedule?.product_name || '';
-  if(serial && name) return `${serial} — ${name}`;
-  return serial || name || 'No equipment';
+  const source = String(schedule?.equipment_source || '').toLowerCase();
+  const sourceLabel = source === 'genoray' ? 'Genoray' : (source === 'vieworks' ? 'Vieworks' : '');
+  const label = serial && name ? `${serial} — ${name}` : (serial || name || 'No equipment');
+  return sourceLabel ? `${label} · ${sourceLabel}` : label;
 }
 function normalizeTSRScheduleCoverageRows(scheduleOrData){
   const source = Array.isArray(scheduleOrData?.schedule_coverage)
@@ -1476,6 +1478,7 @@ function hashScheduleIdentity(schedule){
   const parts = [
     schedule?.client_id, schedule?.client_name,
     schedule?.product_id, schedule?.product_name,
+    schedule?.equipment_source,
     getScheduleOptionDateIso(schedule),
     schedule?.time_start, schedule?.time_end, schedule?.task
   ].map(value => String(value ?? '').trim().toLowerCase()).join('|');
@@ -1582,6 +1585,7 @@ function normalizeStandaloneCreateTSRContext(rawContext){
     client_id: ctx.client_id || '',
     product_name: ctx.product_name || '',
     product_id: ctx.product_id || '',
+    equipment_source: ctx.equipment_source || ctx.product_source || 'product',
     engineer_id: ctx.engineer_id || ctx.engineerId || '',
     serviced_by: ctx.engineer_name || ctx.serviced_by || LOGGED_IN_ENGINEER_NAME || '',
     serviced_by_initials: ctx.engineer_initials || LOGGED_IN_ENGINEER_INITIALS || '',
@@ -1730,6 +1734,7 @@ function getStandaloneScheduleGroupKey(schedule){
     schedule.client_name || '',
     schedule.product_id || '',
     schedule.product_name || '',
+    schedule.equipment_source || 'product',
     schedule.task || '',
     schedule.time_start || '',
     schedule.time_end || '',
@@ -1791,6 +1796,7 @@ function getScheduleSearchText(schedule){
     schedule?.client_address,
     schedule?.product_id,
     schedule?.product_name,
+    schedule?.equipment_source,
     schedule?.task,
     schedule?.date_label,
     schedule?.date_iso,
@@ -1868,6 +1874,7 @@ async function readPendingScheduleOptions(){
         client_id: summary.clientId || '',
         product_name: summary.productName || '',
         product_id: summary.productId || '',
+        equipment_source: summary.productSource || 'product',
         engineers: summary.engineerIds || [],
         engineer_names: [LOGGED_IN_ENGINEER_NAME].filter(Boolean),
         serviced_by: LOGGED_IN_ENGINEER_NAME || '',
@@ -1934,6 +1941,7 @@ function readTimelineSnapshotSchedules(){
             client_id: shift.client_id || '',
             product_name: shift.product_name || '',
             product_id: shift.product_id || '',
+            equipment_source: shift.equipment_source || 'product',
             engineers: rawEngineers,
             engineer_names: [...new Set(engineerNames)],
             serviced_by: LOGGED_IN_ENGINEER_NAME || shift.day_owner_engineer_name || engineer.name || '',

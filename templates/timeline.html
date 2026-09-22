@@ -1017,6 +1017,7 @@
                         <label class="small fw-bold text-muted text-uppercase mb-1 d-block">🛠 Equipment / Machine</label>
                         <input type="text" id="f-prod-search" class="form-control" placeholder="Search machine serial..." autocomplete="off">
                         <input type="hidden" id="f-prod-id">
+                        <input type="hidden" id="f-prod-source" value="product">
                         <div id="prod-results" class="search-results shadow border-0 rounded-3"></div>
                         <div id="product-coverage-status" class="timeline-product-coverage d-none mt-2" role="status" aria-live="polite">
                             <div class="timeline-product-coverage-label">
@@ -11748,6 +11749,7 @@ async function openMobileAddSchedule(){
             title: categoryVal === 'Work' ? (shift?.task || '') : (categoryInfo.detail || shift?.task || ''),
             clientId: isWork ? (shift?.client_id || '') : '',
             productId: isWork ? (shift?.product_id || '') : '',
+            productSource: isWork ? (shift?.equipment_source || 'product') : 'product',
             startTime: shift?.time_start || '08:00',
             endTime: shift?.time_end || '17:00'
         };
@@ -11777,6 +11779,7 @@ async function openMobileAddSchedule(){
             const endTimeEl = document.getElementById('f-end-time');
             const clientEl = document.getElementById('f-cli-id');
             const productEl = document.getElementById('f-prod-id');
+            const productSourceEl = document.getElementById('f-prod-source');
 
             if(categoryEl) categoryEl.value = payload.category || 'Work';
             if(titleEl) titleEl.value = payload.title || '';
@@ -11786,6 +11789,7 @@ async function openMobileAddSchedule(){
             if(endTimeEl) endTimeEl.value = payload.endTime || '17:00';
             if(clientEl) clientEl.value = payload.clientId || '';
             if(productEl) productEl.value = payload.productId || '';
+            if(productSourceEl) productSourceEl.value = payload.productSource || 'product';
 
             if(typeof toggleFields === 'function') toggleFields();
             if(typeof updateDurationLabel === 'function') updateDurationLabel();
@@ -12256,9 +12260,11 @@ function collectMobileEngineerSchedules(){
         if(!product) return "";
         const serial = product.serial_number || product.product_id || "";
         const name = product.name || product.product_name || "";
+        const source = String(product.equipment_source || '').toLowerCase();
+        const sourceLabel = product.source_label || (source === 'genoray' ? 'Genoray' : (source === 'vieworks' ? 'Vieworks' : ''));
+        const baseLabel = serial && name ? `${serial} / ${name}` : (serial || name || "");
 
-        if(serial && name) return `${serial} / ${name}`;
-        return serial || name || "";
+        return sourceLabel && source !== 'product' ? `${baseLabel} · ${sourceLabel}` : baseLabel;
     }
 
     function getProductCoverageStatus(product){
@@ -12297,8 +12303,12 @@ function collectMobileEngineerSchedules(){
         const badge = document.getElementById('product-coverage-badge');
         if(!panel || !badge) return;
 
+        const selectedSource = document.getElementById('f-prod-source')?.value || '';
         const product = typeof productOrSerial === "string"
-            ? (masterProducts || []).find(item => String(item.serial_number || "") === String(productOrSerial))
+            ? (masterProducts || []).find(item =>
+                String(item.serial_number || "") === String(productOrSerial) &&
+                (!selectedSource || String(item.equipment_source || 'product') === String(selectedSource))
+            )
             : productOrSerial;
         const status = getProductCoverageStatus(product);
         if(!product || !status){
@@ -13150,6 +13160,7 @@ function collectMobileEngineerSchedules(){
 
         const clientId = suggestion.client_id || '';
         const productId = suggestion.product_id || '';
+        const productSource = suggestion.equipment_source || suggestion.product_source || 'product';
         const clientName = suggestion.client_name || '';
         const productName = suggestion.product_name || '';
 
@@ -13163,11 +13174,16 @@ function collectMobileEngineerSchedules(){
 
         const prodField = document.getElementById('f-prod-search');
         const prodHidden = document.getElementById('f-prod-id');
+        const prodSource = document.getElementById('f-prod-source');
         const prodResults = document.getElementById('prod-results');
 
         if(productId){
             if(prodHidden) prodHidden.value = productId;
-            const masterProduct = (masterProducts || []).find(item => String(item.serial_number || '') === String(productId));
+            if(prodSource) prodSource.value = productSource;
+            const masterProduct = (masterProducts || []).find(item =>
+                String(item.serial_number || '') === String(productId) &&
+                String(item.equipment_source || 'product') === String(productSource)
+            );
             const display = formatProductDisplay(masterProduct) || suggestion.product_label || (productName ? `${productId} / ${productName}` : productId);
             if(prodField) prodField.value = display;
             if(prodResults) prodResults.innerHTML = '';
@@ -13437,18 +13453,23 @@ function collectMobileEngineerSchedules(){
                             </div>`;
     }
 
-    function getProductDisplayBySerial(serialNumber){
+    function getProductDisplayBySerial(serialNumber, source=''){
         if(!serialNumber) return "";
-        const product = masterProducts.find(p => String(p.serial_number) === String(serialNumber));
+        const product = masterProducts.find(p =>
+            String(p.serial_number) === String(serialNumber) &&
+            (!source || String(p.equipment_source || 'product') === String(source))
+        );
         return formatProductDisplay(product);
     }
 
     function resetProductSelection(message){
         const prodField = document.getElementById('f-prod-search');
         const prodHidden = document.getElementById('f-prod-id');
+        const prodSource = document.getElementById('f-prod-source');
         const prodResults = document.getElementById('prod-results');
 
         if(prodHidden) prodHidden.value = "";
+        if(prodSource) prodSource.value = "product";
         if(prodField){
             prodField.value = "";
             prodField.placeholder = message || "Select a client first...";
@@ -13542,6 +13563,7 @@ if (selectedVal === "Leave") {
             document.getElementById('f-cli-id').value = "";
             document.getElementById('f-cli-search').value = "";
             document.getElementById('f-prod-id').value = "";
+            document.getElementById('f-prod-source').value = "product";
             document.getElementById('f-prod-search').value = "";
             renderProductCoverageStatus(null);
         } else if (selectedVal === "Training" || selectedVal === "Office" || selectedVal === "Travel" || selectedVal === "Pullout" || selectedVal === "Holiday") {
@@ -13557,6 +13579,7 @@ if (selectedVal === "Leave") {
             document.getElementById('f-cli-id').value = "";
             document.getElementById('f-cli-search').value = "";
             document.getElementById('f-prod-id').value = "";
+            document.getElementById('f-prod-source').value = "product";
             document.getElementById('f-prod-search').value = "";
             renderProductCoverageStatus(null);
         } else {
@@ -13961,11 +13984,15 @@ if (selectedVal === "Leave") {
         // still in hand, rather than looked up later when the device may be cold.
         const queuedClientId = dataSet.get('client_id') || '';
         const queuedProductId = dataSet.get('product_id') || '';
+        const queuedProductSource = dataSet.get('equipment_source') || 'product';
         const clientRecord = queuedClientId
             ? masterClients.find(c => String(c.id) === String(queuedClientId))
             : null;
         const productRecord = queuedProductId
-            ? masterProducts.find(p => String(p.serial_number) === String(queuedProductId))
+            ? masterProducts.find(p =>
+                String(p.serial_number) === String(queuedProductId) &&
+                String(p.equipment_source || 'product') === String(queuedProductSource)
+            )
             : null;
 
         const summary = {
@@ -13980,6 +14007,7 @@ if (selectedVal === "Leave") {
             clientName: clientRecord?.name || '',
             clientAddress: clientRecord?.address || '',
             productId: queuedProductId,
+            productSource: queuedProductSource,
             productName: productRecord?.name || productRecord?.product_name || '',
             status: dataSet.get('status') || 'In Progress'
         };
@@ -14021,6 +14049,7 @@ if (selectedVal === "Leave") {
                 clientName: item.summary?.clientName || '',
                 clientAddress: item.summary?.clientAddress || '',
                 productId: item.summary?.productId || '',
+                productSource: item.summary?.productSource || 'product',
                 productName: item.summary?.productName || '',
                 scheduleStatus: item.summary?.status || 'In Progress'
             };
@@ -14138,6 +14167,7 @@ if (selectedVal === "Leave") {
                         client_address: row.clientAddress,
                         product_id: row.productId,
                         product_name: row.productName,
+                        equipment_source: row.productSource || 'product',
                         start_date: (row.dates || [])[0] || dayIso,
                         end_date: (row.dates || [])[(row.dates || []).length - 1] || dayIso,
                         engineers: row.engineerIds
@@ -15105,7 +15135,7 @@ async function loadGrid(options={}) {
         // stopped the full schedule form working in the field. Now the online path tops up
         // a device copy, and the offline path reads it back.
         try{
-            const [customerRes, assetRes] = await Promise.all([fetch('/get_clients'), fetch('/get_products')]);
+            const [customerRes, assetRes] = await Promise.all([fetch('/get_clients'), fetch('/get_products?operational=1')]);
             masterClients = await customerRes.json();
             masterProducts = await assetRes.json();
             if(window.offlineSchedule){
@@ -15141,7 +15171,8 @@ async function loadGrid(options={}) {
     function setupAutocomplete(inputId, resultsId, dataArray, key1, key2, idLink, hiddenLink, isClientSearch) {
         const field = document.getElementById(inputId),
               resultsDiv = document.getElementById(resultsId),
-              hiddenInp = document.getElementById(hiddenLink);
+              hiddenInp = document.getElementById(hiddenLink),
+              sourceInp = inputId === 'f-prod-search' ? document.getElementById('f-prod-source') : null;
 
         field.addEventListener('input', function() {
             const val = field.value.toLowerCase();
@@ -15152,6 +15183,7 @@ async function loadGrid(options={}) {
                 updateProductInputState();
             }else if(inputId === 'f-prod-search'){
                 hiddenInp.value = "";
+                if(sourceInp) sourceInp.value = 'product';
                 renderProductCoverageStatus(null);
             }
             if (!val) return;
@@ -15210,6 +15242,7 @@ async function loadGrid(options={}) {
                     ev.stopPropagation();
                     field.value = textLabel;
                     hiddenInp.value = m[idLink];
+                    if(sourceInp) sourceInp.value = m.equipment_source || 'product';
                     resultsDiv.innerHTML = "";
 
                     if (isClientSearch) {
@@ -15483,7 +15516,8 @@ if(shift.engineers){
         document.getElementById('f-cli-search').value = centerLabel;
 
         document.getElementById('f-prod-id').value = shift.product_id;
-        document.getElementById('f-prod-search').value = getProductDisplayBySerial(shift.product_id) || shift.product_name || "";
+        document.getElementById('f-prod-source').value = shift.equipment_source || 'product';
+        document.getElementById('f-prod-search').value = getProductDisplayBySerial(shift.product_id, shift.equipment_source || 'product') || shift.product_name || "";
         renderProductCoverageStatus(shift.product_id || null);
         document.getElementById('f-start-date').value = shift.start_date || date;
         document.getElementById('f-end-date').value = shift.end_date || shift.start_date || date;
@@ -17279,6 +17313,7 @@ async function openTSRClientEmailModal(shiftId){
         dataSet.append('engineer_id', primaryEngineer);
         const clientValue = categoryVal === "Work" ? document.getElementById('f-cli-id').value : "";
         const productValue = categoryVal === "Work" ? document.getElementById('f-prod-id').value : "";
+        const productSource = categoryVal === "Work" ? (document.getElementById('f-prod-source')?.value || 'product') : "product";
 
         if(categoryVal === "Work" && productValue && !clientValue){
             timelineAlert("Please select a client before selecting a product.");
@@ -17287,6 +17322,7 @@ async function openTSRClientEmailModal(shiftId){
 
         dataSet.append('client_id', clientValue);
         dataSet.append('product_id', productValue);
+        dataSet.append('equipment_source', productValue ? productSource : 'product');
 
         // Step 2: Save known client/contact emails as metadata for manually uploaded TSR files.
         // This avoids OCR for scanned PDFs and lets Send Service Files detect recipients later.
@@ -20063,6 +20099,7 @@ function redirectToCreateTSRPageFromSchedule(shiftPayload, engineerId, dayIso){
         date: dayIso || shift.start_date || '',
         client_id: shift.client_id || '',
         product_id: shift.product_id || '',
+        equipment_source: shift.equipment_source || 'product',
         client_name: shift.client_name || '',
         product_name: shift.product_name || '',
         task: shift.task || shift.title || '',
@@ -20092,6 +20129,7 @@ function redirectToCreateTSRPageFromQueuedSchedule(shiftPayload, engineerId, day
         date: dayIso || shift.start_date || '',
         client_id: shift.client_id || '',
         product_id: shift.product_id || '',
+        equipment_source: shift.equipment_source || 'product',
         client_name: shift.client_name || '',
         client_address: shift.client_address || '',
         product_name: shift.product_name || '',
@@ -20120,6 +20158,7 @@ function redirectToEditLatestTSRFromSchedule(shiftPayload, engineerId, dayIso){
         mode: 'edit_latest',
         client_id: shift.client_id || '',
         product_id: shift.product_id || '',
+        equipment_source: shift.equipment_source || 'product',
         client_name: shift.client_name || '',
         product_name: shift.product_name || '',
         task: shift.task || shift.title || '',
@@ -20153,6 +20192,7 @@ function openOfflineTSRDraftFromShiftModal(){
         date: dayIso || '',
         client_id: safeOfflineTSRValue('f-cli-id') || baseShift.client_id || '',
         product_id: safeOfflineTSRValue('f-prod-id') || baseShift.product_id || '',
+        equipment_source: baseShift.equipment_source || 'product',
         client_name: safeOfflineTSRValue('f-cli-search') || baseShift.client_name || '',
         product_name: safeOfflineTSRValue('f-prod-search') || baseShift.product_name || '',
         task: safeOfflineTSRValue('f-title') || baseShift.task || baseShift.title || '',

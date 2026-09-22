@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-22-operational-equipment-workflows",
+      "release_date": "2026-09-22",
+      "title": "Genoray and Vieworks Equipment in Service Workflows",
+      "summary": "Genoray and Vieworks inventory equipment can now be selected and carried through schedule, TSR, and calibration workflows without merging inventory tables.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-22-operational-equipment-workflows-engineers-admins",
+          "category": "Service Workflows",
+          "description": "Admins and engineers see Product, Genoray, and Vieworks equipment in the schedule picker. The selected inventory source is preserved on schedule rows and reused by Timeline, Offline TSR, calibration certificate BSID resolution, service emails, and operational reports.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-20-accounting-branch-codes",
       "release_date": "2026-09-20",
       "title": "Accounting Branch Codes from Engineer Profiles",

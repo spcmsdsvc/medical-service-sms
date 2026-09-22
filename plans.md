@@ -1,5 +1,159 @@
 # Medical Service SMS — Approved Plans
 
+## Operational Genoray/Vieworks equipment in schedules, TSRs, and calibration
+
+**Status:** Executed — uncommitted
+**Approved:** 2026-09-22 — the owner requested the implementation fix after the current workflow review.
+**Execution authorized:** 2026-09-22 — the owner separately said “proceed with the implementation fix.”
+**Detailed:** 2026-09-22.
+
+### Summary
+
+Make standalone Genoray and Vieworks inventory records available to the operational equipment
+workflow used by admins and engineers. Product Inventory, Genoray Inventory, and Vieworks
+Inventory remain separate CRUD tables and permission surfaces. The change adds a source-aware
+equipment identity to schedule rows and a shared read/resolve projection so schedules, Create
+TSR, and Calibration Report use the selected standalone item’s name, serial number, client, and
+BSID consistently.
+
+### Decisions taken
+
+1. Keep the existing `Product`, `GenorayItem`, and `VieworksItem` tables separate. Do not mirror
+   standalone rows into Product Inventory, because that would create duplicate equipment records
+   and make rename/delete synchronization ambiguous.
+2. Keep `Shift.product_id` as the backward-compatible serial field and add a source column to
+   disambiguate the three equipment tables. Existing rows default to `product`.
+3. Add standalone rows only to the operational equipment response requested by Timeline/field
+   workflows. The normal `/get_products` response remains Product Inventory-only so the Product
+   page, Product certificate badges, and existing dashboards do not silently change inventory
+   scope.
+4. Validate the selected source, serial, and client on schedule create/update. Admin-only
+   Genoray/Vieworks CRUD permissions remain unchanged.
+5. Resolve the source-aware equipment record at schedule/TSR/calibration serialization points.
+   If a standalone equipment row is removed later, preserve the serial in historical schedule
+   payloads while leaving the missing name/BSID blank rather than creating a duplicate Product.
+
+### Files and functions in scope
+
+- `app.py`: add the `Shift.equipment_source` field and additive live migration; add source-aware
+  equipment normalization, lookup, serialization, schedule-payload validation, and shift
+  resolution helpers; expose the operational equipment variant of `/get_products`; update
+  schedule create/update and time-override propagation; update timeline, schedule-detail,
+  Create TSR schedule options, PM display, schedule email, dashboard/report labels, TSR product
+  handling, and calibration certificate BSID fallback to use the resolver.
+- `templates/timeline.html`: carry equipment source in the hidden selection state, populate the
+  operational equipment list, preserve source through online/offline schedule saves and edits,
+  and distinguish duplicate serials by source when resolving the selected item.
+- `templates/offline_tsr.html`: change the calibration BSID label to the shared equipment
+  inventory wording; preserve the server-provided source-aware schedule snapshot without adding
+  a second product picker.
+- `static/changelog/releases.json`: add the user-facing release item for admins/engineers.
+- `tests/test_operational_equipment_workflows.py`: add isolated fail-first and post-fix coverage
+  for the operational list, client filtering, schedule source persistence, timeline/TSR payloads,
+  TSR equipment recognition without Product duplication, and calibration BSID mapping.
+- `tests/test_accounting_branch_codes.py`: update the existing release-head contract so the new
+  operational release can be the manifest head while the accounting release remains covered.
+- `plans.md`, `changes.md`: record the approved executable plan and truthful outcome.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first proof.** Re-read this plan, `changes.md`, current Git status, the
+   applicable source, schedule/TSR/calibration tests, and protected dirty paths. Add isolated
+   focused tests that prove the current endpoint/picker omits Genoray/Vieworks and that a
+   standalone schedule cannot currently resolve its name/BSID. Run the new tests against the
+   unchanged behavior and record the expected failures without touching `scheduler.db` or owner
+   artifacts. **Done when:** the fail-first checkpoint demonstrates the real workflow gap.
+2. **Equipment identity and operational projection.** In `app.py`, add `equipment_source` to
+   `Shift`, migrate existing SQLite databases additively with a `product` default/index, add
+   source normalization and case-safe record resolution, and add the operational equipment
+   serializer/response while keeping default Product Inventory API behavior unchanged. **Done
+   when:** Product, Genoray, and Vieworks rows are returned with source, serial, name, client,
+   BSID, and contract status, and unknown sources cannot resolve.
+3. **Schedule create/update plumbing.** In `app.py` and `templates/timeline.html`, submit and
+   persist the source alongside the serial, validate that the selected equipment exists and is
+   owned by the selected client, preserve it across multi-day chains/time overrides/rebuilds,
+   and include it in timeline/detail/offline queue payloads. **Done when:** an admin/engineer can
+   choose each source and a saved schedule reloads the correct name/source/BSID.
+4. **TSR and calibration integration.** Update `/get_offline_tsr_schedule_options`, TSR
+   equipment recognition, TSR completion payload snapshots, calibration certificate BSID fallback,
+   and the required schedule/PM/email/report serializers. A known Genoray/Vieworks item must be
+   treated as existing equipment and must never be copied into `Product`. **Done when:** Create
+   TSR shows the correct model/serial/BSID and Calibration Report/certificate generation uses the
+   standalone BSID.
+5. **Focused tests and source checks.** Run the focused operational tests, related TSR,
+   calibration, timeline, PM, inventory-isolation, release/cache, Python AST, Jinja/inline
+   JavaScript, JSON, and `git diff --check` checks. Re-run the fail-first cases as passing
+   controls after implementation. Browser/Codex UI automation is prohibited by project rules;
+   use Flask clients and source/runtime checks only. **Done when:** all focused requirements have
+   evidence and no protected file was changed.
+6. **Delivery records and cache.** Bump the embedded service-worker marker monotonically, add the
+   release-manifest entry, update `changes.md`, and change this plan to `Executed — uncommitted`
+   with exact verification results. Do not commit, push, deploy, modify Railway, alter production
+   data, or touch `scheduler.db`, handoff artifacts, `.claude/`, `output/`, or `tmp/`. **Done
+   when:** the implementation report and project records are truthful and complete.
+
+### Acceptance criteria
+
+- The operational schedule equipment picker shows client-linked Product, Genoray, and Vieworks
+  records to authorized admins/engineers.
+- The selected source is stored with every new/updated Shift and survives linked schedule and
+  time-override propagation; existing Product rows remain compatible.
+- Create TSR schedule options show the standalone equipment name, serial, and BSID.
+- A Genoray/Vieworks schedule is recognized as existing equipment during TSR save and does not
+  create a duplicate Product row.
+- Calibration Report and Calibration Certificate BSID fallback use the selected standalone item.
+- Wrong-client and unknown-source submissions are rejected; deleted historical standalone rows
+  retain their serial but do not leak or invent Product data.
+- Product/Genoray/Vieworks inventory isolation and admin-only CRUD behavior remain unchanged.
+
+### Deliberately excluded
+
+No Product/Genoray/Vieworks table merge or mirror, purchase-order relationship redesign, travel
+request schema redesign, historical schedule backfill, standalone inventory permission change,
+production/Railway/database repair, official PDF/DOCX template edit, browser/Codex UI automation,
+commit, push, deployment, or protected dirty-file modification is authorized.
+
+### Implementation outcome
+
+Implemented the approved scope locally and left it uncommitted. `app.py` now has the additive
+`Shift.equipment_source` migration, source-aware Product/Genoray/Vieworks resolution, the
+operational `/get_products?operational=1` projection, schedule create/update validation and
+propagation, and downstream TSR, calibration, PM, email, dashboard, archive, reimbursement, and
+report serializers using the resolver. Existing Product rows continue to default to `product`, and
+the legacy `/get_products` response remains Product Inventory-only. A compatibility fallback also
+keeps legacy/mock schedule objects that expose only `shift.product` rendering their Product name.
+
+`templates/timeline.html` carries the source through the picker, edit form, timeline payload,
+online/offline queue, duplicate schedule, and Create TSR redirects. `templates/offline_tsr.html`
+preserves source-aware schedule identity and uses the shared Equipment Inventory BSID wording.
+`static/changelog/releases.json` records the published admin/engineer workflow item and the
+embedded service-worker marker moved monotonically from v171 to v172. The existing release-head
+contract in `tests/test_accounting_branch_codes.py` was updated to recognize the new intentional
+manifest head while still checking that the accounting release remains present.
+
+The fail-first checkpoint ran before the fix: the new operational tests exposed the Product-only
+picker, standalone TSR handling, and missing standalone calibration BSID. The initial schedule
+fixture also used a plain `admin` account rejected by the existing schedule capability policy;
+the regression now uses an authorized engineer and does not broaden authorization rules. After
+implementation, `tests/test_operational_equipment_workflows.py` passes 5/5; the standalone
+calibration approval module passes 28/28 when isolated; related TSR/offline/numbering/report and
+dashboard suites pass 142/142; related timeline/schedule/email suites pass 37/37; the changelog
+module passes 41/41; the service-email compatibility regression passes 1/1; and the release-head
+contract passes 1/1. Python AST parsing, release JSON parsing, and `git diff --check` pass. A
+repository-wide discovery run completed 1,230 tests with 2 skips and 20 failures, all outside
+the operational focused suites; the remaining failures were an isolated-vs-discovery changelog
+fixture, purchase-order rate-limit setup responses, two staff-fixture responses, and one stale
+historical cache-marker contract. The product-label regression found in the earlier run was
+corrected and re-tested.
+`py_compile` was not counted because this environment denied writing the generated `__pycache__`
+file; AST validation succeeded. No browser, production, Railway, commit, push, deployment,
+`scheduler.db`, handoff artifact, `.claude/`, `output/`, or `tmp/` owner path was changed.
+
+### After implementation
+
+The implementation remains local and uncommitted. Formal review, commit/push, deployment/Railway
+verification, and any production data action require separate owner authorization.
+
 ## Stable TSR number reservation
 
 **Status:** Executed — implementation commit `67ee107`; publication authorized by the owner.

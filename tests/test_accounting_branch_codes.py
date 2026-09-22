@@ -118,8 +118,13 @@ class AccountingPayloadAndUIContractsTests(unittest.TestCase):
     def test_release_entry_is_present(self):
         self.assertTrue(self.releases)
         newest = self.releases['releases'][0]
-        self.assertEqual(newest.get('release_key'), '2026-09-20-accounting-branch-codes')
-        self.assertIn('branch', (newest.get('title') or '').lower())
+        self.assertEqual(newest.get('release_key'), '2026-09-22-operational-equipment-workflows')
+        self.assertIn('equipment', (newest.get('title') or '').lower())
+        accounting_release = next(
+            release for release in self.releases['releases']
+            if release.get('release_key') == '2026-09-20-accounting-branch-codes'
+        )
+        self.assertIn('branch', (accounting_release.get('title') or '').lower())
 
     def test_forms_and_rfps_use_the_creator_branch_for_each_accounting_workflow(self):
         with app_module.app.app_context(), patch.object(app_module, 'travel_liquidation_recalculate_totals'), patch.object(app_module, 'cash_advance_liquidation_recalculate_totals'):
