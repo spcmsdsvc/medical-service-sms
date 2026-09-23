@@ -63,6 +63,7 @@ class TsrOfflineFollowupSourceTests(unittest.TestCase):
 let standaloneCurrentDraftId = 'draft-1';
 let standaloneTSRReservationToken = '';
 let standaloneTSRActiveContextVersion = 1;
+let standaloneTSRSaveStatusGeneration = 0;
 let offlineTSRAttachments = [];
 let standaloneTSRLocalSaveChain = Promise.resolve();
 const OFFLINE_TSR_DB_STORES = {{ drafts: 'drafts' }};
@@ -80,6 +81,7 @@ function getStandaloneTSRDraftTitle() {{ return 'TSR draft'; }}
 function getStandaloneTSRDraftSubtitle() {{ return 'TSR'; }}
 function advanceStandaloneTSRActiveContext() {{ standaloneTSRActiveContextVersion += 1; }}
 function normalizeQueuedAttachments(value) {{ return Array.isArray(value) ? value : []; }}
+function setStandaloneTSRSaveStatus() {{ return true; }}
 function isStandaloneTSRDraftMeaningful() {{ return true; }}
 function isQueuedTSRSignatureAttachment() {{ return false; }}
 function projectOfflineTSRPayloadForLocalStorage(value) {{ return Object.assign({{}}, value || {{}}); }}

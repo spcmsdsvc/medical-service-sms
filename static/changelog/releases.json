@@ -16,6 +16,36 @@
             "admins"
           ],
           "sort_order": 5
+        },
+        {
+          "item_key": "2026-09-23-create-tsr-task-flow",
+          "category": "Create TSR",
+          "description": "Create TSR now starts with schedule and assigned-equipment selection, groups service work, visit sign-off, and supporting documents into clear sections, and keeps review, draft, preview, and other actions together where they remain reachable on phones.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 6
+        },
+        {
+          "item_key": "2026-09-23-create-tsr-readiness-save-status",
+          "category": "Create TSR",
+          "description": "Create TSR now shows five core requirements, points to any unfinished item, and reports when a draft is saved on this device and backed up to your account. Supporting files stay on the original device, and the readiness and save status follow the active appearance theme.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 7
+        },
+        {
+          "item_key": "2026-09-23-create-tsr-refresh-scroll-fix",
+          "category": "Create TSR",
+          "description": "Create TSR stays at the top after refresh instead of jumping to Calibration Report, and the missing-schedule reminder appears when an action needs a schedule rather than on every page load.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 8
         }
       ]
     },

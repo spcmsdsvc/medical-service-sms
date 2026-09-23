@@ -22931,8 +22931,10 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v170-accounting-branch-codes.
-    # Navigation shell bump: v173 calibration model approval -> v174 equipment-first TSR.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v174-equipment-first-tsr';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v174-equipment-first-tsr.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v175-create-tsr-task-flow.
+    # Navigation shell bump: v176 readiness and save status -> v177 Create TSR refresh focus fix.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v177-create-tsr-refresh-focus-fix';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -22951,12 +22953,13 @@ const APP_SHELL = [
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
   '/static/css/app-calibration-report.css?v=9',
+  '/static/css/app-offline-tsr.css?v=2',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=30',
+  '/static/js/app-calibration-report.js?v=31',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

@@ -184,7 +184,7 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
         self.assertIn('const footerReserve = legendFooterHeight +', sticky)
         self.assertNotIn('.timeline-bottom-scroll', self.dark_css)
         self.assertIn(':root[data-app-theme="dark"] .timeline-sticky-h-scroll', self.dark_css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=28", self.layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=29", self.layout)
 
     def test_collapsed_utility_rail_boundary_and_control_order(self):
         row_start = self.timeline.index('<div class="timeline-intro-toggle-row')

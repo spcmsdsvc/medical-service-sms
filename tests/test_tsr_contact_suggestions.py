@@ -160,6 +160,7 @@ const document = {{
 let signatureData = {{ serviced: 'engineer-signature', acknowledged: 'client-signature' }};
 let saveCount = 0;
 function saveStandaloneTSRDraft(silent) {{ saveCount += 1; }}
+function renderStandaloneTSRCoreReadiness() {{}}
 function updateSignatureStatuses() {{}}
 {invalidate}
 {listener}

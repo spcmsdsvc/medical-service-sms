@@ -1189,6 +1189,36 @@
     .tsr-knowledge-text, .tsr-knowledge-meta, .offline-tsr-dialog-title, .offline-tsr-dialog-message
 ) { color: inherit !important; }
 
+:root[data-app-theme="dark"] :is(.offline-tsr-core-readiness, .offline-tsr-save-status) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(.offline-tsr-readiness-item, .offline-tsr-readiness-progress) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .offline-tsr-readiness-item:hover,
+:root[data-app-theme="dark"] .offline-tsr-readiness-item.is-complete {
+    border-color: #75a7ff !important;
+}
+:root[data-app-theme="dark"] :is(.offline-tsr-readiness-state, .offline-tsr-required-marker, .offline-tsr-signature-heading) {
+    color: #bfdbfe !important;
+}
+:root[data-app-theme="dark"] .offline-tsr-required-marker {
+    background: #172b49 !important;
+    border-color: #42648f !important;
+}
+:root[data-app-theme="dark"] .offline-tsr-save-status[data-state="account-backed-up"] .offline-tsr-save-status-message,
+:root[data-app-theme="dark"] .offline-tsr-save-status[data-state="account-backed-up"] .offline-tsr-save-status-icon {
+    color: #86efac !important;
+}
+:root[data-app-theme="dark"] .offline-tsr-save-status.is-error,
+:root[data-app-theme="dark"] .offline-tsr-save-status.is-error .offline-tsr-save-status-icon {
+    color: #fca5a5 !important;
+}
+
 /* Fixed-output exceptions: never theme generated documents or their inner content. */
 :root[data-app-theme="dark"] :is(
     .tsr-print-sheet, .tsr-pdf-render-clone, .tsr-pdf-preview-frame, .tsr-pdf-preview-loading,

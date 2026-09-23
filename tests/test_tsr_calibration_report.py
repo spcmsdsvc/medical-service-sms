@@ -546,9 +546,15 @@ function setReadyFields(report) {
 (async () => {
   const api = context.calibrationReport;
   if(entryLabel.textContent !== "Create Calibration Report" || status.textContent !== "Not Started") fail("inactive card state is wrong");
+  api.reset();
+  if(doc.activeElement === entryButton) fail("reset focused the closed Calibration Report entry button");
   api.create();
   if(entryLabel.textContent !== "Continue Calibration Report" || status.textContent !== "Draft") fail("draft card state is wrong");
   if(!overlay.classList.contains("is-open")) fail("create did not open the editor");
+  api.reset();
+  if(overlay.classList.contains("is-open") || doc.activeElement !== entryButton) fail("reset did not restore entry focus when closing an open editor");
+  api.create();
+  if(!overlay.classList.contains("is-open")) fail("create did not reopen after reset");
   const exposureControls = editor.elements.filter(element => element.getAttribute("data-cr-exposure"));
   if(exposureControls.length !== 112 || Math.max(...exposureControls.map(element => Number(String(element.getAttribute("data-cr-exposure")).split(":")[1]))) !== 7) fail("editor did not build exactly eight rows per focal spot");
 const draft = api.collect(); if(draft.facility.name !== "Scheduled Client" || draft.machine.model !== "Scheduled Model") fail("create did not autofill the schedule");
@@ -800,8 +806,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=9", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=30", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=30'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=31", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=31'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)

@@ -124,6 +124,61 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         self.assertIn("serverSync:'immediate'", self.template_source)
         self.assertIn('Supporting files remain local to this device', self.app_source)
 
+    def test_page_save_status_follows_actual_local_and_server_draft_results(self):
+        local_save = self.template_source.split(
+            'async function saveStandaloneTSRDraftLocally(data', 1
+        )[1].split('async function clearStandaloneTSRDraftLocally', 1)[0]
+        self.assertIn("setStandaloneTSRSaveStatus('saving-local'", local_save)
+        self.assertIn("setStandaloneTSRSaveStatus('local-save-failed'", local_save)
+        self.assertIn("setStandaloneTSRSaveStatus('local-saved-pending'", local_save)
+        self.assertIn('standaloneTSRSaveStatusGeneration', local_save)
+        self.assertTrue('standaloneTSRSaveStatusContextIsActive' in self.template_source,
+                        'Save-state transitions must use the active draft/generation guard.')
+
+        queued_sync = self.template_source.split(
+            'function enqueueStandaloneTSRServerDraftSync', 1
+        )[1].split('function readStandaloneTSRServerDraftDeleteQueue', 1)[0]
+        self.assertIn('statusContext', queued_sync)
+        self.assertIn("setStandaloneTSRSaveStatus('backup-in-progress'", queued_sync)
+        self.assertIn('account-backed-up', queued_sync)
+        self.assertIn('account-backup-failed', queued_sync)
+        self.assertIn('standaloneTSRSaveStatusContextIsActive(statusContext)', queued_sync)
+        self.assertLess(
+            queued_sync.index('return syncStandaloneTSRDraftToServer(record)'),
+            queued_sync.index("setStandaloneTSRSaveStatus('account-backed-up'"),
+            'Account backup must only be reported after syncStandaloneTSRDraftToServer resolves.',
+        )
+        sync_result = queued_sync.split('.then(result =>', 1)[1].split('.catch(error =>', 1)[0]
+        self.assertIn("result?.status === 'success'", sync_result)
+        self.assertIn("setStandaloneTSRSaveStatus('local-saved-pending'", sync_result,
+                      'A skipped/offline sync must not be shown as a confirmed account backup.')
+
+        status_renderer = self.template_source.split(
+            'function setStandaloneTSRSaveStatus', 1
+        )[1].split('function ', 1)[0]
+        self.assertIn('standaloneTSRServerBackupFailureText(details.error)', status_renderer)
+        self.assertIn('attachments_not_durable', status_renderer)
+        self.assertIn("source === 'localstorage'", status_renderer)
+        self.assertTrue('role="status" aria-live="polite"' in self.template_source,
+                        'The save-state indicator must be announced accessibly.')
+
+    def test_save_status_rejects_stale_draft_callbacks(self):
+        self.assertTrue('function standaloneTSRSaveStatusContextIsActive' in self.template_source,
+                        'Save-state callbacks must have a current-draft guard.')
+        guard = self.template_source.split(
+            'function standaloneTSRSaveStatusContextIsActive', 1
+        )[1].split('function ', 1)[0]
+        self.assertIn('standaloneCurrentDraftId', guard)
+        self.assertIn('standaloneTSRSaveStatusGeneration', guard)
+        self.assertIn('standaloneTSRActiveContextVersion', guard)
+        for reset in ('clearStandaloneTSRPage', 'resetStandaloneTSRForm', 'finishStandaloneTSRFinalSave'):
+            body = self.template_source.split(f'async function {reset}', 1)[1].split('\n}', 1)[0]
+            self.assertIn('initializeBlankStandaloneTSR()', body)
+        reset_status = self.template_source.split(
+            'function resetStandaloneTSRSaveStatus', 1
+        )[1].split('function ', 1)[0]
+        self.assertIn("setStandaloneTSRSaveStatus('no-changes'", reset_status)
+
     def test_service_worker_cache_is_bumped_for_server_drafts(self):
         """A floor, never a pinned version.
 

@@ -816,16 +816,17 @@
     if(workspace) workspace.scrollTop = overlayScrollTop;
     focusDialog();
   }
-  function close(){
+  function close(options){
     var overlay = q('#calibration-report-overlay');
     if(!overlay) return;
+    var wasOpen = overlay.classList.contains('is-open');
     var workspace = q('.calibration-report-workspace');
     if(workspace) overlayScrollTop = Number(workspace.scrollTop || 0);
     overlay.classList.remove('is-open');
     overlay.setAttribute('aria-hidden','true');
     overlay.setAttribute('inert','');
     var target = returnFocusElement || q('#calibration-report-create-btn');
-    if(target) target.focus();
+    if(wasOpen && options?.restoreFocus !== false && target) target.focus();
   }
   function reset(options){ var removeAutoDocument = !!(state.auto_document && options?.removeAutoDocument); var cleanupIds = reportBlobIdsForCleanup(state); state = blankState(); state.generated_cleanup = { blob_ids:cleanupIds }; generatedBlobState = 'none'; if(removeAutoDocument && typeof window.removeTSRDocument === 'function') window.removeTSRDocument('Calibration Report'); close(); renderCard(); }
   function apply(payload){ state = payload && payload.status !== 'not_started' ? normalizeState(payload) : blankState(); generatedBlobState = hasGeneratedMetadata(state) ? 'checking' : 'none'; ensureEditor(); applyDomFromState(); syncAutoDocument(); renderCard(); refreshGeneratedBlobState(); }
