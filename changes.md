@@ -2,6 +2,15 @@
 
 codex changes - 2026-09-23
 
+- Removed the unused “Copy Draft Text” and “Start New TSR” buttons from the Create TSR action bar.
+  Review/save, preview, PDF download, and Clear Current TSR remain available. Removed the hidden
+  copy-action selector from schedule gating and updated the existing action-bar source contract
+  and release wording; no save, draft, or reset behavior was changed.
+- Made the Create TSR bottom action bar more compact: reduced desktop button text, heights, padding,
+  spacing, and outer padding so the actions fit on one row when the available width permits. They
+  still wrap without clipping at narrower desktop widths, while mobile keeps 44px-tall touch targets
+  and horizontally scrollable secondary actions. Bumped the page stylesheet and app-shell URL to
+  v4 and the worker cache marker to v179; updated the existing cache contract and release wording.
 - Fixed the Create TSR bottom action bar clipping the start of “Download PDF” when the desktop
   action groups were compressed to one row. The primary Save actions stay together; the secondary
   actions now wrap onto their own row and retain their intrinsic button widths. On mobile, the

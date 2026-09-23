@@ -17,13 +17,13 @@ class TSRPageDesignContracts(unittest.TestCase):
     def test_page_stylesheet_and_worker_precache_are_registered(self):
         self.require_text("css/app-offline-tsr.css")
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
-        self.require_text("/static/css/app-offline-tsr.css?v=3", app_source)
+        self.require_text("/static/css/app-offline-tsr.css?v=4", app_source)
         self.require_text(
-            "medical-service-pwa-offline-navigation-v178-create-tsr-action-bar-layout",
+            "medical-service-pwa-offline-navigation-v179-create-tsr-compact-action-bar",
             app_source,
         )
         self.require_text("app-dark-pages.css') }}?v=29", (ROOT / "templates" / "layout.html").read_text(encoding="utf-8"))
-        self.require_text("css/app-offline-tsr.css') }}?v=3")
+        self.require_text("css/app-offline-tsr.css') }}?v=4")
 
     def test_schedule_selection_is_first_and_empty_state_routes_to_calendar(self):
         self.require_text('id="tsr-schedule-selection"')
@@ -83,11 +83,11 @@ class TSRPageDesignContracts(unittest.TestCase):
         for label in (
             "Preview TSR",
             "Download PDF",
-            "Copy Draft Text",
-            "Start New TSR",
             "Clear Current TSR",
         ):
             self.require_text(label, action_bar)
+        self.assertNotIn("Copy Draft Text", action_bar)
+        self.assertNotIn("Start New TSR", action_bar)
         self.require_text('role="group"', action_bar)
         self.require_text('aria-label="Other TSR actions"', action_bar)
         self.assertEqual(TEMPLATE.count('id="offline-tsr-action-bar"'), 1)

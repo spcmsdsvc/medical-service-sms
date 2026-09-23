@@ -50,7 +50,7 @@
         {
           "item_key": "2026-09-23-create-tsr-action-bar-layout",
           "category": "Create TSR",
-          "description": "Create TSR action buttons now keep their full labels visible on desktop, including at higher browser zoom levels.",
+          "description": "Create TSR's compact action bar focuses on review, save, preview, PDF download, and clearing the current report; mobile actions remain swipeable.",
           "audiences": [
             "engineers",
             "admins"

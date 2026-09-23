@@ -68,16 +68,16 @@
   backdrop-filter: blur(12px);
   background: color-mix(in srgb, var(--app-surface, #fff) 94%, transparent);
   border: 1px solid var(--app-border, #dbe3ee);
-  border-radius: 16px;
+  border-radius: 12px;
   bottom: 0;
   box-shadow: 0 -8px 26px rgba(15, 23, 42, .12);
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   justify-content: space-between;
   margin: 12px auto 0;
   max-width: 1180px;
-  padding: 10px 12px;
+  padding: 6px 8px;
   position: sticky;
   z-index: 1020;
 }
@@ -86,14 +86,16 @@
 .offline-tsr-action-secondary {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
 .offline-tsr-action-primary .btn,
 .offline-tsr-action-secondary .btn {
   flex: 0 0 auto;
-  min-height: 44px;
+  font-size: .82rem;
+  min-height: 38px;
+  padding: .3rem .5rem;
   white-space: nowrap;
 }
 
@@ -106,7 +108,7 @@
 }
 
 .offline-tsr-action-secondary {
-  flex: 1 1 100%;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
   overflow: visible;
@@ -308,6 +310,11 @@
     min-width: 0 !important;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .offline-tsr-action-primary .btn,
+  .offline-tsr-action-secondary .btn {
+    min-height: 44px;
   }
 
   .offline-tsr-action-secondary {

@@ -2,7 +2,7 @@
 
 {% block page_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=9">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=4">
 <script>
 (() => {
   const navigation = window.performance?.getEntriesByType?.('navigation')?.[0];
@@ -459,8 +459,6 @@ window.CalibrationReportConfig = {
     <div class="offline-tsr-action-secondary" role="group" aria-label="Other TSR actions">
       <button class="btn btn-outline-dark fw-bold" type="button" onclick="openTSRPrintPreview()"><i class="fa-solid fa-print me-1" aria-hidden="true"></i>Preview TSR</button>
       <button class="btn btn-outline-success fw-bold offline-tsr-pdf-action" type="button" onclick="downloadTSRPDF()"><i class="fa-solid fa-file-arrow-down me-1" aria-hidden="true"></i>Download PDF</button>
-      <button class="btn btn-outline-secondary fw-bold" type="button" onclick="copyStandaloneTSRText()"><i class="fa-solid fa-copy me-1" aria-hidden="true"></i>Copy Draft Text</button>
-      <button class="btn btn-outline-secondary fw-bold" type="button" onclick="resetStandaloneTSRForm()"><i class="fa-solid fa-file-circle-plus me-1" aria-hidden="true"></i>Start New TSR</button>
       <button class="btn btn-outline-danger fw-bold" type="button" onclick="clearStandaloneTSRPage()"><i class="fa-solid fa-eraser me-1" aria-hidden="true"></i>Clear Current TSR</button>
     </div>
   </div>
@@ -1218,7 +1216,6 @@ function getCreateTSRGatedControls(){
     'button[onclick^="saveStandaloneTSRDraft"]',
     'button[onclick^="openTSRPrintPreview"]',
     'button[onclick^="downloadTSRPDF"]',
-    'button[onclick^="copyStandaloneTSRText"]',
     '.offline-tsr-pdf-action'
   ].join(',');
 
