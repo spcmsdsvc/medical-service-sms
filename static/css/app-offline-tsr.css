@@ -72,6 +72,7 @@
   bottom: 0;
   box-shadow: 0 -8px 26px rgba(15, 23, 42, .12);
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   justify-content: space-between;
   margin: 12px auto 0;
@@ -91,6 +92,7 @@
 
 .offline-tsr-action-primary .btn,
 .offline-tsr-action-secondary .btn {
+  flex: 0 0 auto;
   min-height: 44px;
   white-space: nowrap;
 }
@@ -104,10 +106,10 @@
 }
 
 .offline-tsr-action-secondary {
-  flex: 1 1 auto;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
   justify-content: flex-end;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  overflow: visible;
 }
 
 .offline-tsr-action-bar :focus-visible,
@@ -309,9 +311,12 @@
   }
 
   .offline-tsr-action-secondary {
+    flex-wrap: nowrap;
+    overflow-x: auto;
     justify-content: flex-start;
     margin: 0 -2px;
     padding: 0 2px 2px;
+    scrollbar-width: thin;
   }
 
   .offline-tsr-action-secondary .btn {

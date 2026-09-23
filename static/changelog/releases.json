@@ -46,6 +46,16 @@
             "admins"
           ],
           "sort_order": 8
+        },
+        {
+          "item_key": "2026-09-23-create-tsr-action-bar-layout",
+          "category": "Create TSR",
+          "description": "Create TSR action buttons now keep their full labels visible on desktop, including at higher browser zoom levels.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 9
         }
       ]
     },

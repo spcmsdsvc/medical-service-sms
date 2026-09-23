@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-23
 
+- Fixed the Create TSR bottom action bar clipping the start of “Download PDF” when the desktop
+  action groups were compressed to one row. The primary Save actions stay together; the secondary
+  actions now wrap onto their own row and retain their intrinsic button widths. On mobile, the
+  secondary actions remain horizontally scrollable without shrinking. Bumped the page stylesheet
+  to v3, app-shell stylesheet URL to v3, and worker cache marker to v178; updated the existing page
+  design cache-version contract and added a release note. No save or action behavior changed.
 - Committed the Create TSR task-flow, readiness/save-status, and refresh-focus work as
   `711f287` (`Improve Create TSR workflow and save status`). The commit contains only the TSR page,
   related cache/release wiring, and directly related tests; `scheduler.db`, handoff files, `.claude/`,
