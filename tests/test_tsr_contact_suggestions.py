@@ -123,10 +123,10 @@ class TSRContactSuggestionSourceTests(unittest.TestCase):
         self.assertIn("target !== 'serviced'", saved_signature)
 
     def test_cache_and_release_markers_are_updated(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v158-calibration-center", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v174-equipment-first-tsr", self.app_source)
         for test_name in ('test_layout_sidebar.py', 'test_stock_inventory.py', 'test_timeline_desktop_collapse.py'):
             source = (ROOT / 'tests' / test_name).read_text(encoding='utf-8')
-            self.assertIn('medical-service-pwa-offline-navigation-v158-calibration-center', source)
+            self.assertIn('assert_cache_version_at_least', source)
         self.assertIn('2026-09-08-tsr-contact-signature-preservation', self.release_source)
         self.assertIn('preserves the engineer and client signatures', self.release_source)
         self.assertIn('2026-09-05-tsr-contact-suggestions', self.release_source)
@@ -503,7 +503,8 @@ class TSRContactScheduleRouteTests(unittest.TestCase):
             '_tsr_form_version': 'vector-pdf-v2',
         }
         with patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True), \
-                patch.object(app_module, 'get_tsr_schedule_coverage_rows', return_value=[]):
+                patch.object(app_module, 'get_tsr_schedule_coverage_rows', return_value=[]), \
+                patch.object(app_module, 'ensure_product_from_tsr_payload', return_value={'status': 'not_required'}):
             response = client.post('/save_offline_tsr_online', json=payload)
 
         self.assertEqual(response.status_code, 400)

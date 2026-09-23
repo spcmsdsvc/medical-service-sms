@@ -3,6 +3,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.sw_cache_version import assert_cache_version_at_least
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TIMELINE = ROOT / "templates" / "timeline.html"
@@ -491,10 +493,7 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
         self.assertNotIn("weekOffset", controller)
 
     def test_cache_version_and_everyone_release_are_present(self):
-        self.assertIn(
-            "medical-service-pwa-offline-navigation-v158-calibration-center",
-            self.app,
-        )
+        assert_cache_version_at_least(self, 158, self.app)
 
         release = next(
             (

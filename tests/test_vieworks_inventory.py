@@ -166,7 +166,7 @@ class VieworksInventoryTests(unittest.TestCase):
     def add_item(self, client, serial, name="Vieworks Item", **extra):
         return client.post("/api/vieworks/items", json={"serial_number": serial, "name": name, **extra})
 
-    def test_permission_helper_and_every_route_boundary(self):
+    def test_permission_helper_and_engineer_admin_boundary(self):
         with self.app.app_context():
             users = [
                 app_module.db.session.get(app_module.User, user_id)
@@ -176,17 +176,32 @@ class VieworksInventoryTests(unittest.TestCase):
             self.assertTrue(app_module.can_access_vieworks_inventory(users[0]))
             self.assertTrue(app_module.can_access_vieworks_inventory(users[1]))
             self.assertTrue(app_module.can_access_vieworks_inventory(users[2]))
-            self.assertFalse(app_module.can_access_vieworks_inventory(users[3]))
+            self.assertTrue(app_module.can_access_vieworks_inventory(users[3]))
             self.assertFalse(app_module.can_access_vieworks_inventory(users[4]))
             self.assertFalse(app_module.can_access_vieworks_inventory(users[5]))
+            self.assertFalse(app_module.can_administer_vieworks_inventory(users[3]))
+            self.assertTrue(app_module.can_access_inventory_pm('vieworks', users[0]))
+            self.assertFalse(app_module.can_access_inventory_pm('vieworks', users[3]))
 
+        engineer_client = self.client_for(self.engineer_id)
+        self.assertEqual(engineer_client.get("/vieworks").status_code, 200)
+        self.assertEqual(engineer_client.get("/api/vieworks/items").status_code, 200)
+        self.assertEqual(engineer_client.get("/api/vieworks/summary").status_code, 200)
+        created = self.add_item(engineer_client, "ENGINEER-VIEWORKS")
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        self.assertEqual(engineer_client.put("/api/vieworks/items/ENGINEER-VIEWORKS", json={"name": "Updated"}).status_code, 200)
+        self.assertEqual(engineer_client.get("/vieworks/export").status_code, 200)
+        self.assertEqual(engineer_client.delete("/api/vieworks/items/ENGINEER-VIEWORKS").status_code, 403)
+        self.assertEqual(self.import_csv(engineer_client, "Serial Number,Description\nENGINEER-IMPORT,Nope\n").status_code, 403)
+
+    def test_other_roles_remain_denied_from_vieworks_routes(self):
         paths = [
             ("/vieworks", "GET"), ("/api/vieworks/items", "GET"),
             ("/api/vieworks/summary", "GET"), ("/api/vieworks/items/NOPE", "PUT"),
             ("/api/vieworks/items/NOPE", "DELETE"), ("/vieworks/import", "POST"),
             ("/vieworks/export", "GET"),
         ]
-        for user_id in (self.engineer_id, self.other_role_id, self.inactive_admin_id):
+        for user_id in (self.other_role_id, self.inactive_admin_id):
             client = self.client_for(user_id)
             for path, method in paths:
                 with self.subTest(user=user_id, path=path, method=method):
@@ -202,7 +217,10 @@ class VieworksInventoryTests(unittest.TestCase):
             self.assertEqual(client.get("/api/vieworks/items").get_json(), [])
             self.assertEqual(client.get("/api/vieworks/summary").get_json()["total_items"], 0)
         self.assertIn('href="/vieworks"', self.client_for(self.admin_id).get("/products_page").get_data(as_text=True))
-        self.assertNotIn('href="/vieworks"', self.client_for(self.engineer_id).get("/products_page").get_data(as_text=True))
+        engineer_shell = self.client_for(self.engineer_id).get("/products_page")
+        self.assertIn('href="/vieworks"', engineer_shell.get_data(as_text=True))
+        self.assertIn('href="/vieworks/pm"', self.client_for(self.admin_id).get("/products_page").get_data(as_text=True))
+        self.assertNotIn('href="/vieworks/pm"', engineer_shell.get_data(as_text=True))
 
     def test_first_load_finishes_request_writer_before_creating_index(self):
         with self.app.app_context():

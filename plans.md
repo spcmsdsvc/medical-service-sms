@@ -1,5 +1,147 @@
 # Medical Service SMS — Approved Plans
 
+## Equipment-first TSR workflow
+
+**Status:** Executed — uncommitted
+**Approved:** 2026-09-23 — the owner approved the complete package in the implementation request.
+**Execution authorized:** 2026-09-23 — the owner explicitly requested implementation.
+**Detailed:** 2026-09-23.
+**Execution completed:** 2026-09-23 — implementation and focused verification completed locally;
+no commit, push, deployment, production/Railway action, or protected dirty-file change was made.
+
+### Summary
+
+Require an equipment assignment on Calendar before an engineer can create a TSR. The current
+no-equipment TSR fallback accepts free-text model and serial values and can create a Product
+row even when the engineer intended a Genoray or Vieworks item. The replacement workflow lets
+engineers create/edit the correct standalone inventory record first, select it on Calendar, and
+then create a source-aware TSR without mirroring the standalone record into Product Inventory.
+
+### Scope and decisions
+
+1. Active engineers may access both Genoray and Vieworks inventory pages and their view, create,
+   edit, export, and print operations, matching Product Inventory permissions. Delete and CSV
+   import remain restricted to the existing administrator roles.
+2. Genoray and Vieworks PM pages, APIs, and row actions remain administrator-only. Their PM
+   authorization must not delegate to the broadened engineer inventory gate.
+3. Every Calendar Create TSR entry point remains visible but disabled for schedules without a
+   source-aware equipment assignment. Direct redirect functions and server routes enforce the
+   same rule.
+4. Initial TSR equipment fields are locked and cannot create inventory. Existing linked-equipment
+   correction mode remains available for its existing behavior.
+5. Final online save, queued synchronization, and revision submission require a valid
+   source-aware equipment record linked to the selected Shift and the selected Medical Center.
+   Existing Product, Genoray, and Vieworks tables remain separate.
+6. Existing Product duplicates created by the old free-text fallback are preserved; no automatic
+   merge, delete, or repair is part of this package.
+
+### Files and functions in scope
+
+- app.py: inventory capability helpers and route guards, PM authorization, source-aware TSR
+  validation, ensure_product_from_tsr_payload, online TSR save/revision routes, embedded service
+  worker marker, and related navigation context flags.
+- templates/layout.html, templates/products.html, templates/timeline.html, and
+  templates/offline_tsr.html: engineer inventory navigation, PM-link visibility, all Calendar
+  Create TSR entry points, schedule picker availability, locked initial equipment fields, and
+  user-facing messages.
+- tests/test_genoray_inventory.py, tests/test_vieworks_inventory.py, tests/test_inventory_pm.py,
+  tests/test_operational_equipment_workflows.py, and focused offline TSR tests: permissions,
+  source isolation, no-equipment rejection, draft/queue behavior, and UI source contracts.
+- static/changelog/releases.json, plans.md, and changes.md: release/cache and truthful project
+  control records.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first evidence.** Re-read the current plan, changes.md, protected dirty
+   paths, inventory/PM routes, Calendar/Create TSR entry points, TSR save/revision paths, and
+   focused tests. Add or extend isolated tests that demonstrate the current no-equipment
+   Genoray/Vieworks values fall through to Product before changing the implementation. Do not
+   touch scheduler.db, handoff artifacts, .claude, output, tmp, production, or Railway state.
+   Done means the baseline behavior and protected worktree are recorded.
+2. **Inventory and PM authorization.** Split the existing standalone inventory capability from
+   administrator-only destructive/import and PM capabilities. Allow active engineers to read,
+   create, edit, export, and print both standalone inventories; keep delete/import and all PM
+   routes/API calls administrator-only. Render page action flags and navigation/row links from
+   the same capability decisions. Done means direct engineer requests and UI markup match the
+   Product Inventory permission pattern while existing administrator behavior remains intact.
+3. **Calendar Create TSR gating.** Add one equipment-assignment predicate in timeline.html and
+   apply it to desktop, mobile, pure-engineer, full-calendar, saved-schedule, and queued-schedule
+   entry points. Keep disabled actions visible with an instruction to select equipment first and
+   guard redirect functions as a second client-side boundary. Done means no unassigned schedule
+   can navigate to a normal Create TSR context.
+4. **TSR form and server enforcement.** In offline_tsr.html and app.py, make initial model/serial
+   fields read-only, remove the inventory-creation flag and messaging, make unassigned picker
+   entries unavailable, and require the selected Shift's source, serial, resolvable inventory
+   record, and client ownership before online save, queue sync, or revision submission. Refactor
+   ensure_product_from_tsr_payload to resolve existing linked equipment only and never infer or
+   create Product from submitted text. Done means a tampered no-equipment payload is rejected
+   before PDF, attachment, TSR submission, or inventory writes, while linked source-aware TSRs
+   continue to work.
+5. **Focused verification.** Run the inventory, PM, operational-equipment, offline TSR, queue,
+   revision, schedule, source-contract, Python AST, Jinja/JavaScript, release-manifest,
+   service-worker, and git diff --check validations with the project virtual environment and
+   isolated temporary resources. No browser or Codex UI automation is permitted. Done means
+   focused requirements pass and any unrelated baseline failures are identified without changing
+   protected files.
+6. **Records and cache.** Bump the embedded service-worker marker from v173-calibration-model-
+   approval to v174-equipment-first-tsr, add the dated release entry, update changes.md with
+   exact implementation and verification results, and change this plan to Executed —
+   uncommitted only after the package is complete. Do not commit, push, deploy, modify Railway,
+   or alter production data.
+
+### Deliberately excluded
+
+- No merge, mirroring, deletion, or repair of existing Product/Genoray/Vieworks records.
+- No change to PM workflows other than preserving their administrator-only authorization and
+  hiding PM links/actions from engineers.
+- No new database schema migration is required for this behavior.
+- No browser testing, production/Railway operation, commit, push, deployment, or protected
+  dirty-artifact modification.
+
+### Verification and completion checklist
+
+- Baseline no-equipment free-text behavior is captured before the fix where feasible.
+- Engineer inventory page/read/create/edit/export access passes for both brands.
+- Engineer delete/import and all PM page/API access remain denied.
+- Calendar and Create TSR source-contract checks cover every entry point.
+- Draft save has no inventory side effect; final online/queued/revision paths reject unassigned
+  schedules and leave all inventory counts unchanged.
+- Linked Product, Genoray, and Vieworks schedules save with their existing source and do not
+  create Product duplicates.
+- Python AST, Jinja/template, JavaScript/source, JSON, cache-version, and git diff checks pass.
+- changes.md and this plan contain truthful final results; protected dirty files remain unchanged.
+
+### Execution result
+
+- Split standalone Genoray/Vieworks inventory access from administrator-only destructive/import and
+  PM access. Active engineers can open, list, create, edit, export, and print both inventories;
+  delete/import endpoints and all PM pages/APIs/row actions remain administrator-only. Product
+  Inventory behavior remains unchanged.
+- Added one source-aware equipment-assignment predicate across desktop, inline, mobile sticky,
+  pure-engineer, full-calendar, saved-schedule, and queued-schedule Create TSR actions. Actions
+  remain visible but disabled for unassigned schedules, redirect functions have matching guards,
+  and Calendar editing remains available.
+- Locked initial TSR equipment fields, removed TSR-driven inventory creation and its request flag,
+  and made unassigned schedule picker entries visible but unavailable with an instruction to
+  select equipment on Calendar. Product correction mode remains available for linked Product TSRs.
+- Added server validation for source, serial, inventory resolution, and Medical Center ownership
+  before online save, queued synchronization, and revision work. The legacy helper now mirrors
+  only authoritative Calendar equipment; it never infers or creates Product rows from TSR text.
+  Rejections return the stable Calendar instruction before PDF, attachment, submission, or
+  inventory writes. Existing Product/Genoray/Vieworks source resolution and duplicate-serial
+  disambiguation remain source-aware; old Product duplicates were not changed.
+- Bumped the embedded service-worker marker to
+  `medical-service-pwa-offline-navigation-v174-equipment-first-tsr` and added the dated release
+  manifest entry `2026-09-23-equipment-first-tsr`.
+- Focused suites passed 238 tests: operational equipment 8, Genoray inventory 15, Vieworks
+  inventory 11, inventory PM 35, offline TSR follow-up 13, pending schedules 30, offline schedule
+  19, TSR signature/revision 23, TSR sync reliability 8, TSR contact suggestions 16, Product
+  Inventory 40, and Timeline desktop collapse 20. Python AST, Jinja parsing, release JSON,
+  service-worker marker, and `git diff --check` validation also passed.
+- No browser or Codex UI testing was run, as authorized. Protected `scheduler.db`, handoff files,
+  `.claude/`, `output/`, and `tmp/` remain preserved, and no commit, push, deployment, Railway,
+  production-data, or production-storage operation was performed.
+
 ## Calibration Report Temporary Model Approval
 
 **Status:** Executed — uncommitted

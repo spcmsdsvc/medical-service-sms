@@ -13,6 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # tested by calling them rather than by matching source text: an authorization rule that is
 # only asserted as a string can be refactored into something that no longer holds.
 import app as app_module  # noqa: E402
+from tests.sw_cache_version import assert_cache_version_at_least  # noqa: E402
 
 
 class StockInventorySourceTests(unittest.TestCase):
@@ -90,7 +91,7 @@ class StockInventorySourceTests(unittest.TestCase):
             "'total'",
         ):
             self.assertIn(marker, self.app_source)
-        self.assertIn('medical-service-pwa-offline-navigation-v158-calibration-center', self.app_source)
+        assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_read_only_ui_has_no_mutation_controls(self):
         self.assertIn('id="stockAddItemButton"', self.page_source)

@@ -11,6 +11,7 @@
 {% set inventory_import_url = '/vieworks/import' if is_vieworks_inventory else ('/genoray/import' if is_genoray_inventory else '/import_products') %}
 {% set inventory_export_url = '/vieworks/export' if is_vieworks_inventory else ('/genoray/export' if is_genoray_inventory else '/export_products') %}
 {% set inventory_pm_base_url = '/vieworks/pm' if is_vieworks_inventory else ('/genoray/pm' if is_genoray_inventory else '') %}
+{% set product_can_pm = product_can_pm|default(false) %}
 
 {% block content %}
 <div class="container-fluid">
@@ -436,6 +437,7 @@
 
     const productCanEdit = {{ product_can_edit|tojson }};
     const productCanDelete = {{ product_can_delete|tojson }};
+    const productCanPM = {{ product_can_pm|tojson }};
 
 function isProductMobileViewport(){
     return window.innerWidth <= PRODUCT_MOBILE_BREAKPOINT;
@@ -937,7 +939,7 @@ function renderProductRowActions(product){
     const identity = escapeHtml(getProductIdentityLabel(product));
     let actions = `<div class="product-row-actions no-print" aria-label="Actions for ${identity}">`;
 
-    if(isStandaloneInventory){
+    if(isStandaloneInventory && productCanPM){
         const pmUrl = `${inventoryPMBaseUrl}/${encodeURIComponent(product.serial_number || '')}`;
         actions += `
             <a class="product-row-action product-row-pm" href="${pmUrl}" title="Open ${inventoryLabel} PM" aria-label="Open PM monitoring for ${identity}">
@@ -992,7 +994,7 @@ function renderProductMobileCards(data){
 
         const identity = escapeHtml(getProductIdentityLabel(p));
         let actions = '';
-        if(isStandaloneInventory){
+        if(isStandaloneInventory && productCanPM){
             const pmUrl = `${inventoryPMBaseUrl}/${encodeURIComponent(p.serial_number || '')}`;
             actions += `
                 <a class="product-mobile-btn product-mobile-pm" href="${pmUrl}" title="Open ${inventoryLabel} PM" aria-label="Open PM monitoring for ${identity}">

@@ -1350,6 +1350,8 @@ def inject_navigation_access():
         'nav_can_access_calibration_center': can_access_calibration_center(),
         'nav_can_access_genoray_inventory': can_access_genoray_inventory(),
         'nav_can_access_vieworks_inventory': can_access_vieworks_inventory(),
+        'nav_can_access_genoray_pm': can_access_inventory_pm('genoray'),
+        'nav_can_access_vieworks_pm': can_access_inventory_pm('vieworks'),
         'nav_can_access_accounting_center': can_access_accounting_center(),
         'nav_is_scheduler': is_scheduler_user(),
         'nav_can_administer_personnel': can_administer_personnel(),
@@ -3701,12 +3703,12 @@ def inventory_pm_item_model(brand):
 
 
 def can_access_inventory_pm(brand, user=None):
-    """Apply the same strict active-admin gate as the matching inventory page."""
+    """Apply the strict administrator gate for the matching inventory PM surface."""
     normalized = normalize_inventory_pm_brand(brand)
     if normalized == 'genoray':
-        return bool(can_access_genoray_inventory(user))
+        return bool(can_administer_genoray_inventory(user))
     if normalized == 'vieworks':
-        return bool(can_access_vieworks_inventory(user))
+        return bool(can_administer_vieworks_inventory(user))
     return False
 
 
@@ -7547,14 +7549,46 @@ def can_access_products_page(user=None):
     )
 
 
-def can_access_genoray_inventory(user=None):
-    """Return whether an active account may use the Genoray inventory surface.
+def can_administer_genoray_inventory(user=None):
+    """Return whether an active administrator may import or delete Genoray rows."""
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True))
+    ):
+        return False
 
-    This is deliberately narrower than the Product Inventory gate.  Generic admins
-    are included for this standalone administrator workflow, while superadmins and
-    the verified regional administrator use the existing identity checks.  Engineers,
-    approvers, inactive accounts, and every other role are denied.
-    """
+    role = (getattr(target, 'role', '') or '').strip().lower()
+    return bool(
+        role == 'admin' or
+        is_superadmin_user(target) or
+        is_regional_admin_user(target)
+    )
+
+
+def can_access_genoray_inventory(user=None):
+    """Return whether an active administrator or engineer may use Genoray inventory."""
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True))
+    ):
+        return False
+
+    role = (getattr(target, 'role', '') or '').strip().lower()
+    return bool(
+        can_administer_genoray_inventory(target) or
+        (
+            not is_approver_only_user(target) and
+            (role == 'engineer' or has_engineer_profile(target))
+        )
+    )
+
+
+def can_administer_vieworks_inventory(user=None):
+    """Return whether an active administrator may import or delete Vieworks rows."""
     target = user or current_user
     if not (
         target and
@@ -7572,12 +7606,7 @@ def can_access_genoray_inventory(user=None):
 
 
 def can_access_vieworks_inventory(user=None):
-    """Return whether an active account may use the Vieworks inventory surface.
-
-    Vieworks follows the standalone Genoray administrator boundary. The helper is
-    intentionally separate so the two inventory surfaces can evolve independently
-    without making one route's permission check depend on the other table.
-    """
+    """Return whether an active administrator or engineer may use Vieworks inventory."""
     target = user or current_user
     if not (
         target and
@@ -7588,9 +7617,11 @@ def can_access_vieworks_inventory(user=None):
 
     role = (getattr(target, 'role', '') or '').strip().lower()
     return bool(
-        role == 'admin' or
-        is_superadmin_user(target) or
-        is_regional_admin_user(target)
+        can_administer_vieworks_inventory(target) or
+        (
+            not is_approver_only_user(target) and
+            (role == 'engineer' or has_engineer_profile(target))
+        )
     )
 
 
@@ -12911,6 +12942,13 @@ def get_offline_tsr_schedule_options():
 
         client = shift.client
         product = resolve_shift_equipment(shift)
+        equipment_source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
+        equipment_available = bool(
+            client and
+            product and
+            equipment_source in OPERATIONAL_EQUIPMENT_SOURCES and
+            clean_int(getattr(product, 'client_id', None)) == clean_int(shift.client_id)
+        )
         client_contact = offline_tsr_client_contact_payload(client)
         client_contacts = offline_tsr_client_contacts_payload(client)
         linked_shifts = get_tsr_completion_linked_shifts(shift)
@@ -12938,7 +12976,8 @@ def get_offline_tsr_schedule_options():
             'product_name': product.name if product else '',
             'product_id': shift.product_id or '',
             'product_bsid': (getattr(product, 'bsid', None) or '') if product else '',
-            'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
+            'equipment_source': equipment_source,
+            'equipment_available': equipment_available,
             'engineers': assigned_ids,
             'engineer_names': [eng.name for eng in assigned_engineers],
             'serviced_by': serviced_engineer.name if serviced_engineer else '',
@@ -14701,6 +14740,16 @@ def correct_product_from_tsr_revision(shift, payload):
     if not payload.get('_tsr_equipment_correction_requested'):
         return None
 
+    # Standalone inventory is intentionally separate from Product Inventory.
+    # Revision mode may retain its existing Product correction behavior, but it
+    # must never turn a Genoray or Vieworks TSR into a Product correction.
+    if normalize_equipment_source(getattr(shift, 'equipment_source', None), default='') != 'product':
+        return {
+            'status': 'skipped',
+            'reason': 'source_not_product',
+            'old_serial': clean_str(getattr(shift, 'product_id', None)),
+        }
+
     old_serial = clean_str(getattr(shift, 'product_id', None))
     product_rec = db.session.get(Product, old_serial) if old_serial else None
     if not product_rec:
@@ -14750,7 +14799,13 @@ def correct_product_from_tsr_revision(shift, payload):
         db.session.add(replacement)
         db.session.flush()
 
-        linked_schedule_count = Shift.query.filter_by(product_id=old_serial).update(
+        linked_schedule_count = Shift.query.filter(
+            Shift.product_id == old_serial,
+            or_(
+                Shift.equipment_source == 'product',
+                Shift.equipment_source.is_(None),
+            )
+        ).update(
             {'product_id': new_serial},
             synchronize_session=False
         )
@@ -14758,7 +14813,13 @@ def correct_product_from_tsr_revision(shift, payload):
         db.session.delete(product_rec)
     else:
         product_rec.name = new_name
-        linked_schedule_count = Shift.query.filter_by(product_id=old_serial).count()
+        linked_schedule_count = Shift.query.filter(
+            Shift.product_id == old_serial,
+            or_(
+                Shift.equipment_source == 'product',
+                Shift.equipment_source.is_(None),
+            )
+        ).count()
 
     db.session.add(ActivityLog(
         user=(getattr(current_user, 'username', '') or 'System').capitalize(),
@@ -14779,151 +14840,98 @@ def correct_product_from_tsr_revision(shift, payload):
     }
 
 
-def ensure_product_from_tsr_payload(shift, payload):
-    """Create/link missing schedule equipment from explicit Create TSR fields.
-
-    Warranty values are intentionally not accepted from the TSR payload. A new
-    inventory record starts on the server date it is added and has no end date.
-    """
-    if not shift or not isinstance(payload, dict):
+def validate_tsr_shift_equipment(shift):
+    """Resolve the Shift's assigned equipment without accepting TSR free text."""
+    if not shift:
         return {'status': 'blocked', 'reason': 'invalid_context'}
 
-    current_serial = (clean_str(getattr(shift, 'product_id', None)) or '').upper()
-    current_equipment = resolve_shift_equipment(shift) if current_serial else None
-    current_source = normalize_equipment_source(getattr(shift, 'equipment_source', None))
-    if current_equipment:
-        selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
-        selected_schedule['product_id'] = current_serial
-        selected_schedule['product_name'] = getattr(current_equipment, 'name', None) or ''
-        selected_schedule['equipment_source'] = current_source
-        payload['selectedSchedule'] = selected_schedule
-        payload['tsr-equipment-model'] = getattr(current_equipment, 'name', None) or payload.get('tsr-equipment-model', '')
-        payload['tsr-serial-no'] = current_serial
-        return {
-            'status': 'existing',
-            'serial_number': current_serial,
-            'product_name': getattr(current_equipment, 'name', None) or '',
-            'client_id': getattr(current_equipment, 'client_id', None),
-            'equipment_source': current_source,
-            'bsid': normalize_product_bsid(getattr(current_equipment, 'bsid', None)),
-        }
-
+    source = normalize_equipment_source(
+        getattr(shift, 'equipment_source', None),
+        default='',
+    )
+    serial_number = (clean_str(getattr(shift, 'product_id', None)) or '').upper()
     client_id = clean_int(getattr(shift, 'client_id', None))
-    product_name = (clean_str(payload.get('tsr-equipment-model')) or '')[:100]
-    serial_number = (clean_str(payload.get('tsr-serial-no')) or '').upper()[:100]
+    if not source:
+        return {'status': 'blocked', 'reason': 'invalid_equipment_source'}
+    if not serial_number:
+        return {'status': 'blocked', 'reason': 'missing_equipment_assignment'}
     if not client_id:
         return {'status': 'blocked', 'reason': 'missing_client'}
-    if not product_name or not serial_number:
+
+    record = resolve_operational_equipment(serial_number, source)
+    if not record:
         return {
             'status': 'blocked',
-            'reason': 'missing_equipment_details',
-            'missing_fields': [
-                label for label, value in (
-                    ('Equipment / Model', product_name),
-                    ('Serial No.', serial_number)
-                ) if not value
-            ]
-        }
-
-    selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
-    requested_source = normalize_equipment_source(
-        selected_schedule.get('equipment_source') or payload.get('equipment_source'),
-        default='product',
-    )
-    existing_equipment = resolve_operational_equipment(serial_number, requested_source)
-    if existing_equipment:
-        linked_shift_ids = []
-        for linked_shift in get_tsr_completion_linked_shifts(shift):
-            if not linked_shift or clean_int(getattr(linked_shift, 'client_id', None)) != client_id:
-                continue
-            if not clean_str(getattr(linked_shift, 'product_id', None)):
-                linked_shift.product_id = serial_number
-                linked_shift.equipment_source = requested_source
-                linked_shift_ids.append(linked_shift.id)
-        if not clean_str(getattr(shift, 'product_id', None)):
-            shift.product_id = serial_number
-            shift.equipment_source = requested_source
-            linked_shift_ids.append(shift.id)
-        selected_schedule['product_id'] = serial_number
-        selected_schedule['product_name'] = getattr(existing_equipment, 'name', None) or product_name
-        selected_schedule['equipment_source'] = requested_source
-        payload['selectedSchedule'] = selected_schedule
-        payload['tsr-equipment-model'] = getattr(existing_equipment, 'name', None) or product_name
-        payload['tsr-serial-no'] = serial_number
-        return {
-            'status': 'existing',
+            'reason': 'equipment_not_found',
             'serial_number': serial_number,
-            'product_name': getattr(existing_equipment, 'name', None) or product_name,
-            'client_id': getattr(existing_equipment, 'client_id', None) or client_id,
-            'equipment_source': requested_source,
-            'bsid': normalize_product_bsid(getattr(existing_equipment, 'bsid', None)),
-            'linked_shift_ids': sorted(set(linked_shift_ids)),
+            'equipment_source': source,
         }
 
-    existing_product = db.session.get(Product, serial_number)
-    created = False
-    if existing_product:
-        existing_client_id = clean_int(getattr(existing_product, 'client_id', None))
-        if existing_client_id and existing_client_id != client_id:
-            return {
-                'status': 'blocked',
-                'reason': 'serial_owned_by_other_client',
-                'serial_number': serial_number,
-                'existing_name': clean_str(getattr(existing_product, 'name', None)),
-                'existing_client_id': existing_client_id
-            }
-        if not existing_client_id:
-            existing_product.client_id = client_id
-        if not clean_str(getattr(existing_product, 'name', None)):
-            existing_product.name = product_name
-        product_rec = existing_product
-    else:
-        product_rec = Product(
-            serial_number=serial_number,
-            name=product_name,
-            client_id=client_id,
-            start_warranty_date=get_manila_today(),
-            end_warranty_date=None
-        )
-        db.session.add(product_rec)
-        created = True
-
-    linked_shift_ids = []
-    for linked_shift in get_tsr_completion_linked_shifts(shift):
-        if not linked_shift or clean_int(getattr(linked_shift, 'client_id', None)) != client_id:
-            continue
-        if not clean_str(getattr(linked_shift, 'product_id', None)):
-            linked_shift.product_id = serial_number
-            linked_shift_ids.append(linked_shift.id)
-    if not clean_str(getattr(shift, 'product_id', None)):
-        shift.product_id = serial_number
-        linked_shift_ids.append(shift.id)
-
-    selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
-    selected_schedule['product_id'] = serial_number
-    selected_schedule['product_name'] = product_rec.name or product_name
-    payload['selectedSchedule'] = selected_schedule
-    payload['tsr-equipment-model'] = product_rec.name or product_name
-    payload['tsr-serial-no'] = serial_number
-
-    db.session.add(ActivityLog(
-        user=(getattr(current_user, 'username', '') or 'System').capitalize(),
-        action=(
-            f"{'Added' if created else 'Linked'} equipment from Create TSR: "
-            f"{product_rec.name or product_name} ({serial_number}) to client #{client_id}; "
-            f"schedule(s): {','.join(map(str, sorted(set(linked_shift_ids)))) or shift.id}"
-        )[:255]
-    ))
+    owner_id = clean_int(getattr(record, 'client_id', None))
+    if not owner_id or owner_id != client_id:
+        return {
+            'status': 'blocked',
+            'reason': 'equipment_client_mismatch',
+            'serial_number': serial_number,
+            'equipment_source': source,
+            'client_id': client_id,
+            'equipment_client_id': owner_id,
+        }
 
     return {
-        'status': 'created' if created else 'linked_existing',
-        'serial_number': serial_number,
-        'product_name': product_rec.name or product_name,
-        'client_id': client_id,
-        'start_warranty_date': product_rec.start_warranty_date.isoformat() if product_rec.start_warranty_date else '',
-        'end_warranty_date': '',
-        'linked_shift_ids': sorted(set(linked_shift_ids))
+        'status': 'existing',
+        'serial_number': clean_str(getattr(record, 'serial_number', None)).upper() or serial_number,
+        'product_name': clean_str(getattr(record, 'name', None)) or '',
+        'client_id': owner_id,
+        'equipment_source': source,
+        'bsid': normalize_product_bsid(getattr(record, 'bsid', None)),
+        'record': record,
     }
+
+
+def tsr_equipment_rejection_details(result):
+    """Return the user-facing message/status for a blocked TSR assignment."""
+    reason = (result or {}).get('reason')
+    if reason in {'equipment_client_mismatch', 'serial_owned_by_other_client'}:
+        return 'Selected equipment must belong to this Medical Center.', 409
+    if reason == 'missing_client':
+        return 'A Medical Center is required before creating or syncing a TSR.', 400
+    return 'Select equipment in Calendar before creating or syncing a TSR.', 400
+
+
+def ensure_product_from_tsr_payload(shift, payload):
+    """Apply the authoritative Shift equipment to a TSR payload.
+
+    The legacy function name is retained for callers, but this path no longer
+    creates or links inventory from TSR free text. Calendar owns the equipment
+    assignment; this helper only validates and mirrors that assignment into the
+    payload used by the TSR submission/revision workflow.
+    """
+    if not isinstance(payload, dict):
+        return {'status': 'blocked', 'reason': 'invalid_context'}
+
+    result = validate_tsr_shift_equipment(shift)
+    if result.get('status') == 'blocked':
+        return result
+
+    selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
+    selected_schedule['product_id'] = result['serial_number']
+    selected_schedule['product_name'] = result['product_name']
+    selected_schedule['equipment_source'] = result['equipment_source']
+    selected_schedule['client_id'] = result['client_id']
+    payload['selectedSchedule'] = selected_schedule
+
+    # Product correction remains an explicit revision-only operation. Normal
+    # online/queued saves and standalone inventory corrections must use the
+    # linked record exactly as it exists on Calendar.
+    if not (
+        payload.get('_tsr_equipment_correction_requested') and
+        result['equipment_source'] == 'product'
+    ):
+        payload['tsr-equipment-model'] = result['product_name']
+        payload['tsr-serial-no'] = result['serial_number']
+
+    return {key: value for key, value in result.items() if key != 'record'}
 
 
 def get_online_tsr_missing_core_details(shift, payload):
@@ -17653,6 +17661,16 @@ def save_offline_tsr_online():
         payload['selectedSchedule'] = dict(payload['selectedSchedule'])
         payload['selectedSchedule']['schedule_coverage'] = authoritative_coverage
 
+    equipment_inventory_result = ensure_product_from_tsr_payload(shift, payload)
+    if equipment_inventory_result.get('status') == 'blocked':
+        message, status_code = tsr_equipment_rejection_details(equipment_inventory_result)
+        return jsonify({
+            'status': 'error',
+            'message': message,
+            'equipment_inventory': equipment_inventory_result
+        }), status_code
+    payload['_equipment_inventory_result'] = equipment_inventory_result
+
     preserve_uploaded_pdf = str(payload.get('_offline_queue_preserve_pdf') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
     is_legacy_offline_queue = preserve_uploaded_pdf and not clean_str(payload.get('_tsr_form_version'))
 
@@ -17708,28 +17726,6 @@ def save_offline_tsr_online():
         }), 400
     if missing_core_details and is_legacy_offline_queue:
         payload['_legacy_core_validation_bypassed'] = missing_core_details
-
-    equipment_inventory_result = None
-    has_equipment_details = bool(
-        clean_str(payload.get('tsr-equipment-model')) and
-        clean_str(payload.get('tsr-serial-no'))
-    )
-    if has_equipment_details or not is_legacy_offline_queue:
-        equipment_inventory_result = ensure_product_from_tsr_payload(shift, payload)
-        if equipment_inventory_result.get('status') == 'blocked':
-            reason = equipment_inventory_result.get('reason')
-            if reason == 'serial_owned_by_other_client':
-                message = f"Serial number {equipment_inventory_result.get('serial_number')} already belongs to another Medical Center."
-                status_code = 409
-            else:
-                message = 'Equipment / Model and Serial No. are required because this schedule has no linked inventory equipment.'
-                status_code = 400
-            return jsonify({
-                'status': 'error',
-                'message': message,
-                'equipment_inventory': equipment_inventory_result
-            }), status_code
-        payload['_equipment_inventory_result'] = equipment_inventory_result
 
     submitted_tsr_number = (clean_str(payload.get('tsr-number')) or clean_str(payload.get('tsr_number')) or '')[:120]
     sequence_date = (
@@ -22593,6 +22589,16 @@ def revise_online_tsr_submission(submission_id):
         payload['selectedSchedule'] = dict(payload['selectedSchedule'])
         payload['selectedSchedule']['schedule_coverage'] = authoritative_coverage
 
+    equipment_inventory_result = ensure_product_from_tsr_payload(shift, payload)
+    if equipment_inventory_result.get('status') == 'blocked':
+        message, status_code = tsr_equipment_rejection_details(equipment_inventory_result)
+        return jsonify({
+            'status': 'error',
+            'message': message,
+            'equipment_inventory': equipment_inventory_result
+        }), status_code
+    payload['_equipment_inventory_result'] = equipment_inventory_result
+
     if not online_tsr_has_serviced_signature(payload):
         return jsonify({
             'status': 'error',
@@ -22637,21 +22643,6 @@ def revise_online_tsr_submission(submission_id):
             'message': f"Complete these required TSR details before saving: {', '.join(missing_core_details)}.",
             'missing_core_details': missing_core_details
         }), 400
-
-    equipment_inventory_result = ensure_product_from_tsr_payload(shift, payload)
-    if equipment_inventory_result.get('status') == 'blocked':
-        reason = equipment_inventory_result.get('reason')
-        message = (
-            f"Serial number {equipment_inventory_result.get('serial_number')} already belongs to another Medical Center."
-            if reason == 'serial_owned_by_other_client'
-            else 'Equipment / Model and Serial No. are required because this schedule has no linked inventory equipment.'
-        )
-        return jsonify({
-            'status': 'error',
-            'message': message,
-            'equipment_inventory': equipment_inventory_result
-        }), 409 if reason == 'serial_owned_by_other_client' else 400
-    payload['_equipment_inventory_result'] = equipment_inventory_result
 
     revision_reason = (
         clean_str(payload.get('revision_reason')) or
@@ -22940,8 +22931,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v158-calibration-center.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v165-calendar-date-navigation.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v170-accounting-branch-codes.
-    # Navigation shell bump: v172 operational equipment -> v173 calibration model approval.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v173-calibration-model-approval';
+    # Navigation shell bump: v173 calibration model approval -> v174 equipment-first TSR.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v174-equipment-first-tsr';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -24688,36 +24679,39 @@ def products_page():
         inventory_mode='product',
         product_can_edit=bool(is_admin_authorized() or current_user.role == 'engineer'),
         product_can_delete=bool(is_admin_authorized()),
+        product_can_pm=False,
     )
 
 
 @app.route('/genoray')
 @login_required
 def genoray_page():
-    """Standalone Genoray inventory for active administrators only."""
+    """Standalone Genoray inventory for active administrators and engineers."""
     if not can_access_genoray_inventory():
         return Response('Access denied.', status=403, mimetype='text/plain')
     ensure_genoray_item_table()
     return render_template(
         'products.html',
         inventory_mode='genoray',
-        product_can_edit=True,
-        product_can_delete=True,
+        product_can_edit=bool(can_access_genoray_inventory()),
+        product_can_delete=bool(can_administer_genoray_inventory()),
+        product_can_pm=bool(can_access_inventory_pm('genoray')),
     )
 
 
 @app.route('/vieworks')
 @login_required
 def vieworks_page():
-    """Standalone Vieworks inventory for active administrators only."""
+    """Standalone Vieworks inventory for active administrators and engineers."""
     if not can_access_vieworks_inventory():
         return Response('Access denied.', status=403, mimetype='text/plain')
     ensure_vieworks_item_table()
     return render_template(
         'products.html',
         inventory_mode='vieworks',
-        product_can_edit=True,
-        product_can_delete=True,
+        product_can_edit=bool(can_access_vieworks_inventory()),
+        product_can_delete=bool(can_administer_vieworks_inventory()),
+        product_can_pm=bool(can_access_inventory_pm('vieworks')),
     )
 
 
@@ -46433,6 +46427,13 @@ def get_timeline_data():
                 .get('total_count', 0)
             )
             equipment = resolve_shift_equipment(shift)
+            equipment_source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
+            equipment_available = bool(
+                shift.client_id and
+                equipment and
+                equipment_source in OPERATIONAL_EQUIPMENT_SOURCES and
+                clean_int(getattr(equipment, 'client_id', None)) == clean_int(shift.client_id)
+            )
 
             payload = {
                 'id': shift.id,
@@ -46444,7 +46445,8 @@ def get_timeline_data():
                 'time_end': shift.end_time.strftime("%H:%M"),
                 'client_id': shift.client_id,
                 'product_id': shift.product_id,
-                'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
+                'equipment_source': equipment_source,
+                'equipment_available': equipment_available,
                 'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
                 'status': shift.status,
                 # Keep default legacy payload unchanged.
@@ -46601,6 +46603,13 @@ def get_shift_details(shift_id):
     )
     service_file_delivery = get_shift_service_file_delivery_summary(shift)
     equipment = resolve_shift_equipment(shift)
+    equipment_source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
+    equipment_available = bool(
+        shift.client_id and
+        equipment and
+        equipment_source in OPERATIONAL_EQUIPMENT_SOURCES and
+        clean_int(getattr(equipment, 'client_id', None)) == clean_int(shift.client_id)
+    )
 
     return jsonify({
         'status': 'success',
@@ -46614,7 +46623,8 @@ def get_shift_details(shift_id):
             'time_end': shift.end_time.strftime("%H:%M") if shift.end_time else '',
             'client_id': shift.client_id,
             'product_id': shift.product_id,
-            'equipment_source': normalize_equipment_source(getattr(shift, 'equipment_source', None)),
+            'equipment_source': equipment_source,
+            'equipment_available': equipment_available,
             'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
             'status': shift.status,
             'files': [
@@ -58289,7 +58299,7 @@ def update_vieworks_item(serial_number):
 @login_required
 def delete_vieworks_item(serial_number):
     """Delete one standalone Vieworks inventory item."""
-    if not can_access_vieworks_inventory():
+    if not can_administer_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
     ensure_inventory_pm_visit_table()
@@ -58319,7 +58329,7 @@ def delete_vieworks_item(serial_number):
 @login_required
 def import_vieworks_items():
     """Import Vieworks items from a flexible-header CSV file."""
-    if not can_access_vieworks_inventory():
+    if not can_administer_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
 
@@ -58633,7 +58643,7 @@ def update_genoray_item(serial_number):
 @login_required
 def delete_genoray_item(serial_number):
     """Delete one standalone Genoray inventory item."""
-    if not can_access_genoray_inventory():
+    if not can_administer_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
     ensure_inventory_pm_visit_table()
@@ -58663,7 +58673,7 @@ def delete_genoray_item(serial_number):
 @login_required
 def import_genoray_items():
     """Import Genoray items from a flexible-header CSV file."""
-    if not can_access_genoray_inventory():
+    if not can_administer_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
 

@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-23-equipment-first-tsr",
+      "release_date": "2026-09-23",
+      "title": "Equipment-First TSR Workflow",
+      "summary": "Engineers select assigned Product, Genoray, or Vieworks equipment on Calendar before creating a TSR, keeping standalone inventory source-aware without creating Product duplicates.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-23-equipment-first-tsr-engineers-admins",
+          "category": "Service Workflows",
+          "description": "Active engineers can view, create, edit, export, and print Genoray and Vieworks inventory while delete, import, and PM administration remain administrator-only. Calendar and offline TSR pickers mark unassigned schedules unavailable, and online, queued, and revision saves require a valid equipment record owned by the selected Medical Center.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-22-calibration-model-approval",
       "release_date": "2026-09-22",
       "title": "Calibration Report Temporary Model Approval",

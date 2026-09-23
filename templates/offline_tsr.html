@@ -230,11 +230,14 @@ window.CalibrationReportConfig = {
           </div>
           <div class="col-md-8">
             <label class="small fw-bold text-muted text-uppercase">Equipment / Model</label>
-            <input id="tsr-equipment-model" class="form-control tsr-field" placeholder="Equipment / model">
+            <input id="tsr-equipment-model" class="form-control tsr-field" placeholder="Select equipment on Calendar first" readonly aria-readonly="true" title="Select equipment on Calendar first. Revision mode can edit an existing linked Product.">
           </div>
           <div class="col-md-4">
             <label class="small fw-bold text-muted text-uppercase">Serial No.</label>
-            <input id="tsr-serial-no" class="form-control tsr-field" placeholder="Serial number">
+            <input id="tsr-serial-no" class="form-control tsr-field" placeholder="Select equipment on Calendar first" readonly aria-readonly="true" title="Select equipment on Calendar first. Revision mode can edit an existing linked Product.">
+          </div>
+          <div class="col-12">
+            <div class="tsr-schedule-locked-note"><i class="fa-solid fa-lock me-1"></i>Select the assigned equipment on Calendar before creating a TSR. These fields are auto-filled and locked for the initial TSR; saved linked Product revisions can use correction mode.</div>
           </div>
         </div>
       </div>
@@ -548,7 +551,7 @@ window.CalibrationReportConfig = {
 @media print{.offline-tsr-notifications,.offline-tsr-modal-notifications{display:none!important;}}
 .offline-tsr-dialog-backdrop{position:fixed;inset:0;z-index:4100;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px}.offline-tsr-dialog-backdrop.show{display:flex}.offline-tsr-dialog-box{width:min(470px,100%);background:#fff;border-radius:22px;box-shadow:0 28px 90px rgba(15,23,42,.38);border:1px solid #dbeafe;overflow:hidden;animation:offlineTSRDialogIn .18s ease-out}.offline-tsr-dialog-header{padding:18px 18px 10px;display:flex;gap:12px;align-items:flex-start}.offline-tsr-dialog-icon{width:42px;height:42px;border-radius:16px;background:#eff6ff;color:#0d6efd;display:inline-flex;align-items:center;justify-content:center;font-size:1.05rem;flex:0 0 auto}.offline-tsr-dialog-box.danger .offline-tsr-dialog-icon{background:#fee2e2;color:#b91c1c}.offline-tsr-dialog-box.warning .offline-tsr-dialog-icon{background:#fffbeb;color:#b45309}.offline-tsr-dialog-box.success .offline-tsr-dialog-icon{background:#dcfce7;color:#166534}.offline-tsr-dialog-text{min-width:0;flex:1}.offline-tsr-dialog-title{margin:0;color:#0f172a;font-weight:950;font-size:1.08rem}.offline-tsr-dialog-message{margin-top:5px;color:#475569;font-weight:800;line-height:1.45;white-space:pre-wrap}.offline-tsr-dialog-actions{padding:12px 18px 18px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.tsr-recommended-highlight{outline:3px solid rgba(245,158,11,.8)!important;box-shadow:0 0 0 6px rgba(245,158,11,.18)!important;border-radius:12px;transition:outline .18s ease,box-shadow .18s ease}@keyframes offlineTSRDialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:768px){.offline-tsr-dialog-backdrop{align-items:flex-end;padding:12px}.offline-tsr-dialog-box{width:100%;border-radius:20px}}
 .offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.tsr-schedule-coverage-panel{border:1px solid #bfdbfe;background:#f8fbff;border-radius:16px;padding:12px}.tsr-schedule-coverage-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.05em}.tsr-schedule-coverage-table{width:100%;border-collapse:collapse;font-size:.78rem}.tsr-schedule-coverage-table th,.tsr-schedule-coverage-table td{border:1px solid #bfdbfe;padding:6px 8px;text-align:left;vertical-align:top}.tsr-schedule-coverage-table th{background:#e7f1ff;color:#334155;font-weight:900}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.tsr-saved-signature-panel{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.tsr-saved-signature-copy{min-width:0}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-missing-equipment-entry{background:#fffbeb!important;border-color:#f59e0b!important;box-shadow:0 0 0 3px rgba(245,158,11,.08)}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}.tsr-saved-signature-panel{align-items:stretch;flex-direction:column}.tsr-saved-signature-panel .btn{width:100%}}
- .offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}.tsr-signature-recovery-source{display:flex;align-items:flex-start;gap:10px;border:1px solid #cbd5e1;border-radius:14px;padding:10px 12px;background:#f8fafc;cursor:pointer}.tsr-signature-recovery-source:has(input:checked){border-color:#0d6efd;background:#eff6ff;box-shadow:0 0 0 2px rgba(13,110,253,.12)}.tsr-signature-recovery-source input{margin-top:3px;min-width:18px;min-height:18px}.tsr-signature-recovery-source-copy{min-width:0}.tsr-signature-recovery-source-title{font-weight:900;color:#0f172a}.tsr-signature-recovery-source-meta{font-size:.78rem;color:#64748b;font-weight:700;margin-top:3px;word-break:break-word}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions{justify-content:stretch}.standalone-tsr-draft-actions .btn{flex:1 1 auto}.tsr-signature-recovery-source{align-items:stretch}}
+.standalone-schedule-card.unavailable{background:#f8fafc;border-color:#cbd5e1;cursor:not-allowed;opacity:.88}.standalone-schedule-card.unavailable:hover{border-color:#cbd5e1;transform:none;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-schedule-date-chip:disabled{background:#f1f5f9;color:#94a3b8;border-color:#cbd5e1;cursor:not-allowed}.standalone-schedule-unavailable{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:5px 8px;border-radius:999px;border:1px solid #fde68a;background:#fffbeb;color:#92400e;font-size:.74rem;font-weight:900}
 .offline-tsr-connection-banner{border-radius:16px;padding:10px 12px;margin-bottom:12px;font-weight:800;display:flex;align-items:center;gap:8px}.offline-tsr-connection-banner.online{background:#ecfdf5;color:#15803d;border:1px solid #bbf7d0}.offline-tsr-connection-banner.offline{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}.offline-tsr-connection-banner.syncing{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}.offline-tsr-connection-banner.failed{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}.offline-tsr-queue-panel-syncing{border-left:5px solid #0d6efd!important}.offline-tsr-queue-panel-failed{border-left:5px solid #dc3545!important}.offline-tsr-queue-panel-success{border-left:5px solid #198754!important}
 
 /* Offline TSR cleanup helpers */
@@ -1218,24 +1221,19 @@ function requireStandaloneScheduleForTSRAction(){
   return false;
 }
 function setStandaloneScheduleLockedFields(locked){
-  const selectedSchedule = getSelectedStandaloneSchedule();
-  const allowMissingEquipmentEntry = !!locked && !isOnlineTSRRevisionMode() && selectedScheduleNeedsEquipmentEntry(selectedSchedule);
   TSR_SCHEDULE_LOCKED_FIELD_IDS.forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     const allowRevisionEquipmentEdit = locked && isOnlineTSRRevisionMode() && TSR_REVISION_EDITABLE_EQUIPMENT_FIELD_IDS.includes(id);
-    const allowNewEquipmentEdit = allowMissingEquipmentEntry && TSR_REVISION_EDITABLE_EQUIPMENT_FIELD_IDS.includes(id);
-    const shouldLock = !!locked && !allowRevisionEquipmentEdit && !allowNewEquipmentEdit;
+    const equipmentField = TSR_REVISION_EDITABLE_EQUIPMENT_FIELD_IDS.includes(id);
+    const shouldLock = allowRevisionEquipmentEdit ? false : (equipmentField || !!locked);
     el.readOnly = shouldLock;
     el.disabled = shouldLock;
     el.setAttribute('aria-readonly', shouldLock ? 'true' : 'false');
     el.classList.toggle('tsr-schedule-locked', shouldLock);
-    el.classList.toggle('tsr-missing-equipment-entry', allowNewEquipmentEdit);
     el.title = allowRevisionEquipmentEdit
       ? 'Correction mode: editing this value updates the equipment database record.'
-      : (allowNewEquipmentEdit
-        ? 'No equipment is linked to this schedule. Enter the product and serial number; saving creates it under this Medical Center.'
-        : (locked ? 'Auto-filled from selected schedule' : ''));
+      : (locked ? 'Auto-filled from selected schedule. Select equipment on Calendar before creating a TSR.' : '');
   });
   TSR_SCHEDULE_TIME_FIELD_IDS.forEach(id => {
     const el = document.getElementById(id);
@@ -1325,6 +1323,16 @@ function getScheduleProductLabel(schedule){
   const sourceLabel = source === 'genoray' ? 'Genoray' : (source === 'vieworks' ? 'Vieworks' : '');
   const label = serial && name ? `${serial} — ${name}` : (serial || name || 'No equipment');
   return sourceLabel ? `${label} · ${sourceLabel}` : label;
+}
+function isScheduleEquipmentAssignable(schedule){
+  const source = String(schedule?.equipment_source || '').trim().toLowerCase();
+  const sourceAllowed = ['product', 'genoray', 'vieworks'].includes(source);
+  const hasAssignment = Boolean(
+    String(schedule?.client_id || '').trim() &&
+    String(schedule?.product_id || '').trim() &&
+    String(schedule?.product_name || '').trim()
+  );
+  return sourceAllowed && hasAssignment && schedule?.equipment_available !== false;
 }
 function normalizeTSRScheduleCoverageRows(scheduleOrData){
   const source = Array.isArray(scheduleOrData?.schedule_coverage)
@@ -1465,7 +1473,8 @@ function getScheduleOptionLabel(schedule){
   const label = `${date} ${time} — ${client} — ${product}`.trim();
   // Say plainly that this schedule has not reached the server yet, so the engineer knows the
   // TSR will wait behind it rather than sending straight away.
-  return schedule.pending_schedule_token ? `Waiting to sync — ${label}` : label;
+  const unavailable = isScheduleEquipmentAssignable(schedule) ? '' : ' — Equipment required';
+  return schedule.pending_schedule_token ? `Waiting to sync — ${label}${unavailable}` : `${label}${unavailable}`;
 }
 
 function getScheduleOptionDateIso(schedule){
@@ -1586,6 +1595,7 @@ function normalizeStandaloneCreateTSRContext(rawContext){
     product_name: ctx.product_name || '',
     product_id: ctx.product_id || '',
     equipment_source: ctx.equipment_source || ctx.product_source || 'product',
+    equipment_available: ctx.equipment_available !== false,
     engineer_id: ctx.engineer_id || ctx.engineerId || '',
     serviced_by: ctx.engineer_name || ctx.serviced_by || LOGGED_IN_ENGINEER_NAME || '',
     serviced_by_initials: ctx.engineer_initials || LOGGED_IN_ENGINEER_INITIALS || '',
@@ -1700,6 +1710,10 @@ function applyCreateTSRHandoffToStandaloneTSR(){
 
   const schedule = findStandaloneScheduleFromCreateTSRContext(context) || ensureStandaloneScheduleOptionFromContext(context);
   if(!schedule) return false;
+  if(!isScheduleEquipmentAssignable(schedule)){
+    showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
+    return false;
+  }
 
   const runtimeId = getStandaloneScheduleRuntimeId(schedule);
   selectedStandaloneScheduleId = runtimeId;
@@ -1875,6 +1889,10 @@ async function readPendingScheduleOptions(){
         product_name: summary.productName || '',
         product_id: summary.productId || '',
         equipment_source: summary.productSource || 'product',
+        equipment_available: Boolean(
+          summary.clientId && summary.productId && summary.productName &&
+          ['product', 'genoray', 'vieworks'].includes(String(summary.productSource || 'product').toLowerCase())
+        ),
         engineers: summary.engineerIds || [],
         engineer_names: [LOGGED_IN_ENGINEER_NAME].filter(Boolean),
         serviced_by: LOGGED_IN_ENGINEER_NAME || '',
@@ -1942,6 +1960,7 @@ function readTimelineSnapshotSchedules(){
             product_name: shift.product_name || '',
             product_id: shift.product_id || '',
             equipment_source: shift.equipment_source || 'product',
+            equipment_available: shift.equipment_available !== false && Boolean(shift.client_id && shift.product_id && shift.product_name),
             engineers: rawEngineers,
             engineer_names: [...new Set(engineerNames)],
             serviced_by: LOGGED_IN_ENGINEER_NAME || shift.day_owner_engineer_name || engineer.name || '',
@@ -1989,10 +2008,10 @@ function renderStandaloneScheduleOptions(schedules, sourceLabel='cached'){
   const help = document.getElementById('tsr-schedule-picker-help');
   if(select){
     const currentValue = selectedStandaloneScheduleId || select.value || '';
-    select.innerHTML = '<option value="">No schedule selected</option>' + standaloneScheduleOptions.map(schedule => `<option value="${escapeAttr(getStandaloneScheduleRuntimeId(schedule))}">${escapeHTML(getScheduleOptionLabel(schedule))}</option>`).join('');
+    select.innerHTML = '<option value="">No schedule selected</option>' + standaloneScheduleOptions.map(schedule => `<option value="${escapeAttr(getStandaloneScheduleRuntimeId(schedule))}"${isScheduleEquipmentAssignable(schedule) ? '' : ' disabled'}>${escapeHTML(getScheduleOptionLabel(schedule))}</option>`).join('');
     // currentValue may be a selection restored from a draft, so it can be in the old format.
     const matched = currentValue
-      ? standaloneScheduleOptions.find(s => isSameScheduleSelection(currentValue, s))
+      ? standaloneScheduleOptions.find(s => isSameScheduleSelection(currentValue, s) && isScheduleEquipmentAssignable(s))
       : null;
     if(matched){
       select.value = String(getStandaloneScheduleRuntimeId(matched));
@@ -2000,7 +2019,8 @@ function renderStandaloneScheduleOptions(schedules, sourceLabel='cached'){
   }
   if(help){
     if(standaloneScheduleOptions.length){
-      help.textContent = `${standaloneScheduleOptions.length} assigned schedule(s) available from ${sourceLabel}. Initial view shows this week; use search to find previous schedules.`;
+      const unavailableCount = standaloneScheduleOptions.filter(schedule => !isScheduleEquipmentAssignable(schedule)).length;
+      help.textContent = `${standaloneScheduleOptions.length} schedule(s) available from ${sourceLabel}.${unavailableCount ? ` ${unavailableCount} require equipment assignment on Calendar.` : ''} Initial view shows this week; use search to find previous schedules.`;
     }else{
       help.textContent = 'No cached schedules found yet. Open/load schedules online first before creating a TSR offline.';
     }
@@ -2031,17 +2051,19 @@ function renderStandaloneScheduleCards(){
   list.innerHTML = groups.map(group => {
     const schedule = group.primary;
     const items = group.items || [];
-    const active = items.some(item => isSameScheduleSelection(selectedStandaloneScheduleId, item));
+    const groupAssignable = isScheduleEquipmentAssignable(schedule);
+    const active = groupAssignable && items.some(item => isSameScheduleSelection(selectedStandaloneScheduleId, item));
     const engineers = (schedule.engineer_names || []).join(', ') || schedule.serviced_by || '';
     const dateRange = getStandaloneScheduleGroupDateRange(items);
     const isMultiDay = items.length > 1;
     const dateButtons = isMultiDay ? `<div class="standalone-schedule-date-row">${items.map(item => {
       const uid = getStandaloneScheduleRuntimeId(item);
       const chipActive = isSameScheduleSelection(selectedStandaloneScheduleId, item);
-      return `<button type="button" class="standalone-schedule-date-chip ${chipActive ? 'active' : ''}" onclick="event.stopPropagation(); selectStandaloneScheduleFromModal('${escapeAttr(uid)}')">${escapeHTML(getStandaloneScheduleDateText(item) || 'Select date')}</button>`;
+      const itemAssignable = isScheduleEquipmentAssignable(item);
+      return `<button type="button" class="standalone-schedule-date-chip ${chipActive ? 'active' : ''}"${itemAssignable ? ` onclick="event.stopPropagation(); selectStandaloneScheduleFromModal('${escapeAttr(uid)}')"` : ' disabled'}>${escapeHTML(getStandaloneScheduleDateText(item) || 'Select date')}</button>`;
     }).join('')}</div>` : '';
     const clickTarget = escapeAttr(getStandaloneScheduleRuntimeId(schedule));
-    return `<div class="standalone-schedule-card ${active ? 'active' : ''}" onclick="selectStandaloneScheduleFromModal('${clickTarget}')">
+    return `<div class="standalone-schedule-card ${active ? 'active' : ''}${groupAssignable ? '' : ' unavailable'}"${groupAssignable ? ` onclick="selectStandaloneScheduleFromModal('${clickTarget}')"` : ' aria-disabled="true"'}>
       <div class="standalone-schedule-card-top">
         <div>
           <div class="standalone-schedule-client">${escapeHTML(schedule.client_name || 'No client')}</div>
@@ -2055,6 +2077,7 @@ function renderStandaloneScheduleCards(){
       </div>
       <div class="standalone-schedule-meta"><i class="fa-solid fa-clock me-1"></i>${escapeHTML(schedule.time_start || '')}-${escapeHTML(schedule.time_end || '')} • ${escapeHTML(stripScheduleBillingTags(schedule.task) || 'Service schedule')}</div>
       ${engineers ? `<div class="standalone-schedule-meta"><i class="fa-solid fa-user-gear me-1"></i>${escapeHTML(engineers)}</div>` : ''}
+      ${groupAssignable ? '' : '<div class="standalone-schedule-unavailable"><i class="fa-solid fa-lock"></i>Unavailable — select equipment on Calendar first</div>'}
       ${isMultiDay ? `<div class="standalone-schedule-meta"><i class="fa-solid fa-circle-info me-1"></i>Multi-day schedule. Tap the card to select the first day, or choose another date below.</div>${dateButtons}` : ''}
     </div>`;
   }).join('');
@@ -2085,6 +2108,10 @@ function closeStandaloneSchedulePickerModal(){
 }
 
 async function assignPickedScheduleToQueuedTSR(itemId, schedule){
+  if(!isScheduleEquipmentAssignable(schedule)){
+    showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
+    return;
+  }
   const queue = await loadOfflineTSRQueueStore();
   const item = queue.find(row => row.id === itemId);
   if(!item){
@@ -2129,6 +2156,10 @@ async function assignPickedScheduleToQueuedTSR(itemId, schedule){
 function selectStandaloneScheduleFromModal(id){
   const schedule = standaloneScheduleOptions.find(item => isSameScheduleSelection(id, item));
   if(!schedule) return;
+  if(!isScheduleEquipmentAssignable(schedule)){
+    showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
+    return;
+  }
 
   if(queuedTSRAwaitingSchedulePick){
     const targetId = queuedTSRAwaitingSchedulePick;
@@ -2271,6 +2302,10 @@ function applyScheduleComplaintDefault(schedule, overwrite=true){
 
 function applyScheduleToStandaloneTSR(schedule, overwrite=true){
   if(!schedule) return;
+  if(!isScheduleEquipmentAssignable(schedule)){
+    showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
+    return;
+  }
   const wasPaused = standaloneTSRAutosavePaused;
   standaloneTSRAutosavePaused = true;
   try{
@@ -2320,11 +2355,9 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
         <div><span>Task</span><strong>${escapeHTML(stripScheduleBillingTags(schedule.task) || 'Service schedule')}</strong></div>
         <div><span>Equipment</span><strong>${escapeHTML(getScheduleProductLabel(schedule))}</strong></div>
       </div>
-      <div class="tsr-schedule-locked-note"><i class="fa-solid ${isOnlineTSRRevisionMode() || selectedScheduleNeedsEquipmentEntry(schedule) ? 'fa-pen-to-square' : 'fa-lock'} me-1"></i>${isOnlineTSRRevisionMode()
+      <div class="tsr-schedule-locked-note"><i class="fa-solid ${isOnlineTSRRevisionMode() ? 'fa-pen-to-square' : 'fa-lock'} me-1"></i>${isOnlineTSRRevisionMode()
         ? 'Correction mode: product and serial can be edited and will update the equipment database record.'
-        : (selectedScheduleNeedsEquipmentEntry(schedule)
-          ? 'No inventory equipment is linked. Enter Product and Serial; saving creates it under this Medical Center with today as the warranty start date.'
-          : 'Client/equipment fields are locked. Start and finish time may be adjusted before saving.')}</div>`;
+        : 'Client/equipment fields are locked. Start and finish time may be adjusted before saving.'}</div>`;
   }
   renderTSRScheduleCoveragePanel(schedule);
   renderTSRClientContactSuggestions(schedule);
@@ -3023,11 +3056,6 @@ function collectTSRData(){
     _tsr_filename_template:activeTSRFilenameTemplate
   };
   document.querySelectorAll('.tsr-field').forEach(el=>data[el.id]=el.value);
-  data._equipment_inventory_create_requested = Boolean(
-    selectedScheduleNeedsEquipmentEntry(selectedSchedule) &&
-    String(data['tsr-equipment-model'] || '').trim() &&
-    String(data['tsr-serial-no'] || '').trim()
-  );
   if(onlineTSRRevisionContext){
     const originalProductName = String(onlineTSRRevisionContext.original_product_name || '').trim();
     const originalSerialNo = String(onlineTSRRevisionContext.original_serial_no || '').trim();
@@ -3908,21 +3936,21 @@ function applyStandaloneTSRDraftData(data){
     // against canonical, and the next save quietly persists the new format. Drafts are never
     // rewritten in bulk -- matching is reversible, editing every draft on a device is not.
     const matchedOption = storedScheduleId
-      ? standaloneScheduleOptions.find(item => isSameScheduleSelection(storedScheduleId, item))
+      ? standaloneScheduleOptions.find(item => isSameScheduleSelection(storedScheduleId, item) && isScheduleEquipmentAssignable(item))
       : null;
 
     if(matchedOption){
       selectedStandaloneScheduleId = String(getStandaloneScheduleRuntimeId(matchedOption));
       awaitingScheduleRepick = false;
       syncStandaloneTSRAddressFromSchedule(matchedOption);
-    }else if(storedScheduleId && selectedStandaloneScheduleSnapshot){
+    }else if(storedScheduleId && selectedStandaloneScheduleSnapshot && isScheduleEquipmentAssignable(selectedStandaloneScheduleSnapshot)){
       // Nothing in the current list matches. Keep every field the engineer typed, drop the
       // dead selection, and ask them to pick the schedule again rather than guessing.
       selectedStandaloneScheduleId = '';
       awaitingScheduleRepick = true;
     }else{
-      selectedStandaloneScheduleId = storedScheduleId;
-      awaitingScheduleRepick = false;
+      selectedStandaloneScheduleId = '';
+      awaitingScheduleRepick = Boolean(storedScheduleId);
     }
     renderTSRClientContactSuggestions(matchedOption || selectedStandaloneScheduleSnapshot);
     standaloneDocuments=data.documents||[];
@@ -7736,13 +7764,8 @@ function getMissingTSRCoreDetails(data){
   if(!String(data?.['tsr-actions-taken'] || '').trim()){
     missing.push({ label:'Actions Taken', selector:'#tsr-action-input' });
   }
-  if(selectedScheduleNeedsEquipmentEntry(selectedSchedule)){
-    if(!String(data?.['tsr-equipment-model'] || '').trim()){
-      missing.push({ label:'Equipment / Model', selector:'#tsr-equipment-model' });
-    }
-    if(!String(data?.['tsr-serial-no'] || '').trim()){
-      missing.push({ label:'Serial No.', selector:'#tsr-serial-no' });
-    }
+  if(hasStandaloneScheduleSelection() && !isScheduleEquipmentAssignable(selectedSchedule)){
+    missing.push({ label:'Assigned equipment', selector:'#tsr-schedule-select' });
   }
   return missing;
 }

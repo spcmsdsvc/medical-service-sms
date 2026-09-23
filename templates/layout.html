@@ -317,11 +317,15 @@
                             {% endif %}
                             {% if can_access_genoray_inventory %}
                                 {{ nav_link('/genoray', 'fa-boxes-packing', 'Genoray') }}
-                                {{ nav_link('/genoray/pm', 'fa-screwdriver-wrench', 'Genoray PM') }}
+                                {% if nav_can_access_genoray_pm %}
+                                    {{ nav_link('/genoray/pm', 'fa-screwdriver-wrench', 'Genoray PM') }}
+                                {% endif %}
                             {% endif %}
                             {% if can_access_vieworks_inventory %}
                                 {{ nav_link('/vieworks', 'fa-boxes-packing', 'Vieworks') }}
-                                {{ nav_link('/vieworks/pm', 'fa-screwdriver-wrench', 'Vieworks PM') }}
+                                {% if nav_can_access_vieworks_pm %}
+                                    {{ nav_link('/vieworks/pm', 'fa-screwdriver-wrench', 'Vieworks PM') }}
+                                {% endif %}
                             {% endif %}
                         </div>
                     {% else %}

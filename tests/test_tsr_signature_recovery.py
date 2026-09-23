@@ -538,12 +538,21 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             )
             app_module.db.session.add_all([engineer, client])
             app_module.db.session.flush()
+            product = app_module.Product(
+                serial_number=f"ROUTE-SERIAL-{cls.suffix}",
+                name="Route Model",
+                client_id=client.id,
+            )
+            app_module.db.session.add(product)
+            app_module.db.session.flush()
             shift = app_module.Shift(
                 title=f"TSR signature route shift {cls.suffix}",
                 start_time=datetime.combine(app_module.get_manila_today(), time(8, 0)),
                 end_time=datetime.combine(app_module.get_manila_today(), time(17, 0)),
                 engineer_id=engineer.id,
                 client_id=client.id,
+                product_id=product.serial_number,
+                equipment_source="product",
                 status="In Progress",
             )
             app_module.db.session.add(shift)
@@ -552,6 +561,7 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             cls.shift_id = shift.id
             cls.engineer_id = engineer.id
             cls.client_id = client.id
+            cls.product_serial = product.serial_number
             cls.submission_ids = []
 
     @classmethod
@@ -564,6 +574,9 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             shift = app_module.db.session.get(app_module.Shift, getattr(cls, "shift_id", None))
             if shift:
                 app_module.db.session.delete(shift)
+            product = app_module.db.session.get(app_module.Product, getattr(cls, "product_serial", None))
+            if product:
+                app_module.db.session.delete(product)
             client = app_module.db.session.get(app_module.Client, getattr(cls, "client_id", None))
             if client:
                 app_module.db.session.delete(client)
@@ -596,7 +609,7 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             "tsr-customer-name": f"TSR Signature Route Client {self.suffix}",
             "tsr-serviced-by": "TSR Signature Route Engineer",
             "tsr-equipment-model": "Route Model",
-            "tsr-serial-no": "ROUTE-SERIAL",
+            "tsr-serial-no": self.product_serial,
             "_tsr_form_version": "vector-pdf-v2",
             "submission_token": token,
             "signatures": {

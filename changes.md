@@ -1,5 +1,46 @@
 # Project Change Log
 
+codex changes - 2026-09-23
+
+- Recorded the owner-authorized Equipment-first TSR workflow plan in plans.md. The authorized
+  scope covers engineer access to Genoray/Vieworks inventory without PM access, Calendar/Create
+  TSR gating for unassigned schedules, removal of TSR-driven inventory creation, source-aware
+  server enforcement, focused verification, cache/release records, and preservation of the
+  protected dirty worktree. Implementation and test results will be appended after execution.
+- Executed the owner-authorized Equipment-first TSR workflow locally and left it uncommitted.
+  Active engineers can now view, create, edit, export, and print both Genoray and Vieworks
+  inventory pages; delete/import operations and Genoray/Vieworks PM pages, APIs, navigation links,
+  and row actions remain administrator-only. Product Inventory behavior was preserved.
+- Added a shared source-aware Calendar equipment-assignment predicate and applied it to desktop,
+  inline, mobile sticky, pure-engineer, full-calendar, saved-schedule, and queued-schedule Create
+  TSR actions. Unassigned actions stay visible but disabled with the Calendar instruction, and
+  direct redirect functions have matching guards.
+- Changed initial Offline TSR model/serial fields to locked, schedule-derived values; unassigned
+  schedule options remain visible as unavailable with “Select equipment on Calendar first,” and
+  `_equipment_inventory_create_requested` is no longer produced. Existing linked Product
+  correction behavior remains available.
+- Enforced source, serial, inventory-resolution, and Medical Center ownership validation before
+  online final save, queued synchronization, and revision submission. Rejected unassigned or
+  mismatched schedules before PDF, attachment, TSR submission, or inventory writes with the stable
+  actionable Calendar message. `ensure_product_from_tsr_payload()` now resolves only the linked
+  Calendar record and never creates or infers Product/Genoray/Vieworks inventory from TSR text;
+  existing duplicate records were preserved.
+- Updated focused coverage for engineer inventory permissions, PM denial, source-aware schedule
+  resolution, duplicate serial disambiguation, unassigned online/queued/revision rejection,
+  draft non-mutation, Calendar guards, and locked TSR fields. The no-equipment regression submits
+  both Genoray and Vieworks free-text values and confirms Product, Genoray, and Vieworks counts
+  remain unchanged.
+- Bumped the embedded service-worker marker from v173 to
+  `medical-service-pwa-offline-navigation-v174-equipment-first-tsr` and added the
+  `2026-09-23-equipment-first-tsr` release entry describing engineer inventory access and
+  equipment-first TSR creation.
+- Focused verification passed 238 tests across operational equipment, Genoray, Vieworks, PM,
+  offline TSR, pending/offline schedules, TSR signature/revision, sync reliability, contact
+  suggestions, Product Inventory, and Timeline desktop modules. Python AST, Jinja/template,
+  release JSON, service-worker marker, and `git diff --check` validation passed. No browser or
+  Codex UI testing, commit, push, deployment, Railway/production operation, or protected dirty
+  path modification was performed.
+
 codex changes - 2026-09-22
 
 - Recorded the owner-authorized `Calibration Report Temporary Model Approval` plan in

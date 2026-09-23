@@ -145,7 +145,7 @@ class GenorayInventoryTests(unittest.TestCase):
         payload = {"serial_number": serial, "name": name, **extra}
         return client.post("/api/genoray/items", json=payload)
 
-    def test_permission_helper_allows_only_active_admin_shapes(self):
+    def test_permission_helper_allows_active_engineer_use_but_not_admin_actions(self):
         with self.app.app_context():
             users = [app_module.db.session.get(app_module.User, user_id) for user_id in (
                 self.admin_id, self.superadmin_id, self.regional_id,
@@ -154,11 +154,26 @@ class GenorayInventoryTests(unittest.TestCase):
             self.assertTrue(app_module.can_access_genoray_inventory(users[0]))
             self.assertTrue(app_module.can_access_genoray_inventory(users[1]))
             self.assertTrue(app_module.can_access_genoray_inventory(users[2]))
-            self.assertFalse(app_module.can_access_genoray_inventory(users[3]))
+            self.assertTrue(app_module.can_access_genoray_inventory(users[3]))
             self.assertFalse(app_module.can_access_genoray_inventory(users[4]))
             self.assertFalse(app_module.can_access_genoray_inventory(users[5]))
+            self.assertFalse(app_module.can_administer_genoray_inventory(users[3]))
+            self.assertTrue(app_module.can_access_inventory_pm('genoray', users[0]))
+            self.assertFalse(app_module.can_access_inventory_pm('genoray', users[3]))
 
-    def test_every_genoray_route_denies_engineer_and_other_role(self):
+    def test_engineer_can_use_genoray_inventory_but_cannot_delete_or_import(self):
+        client = self.client_for(self.engineer_id)
+        self.assertEqual(client.get("/genoray").status_code, 200)
+        self.assertEqual(client.get("/api/genoray/items").status_code, 200)
+        self.assertEqual(client.get("/api/genoray/summary").status_code, 200)
+        created = self.add_item(client, "ENGINEER-GENORAY")
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        self.assertEqual(client.put("/api/genoray/items/ENGINEER-GENORAY", json={"name": "Updated"}).status_code, 200)
+        self.assertEqual(client.get("/genoray/export").status_code, 200)
+        self.assertEqual(client.delete("/api/genoray/items/ENGINEER-GENORAY").status_code, 403)
+        self.assertEqual(self.import_csv(client, "Serial Number,Description\nENGINEER-IMPORT,Nope\n").status_code, 403)
+
+    def test_other_roles_remain_denied_from_genoray_routes(self):
         paths = [
             ("/genoray", "GET"),
             ("/api/genoray/items", "GET"),
@@ -169,7 +184,6 @@ class GenorayInventoryTests(unittest.TestCase):
             ("/genoray/export", "GET"),
         ]
         for user, user_id in (
-            (self.engineer, self.engineer_id),
             (self.other_role, self.other_role_id),
             (self.inactive_admin, self.inactive_admin_id),
         ):
@@ -200,7 +214,9 @@ class GenorayInventoryTests(unittest.TestCase):
         self.assertEqual(admin_shell.status_code, 200)
         self.assertEqual(engineer_shell.status_code, 200)
         self.assertIn('href="/genoray"', admin_shell.get_data(as_text=True))
-        self.assertNotIn('href="/genoray"', engineer_shell.get_data(as_text=True))
+        self.assertIn('href="/genoray"', engineer_shell.get_data(as_text=True))
+        self.assertIn('href="/genoray/pm"', admin_shell.get_data(as_text=True))
+        self.assertNotIn('href="/genoray/pm"', engineer_shell.get_data(as_text=True))
 
     def test_page_adds_start_at_g00001_and_never_reuse_deleted_numbers(self):
         client = self.client_for(self.admin_id)

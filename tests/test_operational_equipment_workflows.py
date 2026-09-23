@@ -162,6 +162,7 @@ class OperationalEquipmentWorkflowTests(unittest.TestCase):
         self.assertEqual(selected["product_name"], self.genoray_name)
         self.assertEqual(selected["product_bsid"], self.genoray_bsid)
         self.assertEqual(selected["equipment_source"], "genoray")
+        self.assertTrue(selected["equipment_available"])
 
     def test_schedule_rejects_wrong_client_and_unknown_equipment_source(self):
         client = self.client_for(self.engineer_user_id)
@@ -203,6 +204,125 @@ class OperationalEquipmentWorkflowTests(unittest.TestCase):
             self.assertEqual(result["status"], "existing")
             self.assertEqual(result["product_name"], self.vieworks_name)
             self.assertEqual(before_count, after_count)
+            app_module.db.session.delete(shift)
+            app_module.db.session.commit()
+
+    def test_tsr_free_text_cannot_create_or_relink_inventory(self):
+        with self.app.app_context():
+            shift = app_module.Shift(
+                title="Unassigned TSR source test",
+                start_time=app_module.datetime.combine(app_module.get_manila_today(), app_module.datetime.min.time()).replace(hour=8),
+                end_time=app_module.datetime.combine(app_module.get_manila_today(), app_module.datetime.min.time()).replace(hour=10),
+                engineer_id=self.engineer_id,
+                client_id=self.client_id,
+                product_id=None,
+                equipment_source="product",
+                status="Completed",
+            )
+            app_module.db.session.add(shift)
+            app_module.db.session.commit()
+            before_counts = {
+                "product": app_module.Product.query.count(),
+                "genoray": app_module.GenorayItem.query.count(),
+                "vieworks": app_module.VieworksItem.query.count(),
+            }
+            for model_name, serial_number in (
+                ("Genoray free-text model", "GENORAY-FREE-TEXT"),
+                ("Vieworks free-text model", "VIEWORKS-FREE-TEXT"),
+            ):
+                result = app_module.ensure_product_from_tsr_payload(shift, {
+                    "tsr-equipment-model": model_name,
+                    "tsr-serial-no": serial_number,
+                    "selectedSchedule": {},
+                })
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["reason"], "missing_equipment_assignment")
+
+            self.assertEqual(app_module.Product.query.count(), before_counts["product"])
+            self.assertEqual(app_module.GenorayItem.query.count(), before_counts["genoray"])
+            self.assertEqual(app_module.VieworksItem.query.count(), before_counts["vieworks"])
+            self.assertIsNone(shift.product_id)
+            app_module.db.session.delete(shift)
+            app_module.db.session.commit()
+
+    def test_tsr_rejects_assigned_equipment_owned_by_another_client(self):
+        with self.app.app_context():
+            shift = app_module.Shift(
+                title="Wrong owner TSR source test",
+                start_time=app_module.datetime.combine(app_module.get_manila_today(), app_module.datetime.min.time()).replace(hour=8),
+                end_time=app_module.datetime.combine(app_module.get_manila_today(), app_module.datetime.min.time()).replace(hour=10),
+                engineer_id=self.engineer_id,
+                client_id=self.other_client_id,
+                product_id=self.genoray_serial,
+                equipment_source="genoray",
+                status="Completed",
+            )
+            app_module.db.session.add(shift)
+            app_module.db.session.commit()
+            result = app_module.ensure_product_from_tsr_payload(shift, {
+                "tsr-equipment-model": "Tampered model",
+                "tsr-serial-no": "TAMPERED-SERIAL",
+                "selectedSchedule": {},
+            })
+            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["reason"], "equipment_client_mismatch")
+            self.assertEqual(shift.product_id, self.genoray_serial)
+            app_module.db.session.delete(shift)
+            app_module.db.session.commit()
+
+    def test_online_queued_and_revision_paths_reject_unassigned_shift_before_writes(self):
+        with self.app.app_context():
+            shift = app_module.Shift(
+                title="Unassigned final-path TSR test",
+                start_time=app_module.datetime.combine(app_module.get_manila_today(), app_module.datetime.min.time()).replace(hour=8),
+                end_time=app_module.datetime.combine(app_module.get_manila_today(), app_module.datetime.min.time()).replace(hour=10),
+                engineer_id=self.engineer_id,
+                client_id=self.client_id,
+                product_id=None,
+                equipment_source="product",
+                status="In Progress",
+            )
+            app_module.db.session.add(shift)
+            app_module.db.session.commit()
+            shift_id = shift.id
+            original = app_module.OnlineTsrSubmission(
+                shift_id=shift_id,
+                tsr_number="TSR-UNASSIGNED-1",
+                payload_json="{}",
+                submission_token=f"unassigned-original-{uuid.uuid4().hex}",
+                status="completed",
+            )
+            app_module.db.session.add(original)
+            app_module.db.session.commit()
+            original_id = original.id
+            before_products = app_module.Product.query.count()
+
+        client = self.client_for(self.engineer_user_id)
+        payload = {
+            "schedule_id": shift_id,
+            "selectedScheduleId": shift_id,
+            "selectedSchedule": {"id": shift_id, "client_id": self.client_id},
+            "tsr-equipment-model": "Tampered free-text model",
+            "tsr-serial-no": "TAMPERED-FREE-TEXT",
+            "_offline_queue_preserve_pdf": "true",
+        }
+        online = client.post("/save_offline_tsr_online", json=payload)
+        self.assertEqual(online.status_code, 400, online.get_data(as_text=True))
+        self.assertEqual(online.get_json()["equipment_inventory"]["reason"], "missing_equipment_assignment")
+
+        revision = client.post(
+            f"/revise_online_tsr_submission/{original_id}",
+            json=payload,
+        )
+        self.assertEqual(revision.status_code, 400, revision.get_data(as_text=True))
+        self.assertEqual(revision.get_json()["equipment_inventory"]["reason"], "missing_equipment_assignment")
+
+        with self.app.app_context():
+            self.assertEqual(app_module.Product.query.count(), before_products)
+            self.assertEqual(app_module.OnlineTsrSubmission.query.filter_by(shift_id=shift_id).count(), 1)
+            original = app_module.db.session.get(app_module.OnlineTsrSubmission, original_id)
+            shift = app_module.db.session.get(app_module.Shift, shift_id)
+            app_module.db.session.delete(original)
             app_module.db.session.delete(shift)
             app_module.db.session.commit()
 

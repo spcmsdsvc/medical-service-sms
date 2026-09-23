@@ -30,6 +30,7 @@ class TsrOfflineFollowupSourceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         cls.tsr_source = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+        cls.timeline_source = (ROOT / 'templates' / 'timeline.html').read_text(encoding='utf-8')
         cls.release_source = (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8')
 
     def _helper_body(self, signature, next_signature):
@@ -291,6 +292,24 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
         )
         self.assertIn('2026-09-08-tsr-offline-draft-save-order', self.release_source)
         self.assertIn('Service Requested By and Acknowledged By', self.release_source)
+
+    def test_equipment_first_picker_and_server_contract(self):
+        self.assertIn("medical-service-pwa-offline-navigation-v174-equipment-first-tsr", self.app_source)
+        self.assertIn('def validate_tsr_shift_equipment(shift):', self.app_source)
+        self.assertIn("'reason': 'equipment_client_mismatch'", self.app_source)
+        ensure_body = self.app_source.split('def ensure_product_from_tsr_payload(shift, payload):', 1)[1].split(
+            '\ndef get_online_tsr_missing_core_details', 1
+        )[0]
+        self.assertNotIn('Product(', ensure_body)
+        self.assertNotIn('_equipment_inventory_create_requested', self.tsr_source)
+        self.assertIn('function isScheduleEquipmentAssignable(schedule)', self.tsr_source)
+        self.assertIn('equipment_available', self.tsr_source)
+        self.assertIn('Unavailable — select equipment on Calendar first', self.tsr_source)
+        self.assertIn('function hasScheduleTSREquipmentAssignment(shift)', self.timeline_source)
+        self.assertIn('data-create-tsr-button', self.timeline_source)
+        self.assertIn('redirectToCreateTSRPageFromQueuedSchedule', self.timeline_source)
+        self.assertIn('Select equipment on Calendar first before creating a TSR.', self.timeline_source)
+        self.assertIn('2026-09-23-equipment-first-tsr', self.release_source)
 
 
 class TsrOfflineFollowupBackendTests(unittest.TestCase):
