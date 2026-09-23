@@ -2,6 +2,115 @@
 
 codex changes - 2026-09-23
 
+- Committed the Create TSR task-flow, readiness/save-status, and refresh-focus work as
+  `711f287` (`Improve Create TSR workflow and save status`). The commit contains only the TSR page,
+  related cache/release wiring, and directly related tests; `scheduler.db`, handoff files, `.claude/`,
+  `output/`, `tmp/`, and other unrelated dirty paths were excluded.
+- Fixed Create TSR startup's recursive readiness refresh: the summary now builds its live snapshot
+  from only the category, action, selected-schedule, and signature fields it needs, rather than
+  calling `collectTSRData()` and re-entering `syncActionsText()`. This lets startup reach schedule
+  loading. Added a regression contract; page-design and isolated schedule-route tests passed 12/12.
+  The fresh Brave tab still serves the old template code, so browser confirmation awaits a local
+  Python/VBS restart. No schedule was selected and no TSR was saved.
+- Follow-up scope check for the Create TSR refresh-scroll fix: calibration-report reset again uses
+  its regular close path. A reset of an already-closed editor does not focus or scroll to the card,
+  while a reset that closes an open editor still returns focus to its trigger. The existing focused
+  contracts cover both reset cases, Back/Escape focus return, and restoration of the editor's own
+  scroll position. The owner confirmed the refreshed local page no longer jumps to Calibration Report.
+- Local Brave reproduction traced the delayed jump to blank-draft startup: Calibration Report
+  reset closed an already-hidden editor and incorrectly focused its entry button, which scrolled
+  it into view. Startup schedule gating also emitted the missing-schedule toast on every load.
+  Reset now restores entry focus only when closing an open editor through the normal close action;
+  startup gating is silent, and reload keeps native scroll restoration disabled without issuing a
+  scroll command. Bumped the Calibration Report asset to v31 and the service-worker cache marker
+  to v177; added a release note and focused contracts. Page-design, Calibration Report, and cache
+  tests passed 34/34; release JSON parsing and `git diff --check` passed. Local Brave currently
+  still serves the v30 script, so final browser verification awaits a Python restart after these
+  latest changes.
+- A second local Brave check showed browser focus restoration happened after `pageshow` and one
+  animation frame. Moved the targeted blur to `pagehide` so the outgoing TSR page clears focus on
+  the Calibration Report card before a reload can preserve it. Reload scroll restoration remains
+  manual, with no programmatic scrolling.
+- Browser check in local Brave confirmed that the updated refresh handler reached the page and
+  returned the viewport to the top, but the Calibration Report button remained focused because
+  focus restoration completed after the immediate `pageshow` callback. Deferred only the targeted
+  focus clear to the next animation frame; no scroll command is used. Recheck from that section.
+- Removed the forced `window.scrollTo(0, 0)` and animation-frame scroll from Create TSR reload
+  handling after the owner reported continued movement. Reloads without a URL fragment now only
+  disable native scroll restoration and clear restored focus inside the Calibration Report card;
+  no programmatic scroll runs during refresh. Direct user-triggered focus/navigation remains.
+- Follow-up to the Create TSR refresh-scroll fix after the owner reproduced the issue. The browser
+  was restoring focus to the Calibration Report button, which scrolled it into view independently
+  of scroll-position restoration. On refresh, the page now clears only a restored focus inside the
+  Calibration Report card before returning to the top. Added a focused page-design regression
+  contract; explicit links, Back/Forward restoration, draft data, and user-triggered report review
+  remain unchanged.
+- Fixed Create TSR refresh scroll restoration. On a browser reload without an explicit URL
+  fragment, the page now opens at the top instead of returning to a previous scroll position near
+  Calibration Report. The browser's prior scroll-restoration setting is restored when leaving the
+  page, preserving Back/Forward behavior and explicit section links. Calibration Report field
+  focus remains available only through its explicit review action; draft contents and save behavior
+  are unchanged.
+- Implemented Create TSR design Package 2. `templates/offline_tsr.html` now shows the five
+  existing core prerequisites, marks the matching controls Required, updates the checklist from
+  current schedule/equipment, core-detail, and signature checks, and lets users focus missing
+  items. Recommended details remain optional; draft/final-save validation and generated TSR/PDF/
+  print output are unchanged.
+- Replaced the static Local Draft badge with an accessible status for local saving, local-save
+  failure, pending/in-progress account backup, confirmed backup, and account-backup failure.
+  Status follows actual local persistence and actual immediate/debounced server results; only an
+  explicit successful response confirms backup. Session expiry, permission refusal, localStorage
+  fallback, transient failure, and non-durable attachments have distinct explanatory copy. Stale
+  callbacks are guarded by active draft and save generation.
+- Refined Create TSR page spacing, typography, readiness rows, and status styling with existing
+  theme tokens; added only page-specific late-loaded dark overrides. Updated the page stylesheet
+  query and shell cache entry to v2, dark stylesheet query to v29, worker marker to v176, and
+  added one 2026-09-23 release item. No backend/API/database/schema or generated-document changes.
+- Added Package 2 page-design and draft-sync contracts and updated related theme/event harness
+  expectations. Fail-first contracts recorded 7 expected failures. Focused page-design, draft-sync,
+  signature, sync-reliability, and offline-follow-up tests passed: 66/66. Jinja rendering and all
+  seven inline JavaScript syntax checks passed. Release JSON/cache checks and `git diff --check`
+  passed.
+- Full unittest discovery used an isolated temporary database: 1,252 run, 20 failures, 1 skip.
+  The 20 failures match the prior Package 1 baseline categories: two stale changelog/release
+  contracts, 16 purchase-order setup failures from login rate limits, and two staff-creation
+  fixture responses. No TSR test failed.
+- External Brave QA used only an isolated temporary database and synthetic account/schedule data.
+  The checklist and no-changes status were observed in light and dark themes at the browser's
+  available 1265×665 viewport. The browser control did not expose viewport sizing, so 1440×900
+  and 390×844 checks could not be completed; browser testing stopped without final-save and never
+  used the in-app browser. The synthetic localhost QA server/database remain in the system temp
+  directory because the process command-line query was denied, so the server was left untouched.
+  No owner or production data was used.
+- After the owner asked to avoid overchecking, no additional test or browser runs were started;
+  this record reports only the checks already completed and their exact outcomes.
+- Completed the owner-authorized Create TSR task-flow and responsive-layout Package 1 implementation;
+  plans.md now records it as `Executed — Package 1 complete and uncommitted`, with Package 2 still
+  gated. The page now starts with schedule/customer/equipment, followed by service work,
+  visit/sign-off, and supporting documents; its no-selection state explains the assigned-equipment
+  requirement and links to Calendar, while Continue Saved Work is collapsed by default.
+- Added `static/css/app-offline-tsr.css` for the desktop schedule/section summary rail and responsive
+  action layout. Replaced duplicated page-level controls with one action bar containing Review &
+  Save TSR, Save Draft, preview, PDF download, copy, start-new, and clear actions. Existing
+  schedule/equipment gating, save/draft/backup, preview/confirmation, queue, signature, attachment,
+  calibration, and server-validation behavior was preserved. Generated TSR/PDF/print styling was
+  not changed.
+- Added `/static/css/app-offline-tsr.css?v=1` to the embedded service-worker app shell and bumped
+  its cache marker from v174 to
+  `medical-service-pwa-offline-navigation-v175-create-tsr-task-flow`; added the 2026-09-23 release
+  item.
+- Added five fail-first page-design contract tests (5 failures before implementation, then 5/5
+  passing). Focused TSR behavior tests passed 125/125. Jinja rendering, inline JavaScript syntax,
+  release JSON parsing, service-worker asset/version checks, and `git diff --check` passed.
+  Full discovery ran 1,246 tests: 20 failures and 1 skip; observed failures were outside this TSR
+  layout scope, including stale release/changelog expectations, purchase-order setup rate limits,
+  and staff-creation responses.
+- Attempted the explicitly authorized visual QA in a fresh external Brave tab against a local
+  synthetic database on port 8765. Brave blocked automation at the login page when another
+  extension UI was open, before sign-in, so the 1440x900/390x844 and selected-schedule checks could
+  not be completed. The isolated server and database were cleaned up; no final save, production
+  data, or owner data was used. Protected dirty work remains untouched; no commit, push, or deploy
+  was performed. Package 2 remains gated.
 - Recorded the owner-authorized Equipment-first TSR workflow plan in plans.md. The authorized
   scope covers engineer access to Genoray/Vieworks inventory without PM access, Calendar/Create
   TSR gating for unassigned schedules, removal of TSR-driven inventory creation, source-aware

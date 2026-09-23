@@ -1,5 +1,361 @@
 # Medical Service SMS — Approved Plans
 
+## Create TSR readiness, save status, and theme polish — Package 2
+
+**Status:** Executed — implementation commit `711f287`; exact requested browser viewports remain unverified.
+**Approved:** 2026-09-23 — the owner approved the staged Create TSR design packages.
+**Execution authorized:** 2026-09-23 — the owner explicitly requested implementation of Package 2.
+**Detailed:** 2026-09-23.
+
+### Summary
+
+Add a five-item summary of the existing Create TSR core prerequisites, replace the static Local
+Draft badge with accurate local-save/account-backup status, and polish page spacing, typography,
+theme tokens, and dark-mode rendering. This package builds on the uncommitted Package 1 task-flow
+layout. Existing save/final-validation/draft/backup/queue/signature/attachment/calibration behavior
+and generated TSR/PDF/print output remain unchanged.
+
+### Decisions and boundaries
+
+1. Display five existing prerequisites: selected schedule with assigned equipment, Service
+   Category, Actions Taken, Serviced By signature, and Acknowledged By signature. The summary is
+   informational: it does not change existing final-save validation, draft-save permission, or
+   conditional Calibration Report and attachment validation. Recommended details stay optional.
+2. Use the existing `hasStandaloneScheduleSelection()`,
+   `isScheduleEquipmentAssignable()`, `getMissingTSRCoreDetails()`,
+   `hasRequiredServicedSignature()`, and `hasRequiredAcknowledgedSignature()` checks. Refresh on
+   field/custom-control edits, schedule changes, and signature updates. Each missing item can take
+   focus to its existing schedule picker, category control, action field, or signature action.
+3. Replace the literal `Local Draft` badge with one polite live status indicator. Report no changes,
+   local write in progress, local saved/account backup pending, account backup in progress,
+   confirmed account backup, local write failure, and account-backup failure. Use
+   `standaloneTSRServerBackupFailureText()` for distinct expired-session, permission-refusal, and
+   retryable connection/server failures. Mention fallback localStorage and non-durable attachment
+   limitations when they apply. Do not replace the connection banner, queue panel, or notifications.
+4. Status updates follow the real local IndexedDB/fallback result and the actual immediate or
+   debounced `syncStandaloneTSRDraftToServer()` outcome. Tie each callback to the active draft and
+   latest save generation so an old backup cannot mark newer content as backed up. Reset status
+   when the existing clear/finalize/blank-form flows reset the current draft.
+5. Keep visual changes scoped to Create TSR in `static/css/app-offline-tsr.css` and, only for
+   needed late-loaded dark overrides, `static/css/app-dark-pages.css`. Use the existing `--app-*`
+   theme tokens. Leave all official TSR/PDF/print/preview document surfaces white and unchanged.
+6. Bump the page stylesheet URL and its service-worker app-shell URL to `v=2`; increment the
+   embedded navigation worker marker monotonically from v175 to
+   `medical-service-pwa-offline-navigation-v176-create-tsr-readiness-status`. Bump the late-loaded
+   `app-dark-pages.css` query version once. Add one user-facing Package 2 item to the existing
+   2026-09-23 release entry.
+7. No backend, route/API, database, schema, generated document, commit, push, deployment, Railway,
+   or production changes. Preserve Package 1 and all unrelated/protected pre-existing dirty work.
+   Do not use the in-app browser or navigate/close the Codex app.
+8. External-browser QA was explicitly requested for this task. Use only an isolated local test
+   database and synthetic data, inspect summary/status in light and dark themes at 1440×900 and
+   390×844, and do not final-save. If the isolated environment cannot be established or browser
+   automation is blocked, stop that QA and record the blocker without trying the in-app browser.
+
+### Investigation and current state
+
+- Package 1 is present in the worktree and remains uncommitted. It reorganized the page into a
+  schedule-first layout and added `static/css/app-offline-tsr.css?v=1` to the page and service-worker
+  shell. The embedded cache marker is v175.
+- `templates/offline_tsr.html` already has the page's real save, backup, clear, reset, signature,
+  schedule, and core-requirement functions. `getMissingTSRCoreDetails()` covers Service Category,
+  Actions Taken, and an invalid selected equipment assignment; the readiness summary must also
+  mark an absent schedule incomplete without changing that existing validation helper.
+- Local draft storage reports IndexedDB, localStorage fallback, or storage failure in the returned
+  record. `enqueueStandaloneTSRServerDraftSync()` schedules delayed requests but currently does not
+  expose their eventual result; status wiring must observe the real delayed promise while keeping
+  the existing serialization and return behavior.
+- `static/css/app-dark-pages.css` already contains Create TSR and fixed-white document overrides;
+  add only the new page-specific dark rules required by Package 2 and keep the print exceptions.
+- Protected/pre-existing dirty paths include `Handoffs/08-11-26 handoff.md`, `scheduler.db`,
+  `.claude/`, `medical-service-sms-detailed-handoff-2026-07-26.md`, `output/`, and `tmp/`. They are
+  owner-controlled and excluded.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first contracts.** Read applicable instructions, `changes.md`, the Package
+   1 plan/record, Git status, full current diffs for intended files, template save/sync/signature
+   paths, the CSS load order, service-worker cache registration, release schema, and focused tests.
+   Extend `tests/test_tsr_page_design.py` for the five readiness items, required labels, accessible
+   save status, themed page CSS, and v2/v176 cache registrations. Extend
+   `tests/test_tsr_draft_sync.py` for actual delayed/immediate outcome wiring, stale-generation
+   guards, and distinct failure-state rendering. Run these contracts before implementation and
+   capture the expected failures. Do not edit or stage protected artifacts.
+2. **Readiness summary and required markers.** In `templates/offline_tsr.html`, add the summary and
+   visible Required markers to the existing schedule, category, action, and signature controls.
+   Add a render/update helper that derives its five states only from the existing checks, and
+   focus/scroll links for each missing prerequisite. Refresh it on regular field events, category
+   and action custom-control updates, schedule-gate changes, and `updateSignatureStatuses()`. Keep
+   `getMissingTSRRecommendedDetails()` out of the completion count and preserve all validation and
+   save gates.
+3. **Truthful save-status indicator.** In `templates/offline_tsr.html`, replace the static badge
+   with an accessible `role="status"` / polite live region and add a small status renderer. Start
+   local-saving state when an eligible local save begins; report the concrete IndexedDB/fallback/
+   failed result; show pending while offline/debounced; show backup-in-progress only when the
+   network request starts; and show account-backed-up only after the current draft's server request
+   succeeds. Route 401/403/transient failures through the existing message helper, append fallback
+   and attachment durability notes when relevant, and guard every async transition using active
+   draft ID, context, and latest generation. Preserve existing notification behavior and the
+   existing queue/connection surfaces. Reset status on the existing blank, clear, and successful
+   final-save paths. Do not alter draft or final-save eligibility or persistence order.
+4. **Page-only style and cache/release.** Refine `static/css/app-offline-tsr.css` using existing
+   theme variables for type hierarchy, section/card rhythm, required markers, readiness rows, and
+   save-status states. Add only necessary Create TSR dark-mode selectors to
+   `static/css/app-dark-pages.css`; keep white preview/print exceptions intact. Update the stylesheet
+   query in `templates/offline_tsr.html`, its `APP_SHELL` URL and cache marker in `app.py`, and the
+   dark stylesheet query in `templates/layout.html`. Add one user-facing item to the existing
+   2026-09-23 release entry in `static/changelog/releases.json`.
+5. **Verification.** Prove the new source contracts fail before the implementation and pass after
+   it. Run focused page-design and TSR draft/sync/signature tests, then full unittest discovery with
+   isolated temporary databases; compare any unrelated failures with Package 1's recorded baseline
+   of 1,246 tests, 20 failures, and 1 skip. Also validate Jinja rendering, inline JavaScript
+   syntax, release JSON, stylesheet/app-shell cache URLs and worker marker, and `git diff --check`.
+   Run the explicitly requested external browser QA only with a verified isolated synthetic local
+   database and inspect both themes at both requested viewports; do not final-save. If blocked, stop
+   and record why without using in-app automation.
+6. **Self-review and closeout.** Inspect the final scoped diff and confirm Package 1 behavior,
+   draft/sync/validation semantics, generated TSR/PDF/print styles, and protected dirty work are
+   preserved. Record actual commands/results, browser QA outcome, deviations, and limitations here
+   and in `changes.md`. Leave all source and record changes uncommitted; do not push, merge, deploy,
+   or perform Railway/production actions. Stop after the implementation report; implementation
+   does not authorize a separate review stage.
+
+### Deliberately excluded
+
+- New or changed server validation, routes/APIs, schemas, database migration, final-save gates,
+  local draft behavior, backup policy/order, retry queue, attachment persistence, signatures, or
+  calibration workflow.
+- Any changes to generated TSR content, print CSS, PDF preview, document artifacts, or customer
+  data.
+- Any edits to protected pre-existing dirty files, commits, pushes, merges, deployments, Railway,
+  production state, or in-app browser/Codex UI actions.
+
+### Package 2 execution record
+
+**Completed:** 2026-09-23 — implementation commit `711f287` contains the Create TSR packages and their direct refresh/schedule fixes.
+
+- Added the five-item core-readiness summary and visible Required markers in
+  `templates/offline_tsr.html`. It reads the existing schedule/equipment, core-detail, and
+  signature checks, updates as page controls change, and offers focus actions for missing items.
+  It does not count recommended details or change draft/final-save eligibility.
+- Replaced the static draft label with a polite status region that follows local write results and
+  actual immediate/debounced backup results. The account-backed-up state now requires a
+  successful server response; skipped/offline results remain pending. Status callbacks check the
+  active draft, context, and save generation. Failure copy distinguishes session expiry,
+  permission refusal, other backup failures, localStorage fallback, and non-durable attachments.
+  Existing validation, queue, signature, attachment, calibration, and final-save behavior was
+  preserved.
+- Added page-scoped light/dark styles using existing theme variables; print/PDF/preview document
+  styling was not changed. Updated page stylesheet references to v2, late-loaded dark CSS to v29,
+  embedded worker marker to v176, and added one item to the existing 2026-09-23 release.
+- Added/updated source contracts and small existing test-harness expectations for the new checks
+  and cache version. Fail-first Package 2 run: 11 tests, 7 expected failures and 4 existing
+  Package 1 checks passing. Final focused page-design/draft-sync/signature/sync/offline-follow-up
+  run: 66 tests passed.
+- Full isolated-database discovery: 1,252 tests, 20 failures, 1 skip. Failure categories match
+  Package 1's 1,246 / 20 / 1 baseline: two stale changelog/release contracts, 16 purchase-order
+  setup tests rate-limited during login, and two staff-creation fixture responses. No TSR test
+  failed.
+- Jinja rendering passed; all 7 inline JavaScript blocks passed `node --check`. Release JSON,
+  cache URL/marker, CSS balance/added-file whitespace, and `git diff --check` checks passed.
+- External Brave QA used an isolated temporary database populated only with a synthetic engineer,
+  customer, product, and assigned schedule. The page loaded and showed the five-item summary and
+  “No draft changes yet” state in both light and dark themes. The available browser viewport was
+  1265×665; the CUA browser API did not expose viewport sizing, so the requested 1440×900 and
+  390×844 checks were not completed. A local Playwright import attempt was unavailable. Browser
+  testing stopped without a final save and without using the in-app browser. The isolated local
+  QA server and temporary synthetic database remain on loopback/temp because Windows denied the
+  process command-line query required for safe server cleanup; no process was stopped.
+- Package 1 and protected pre-existing dirty work were preserved. During implementation closeout,
+  no commit, push, deployment, Railway, production, database-schema, or generated-document changes
+  were made; the owner later authorized publication separately.
+- After the owner's follow-up to avoid overchecking, no additional suite or browser runs were
+  started. The results above are limited to checks already completed; the exact viewport QA
+  limitation and untouched local test server are recorded as-is.
+
+## Create TSR task flow and responsive action layout — Package 1
+
+**Status:** Executed — included in implementation commit `711f287`; Package 2 was completed before publication.
+**Approved:** 2026-09-23 — the owner approved the Create TSR redesign and its staged scope.
+**Execution authorized:** 2026-09-23 — Package 1 implementation was separately authorized.
+**Detailed:** 2026-09-23.
+
+### Context
+
+Create TSR currently places the saved-draft list ahead of schedule selection, duplicates save,
+preview, and download buttons in the page header and a right-hand panel, and puts visit/sign-off
+fields in a desktop-only side column. That makes the first step and the mobile task order unclear.
+Package 1 reorganizes the existing form while retaining its app visual language and every current
+save, draft, preview/confirmation, offline queue, signature, attachment, calibration, and server
+validation behavior.
+
+### Decisions taken
+
+1. Start new work with selecting a schedule whose equipment is assigned. When no schedule is
+   selected, explain the assigned-equipment requirement and link to Calendar; retain the existing
+   schedule/equipment gating and disabled-control behavior.
+2. Order the TSR work into four named sections: schedule/customer/equipment; service work;
+   visit/sign-off; and supporting documents. Keep all existing field IDs, data hooks, action
+   handlers, and form semantics so persistence and generated documents continue to work.
+3. Keep Continue Saved Work available as a secondary, collapsed-by-default panel.
+4. Replace duplicated page-level actions with one responsive action bar: primary “Review & Save
+   TSR”, secondary “Save Draft”, and reachable secondary actions for preview, PDF download, copy,
+   start new, and clear. The primary action continues through the existing preview and final-save
+   confirmation flow.
+5. Use a compact desktop summary rail for schedule context and static section navigation. At
+   mobile widths, place the schedule rail before the form, keep visit/sign-off in the main content
+   flow, and keep the action bar reachable above the device safe area.
+6. Keep the existing product visual language. Do not edit generated TSR/PDF/print CSS, APIs,
+   schemas, backend workflows, save/draft/backup semantics, queue behavior, signatures,
+   attachments, calibration behavior, or server validation.
+7. Package 2 is explicitly gated: do not add a required-field completion checklist, dynamic
+   local/account/sync status, or a visual token/palette/dark-theme polish pass in Package 1.
+8. Browser visual QA is owner-authorized only in an external browser, against a local app using an
+   isolated test database and synthetic account/schedule data, at 1440x900 and 390x844. Inspect
+   initial no-schedule and selected-schedule states and action reachability/accessibility without
+   final saving or production/owner data. If safe isolation cannot be established, skip browser QA
+   and record why. Never use the in-app browser or navigate/close the Codex app.
+9. Preserve the pre-existing protected dirty paths exactly: `Handoffs/08-11-26 handoff.md`,
+   `scheduler.db`, `.claude/`, `medical-service-sms-detailed-handoff-2026-07-26.md`, `output/`,
+   and `tmp/`. Do not commit, push, deploy, or modify Railway/production state.
+
+### Investigation
+
+- `templates/offline_tsr.html:29-38` currently shows six page-header actions; the schedule picker
+  begins at line 171, after Continue Saved Work at line 154.
+- `templates/offline_tsr.html:199-408` holds the customer/equipment and service fields in the
+  primary column, supporting-document cards below them, and service date/sign-off/billing fields
+  in a right-hand card. Preserve every referenced element ID and inline handler while moving the
+  field groups.
+- `templates/offline_tsr.html:1203-1221` contains the existing schedule gate and disables gated
+  controls when no valid schedule is selected. The `updateCreateTSRScheduleGate()` function is the
+  appropriate place to toggle a new no-schedule explanation without weakening the gate.
+- `templates/offline_tsr.html:3985-3995` updates the single save-button label for revision mode;
+  its regular label must become “Review & Save TSR” while correction mode remains unchanged.
+- `templates/offline_tsr.html:7425-7436` confirms the non-silent save action enters the existing
+  preview/final-confirmation workflow. `saveStandaloneTSRLocalDraft()`, `openTSRPrintPreview()`,
+  `downloadTSRPDF()`, `copyStandaloneTSRText()`, `resetStandaloneTSRForm()`, and
+  `clearStandaloneTSRPage()` are existing actions to reuse.
+- `templates/offline_tsr.html:553` contains existing page-local component styling; add only the
+  new layout/action rules in `static/css/app-offline-tsr.css` and leave document/print styling
+  unchanged.
+- `app.py:22935-22960` embeds service-worker cache version `v174` and the shell asset list. Add the
+  new CSS asset there and monotonically bump the marker to `v175-create-tsr-task-flow`.
+- `static/changelog/releases.json` already has the 2026-09-23 daily release; add the task-flow
+  release item to that entry as instructed by its README rather than creating a duplicate day.
+- There are no tracked or untracked Package 1 source edits at preflight. Git status contains only
+  the listed protected dirty paths; the targeted files have no existing diff to reconcile.
+
+### Execution steps
+
+1. **Preflight and fail-first source contract.** Confirm the approved Package 1 scope, applicable
+   instructions, current `changes.md`, Git status/diffs, current cache marker, template structure,
+   and focused TSR tests. Add `tests/test_tsr_page_design.py` assertions for the new stylesheet,
+   schedule-first no-schedule state and Calendar route, four semantic form sections, compact
+   summary navigation, a single responsive action bar with all six requested actions, secondary
+   collapsed saved-work access, and visit/sign-off staying in the form flow. Run that module before
+   implementation and capture the expected failures. Do not open or change protected data.
+2. **Reorder the template.** In `templates/offline_tsr.html`, load the new page CSS, put schedule
+   selection and selected-schedule/coverage context first, add a no-schedule Calendar explanation,
+   make saved work secondary, and group the preserved existing controls into the four approved
+   sections. Move visit/sign-off into the form main flow. Reuse the existing field IDs, callbacks,
+   schedule selection, calibration, signature, attachment, parts, and preview modal markup. Remove
+   only duplicated page-level save/preview/download controls. Label the normal primary button
+   “Review & Save TSR” and preserve the correction-mode label and existing final confirmation.
+3. **Add layout CSS.** Create `static/css/app-offline-tsr.css` for the desktop schedule/progress rail,
+   responsive section grid, focusable section links, mobile main-flow ordering, and safe-area-aware
+   reachable action bar. Preserve the current visual language and component styles. Do not alter
+   generated PDF or print layout rules.
+4. **Update the service worker and release entry.** In the embedded `APP_SHELL` block in `app.py`,
+   add `/static/css/app-offline-tsr.css?v=1` and bump only the navigation cache marker from v174 to
+   `medical-service-pwa-offline-navigation-v175-create-tsr-task-flow`. Add a 2026-09-23
+   user-facing item in the existing release entry in `static/changelog/releases.json`.
+5. **Prove behavior and artifacts.** Run the fail-first page-design tests again, then the focused
+   TSR schedule/draft/signature/preview/attachment/calibration suites and the full suite with
+   `venv\\Scripts\\python.exe` and isolated temporary test databases, never `scheduler.db`.
+   Validate Jinja rendering, inline JavaScript syntax, the app-shell CSS/cache marker, release JSON,
+   and `git diff --check`. If isolated local account data can be established safely, perform the
+   authorized external-browser QA sequence at both target sizes; otherwise skip and record the
+   isolation blocker without touching protected state.
+6. **Self-review and records closeout.** Inspect the final scoped diff, confirm all old IDs and
+   save/queue/confirmation/signature/attachment/calibration paths remain present, confirm generated
+   TSR/PDF/print CSS is unchanged, and confirm protected dirty paths are untouched. Append exact
+   verification outcomes and any deviations to this plan and `changes.md`; leave Package 2 gated.
+   Do not commit, push, deploy, use the in-app browser, or perform Railway/production operations.
+
+### Deliberately excluded
+
+- Package 2 completion/readiness checklist, dynamic local/account/sync status, and visual
+  token/palette/dark-theme polish. These remain gated for a later explicit go-ahead.
+- Any schema, route/API, backend workflow, persistence, save/draft/backup, sync/queue,
+  signature, attachment, calibration, or server-validation change.
+- Generated TSR/PDF content or print CSS/layout changes.
+- Production data/storage, Railway variables/deployment, commit, push, destructive Git/database
+  operations, or modifications to protected dirty files.
+- In-app browser/Codex UI navigation or termination.
+
+### Verification
+
+- `tests/test_tsr_page_design.py` begins fail-first against current source and passes after the
+  layout change, covering schedule-first flow, Calendar guidance, sections, summary navigation,
+  one action bar, secondary actions, secondary draft access, and mobile visit/sign-off placement.
+- Existing focused TSR behavior tests provide the regression control for gating, schedules,
+  draft durability, preview confirmation, queueing, signatures, attachments, and calibration.
+- Run the full unittest discovery suite with the project virtual environment and each test module's
+  configured temporary database; never configure or connect tests to `scheduler.db`.
+- Render `/offline-tsr` with the Flask test client under a synthetic engineer context; validate
+  Jinja compilation, inline JavaScript syntax, JSON release parsing, v175 shell precache/version,
+  and `git diff --check`.
+- External browser sequence, only with confirmed local isolated test account/schedule data: at
+  1440x900 and 390x844 inspect the page with no schedule, select an assigned synthetic schedule,
+  confirm equipment autofill and preserved gating, keyboard-reach the secondary action group and
+  mobile action bar, and check layout/overflow. Do not final-save. If safe isolation cannot be
+  proven, skip this sequence and record the reason.
+
+### After implementation
+
+The Builder completed the scoped self-review of the plan/change records, test outcomes, release
+entry, service-worker asset cache, protected-worktree status, and unchanged print layout. At the
+Package 1 closeout, its implementation was uncommitted and Package 2 awaited a separate go-ahead.
+The owner later authorized Package 2 and separately authorized publication; see the Package 2
+execution record.
+
+### Package 1 execution record
+
+- Reordered the Create TSR page into schedule/customer/equipment, service work, visit/sign-off,
+  and supporting-document sections. The initial no-selection state explains the Calendar equipment
+  requirement; Continue Saved Work is collapsed by default; the single responsive action bar keeps
+  the existing save, draft, preview, download, copy, start-new, and clear handlers.
+- Added `static/css/app-offline-tsr.css`, precached it in the embedded app shell, and advanced the
+  cache marker to `medical-service-pwa-offline-navigation-v175-create-tsr-task-flow`. Added the
+  Package 1 release entry for 2026-09-23. Generated TSR/PDF/print styling and workflow semantics
+  were not changed.
+- Added five source-contract tests and observed all five fail before implementation. After the
+  implementation, the new module passed 5/5; the focused TSR behavior set passed 125/125. Jinja
+  rendering, inline JavaScript syntax, release JSON parsing, app-shell CSS/version checks, and
+  `git diff --check` passed.
+- Full unittest discovery ran 1,246 tests and ended with 20 failures and 1 skip. The observed
+  failures were outside this TSR layout scope (including existing release/changelog expectations,
+  purchase-order setup rate limits, and staff-creation responses); no TSR test failed.
+- Browser QA was attempted only in a fresh external Brave tab against a local synthetic database
+  on port 8765. The app served the login page, but Brave blocked automation when another extension
+  UI was open, before sign-in; the tab could not reach either target viewport or the selected
+  schedule state. The isolated database and test server were removed/stopped. No final save,
+  production data, or owner data was used.
+- The protected dirty paths listed above remain untouched; implementation changes remain
+  uncommitted. Package 2 is still gated pending the owner's review and distinct go-ahead.
+
+### Risks
+
+- Moving live form fields can break selector-based autosave or signature state if IDs or hooks
+  change. Preserve those IDs/hooks and run existing TSR workflow tests.
+- A visual no-schedule state must not replace existing JavaScript control disabling. Keep the gate
+  and only toggle the explanatory state.
+- A fixed mobile action bar could cover visit/sign-off inputs. Reserve page space, include device
+  safe-area padding, and inspect at 390x844 if safe browser isolation is available.
+- Pre-caching a page stylesheet without a cache bump can leave offline TSR on stale layout. Add the
+  versioned CSS to `APP_SHELL` and advance the marker monotonically.
+
 ## Equipment-first TSR workflow
 
 **Status:** Executed — uncommitted
