@@ -2,8 +2,8 @@
 
 ## Create TSR draft deletion durability and account-scoped tombstones
 
-**Status:** Executed — local implementation and verification complete on 2026-09-24; commit,
-push, and deployment were not authorized.
+**Status:** Executed — implementation commit `7dc5776` published to `origin/main` on 2026-09-24;
+Railway accepted the push and was building the production deployment at verification.
 **Approved:** 2026-09-24 — prevent deleted Create TSR drafts from returning while preserving
 existing engineers' local drafts and account isolation.
 **Execution authorized:** 2026-09-24 — delegated implementation authorization received from the
@@ -97,6 +97,16 @@ signatures, attachments, history, and final-save behavior.
   Node syntax checks using a disposable temporary test database. `git diff --check` passed.
 - Browser QA, account/production records, scheduler.db, and Railway were not accessed. No
   commit, push, or deployment was performed.
+
+### Publication outcome — 2026-09-24
+
+- The owner authorized publication after implementation. Commit `7dc5776` contains only the
+  six intended deletion-fix and project-record files; protected and unrelated dirty paths stayed
+  outside the commit.
+- Remote verification resolved `origin/main` to
+  `7dc577666fa93cb0969d7f19f5d3a9b3f7f483db`. Railway accepted the push and reported latest
+  deployment `4dd7a61e-9e01-4701-9de3-9f5ddc5c06cd` as **BUILDING**. No variables or manual
+  redeploy were changed.
 
 ## Late Calibration Report for Existing TSRs
 

@@ -22,6 +22,13 @@ codex changes - 2026-09-24
   `/offline-tsr` returned HTTP 200; all 8 nonempty inline scripts passed Node syntax checks
   using a disposable temporary test database; `git diff --check` passed. Browser QA,
   account/production data, scheduler.db, Railway, commit, push, and deployment were not touched.
+- Owner then authorized publication of this deletion-fix package as commit `7dc5776`; the commit
+  contains only `app.py`, `changes.md`, `plans.md`, `static/changelog/releases.json`,
+  `templates/offline_tsr.html`, and `tests/test_tsr_draft_sync.py`. Protected `scheduler.db`,
+  handoff files, `.claude/`, `output/`, `tmp/`, and unrelated dirty work remained excluded.
+- `git ls-remote origin refs/heads/main` verified `7dc577666fa93cb0969d7f19f5d3a9b3f7f483db`.
+  Railway accepted the push; the latest production deployment `4dd7a61e-9e01-4701-9de3-9f5ddc5c06cd`
+  was **BUILDING** at verification. No Railway variables or manual redeploy were changed.
 - Recorded the approved Create TSR draft-deletion durability package in `plans.md` before
   implementation. The package covers pending-save cancellation, account-scoped retryable
   deletion tombstones, suppression of stale account copies, verified IndexedDB/localStorage
