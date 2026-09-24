@@ -2,7 +2,7 @@
 
 {% block page_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=9">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=6">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=7">
 <script>
 (() => {
   const navigation = window.performance?.getEntriesByType?.('navigation')?.[0];
@@ -3761,9 +3761,9 @@ function standaloneTSRDraftPayloadsDiffer(left, right){
 
 function standaloneTSRDraftSourceLabel(record){
   const source = record?.recoverySourceKind || record?.recoverySourceKey || '';
-  if(source === 'history' || record?.source === 'server_draft_history') return 'Earlier account copy';
-  if(source === 'account' || record?.source === 'server_draft') return 'Saved to your account';
-  return 'Saved on this device';
+  if(source === 'history' || record?.source === 'server_draft_history') return 'Earlier backup';
+  if(source === 'account' || record?.source === 'server_draft') return 'Account version';
+  return 'Device version';
 }
 
 function rememberStandaloneTSRDraftConflict(id, candidates){
@@ -3847,6 +3847,88 @@ function groupStandaloneTSRDraftVersions(records){
 function parseOfflineTSRDate(value){
   const timestamp = Date.parse(String(value || ''));
   return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function standaloneTSRDraftVersionReadiness(record){
+  const payload = record?.payload || record || {};
+  const schedule = payload.selectedSchedule || payload.selected_schedule || {};
+  const hasSchedule = Boolean(getStandaloneDraftScheduleId(payload)) && isScheduleEquipmentAssignable(schedule);
+  const hasServiceCategory = Boolean(String(getTSRServiceCategoryText(payload) || '').trim());
+  const hasActionsTaken = Boolean(String(payload['tsr-actions-taken'] || '').trim());
+  const signaturePayload = { signatures:payload.signatures && typeof payload.signatures === 'object' ? payload.signatures : {} };
+  const hasEngineerSignature = hasRequiredServicedSignature(signaturePayload);
+  const hasClientSignature = hasRequiredAcknowledgedSignature(signaturePayload);
+  return {
+    completedCount:[hasSchedule, hasServiceCategory, hasActionsTaken, hasEngineerSignature, hasClientSignature].filter(Boolean).length,
+    hasSchedule,
+    hasServiceCategory,
+    hasActionsTaken,
+    hasEngineerSignature,
+    hasClientSignature
+  };
+}
+
+function standaloneTSRDraftVersionSignatureSummary(readiness){
+  if(readiness.hasEngineerSignature && readiness.hasClientSignature) return 'Includes both signatures';
+  if(readiness.hasEngineerSignature) return 'Engineer signature included; client signature missing';
+  if(readiness.hasClientSignature) return 'Client signature included; engineer signature missing';
+  return 'Both signatures missing';
+}
+
+function standaloneTSRDraftVersionTime(record){
+  return parseOfflineTSRDate(record?.updated_at) ?? parseOfflineTSRDate(record?.payload?.savedAt) ?? null;
+}
+
+function standaloneTSRDraftVersionSourceKinds(record){
+  const kinds = new Set();
+  const values = [record?.recoverySourceKind, record?.recoverySourceKey, ...(record?.recoverySourceKeys || [])]
+    .concat(record?.source === 'server_draft_history' ? ['history'] : [])
+    .concat(record?.source === 'server_draft' ? ['account'] : [])
+    .concat(record?.source === 'localstorage' ? ['localstorage'] : []);
+  values.forEach(value => {
+    const key = String(value || '').toLowerCase();
+    if(key === 'history' || key.startsWith('history-') || key.includes('draft_history')) kinds.add('history');
+    else if(key === 'account' || key.startsWith('account-') || key === 'server_draft') kinds.add('account');
+    else if(key === 'indexeddb' || key.startsWith('indexeddb-') || key === 'localstorage' || key.startsWith('localstorage-')) kinds.add('device');
+  });
+  if(!kinds.size) kinds.add('device');
+  return Array.from(kinds);
+}
+
+function standaloneTSRDraftVersionSourcePriority(record){
+  const kinds = standaloneTSRDraftVersionSourceKinds(record);
+  if(kinds.includes('device')) return 0;
+  if(kinds.includes('account')) return 1;
+  return 2;
+}
+
+function standaloneTSRDraftVersionPrimarySource(record){
+  return standaloneTSRDraftVersionSourcePriority(record) === 0 ? 'device'
+    : (standaloneTSRDraftVersionSourcePriority(record) === 1 ? 'account' : 'history');
+}
+
+function standaloneTSRDraftVersionSourceText(record, recommended=false){
+  if(recommended) return 'Recommended version';
+  const source = standaloneTSRDraftVersionPrimarySource(record);
+  return source === 'account' ? 'Account version' : (source === 'history' ? 'Earlier backup' : 'Device version');
+}
+
+function standaloneTSRDraftVersionOtherSourceText(record){
+  const primary = standaloneTSRDraftVersionPrimarySource(record);
+  return standaloneTSRDraftVersionSourceKinds(record)
+    .filter(kind => kind !== primary)
+    .map(kind => kind === 'account' ? 'Also saved to your account'
+      : (kind === 'history' ? 'Also available as an earlier backup' : 'Also saved on this device'));
+}
+
+function compareStandaloneTSRDraftVersions(left, right){
+  const readinessDifference = standaloneTSRDraftVersionReadiness(right).completedCount -
+    standaloneTSRDraftVersionReadiness(left).completedCount;
+  if(readinessDifference) return readinessDifference;
+  const leftTime = standaloneTSRDraftVersionTime(left) ?? Number.NEGATIVE_INFINITY;
+  const rightTime = standaloneTSRDraftVersionTime(right) ?? Number.NEGATIVE_INFINITY;
+  if(leftTime !== rightTime) return rightTime - leftTime;
+  return standaloneTSRDraftVersionSourcePriority(left) - standaloneTSRDraftVersionSourcePriority(right);
 }
 
 async function archiveStandaloneTSRDraftVersion(record, { baseRevision=null } = {}){
@@ -5908,18 +5990,29 @@ async function renderStandaloneTSRDraftPanel(){
     return;
   }
   list.innerHTML = historyWarning + groups.map(group => {
-    const record = group.versions[0];
+    const rankedVersions = group.versions.slice().sort(compareStandaloneTSRDraftVersions);
+    const record = rankedVersions[0];
     const draftId = group.id;
     const selectedSourceKey = standaloneTSRDraftRecoveryChoices.get(draftId);
     const selectedVersion = selectedSourceKey
       ? group.versions.find(version => version.recoverySourceKeys.includes(selectedSourceKey))
       : null;
-    const payload = (selectedVersion || record).payload || {};
-    const title = record.title || getStandaloneTSRDraftTitle(payload);
-    const subtitle = record.subtitle || getStandaloneTSRDraftSubtitle(payload);
-    const updated = formatStandaloneTSRDraftTime(record.updated_at || payload.savedAt);
+    const payload = record.payload || {};
+    const title = getStandaloneTSRDraftTitle(payload) || record.title || 'Untitled TSR draft';
+    const subtitle = getStandaloneTSRDraftSubtitle(payload) || record.subtitle || 'No equipment details yet';
     const active = draftId && draftId === standaloneCurrentDraftId;
     const conflicted = group.versions.length > 1;
+    const readiness = standaloneTSRDraftVersionReadiness(record);
+    const signatureSummary = standaloneTSRDraftVersionSignatureSummary(readiness);
+    const savedTime = formatStandaloneTSRDraftTime(record.updated_at || payload.savedAt);
+    const recommendationSourceKey = record.recoverySourceKeys[0] || record.recoverySourceKey;
+    const recommendationIsOpen = active && (selectedVersion
+      ? record.recoverySourceKeys.includes(selectedSourceKey)
+      : !conflicted);
+    const extraSources = standaloneTSRDraftVersionOtherSourceText(record);
+    const sourceNote = extraSources.length
+      ? `<div class="standalone-tsr-draft-source-note">${extraSources.map(label => escapeHTML(label)).join(' · ')}</div>`
+      : '';
     const remoteAttachmentCount = Math.max(...group.versions.map(version =>
       Number(version.server_attachment_count || version.payload?._server_draft_attachment_count || 0)
     ));
@@ -5927,47 +6020,65 @@ async function renderStandaloneTSRDraftPanel(){
     const attachmentNote = remoteAttachmentCount && !hasLocalAttachments
       ? `<div class="standalone-tsr-draft-meta text-warning"><i class="fa-solid fa-paperclip me-1"></i>${remoteAttachmentCount} supporting file${remoteAttachmentCount === 1 ? '' : 's'} remain on the original device.</div>`
       : '';
-    const missingSignatureTargets = getStandaloneTSRSignatureRecoveryMissingTargets(payload);
+    const selectedPayload = (selectedVersion || record).payload || {};
+    const missingSignatureTargets = getStandaloneTSRSignatureRecoveryMissingTargets(selectedPayload);
     const recoveryNote = (!conflicted || selectedVersion) && missingSignatureTargets.length
-      ? `<div class="standalone-tsr-draft-meta text-warning"><i class="fa-solid fa-signature me-1"></i>Missing: ${missingSignatureTargets.map(target => target === 'serviced' ? 'engineer signature' : 'client signature').join(' and ')}</div>`
+      ? `<div class="standalone-tsr-draft-meta text-warning"><i class="fa-solid fa-signature me-1"></i>${conflicted ? 'Currently open version missing: ' : 'Missing: '}${missingSignatureTargets.map(target => target === 'serviced' ? 'engineer signature' : 'client signature').join(' and ')}</div>`
       : '';
     const recoveryAction = (!conflicted || selectedVersion) && missingSignatureTargets.length
       ? `<button class="btn btn-warning btn-sm fw-bold" type="button" onclick="beginStandaloneTSRSignatureRecovery('${escapeAttr(draftId)}')"><i class="fa-solid fa-signature me-1"></i>Recover available signatures</button>`
       : '';
-    const sourceNote = !conflicted ? group.versions.map(version => {
-      const labels = version.recoverySourceLabels.join(' + ');
-      return `<span class="standalone-tsr-draft-source">${escapeHTML(labels)}</span>`;
-    }).join('') : '';
-    const copyChoices = conflicted
-      ? `<div class="standalone-tsr-draft-versions" role="group" aria-label="Different saved copies">
-          <div class="standalone-tsr-draft-versions-intro">We found different saved versions. Choose one to open. It will not be saved or submitted yet.</div>
-          ${group.versions.map(version => {
-            const sourceLabels = version.recoverySourceLabels.join(' + ');
-            const versionTime = formatStandaloneTSRDraftTime(version.updated_at || version.payload?.savedAt);
-            const selected = standaloneTSRDraftRecoveryChoices.get(draftId) &&
-              version.recoverySourceKeys.includes(standaloneTSRDraftRecoveryChoices.get(draftId));
-            const sourceKey = version.recoverySourceKeys[0] || version.recoverySourceKey;
-            return `<div class="standalone-tsr-draft-version">
-              <div class="standalone-tsr-draft-version-copy"><strong>${escapeHTML(sourceLabels)}</strong><div class="standalone-tsr-draft-meta">Saved ${escapeHTML(versionTime)}</div></div>
-              <button class="btn btn-outline-primary btn-sm fw-bold" type="button" aria-pressed="${selected ? 'true' : 'false'}" onclick="useStandaloneTSRDraftCopy('${escapeAttr(draftId)}','${escapeAttr(sourceKey)}')">${selected ? 'Open again' : 'Open this version'}</button>
-            </div>`;
-          }).join('')}
-        </div>`
+    const otherVersions = rankedVersions.slice(1);
+    const copyChoices = otherVersions.length
+      ? `<details class="standalone-tsr-draft-others">
+          <summary>Other saved versions (${otherVersions.length})</summary>
+          <div class="standalone-tsr-draft-others-list">
+            ${otherVersions.map(version => {
+              const versionReadiness = standaloneTSRDraftVersionReadiness(version);
+              const versionTime = formatStandaloneTSRDraftTime(version.updated_at || version.payload?.savedAt);
+              const isOpen = active && selectedSourceKey && version.recoverySourceKeys.includes(selectedSourceKey);
+              const sourceKey = version.recoverySourceKeys[0] || version.recoverySourceKey;
+              const versionSources = standaloneTSRDraftVersionOtherSourceText(version);
+              const availability = versionSources.length
+                ? `<div class="standalone-tsr-draft-source-note">${versionSources.map(label => escapeHTML(label)).join(' · ')}</div>`
+                : '';
+              return `<div class="standalone-tsr-draft-version">
+                <div class="standalone-tsr-draft-version-copy">
+                  <strong>${escapeHTML(standaloneTSRDraftVersionSourceText(version))}</strong>
+                  <div class="standalone-tsr-draft-meta">${versionReadiness.completedCount} of 5 requirements completed · ${escapeHTML(standaloneTSRDraftVersionSignatureSummary(versionReadiness))}</div>
+                  <div class="standalone-tsr-draft-meta">Saved ${escapeHTML(versionTime)}</div>
+                  ${availability}
+                </div>
+                ${isOpen
+                  ? '<span class="standalone-tsr-draft-currently-open" aria-current="true">Currently open</span>'
+                  : `<button class="btn btn-outline-primary btn-sm fw-bold" type="button" onclick="useStandaloneTSRDraftCopy('${escapeAttr(draftId)}','${escapeAttr(sourceKey)}')">Open instead</button>`}
+              </div>`;
+            }).join('')}
+          </div>
+        </details>`
       : '';
-    const openAction = !conflicted
-      ? `<button class="btn btn-primary btn-sm fw-bold" type="button" onclick="openStandaloneTSRDraft('${escapeAttr(draftId)}')"><i class="fa-solid fa-folder-open me-1"></i>Open</button>`
-      : '';
+    const continueAction = recommendationIsOpen
+      ? '<span class="standalone-tsr-draft-currently-open" aria-current="true">Currently open</span>'
+      : `<button class="btn btn-primary btn-sm fw-bold" type="button" onclick="useStandaloneTSRDraftCopy('${escapeAttr(draftId)}','${escapeAttr(recommendationSourceKey)}')"><i class="fa-solid fa-folder-open me-1"></i>Continue draft</button>`;
     return `<div class="standalone-tsr-draft-card ${active ? 'active' : ''}">
       <div class="min-w-0">
-        <div class="standalone-tsr-draft-title"><i class="fa-solid fa-file-lines text-warning me-1"></i>${escapeHTML(title)}${sourceNote}</div>
+        <div class="standalone-tsr-draft-title"><i class="fa-solid fa-file-lines text-warning me-1"></i>${escapeHTML(title)}</div>
         <div class="standalone-tsr-draft-meta">${escapeHTML(subtitle)}</div>
-        <div class="standalone-tsr-draft-meta">Last saved: ${escapeHTML(updated)}</div>
+        <div class="standalone-tsr-draft-meta">${conflicted ? 'Recommended version saved: ' : 'Last saved: '}${escapeHTML(savedTime)}</div>
         ${attachmentNote}
         ${recoveryNote}
+        <section class="standalone-tsr-draft-recommendation" aria-label="${conflicted ? 'Recommended saved version' : 'Saved draft'}">
+          <div class="standalone-tsr-draft-recommendation-heading">
+            <strong>${escapeHTML(standaloneTSRDraftVersionSourceText(record, conflicted))}</strong>
+            ${sourceNote}
+          </div>
+          <div class="standalone-tsr-draft-meta standalone-tsr-draft-completion">${conflicted ? 'Recommended — ' : ''}${readiness.completedCount} of 5 requirements completed</div>
+          <div class="standalone-tsr-draft-meta">${escapeHTML(signatureSummary)}</div>
+          ${continueAction}
+        </section>
         ${copyChoices}
       </div>
       <div class="standalone-tsr-draft-actions">
-        ${openAction}
         ${recoveryAction}
         <button class="btn btn-outline-danger btn-sm fw-bold" type="button" onclick="deleteStandaloneTSRDraft('${escapeAttr(draftId)}')"><i class="fa-solid fa-trash me-1"></i>Delete</button>
       </div>
@@ -6010,7 +6121,7 @@ async function useStandaloneTSRDraftCopy(id, sourceKey){
     }
     standaloneTSRDraftRecoveryChoices.set(draftId, selectedSourceKey);
     applyStandaloneTSRDraftData(data);
-    const sourceLabel = selected.recoverySourceLabels.join(' + ');
+    const sourceLabel = standaloneTSRDraftSourceLabel(selected);
     setStandaloneTSRSaveStatus('copy-selected', null, {
       message:`Loaded ${sourceLabel}. Review the TSR; this selection has not been saved or backed up.`
     });

@@ -1,5 +1,119 @@
 # Medical Service SMS — Approved Plans
 
+## Create TSR saved-draft simplification
+
+**Status:** Executed — implementation verified; uncommitted (no commit, push, or deployment).
+**Approved:** 2026-09-24 — simplify the saved-draft version chooser so engineers can continue the
+best-supported copy without deciphering storage sources.
+**Execution authorized:** 2026-09-24 — the owner explicitly requested implementation.
+**Detailed:** 2026-09-24.
+
+### Summary and boundaries
+
+For each draft with distinct saved versions, score every version on the five existing core items:
+assigned schedule/equipment, Service Category, Actions Taken, engineer signature, and client
+signature. Recommend the highest-scoring copy. Break ties by newest valid saved timestamp, then
+prefer a device copy, current account copy, and earlier account backup. Show one prominent
+**Continue draft** action for the recommendation and put other distinct copies under a collapsed
+**Other saved versions (N)** disclosure. Give each alternate a compact completion/signature/time
+summary and an **Open instead** action. Single-copy drafts also use **Continue draft**. After a copy
+is opened, mark it **Currently open** while keeping the alternatives accessible.
+
+Opening remains review-only: retain the existing identity-preserving copy-selection path and do
+not save, sync, submit, merge, delete, or alter draft ID, TSR number, or reservation. Identical
+payloads remain one visible version. Replace joined source strings with the plain labels
+**Recommended version**, **Account version**, **Device version**, and **Earlier backup**; source
+availability may appear as secondary text. Keep Delete and signature-recovery behavior intact.
+
+Files in scope: `templates/offline_tsr.html` for scoring/rendering/open-state, the relevant saved-
+work rules in `static/css/app-offline-tsr.css`, focused contracts in
+`tests/test_tsr_draft_sync.py` and `tests/test_tsr_page_design.py`, the embedded service-worker
+marker and app-shell URL in `app.py`, the page stylesheet query in the template, one user-facing
+2026-09-24 release item in `static/changelog/releases.json`, and these required records. Add a
+late-loaded dark-page override only if the focused CSS needs it. Do not change backend/API,
+database/schema, generated PDF/print output, validation, autosave, draft recovery semantics,
+reservation, or final-save behavior. Do not touch protected or unrelated dirty work; do not run
+browser QA, commit, push, deploy, or modify Railway/production data.
+
+### Numbered execution steps
+
+1. **Preflight.** Read applicable instructions and `changes.md` fully. Confirm HEAD includes
+   `5786782`, inspect Git status and intended-file diffs, and review current version grouping,
+   payload shape, copy-selection identity handling, saved-work CSS, focused tests, worker/cache
+   registration, and release format. Keep `scheduler.db`, handoff files, `.claude/`, the detailed
+   handoff, `output/`, `tmp/`, and other unrelated work untouched.
+2. **Pure readiness and source helpers — `templates/offline_tsr.html`.** Add a helper that reads a
+   candidate payload without changing the form, scores exactly the five listed requirements,
+   summarizes whether engineer/client/both signatures are present, parses a valid saved timestamp,
+   and ranks source priority as device > current account > earlier backup. Select the highest score,
+   then newest valid time, then source priority. Keep content deduplication in the existing grouping
+   helper so identical payloads remain one version.
+3. **Saved-work rendering and opening — `templates/offline_tsr.html`.** Render the recommended
+   version directly with the label/reason, signature summary, time, and **Continue draft**. Put all
+   other distinct versions in a closed `<details>` disclosure with an accurate count and compact
+   summary plus **Open instead**. Rename the single-copy action. Reflect the currently-open source
+   with **Currently open** without hiding alternatives. Replace source-joined labels with one
+   plain-language category; retain supporting source detail only where useful. Leave delete and
+   signature recovery handlers unchanged. Opening continues through the existing non-saving,
+   identity-preserving functions.
+4. **Responsive styling and versioned assets — CSS/template/`app.py`.** Refine only these saved-work
+   card, recommendation, disclosure, and alternate-version styles in `static/css/app-offline-tsr.css`
+   with current theme variables; use compact wrapping at desktop and mobile widths. Update the
+   stylesheet URL and worker precache URL from v6 to v7, bump the active worker marker from v188 to
+   v189, and update the nearby cache comment. Add a dark override only if the late-loaded stylesheet
+   requires it; do not alter white generated/preview/print surfaces.
+5. **Release and regression coverage.** Add one published 2026-09-24 engineer-facing release item.
+   Extend focused draft-sync and page-design tests for five-item scoring, signature summaries,
+   deterministic tie-breaking, identical-copy deduplication, recommendation and collapsed
+   alternatives, currently-open state, single-copy label, responsive rules, cache/release
+   registration, and review-only identity/save behavior. Keep tests at the existing helper/source
+   contract level and do not add server/database behavior.
+6. **Verify and close out.** Run focused draft-sync and page-design tests, plus offline/cache tests
+   if cache contracts require them. Validate isolated Jinja route rendering, all rendered inline
+   JavaScript with Node syntax checking, embedded worker syntax, release JSON/cache markers, and
+   `git diff --check`. Self-review the intended diff and status; record exact outcomes, skipped
+   browser QA, and any deviations here and in the current `changes.md` entry. Mark this plan
+   **Executed — uncommitted** only after verification. No commit, push, deployment, Railway, or
+   browser operation is authorized in this package.
+
+### Acceptance criteria
+
+- The recommended copy is the distinct version with the highest five-item score; ties use newest
+  valid save time and then device/account/earlier-backup priority.
+- The recommendation and each alternative show accurate completion, signature, and time details;
+  only the recommendation is initially prominent, and alternatives start collapsed.
+- Identical payloads render once; no visible source label joins multiple storage sources.
+- Continue/open keeps the existing identity and remains review-only; alternatives and existing
+  delete/signature-recovery actions remain available.
+- Focused tests, render/JavaScript/cache/release checks, and diff checks pass. Protected dirty
+  paths remain untouched.
+
+### Execution outcome — 2026-09-24
+
+- `templates/offline_tsr.html` now ranks each distinct version using the existing five core
+  requirements, newest valid save time, then device/account/earlier-backup priority. The top copy
+  is marked **Recommended version** with its completion and signature summary. Other copies are
+  under a collapsed **Other saved versions (N)** disclosure with compact summaries and
+  **Open instead** actions. Single-copy drafts also use **Continue draft**; an opened copy is
+  marked **Currently open** while alternatives stay available. Identical payloads still group
+  into one version, and opening continues through the existing review-only, identity-preserving
+  action without save/sync/submit/delete calls.
+- Saved-work styling in `static/css/app-offline-tsr.css` uses existing theme tokens, retains a
+  compact responsive layout, and removes the unused source-combination chooser rules. No late
+  dark override was needed. The page stylesheet query and app-shell URL advanced to v7, the
+  embedded worker advanced to v189, and the published 2026-09-24 release entry was added.
+- Focused command `venv\Scripts\python.exe -m unittest tests.test_tsr_draft_sync
+  tests.test_tsr_page_design tests.test_offline_api_status` passed **72/72**. Coverage includes
+  each individual requirement score, signature summaries, date/source tie breaks, collapsed
+  alternatives, identity preservation, and review-only selection. The suite also rendered
+  `/offline-tsr` using isolated temporary route databases and parsed every nonempty inline script
+  with Node. Python AST, embedded worker JavaScript syntax, release JSON, cache/version checks,
+  and `git diff --check` passed.
+- Browser QA and full unittest discovery were not run; browser QA requires separate owner
+  authorization and the approved plan called for focused verification. No production data,
+  database/schema, Railway, commit, push, or deployment action was taken. Pre-existing protected
+  dirty files remain untouched and unstaged.
+
 ## Create TSR device-draft account isolation
 
 **Status:** Executed — implementation verified; uncommitted (no commit, push, or deployment).

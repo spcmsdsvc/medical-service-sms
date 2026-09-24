@@ -19,10 +19,10 @@ class TSRPageDesignContracts(unittest.TestCase):
     def test_page_stylesheet_and_worker_precache_are_registered(self):
         self.require_text("css/app-offline-tsr.css")
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
-        self.require_text("/static/css/app-offline-tsr.css?v=6", app_source)
-        assert_cache_version_at_least(self, 182, app_source)
+        self.require_text("/static/css/app-offline-tsr.css?v=7", app_source)
+        assert_cache_version_at_least(self, 189, app_source)
         self.require_text("app-dark-pages.css') }}?v=29", (ROOT / "templates" / "layout.html").read_text(encoding="utf-8"))
-        self.require_text("css/app-offline-tsr.css') }}?v=6")
+        self.require_text("css/app-offline-tsr.css') }}?v=7")
 
     def test_schedule_selection_is_first_and_empty_state_routes_to_calendar(self):
         self.require_text('id="tsr-schedule-selection"')
@@ -120,9 +120,37 @@ class TSRPageDesignContracts(unittest.TestCase):
         self.assertIsNotNone(version_layout)
         self.assertIn("grid-template-columns: minmax(0, 1fr);", version_layout.group(1))
         self.require_text(".standalone-tsr-draft-version", css)
+        for selector in (
+            ".standalone-tsr-draft-recommendation",
+            ".standalone-tsr-draft-others",
+            ".standalone-tsr-draft-currently-open",
+        ):
+            self.require_text(selector, css)
         self.require_text("white-space: nowrap", css)
         self.require_text("safe-area-inset-bottom", css)
         self.assertRegex(css, r"@media\s*\(max-width:\s*(?:[0-9]+)px\)")
+
+    def test_saved_draft_recommendation_and_other_versions_are_clear_and_collapsed(self):
+        panel = TEMPLATE.split("async function renderStandaloneTSRDraftPanel", 1)[1].split(
+            "async function openStandaloneTSRDraft", 1
+        )[0]
+        for label in (
+            "Recommended — ",
+            "Continue draft",
+            "Other saved versions (${otherVersions.length})",
+            "Open instead",
+            "Currently open",
+            "requirements completed",
+            "standaloneTSRDraftVersionSignatureSummary",
+        ):
+            self.require_text(label, panel)
+        self.require_text("Recommended version", TEMPLATE)
+        disclosure = re.search(r"<details class=\"standalone-tsr-draft-others\">(.*?)</details>", panel, re.DOTALL)
+        self.assertIsNotNone(disclosure)
+        self.assertNotIn(" open", disclosure.group(0).split(">", 1)[0])
+        self.assertNotIn("recoverySourceLabels.join", panel)
+        self.assertIn("compareStandaloneTSRDraftVersions", panel)
+        self.assertIn("useStandaloneTSRDraftCopy", panel)
 
     def test_core_readiness_summary_tracks_only_the_five_core_requirements(self):
         self.require_text('id="tsr-core-readiness-summary"')

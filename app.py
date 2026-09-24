@@ -23562,8 +23562,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v183-tsr-draft-history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v185-late-calibration-report.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v187-tsr-account-drafts-network-only.
-    # Navigation shell bump: v188 scopes local Create TSR drafts to the signed-in engineer.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v188-tsr-local-draft-account-scope';
+    # Navigation shell bump: v189 simplifies Create TSR saved-version selection.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v189-tsr-draft-chooser';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -23582,7 +23582,7 @@ const APP_SHELL = [
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
   '/static/css/app-calibration-report.css?v=9',
-  '/static/css/app-offline-tsr.css?v=6',
+  '/static/css/app-offline-tsr.css?v=7',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',

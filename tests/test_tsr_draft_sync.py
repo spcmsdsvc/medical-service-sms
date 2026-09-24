@@ -164,10 +164,18 @@ class TsrDraftSyncContractTests(unittest.TestCase):
             'async function renderStandaloneTSRDraftPanel', 1
         )[1].split('async function openStandaloneTSRDraft', 1)[0]
         self.assertIn('groupStandaloneTSRDraftVersions', panel)
-        self.assertIn('Open this version', panel)
+        self.assertIn('compareStandaloneTSRDraftVersions', panel)
+        self.assertIn('Continue draft', panel)
+        self.assertIn('Open instead', panel)
+        self.assertIn('Other saved versions (${otherVersions.length})', panel)
+        self.assertIn('<details class="standalone-tsr-draft-others">', panel)
+        self.assertNotIn('recoverySourceLabels.join', panel)
+        self.assertNotIn('Different saved copies', panel)
         self.assertIn('useStandaloneTSRDraftCopy', panel)
-        self.assertIn('Choose one to open', panel)
-        self.assertIn('Earlier account copy', self.template_source)
+        self.assertIn('Earlier backup', self.template_source)
+        self.assertIn('Recommended version', self.template_source)
+        self.assertIn('Account version', self.template_source)
+        self.assertIn('Device version', self.template_source)
         self.assertIn("'/get_tsr_draft_history'", self.template_source)
         self.assertIn("'/save_tsr_draft_version'", self.template_source)
 
@@ -175,8 +183,9 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         labels = self.template_source.split(
             'function standaloneTSRDraftSourceLabel', 1
         )[1].split('function rememberStandaloneTSRDraftConflict', 1)[0]
-        self.assertIn("'Saved to your account'", labels)
-        self.assertIn("'Saved on this device'", labels)
+        self.assertIn("'Account version'", labels)
+        self.assertIn("'Device version'", labels)
+        self.assertIn("'Earlier backup'", labels)
         for implementation_term in ('IndexedDB', 'localStorage', 'fallback storage'):
             self.assertNotIn(implementation_term, labels)
 
@@ -194,6 +203,7 @@ class TsrDraftSyncContractTests(unittest.TestCase):
             'saveStandaloneTSRDraftLocally(',
             'syncStandaloneTSRDraftToServer(',
             'submitStandaloneTSROnline(',
+            'deleteStandaloneTSRDraft(',
         ):
             self.assertNotIn(forbidden, selection)
 
@@ -391,12 +401,70 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         self.assertTrue('OFFLINE_TSR_DB_VERSION = 1' in self.template_source,
                         'Tombstones must not migrate or purge existing IndexedDB draft records.')
 
-    def test_nonconflicting_single_copy_keeps_existing_open_action(self):
+    def test_single_copy_uses_continue_draft_and_open_state_keeps_alternatives(self):
         panel = self.template_source.split(
             'async function renderStandaloneTSRDraftPanel', 1
         )[1].split('async function openStandaloneTSRDraft', 1)[0]
-        self.assertIn('openStandaloneTSRDraft', panel)
-        self.assertIn('group.versions.length > 1', panel)
+        self.assertIn('Continue draft', panel)
+        self.assertIn('standaloneTSRDraftRecoveryChoices', panel)
+        self.assertIn('Currently open', panel)
+        self.assertIn('Other saved versions (${otherVersions.length})', panel)
+        self.assertNotIn("'Open</button>'", panel)
+
+    def test_saved_version_scoring_and_source_tiebreaks_use_payload_only(self):
+        scoring_helpers = self.template_source.split(
+            'function standaloneTSRDraftVersionReadiness', 1
+        )[1].split('async function archiveStandaloneTSRDraftVersion', 1)[0]
+        script = r"""
+function parseOfflineTSRDate(value){const stamp=Date.parse(String(value||''));return Number.isFinite(stamp)?stamp:null;}
+function getStandaloneDraftScheduleId(data){return String(data?.schedule_id||data?.selectedScheduleId||data?.selectedSchedule?.id||'').trim();}
+function isScheduleEquipmentAssignable(schedule){return Boolean(schedule?.client_id&&schedule?.product_id&&schedule?.product_name&&['product','genoray','vieworks'].includes(String(schedule?.equipment_source||'').toLowerCase())&&schedule?.equipment_available!==false);}
+function getTSRServiceCategoryText(data){return String(data?.['tsr-service-category']||'');}
+function hasRequiredServicedSignature(data){return Boolean(String(data?.signatures?.serviced||'').trim());}
+function hasRequiredAcknowledgedSignature(data){return Boolean(String(data?.signatures?.acknowledged||'').trim());}
+""" + 'function standaloneTSRDraftVersionReadiness' + scoring_helpers + r"""
+const complete={id:'draft',recoverySourceKind:'indexeddb',recoverySourceKey:'indexeddb',updated_at:'2026-09-24T08:00:00Z',payload:{schedule_id:'17',selectedSchedule:{id:'17',client_id:'1',product_id:'SN-1',product_name:'Model',equipment_source:'product'},'tsr-service-category':'Repair','tsr-actions-taken':'Replaced part',signatures:{serviced:'engineer',acknowledged:'client'},savedAt:'2026-09-24T08:00:00Z'}};
+const missingEquipment={...complete,payload:{...complete.payload,selectedSchedule:{id:'17',client_id:'',product_id:'',product_name:'',equipment_source:'product'}}};
+const missingService={...complete,payload:{...complete.payload,'tsr-service-category':''}};
+const missingActions={...complete,payload:{...complete.payload,'tsr-actions-taken':''}};
+const missingEngineer={...complete,payload:{...complete.payload,signatures:{serviced:'',acknowledged:'client'}}};
+const missingClient={...complete,payload:{...complete.payload,signatures:{serviced:'engineer',acknowledged:''}}};
+const device={...missingEquipment,recoverySourceKind:'indexeddb',recoverySourceKey:'indexeddb',updated_at:'2026-09-24T08:00:00Z'};
+const accountNewer={...missingEquipment,recoverySourceKind:'account',recoverySourceKey:'account',updated_at:'2026-09-24T08:05:00Z'};
+const accountSameTime={...accountNewer,updated_at:device.updated_at};
+const historySameTime={...accountSameTime,recoverySourceKind:'history',recoverySourceKey:'history',source:'server_draft_history'};
+const invalidUpdatedAt={...device,updated_at:'not a date',payload:{...device.payload,savedAt:'2026-09-24T08:10:00Z'}};
+const orderedByTime=[device,accountNewer].sort(compareStandaloneTSRDraftVersions);
+const orderedBySource=[historySameTime,accountSameTime,device].sort(compareStandaloneTSRDraftVersions);
+console.log(JSON.stringify({
+  complete:standaloneTSRDraftVersionReadiness(complete).completedCount,
+  missingEquipment:standaloneTSRDraftVersionReadiness(missingEquipment).completedCount,
+  missingService:standaloneTSRDraftVersionReadiness(missingService).completedCount,
+  missingActions:standaloneTSRDraftVersionReadiness(missingActions).completedCount,
+  missingEngineer:standaloneTSRDraftVersionReadiness(missingEngineer).completedCount,
+  missingClient:standaloneTSRDraftVersionReadiness(missingClient).completedCount,
+  includesBoth:standaloneTSRDraftVersionSignatureSummary(standaloneTSRDraftVersionReadiness(complete)),
+  engineerOnly:standaloneTSRDraftVersionSignatureSummary(standaloneTSRDraftVersionReadiness(missingClient)),
+  clientOnly:standaloneTSRDraftVersionSignatureSummary(standaloneTSRDraftVersionReadiness(missingEngineer)),
+  noSignatures:standaloneTSRDraftVersionSignatureSummary(standaloneTSRDraftVersionReadiness({...complete,payload:{...complete.payload,signatures:{}}})),
+  newerWinner:standaloneTSRDraftVersionSourceText(orderedByTime[0]),
+  sourceOrder:orderedBySource.map(item=>standaloneTSRDraftVersionSourceText(item)).join(','),
+  validPayloadTime:standaloneTSRDraftVersionTime(invalidUpdatedAt)
+}));
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertEqual(output['complete'], 5)
+        for key in ('missingEquipment', 'missingService', 'missingActions', 'missingEngineer', 'missingClient'):
+            self.assertEqual(output[key], 4)
+        self.assertEqual(output['includesBoth'], 'Includes both signatures')
+        self.assertEqual(output['engineerOnly'], 'Engineer signature included; client signature missing')
+        self.assertEqual(output['clientOnly'], 'Client signature included; engineer signature missing')
+        self.assertEqual(output['noSignatures'], 'Both signatures missing')
+        self.assertEqual(output['newerWinner'], 'Account version')
+        self.assertEqual(output['sourceOrder'], 'Device version,Account version,Earlier backup')
+        self.assertEqual(output['validPayloadTime'], 1790237400000)
 
     def test_source_grouping_and_copy_selection_keep_original_reservation_without_saving(self):
         grouping_helpers = self.template_source.split(

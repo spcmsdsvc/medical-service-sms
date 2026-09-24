@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-24-create-tsr-draft-chooser-simplification",
+      "release_date": "2026-09-24",
+      "title": "A Simpler Way to Continue TSR Drafts",
+      "summary": "Create TSR recommends the saved copy with the most required details completed and keeps other copies easy to find.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-24-create-tsr-draft-chooser-engineers",
+          "category": "Create TSR",
+          "description": "Continue Saved Work now recommends the copy with the most required details completed. Other saved versions stay available under a collapsed list, so you can open another copy when needed.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-24-create-tsr-device-draft-account-scope",
       "release_date": "2026-09-24",
       "title": "Device TSR Drafts Stay With Their Engineer",

@@ -2,6 +2,24 @@
 
 codex changes - 2026-09-24
 
+- Simplified the Create TSR Continue Saved Work chooser in `templates/offline_tsr.html`. Distinct
+  saved copies are ranked by completion of the five existing core requirements, valid save time,
+  then device/account/earlier-backup source priority. The recommended copy is shown with its
+  completion and signature summary and a primary **Continue draft** action; remaining copies are
+  collapsed under **Other saved versions (N)** with **Open instead** actions. Single-copy drafts
+  use the same Continue draft wording, and an opened version is marked **Currently open**. Content
+  deduplication and the existing review-only identity-preserving selection flow remain in place;
+  Delete, signature recovery, saving, validation, and backend behavior were not changed.
+- Refined the saved-work card styling in `static/css/app-offline-tsr.css` with existing theme
+  variables and responsive compact rules; no late dark override was needed. Bumped the page and
+  app-shell stylesheet URL to v7, the service-worker marker to v189, and added the published
+  `2026-09-24-create-tsr-draft-chooser-simplification` engineer release entry. Focused draft,
+  page-design, and offline/cache tests passed **72/72**; isolated `/offline-tsr` rendering and
+  inline-script parsing, Python AST, embedded worker syntax, release JSON/cache checks, and
+  `git diff --check` passed. Browser QA and full discovery were not run; no database, production,
+  Railway, commit, push, or deployment action occurred. Protected pre-existing dirty files remain
+  untouched and unstaged.
+
 - Separated Create TSR device drafts by the signed-in engineer in `templates/offline_tsr.html`.
   New and updated IndexedDB records carry the account ID as local-only metadata; local listing,
   opening, recovery, draft sync, and startup upload exclude another account's scoped records.
