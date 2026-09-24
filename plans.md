@@ -2,7 +2,7 @@
 
 ## Calibration Report separate X-ray tube output pages
 
-**Status:** Executed — implementation verified; uncommitted (no commit, push, or deployment).
+**Status:** Executed — implementation commit `63bd0b0`; owner-authorized publication pending verification.
 **Approved:** 2026-09-24 — the owner requested implementation of the proposed two-tube report plan.
 **Detailed:** 2026-09-24.
 **Execution authorized:** 2026-09-24 — the owner separately said “go ahead” after the approved plan was recorded.
@@ -104,7 +104,10 @@ pair is restored. Single-tube reports remain three pages and Page 3 is still lab
 - The local LibreOffice/soffice converter is unavailable, so the generated PDF's rendered page
   count and layout were not checked. Browser QA was excluded by the project instructions. No
   application database, production data, or protected dirty files were intentionally modified;
-  no commit, push, or deployment was performed.
+  no commit, push, or deployment was performed during the implementation pass.
+- The owner separately authorized commit and push on 2026-09-24. The selected calibration-report
+  implementation files were committed on local `main` as `63bd0b0`. Publication verification is
+  recorded in the task report after pushing `origin/main` and checking Railway metadata.
 
 ## Create TSR saved-draft simplification
 

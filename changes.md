@@ -23,6 +23,12 @@ codex changes - 2026-09-24
   rendered PDF pagination/layout was not verified. No commit, push, deployment, database change,
   or production operation was performed.
 
+- Committed only the Calibration Report two-tube implementation, focused test, release, cache,
+  and required record files as `63bd0b0` on local `main` after the owner's separate commit-and-push
+  authorization. The protected database, handoff, output, temporary, and other unrelated local
+  files were excluded from staging. The owner authorized publication of this commit to
+  `origin/main`; remote and Railway verification will be reported after the push.
+
 - Simplified the Create TSR Continue Saved Work chooser in `templates/offline_tsr.html`. Distinct
   saved copies are ranked by completion of the five existing core requirements, valid save time,
   then device/account/earlier-backup source priority. The recommended copy is shown with its
