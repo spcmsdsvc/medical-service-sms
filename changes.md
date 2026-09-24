@@ -10,8 +10,8 @@ codex changes - 2026-09-24
   application code, tests, databases, or production records had been changed at the time this
   plan was recorded. Implementation required a separate go-ahead under the repository workflow.
 - The owner separately authorized implementation on 2026-09-24. Draft recovery and overwrite
-  protection are implemented and remain uncommitted; protected dirty paths, engineer
-  browser/account data, and production records remain excluded.
+  protection are implemented; protected dirty paths, engineer browser/account data, and
+  production records remain excluded from this change.
 - Updated `templates/offline_tsr.html` to retain differing same-ID IndexedDB, localStorage, and
   account-backup payloads, group distinct versions under one saved-work entry, and require an
   explicit `Use this copy` action. Applying a version rehydrates its attachments/signatures,
@@ -59,6 +59,11 @@ codex changes - 2026-09-24
   Use blocked its local-file URL. Browser testing stopped at that denial; no live engineer or
   account page was opened and no draft was selected or saved. The visual result still needs an
   approved browser QA path. No commit, push, or deployment was performed.
+- Committed the Create TSR draft-recovery package on `main` as `5378be5`. The commit contains
+  only the recovery implementation, its tests, release entry, and required plan/change records;
+  `scheduler.db`, the handoff, `.claude/`, `output/`, `tmp/`, and other unrelated work were
+  excluded. The owner authorized pushing this package; remote and Railway status are reported
+  in the task closeout.
 
 codex changes - 2026-09-23
 

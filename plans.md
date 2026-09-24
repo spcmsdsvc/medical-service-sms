@@ -2,7 +2,7 @@
 
 ## Create TSR draft recovery and overwrite protection
 
-**Status:** Executed — uncommitted and unpublished; commit/push were not authorized.
+**Status:** Executed — implementation commit `5378be5`; publication authorized 2026-09-24.
 **Approved:** 2026-09-24 — the owner requested implementation of the proposed recovery plan.
 **Detailed:** 2026-09-24.
 
