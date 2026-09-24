@@ -1,5 +1,113 @@
 # Medical Service SMS — Approved Plans
 
+## Create TSR device-draft account isolation
+
+**Status:** Executed — implementation verified; uncommitted (no commit, push, or deployment).
+**Approved:** 2026-09-24 — separate device drafts by the signed-in engineer and stop shared
+browser storage from displaying or uploading a previous engineer's draft.
+**Execution authorized:** 2026-09-24 — the owner approved and instructed implementation.
+**Detailed:** 2026-09-24.
+
+### Summary and boundaries
+
+Add the signed-in account ID as local ownership metadata for Create TSR drafts. Filter IndexedDB
+drafts and localStorage fallback reads, writes, autosaves, recovery, and startup upload to the
+current account. Keep the existing single IndexedDB database/store; do not change server routes,
+database schema, or TSR payload/hash semantics. Give each account a separate localStorage fallback
+key, and migrate older unscoped copies only when a current-account server draft already has the
+same draft key or the saved `Serviced By` identity exactly matches the signed-in engineer. Keep
+ambiguous and foreign scoped records untouched and hidden. Preserve current-account deletion and
+prevent a foreign or unscoped startup upload from recreating a deleted account draft.
+
+Files in scope: `templates/offline_tsr.html`, `tests/test_tsr_draft_sync.py`, `app.py` only for
+the embedded service-worker cache marker, `static/changelog/releases.json`, `plans.md`, and
+`changes.md`. Keep server owner filters, schema, reservations, signatures, attachments, calibration,
+validation, final-save rules, and offline queue behavior unchanged. Do not automatically delete
+existing account drafts. Do not inspect production records or browser storage; do not use browser
+QA; do not commit, push, deploy, change Railway, or touch protected dirty paths.
+
+### Numbered execution steps
+
+1. **Preflight.** Read applicable `AGENTS.md` and `changes.md` in full; confirm the current Git
+   head includes the account-cache isolation fix; inspect status, the approved plan, Create TSR
+   draft/localStorage/IndexedDB/merge/open/delete code, focused tests, current cache marker, and
+   release format. Preserve `scheduler.db`, handoff artifacts, `.claude/`, `output/`, `tmp/`, and
+   unrelated dirty work.
+2. **Scope and migrate device records — `templates/offline_tsr.html`.** Persist
+   `STANDALONE_TSR_ACCOUNT_SCOPE` on newly saved IndexedDB records and current-account server
+   candidates as local metadata only. Filter draft listing, opening, recovery, autosave/sync, and
+   startup upload so a nonempty different `account_id` is untouched, hidden, and never uploaded.
+   Safely tag legacy unscoped records only for a same-key current-account server draft or an exact
+   normalized nonblank `tsr-serviced-by` identity match; leave other legacy records intact and
+   hidden. Never include local ownership metadata in the server payload or comparable content hash.
+3. **Scope localStorage fallback and deletion — `templates/offline_tsr.html`.** Derive a current
+   account fallback key from the legacy key and account ID. Route normal fallback reads, writes,
+   deletion, and verification through that key; retain the legacy unscoped key for conservative
+   migration, and never read or overwrite another account's scoped fallback. Ensure a current
+   account tombstone suppresses a retained legacy copy after explicit deletion, while an engineer
+   can still recover their own legacy copy on sign-in. Restrict automatic old-draft cleanup to
+   drafts owned by the signed-in account, and preserve attachment blobs referenced by any local
+   draft so another engineer's retained copy stays usable.
+4. **Regression coverage — `tests/test_tsr_draft_sync.py`.** Add focused coverage for same-browser
+   account switching: a foreign scoped record is hidden and not uploaded but is available to its
+   owner; a current-account record still loads and uploads; fallback keys are isolated; matching
+   legacy copies are adopted and ambiguous copies stay hidden; and deletion cannot be undone by a
+   foreign or unscoped startup upload. Keep tests focused on the real helper behavior and existing
+   test conventions.
+5. **Cache/release and verification — `app.py`, `static/changelog/releases.json`.** Advance the
+   active embedded service-worker marker monotonically from v187 to v188 and add one published
+   2026-09-24 engineer release item explaining that device drafts are separated by signed-in
+   engineer. Run the focused TSR draft-sync and offline API/cache suites using the project venv,
+   with isolated temporary databases where needed; also validate Jinja rendering, extracted
+   inline JavaScript syntax, release JSON/cache version, and `git diff --check`. Do not run browser
+   QA or broad tests unless a focused failure shows a material regression.
+6. **Closeout.** Inspect the intended diff and Git status, verify protected dirty paths remain
+   untouched, record actual results and any deviation in `changes.md`, and mark this plan
+   `Executed — uncommitted` with the outcome. No commit, push, deployment, Railway operation,
+   browser inspection, production-data access, or database/schema change is part of this package.
+
+### Acceptance criteria
+
+- A draft scoped to a different engineer never appears, opens, autosaves, or uploads for the
+  current engineer; it stays intact for its owner.
+- A signed-in engineer can continue current-account device drafts and can safely adopt a legacy
+  unscoped copy only when the existing account draft key or saved Serviced By identity matches.
+- Each account reads/writes only its own fallback key; ambiguous legacy copies remain intact and
+  hidden.
+- Current-account explicit deletion and tombstones remain durable without removing a foreign
+  device copy or re-uploading an unscoped copy at startup.
+- TSR identity, reservation, server payload/hash, attachments, signatures, calibration, final-save
+  and queue behavior remain unchanged. Focused tests and required syntax/release checks pass.
+
+### Execution outcome — 2026-09-24
+
+- `templates/offline_tsr.html` now tags local IndexedDB drafts with the signed-in account ID,
+  filters local load/open/recovery and background sync by that scope, and tags drafts hydrated
+  from the current account's server response. A foreign key collision is not overwritten or
+  deleted; the current account can still open its server copy from the in-memory candidate.
+- The localStorage fallback now uses a key derived from the legacy draft key and account ID.
+  Legacy unscoped records are adopted only when the current account already has the same draft
+  key or the saved `Serviced By` identity matches. Ambiguous records remain stored and hidden;
+  matching legacy fallbacks are copied to the current account key without deleting the legacy
+  source. Account tombstones suppress unscoped startup uploads after deletion.
+- Old-draft cleanup now removes only records tagged to the current account, and orphan cleanup
+  retains attachment blobs referenced by drafts across all accounts. No schema, server route,
+  payload projection, reservation, final-save, or offline queue behavior changed.
+- Advanced the embedded worker cache marker from v187 to v188 and added the published
+  `2026-09-24-create-tsr-device-draft-account-scope` release entry.
+- Added same-browser account-switch, legacy matching/quarantine, account fallback isolation,
+  foreign-record overwrite/delete protection, current-account delete suppression, cache/release,
+  and rendered inline-script checks in `tests/test_tsr_draft_sync.py`. The focused draft-sync
+  suite passed **42/42** tests; `tests.test_offline_api_status` passed **17/17**. The isolated
+  `/offline-tsr` render returned HTTP 200 and every nonempty inline script passed Node syntax
+  checking. Python AST parsing, embedded worker `node --check`, release JSON/cache validation,
+  and `git diff --check` passed.
+- Browser QA, full unittest discovery, account/production data, and Railway were not accessed.
+  Existing account drafts copied by the earlier startup bug are not automatically deleted; the
+  current account owner can delete each incorrect copy once after deployment. That account-scoped
+  deletion does not delete a different engineer's server-side copy. No commit, push, or deployment
+  was performed. Pre-existing protected dirty paths remain untouched.
+
 ## Create TSR account-draft cache isolation
 
 **Status:** Executed — implementation verified; no commit, push, or deployment performed.

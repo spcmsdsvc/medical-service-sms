@@ -718,6 +718,10 @@ async function invalidateTimelineSnapshotsAfterTSRSave(){
 const LOGGED_IN_ENGINEER_NAME = "{{ (current_user.engineer_profile.name if current_user.engineer_profile else current_user.username)|e }}";
 const LOGGED_IN_ENGINEER_INITIALS = "{{ (current_user.engineer_profile.initials if current_user.engineer_profile and current_user.engineer_profile.initials else '')|e }}";
 const STANDALONE_TSR_ACCOUNT_SCOPE = String({{ current_user.get_id()|tojson }} || '').trim();
+function getStandaloneTSRDraftFallbackKey(){
+  const accountId = encodeURIComponent(STANDALONE_TSR_ACCOUNT_SCOPE || 'unassigned');
+  return `${STANDALONE_TSR_KEY}:account:${accountId}`;
+}
 const OFFLINE_TSR_STORAGE_HEALTH_ADMIN = String("{{ 'true' if offline_storage_health_admin else 'false' }}").toLowerCase() === 'true';
 const SIGNATURE_STAMP_SCALE = Number({{ signature_stamp_scale|tojson }}) || 1.5;
 // The signature footer's height is reserved by renderTSRPrintSheetCanvases before the
@@ -1454,6 +1458,40 @@ function isCompactTSRScheduleCoverage(scheduleOrData){
 function normalizeTSREngineerIdentity(value){
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
+function getStandaloneTSRDraftEngineerIdentity(record){
+  const payload = record?.payload && typeof record.payload === 'object' ? record.payload : record || {};
+  return normalizeTSREngineerIdentity(payload['tsr-serviced-by'] || payload.serviced_by || '');
+}
+
+function standaloneTSRDraftCanAdoptLegacy(record, knownServerDraftKeys=null){
+  if(!record || String(record.account_id || '').trim()){
+    return String(record?.account_id || '').trim() === STANDALONE_TSR_ACCOUNT_SCOPE && Boolean(STANDALONE_TSR_ACCOUNT_SCOPE);
+  }
+  if(!STANDALONE_TSR_ACCOUNT_SCOPE) return false;
+  const draftKey = String(record.id || record._draft_id || record.payload?._draft_id || '').trim();
+  const serverKeys = knownServerDraftKeys instanceof Set
+    ? knownServerDraftKeys
+    : new Set(standaloneTSRAccountDraftCandidates?.keys?.() || []);
+  if(draftKey && serverKeys.has(draftKey)) return true;
+  const savedEngineer = getStandaloneTSRDraftEngineerIdentity(record);
+  const currentEngineer = normalizeTSREngineerIdentity(LOGGED_IN_ENGINEER_NAME);
+  return Boolean(savedEngineer && currentEngineer && savedEngineer === currentEngineer);
+}
+
+async function adoptStandaloneTSRDraftForCurrentAccount(record, knownServerDraftKeys=null){
+  const accountId = String(record?.account_id || '').trim();
+  if(accountId === STANDALONE_TSR_ACCOUNT_SCOPE && STANDALONE_TSR_ACCOUNT_SCOPE) return record;
+  if(accountId || !standaloneTSRDraftCanAdoptLegacy(record, knownServerDraftKeys)) return null;
+  const adopted = Object.assign({}, record, { account_id:STANDALONE_TSR_ACCOUNT_SCOPE });
+  try{
+    await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, adopted);
+    return adopted;
+  }catch(err){
+    console.warn('[Offline TSR] Unable to mark this legacy draft for the signed-in engineer', err);
+    return null;
+  }
+}
+
 function getTSROtherAssignedEngineerNames(scheduleOrData){
   const rows = getTSRScheduleCoverageRows(scheduleOrData);
   const signer = normalizeTSREngineerIdentity(scheduleOrData?.['tsr-serviced-by'] || scheduleOrData?.serviced_by || LOGGED_IN_ENGINEER_NAME);
@@ -3538,6 +3576,7 @@ async function buildOfflineTSRDraftRecord(data){
   const durablePayload = await prepareStandaloneTSRDraftPayload(payload, id);
   return {
     id,
+    account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
     schedule_id: durablePayload?.schedule_id || durablePayload?.selectedScheduleId || durablePayload?.selectedSchedule?.id || '',
     selected_schedule_id: durablePayload?.selectedScheduleId || durablePayload?.selectedSchedule?.id || '',
     title: getStandaloneTSRDraftTitle(durablePayload),
@@ -3600,6 +3639,7 @@ function buildStandaloneTSRAccountDraftCandidate(remote, draftKey){
   if(remote?.client_name && !payload['tsr-customer-name']) payload['tsr-customer-name'] = remote.client_name;
   return {
     id:draftKey,
+    account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
     schedule_id:remote?.schedule_id || payload.schedule_id || payload.selectedScheduleId || '',
     selected_schedule_id:payload.selectedScheduleId || payload.selectedSchedule?.id || payload.selected_schedule?.id || '',
     title:remote?.title || getStandaloneTSRDraftTitle(payload),
@@ -3626,6 +3666,7 @@ function buildStandaloneTSRHistoryDraftCandidate(version, draftKey){
   const payload = Object.assign({}, version?.payload || {}, { _draft_id:draftKey });
   return {
     id:draftKey,
+    account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
     draft_key:draftKey,
     tsr_number:version?.tsr_number || payload['tsr-number'] || '',
     reservation_token:version?.reservation_token || payload.reservation_token || payload.tsr_reservation_token || '',
@@ -3661,7 +3702,7 @@ async function persistStandaloneTSRDraftServerMetadata(record, serverDraft){
   const state = rememberStandaloneTSRDraftServerState(id, serverDraft || {});
   if(!id || !state) return false;
   const local = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, id).catch(() => null);
-  if(local){
+  if(local && String(local.account_id || '') === STANDALONE_TSR_ACCOUNT_SCOPE){
     local.server_revision = state.revision;
     local.server_hash = state.hash;
     await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, local).catch(() => null);
@@ -3810,6 +3851,9 @@ function parseOfflineTSRDate(value){
 
 async function archiveStandaloneTSRDraftVersion(record, { baseRevision=null } = {}){
   if(!record?.id || !record?.payload) return { success:false, reason:'missing_draft' };
+  if(String(record.account_id || '') !== STANDALONE_TSR_ACCOUNT_SCOPE){
+    return { success:false, reason:'account_scope_mismatch' };
+  }
   if(!navigator.onLine) return { success:false, reason:'offline' };
   const headers = { 'Content-Type':'application/json', Accept:'application/json' };
   const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
@@ -3845,6 +3889,9 @@ async function archiveStandaloneTSRDraftVersion(record, { baseRevision=null } = 
 
 async function syncStandaloneTSRDraftToServer(record){
   if(!record?.id) return { skipped:true, reason:'missing_draft_key' };
+  if(String(record.account_id || '') !== STANDALONE_TSR_ACCOUNT_SCOPE){
+    return { skipped:true, reason:'account_scope_mismatch' };
+  }
   if(!navigator.onLine) return { skipped:true, reason:'offline' };
 
   const headers = { 'Content-Type':'application/json', Accept:'application/json' };
@@ -3998,6 +4045,9 @@ function resetStandaloneTSRSaveStatus(){
 
 function enqueueStandaloneTSRServerDraftSync(record, { immediate=false, statusContext=null } = {}){
   if(!record?.id || !navigator.onLine) return { pending:true, skipped:true, reason:'offline_or_missing_key' };
+  if(String(record.account_id || '') !== STANDALONE_TSR_ACCOUNT_SCOPE){
+    return { pending:true, skipped:true, reason:'account_scope_mismatch' };
+  }
   const draftId = String(record.id || '').trim();
   if(isStandaloneTSRDraftDeletionTombstoned(draftId)){
     return { pending:true, skipped:true, reason:'draft_deletion_pending' };
@@ -4375,8 +4425,23 @@ async function mergeServerStandaloneTSRDrafts(){
       standaloneTSRDraftHistoryWarning = 'Earlier account copies could not be loaded. Device copies remain available here.';
     }
     await waitForStandaloneTSRLocalSaves();
-    const localRecords = await loadStandaloneTSRDraftRecordsFromIndexedDB({ includeEmpty:true }).catch(() => []);
-    const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+    const remoteKeys = new Set(remoteDrafts.map(draft => String(draft.draft_key || draft.id || '').trim()).filter(Boolean));
+    const allLocalRecords = await loadStandaloneTSRDraftRecordsFromIndexedDB({
+      includeEmpty:true,
+      includeOtherAccounts:true
+    }).catch(() => []);
+    const localRecords = [];
+    for(const record of allLocalRecords){
+      const accountId = String(record.account_id || '').trim();
+      if(accountId === STANDALONE_TSR_ACCOUNT_SCOPE && STANDALONE_TSR_ACCOUNT_SCOPE){
+        localRecords.push(record);
+        continue;
+      }
+      if(accountId || isStandaloneTSRDraftDeletionTombstoned(record.id)) continue;
+      const adopted = await adoptStandaloneTSRDraftForCurrentAccount(record, remoteKeys);
+      if(adopted) localRecords.push(adopted);
+    }
+    const fallback = loadStandaloneTSRDraftFromLocalStorageFallback({ knownServerDraftKeys:remoteKeys });
     const localCandidatesByKey = new Map();
     const indexedByKey = new Map();
     const addLocalCandidate = candidate => {
@@ -4404,6 +4469,7 @@ async function mergeServerStandaloneTSRDrafts(){
         updated_at:fallback.savedAt || '',
         server_revision:Number(fallback._server_revision || 0) || null,
         server_hash:String(fallback._server_hash || ''),
+        account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
         source:'localstorage',
         recoverySourceKey:'localstorage',
         recoverySourceKind:'localstorage'
@@ -4418,8 +4484,20 @@ async function mergeServerStandaloneTSRDrafts(){
       }
     }
 
-    const remoteKeys = new Set(remoteDrafts.map(draft => String(draft.draft_key || draft.id || '')));
-    for(const localRecord of localRecords){
+    const localRecordsToUpload = localRecords.slice();
+    if(fallback && isStandaloneTSRDraftMeaningful(fallback)){
+      const fallbackId = String(fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID).trim();
+      if(fallbackId && !localRecordsToUpload.some(record => String(record.id) === fallbackId)){
+        localRecordsToUpload.push({
+          id:fallbackId,
+          account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
+          payload:fallback,
+          updated_at:fallback.savedAt || '',
+          source:'localstorage'
+        });
+      }
+    }
+    for(const localRecord of localRecordsToUpload){
       const localKey = String(localRecord.id || '');
       if(localKey && !isStandaloneTSRDraftDeletionTombstoned(localKey) && !remoteKeys.has(localKey) &&
         isStandaloneTSRDraftMeaningful(localRecord.payload) &&
@@ -4486,9 +4564,18 @@ async function mergeServerStandaloneTSRDrafts(){
         continue;
       }
 
-      await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, Object.assign({}, accountCandidate, {
-        phase:'phase6-server-draft-hydration'
-      }));
+      standaloneTSRAccountDraftCandidates.set(draftKey, accountCandidate);
+      const foreignCollision = allLocalRecords.some(candidate =>
+        String(candidate?.id || '') === draftKey &&
+        String(candidate?.account_id || '').trim() &&
+        String(candidate.account_id).trim() !== STANDALONE_TSR_ACCOUNT_SCOPE
+      );
+      if(!foreignCollision){
+        await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, Object.assign({}, accountCandidate, {
+          account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
+          phase:'phase6-server-draft-hydration'
+        }));
+      }
     }
     standaloneTSRServerDraftsHydrated = true;
     return { success:true, count:remoteDrafts.length, history_loaded:historyLoaded };
@@ -4504,23 +4591,54 @@ async function refreshStandaloneTSRDraftPanel(){
 }
 
 async function saveStandaloneTSRDraftToIndexedDB(data, { updateActiveState=true } = {}){
+  const draftId = resolveStandaloneTSRDraftId(data || {});
+  const previous = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, draftId);
+  if(previous){
+    const previousAccountId = String(previous.account_id || '').trim();
+    if(previousAccountId && previousAccountId !== STANDALONE_TSR_ACCOUNT_SCOPE){
+      throw new Error('This device copy belongs to another signed-in engineer.');
+    }
+    if(!previousAccountId){
+      const adopted = await adoptStandaloneTSRDraftForCurrentAccount(previous);
+      if(!adopted) throw new Error('This device copy could not be safely matched to the signed-in engineer.');
+    }
+  }
   const record = await buildOfflineTSRDraftRecord(data);
+  record.account_id = STANDALONE_TSR_ACCOUNT_SCOPE;
   await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, record);
   if(updateActiveState) standaloneCurrentDraftId = record.id;
   return record;
 }
 
 async function loadStandaloneTSRDraftFromIndexedDB(){
-  const record = standaloneCurrentDraftId
-    ? await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, standaloneCurrentDraftId)
-    : await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, OFFLINE_TSR_ACTIVE_DRAFT_ID);
-  if(record?.payload) return await rehydrateStandaloneTSRDraftPayload(Object.assign({}, record.payload, { _draft_id: record.id }));
-  return null;
+  const id = standaloneCurrentDraftId || OFFLINE_TSR_ACTIVE_DRAFT_ID;
+  const record = await loadStandaloneTSRDraftRecordById(id);
+  return record?.payload || null;
 }
 
-async function loadStandaloneTSRDraftRecordsFromIndexedDB({ includeEmpty=false } = {}){
+async function loadStandaloneTSRDraftRecordsFromIndexedDB({ includeEmpty=false, includeOtherAccounts=false, knownServerDraftKeys=null } = {}){
   const records = await offlineTSRDBGetAll(OFFLINE_TSR_DB_STORES.drafts);
-  return records
+  const visibleRecords = [];
+  for(const record of records){
+    if(!record?.payload) continue;
+    const accountId = String(record.account_id || '').trim();
+    if(accountId === STANDALONE_TSR_ACCOUNT_SCOPE && STANDALONE_TSR_ACCOUNT_SCOPE){
+      visibleRecords.push(record);
+      continue;
+    }
+    if(accountId){
+      if(includeOtherAccounts) visibleRecords.push(record);
+      continue;
+    }
+    if(includeOtherAccounts){
+      visibleRecords.push(record);
+      continue;
+    }
+    if(isStandaloneTSRDraftDeletionTombstoned(record.id)) continue;
+    const adopted = await adoptStandaloneTSRDraftForCurrentAccount(record, knownServerDraftKeys);
+    if(adopted) visibleRecords.push(adopted);
+  }
+  return visibleRecords
     .filter(record => record?.payload)
     .map(record => {
       const payload = Object.assign({}, record.payload || {});
@@ -4534,8 +4652,19 @@ async function loadStandaloneTSRDraftRecordsFromIndexedDB({ includeEmpty=false }
 async function loadStandaloneTSRDraftRecordById(id){
   const record = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, id);
   if(!record?.payload) return null;
-  const payload = await rehydrateStandaloneTSRDraftPayload(Object.assign({}, record.payload || {}, { _draft_id: record.id }));
-  return Object.assign({}, record, { payload });
+  const accountId = String(record.account_id || '').trim();
+  let scopedRecord = record;
+  if(accountId && accountId !== STANDALONE_TSR_ACCOUNT_SCOPE) return null;
+  if(!accountId){
+    if(isStandaloneTSRDraftDeletionTombstoned(record.id)) return null;
+    scopedRecord = await adoptStandaloneTSRDraftForCurrentAccount(
+      record,
+      new Set(standaloneTSRAccountDraftCandidates.keys())
+    );
+    if(!scopedRecord) return null;
+  }
+  const payload = await rehydrateStandaloneTSRDraftPayload(Object.assign({}, scopedRecord.payload || {}, { _draft_id: scopedRecord.id }));
+  return Object.assign({}, scopedRecord, { payload });
 }
 
 async function clearStandaloneTSRDraftFromIndexedDB(id=null){
@@ -4543,22 +4672,44 @@ async function clearStandaloneTSRDraftFromIndexedDB(id=null){
   await waitForStandaloneTSRLocalSaves();
   let indexedDBAbsent = !isIndexedDBSupported();
   try{
-    await offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, targetId);
-    const remaining = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, targetId);
-    indexedDBAbsent = !remaining;
+    const existing = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, targetId);
+    const accountId = String(existing?.account_id || '').trim();
+    const legacyOwnedByCurrentEngineer = !accountId && existing &&
+      getStandaloneTSRDraftEngineerIdentity(existing) &&
+      getStandaloneTSRDraftEngineerIdentity(existing) === normalizeTSREngineerIdentity(LOGGED_IN_ENGINEER_NAME);
+    if(existing && (accountId === STANDALONE_TSR_ACCOUNT_SCOPE || legacyOwnedByCurrentEngineer)){
+      await offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, targetId);
+      const remaining = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, targetId);
+      indexedDBAbsent = !remaining || String(remaining.account_id || '').trim() !== STANDALONE_TSR_ACCOUNT_SCOPE;
+    }else{
+      // A draft owned by another account, or an unowned copy that cannot be matched safely,
+      // is not this engineer's device draft and must remain untouched.
+      indexedDBAbsent = true;
+    }
   }catch(err){
     console.warn('[Offline TSR DB] Unable to verify TSR draft removal from IndexedDB', err);
   }
 
   let localStorageAbsent = false;
   try{
-    const raw = localStorage.getItem(STANDALONE_TSR_KEY);
+    const scopedKey = getStandaloneTSRDraftFallbackKey();
+    const raw = localStorage.getItem(scopedKey);
     if(raw){
       const fallback = JSON.parse(raw);
       const fallbackId = String(fallback?._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID).trim();
-      if(fallbackId === String(targetId).trim()) localStorage.removeItem(STANDALONE_TSR_KEY);
+      if(fallbackId === String(targetId).trim()) localStorage.removeItem(scopedKey);
     }
-    const remainingRaw = localStorage.getItem(STANDALONE_TSR_KEY);
+    const legacyRaw = localStorage.getItem(STANDALONE_TSR_KEY);
+    if(legacyRaw){
+      const legacyFallback = JSON.parse(legacyRaw);
+      const legacyId = String(legacyFallback?._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID).trim();
+      const legacyEngineer = getStandaloneTSRDraftEngineerIdentity(legacyFallback);
+      const currentEngineer = normalizeTSREngineerIdentity(LOGGED_IN_ENGINEER_NAME);
+      if(legacyId === String(targetId).trim() && legacyEngineer && legacyEngineer === currentEngineer){
+        localStorage.removeItem(STANDALONE_TSR_KEY);
+      }
+    }
+    const remainingRaw = localStorage.getItem(scopedKey);
     if(!remainingRaw){
       localStorageAbsent = true;
     }else{
@@ -4588,7 +4739,7 @@ function saveStandaloneTSRDraftToLocalStorageFallback(data){
       projected._server_revision = serverState.revision;
       projected._server_hash = serverState.hash;
     }
-    localStorage.setItem(STANDALONE_TSR_KEY, JSON.stringify(projected));
+    localStorage.setItem(getStandaloneTSRDraftFallbackKey(), JSON.stringify(projected));
     return true;
   }catch(err){
     console.warn('[Offline TSR] Unable to save localStorage draft fallback', err);
@@ -4596,10 +4747,22 @@ function saveStandaloneTSRDraftToLocalStorageFallback(data){
   }
 }
 
-function loadStandaloneTSRDraftFromLocalStorageFallback(){
+function loadStandaloneTSRDraftFromLocalStorageFallback({ knownServerDraftKeys=null }={}){
   try{
-    const raw = localStorage.getItem(STANDALONE_TSR_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const scopedRaw = localStorage.getItem(getStandaloneTSRDraftFallbackKey());
+    if(scopedRaw){
+      return JSON.parse(scopedRaw);
+    }
+    const legacyRaw = localStorage.getItem(STANDALONE_TSR_KEY);
+    if(!legacyRaw) return null;
+    const legacy = JSON.parse(legacyRaw);
+    const legacyId = String(legacy?._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID).trim();
+    if(isStandaloneTSRDraftDeletionTombstoned(legacyId)) return null;
+    const candidate = { id:legacyId, payload:legacy };
+    if(!standaloneTSRDraftCanAdoptLegacy(candidate, knownServerDraftKeys)) return null;
+    const adopted = Object.assign({}, legacy, { _draft_id:legacyId });
+    if(!saveStandaloneTSRDraftToLocalStorageFallback(adopted)) return null;
+    return adopted;
   }catch(err){
     console.warn('[Offline TSR] Unable to load localStorage draft fallback', err);
     return null;
@@ -5028,6 +5191,7 @@ async function saveStandaloneTSRDraftLocallyNow(context){
     }
     return {
       id:fallbackId,
+      account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
       payload:projectOfflineTSRPayloadForLocalStorage(payload),
       schedule_id:payload.schedule_id || payload.selectedScheduleId || '',
       tsr_number:payload['tsr-number'] || '',
@@ -5161,6 +5325,7 @@ async function getStandaloneTSRDraftRecords(){
     const fallbackId = fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID;
     records.push({
       id:fallbackId,
+      account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
       payload:Object.assign({}, fallback, { _draft_id:fallbackId }),
       title: getStandaloneTSRDraftTitle(fallback),
       subtitle: getStandaloneTSRDraftSubtitle(fallback),
@@ -5586,6 +5751,10 @@ async function beginStandaloneTSRSignatureRecovery(recordId){
       record = { id:targetId, payload:Object.assign({}, fallback, { _draft_id:targetId }), source:'localstorage' };
     }
   }
+  if(!record){
+    const accountCandidate = standaloneTSRAccountDraftCandidates.get(targetId);
+    if(accountCandidate?.payload) record = accountCandidate;
+  }
   if(!record?.payload){
     showTSRStatus('This TSR draft could not be found for signature recovery.', 'danger');
     return false;
@@ -5874,6 +6043,10 @@ async function openStandaloneTSRDraft(id){
     if(fallback && (id === OFFLINE_TSR_ACTIVE_DRAFT_ID || id === fallback._draft_id)){
       record = { id, payload: Object.assign({}, fallback, { _draft_id:id }), source:'localstorage' };
     }
+  }
+  if(!record){
+    const accountCandidate = standaloneTSRAccountDraftCandidates.get(requestedId);
+    if(accountCandidate?.payload) record = accountCandidate;
   }
   if(!record?.payload){
     showTSRStatus('This TSR draft could not be found on this device.', 'danger');
@@ -6410,8 +6583,14 @@ async function migrateStandaloneDraftLocalStorageToIndexedDB(){
     return { migrated:false, reason:'no_localstorage_draft' };
   }
 
-  await saveStandaloneTSRDraftToIndexedDB(fallbackDraft);
-  return { migrated:true, reason:'localstorage_draft_imported' };
+  try{
+    await saveStandaloneTSRDraftToIndexedDB(fallbackDraft);
+    return { migrated:true, reason:'localstorage_draft_imported' };
+  }catch(err){
+    // A different engineer may already own this IndexedDB key. Keep the safe account-keyed
+    // fallback in place and continue queue migration without replacing their device record.
+    return { migrated:false, reason:'draft_key_owned_by_another_account' };
+  }
 }
 
 async function migrateOfflineQueueLocalStorageToIndexedDB(){
@@ -6826,11 +7005,16 @@ function offlineTSRRecordAgeDays(record, dateKeys=['updated_at','created_at']){
   return 0;
 }
 
-function collectReferencedOfflineTSRBlobIds(queue){
+function collectReferencedOfflineTSRBlobIds(queue, drafts=[]){
   const refs = new Set();
   normalizeOfflineTSRQueue(queue).forEach(item => {
     if(item?.pdf_blob_id) refs.add(item.pdf_blob_id);
     normalizeQueuedAttachments(item?.attachments || item?.payload?.attachments || []).forEach(att => {
+      if(att?.blob_id) refs.add(att.blob_id);
+    });
+  });
+  (Array.isArray(drafts) ? drafts : []).forEach(record => {
+    normalizeQueuedAttachments(record?.payload?.attachments || []).forEach(att => {
       if(att?.blob_id) refs.add(att.blob_id);
     });
   });
@@ -6857,7 +7041,8 @@ async function saveOfflineTSRCleanupMetadata(update={}){
 }
 
 async function cleanupOfflineTSROrphanBlobs(queue){
-  const referencedBlobIds = collectReferencedOfflineTSRBlobIds(queue);
+  const drafts = await offlineTSRDBGetAll(OFFLINE_TSR_DB_STORES.drafts).catch(() => []);
+  const referencedBlobIds = collectReferencedOfflineTSRBlobIds(queue, drafts);
   const blobs = await offlineTSRDBGetAll(OFFLINE_TSR_DB_STORES.attachments).catch(() => []);
   let deleted = 0;
 
@@ -6878,6 +7063,7 @@ async function cleanupOfflineTSROldDraftRecords(){
 
   for(const draftRecord of drafts){
     if(!draftRecord?.id || draftRecord.id === OFFLINE_TSR_ACTIVE_DRAFT_ID) continue;
+    if(String(draftRecord.account_id || '') !== STANDALONE_TSR_ACCOUNT_SCOPE) continue;
     const ageDays = offlineTSRRecordAgeDays(draftRecord, ['updated_at','created_at']);
     if(ageDays < OFFLINE_TSR_OLD_DRAFT_RETENTION_DAYS) continue;
     await offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, draftRecord.id);

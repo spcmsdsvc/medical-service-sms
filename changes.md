@@ -2,6 +2,36 @@
 
 codex changes - 2026-09-24
 
+- Separated Create TSR device drafts by the signed-in engineer in `templates/offline_tsr.html`.
+  New and updated IndexedDB records carry the account ID as local-only metadata; local listing,
+  opening, recovery, draft sync, and startup upload exclude another account's scoped records.
+  Server-hydrated current-account drafts are tagged locally, and foreign IndexedDB key collisions
+  are neither overwritten nor deleted. The account ID is not added to the TSR payload or server
+  content hash.
+- Moved the localStorage draft fallback to a key derived from the legacy key and signed-in account
+  ID. Legacy unscoped records are copied/tagged only when the current account already has the same
+  draft key or the normalized saved `Serviced By` identity matches; other legacy copies remain
+  stored and hidden. Deletion removes the current account fallback and does not remove a legacy
+  copy attributed to another engineer. Current-account tombstones prevent retained unscoped drafts
+  from being uploaded again at startup.
+- Restricted old-draft cleanup to records owned by the signed-in account and included all local
+  draft attachment references when removing orphan blobs, so an engineer's retained copy stays
+  usable after another account signs in. No backend route, database/schema, server projection,
+  reservation, validation, final-save, or offline queue behavior changed.
+- Advanced the embedded service-worker marker from v187 to v188 and added the published
+  `2026-09-24-create-tsr-device-draft-account-scope` release item. Added behavior coverage for
+  account switching, legacy adoption and quarantine, fallback isolation, foreign-record
+  overwrite/delete protection, deletion tombstones, cache/release metadata, and rendered inline
+  JavaScript syntax.
+- Verification passed: `venv\Scripts\python.exe -m unittest tests.test_tsr_draft_sync`
+  (**42/42**) and `venv\Scripts\python.exe -m unittest tests.test_offline_api_status`
+  (**17/17**); `/offline-tsr` rendered successfully against isolated temporary route databases,
+  and all nonempty inline scripts passed Node syntax checking. `app.py` AST, embedded worker
+  JavaScript, release JSON/cache marker, and `git diff --check` passed. Full suite and browser QA
+  were not run. Existing incorrectly copied drafts already saved under the current account are
+  not automatically removed; the current account owner can delete each once after deployment.
+  No production data, browser storage, Railway, commit, push, or deployment was touched.
+
 - Prevented cross-account reuse of Create TSR account drafts from the embedded service worker.
   `app.py` now routes exact `/get_tsr_drafts` and `/get_tsr_draft_history` GET requests through
   a same-origin, `no-store` network-only branch before navigation and generic `/get_` handling;

@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -351,11 +352,13 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         )[1].split('/* =========================================================', 1)[0]
 
         self.assertTrue('offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, targetId)' in clear_device)
+        self.assertTrue('const scopedKey = getStandaloneTSRDraftFallbackKey()' in clear_device)
+        self.assertTrue('localStorage.removeItem(scopedKey)' in clear_device)
         self.assertTrue('localStorage.removeItem(STANDALONE_TSR_KEY)' in clear_device)
         self.assertTrue('offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, targetId)' in clear_device,
                         'IndexedDB absence must be verified after the delete.')
-        self.assertTrue('localStorage.getItem(STANDALONE_TSR_KEY)' in clear_device,
-                        'The matching localStorage mirror must be verified absent.')
+        self.assertTrue('localStorage.getItem(scopedKey)' in clear_device,
+                        'The current account localStorage mirror must be verified absent.')
         self.assertTrue('local_deleted' in clear_device)
         self.assertTrue('if(!result?.local_deleted)' in delete_ui)
         self.assertTrue('could not be confirmed' in delete_ui)
@@ -502,11 +505,12 @@ let standaloneTSRDraftHistoryWarning = '';
 const standaloneTSRDraftConflictIds = new Set();
 const standaloneTSRDraftRecoveryVariants = new Map();
 const standaloneTSRDraftRecoveryChoices = new Map();
+const STANDALONE_TSR_ACCOUNT_SCOPE='current';
 const OFFLINE_TSR_DB_STORES={drafts:'drafts'};
 const OFFLINE_TSR_ACTIVE_DRAFT_ID='active';
 let standaloneTSRServerDraftsHydrated=false;
 let writes=0, uploads=0;
-const local={id:'draft-divergent',source:'offline_tsr_page',updated_at:'2026-09-24T08:00:00Z',
+const local={id:'draft-divergent',account_id:'current',source:'offline_tsr_page',updated_at:'2026-09-24T08:00:00Z',
   schedule_id:'17',tsr_number:'20260924-01-ABC',reservation_token:'reservation-one',
   payload:{_draft_id:'draft-divergent','tsr-number':'20260924-01-ABC',reservation_token:'reservation-one',
     'tsr-complaint':'device work',signatures:{serviced:'device-signature',acknowledged:''},
@@ -554,6 +558,297 @@ function archiveStandaloneTSRDraftVersion(){return Promise.resolve({success:true
         self.assertEqual(output['accountCandidate'], 'account work')
         self.assertEqual(output['savedVariants'], ['account work', 'device work'])
 
+    def test_device_drafts_stay_with_their_account_and_legacy_adoption_is_conservative(self):
+        fallback_key = self.template_source.split(
+            'function getStandaloneTSRDraftFallbackKey(){', 1
+        )[1].split('const OFFLINE_TSR_STORAGE_HEALTH_ADMIN', 1)[0]
+        identity_helpers = self.template_source.split(
+            'function getStandaloneTSRDraftEngineerIdentity(record){', 1
+        )[1].split('function getTSROtherAssignedEngineerNames', 1)[0]
+        local_record_loader = self.template_source.split(
+            'async function loadStandaloneTSRDraftRecordsFromIndexedDB', 1
+        )[1].split('async function loadStandaloneTSRDraftRecordById', 1)[0]
+        merge = self.template_source.split(
+            'async function mergeServerStandaloneTSRDrafts', 1
+        )[1].split('async function refreshStandaloneTSRDraftPanel', 1)[0]
+        account_candidate = self.template_source.split(
+            'function buildStandaloneTSRAccountDraftCandidate', 1
+        )[1].split('function buildStandaloneTSRHistoryDraftCandidate', 1)[0]
+        script = r"""
+Object.defineProperty(globalThis,'navigator',{value:{onLine:true},configurable:true});
+const STANDALONE_TSR_KEY='medicalServiceStandaloneTSRDraftV1';
+let STANDALONE_TSR_ACCOUNT_SCOPE='current';
+let LOGGED_IN_ENGINEER_NAME='Current Engineer';
+const OFFLINE_TSR_DB_STORES={drafts:'drafts'};
+const OFFLINE_TSR_ACTIVE_DRAFT_ID='active';
+const localStorageValues=new Map();
+globalThis.localStorage={
+  getItem(key){return localStorageValues.has(key)?localStorageValues.get(key):null;},
+  setItem(key,value){localStorageValues.set(key,String(value));},
+  removeItem(key){localStorageValues.delete(key);}
+};
+const standaloneTSRAccountDraftCandidates=new Map();
+const standaloneTSRDraftServerStates=new Map();
+const standaloneTSRDraftHistoryCandidates=new Map();
+const standaloneTSRDraftRecoveryVariants=new Map();
+const standaloneTSRDraftConflictIds=new Set();
+const standaloneTSRDraftRecoveryChoices=new Map();
+const tombstones=new Set(['current:deleted-legacy']);
+const dbDrafts=[
+  {id:'alvin-draft',account_id:'alvin',payload:{_draft_id:'alvin-draft','tsr-serviced-by':'Alvin Mamangon','tsr-complaint':'Alvin device work'}},
+  {id:'current-draft',account_id:'current',payload:{_draft_id:'current-draft','tsr-serviced-by':'Current Engineer','tsr-complaint':'Current work'}},
+  {id:'deleted-legacy',payload:{_draft_id:'deleted-legacy','tsr-serviced-by':'Current Engineer','tsr-complaint':'Deleted copy'}},
+  {id:'ambiguous-legacy',payload:{_draft_id:'ambiguous-legacy','tsr-serviced-by':'Alvin Mamangon','tsr-complaint':'Ambiguous copy'}},
+  {id:'current-legacy',payload:{_draft_id:'current-legacy','tsr-serviced-by':' Current  Engineer ','tsr-complaint':'Recoverable current work'}}
+];
+let remoteDrafts=[];
+let uploads=[];
+let standaloneTSRServerDraftsHydrated=false;
+function normalizeTSREngineerIdentity(value){return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
+function isStandaloneTSRDraftDeletionTombstoned(id){return tombstones.has(`${STANDALONE_TSR_ACCOUNT_SCOPE}:${id}`);}
+function isStandaloneTSRDraftMeaningful(){return true;}
+function getStandaloneTSRDraftTitle(){return 'Saved TSR';}
+function getStandaloneTSRDraftSubtitle(){return 'Service visit';}
+function groupStandaloneTSRDraftVersions(items){return [{versions:items}];}
+function standaloneTSRDraftRecordsHaveSameContent(a,b){return JSON.stringify(a?.payload)===JSON.stringify(b?.payload);}
+function rememberStandaloneTSRDraftConflict(){}
+function rememberStandaloneTSRDraftServerState(){}
+function flushStandaloneTSRServerDraftDeletes(){return Promise.resolve();}
+function readStandaloneTSRServerDraftDeleteQueue(){return [];}
+function waitForStandaloneTSRLocalSaves(){return Promise.resolve();}
+function offlineTSRDBGetAll(){return Promise.resolve(dbDrafts);}
+async function offlineTSRDBPut(store,record){const index=dbDrafts.findIndex(item=>item.id===record.id);if(index>=0)dbDrafts[index]=record;else dbDrafts.push(record);return record;}
+function loadStandaloneTSRDraftFromLocalStorageFallback(){return null;}
+function persistStandaloneTSRDraftServerMetadata(){return Promise.resolve(true);}
+function enqueueStandaloneTSRServerDraftSync(record){uploads.push({id:record.id,account_id:record.account_id});return Promise.resolve({status:'success'});}
+function archiveStandaloneTSRDraftVersion(){return Promise.resolve({success:true});}
+function setStandaloneTSRSaveStatus(){}
+globalThis.fetch=async(url)=>url==='/get_tsr_draft_history'
+  ? ({ok:true,json:async()=>({status:'success',versions:[]})})
+  : ({ok:true,json:async()=>({status:'success',drafts:remoteDrafts})});
+""" + "function getStandaloneTSRDraftFallbackKey(){" + fallback_key + "function getStandaloneTSRDraftEngineerIdentity(record){" + identity_helpers + "function getTSROtherAssignedEngineerNames(){}\n" + "async function loadStandaloneTSRDraftRecordsFromIndexedDB" + local_record_loader + "function buildStandaloneTSRAccountDraftCandidate" + account_candidate + "async function mergeServerStandaloneTSRDrafts" + merge + r"""
+(async()=>{
+  const sameKeyLegacyEligible=standaloneTSRDraftCanAdoptLegacy(
+    {id:'remote-key-legacy',payload:{'tsr-serviced-by':'Alvin Mamangon'}},
+    new Set(['remote-key-legacy'])
+  );
+  const ambiguousLegacyEligible=standaloneTSRDraftCanAdoptLegacy(
+    {id:'unmatched-legacy',payload:{'tsr-serviced-by':'Alvin Mamangon'}},
+    new Set()
+  );
+  const firstMerge=await mergeServerStandaloneTSRDrafts();
+  const currentRows=await loadStandaloneTSRDraftRecordsFromIndexedDB();
+  const accountStateAfterSwitch={
+    records:currentRows.map(item=>item.id).sort(),
+    uploads:uploads.slice().sort((a,b)=>a.id.localeCompare(b.id)),
+    foreignCopy:dbDrafts.find(item=>item.id==='alvin-draft'),
+    deletedLegacy:dbDrafts.find(item=>item.id==='deleted-legacy')
+  };
+  STANDALONE_TSR_ACCOUNT_SCOPE='alvin';
+  LOGGED_IN_ENGINEER_NAME='Alvin Mamangon';
+  const alvinRows=await loadStandaloneTSRDraftRecordsFromIndexedDB();
+  remoteDrafts=[
+    {draft_key:'deleted-legacy',payload:{_draft_id:'deleted-legacy','tsr-complaint':'stale account copy'}},
+    {draft_key:'alvin-draft',payload:{_draft_id:'alvin-draft','tsr-complaint':'copied account data'}}
+  ];
+  STANDALONE_TSR_ACCOUNT_SCOPE='current';
+  LOGGED_IN_ENGINEER_NAME='Current Engineer';
+  const secondMerge=await mergeServerStandaloneTSRDrafts();
+  console.log(JSON.stringify({
+    firstMerge:firstMerge.success===true,
+    secondMerge:secondMerge.success===true,
+    secondMergeReason:secondMerge.reason||'',
+    sameKeyLegacyEligible,
+    ambiguousLegacyEligible,
+    currentIds:accountStateAfterSwitch.records,
+    uploadedIds:accountStateAfterSwitch.uploads.map(item=>item.id).sort(),
+    uploadScopes:accountStateAfterSwitch.uploads.map(item=>item.account_id),
+    alvinIds:alvinRows.map(item=>item.id).sort(),
+    foreignAfterSwitch:accountStateAfterSwitch.foreignCopy.account_id,
+    foreignPayload:accountStateAfterSwitch.foreignCopy.payload['tsr-complaint'],
+    deletedLegacyScope:accountStateAfterSwitch.deletedLegacy.account_id||'',
+    staleDeletedAccountCandidate:standaloneTSRAccountDraftCandidates.has('deleted-legacy'),
+    foreignCollisionUnchanged:dbDrafts.find(item=>item.id==='alvin-draft').payload['tsr-complaint'],
+    copiedAccountCandidate:standaloneTSRAccountDraftCandidates.get('alvin-draft')?.payload?.['tsr-complaint']
+  }));
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertTrue(output['firstMerge'])
+        self.assertTrue(output['secondMerge'], output['secondMergeReason'])
+        self.assertTrue(output['sameKeyLegacyEligible'])
+        self.assertFalse(output['ambiguousLegacyEligible'])
+        self.assertEqual(output['currentIds'], ['current-draft', 'current-legacy'])
+        self.assertEqual(output['uploadedIds'], ['current-draft', 'current-legacy'])
+        self.assertEqual(set(output['uploadScopes']), {'current'})
+        self.assertEqual(output['alvinIds'], ['alvin-draft', 'ambiguous-legacy'])
+        self.assertEqual(output['foreignAfterSwitch'], 'alvin')
+        self.assertEqual(output['foreignPayload'], 'Alvin device work')
+        self.assertEqual(output['deletedLegacyScope'], '')
+        self.assertFalse(output['staleDeletedAccountCandidate'])
+        self.assertEqual(output['foreignCollisionUnchanged'], 'Alvin device work')
+        self.assertEqual(output['copiedAccountCandidate'], 'copied account data')
+
+    def test_localstorage_fallback_is_separate_per_engineer_and_legacy_copy_is_preserved(self):
+        fallback_key = self.template_source.split(
+            'function getStandaloneTSRDraftFallbackKey(){', 1
+        )[1].split('const OFFLINE_TSR_STORAGE_HEALTH_ADMIN', 1)[0]
+        identity_helpers = self.template_source.split(
+            'function getStandaloneTSRDraftEngineerIdentity(record){', 1
+        )[1].split('function getTSROtherAssignedEngineerNames', 1)[0]
+        fallback_functions = self.template_source.split(
+            'function saveStandaloneTSRDraftToLocalStorageFallback(data){', 1
+        )[1].split('function syncStandaloneTSRAddressFromSchedule', 1)[0]
+        script = r"""
+const STANDALONE_TSR_KEY='medicalServiceStandaloneTSRDraftV1';
+const OFFLINE_TSR_ACTIVE_DRAFT_ID='active';
+const OFFLINE_TSR_DB_STORES={drafts:'drafts'};
+let STANDALONE_TSR_ACCOUNT_SCOPE='alvin';
+let LOGGED_IN_ENGINEER_NAME='Alvin Mamangon';
+let standaloneCurrentDraftId='';
+const standaloneTSRDraftServerStates=new Map();
+const standaloneTSRAccountDraftCandidates=new Map();
+const storage=new Map();
+globalThis.localStorage={getItem(key){return storage.has(key)?storage.get(key):null;},setItem(key,value){storage.set(key,String(value));},removeItem(key){storage.delete(key);}};
+function normalizeTSREngineerIdentity(value){return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
+function projectOfflineTSRPayloadForLocalStorage(data){return {...data};}
+function isStandaloneTSRDraftDeletionTombstoned(){return false;}
+function offlineTSRDBPut(){return Promise.resolve();}
+""" + "function getStandaloneTSRDraftFallbackKey(){" + fallback_key + "function getStandaloneTSRDraftEngineerIdentity(record){" + identity_helpers + "function getTSROtherAssignedEngineerNames(){}\nfunction saveStandaloneTSRDraftToLocalStorageFallback(data){" + fallback_functions + "function syncStandaloneTSRAddressFromSchedule(){}\n" + r"""
+const alvinSaved=saveStandaloneTSRDraftToLocalStorageFallback({_draft_id:'alvin-1','tsr-serviced-by':'Alvin Mamangon','tsr-complaint':'Alvin work'});
+const alvinKey=getStandaloneTSRDraftFallbackKey();
+STANDALONE_TSR_ACCOUNT_SCOPE='rhea';
+LOGGED_IN_ENGINEER_NAME='Rhea Engineer';
+const rheaBeforeSave=loadStandaloneTSRDraftFromLocalStorageFallback();
+const rheaSaved=saveStandaloneTSRDraftToLocalStorageFallback({_draft_id:'rhea-1','tsr-serviced-by':'Rhea Engineer','tsr-complaint':'Rhea work'});
+const rheaKey=getStandaloneTSRDraftFallbackKey();
+const alvinPreserved=JSON.parse(storage.get(alvinKey))._draft_id==='alvin-1';
+storage.set(STANDALONE_TSR_KEY,JSON.stringify({_draft_id:'legacy-alvin','tsr-serviced-by':'Alvin Mamangon','tsr-complaint':'Legacy Alvin work'}));
+const ambiguousRead=loadStandaloneTSRDraftFromLocalStorageFallback();
+const legacyKeptForOwner=storage.has(STANDALONE_TSR_KEY);
+STANDALONE_TSR_ACCOUNT_SCOPE='alvin';
+LOGGED_IN_ENGINEER_NAME='Alvin Mamangon';
+storage.delete(getStandaloneTSRDraftFallbackKey());
+const adoptedLegacy=loadStandaloneTSRDraftFromLocalStorageFallback();
+console.log(JSON.stringify({
+  keysDiffer:alvinKey!==rheaKey,
+  alvinSaved,rheaSaved,
+  rheaBeforeSave:rheaBeforeSave===null,
+  alvinPreserved,
+  ambiguousHidden:ambiguousRead?.['tsr-complaint']!=='Legacy Alvin work',
+  legacyKeptForOwner,
+  ownerRecovers:adoptedLegacy?.['tsr-complaint']==='Legacy Alvin work',
+  legacyStillPresent:storage.has(STANDALONE_TSR_KEY),
+  adoptedScoped:storage.has(alvinKey)
+}));
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertTrue(output['keysDiffer'])
+        self.assertTrue(output['alvinSaved'] and output['rheaSaved'])
+        self.assertTrue(output['rheaBeforeSave'])
+        self.assertTrue(output['alvinPreserved'])
+        self.assertTrue(output['ambiguousHidden'])
+        self.assertTrue(output['legacyKeptForOwner'])
+        self.assertTrue(output['ownerRecovers'])
+        self.assertTrue(output['legacyStillPresent'])
+        self.assertTrue(output['adoptedScoped'])
+
+    def test_foreign_indexeddb_record_cannot_be_overwritten_or_deleted(self):
+        save_indexed = self.template_source.split(
+            'async function saveStandaloneTSRDraftToIndexedDB', 1
+        )[1].split('async function loadStandaloneTSRDraftFromIndexedDB', 1)[0]
+        clear_local = self.template_source.split(
+            'async function clearStandaloneTSRDraftFromIndexedDB', 1
+        )[1].split('function saveStandaloneTSRDraftToLocalStorageFallback', 1)[0]
+        fallback_key = self.template_source.split(
+            'function getStandaloneTSRDraftFallbackKey(){', 1
+        )[1].split('const OFFLINE_TSR_STORAGE_HEALTH_ADMIN', 1)[0]
+        identity_helpers = self.template_source.split(
+            'function getStandaloneTSRDraftEngineerIdentity(record){', 1
+        )[1].split('function getTSROtherAssignedEngineerNames', 1)[0]
+        script = r"""
+const STANDALONE_TSR_KEY='medicalServiceStandaloneTSRDraftV1';
+const STANDALONE_TSR_ACCOUNT_SCOPE='rhea';
+const LOGGED_IN_ENGINEER_NAME='Rhea Engineer';
+const OFFLINE_TSR_DB_STORES={drafts:'drafts'};
+const OFFLINE_TSR_ACTIVE_DRAFT_ID='active';
+let standaloneCurrentDraftId='shared-key';
+const foreignRecord={id:'shared-key',account_id:'alvin',payload:{_draft_id:'shared-key','tsr-serviced-by':'Alvin Mamangon','tsr-complaint':'Alvin original'}};
+let putCount=0,deleteCount=0,buildCount=0;
+function normalizeTSREngineerIdentity(value){return String(value||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
+function resolveStandaloneTSRDraftId(data){return String(data?._draft_id||'new-key');}
+function offlineTSRDBGet(){return Promise.resolve(foreignRecord);}
+function offlineTSRDBPut(){putCount++;return Promise.resolve();}
+function offlineTSRDBDelete(){deleteCount++;return Promise.resolve();}
+function isIndexedDBSupported(){return true;}
+function waitForStandaloneTSRLocalSaves(){return Promise.resolve();}
+function adoptStandaloneTSRDraftForCurrentAccount(){return Promise.resolve(null);}
+function buildOfflineTSRDraftRecord(){buildCount++;return Promise.resolve({id:'shared-key',account_id:'rhea',payload:{}});}
+const storage=new Map();
+globalThis.localStorage={getItem(key){return storage.has(key)?storage.get(key):null;},setItem(key,value){storage.set(key,String(value));},removeItem(key){storage.delete(key);}};
+""" + "function getStandaloneTSRDraftFallbackKey(){" + fallback_key + "function getStandaloneTSRDraftEngineerIdentity(record){" + identity_helpers + "function getTSROtherAssignedEngineerNames(){}\n" + "async function saveStandaloneTSRDraftToIndexedDB" + save_indexed + "async function clearStandaloneTSRDraftFromIndexedDB" + clear_local + r"""
+(async()=>{
+  let rejected=false;
+  try{await saveStandaloneTSRDraftToIndexedDB({_draft_id:'shared-key','tsr-complaint':'Rhea work'});}
+  catch(error){rejected=true;}
+  const deletion=await clearStandaloneTSRDraftFromIndexedDB('shared-key');
+  console.log(JSON.stringify({
+    rejected,
+    buildCount,
+    putCount,
+    deleteCount,
+    foreignScope:foreignRecord.account_id,
+    foreignComplaint:foreignRecord.payload['tsr-complaint'],
+    deletionConfirmedForCurrentScope:deletion.local_deleted
+  }));
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertTrue(output['rejected'])
+        self.assertEqual((output['buildCount'], output['putCount'], output['deleteCount']), (0, 0, 0))
+        self.assertEqual(output['foreignScope'], 'alvin')
+        self.assertEqual(output['foreignComplaint'], 'Alvin original')
+        self.assertTrue(output['deletionConfirmedForCurrentScope'])
+
+    def test_draft_scope_metadata_stays_local_and_cache_release_are_updated(self):
+        record_builder = self.template_source.split(
+            'async function buildOfflineTSRDraftRecord', 1
+        )[1].split('function buildStandaloneTSRServerDraftRequest', 1)[0]
+        server_request = self.template_source.split(
+            'function buildStandaloneTSRServerDraftRequest', 1
+        )[1].split('function buildStandaloneTSRAccountDraftCandidate', 1)[0]
+        merge = self.template_source.split(
+            'async function mergeServerStandaloneTSRDrafts', 1
+        )[1].split('async function refreshStandaloneTSRDraftPanel', 1)[0]
+        draft_cleanup = self.template_source.split(
+            'async function cleanupOfflineTSROldDraftRecords', 1
+        )[1].split('async function runOfflineTSRRetentionCleanup', 1)[0]
+        blob_references = self.template_source.split(
+            'function collectReferencedOfflineTSRBlobIds', 1
+        )[1].split('async function saveOfflineTSRCleanupMetadata', 1)[0]
+        self.assertIn('account_id:STANDALONE_TSR_ACCOUNT_SCOPE', record_builder)
+        self.assertIn('record?.payload', server_request)
+        self.assertNotIn('account_id:', server_request.split('const payload =', 1)[1].split('return {', 1)[1])
+        self.assertIn('includeOtherAccounts:true', merge)
+        self.assertIn('accountId === STANDALONE_TSR_ACCOUNT_SCOPE', merge)
+        self.assertIn('if(accountId || isStandaloneTSRDraftDeletionTombstoned(record.id)) continue;', merge)
+        self.assertIn('localRecordsToUpload', merge)
+        self.assertIn('foreignCollision', merge)
+        self.assertIn('draftRecord.account_id', draft_cleanup)
+        self.assertIn('record?.payload?.attachments', blob_references)
+
+        assert_cache_version_at_least(self, 188, self.app_source)
+        releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
+        release = next(item for item in releases if item['release_key'] == '2026-09-24-create-tsr-device-draft-account-scope')
+        self.assertEqual(release['release_date'], '2026-09-24')
+        self.assertIn('signed-in engineer', release['items'][0]['description'])
+
     def test_stale_backup_result_uses_unresolved_status_until_real_success(self):
         enqueue = self.template_source.split(
             'function enqueueStandaloneTSRServerDraftSync', 1
@@ -567,6 +862,7 @@ const standaloneTSRDraftConflictIds=new Set();
 const standaloneTSRDraftRecoveryChoices=new Map();
 const standaloneTSRAccountDraftCandidates=new Map();
 const standaloneTSRDraftRecoveryVariants=new Map();
+const STANDALONE_TSR_ACCOUNT_SCOPE='current';
 const standaloneTSRSaveStatusGeneration=1;
 const standaloneTSRActiveContextVersion=1;
 let nextResult={status:'success',stale_ignored:true};
@@ -577,9 +873,9 @@ function isStandaloneTSRDraftDeletionTombstoned(){return false;}
 function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
 """ + "function enqueueStandaloneTSRServerDraftSync" + enqueue + r"""
 (async()=>{
-  await enqueueStandaloneTSRServerDraftSync({id:'draft-status',payload:{}},{immediate:true,statusContext:{}});
+  await enqueueStandaloneTSRServerDraftSync({id:'draft-status',account_id:'current',payload:{}},{immediate:true,statusContext:{}});
   nextResult={status:'success'};
-  await enqueueStandaloneTSRServerDraftSync({id:'draft-status',payload:{}},{immediate:true,statusContext:{}});
+  await enqueueStandaloneTSRServerDraftSync({id:'draft-status',account_id:'current',payload:{}},{immediate:true,statusContext:{}});
   console.log(JSON.stringify(states));
 })().catch(error=>{console.error(error);process.exit(1);});
 """
@@ -653,7 +949,7 @@ function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
         to undo. The bump is a mandatory step for any APP_SHELL change; a test that punishes
         it is a test that trains people to skip it.
         """
-        assert_cache_version_at_least(self, 186, self.app_source)
+        assert_cache_version_at_least(self, 188, self.app_source)
         self.assertIn("'/offline-tsr',", self.app_source)
 
     def test_draft_recovery_release_entry_is_present(self):
@@ -1038,6 +1334,28 @@ class TsrDraftRouteTests(unittest.TestCase):
                 test_engine.dispose()
             if database_path and os.path.exists(database_path):
                 os.unlink(database_path)
+
+    def test_create_tsr_renders_and_inline_javascript_parses(self):
+        with self.isolated_route_clients() as (clients, _user_ids):
+            response = clients['one'].get('/offline-tsr')
+            self.assertEqual(response.status_code, 200)
+            scripts = re.findall(r'<script\b[^>]*>(.*?)</script\s*>', response.get_data(as_text=True), re.I | re.S)
+            self.assertTrue(scripts, 'Create TSR should render its page scripts.')
+            parsed_scripts = 0
+            for source in scripts:
+                if not source.strip():
+                    continue
+                fd, script_path = tempfile.mkstemp(suffix='.js')
+                try:
+                    with os.fdopen(fd, 'w', encoding='utf-8') as script_file:
+                        script_file.write(source)
+                    result = subprocess.run([str(NODE), '--check', script_path], cwd=ROOT, capture_output=True, text=True, check=False)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    parsed_scripts += 1
+                finally:
+                    if os.path.exists(script_path):
+                        os.unlink(script_path)
+            self.assertGreater(parsed_scripts, 0, 'At least one nonempty inline script should be checked.')
 
 
 @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')

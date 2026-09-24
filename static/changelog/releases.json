@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-24-create-tsr-device-draft-account-scope",
+      "release_date": "2026-09-24",
+      "title": "Device TSR Drafts Stay With Their Engineer",
+      "summary": "Create TSR now keeps saved drafts with the engineer who created them on a shared browser.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-24-create-tsr-device-draft-account-scope-engineers",
+          "category": "Create TSR",
+          "description": "Saved TSR drafts on this device now stay with the signed-in engineer. Older drafts are shown only when their saved engineer matches your account or your account already has that same draft.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-24-create-tsr-draft-deletion",
       "release_date": "2026-09-24",
       "title": "Reliable Create TSR Draft Deletion",
