@@ -75,6 +75,8 @@ class FakeElement {
     this.classList = { toggle: () => {} };
   }
   getAttribute(name) { return this.attributes[name] || null; }
+  setAttribute(name, value) { this.attributes[name] = String(value); if (name === 'hidden') this.hidden = true; }
+  removeAttribute(name) { delete this.attributes[name]; if (name === 'hidden') this.hidden = false; }
   matches(selector) {
     const match = String(selector).match(/^\[([^\]=]+)\]$/);
     return !!(match && Object.prototype.hasOwnProperty.call(this.attributes, match[1]));
@@ -89,10 +91,17 @@ Object.defineProperty(editor, 'innerHTML', {
   set(value) {
     this.html = value;
     this.elements = [];
-    for (const attribute of ['data-cr-field', 'data-cr-check', 'data-cr-exposure', 'data-cr-performance']) {
-      const pattern = new RegExp('<(?:input|textarea)\\b[^>]*' + attribute + '="([^"]+)"[^>]*>', 'g');
-      let match;
-      while ((match = pattern.exec(value))) this.elements.push(new FakeElement({ [attribute]: match[1] }));
+    const pattern = /<([a-z]+)\b([^>]*)>/gi;
+    let match;
+    while ((match = pattern.exec(value))) {
+      const attributes = {};
+      for (const item of match[2].matchAll(/([:\w-]+)(?:="([^"]*)")?/g)) attributes[item[1]] = item[2] || '';
+      if (Object.keys(attributes).some(attribute => attribute.indexOf('data-cr-') === 0)) {
+        const element = new FakeElement(attributes);
+        element.tagName = match[1];
+        element.hidden = Object.prototype.hasOwnProperty.call(attributes, 'hidden');
+        this.elements.push(element);
+      }
     }
   },
   get() { return this.html || ''; }
@@ -167,12 +176,14 @@ const legacy = {
   status: 'draft',
   facility: { name: 'Legacy Client', address: 'Legacy Address' },
   signature: { name: 'Legacy Engineer', data_url: png },
+  exposure: { small:[{ nominal_kvp:'Legacy Tube 1 Small' }], large:[{ nominal_kvp:'Legacy Tube 1 Large' }] },
   performance_results: ['Pass', 'Pass', 'ignored third result']
 };
 api.apply(legacy);
 const migrated = api.collect();
 if (migrated.signature.image !== png || Object.prototype.hasOwnProperty.call(migrated.signature, 'data_url')) throw new Error('legacy signature migration failed');
 if (migrated.machine.manufacturer !== 'Shimadzu') throw new Error('legacy blank manufacturer was not normalized to Shimadzu');
+if (migrated.exposure.small[0].nominal_kvp !== 'Legacy Tube 1 Small' || migrated.exposure.large[0].nominal_kvp !== 'Legacy Tube 1 Large' || migrated.tube2_output.exposure.small[0].nominal_kvp) throw new Error('legacy output was not retained as Tube 1 with blank Tube 2 state');
 if (api.getSource().performance.length !== 2) throw new Error('performance criteria count is not two');
 api.apply({ status:'draft', machine:{ manufacturer:' \t ' } });
 if (api.collect().machine.manufacturer !== 'Shimadzu') throw new Error('blank manufacturer was not normalized to Shimadzu');
@@ -221,9 +232,36 @@ const complete = {
   exposure: { small:[{ nominal_kvp:'80', measured_kvp:'80.2', ma_mas:'100mA', dose_mgy:'1.2', dose_rate:'2.4', time_msec:'10', measured_time:'0.010' }], large:[{ nominal_kvp:'100' }] },
   exposure_current_units: { small:'mA', large:'mAs' },
   performance_results: ['Pass', 'Pass'],
+  tube2_output: {
+    exposure: { small:[{ nominal_kvp:'22.2', measured_kvp:'22.3', ma_mas:'20mA', dose_ugy:'0.5', dose_rate:'0.7', time_msec:'4', measured_time:'4.1' }], large:[{ nominal_kvp:'33.2' }] },
+    exposure_current_units: { small:'mA', large:'mAs' },
+    focal_spots: { small:true, large:true }, focal_sizes: { small:'0.3', large:'0.8' },
+    performance_results: ['Tube 2 kVp Pass', 'Tube 2 time Pass']
+  },
   signature: { name:'Engineer', image: png }
 };
 api.apply(complete);
+const normalizedTwoTube = api.collect();
+if (normalizedTwoTube.schema_version !== 7 || !normalizedTwoTube.tube2_output || !editor.elements.find(element => element.getAttribute('data-cr-page') === '4') || editor.elements.find(element => element.getAttribute('data-cr-page') === '4').hidden) throw new Error('Tube 2 editor page was not activated for the complete identity pair');
+const tube2NominalInput = editor.elements.find(element => element.getAttribute('data-cr-exposure') === 'tube2:small:0:0');
+if (!tube2NominalInput) throw new Error('independent Tube 2 measurements were not rendered');
+tube2NominalInput.value = '23.4'; editor.dispatch('input', { target:tube2NominalInput });
+if (api.collect().tube2_output.exposure.small[0].nominal_kvp !== '23.4' || api.collect().exposure.small[0].nominal_kvp !== '80') throw new Error('editing Tube 2 changed Tube 1 output or did not persist independently');
+const partialTube2 = JSON.parse(JSON.stringify(complete)); partialTube2.machine.tube2_serial = '';
+const partialTube2Validation = api.validateForFinalSave({ calibration_report:partialTube2 });
+if (partialTube2Validation.ok || !partialTube2Validation.missing.some(item => item.path === 'machine.tube2_serial')) throw new Error('partial Tube 2 identity did not block final save');
+const missingTube2Output = JSON.parse(JSON.stringify(complete)); missingTube2Output.tube2_output.performance_results[0] = '';
+const missingTube2Validation = api.validateForFinalSave({ calibration_report:missingTube2Output });
+if (missingTube2Validation.ok || !missingTube2Validation.missing.some(item => item.path === 'tube2_output.performance_results.0')) throw new Error('incomplete Tube 2 output did not block final save independently');
+const tube2Overflow = JSON.parse(JSON.stringify(complete)); tube2Overflow.tube2_output.exposure.small[0].nominal_kvp = 'x'.repeat(13);
+const tube2OverflowValidation = api.validateForFinalSave({ calibration_report:tube2Overflow });
+if (tube2OverflowValidation.ok || tube2OverflowValidation.fit[0].path !== 'tube2_output.exposure.small.0.nominal_kvp') throw new Error('Tube 2 exact-fit limit was not applied');
+const singleTube = JSON.parse(JSON.stringify(complete)); singleTube.machine.tube2_model = ''; singleTube.machine.tube2_serial = '';
+if (!api.validateForFinalSave({ calibration_report:singleTube }).ok) throw new Error('single-tube validation incorrectly required Tube 2 output');
+api.apply(singleTube);
+if (!editor.elements.find(element => element.getAttribute('data-cr-page') === '4').hidden || !editor.elements.find(element => element.getAttribute('data-cr-page-panel') === '4').hidden) throw new Error('Tube 2 tab and panel did not hide when its identity pair was removed');
+api.apply(complete);
+if (api.collect().tube2_output.exposure.small[0].nominal_kvp !== '22.2') throw new Error('Tube 2 draft entries did not restore with its identity pair');
 const fitRules = api.getExactFitRules();
 const boundaryCases = [
   ['facility.name', 'page1_value'],
@@ -282,7 +320,13 @@ if (!generatedDocument.includes('Client &amp; Sons') || !generatedDocument.inclu
 for (const marker of ['Shimadzu', 'Mobile Dart Evolution MX9', 'SN-1', '2026-08-19', 'Tool Co', '80.2', 'Pass &amp; verified']) {
   if (!generatedDocument.includes(marker)) throw new Error(`generated DOCX is missing ${marker}`);
 }
-if ((generatedDocument.match(/<w:tbl\b/g) || []).length !== 5) throw new Error('generated DOCX changed source table count');
+if ((generatedDocument.match(/<w:tbl\b/g) || []).length !== 8) throw new Error('two-tube DOCX did not append one output page with its three source tables');
+if (!generatedDocument.includes('AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 1') || !generatedDocument.includes('AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 2')) throw new Error('generated output pages are not labeled by tube');
+if (!/<w:br\b[^>]*w:type="page"/.test(generatedDocument)) throw new Error('Tube 2 output page has no explicit page break');
+const generatedTables = Array.from(generatedDocument.matchAll(/<w:tbl\b[\s\S]*?<\/w:tbl>/g), match => match[0]);
+const tube1SmallTable = generatedTables[2].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
+const tube2SmallTable = generatedTables[5].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
+if (!tube1SmallTable.includes('80.2') || tube1SmallTable.includes('22.3') || !tube2SmallTable.includes('22.3') || tube2SmallTable.includes('80.2')) throw new Error('Tube 1 and Tube 2 output values were mixed in the generated DOCX');
 if ((generatedDocument.match(/<w:tr\b/g) || []).length < 55) throw new Error('generated DOCX lost source table rows');
 if (!generatedDocument.includes('CALIBRATION REPORT') || !generatedDocument.includes('PERFORMANCE CRITERIA')) throw new Error('generated DOCX lost source wording');
 if (!generatedDocument.includes('RESULT: Pass') || !generatedDocument.includes('RESULT: Pass &amp; verified')) throw new Error('result lines were not filled');
@@ -488,7 +532,7 @@ doc = {
     if(selector[0] === "#") return ids.get(selector.slice(1)) || editor.elements.find(element => element.getAttribute("id") === selector.slice(1)) || null;
     if(selector === ".calibration-report-workspace") return workspace;
     if(selector === ".calibration-report-tab") return editor.elements.find(element => element.matches(selector)) || null;
-    return null;
+    return editor.elements.find(element => element.matches(selector)) || null;
   },
   querySelectorAll(selector) { return editor.elements.filter(element => element.matches(selector)); },
   createElement: tag => new Element({}, tag),
@@ -556,8 +600,21 @@ function setReadyFields(report) {
   api.create();
   if(!overlay.classList.contains("is-open")) fail("create did not reopen after reset");
   const exposureControls = editor.elements.filter(element => element.getAttribute("data-cr-exposure"));
-  if(exposureControls.length !== 112 || Math.max(...exposureControls.map(element => Number(String(element.getAttribute("data-cr-exposure")).split(":")[1]))) !== 7) fail("editor did not build exactly eight rows per focal spot");
-const draft = api.collect(); if(draft.facility.name !== "Scheduled Client" || draft.machine.model !== "Scheduled Model") fail("create did not autofill the schedule");
+  const tube1ExposureControls = exposureControls.filter(element => !String(element.getAttribute("data-cr-exposure")).startsWith("tube2:"));
+  const tube2ExposureControls = exposureControls.filter(element => String(element.getAttribute("data-cr-exposure")).startsWith("tube2:"));
+  if(exposureControls.length !== 224 || tube1ExposureControls.length !== 112 || tube2ExposureControls.length !== 112 || Math.max(...tube2ExposureControls.map(element => Number(String(element.getAttribute("data-cr-exposure")).split(":")[2]))) !== 7) fail("editor did not build separate eight-row output controls for both tubes");
+  const tab4 = doc.querySelector("#calibration-report-tab-4"); const panel4 = pagePanel(4);
+  if(!tab4?.hidden || !panel4?.hidden) fail("Tube 2 editor page should start hidden without both identity fields");
+  const tube2Identity = api.collect(); tube2Identity.machine.tube2_model = "Tube 2 Model"; tube2Identity.machine.tube2_serial = "Tube 2 Serial"; api.apply(tube2Identity);
+  if(tab4.hidden || panel4.hidden || !editor.html.includes("X-RAY TUBE 1") || !editor.html.includes("X-RAY TUBE 2")) fail("Tube 2 tab and labeled editor page did not activate for its identity pair");
+  const page3Tab = doc.querySelector("#calibration-report-tab-3"); page3Tab.dispatch("keydown", keyboardEvent("ArrowRight", false));
+  if(tab4.getAttribute("aria-selected") !== "true" || doc.activeElement !== tab4) fail("keyboard navigation did not include the conditional Tube 2 page");
+  const tube2Performance = editor.elements.find(element => element.getAttribute("data-cr-performance") === "tube2:0");
+  if(!tube2Performance || !api.focusMissing([{ path:"tube2_output.performance_results.0" }], { explicit:true })) fail("Tube 2 missing-field review did not open its editor page");
+  await new Promise(resolve => setTimeout(resolve, 70));
+  if(doc.activeElement !== tube2Performance || tab4.getAttribute("aria-selected") !== "true") fail("Tube 2 missing-field review did not focus its own result input");
+  const oneTubeDraft = api.collect(); oneTubeDraft.machine.tube2_model = ""; oneTubeDraft.machine.tube2_serial = ""; api.apply(oneTubeDraft);
+  const draft = api.collect(); if(draft.facility.name !== "Scheduled Client" || draft.machine.model !== "Scheduled Model") fail("create did not autofill the schedule");
 if(draft.machine.manufacturer !== "Shimadzu") fail("blank report did not default the manufacturer");
 const manufacturerInput = editorControl("machine.manufacturer");
 if(!manufacturerInput || String(manufacturerInput.tagName).toLowerCase() !== "input" || manufacturerInput.getAttribute("type") !== "text" || manufacturerInput.getAttribute("readonly") !== null || manufacturerInput.getAttribute("disabled") !== null || manufacturerInput.value !== "Shimadzu") fail("Manufacturer control is not an editable Shimadzu text input");
@@ -580,6 +637,7 @@ const backInput = editorControl("facility.name"); if(!backInput) fail("Back pers
   api.apply(escapeState); api.open();
   if(backInput.value !== backValue || escapeInput.value !== escapeValue) fail("Escape values were not restored in the editor on reopen");
   const tab1 = doc.querySelector("#calibration-report-tab-1"); const tab2 = doc.querySelector("#calibration-report-tab-2");
+  tab1.dispatch("click");
   if(tab1.getAttribute("aria-selected") !== "true" || tab1.getAttribute("tabindex") !== "0" || tab2.getAttribute("aria-selected") !== "false" || tab2.getAttribute("tabindex") !== "-1") fail("tab ARIA state is wrong");
   tab1.dispatch("keydown", { key:"ArrowRight", preventDefault(){} }); if(tab2.getAttribute("aria-selected") !== "true" || doc.activeElement !== tab2) fail("tab arrow navigation is wrong");
   const tab3 = doc.querySelector("#calibration-report-tab-3");
@@ -730,8 +788,8 @@ class CalibrationReportContractTests(unittest.TestCase):
 
     def test_eight_row_focal_editor_and_scroll_contract(self):
         self.assertIn('CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8', self.script_source)
-        self.assertIn('schema_version: 6', self.script_source)
-        self.assertIn('base.schema_version = 6', self.script_source)
+        self.assertIn('schema_version: 7', self.script_source)
+        self.assertIn('base.schema_version = 7', self.script_source)
         self.assertIn('Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }', self.script_source)
         self.assertIn('overflow-y:auto', self.css_source)
         self.assertRegex(self.css_source, r'\.calibration-report-exposure-scroll[^\{]*\{[^}]*max-height:\s*\d+px')
@@ -742,6 +800,22 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('replaceFocalMeasurementRows', self.script_source)
         self.assertIn('measurementRows', self.script_source)
         self.assertIn('whitespace-only', self.script_source)
+
+    def test_two_tube_page_cache_and_release_registration(self):
+        self.assertIn('Page 3 · X-ray Tube 1', self.script_source)
+        self.assertIn('Page 4 · X-ray Tube 2', self.script_source)
+        self.assertIn('tube2_output', self.script_source)
+        self.assertIn('app-calibration-report.css', self.template_source)
+        self.assertIn('?v=9', self.template_source)
+        self.assertIn("app-calibration-report.css?v=9", self.app_source)
+        self.assertIn('app-calibration-report.js', self.template_source)
+        self.assertIn('?v=33', self.template_source)
+        self.assertIn("app-calibration-report.css?v=9", self.app_source)
+        self.assertIn("app-calibration-report.js?v=33", self.app_source)
+        assert_cache_version_at_least(self, 190, self.app_source)
+        releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
+        calibration_release = next(item for item in releases if item['release_key'] == '2026-09-24-late-calibration-report')
+        self.assertTrue(any(item['item_key'] == '2026-09-24-calibration-report-two-tube-output' for item in calibration_release['items']))
 
     def test_certificate_catalog_and_final_save_contract(self):
         catalog_path = ROOT / 'static' / 'templates' / 'calibration-certificate' / 'calibration-certificate-catalog.json'
@@ -806,8 +880,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=9", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=32", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=32'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=33", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=33'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -845,8 +919,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=32", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=32'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=33", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=33'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
@@ -917,7 +991,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         })
         self.assertEqual(payload['docxMime'], DOCX_MIME)
         self.assertTrue(payload['docxFilename'].endswith('.docx'))
-        self.assertEqual(payload['sourceTableCount'], 5)
+        self.assertEqual(payload['sourceTableCount'], 8)
         self.assertTrue(payload['signatureRelationship'])
         self.assertEqual(payload['missingSlotCode'], 'calibration_report_template_slot_missing')
         self.assertEqual(payload['missingBlobCode'], 'calibration_report_blob_missing')
@@ -1154,14 +1228,14 @@ function report(overrides = {}) {
   api.apply(catalogAfterTemporary);
   const temporaryClearedForCatalog = api.collect().certificate.model_source === 'catalog' && api.collect().certificate.equipment_model === 'MobileDart Evolution MX9';
   api.apply({ status:'draft' });
-  if (fresh.schema_version !== 6 || fresh.exposure_current_units.small !== '' || fresh.exposure_current_units.large !== '') throw new Error('new report did not start with blank exposure current units');
+  if (fresh.schema_version !== 7 || fresh.exposure_current_units.small !== '' || fresh.exposure_current_units.large !== '' || !fresh.tube2_output) throw new Error('new report did not start with independent Tube 2 output state');
   const unitInputs = editor.elements.filter(element => element.getAttribute('data-cr-exposure-unit'));
-  if (unitInputs.length !== 4) throw new Error('Page 3 did not render four exposure current unit radios');
+  if (unitInputs.length !== 8) throw new Error('the two output pages did not render independent exposure current unit radios');
   const unitNames = new Set(unitInputs.map(element => element.getAttribute('name')));
-  if (unitNames.size !== 2 || unitInputs.some(element => !element.getAttribute('name'))) throw new Error('exposure current unit groups are not independent');
+  if (unitNames.size !== 4 || unitInputs.some(element => !element.getAttribute('name'))) throw new Error('exposure current unit groups are not independent');
   if (unitInputs.some(element => element.checked)) throw new Error('new report selected an exposure current unit by default');
   const unitHeadings = editor.elements.filter(element => element.getAttribute('data-cr-exposure-unit-heading'));
-  if (unitHeadings.length !== 2 || unitHeadings.some(element => element.textContent !== 'mA / mAs')) throw new Error('neutral exposure current unit headings were not rendered');
+  if (unitHeadings.length !== 4 || unitHeadings.some(element => element.textContent !== 'mA / mAs')) throw new Error('neutral exposure current unit headings were not rendered');
   const smallMa = unitInputs.find(element => element.getAttribute('data-cr-exposure-unit') === 'small' && element.value === 'mA');
   const smallMas = unitInputs.find(element => element.getAttribute('data-cr-exposure-unit') === 'small' && element.value === 'mAs');
   const largeMas = unitInputs.find(element => element.getAttribute('data-cr-exposure-unit') === 'large' && element.value === 'mAs');
@@ -1256,6 +1330,8 @@ function report(overrides = {}) {
   }
   const smallOnlyXml = await conditionalOutput(smallOnly, 'small-only');
   const largeOnlyXml = await conditionalOutput(largeOnly, 'large-only');
+  const singleTubeXml = await conditionalOutput(report(), 'single-tube');
+  if ((singleTubeXml.match(/<w:tbl\b/g) || []).length !== 5 || !singleTubeXml.includes('AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 1') || singleTubeXml.includes('AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 2')) throw new Error('single-tube DOCX did not retain one labeled output page');
   const smallOnlyTables = directBlocks((smallOnlyXml.match(/<w:body>([\s\S]*)<\/w:body>/) || [])[1] || '', 'tbl');
   const largeOnlyTables = directBlocks((largeOnlyXml.match(/<w:body>([\s\S]*)<\/w:body>/) || [])[1] || '', 'tbl');
   const smallOnlyOutput = smallOnlyTables.length === 4 && !smallOnlyXml.includes('FOCAL SPOT       : LARGE') && smallOnlyXml.includes('0.72');
@@ -1316,7 +1392,7 @@ function report(overrides = {}) {
   const compactTables = directBlocks(compactBody, 'tbl');
   const compactSmallRows = compactTables.length >= 4 ? directBlocks(compactBody.slice(compactTables[2].start, compactTables[2].end), 'tr').slice(4) : [];
   const compactLargeRows = compactTables.length >= 4 ? directBlocks(compactBody.slice(compactTables[3].start, compactTables[3].end), 'tr').slice(4) : [];
-  const compactRows = compactSmallRows.length === 3 && compactLargeRows.length === 1 && compactXml.includes('SMALL-FIRST') && compactXml.includes('SMALL-MIDDLE') && compactXml.includes('SMALL-LAST') && compactXml.includes('LARGE-SECOND') && !compactXml.includes('   ')
+const compactRows = compactSmallRows.length === 3 && compactLargeRows.length === 1 && compactXml.includes('SMALL-FIRST') && compactXml.includes('SMALL-MIDDLE') && compactXml.includes('SMALL-LAST') && compactXml.includes('LARGE-SECOND') && !compactXml.includes('   ')
     && compactXml.indexOf('SMALL-FIRST') < compactXml.indexOf('SMALL-MIDDLE') && compactXml.indexOf('SMALL-MIDDLE') < compactXml.indexOf('SMALL-LAST');
   const fiveRowsDraft = report({ exposure:{ small:fullRows.slice(0, 5).concat([{}, {}, {}]), large:fullRows.slice(0, 5).concat([{}, {}, {}]) } });
   const fiveRowsXml = await conditionalOutput(fiveRowsDraft, 'five-rows');
@@ -1577,7 +1653,7 @@ function run(catalog){
   const missing = run({});
   const malformed = run({ equipment_names:['Raw Equipment'], models:Array(47).fill('Raw Model') });
   const sampleFailure = await missing.samplePromise;
-  console.log(JSON.stringify({
+console.log(JSON.stringify({
     missingCatalogRejected:missing.match.status !== 'exact' && !missing.match.value && !missing.validation.ok,
     malformedCatalogRejected:malformed.match.status !== 'exact' && !malformed.match.value && !malformed.validation.ok,
     sampleFailureActionable:sampleFailure === null && missing.statuses.some(item => item.tone === 'danger' && /catalog/i.test(item.message))

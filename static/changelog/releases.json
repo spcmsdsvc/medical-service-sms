@@ -91,6 +91,15 @@
             "engineers"
           ],
           "sort_order": 1
+        },
+        {
+          "item_key": "2026-09-24-calibration-report-two-tube-output",
+          "category": "Calibration Report",
+          "description": "Calibration Reports label the existing results as X-ray Tube 1 and add a separate X-ray Tube 2 results page when the second tube model and serial number are entered.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
         }
       ]
     },

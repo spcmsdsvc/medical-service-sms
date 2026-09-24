@@ -23562,8 +23562,9 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v183-tsr-draft-history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v185-late-calibration-report.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v187-tsr-account-drafts-network-only.
-    # Navigation shell bump: v189 simplifies Create TSR saved-version selection.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v189-tsr-draft-chooser';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v189-tsr-draft-chooser.
+    # Navigation shell bump: v190 adds conditional two-tube Calibration Report output pages.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v190-calibration-two-tube-output';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -23588,7 +23589,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=32',
+  '/static/js/app-calibration-report.js?v=33',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

@@ -2,6 +2,27 @@
 
 codex changes - 2026-09-24
 
+- Recorded the owner-approved Calibration Report two-tube output-page implementation plan in
+  `plans.md` with separate Tube 1/Tube 2 results, validation, artifact preservation, tests, and
+  release steps. Its status is **Approved — awaiting go-ahead**; no application code, template,
+  database, generated report, cache, or production behavior changed in this recording step.
+
+- Implemented conditional independent X-ray Tube 2 output pages in
+  `static/js/app-calibration-report.js`: older report payload output remains Tube 1, Tube 2
+  measurements and performance results are saved separately, its editor tab appears only for a
+  complete model/serial pair, and final validation applies to each included output page. DOCX
+  generation labels the original output as Tube 1 and appends a page-break-separated Tube 2 copy
+  when enabled; the official source template was not changed. Added focused coverage in
+  `tests/test_tsr_calibration_report.py`, advanced the report script query to v33 and the embedded
+  worker marker to v190, and added the engineer-facing release item
+  `2026-09-24-calibration-report-two-tube-output`. Focused report tests passed **21/21**, PDF
+  workflow tests passed **12/12**, JavaScript syntax, `app.py` AST, release JSON, OOXML checks, and
+  `git diff --check` passed. Full test discovery ran **1,304** tests and had **23 failures, 1
+  skipped** in changelog, purchase-order, staff-creation, and TSR offline follow-up suites. A
+  local PDF converter was unavailable and browser QA was excluded by project instructions, so
+  rendered PDF pagination/layout was not verified. No commit, push, deployment, database change,
+  or production operation was performed.
+
 - Simplified the Create TSR Continue Saved Work chooser in `templates/offline_tsr.html`. Distinct
   saved copies are ranked by completion of the five existing core requirements, valid save time,
   then device/account/earlier-backup source priority. The recommended copy is shown with its

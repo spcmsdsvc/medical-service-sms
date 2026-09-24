@@ -1,5 +1,111 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Report separate X-ray tube output pages
+
+**Status:** Executed — implementation verified; uncommitted (no commit, push, or deployment).
+**Approved:** 2026-09-24 — the owner requested implementation of the proposed two-tube report plan.
+**Detailed:** 2026-09-24.
+**Execution authorized:** 2026-09-24 — the owner separately said “go ahead” after the approved plan was recorded.
+
+### Context and decisions
+
+Page 1 already has model and serial fields for X-ray tubes 1 and 2, but the saved report has only
+one Page 3 output/results data set. The owner wants Page 3 labeled **X-ray Tube 1** and a duplicate
+Page 4 labeled **X-ray Tube 2** when both tube 2 identity fields are present. The Page 4 focal-spot
+settings, measurement rows, current units, and performance results must be editable and saved
+independently. A partial tube 2 identity remains a draft and blocks final save until the pair is
+complete. When the pair is complete, Page 4 must meet the same final-save requirements as Page 3.
+Removing a tube 2 identity field hides Page 4 from output but retains its draft entries if the
+pair is restored. Single-tube reports remain three pages and Page 3 is still labeled Tube 1.
+
+### Investigation and boundaries
+
+- `static/js/app-calibration-report.js` currently stores tube identities in `machine`, one
+  top-level `exposure`/`exposure_current_units`/`focal_spots`/`focal_sizes`/`performance_results`
+  group in schema 6, renders three editor tabs, validates one output group, and fills five source
+  DOCX tables by index. Keep the existing top-level output group as Tube 1 for older drafts; add
+  a separate Tube 2 group without duplicating the machine/check/signature fields.
+- `static/templates/calibration-report/calibration-report-template.docx` is the official three-page
+  source. Page 3 consists of its output heading, two focal-spot tables, performance table, and
+  intervening paragraphs. Preserve the source artifact and its furniture; clone only the output
+  region in generated DOCX when Tube 2 is active, with an explicit page break and tube-specific
+  labels in the existing heading area. Continue using the current DOCX-to-PDF conversion route.
+- Scope is the Calibration Report editor, saved payload normalization, final validation, DOCX
+  generation, focused tests, necessary page-local styling, versioned static assets, release
+  metadata, and required records. No historical artifact repair, database/schema change,
+  certificate change, production operation, commit, push, or deployment is included. Protected
+  `scheduler.db`, handoff files, `output/`, `tmp/`, and unrelated work remain untouched.
+
+### Numbered execution steps
+
+1. **Preflight.** Read applicable instructions and `changes.md` in full; inspect Git status,
+   the current report JS/CSS, template structure, focused tests, cache registration, and release
+   format. Stop before editing if protected dirty work or source changes invalidate this plan.
+2. **State and editor — `static/js/app-calibration-report.js` and, only if needed,
+   `static/css/app-calibration-report.css`.** Advance the report schema; normalize old payloads
+   so existing output remains Tube 1 and Tube 2 starts independent and blank. Add a conditional
+   fourth tab and output panel with separate control names/identifiers, including accessible
+   tube labels. Wire editing, draft restoration, focus, keyboard navigation, and generated-report
+   invalidation. Done when changing one tube's output never changes the other's data and toggling
+   the Tube 2 identity pair shows/hides its panel without erasing draft entries.
+3. **Validation — `static/js/app-calibration-report.js`.** Require both Tube 2 identity fields
+   when either is entered. Validate included focal spots, sizes, current units, measurements,
+   performance results, and exact-fit limits independently on each active output page. Direct
+   missing-field review to the correct panel. Done when a partial identity or incomplete active
+   Page 4 cannot finalize, while a one-tube report uses its established requirements.
+4. **Generated artifact — `static/js/app-calibration-report.js`.** Keep all Page 1/2 and
+   signature writes in the source template. Fill the original output region for Tube 1, then
+   clone its unfilled source structure for Tube 2 before applying that tube's values, with an
+   explicit page break. Label both pages in the existing output-heading area and preserve source
+   tables, headers, footer, layout, and optional-focal-table behavior. Done when generated
+   DOCX/PDF is three pages without Tube 2 and four pages with correctly separated data.
+5. **Focused regression and delivery.** Extend `tests/test_tsr_calibration_report.py` for
+   legacy normalization, the identity trigger, independent edits, draft reopening, validation,
+   error focus, three/four-page OOXML content, and distinct output values. Add PDF conversion
+   checks to `tests/test_calibration_report_pdf.py` only if the existing tests reveal a relevant
+   conversion constraint. Bump Calibration Report JS/CSS query versions as needed in
+   `templates/offline_tsr.html`, the matching embedded worker cache URLs/version in `app.py`,
+   and add one user-facing item to `static/changelog/releases.json`.
+6. **Verify and close out.** First confirm the new focused behavior tests fail against the old
+   behavior, then run the focused report/PDF tests and the full suite. Check JS syntax, generated
+   DOCX ZIP/XML and template furniture, PDF page count and layout with the local converter when
+   available, release/cache markers, and `git diff --check`. Self-review intended changes and
+   report exact pass/fail/skip outcomes. Browser verification is excluded unless the owner
+   separately authorizes it under `AGENTS.md`; record that limitation. Update `changes.md` and
+   this plan's status/outcome. Review the commit checklist, but do not commit, push, or deploy
+   without separate authorization.
+
+### Acceptance and risks
+
+- A complete Tube 2 model/serial pair produces a fourth, independently populated output page;
+  a missing or partial pair never silently produces a final report with omitted Tube 2 results.
+- Single-tube reports retain their three-page structure and existing saved values. Older drafts
+  load as Tube 1; switching Tube 2 off and on retains its unsaved output work in the draft.
+- The main risk is Word pagination or incorrect table targeting after duplicating the output
+  region. Inspect the resulting OOXML and converted PDF, including one- and two-focal variants,
+  before considering the change complete. Existing production artifacts are not rewritten.
+
+### Execution outcome — 2026-09-24
+
+- `static/js/app-calibration-report.js` now keeps Tube 1 in the existing output fields and stores
+  Tube 2's measurements and results separately. The editor reveals a fourth tab only when both
+  Tube 2 identity fields are present, retains hidden Tube 2 draft values if the pair is removed,
+  and independently validates the included output pages and exact-fit limits. Generated DOCX
+  output labels the original results as Tube 1 and appends a page-break-separated copy for Tube 2.
+- `tests/test_tsr_calibration_report.py` covers legacy normalization, conditional activation,
+  independent values, identity and output validation, focus routing, and one-/two-tube OOXML
+  output. The focused tests passed **21/21**. `tests/test_calibration_report_pdf.py` passed
+  **12/12**. The new activation test was confirmed failing before the implementation.
+- `node --check static/js/app-calibration-report.js`, Python AST parsing of `app.py`, release JSON
+  parsing, and `git diff --check` passed. Generated OOXML/table/page-break assertions passed in
+  the focused report tests. Full discovery ran **1,304** tests and reported **23 failures, 1
+  skipped**; failures were in changelog workflow, purchase-order, staff-creation, and TSR offline
+  follow-up tests, with none in the calibration-report tests.
+- The local LibreOffice/soffice converter is unavailable, so the generated PDF's rendered page
+  count and layout were not checked. Browser QA was excluded by the project instructions. No
+  application database, production data, or protected dirty files were intentionally modified;
+  no commit, push, or deployment was performed.
+
 ## Create TSR saved-draft simplification
 
 **Status:** Executed — implementation verified; uncommitted (no commit, push, or deployment).
