@@ -1,5 +1,72 @@
 # Medical Service SMS — Approved Plans
 
+## Create TSR account-draft cache isolation
+
+**Status:** Executed — implementation verified; no commit, push, or deployment performed.
+**Approved:** 2026-09-24 — prevent `/get_tsr_drafts` and `/get_tsr_draft_history` responses
+from being reused across signed-in accounts through URL-keyed Cache Storage.
+**Execution authorized:** 2026-09-24 — the Planner / Orchestrator delegated the approved fix.
+**Detailed:** 2026-09-24.
+
+### Summary and boundaries
+
+The embedded service worker's generic `networkFirst()` path stores authenticated account-draft
+GET responses under URL-only cache keys and can return another engineer's copy after a network
+failure. Add an exact network-only branch for the two account-draft endpoints before the generic
+`/get_` handler. Use same-origin credentials and `cache: 'no-store'`; on network failure return
+`offlineApiResponse()` so the page can continue to use its local device drafts. Do not change
+server owner filters, draft records, schema, other API behavior, POST routing, or UI. Advance the
+worker cache marker to v187 and publish one 2026-09-24 engineer release item. Keep protected dirty
+paths untouched and unstaged; no browser QA, database, Railway, production, commit, or push work.
+
+### Numbered execution steps
+
+1. **Preflight.** Read applicable instructions and current change records; inspect Git status,
+   the embedded worker, source-contract tests, release manifest, and latest plan. Do not inspect
+   `scheduler.db` or protected generated/handoff content.
+2. **Worker branch — `app.py`.** Add an exact same-origin branch for `/get_tsr_drafts` and
+   `/get_tsr_draft_history` before generic `startsWith('/get_')`. Fetch with same-origin
+   credentials and `no-store`; on rejection return `offlineApiResponse()` without any runtime
+   or shell cache reads/writes. Bump v186 to v187 and update the nearby comment.
+3. **Regression contract — `tests/test_offline_api_status.py`.** Assert the exact routes and
+   fetch options, offline fallback, placement before generic network-first handling, absence of
+   cache match/put calls in the branch, continued generic handling for other GET APIs, and a
+   worker cache version of at least v187.
+4. **Release and verification — `static/changelog/releases.json`, `plans.md`, `changes.md`.**
+   Add one dated user-facing note describing account-draft cache isolation without claiming
+   deletion or backend changes. Run focused source-contract tests, JavaScript syntax and
+   release/cache validation, and `git diff --check`; no browser test or full-suite run is needed
+   for this focused worker change under the delegated verification scope.
+5. **Closeout.** Review the intended diff and protected-path status, record actual results below
+   and in the newest `changes.md` section, and leave Git uncommitted.
+
+### Acceptance criteria
+
+- Neither exact account-draft endpoint can read from or write to Cache Storage.
+- Requests use same-origin credentials and `no-store`; a rejected fetch returns the existing
+  JSON offline API response.
+- Other dynamic API GETs continue through their existing generic network-first behavior.
+- The active cache marker is at least v187 and the dated release item is valid.
+
+### Execution outcome — 2026-09-24
+
+- Added the exact network-only branch in `app.py` before both navigation fallback and generic
+  `/get_` handling. The account draft and history endpoints use same-origin credentials and
+  `cache: 'no-store'`; a rejected request returns `offlineApiResponse()` without Cache Storage
+  access. Other dynamic GETs still use `networkFirst()`.
+- Advanced the embedded worker marker to v187 and added the 2026-09-24 account-safe TSR draft
+  loading release item. No server owner filter, backend route, draft record, schema, POST path,
+  or page UI changed.
+- Added source contracts in `tests/test_offline_api_status.py` for exact paths/options, offline
+  fallback, placement before navigation and generic GET handling, cache-read/write exclusion,
+  preserved generic API behavior, cache floor, and the release entry. The focused command
+  `venv\Scripts\python.exe -m unittest tests.test_offline_api_status` passed **17 tests**.
+- `app.py` AST parsing, embedded service-worker `node --check`, release JSON/cache-marker
+  validation, and `git diff --check` passed. Full-suite and browser QA were not run; neither was
+  required for this focused worker change, and browser QA was excluded by the delegated scope.
+  Protected dirty paths were preserved. No database, production, Railway, commit, push, or
+  deployment operation was performed.
+
 ## Create TSR draft deletion durability and account-scoped tombstones
 
 **Status:** Executed — implementation commit `7dc5776` published to `origin/main` on 2026-09-24;

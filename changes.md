@@ -2,6 +2,21 @@
 
 codex changes - 2026-09-24
 
+- Prevented cross-account reuse of Create TSR account drafts from the embedded service worker.
+  `app.py` now routes exact `/get_tsr_drafts` and `/get_tsr_draft_history` GET requests through
+  a same-origin, `no-store` network-only branch before navigation and generic `/get_` handling;
+  a network failure returns the existing JSON offline API response and never reads or writes
+  Cache Storage. Other dynamic API GET handling and server owner filters are unchanged.
+- Advanced the worker cache marker from v186 to v187 and added the published
+  `2026-09-24-tsr-account-draft-cache-isolation` release item. Added source contracts in
+  `tests/test_offline_api_status.py` for the exact network-only branch, generic network-first
+  positive control, cache marker, and release item.
+- Verification passed: `venv\Scripts\python.exe -m unittest tests.test_offline_api_status`
+  (17 tests), Python AST parsing of `app.py`, `node --check` on the extracted embedded worker,
+  release JSON/cache-marker validation, and `git diff --check`. Full-suite and browser QA were
+  not run for this focused worker change. No backend, database, protected artifact, Railway,
+  commit, push, or deployment work was performed.
+
 - Implemented durable Create TSR draft deletion in `templates/offline_tsr.html`. Deletion now
   waits for local saves, cancels the selected draft's debounced account backup, serializes behind
   in-flight account sync, and fences automatic saves/uploads with an account-scoped durable

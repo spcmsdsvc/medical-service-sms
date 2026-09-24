@@ -20,6 +20,25 @@
       ]
     },
     {
+      "release_key": "2026-09-24-tsr-account-draft-cache-isolation",
+      "release_date": "2026-09-24",
+      "title": "Account-Safe TSR Draft Loading",
+      "summary": "Account TSR drafts now load from the server without using a shared offline response cache.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-24-tsr-account-draft-cache-isolation-engineers",
+          "category": "Create TSR",
+          "description": "Create TSR account drafts and their history are no longer read from or saved to a shared offline cache. If the server is unavailable, the page keeps using drafts saved on this device.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-24-late-calibration-report",
       "release_date": "2026-09-24",
       "title": "Late Calibration Reports",

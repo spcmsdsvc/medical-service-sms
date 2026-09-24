@@ -23561,8 +23561,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v181-create-tsr-recovery-layout.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v183-tsr-draft-history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v185-late-calibration-report.
-    # Navigation shell bump: v186 makes Create TSR draft deletion durable.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v186-durable-tsr-draft-deletion';
+    # Navigation shell bump: v187 keeps account-scoped TSR drafts out of shared offline caches.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v187-tsr-account-drafts-network-only';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -23947,6 +23947,22 @@ self.addEventListener('fetch', event => {
       }
     })());
     event.waitUntil(purgeAuthenticatedCaches());
+    return;
+  }
+
+  // Account-scoped TSR draft responses vary by the signed-in user. Cache Storage is keyed
+  // by URL alone, so these reads must never use the shared runtime or shell caches.
+  if (isSameOrigin && (
+      url.pathname === '/get_tsr_drafts' ||
+      url.pathname === '/get_tsr_draft_history'
+  )) {
+    event.respondWith((async () => {
+      try {
+        return await fetch(request, { credentials: 'same-origin', cache: 'no-store' });
+      } catch (err) {
+        return offlineApiResponse();
+      }
+    })());
     return;
   }
 

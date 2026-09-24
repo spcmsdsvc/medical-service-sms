@@ -11,6 +11,7 @@ were written: the API read returns 503 / application/json / offline:true, while 
 navigation still returns the offline HTML page.
 """
 
+import json
 import pathlib
 import re
 import unittest
@@ -46,6 +47,40 @@ class OfflineApiFallbackTests(unittest.TestCase):
         network_first = sw[sw.index('async function networkFirst('):sw.index('async function fieldNavigationFirst(')]
         self.assertIn('return offlineApiResponse();', network_first)
         self.assertNotIn("caches.match('/offline')", network_first)
+
+    def test_account_scoped_tsr_drafts_are_network_only_before_generic_gets(self):
+        sw = self._service_worker_source()
+        handler = sw[sw.index("self.addEventListener('fetch'"):]
+        branch_start = handler.index('// Account-scoped TSR draft responses vary by the signed-in user.')
+        navigation_start = handler.index("if (request.mode === 'navigate') {")
+        generic_start = handler.index("url.pathname.startsWith('/get_')")
+        branch = handler[branch_start:generic_start]
+
+        self.assertLess(branch_start, navigation_start)
+        self.assertLess(branch_start, generic_start)
+        self.assertIn("url.pathname === '/get_tsr_drafts'", branch)
+        self.assertIn("url.pathname === '/get_tsr_draft_history'", branch)
+        self.assertIn("fetch(request, { credentials: 'same-origin', cache: 'no-store' })", branch)
+        self.assertIn('return offlineApiResponse();', branch)
+        self.assertNotRegex(branch, r'\b(?:runtimeCache|shellCache|cache)\.match\s*\(')
+        self.assertNotRegex(branch, r'\b(?:runtimeCache|shellCache|cache)\.put\s*\(')
+        self.assertNotIn('caches.open(', branch)
+        self.assertNotIn('caches.match(', branch)
+
+        # Other /get_ APIs retain their established networkFirst path.
+        generic = handler[generic_start:handler.index("if (\n    isSameOrigin &&", generic_start)]
+        self.assertIn('event.respondWith(networkFirst(request));', generic)
+
+    def test_tsr_draft_network_only_fix_bumps_the_service_worker_cache(self):
+        assert_cache_version_at_least(self, 187, self.app_source)
+
+    def test_tsr_account_draft_cache_isolation_release_entry_exists(self):
+        releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
+        release = next(item for item in releases if item['release_key'] == '2026-09-24-tsr-account-draft-cache-isolation')
+        self.assertEqual(release['release_date'], '2026-09-24')
+        description = release['items'][0]['description']
+        self.assertIn('shared offline cache', description)
+        self.assertIn('drafts saved on this device', description)
 
     def test_navigations_still_fall_back_to_the_offline_page(self):
         """The positive control, and the thing most easily broken by this fix.
