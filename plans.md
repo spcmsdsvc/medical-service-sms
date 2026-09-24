@@ -1,5 +1,51 @@
 # Medical Service SMS — Approved Plans
 
+## Create TSR durable draft history and overwrite prevention
+
+**Status:** Executed — local implementation and verification complete on 2026-09-24; no commit was authorized.
+**Approved:** 2026-09-24 — preserve device/account TSR copies with revision-checked account saves.
+**Execution authorized:** 2026-09-24 — delegated implementation authorization received from the owner through the Planner.
+**Detailed:** 2026-09-24.
+
+### Summary
+
+Add immutable, owner-scoped server history for projected TSR draft versions and optimistic concurrency to the existing account backup. Keep the current row plus at most five prior versions per draft for 30 days. A stale or legacy no-revision write that differs from current must return a conflict and preserve its candidate in history; it must never replace the current row. Engineers can inspect and explicitly open account history from Continue Saved Work. Local edits remain available if history backup fails. Preserve the existing draft key, canonical TSR number, reservation token, signatures, attachment metadata, final-save rules, and offline-first behavior.
+
+### Decisions and boundaries
+
+1. The current draft row starts at revision 1 and carries a SHA-256 hash over its canonical projected payload. Matching content is idempotent. Accepted content changes archive the prior current payload before incrementing revision.
+2. Each archived row is owner-scoped, immutable from application routes, deduplicated by owner/draft/hash, and stores the projected payload, signature snapshot, TSR/reservation identity, attachment metadata, informational device timestamp, server capture time, hash, source, and revision linkage. Blobs remain local.
+3. Retention runs during account draft reads and writes: remove versions older than 30 days and keep the five most recent archived versions for each draft. Never purge a current draft. Explicit draft deletion and successful final-save cleanup delete current and history together through the existing delete route.
+4. /save_tsr_draft accepts base_revision; a matching revision may replace current, a mismatch returns HTTP 409 and archives the incoming candidate, and a missing legacy revision may only be idempotent when content matches. Server timestamps decide captured/history ordering; device timestamps are metadata only.
+5. /save_tsr_draft_version is archive-only and idempotent; /get_tsr_draft_history returns only the signed-in owner's retained versions. Existing authentication, CSRF, backup permission checks, payload projection, and reservation behavior remain in force.
+6. The client persists server revision/hash in local draft records, fetches current plus history, and keeps divergent device content locally. It may archive a device candidate online, but does not automatically merge or submit history. Explicit Open this version only applies the chosen payload; the next deliberate save uses the latest current-account revision. Attachment blobs remain device-local.
+7. No generated TSR document/PDF changes, unrelated route changes, destructive migration, production/database records, engineer browser inspection, commit, push, deployment, or Railway operation. Browser QA is skipped because it is outside this package's authorization.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read applicable AGENTS.md, changes.md, the current plans, Git status and intended-file diffs; trace the existing TSR draft model/schema helper, save/list/delete routes, final-save cleanup, client local save/sync/merge/history panel, reservation identity, and focused tests. Preserve protected dirty paths. Record this complete approved plan here with status In progress before implementation.
+2. **Server model and additive schema.** In app.py, extend TsrDraft with revision/hash and add TsrDraftVersion. Extend ensure_tsr_draft_schema() with additive legacy-column/table/index creation. Add canonical hash, version archive/serialization, retention, and owner-scoped history helpers. Done means existing databases acquire only the new columns/table/indexes and typed payloads remain projected without file blobs.
+3. **Revision-checked account routes.** In save_tsr_draft(), preserve the existing reservation identity; accept equal base revisions, archive the old row before accepted changed replacements, return 409 on a differing stale or missing-revision request, and archive that candidate without changing current. Add archive-only and owner-scoped history routes. Update get_tsr_drafts() to include revision/hash and perform retention. Update delete_tsr_draft() to remove history with the current row. Done means owner isolation, conflict preservation, dedupe, retention, and cleanup contracts pass on temporary SQLite databases.
+4. **Client version persistence and recovery.** In templates/offline_tsr.html, persist server revision/hash in IndexedDB/fallback bookkeeping; send base revision; apply server canonical metadata; handle success, 409 conflict, history/archive, auth refusal, transient/network failure distinctly. Merge remote history into Continue Saved Work using plain-language source labels. On divergence preserve local data, attempt archive-only when online, and keep editing/local save usable if backup fails. Explicit version opening must not save, sync, queue, change draft ID/TSR number/reservation, or final-save; subsequent deliberate save uses current server revision. Done means focused source contracts prove each behavior and ordinary one-copy flow remains intact.
+5. **Release and implementation records.** In app.py, monotonically bump the embedded Create TSR service-worker cache marker. Add a user-facing item to the 2026-09-24 release in static/changelog/releases.json. Update this plan with actual execution outcome and changes.md with factual files/behavior/checks before closeout.
+6. **Verification and closeout.** Extend tests/test_tsr_draft_sync.py for two-device concurrency, mismatch no-overwrite, current/archive-only archival, dedupe, five/30-day retention, owner isolation, delete/final-save cleanup, legacy requests, identity/reservation preservation, selection-without-save, and truthful statuses. Run focused TSR tests, isolated-database route tests, full unittest discovery against the recorded baseline, authenticated Jinja render and inline-JS syntax checks, release/cache checks, and git diff --check. Browser QA is skipped. Inspect only the intended-file diff and confirm protected paths were not modified; do not commit, push, deploy, or touch Railway.
+
+### Current source and protected state
+
+- The current account route uses one mutable TsrDraft row and compares device timestamps; /get_tsr_drafts and /delete_tsr_draft are owner-scoped. Successful online/revision final-save calls clearStandaloneTSRDraftLocally(), which calls the delete route.
+- The client already has local-first IndexedDB/localStorage saves, conflict selection, and a stale-status indicator. This package adds server revision/history to those paths without replacing their form or final-save workflow.
+- Pre-existing protected dirty paths are scheduler.db, Handoffs/08-11-26 handoff.md, .claude/, medical-service-sms-detailed-handoff-2026-07-26.md, output/, and tmp/; none are in scope.
+
+### Execution outcome — 2026-09-24
+
+- Implemented the additive `TsrDraft` revision/hash fields and owner-scoped `TsrDraftVersion` history, conditional revision saves, archive-only and history routes, retention, and paired draft/history cleanup in `app.py`.
+- Updated `templates/offline_tsr.html` to persist server revision/hash locally, preserve divergent device/account/history versions, offer explicit version opening, and keep local edits available with plain-language backup failure states. Draft/reservation identity, signatures, attachment metadata, offline behavior, and final-save cleanup remain wired through the existing flow; attachment blobs remain local.
+- Added focused concurrency, conflict, dedupe, retention, migration, owner-isolation, cleanup, identity, selection, and status contracts in `tests/test_tsr_draft_sync.py`. Added the user-facing release item and bumped the active Create TSR service-worker marker to v183.
+- Focused TSR verification passed: `tests.test_tsr_draft_sync` ran 31 tests; the combined draft-sync, page-design, signature-recovery, sync-reliability, and offline-follow-up command ran 86 tests, all successful. Full discovery ran 1,272 tests and exited with 20 failures and 2 skips. The recorded baseline was 1,265 tests with 20 failures and 1 skip; the observed full-run tail included the existing Purchase Order HTTP 429 and staff fixture HTTP 400 categories. No TSR failures appeared in the focused runs.
+- Python syntax, release JSON/item, cache marker v183, an authenticated `/offline-tsr` render (HTTP 200), and syntax of three nonempty inline JavaScript blocks passed. `git diff --check` passed before final record edits and is rerun for closeout. Browser QA was skipped as required.
+- Test/app imports emitted startup changelog and reimbursement tracker migration messages before temporary route-test engines were installed. The pre-existing protected dirty `scheduler.db` was not inspected or reverted; because of those startup messages, additional effects on that file cannot be ruled out. No further app-importing checks were run after this was identified.
+- No commit, push, deployment, Railway operation, production record access, or browser QA was performed. Protected pre-existing paths remain outside the intended file changes; their contents were not inspected or cleaned.
+
 ## Create TSR draft recovery and overwrite protection
 
 **Status:** Executed — implementation commit `5378be5`; publication authorized 2026-09-24.

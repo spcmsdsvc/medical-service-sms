@@ -4,6 +4,8 @@ import pathlib
 import subprocess
 import tempfile
 import unittest
+from contextlib import contextmanager
+from datetime import timedelta
 
 from sqlalchemy import create_engine
 
@@ -31,10 +33,13 @@ class TsrDraftSyncContractTests(unittest.TestCase):
 
     def test_server_draft_schema_and_owner_scoped_routes_exist(self):
         self.assertIn('class TsrDraft(db.Model)', self.app_source)
+        self.assertIn('class TsrDraftVersion(db.Model)', self.app_source)
         self.assertIn("db.UniqueConstraint('user_id', 'draft_key'", self.app_source)
         for route in (
             "@app.route('/save_tsr_draft', methods=['POST'])",
             "@app.route('/get_tsr_drafts', methods=['GET'])",
+            "@app.route('/save_tsr_draft_version', methods=['POST'])",
+            "@app.route('/get_tsr_draft_history', methods=['GET'])",
             "@app.route('/delete_tsr_draft', methods=['POST'])",
         ):
             self.assertIn(route, self.app_source)
@@ -95,13 +100,17 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         self.assertIn('generated_cleanup', self.calibration_report_source)
         self.assertIn('hasGeneratedMetadata', self.calibration_report_source)
 
-    def test_stale_device_timestamp_is_ignored(self):
+    def test_server_conflicts_use_revision_not_device_clock_ordering(self):
         if app_module is None:
             self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
-        newer = app_module.parse_tsr_draft_device_timestamp('2026-08-07T08:00:00+00:00')
-        older = app_module.parse_tsr_draft_device_timestamp('2026-08-07T07:59:59+00:00')
-        self.assertIsNotNone(newer)
-        self.assertLess(older, newer)
+        self.assertIsNone(app_module.normalize_tsr_draft_revision(None))
+        self.assertEqual(app_module.normalize_tsr_draft_revision('3'), 3)
+        route = self.app_source.split("@app.route('/save_tsr_draft'", 1)[1].split("@app.route('/get_tsr_drafts'", 1)[0]
+        self.assertIn("base_revision", route)
+        self.assertIn("revision_mismatch", route)
+        self.assertIn('tsr_draft_conflict_response', route)
+        self.assertIn("'status': 'conflict'", self.app_source)
+        self.assertNotIn('incoming_timestamp < stored_timestamp', route)
         self.assertIn('stale_ignored', self.app_source)
 
     def test_optional_server_metadata_does_not_slice_none(self):
@@ -157,6 +166,9 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         self.assertIn('Open this version', panel)
         self.assertIn('useStandaloneTSRDraftCopy', panel)
         self.assertIn('Choose one to open', panel)
+        self.assertIn('Earlier account copy', self.template_source)
+        self.assertIn("'/get_tsr_draft_history'", self.template_source)
+        self.assertIn("'/save_tsr_draft_version'", self.template_source)
 
     def test_recovery_sources_use_plain_language(self):
         labels = self.template_source.split(
@@ -191,8 +203,8 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         queued = self.template_source.split(
             'function enqueueStandaloneTSRServerDraftSync', 1
         )[1].split('function readStandaloneTSRServerDraftDeleteQueue', 1)[0]
-        self.assertIn('stale_ignored', sync)
-        self.assertIn('result?.stale_ignored', queued)
+        self.assertIn("response.status === 409 && result.status === 'conflict'", sync)
+        self.assertIn("result?.status === 'conflict'", queued)
         self.assertIn('account-backup-conflict', queued)
 
     def test_unresolved_conflict_blocks_background_sync_and_draft_overwrite(self):
@@ -204,7 +216,38 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         )[1].split('async function clearStandaloneTSRDraftLocally', 1)[0]
         self.assertIn('draft_source_conflict', sync)
         self.assertIn('!standaloneTSRDraftRecoveryChoices.has(draftId)', sync)
-        self.assertIn('draft_source_conflict', local_save)
+        self.assertNotIn('draft_source_conflict', local_save,
+                         'Local editing and device saves remain usable when account versions diverge.')
+        self.assertIn('saveStandaloneTSRDraftLocallyNow(context)', local_save)
+
+    def test_server_revision_metadata_conflict_archive_and_plain_language_statuses_are_wired(self):
+        request_builder = self.template_source.split(
+            'function buildStandaloneTSRServerDraftRequest', 1
+        )[1].split('function buildStandaloneTSRAccountDraftCandidate', 1)[0]
+        sync = self.template_source.split(
+            'async function syncStandaloneTSRDraftToServer', 1
+        )[1].split('function standaloneTSRServerBackupFailureText', 1)[0]
+        merge = self.template_source.split(
+            'async function mergeServerStandaloneTSRDrafts', 1
+        )[1].split('async function refreshStandaloneTSRDraftPanel', 1)[0]
+        self.assertIn('base_revision', request_builder)
+        self.assertIn('server_revision', self.template_source)
+        self.assertIn('server_hash', self.template_source)
+        self.assertIn("response.status === 409 && result.status === 'conflict'", sync)
+        self.assertIn('persistStandaloneTSRDraftServerMetadata', sync)
+        self.assertIn('archiveStandaloneTSRDraftVersion(candidate', merge)
+        self.assertIn('Your session expired', merge)
+        self.assertIn('cannot access TSR draft history', merge)
+        self.assertIn('remains saved on this device', merge)
+
+    def test_successful_final_save_still_deletes_account_draft_and_history(self):
+        finish = self.template_source.split(
+            'async function finishStandaloneTSRFinalSave', 1
+        )[1].split('async function confirmStandaloneTSRFinalSave', 1)[0]
+        delete_route = self.app_source.split("@app.route('/delete_tsr_draft'", 1)[1].split("@app.route('/release_tsr_number_reservation'", 1)[0]
+        self.assertGreaterEqual(finish.count('clearStandaloneTSRDraftLocally()'), 2)
+        self.assertIn('TsrDraftVersion.query.filter_by', delete_route)
+        self.assertIn('history_query.delete', delete_route)
 
     def test_nonconflicting_single_copy_keeps_existing_open_action(self):
         panel = self.template_source.split(
@@ -314,6 +357,9 @@ function getStandaloneTSRDraftTitle(){return 'Saved TSR';}
 function getStandaloneTSRDraftSubtitle(){return 'Service visit';}
 Object.defineProperty(globalThis,'navigator',{value:{onLine:true},configurable:true});
 const standaloneTSRAccountDraftCandidates = new Map();
+const standaloneTSRDraftServerStates = new Map();
+let standaloneTSRDraftHistoryCandidates = new Map();
+let standaloneTSRDraftHistoryWarning = '';
 const standaloneTSRDraftConflictIds = new Set();
 const standaloneTSRDraftRecoveryVariants = new Map();
 const standaloneTSRDraftRecoveryChoices = new Map();
@@ -331,15 +377,21 @@ const remote={draft_key:'draft-divergent',updated_at:'2026-09-24T08:10:00Z',devi
   payload:{_draft_id:'draft-divergent','tsr-number':'20260924-01-ABC',reservation_token:'reservation-one',
     'tsr-complaint':'account work',signatures:{serviced:'account-signature',acknowledged:'client-signature'},
     attachments:[{name:'account.pdf',blob_id:'account-file'}]}};
-globalThis.fetch=async()=>({ok:true,json:async()=>({status:'success',drafts:[remote]})});
+globalThis.fetch=async(url)=>url==='/get_tsr_draft_history'
+  ? ({ok:true,json:async()=>({status:'success',versions:[]})})
+  : ({ok:true,json:async()=>({status:'success',drafts:[remote]})});
 function flushStandaloneTSRServerDraftDeletes(){return Promise.resolve();}
 function waitForStandaloneTSRLocalSaves(){return Promise.resolve();}
 function readStandaloneTSRServerDraftDeleteQueue(){return [];}
 function loadStandaloneTSRDraftRecordsFromIndexedDB(){return Promise.resolve([local]);}
 function loadStandaloneTSRDraftFromLocalStorageFallback(){return null;}
+function offlineTSRDBGet(){return Promise.resolve(null);}
+function saveStandaloneTSRDraftToLocalStorageFallback(){return true;}
 function isStandaloneTSRDraftMeaningful(){return true;}
 function enqueueStandaloneTSRServerDraftSync(){uploads++;return Promise.resolve({status:'success'});}
 function offlineTSRDBPut(){writes++;return Promise.resolve();}
+function persistStandaloneTSRDraftServerMetadata(){return Promise.resolve(true);}
+function archiveStandaloneTSRDraftVersion(){return Promise.resolve({success:true,status:'success'});}
 """ + "function buildStandaloneTSRAccountDraftCandidate" + helper_functions + "\n" + "async function mergeServerStandaloneTSRDrafts" + merge + r"""
 (async()=>{
   const result=await mergeServerStandaloneTSRDrafts();
@@ -467,10 +519,270 @@ function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
         self.assertEqual(release['release_key'], '2026-09-24-create-tsr-draft-recovery')
         self.assertEqual(release['release_date'], '2026-09-24')
         self.assertIn('Choose which copy to continue', release['items'][0]['description'])
+        self.assertTrue(any(item['item_key'] == '2026-09-24-tsr-draft-version-history' for item in release['items']))
 
 
 @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
 class TsrDraftRouteTests(unittest.TestCase):
+    @contextmanager
+    def isolated_route_clients(self):
+        fd, database_path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        extension = None
+        original_engine = None
+        original_ready = None
+        original_reservation_ready = None
+        test_engine = None
+        original_csrf = None
+        try:
+            with app_module.app.app_context():
+                extension = app_module.app.extensions['sqlalchemy']
+                engines = extension._app_engines[app_module.app]
+                original_engine = engines[None]
+                original_ready = app_module._tsr_draft_table_ready
+                original_reservation_ready = app_module._tsr_number_reservation_table_ready
+                original_csrf = app_module.app.config.get('WTF_CSRF_ENABLED')
+                app_module.app.config['WTF_CSRF_ENABLED'] = False
+                test_engine = create_engine(f"sqlite:///{database_path.replace(os.sep, '/')}")
+                engines[None] = test_engine
+                app_module._tsr_draft_table_ready = False
+                app_module._tsr_number_reservation_table_ready = False
+                app_module.db.session.remove()
+                app_module.db.create_all()
+                app_module.ensure_tsr_draft_schema()
+                suffix = pathlib.Path(database_path).stem[-10:]
+                user_one = app_module.User(username=f'draft-history-one-{suffix}', password='test-only', role='engineer', is_active=True)
+                user_two = app_module.User(username=f'draft-history-two-{suffix}', password='test-only', role='engineer', is_active=True)
+                app_module.db.session.add_all([user_one, user_two])
+                app_module.db.session.commit()
+                user_ids = {'one': user_one.id, 'two': user_two.id}
+
+            clients = {}
+            for label, user_id in user_ids.items():
+                client = app_module.app.test_client()
+                with client.session_transaction() as session:
+                    session['_user_id'] = str(user_id)
+                    session['_fresh'] = True
+                clients[label] = client
+            yield clients, user_ids
+        finally:
+            if extension is not None:
+                with app_module.app.app_context():
+                    app_module.db.session.remove()
+                    if original_engine is not None:
+                        extension._app_engines[app_module.app][None] = original_engine
+                    if original_ready is not None:
+                        app_module._tsr_draft_table_ready = original_ready
+                    if original_reservation_ready is not None:
+                        app_module._tsr_number_reservation_table_ready = original_reservation_ready
+                    if original_csrf is not None:
+                        app_module.app.config['WTF_CSRF_ENABLED'] = original_csrf
+            if test_engine is not None:
+                test_engine.dispose()
+            if database_path and os.path.exists(database_path):
+                os.unlink(database_path)
+
+    def test_two_device_revisions_archive_replaced_current_and_stale_candidate(self):
+        with self.isolated_route_clients() as (clients, user_ids):
+            client_a = clients['one']
+            client_b = app_module.app.test_client()
+            with client_b.session_transaction() as session:
+                session['_user_id'] = str(user_ids['one'])
+                session['_fresh'] = True
+
+            first = client_a.post('/save_tsr_draft', json={
+                'draft_key': 'two-device-draft',
+                'device_updated_at': '2026-09-24T08:00:00+08:00',
+                'payload': {
+                    'tsr-complaint': 'Device copies start here',
+                    'signatures': {'serviced': 'signature-v1', 'acknowledged': ''},
+                    'attachments': [{'name': 'inspection.jpg', 'blob_id': 'local-attachment-1'}],
+                },
+            })
+            self.assertEqual(first.status_code, 200)
+            first_body = first.get_json()
+            token = first_body['reservation_token']
+            number = first_body['tsr_number']
+            self.assertEqual(first_body['revision'], 1)
+            self.assertEqual(first_body['draft']['content_hash'], first_body['hash'])
+
+            accepted = client_a.post('/save_tsr_draft', json={
+                'draft_key': 'two-device-draft',
+                'base_revision': 1,
+                'device_updated_at': '2026-09-24T08:01:00+08:00',
+                'payload': {
+                    'tsr-complaint': 'Device A saved first',
+                    'tsr-number': number,
+                    'reservation_token': token,
+                    'signatures': {'serviced': 'signature-v2', 'acknowledged': ''},
+                    'attachments': [{'name': 'inspection.jpg', 'blob_id': 'local-attachment-1'}],
+                },
+            })
+            self.assertEqual(accepted.status_code, 200)
+            self.assertEqual(accepted.get_json()['revision'], 2)
+            self.assertEqual(accepted.get_json()['history_count'], 1)
+
+            stale = client_b.post('/save_tsr_draft', json={
+                'draft_key': 'two-device-draft',
+                'base_revision': 1,
+                # A future device timestamp cannot make an older revision authoritative.
+                'device_updated_at': '2099-01-01T00:00:00+00:00',
+                'payload': {
+                    'tsr-complaint': 'Device B stale copy',
+                    'tsr-number': number,
+                    'reservation_token': token,
+                    'signatures': {'serviced': 'signature-device-b', 'acknowledged': ''},
+                    'attachments': [{'name': 'inspection.jpg', 'blob_id': 'local-attachment-1'}],
+                },
+            })
+            self.assertEqual(stale.status_code, 409)
+            stale_body = stale.get_json()
+            self.assertEqual(stale_body['status'], 'conflict')
+            self.assertEqual(stale_body['conflict_metadata']['reason'], 'revision_mismatch')
+            self.assertEqual(stale_body['draft']['payload']['tsr-complaint'], 'Device A saved first')
+            self.assertEqual(stale_body['revision'], 2)
+            self.assertEqual(stale_body['history_count'], 2)
+            self.assertEqual(stale_body['draft']['reservation_token'], token)
+            self.assertEqual(stale_body['draft']['tsr_number'], number)
+            self.assertEqual(stale_body['version']['payload']['tsr-complaint'], 'Device B stale copy')
+            self.assertEqual(stale_body['version']['reservation_token'], token)
+
+            duplicate = client_b.post('/save_tsr_draft', json={
+                'draft_key': 'two-device-draft', 'base_revision': 1,
+                'device_updated_at': '2099-01-01T00:00:00+00:00',
+                'payload': stale_body['version']['payload'],
+            })
+            self.assertEqual(duplicate.status_code, 409)
+            self.assertTrue(duplicate.get_json()['candidate_deduplicated'])
+            self.assertEqual(duplicate.get_json()['history_count'], 2)
+
+            history = client_a.get('/get_tsr_draft_history?draft_key=two-device-draft').get_json()['versions']
+            self.assertEqual(len(history), 2)
+            replaced = next(item for item in history if item['source'] == 'account')
+            self.assertEqual(replaced['revision'], 1)
+            self.assertEqual(replaced['replaced_by_revision'], 2)
+            self.assertEqual(replaced['signatures']['serviced'], 'signature-v1')
+            self.assertEqual(replaced['attachment_metadata'][0]['blob_id'], 'local-attachment-1')
+            self.assertEqual(clients['two'].get('/get_tsr_draft_history?draft_key=two-device-draft').get_json()['versions'], [])
+
+    def test_archive_only_is_owner_scoped_deduplicated_and_never_replaces_current(self):
+        with self.isolated_route_clients() as (clients, _user_ids):
+            current = clients['one'].post('/save_tsr_draft', json={
+                'draft_key': 'archive-only-draft',
+                'payload': {'tsr-complaint': 'Current account copy'},
+            })
+            self.assertEqual(current.status_code, 200)
+            current_body = current.get_json()
+            candidate = {
+                'draft_key': 'archive-only-draft',
+                'base_revision': current_body['revision'],
+                'device_updated_at': '2026-09-24T08:05:00+08:00',
+                'payload': {
+                    'tsr-complaint': 'Device-only alternate',
+                    'tsr-number': current_body['tsr_number'],
+                    'reservation_token': current_body['reservation_token'],
+                    'signatures': {'serviced': 'saved-signature'},
+                    'attachments': [{'name': 'machine.jpg', 'blob_id': 'local-blob-2'}],
+                },
+            }
+            archived = clients['one'].post('/save_tsr_draft_version', json=candidate)
+            self.assertEqual(archived.status_code, 200)
+            self.assertTrue(archived.get_json()['archived'])
+            repeated = clients['one'].post('/save_tsr_draft_version', json=candidate)
+            self.assertEqual(repeated.status_code, 200)
+            self.assertTrue(repeated.get_json()['deduplicated'])
+            self.assertEqual(repeated.get_json()['history_count'], 1)
+
+            current_after = clients['one'].get('/get_tsr_drafts').get_json()['drafts'][0]
+            self.assertEqual(current_after['revision'], current_body['revision'])
+            self.assertEqual(current_after['payload']['tsr-complaint'], 'Current account copy')
+            versions = clients['one'].get('/get_tsr_draft_history?draft_key=archive-only-draft').get_json()['versions']
+            self.assertEqual(len(versions), 1)
+            self.assertEqual(versions[0]['source'], 'device')
+            self.assertEqual(versions[0]['payload']['tsr-complaint'], 'Device-only alternate')
+            self.assertEqual(clients['two'].get('/get_tsr_draft_history').get_json()['versions'], [])
+
+    def test_history_reads_purge_after_thirty_days_and_keep_five_versions(self):
+        with self.isolated_route_clients() as (clients, user_ids):
+            response = clients['one'].post('/save_tsr_draft', json={
+                'draft_key': 'retention-draft',
+                'payload': {'tsr-complaint': 'Current stays current'},
+            })
+            self.assertEqual(response.status_code, 200)
+            with app_module.app.app_context():
+                now = app_module.get_manila_time()
+                ages = [31, 6, 5, 4, 3, 2, 1]
+                for index, age in enumerate(ages):
+                    payload = {'tsr-complaint': f'history-{index}', '_draft_id': 'retention-draft'}
+                    version, created = app_module.archive_tsr_draft_version_record(
+                        user_ids['one'], 'retention-draft', payload, source='device'
+                    )
+                    self.assertTrue(created)
+                    version.captured_at = now - timedelta(days=age)
+                app_module.db.session.commit()
+
+            result = clients['one'].get('/get_tsr_draft_history?draft_key=retention-draft')
+            self.assertEqual(result.status_code, 200)
+            body = result.get_json()
+            self.assertEqual(len(body['versions']), 5)
+            self.assertEqual(body['history_count'], 5)
+            self.assertTrue(all(item['payload']['tsr-complaint'] != 'history-0' for item in body['versions']))
+            self.assertTrue(all(item['payload']['tsr-complaint'] != 'history-1' for item in body['versions']))
+            current = clients['one'].get('/get_tsr_drafts').get_json()['drafts'][0]
+            self.assertEqual(current['payload']['tsr-complaint'], 'Current stays current')
+            self.assertEqual(current['revision'], 1)
+
+    def test_additive_schema_migrates_legacy_current_and_missing_revision_cannot_replace_it(self):
+        with self.isolated_route_clients() as (clients, user_ids):
+            with app_module.app.app_context():
+                app_module.db.session.remove()
+                engine = app_module.app.extensions['sqlalchemy']._app_engines[app_module.app][None]
+                with engine.begin() as connection:
+                    connection.exec_driver_sql('DROP TABLE IF EXISTS tsr_draft')
+                    connection.exec_driver_sql("""
+                        CREATE TABLE tsr_draft (
+                            id INTEGER PRIMARY KEY,
+                            user_id INTEGER NOT NULL,
+                            draft_key VARCHAR(140) NOT NULL,
+                            schedule_id VARCHAR(140),
+                            tsr_number VARCHAR(120),
+                            client_name VARCHAR(200),
+                            service_date VARCHAR(40),
+                            title VARCHAR(255),
+                            subtitle VARCHAR(500),
+                            payload_json TEXT NOT NULL,
+                            attachment_count INTEGER NOT NULL DEFAULT 0,
+                            device_updated_at VARCHAR(40),
+                            created_at DATETIME NOT NULL,
+                            updated_at DATETIME NOT NULL
+                        )
+                    """)
+                app_module._tsr_draft_table_ready = False
+                self.assertTrue(app_module.ensure_tsr_draft_schema())
+                with engine.connect() as connection:
+                    columns = {row[1] for row in connection.exec_driver_sql('PRAGMA table_info(tsr_draft)').fetchall()}
+                self.assertTrue({'reservation_token', 'revision', 'content_hash'} <= columns)
+                legacy = app_module.TsrDraft(
+                    user_id=user_ids['one'],
+                    draft_key='legacy-revision-draft',
+                    payload_json='{"_draft_id":"legacy-revision-draft","tsr-complaint":"legacy current"}',
+                    created_at=app_module.get_manila_time(),
+                    updated_at=app_module.get_manila_time(),
+                )
+                app_module.db.session.add(legacy)
+                app_module.db.session.commit()
+
+            response = clients['one'].post('/save_tsr_draft', json={
+                'draft_key': 'legacy-revision-draft',
+                'device_updated_at': '2099-01-01T00:00:00+00:00',
+                'payload': {'_draft_id': 'legacy-revision-draft', 'tsr-complaint': 'legacy device alternate'},
+            })
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.get_json()['conflict_metadata']['reason'], 'base_revision_required')
+            current = clients['one'].get('/get_tsr_drafts').get_json()['drafts'][0]
+            self.assertEqual(current['payload']['tsr-complaint'], 'legacy current')
+            self.assertEqual(current['revision'], 1)
+
     def test_owner_isolation_upsert_stale_and_delete_scope(self):
         fd, database_path = tempfile.mkstemp(suffix='.db')
         os.close(fd)
@@ -538,17 +850,23 @@ class TsrDraftRouteTests(unittest.TestCase):
             self.assertGreaterEqual(len(first_reservation_token), 12)
             self.assertRegex(first_tsr_number, r'^\d{8}-\d{2}-[A-Z0-9]{1,5}$')
             second = client_one.post('/save_tsr_draft', json=dict(payload, payload={'tsr-complaint': 'older value'}, device_updated_at='2026-08-07T07:00:00+00:00'))
-            self.assertEqual(second.status_code, 200)
+            self.assertEqual(second.status_code, 409)
             second_payload = second.get_json()
             self.assertTrue(second_payload['stale_ignored'])
+            self.assertTrue(second_payload['conflict'])
+            self.assertTrue(second_payload['candidate_archived'])
             self.assertEqual(second_payload['draft']['payload']['tsr-complaint'], 'newer value')
             self.assertEqual(second_payload['draft']['reservation_token'], first_reservation_token)
             self.assertEqual(second_payload['draft']['tsr_number'], first_tsr_number)
+            self.assertEqual(second_payload['draft']['revision'], 1)
+            self.assertEqual(second_payload['history_count'], 1)
 
             self.assertEqual(client_two.get('/get_tsr_drafts').get_json()['drafts'], [])
             self.assertEqual(client_two.post('/delete_tsr_draft', json={'draft_key': 'draft-owner-one'}).status_code, 404)
+            self.assertEqual(client_two.get('/get_tsr_draft_history?draft_key=draft-owner-one').get_json()['versions'], [])
             self.assertEqual(client_one.post('/delete_tsr_draft', json={'draft_key': 'draft-owner-one'}).status_code, 200)
             self.assertEqual(client_one.get('/get_tsr_drafts').get_json()['drafts'], [])
+            self.assertEqual(client_one.get('/get_tsr_draft_history?draft_key=draft-owner-one').get_json()['versions'], [])
             with app_module.app.app_context():
                 self.assertIsNone(app_module.TsrNumberReservation.query.filter_by(
                     reservation_token=first_reservation_token

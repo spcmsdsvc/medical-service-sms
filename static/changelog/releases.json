@@ -36,6 +36,16 @@
             "admins"
           ],
           "sort_order": 3
+        },
+        {
+          "item_key": "2026-09-24-tsr-draft-version-history",
+          "category": "Create TSR",
+          "description": "Create TSR keeps earlier account copies for recovery and protects newer work when another device saves first. Continue Saved Work shows earlier versions, while local edits remain available if account backup is unavailable.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 4
         }
       ]
     },

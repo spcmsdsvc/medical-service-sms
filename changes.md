@@ -64,6 +64,34 @@ codex changes - 2026-09-24
   `scheduler.db`, the handoff, `.claude/`, `output/`, `tmp/`, and other unrelated work were
   excluded. The owner authorized pushing this package; remote and Railway status are reported
   in the task closeout.
+- Implemented durable, owner-scoped TSR account draft history and optimistic concurrency in
+  `app.py`. Current drafts carry a revision and canonical payload hash; accepted content changes
+  archive the replaced copy, stale or legacy differing saves preserve the incoming candidate and
+  return conflict, archive-only requests deduplicate by content hash, and normal reads/writes
+  enforce five prior versions per draft and 30-day retention. Draft deletion and successful
+  final-save cleanup remove current and historical rows together.
+- Updated `templates/offline_tsr.html` to store account revision/hash metadata with local drafts,
+  show earlier account/device versions in Continue Saved Work, and let engineers explicitly open
+  a chosen copy without saving or submitting it. Device/account divergence no longer auto-merges;
+  local editing remains available when backup fails, with plain-language status. File blobs remain
+  local, and existing draft/TSR/reservation identity is retained.
+- Added TSR history/concurrency route and client contracts in `tests/test_tsr_draft_sync.py`,
+  added the 2026-09-24 release item in `static/changelog/releases.json`, and bumped the active
+  Create TSR service-worker cache marker to v183.
+- Focused TSR checks passed: the draft-sync module ran 31 tests, and the combined TSR draft-sync,
+  page-design, signature-recovery, sync-reliability, and offline-follow-up run passed 86 tests.
+  Full unittest discovery ran 1,272 tests and reported 20 failures and 2 skips; the recorded
+  baseline had 1,265 tests, 20 failures, and 1 skip. The full-run tail showed the pre-existing
+  Purchase Order HTTP 429 and staff fixture HTTP 400 failure categories; no focused TSR test
+  failed. Python syntax, release JSON/item, v183 cache marker, authenticated `/offline-tsr` render
+  (HTTP 200), and syntax checks of three nonempty inline JavaScript blocks passed.
+- Test/app imports emitted startup changelog synchronization and reimbursement tracker migration
+  messages before isolated route-test engines were installed. The pre-existing protected dirty
+  `scheduler.db` was not inspected or reverted, but those startup messages mean additional effects
+  on that file cannot be ruled out. No further app-importing checks were run after this was
+  identified. Browser QA was skipped as required; no commit, push, deployment, Railway action, or
+  production-record access was performed. `git diff --check` passed before the final record edits
+  and was rerun during closeout.
 
 codex changes - 2026-09-23
 

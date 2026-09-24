@@ -3160,6 +3160,9 @@ let standaloneTSRServerDraftSyncTimer = null;
 let standaloneTSRServerDraftSyncChain = Promise.resolve();
 let standaloneTSRServerDraftsHydrated = false;
 let standaloneTSRAccountDraftCandidates = new Map();
+let standaloneTSRDraftServerStates = new Map();
+let standaloneTSRDraftHistoryCandidates = new Map();
+let standaloneTSRDraftHistoryWarning = '';
 let standaloneTSRDraftConflictIds = new Set();
 let standaloneTSRDraftRecoveryChoices = new Map();
 let standaloneTSRDraftRecoveryVariants = new Map();
@@ -3516,6 +3519,8 @@ async function buildOfflineTSRDraftRecord(data){
   const now = new Date().toISOString();
   const payload = Object.assign({}, data || {});
   const id = resolveStandaloneTSRDraftId(payload);
+  const previous = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, id).catch(() => null);
+  const serverState = standaloneTSRDraftServerStates.get(id) || {};
   const durablePayload = await prepareStandaloneTSRDraftPayload(payload, id);
   return {
     id,
@@ -3527,6 +3532,8 @@ async function buildOfflineTSRDraftRecord(data){
     client_name: durablePayload?.['tsr-customer-name'] || durablePayload?.selectedSchedule?.client_name || '',
     tsr_number: durablePayload?.['tsr-number'] || '',
     reservation_token: durablePayload?.reservation_token || durablePayload?.tsr_reservation_token || '',
+    server_revision:serverState.revision || previous?.server_revision || payload?._server_revision || null,
+    server_hash:serverState.hash || previous?.server_hash || payload?._server_hash || '',
     payload: durablePayload,
     updated_at: now,
     created_at: data?.created_at || data?.savedAt || now,
@@ -3538,6 +3545,10 @@ async function buildOfflineTSRDraftRecord(data){
 function buildStandaloneTSRServerDraftRequest(record){
   const sourcePayload = projectOfflineTSRPayloadForLocalStorage(record?.payload || {});
   const payload = Object.assign({}, sourcePayload, { _draft_id: record?.id || sourcePayload._draft_id || '' });
+  delete payload._server_revision;
+  delete payload._server_hash;
+  delete payload._server_draft_attachment_count;
+  delete payload._server_draft_attachment_names;
   const attachmentNames = normalizeQueuedAttachments(record?.payload?.attachments || [])
     .filter(attachment => !isQueuedTSRSignatureAttachment(attachment))
     .map(attachment => String(attachment?.name || attachment?.filename || '').trim())
@@ -3556,6 +3567,8 @@ function buildStandaloneTSRServerDraftRequest(record){
     subtitle: record?.subtitle || getStandaloneTSRDraftSubtitle(payload),
     attachment_count: attachmentNames.length,
     attachment_names: attachmentNames,
+    base_revision: standaloneTSRDraftServerStates.get(String(record?.id || payload._draft_id || '').trim())?.revision ||
+      record?.server_revision || record?.payload?._server_revision || null,
     device_updated_at: record?.updated_at || new Date().toISOString(),
     payload
   };
@@ -3587,9 +3600,69 @@ function buildStandaloneTSRAccountDraftCandidate(remote, draftKey){
     source:'server_draft',
     recoverySourceKey:'account',
     recoverySourceKind:'account',
+    server_revision:Number(remote?.server_revision || remote?.revision || 0) || null,
+    server_hash:String(remote?.content_hash || remote?.hash || ''),
+    history_count:Number(remote?.history_count || 0),
     server_attachment_count:Number(remote?.attachment_count || 0),
     server_attachment_names:Array.isArray(remote?.attachment_names) ? remote.attachment_names : []
   };
+}
+
+function buildStandaloneTSRHistoryDraftCandidate(version, draftKey){
+  const payload = Object.assign({}, version?.payload || {}, { _draft_id:draftKey });
+  return {
+    id:draftKey,
+    draft_key:draftKey,
+    tsr_number:version?.tsr_number || payload['tsr-number'] || '',
+    reservation_token:version?.reservation_token || payload.reservation_token || payload.tsr_reservation_token || '',
+    payload,
+    updated_at:version?.captured_at || '',
+    captured_at:version?.captured_at || '',
+    device_updated_at:version?.device_updated_at || '',
+    revision:version?.revision || null,
+    base_revision:version?.base_revision || null,
+    server_revision:version?.revision || null,
+    server_hash:String(version?.content_hash || ''),
+    history_version_id:version?.id || null,
+    source:'server_draft_history',
+    recoverySourceKey:`history-${version?.id || version?.content_hash || 'older'}`,
+    recoverySourceKind:'history',
+    server_attachment_count:Number(version?.attachment_count || 0),
+    server_attachment_names:Array.isArray(version?.attachment_names) ? version.attachment_names : []
+  };
+}
+
+function rememberStandaloneTSRDraftServerState(draftKey, draft){
+  const id = String(draftKey || '').trim();
+  const revision = Number(draft?.server_revision || draft?.revision || 0);
+  const hash = String(draft?.content_hash || draft?.hash || '');
+  if(!id || !revision || !hash) return null;
+  const state = { revision, hash };
+  standaloneTSRDraftServerStates.set(id, state);
+  return state;
+}
+
+async function persistStandaloneTSRDraftServerMetadata(record, serverDraft){
+  const id = String(serverDraft?.draft_key || serverDraft?.id || record?.id || '').trim();
+  const state = rememberStandaloneTSRDraftServerState(id, serverDraft || {});
+  if(!id || !state) return false;
+  const local = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, id).catch(() => null);
+  if(local){
+    local.server_revision = state.revision;
+    local.server_hash = state.hash;
+    await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, local).catch(() => null);
+  }
+  const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+  if(fallback && String(fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID) === id){
+    fallback._server_revision = state.revision;
+    fallback._server_hash = state.hash;
+    saveStandaloneTSRDraftToLocalStorageFallback(fallback);
+  }
+  if(record){
+    record.server_revision = state.revision;
+    record.server_hash = state.hash;
+  }
+  return true;
 }
 
 function standaloneTSRDraftComparableSignature(record){
@@ -3602,7 +3675,8 @@ function standaloneTSRDraftComparableSignature(record){
   }
   const storageOnlyKeys = new Set([
     '_draft_id', 'draft_id', 'savedAt', 'saved_at',
-    '_server_draft_attachment_count', '_server_draft_attachment_names'
+    '_server_draft_attachment_count', '_server_draft_attachment_names',
+    '_server_revision', '_server_hash'
   ]);
   const normalize = (value, topLevel=false) => {
     if(typeof Blob !== 'undefined' && value instanceof Blob){
@@ -3632,6 +3706,7 @@ function standaloneTSRDraftPayloadsDiffer(left, right){
 
 function standaloneTSRDraftSourceLabel(record){
   const source = record?.recoverySourceKind || record?.recoverySourceKey || '';
+  if(source === 'history' || record?.source === 'server_draft_history') return 'Earlier account copy';
   if(source === 'account' || record?.source === 'server_draft') return 'Saved to your account';
   return 'Saved on this device';
 }
@@ -3661,7 +3736,12 @@ function rememberStandaloneTSRDraftConflict(id, candidates){
   });
   if(distinct.length > 1){
     standaloneTSRDraftRecoveryVariants.set(draftId, distinct);
+  }
+  const currentCopies = distinct.filter(candidate => candidate.recoverySourceKind !== 'history');
+  if(groupStandaloneTSRDraftVersions(currentCopies).some(group => group.versions.length > 1)){
     standaloneTSRDraftConflictIds.add(draftId);
+  }else{
+    standaloneTSRDraftConflictIds.delete(draftId);
   }
   return distinct;
 }
@@ -3669,6 +3749,8 @@ function rememberStandaloneTSRDraftConflict(id, candidates){
 function clearStandaloneTSRDraftRecoveryState(id){
   const draftId = String(id || '').trim();
   standaloneTSRAccountDraftCandidates.delete(draftId);
+  standaloneTSRDraftHistoryCandidates.delete(draftId);
+  standaloneTSRDraftServerStates.delete(draftId);
   standaloneTSRDraftConflictIds.delete(draftId);
   standaloneTSRDraftRecoveryChoices.delete(draftId);
   standaloneTSRDraftRecoveryVariants.delete(draftId);
@@ -3712,6 +3794,41 @@ function parseOfflineTSRDate(value){
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+async function archiveStandaloneTSRDraftVersion(record, { baseRevision=null } = {}){
+  if(!record?.id || !record?.payload) return { success:false, reason:'missing_draft' };
+  if(!navigator.onLine) return { success:false, reason:'offline' };
+  const headers = { 'Content-Type':'application/json', Accept:'application/json' };
+  const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+  if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+  const request = buildStandaloneTSRServerDraftRequest(record);
+  request.base_revision = baseRevision ||
+    standaloneTSRDraftServerStates.get(String(record.id))?.revision ||
+    record.server_revision || null;
+  try{
+    const response = await fetch('/save_tsr_draft_version', {
+      method:'POST', credentials:'same-origin', cache:'no-store', headers,
+      body:JSON.stringify(request)
+    });
+    const result = await response.json().catch(() => ({}));
+    if(!response.ok || result.status !== 'success'){
+      const error = new Error(result.message || `TSR version backup failed (${response.status}).`);
+      error.httpStatus = response.status;
+      error.requiresLogin = response.status === 401 || response.status === 403;
+      throw error;
+    }
+    if(result.version){
+      const candidate = buildStandaloneTSRHistoryDraftCandidate(result.version, String(record.id));
+      const versions = standaloneTSRDraftHistoryCandidates.get(String(record.id)) || [];
+      if(!versions.some(version => version.content_hash === candidate.server_hash)) versions.push(candidate);
+      standaloneTSRDraftHistoryCandidates.set(String(record.id), versions);
+    }
+    return result;
+  }catch(error){
+    return { success:false, error, reason:error?.httpStatus === 401 ? 'session_expired'
+      : error?.httpStatus === 403 ? 'permission_refused' : 'backup_failed' };
+  }
+}
+
 async function syncStandaloneTSRDraftToServer(record){
   if(!record?.id) return { skipped:true, reason:'missing_draft_key' };
   if(!navigator.onLine) return { skipped:true, reason:'offline' };
@@ -3732,23 +3849,34 @@ async function syncStandaloneTSRDraftToServer(record){
       body: JSON.stringify(buildStandaloneTSRServerDraftRequest(record))
     });
     const result = await response.json().catch(() => ({}));
+    if(response.status === 409 && result.status === 'conflict'){
+      const serverDraft = result.draft || {};
+      const draftKey = String(serverDraft.draft_key || serverDraft.id || record.id || '').trim();
+      if(draftKey){
+        await persistStandaloneTSRDraftServerMetadata(record, serverDraft);
+        const accountCandidate = buildStandaloneTSRAccountDraftCandidate(serverDraft, draftKey);
+        standaloneTSRAccountDraftCandidates.set(draftKey, accountCandidate);
+        const candidates = [
+          Object.assign({}, record, { recoverySourceKey:'indexeddb', recoverySourceKind:'indexeddb' }),
+          accountCandidate
+        ];
+        if(result.version){
+          const archivedCandidate = buildStandaloneTSRHistoryDraftCandidate(result.version, draftKey);
+          candidates.push(archivedCandidate);
+        }
+        rememberStandaloneTSRDraftConflict(draftKey, candidates);
+        void renderStandaloneTSRDraftPanel();
+      }
+      return result;
+    }
     if(!response.ok || result.status !== 'success'){
       const error = new Error(result.message || `TSR draft backup failed (${response.status}).`);
       error.httpStatus = response.status;
       error.requiresLogin = response.status === 401 || response.status === 403;
       throw error;
     }
-    if(result.stale_ignored){
-      const serverDraft = result.draft || {};
-      const draftKey = String(serverDraft.draft_key || serverDraft.id || record.id || '').trim();
-      if(draftKey){
-        const accountCandidate = buildStandaloneTSRAccountDraftCandidate(serverDraft, draftKey);
-        standaloneTSRAccountDraftCandidates.set(draftKey, accountCandidate);
-        rememberStandaloneTSRDraftConflict(draftKey, [
-          Object.assign({}, record, { recoverySourceKey:'indexeddb', recoverySourceKind:'indexeddb' }),
-          accountCandidate
-        ]);
-      }
+    if(result.draft){
+      await persistStandaloneTSRDraftServerMetadata(record, result.draft);
     }
     if(result.reservation_token || result.tsr_number || result.draft?.reservation_token){
       await reconcileTSRReservationFromServer(result, record?.payload || {});
@@ -3885,10 +4013,14 @@ function enqueueStandaloneTSRServerDraftSync(record, { immediate=false, statusCo
             standaloneTSRDraftConflictIds.delete(draftId);
             standaloneTSRDraftRecoveryChoices.delete(draftId);
             setStandaloneTSRSaveStatus('account-backed-up', statusContext, { record });
-          }else if(result?.stale_ignored){
+          }else if(result?.status === 'conflict' || result?.stale_ignored){
+            const conflictReason = result?.conflict_metadata?.reason;
+            const conflictMessage = conflictReason === 'base_revision_required'
+              ? 'This older device copy has no server revision. It remains saved on this device; compare it with the account copy before continuing.'
+              : 'The account changed after this device loaded its last revision. Your edits remain saved on this device; compare the copies before continuing.';
             setStandaloneTSRSaveStatus('account-backup-conflict', statusContext, {
               record,
-              message:'The account kept a different saved version, so this device copy was not backed up. Compare the copies in Continue Saved Work.'
+              message:conflictMessage
             });
           }else{
             setStandaloneTSRSaveStatus('local-saved-pending', statusContext, { record });
@@ -4081,6 +4213,33 @@ async function mergeServerStandaloneTSRDrafts(){
     }
 
     const remoteDrafts = Array.isArray(result.drafts) ? result.drafts : [];
+    let historyLoaded = false;
+    try{
+      const historyResponse = await fetch('/get_tsr_draft_history', {
+        credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}
+      });
+      const historyResult = await historyResponse.json().catch(() => ({}));
+      if(historyResponse.ok && historyResult.status === 'success'){
+        standaloneTSRDraftHistoryCandidates = new Map();
+        for(const version of Array.isArray(historyResult.versions) ? historyResult.versions : []){
+          const key = String(version?.draft_key || '').trim();
+          if(!key) continue;
+          const candidates = standaloneTSRDraftHistoryCandidates.get(key) || [];
+          candidates.push(buildStandaloneTSRHistoryDraftCandidate(version, key));
+          standaloneTSRDraftHistoryCandidates.set(key, candidates);
+        }
+        standaloneTSRDraftHistoryWarning = '';
+        historyLoaded = true;
+      }else{
+        standaloneTSRDraftHistoryWarning = historyResponse.status === 401
+          ? 'Your session expired. Earlier account copies could not be loaded; sign in again to view them.'
+          : historyResponse.status === 403
+            ? 'This account cannot access TSR draft history. Device copies remain available here.'
+            : 'Earlier account copies could not be loaded. Device copies remain available here.';
+      }
+    }catch(historyError){
+      standaloneTSRDraftHistoryWarning = 'Earlier account copies could not be loaded. Device copies remain available here.';
+    }
     const pendingServerDraftDeletes = new Set(readStandaloneTSRServerDraftDeleteQueue());
     await waitForStandaloneTSRLocalSaves();
     const localRecords = await loadStandaloneTSRDraftRecordsFromIndexedDB({ includeEmpty:true }).catch(() => []);
@@ -4110,6 +4269,8 @@ async function mergeServerStandaloneTSRDrafts(){
         title:getStandaloneTSRDraftTitle(fallback),
         subtitle:getStandaloneTSRDraftSubtitle(fallback),
         updated_at:fallback.savedAt || '',
+        server_revision:Number(fallback._server_revision || 0) || null,
+        server_hash:String(fallback._server_hash || ''),
         source:'localstorage',
         recoverySourceKey:'localstorage',
         recoverySourceKind:'localstorage'
@@ -4146,12 +4307,30 @@ async function mergeServerStandaloneTSRDrafts(){
       const localCandidates = localCandidatesByKey.get(draftKey) || [];
       const local = indexedByKey.get(draftKey) || localCandidates[0] || null;
       const accountCandidate = buildStandaloneTSRAccountDraftCandidate(remote, draftKey);
+      rememberStandaloneTSRDraftServerState(draftKey, remote);
+      if(local) await persistStandaloneTSRDraftServerMetadata(local, remote);
       const allCandidates = [...localCandidates, accountCandidate];
       const hasDivergentCopy = groupStandaloneTSRDraftVersions(allCandidates)
         .some(group => group.versions.length > 1);
       if(hasDivergentCopy || standaloneTSRDraftConflictIds.has(draftKey)){
         standaloneTSRAccountDraftCandidates.set(draftKey, accountCandidate);
         rememberStandaloneTSRDraftConflict(draftKey, allCandidates);
+        for(const candidate of localCandidates){
+          if(standaloneTSRDraftRecordsHaveSameContent(candidate, accountCandidate)) continue;
+          const archived = await archiveStandaloneTSRDraftVersion(candidate, { baseRevision:accountCandidate.server_revision });
+          if(!archived?.success){
+            const error = archived?.error || null;
+            const detail = error ? standaloneTSRServerBackupFailureText(error)
+              : 'The device copy remains saved on this device. Account history backup will retry when the connection returns.';
+            standaloneTSRDraftHistoryWarning = detail;
+            if(String(standaloneCurrentDraftId || '') === draftKey){
+              setStandaloneTSRSaveStatus('account-backup-conflict', null, {
+                record:candidate,
+                message:`This copy remains saved on this device. ${detail}`
+              });
+            }
+          }
+        }
         continue;
       }
 
@@ -4174,7 +4353,7 @@ async function mergeServerStandaloneTSRDrafts(){
       }));
     }
     standaloneTSRServerDraftsHydrated = true;
-    return { success:true, count:remoteDrafts.length };
+    return { success:true, count:remoteDrafts.length, history_loaded:historyLoaded };
   }catch(err){
     console.warn('[Offline TSR] Server draft hydration failed', err);
     return { skipped:true, reason:err?.message || 'hydration_failed' };
@@ -4237,7 +4416,14 @@ async function clearStandaloneTSRDraftFromIndexedDB(id=null){
 
 function saveStandaloneTSRDraftToLocalStorageFallback(data){
   try{
-    localStorage.setItem(STANDALONE_TSR_KEY, JSON.stringify(projectOfflineTSRPayloadForLocalStorage(data || {})));
+    const projected = projectOfflineTSRPayloadForLocalStorage(data || {});
+    const id = String(projected._draft_id || standaloneCurrentDraftId || '').trim();
+    const serverState = standaloneTSRDraftServerStates.get(id);
+    if(serverState){
+      projected._server_revision = serverState.revision;
+      projected._server_hash = serverState.hash;
+    }
+    localStorage.setItem(STANDALONE_TSR_KEY, JSON.stringify(projected));
     return true;
   }catch(err){
     console.warn('[Offline TSR] Unable to save localStorage draft fallback', err);
@@ -4486,6 +4672,13 @@ async function saveStandaloneTSRDraftLocallyNow(context){
     console.warn('[Offline TSR DB] IndexedDB draft save failed. Falling back to metadata-only localStorage.', err);
     const fallbackId = context.draftId;
     const payload = Object.assign({}, data || {}, { _draft_id:fallbackId });
+    const serverState = typeof standaloneTSRDraftServerStates !== 'undefined'
+      ? standaloneTSRDraftServerStates.get(fallbackId)
+      : null;
+    if(serverState){
+      payload._server_revision = serverState.revision;
+      payload._server_hash = serverState.hash;
+    }
     const fallbackSaved = saveStandaloneTSRDraftToLocalStorageFallback(payload);
     if(!fallbackSaved){
       return {
@@ -4513,6 +4706,8 @@ async function saveStandaloneTSRDraftLocallyNow(context){
       updated_at:new Date().toISOString(),
       source:'localstorage',
       attachments_not_durable: normalizeQueuedAttachments(payload.attachments || []).length > 0,
+      server_revision:serverState?.revision || null,
+      server_hash:serverState?.hash || '',
       storage_error:err?.message || 'indexeddb_unavailable'
     };
   }
@@ -4526,14 +4721,6 @@ async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = 
       message:'This content has not been saved yet. Add service work, a signature, or supporting details to start a draft.'
     });
     return { skipped:true, reason:'empty_tsr_draft' };
-  }
-  if(typeof standaloneTSRDraftConflictIds !== 'undefined' && standaloneTSRDraftConflictIds.has(context.draftId) &&
-    (typeof standaloneTSRDraftRecoveryChoices === 'undefined' ||
-      !standaloneTSRDraftRecoveryChoices.has(context.draftId))){
-    setStandaloneTSRSaveStatus('account-backup-conflict', null, {
-      message:'Different saved copies are available. Choose one in Continue Saved Work before saving this draft again.'
-    });
-    return { skipped:true, reason:'draft_source_conflict' };
   }
   context.statusGeneration = ++standaloneTSRSaveStatusGeneration;
   setStandaloneTSRSaveStatus('saving-local', context);
@@ -4623,6 +4810,8 @@ async function getStandaloneTSRDraftRecords(){
       title: getStandaloneTSRDraftTitle(fallback),
       subtitle: getStandaloneTSRDraftSubtitle(fallback),
       updated_at: fallback.savedAt || '',
+      server_revision:Number(fallback._server_revision || 0) || null,
+      server_hash:String(fallback._server_hash || ''),
       source:'localstorage',
       recoverySourceKey:'localstorage',
       recoverySourceKind:'localstorage'
@@ -4631,6 +4820,7 @@ async function getStandaloneTSRDraftRecords(){
   for(const candidate of standaloneTSRAccountDraftCandidates.values()){
     if(candidate?.payload && isStandaloneTSRDraftMeaningful(candidate.payload)) records.push(candidate);
   }
+  for(const versions of standaloneTSRDraftHistoryCandidates.values()) records.push(...versions);
   for(const variants of standaloneTSRDraftRecoveryVariants.values()) records.push(...variants);
   groupStandaloneTSRDraftVersions(records).forEach(group => {
     if(group.versions.length > 1) rememberStandaloneTSRDraftConflict(group.id, group.versions);
@@ -5174,13 +5364,16 @@ async function renderStandaloneTSRDraftPanel(){
   if(hasScheduleFilter){
     groups = groups.filter(group => group.versions.some(record => draftMatchesSelectedStandaloneSchedule(record)));
   }
+  const historyWarning = standaloneTSRDraftHistoryWarning
+    ? `<div class="standalone-tsr-draft-meta text-warning" role="status" aria-live="polite">${escapeHTML(standaloneTSRDraftHistoryWarning)}</div>`
+    : '';
   if(!groups.length){
     list.innerHTML = hasScheduleFilter
-      ? '<div class="standalone-tsr-draft-empty">No saved TSR drafts for the selected schedule.</div>'
-      : '<div class="standalone-tsr-draft-empty">No saved TSR drafts on this device or account.</div>';
+      ? `${historyWarning}<div class="standalone-tsr-draft-empty">No saved TSR drafts for the selected schedule.</div>`
+      : `${historyWarning}<div class="standalone-tsr-draft-empty">No saved TSR drafts on this device or account.</div>`;
     return;
   }
-  list.innerHTML = groups.map(group => {
+  list.innerHTML = historyWarning + groups.map(group => {
     const record = group.versions[0];
     const draftId = group.id;
     const selectedSourceKey = standaloneTSRDraftRecoveryChoices.get(draftId);

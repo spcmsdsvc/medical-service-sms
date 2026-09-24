@@ -3208,11 +3208,39 @@ class TsrDraft(db.Model):
     payload_json = db.Column(db.Text, nullable=False)
     attachment_count = db.Column(db.Integer, default=0, nullable=False)
     device_updated_at = db.Column(db.String(40), nullable=True, index=True)
+    revision = db.Column(db.Integer, default=1, nullable=False)
+    content_hash = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
     updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False, index=True)
 
     __table_args__ = (
         db.UniqueConstraint('user_id', 'draft_key', name='uq_tsr_draft_user_key'),
+    )
+
+
+class TsrDraftVersion(db.Model):
+    """Immutable, owner-scoped projected snapshots retained for TSR recovery."""
+    __tablename__ = 'tsr_draft_version'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    draft_key = db.Column(db.String(140), nullable=False, index=True)
+    revision = db.Column(db.Integer, nullable=True)
+    base_revision = db.Column(db.Integer, nullable=True)
+    replaced_by_revision = db.Column(db.Integer, nullable=True)
+    tsr_number = db.Column(db.String(120), nullable=True)
+    reservation_token = db.Column(db.String(120), nullable=True)
+    payload_json = db.Column(db.Text, nullable=False)
+    signatures_json = db.Column(db.Text, nullable=False, default='{}')
+    attachment_metadata_json = db.Column(db.Text, nullable=False, default='[]')
+    attachment_count = db.Column(db.Integer, nullable=False, default=0)
+    device_updated_at = db.Column(db.String(40), nullable=True)
+    captured_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+    content_hash = db.Column(db.String(64), nullable=False)
+    source = db.Column(db.String(24), nullable=False, default='account')
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'draft_key', 'content_hash', name='uq_tsr_draft_version_user_key_hash'),
+        db.Index('idx_tsr_draft_version_owner_key_time', 'user_id', 'draft_key', 'captured_at'),
     )
 
 
@@ -4615,6 +4643,14 @@ def ensure_tsr_draft_schema():
                 connection.exec_driver_sql(
                     "ALTER TABLE tsr_draft ADD COLUMN reservation_token VARCHAR(120)"
                 )
+            if 'revision' not in existing_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE tsr_draft ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
+                )
+            if 'content_hash' not in existing_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE tsr_draft ADD COLUMN content_hash VARCHAR(64)"
+                )
             index_statements = (
                 "CREATE INDEX IF NOT EXISTS idx_tsr_draft_user_id ON tsr_draft (user_id)",
                 "CREATE INDEX IF NOT EXISTS idx_tsr_draft_updated_at ON tsr_draft (updated_at)",
@@ -4627,6 +4663,7 @@ def ensure_tsr_draft_schema():
                     connection.exec_driver_sql(statement)
                 except Exception as index_error:
                     print(f"[TSR-DRAFT] Index step skipped ({index_error}): {statement}", flush=True)
+        TsrDraftVersion.__table__.create(db.engine, checkfirst=True)
         _tsr_draft_table_ready = True
         return True
     except Exception as table_error:
@@ -17233,8 +17270,8 @@ def tsr_draft_attachment_manifest(payload):
     for attachment in attachments if isinstance(attachments, list) else []:
         if not isinstance(attachment, dict):
             continue
-        source = clean_str(attachment.get('source')).lower()
-        identifier = clean_str(attachment.get('id')).lower()
+        source = (clean_str(attachment.get('source')) or '').lower()
+        identifier = (clean_str(attachment.get('id')) or '').lower()
         if 'signature' in source or 'signature-serviced' in identifier or 'signature-acknowledged' in identifier:
             continue
         name = os.path.basename(clean_str(attachment.get('name')) or '')
@@ -17294,12 +17331,171 @@ def reserve_tsr_number():
     })
 
 
-def tsr_draft_to_dict(draft, stale_ignored=False):
+TSR_DRAFT_HISTORY_MAX_VERSIONS = 5
+TSR_DRAFT_HISTORY_RETENTION_DAYS = 30
+
+
+def tsr_draft_payload_json(payload):
+    """Serialize a projected TSR payload deterministically for storage and hashing."""
+    return json.dumps(
+        project_tsr_draft_payload_for_server(payload),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(',', ':'),
+    )
+
+
+def tsr_draft_content_hash(payload):
+    """Hash the canonical projected payload; browser-only file bytes never enter it."""
+    return hashlib.sha256(tsr_draft_payload_json(payload).encode('utf-8')).hexdigest()
+
+
+def normalize_tsr_draft_revision(value):
+    if isinstance(value, bool) or value is None or clean_str(value) == '':
+        return None
+    try:
+        revision = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return revision if revision > 0 else None
+
+
+def tsr_draft_payload_with_identity(payload, draft_key, tsr_number=None, reservation_token=None):
+    projected = project_tsr_draft_payload_for_server(payload)
+    projected['_draft_id'] = draft_key
+    if tsr_number:
+        projected['tsr-number'] = tsr_number
+        projected['tsr_number'] = tsr_number
+    if reservation_token:
+        projected['reservation_token'] = reservation_token
+        projected['tsr_reservation_token'] = reservation_token
+    return projected
+
+
+def tsr_draft_history_count(user_id, draft_key):
+    return TsrDraftVersion.query.filter_by(user_id=user_id, draft_key=draft_key).count()
+
+
+def purge_tsr_draft_history(user_id, draft_key=None):
+    """Apply the rolling 30-day and five-version cap to one owner's archived versions."""
+    query = TsrDraftVersion.query.filter_by(user_id=user_id)
+    if draft_key:
+        query = query.filter_by(draft_key=draft_key)
+    cutoff = get_manila_time() - timedelta(days=TSR_DRAFT_HISTORY_RETENTION_DAYS)
+    for version in query.filter(TsrDraftVersion.captured_at < cutoff).all():
+        db.session.delete(version)
+
+    retained_query = TsrDraftVersion.query.filter_by(user_id=user_id)
+    if draft_key:
+        retained_query = retained_query.filter_by(draft_key=draft_key)
+    retained = retained_query.order_by(
+        TsrDraftVersion.draft_key.asc(),
+        TsrDraftVersion.captured_at.desc(),
+        TsrDraftVersion.id.desc(),
+    ).all()
+    counts = {}
+    for version in retained:
+        count = counts.get(version.draft_key, 0)
+        if count >= TSR_DRAFT_HISTORY_MAX_VERSIONS:
+            db.session.delete(version)
+        else:
+            counts[version.draft_key] = count + 1
+    return counts.get(draft_key, 0) if draft_key else counts
+
+
+def archive_tsr_draft_version_record(
+    user_id,
+    draft_key,
+    payload,
+    *,
+    tsr_number=None,
+    reservation_token=None,
+    device_updated_at=None,
+    source='account',
+    revision=None,
+    base_revision=None,
+    replaced_by_revision=None,
+):
+    projected = tsr_draft_payload_with_identity(payload, draft_key, tsr_number, reservation_token)
+    payload_json = tsr_draft_payload_json(projected)
+    content_hash = hashlib.sha256(payload_json.encode('utf-8')).hexdigest()
+    existing = TsrDraftVersion.query.filter_by(
+        user_id=user_id,
+        draft_key=draft_key,
+        content_hash=content_hash,
+    ).first()
+    if existing:
+        return existing, False
+
+    attachments = projected.get('attachments') if isinstance(projected.get('attachments'), list) else []
+    names = tsr_draft_attachment_manifest(projected)
+    signature_snapshot = projected.get('signatures') if isinstance(projected.get('signatures'), dict) else {}
+    attachment_metadata = [
+        attachment for attachment in attachments if isinstance(attachment, dict)
+    ]
+    version = TsrDraftVersion(
+        user_id=user_id,
+        draft_key=draft_key,
+        revision=revision,
+        base_revision=base_revision,
+        replaced_by_revision=replaced_by_revision,
+        tsr_number=tsr_number or projected.get('tsr-number') or projected.get('tsr_number'),
+        reservation_token=reservation_token or projected.get('reservation_token') or projected.get('tsr_reservation_token'),
+        payload_json=payload_json,
+        signatures_json=json.dumps(signature_snapshot, ensure_ascii=False, sort_keys=True, separators=(',', ':')),
+        attachment_metadata_json=json.dumps(attachment_metadata, ensure_ascii=False, sort_keys=True, separators=(',', ':')),
+        attachment_count=max(len(names), min(TSR_DRAFT_MAX_ATTACHMENT_COUNT, len(attachment_metadata))),
+        device_updated_at=tsr_draft_text(device_updated_at, 40),
+        captured_at=get_manila_time(),
+        content_hash=content_hash,
+        source=source if source in {'account', 'device'} else 'account',
+    )
+    db.session.add(version)
+    db.session.flush()
+    return version, True
+
+
+def tsr_draft_version_to_dict(version):
+    try:
+        payload = json.loads(version.payload_json or '{}')
+    except (TypeError, ValueError):
+        payload = {}
+    names = tsr_draft_attachment_manifest(payload)
+    return {
+        'id': version.id,
+        'draft_key': version.draft_key,
+        'revision': version.revision,
+        'base_revision': version.base_revision,
+        'replaced_by_revision': version.replaced_by_revision,
+        'tsr_number': version.tsr_number or payload.get('tsr-number') or '',
+        'reservation_token': version.reservation_token or payload.get('reservation_token') or payload.get('tsr_reservation_token') or '',
+        'payload': payload,
+        'signatures': json.loads(version.signatures_json or '{}'),
+        'attachment_count': int(version.attachment_count or len(names) or 0),
+        'attachment_names': names,
+        'attachment_metadata': json.loads(version.attachment_metadata_json or '[]'),
+        'device_updated_at': version.device_updated_at or '',
+        'captured_at': version.captured_at.isoformat() if version.captured_at else None,
+        'content_hash': version.content_hash,
+        'source': version.source,
+    }
+
+def tsr_draft_to_dict(draft, stale_ignored=False, conflict=False, history_count=None):
     try:
         payload = json.loads(draft.payload_json or '{}')
     except (TypeError, ValueError):
         payload = {}
+    payload = tsr_draft_payload_with_identity(
+        payload,
+        draft.draft_key,
+        draft.tsr_number or payload.get('tsr-number') or payload.get('tsr_number'),
+        draft.reservation_token or payload.get('reservation_token') or payload.get('tsr_reservation_token'),
+    )
     names = tsr_draft_attachment_manifest(payload)
+    revision = normalize_tsr_draft_revision(getattr(draft, 'revision', None)) or 1
+    content_hash = getattr(draft, 'content_hash', None) or tsr_draft_content_hash(payload)
+    if history_count is None:
+        history_count = tsr_draft_history_count(draft.user_id, draft.draft_key)
     return {
         'id': draft.id,
         'draft_key': draft.draft_key,
@@ -17316,14 +17512,119 @@ def tsr_draft_to_dict(draft, stale_ignored=False):
         'device_updated_at': draft.device_updated_at or '',
         'created_at': draft.created_at.isoformat() if draft.created_at else None,
         'updated_at': draft.updated_at.isoformat() if draft.updated_at else None,
+        'revision': revision,
+        'server_revision': revision,
+        'content_hash': content_hash,
+        'hash': content_hash,
+        'history_count': history_count,
+        'conflict': bool(conflict or stale_ignored),
         'stale_ignored': bool(stale_ignored),
     }
+
+
+def tsr_draft_conflict_response(user_id, draft_key, candidate_payload, device_updated_at, base_revision, reason):
+    """Preserve a stale candidate and return the latest current copy without changing it."""
+    current = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).with_for_update().first()
+    if current:
+        try:
+            current_payload = json.loads(current.payload_json or '{}')
+        except (TypeError, ValueError):
+            current_payload = {}
+        current_payload = tsr_draft_payload_with_identity(
+            current_payload,
+            draft_key,
+            current.tsr_number or current_payload.get('tsr-number') or current_payload.get('tsr_number'),
+            current.reservation_token or current_payload.get('reservation_token') or current_payload.get('tsr_reservation_token'),
+        )
+        current_revision = normalize_tsr_draft_revision(current.revision) or 1
+        current_hash = current.content_hash or tsr_draft_content_hash(current_payload)
+        candidate_payload = tsr_draft_payload_with_identity(
+            candidate_payload,
+            draft_key,
+            current.tsr_number or candidate_payload.get('tsr-number') or candidate_payload.get('tsr_number'),
+            current.reservation_token or candidate_payload.get('reservation_token') or candidate_payload.get('tsr_reservation_token'),
+        )
+        candidate_hash = tsr_draft_content_hash(candidate_payload)
+        if candidate_hash == current_hash:
+            current.content_hash = current_hash
+            try:
+                history_count = purge_tsr_draft_history(user_id, draft_key)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
+            current = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).first()
+            serialized = tsr_draft_to_dict(current, history_count=history_count)
+            return jsonify({
+                'status': 'success', 'success': True, 'idempotent': True,
+                'revision': serialized['revision'], 'hash': serialized['content_hash'],
+                'history_count': history_count, 'conflict': False, 'draft': serialized,
+                'message': 'This TSR draft version is already backed up.'
+            })
+    else:
+        current_revision = None
+        current_hash = ''
+        candidate_payload = tsr_draft_payload_with_identity(candidate_payload, draft_key)
+
+    try:
+        version, archived = archive_tsr_draft_version_record(
+            user_id,
+            draft_key,
+            candidate_payload,
+            tsr_number=candidate_payload.get('tsr-number') or candidate_payload.get('tsr_number'),
+            reservation_token=candidate_payload.get('reservation_token') or candidate_payload.get('tsr_reservation_token'),
+            device_updated_at=device_updated_at,
+            source='device',
+            base_revision=base_revision,
+        )
+        history_count = purge_tsr_draft_history(user_id, draft_key)
+        db.session.commit()
+    except Exception as archive_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] Conflict archive failed for user={user_id} key={draft_key}: {archive_error}", flush=True)
+        current = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).first()
+        serialized = tsr_draft_to_dict(current, stale_ignored=True, conflict=True) if current else None
+        return jsonify({
+            'status': 'conflict', 'success': False, 'conflict': True,
+            'candidate_archived': False,
+            'revision': serialized['revision'] if serialized else None,
+            'hash': serialized['content_hash'] if serialized else '',
+            'history_count': serialized['history_count'] if serialized else 0,
+            'draft': serialized,
+            'conflict_metadata': {
+                'reason': reason,
+                'current_revision': serialized['revision'] if serialized else None,
+                'current_hash': serialized['content_hash'] if serialized else '',
+                'candidate_archived': False,
+            },
+            'message': 'This draft changed in your account. Your device copy remains on this device; account history could not be updated.'
+        }), 409
+
+    current = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).first()
+    serialized = tsr_draft_to_dict(current, stale_ignored=True, conflict=True, history_count=history_count) if current else None
+    version_data = tsr_draft_version_to_dict(version)
+    return jsonify({
+        'status': 'conflict', 'success': False, 'conflict': True, 'stale_ignored': True,
+        'candidate_archived': True, 'candidate_deduplicated': not archived,
+        'version': version_data,
+        'revision': serialized['revision'] if serialized else None,
+        'hash': serialized['content_hash'] if serialized else '',
+        'history_count': history_count, 'draft': serialized,
+        'conflict_metadata': {
+            'reason': reason,
+            'current_revision': current_revision,
+            'current_hash': current_hash,
+            'candidate_hash': version_data['content_hash'],
+            'candidate_archived': True,
+        },
+        'message': 'This draft changed in your account. Your device copy was kept and needs review.'
+    }), 409
 
 
 @app.route('/save_tsr_draft', methods=['POST'])
 @login_required
 def save_tsr_draft():
-    """Upsert the signed-in user's typed Create TSR draft backup."""
+    """Save only a matching server revision, preserving any divergent candidate."""
     if not can_back_up_tsr_drafts():
         return denied()
     if not ensure_tsr_draft_schema():
@@ -17332,67 +17633,97 @@ def save_tsr_draft():
     body = request.get_json(silent=True) or {}
     if not isinstance(body, dict):
         return jsonify({'status': 'error', 'message': 'Invalid TSR draft payload.'}), 400
-
     draft_key = normalize_tsr_draft_key(body.get('draft_key') or body.get('id'))
     payload = body.get('payload') if isinstance(body.get('payload'), dict) else {}
     if not draft_key or not payload:
         return jsonify({'status': 'error', 'message': 'A TSR draft key and payload are required.'}), 400
+    if 'base_revision' in body and body.get('base_revision') not in (None, '') and normalize_tsr_draft_revision(body.get('base_revision')) is None:
+        return jsonify({'status': 'error', 'message': 'The TSR draft revision is invalid.'}), 400
 
-    projected_payload = project_tsr_draft_payload_for_server(payload)
-    try:
-        payload_json = json.dumps(projected_payload, ensure_ascii=False, separators=(',', ':'))
-    except (TypeError, ValueError):
-        return jsonify({'status': 'error', 'message': 'TSR draft payload could not be serialized.'}), 400
+    user_id = getattr(current_user, 'id', None)
+    base_revision = normalize_tsr_draft_revision(body.get('base_revision'))
+    device_updated_at = tsr_draft_text(body.get('device_updated_at'), 40)
+    projected_payload = tsr_draft_payload_with_identity(payload, draft_key)
+    payload_json = tsr_draft_payload_json(projected_payload)
     if len(payload_json.encode('utf-8')) > TSR_DRAFT_MAX_PAYLOAD_BYTES:
         return jsonify({
             'status': 'error',
             'message': 'TSR draft is too large for server backup. Supporting files remain local to this device.'
         }), 413
 
-    device_updated_at = tsr_draft_text(body.get('device_updated_at'), 40) or ''
-    incoming_timestamp = parse_tsr_draft_device_timestamp(device_updated_at)
-    if incoming_timestamp is None:
-        device_updated_at = get_manila_time().isoformat()
-        incoming_timestamp = parse_tsr_draft_device_timestamp(device_updated_at)
-
-    existing = TsrDraft.query.filter_by(
-        user_id=getattr(current_user, 'id', None),
-        draft_key=draft_key,
-    ).first()
+    existing = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).with_for_update().first()
+    current_payload = {}
+    current_revision = 0
+    current_hash = ''
     if existing:
-        stored_timestamp = parse_tsr_draft_device_timestamp(existing.device_updated_at)
-        if stored_timestamp is not None and incoming_timestamp is not None and incoming_timestamp < stored_timestamp:
+        try:
+            current_payload = json.loads(existing.payload_json or '{}')
+        except (TypeError, ValueError):
+            current_payload = {}
+        current_payload = tsr_draft_payload_with_identity(
+            current_payload,
+            draft_key,
+            existing.tsr_number or current_payload.get('tsr-number') or current_payload.get('tsr_number'),
+            existing.reservation_token or current_payload.get('reservation_token') or current_payload.get('tsr_reservation_token'),
+        )
+        current_revision = normalize_tsr_draft_revision(existing.revision) or 1
+        current_hash = existing.content_hash or tsr_draft_content_hash(current_payload)
+        projected_payload = tsr_draft_payload_with_identity(
+            projected_payload,
+            draft_key,
+            existing.tsr_number or projected_payload.get('tsr-number') or projected_payload.get('tsr_number'),
+            existing.reservation_token or projected_payload.get('reservation_token') or projected_payload.get('tsr_reservation_token'),
+        )
+        payload_json = tsr_draft_payload_json(projected_payload)
+        incoming_hash = hashlib.sha256(payload_json.encode('utf-8')).hexdigest()
+
+        if incoming_hash == current_hash:
+            existing.content_hash = current_hash
+            try:
+                history_count = purge_tsr_draft_history(user_id, draft_key)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
+            current = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).first()
+            serialized = tsr_draft_to_dict(current, history_count=history_count)
             return jsonify({
-                'status': 'success',
-                'success': True,
-                'stale_ignored': True,
-                'draft': tsr_draft_to_dict(existing, stale_ignored=True),
-                'message': 'An older device draft was ignored; the newer server copy was kept.'
+                'status': 'success', 'success': True, 'idempotent': True,
+                'reservation_token': current.reservation_token or '',
+                'tsr_number': current.tsr_number or '',
+                'revision': serialized['revision'], 'hash': serialized['content_hash'],
+                'history_count': history_count, 'conflict': False,
+                'draft': serialized, 'message': 'This TSR draft version is already backed up.'
             })
+
+        if base_revision is None or base_revision != current_revision:
+            reason = 'base_revision_required' if base_revision is None else 'revision_mismatch'
+            return tsr_draft_conflict_response(
+                user_id, draft_key, projected_payload, device_updated_at, base_revision, reason
+            )
+        revision = current_revision + 1
         draft = existing
     else:
-        draft = TsrDraft(user_id=getattr(current_user, 'id', None), draft_key=draft_key)
+        revision = 1
+        draft = TsrDraft(
+            user_id=user_id,
+            draft_key=draft_key,
+            revision=revision,
+            payload_json=payload_json,
+        )
         db.session.add(draft)
 
-    # The reservation lookup may autoflush a newly-created draft. Seed the required payload
-    # column before that lookup; the canonical number fields are filled immediately after the
-    # reservation returns.
-    draft.payload_json = payload_json
-
-    # A server-backed draft save is the first authoritative numbering event. The browser may
-    # carry a legacy preview, but only this owner-scoped reservation decides the canonical value.
+    # This save is already revision-authorized. Reuse the draft's reservation identity, or
+    # create the original reservation for a legacy account row that predates reservations.
     reservation_token = normalize_tsr_number_reservation_token(
-        body.get('reservation_token') or
-        body.get('tsr_reservation_token') or
-        projected_payload.get('reservation_token') or
-        projected_payload.get('tsr_reservation_token') or
-        getattr(existing, 'reservation_token', None)
+        (existing.reservation_token if existing else None) or
+        body.get('reservation_token') or body.get('tsr_reservation_token') or
+        projected_payload.get('reservation_token') or projected_payload.get('tsr_reservation_token')
     )
     preferred_number = (
+        (existing.tsr_number if existing else None) or
         tsr_draft_text(body.get('tsr_number'), 120) or
-        tsr_draft_text(projected_payload.get('tsr-number'), 120) or
-        tsr_draft_text(projected_payload.get('tsr_number'), 120) or
-        tsr_draft_text(getattr(existing, 'tsr_number', None), 120)
+        tsr_draft_text(projected_payload.get('tsr-number') or projected_payload.get('tsr_number'), 120)
     )
     selected_schedule = projected_payload.get('selectedSchedule') if isinstance(projected_payload.get('selectedSchedule'), dict) else {}
     sequence_date = (
@@ -17405,7 +17736,7 @@ def save_tsr_draft():
     )
     try:
         reservation = reserve_online_tsr_number(
-            getattr(current_user, 'id', None),
+            user_id,
             reservation_token=reservation_token,
             draft_key=draft_key,
             sequence_date=sequence_date,
@@ -17420,19 +17751,13 @@ def save_tsr_draft():
         return jsonify({'status': 'error', 'message': str(reservation_error)}), 409
     except Exception as reservation_error:
         db.session.rollback()
-        print(f"[TSR-DRAFT] Reservation failed for user={getattr(current_user, 'id', None)} key={draft_key}: {reservation_error}", flush=True)
+        print(f"[TSR-DRAFT] Reservation failed for user={user_id} key={draft_key}: {reservation_error}", flush=True)
         return jsonify({'status': 'error', 'message': 'TSR draft backup could not reserve a stable number.'}), 503
 
-    reservation_token = reservation.reservation_token
-    projected_payload['reservation_token'] = reservation_token
-    projected_payload['tsr_reservation_token'] = reservation_token
-    projected_payload['tsr-number'] = reservation.tsr_number
-    projected_payload['tsr_number'] = reservation.tsr_number
-    try:
-        payload_json = json.dumps(projected_payload, ensure_ascii=False, separators=(',', ':'))
-    except (TypeError, ValueError):
-        db.session.rollback()
-        return jsonify({'status': 'error', 'message': 'TSR draft payload could not be serialized.'}), 400
+    projected_payload = tsr_draft_payload_with_identity(
+        projected_payload, draft_key, reservation.tsr_number, reservation.reservation_token
+    )
+    payload_json = tsr_draft_payload_json(projected_payload)
     if len(payload_json.encode('utf-8')) > TSR_DRAFT_MAX_PAYLOAD_BYTES:
         db.session.rollback()
         return jsonify({
@@ -17440,46 +17765,82 @@ def save_tsr_draft():
             'message': 'TSR draft is too large for server backup. Supporting files remain local to this device.'
         }), 413
 
-    # A concurrent unique-number race may have rolled back the session while the helper
-    # retried. Re-attach the draft before applying the canonical reservation snapshot.
-    db.session.add(draft)
     attachment_names = tsr_draft_attachment_manifest(projected_payload)
     try:
         attachment_count = int(body.get('attachment_count') or len(attachment_names) or 0)
     except (TypeError, ValueError):
         attachment_count = len(attachment_names)
     attachment_count = max(len(attachment_names), min(TSR_DRAFT_MAX_ATTACHMENT_COUNT, max(0, attachment_count)))
-    draft.schedule_id = tsr_draft_text(
-        body.get('schedule_id') or projected_payload.get('schedule_id') or projected_payload.get('selectedScheduleId'),
-        140,
-    )
-    draft.tsr_number = tsr_draft_text(
-        reservation.tsr_number,
-        120,
-    )
-    draft.reservation_token = reservation_token
-    draft.client_name = tsr_draft_text(body.get('client_name') or projected_payload.get('tsr-customer-name'), 200)
-    draft.service_date = tsr_draft_text(body.get('service_date') or projected_payload.get('tsr-service-date'), 40)
-    draft.title = tsr_draft_text(body.get('title'), 255)
-    draft.subtitle = tsr_draft_text(body.get('subtitle'), 500)
-    draft.payload_json = payload_json
-    draft.attachment_count = attachment_count
-    draft.device_updated_at = device_updated_at or None
-    draft.updated_at = get_manila_time()
+    draft_values = {
+        'schedule_id': tsr_draft_text(
+            body.get('schedule_id') or projected_payload.get('schedule_id') or projected_payload.get('selectedScheduleId'),
+            140,
+        ),
+        'tsr_number': tsr_draft_text(reservation.tsr_number, 120),
+        'reservation_token': reservation.reservation_token,
+        'client_name': tsr_draft_text(body.get('client_name') or projected_payload.get('tsr-customer-name'), 200),
+        'service_date': tsr_draft_text(body.get('service_date') or projected_payload.get('tsr-service-date'), 40),
+        'title': tsr_draft_text(body.get('title'), 255),
+        'subtitle': tsr_draft_text(body.get('subtitle'), 500),
+        'payload_json': payload_json,
+        'attachment_count': attachment_count,
+        'device_updated_at': device_updated_at,
+        'revision': revision,
+        'content_hash': hashlib.sha256(payload_json.encode('utf-8')).hexdigest(),
+        'updated_at': get_manila_time(),
+    }
 
     try:
+        if existing:
+            archive_tsr_draft_version_record(
+                user_id, draft_key, current_payload,
+                tsr_number=existing.tsr_number,
+                reservation_token=existing.reservation_token,
+                device_updated_at=existing.device_updated_at,
+                source='account',
+                revision=current_revision,
+                base_revision=current_revision,
+                replaced_by_revision=revision,
+            )
+            updated = TsrDraft.query.filter_by(
+                id=existing.id,
+                user_id=user_id,
+                draft_key=draft_key,
+                revision=current_revision,
+            ).update(draft_values, synchronize_session=False)
+            if updated != 1:
+                db.session.rollback()
+                reason = 'revision_mismatch' if base_revision is not None else 'base_revision_required'
+                return tsr_draft_conflict_response(
+                    user_id, draft_key, projected_payload, device_updated_at, base_revision, reason
+                )
+        else:
+            for field, value in draft_values.items():
+                setattr(draft, field, value)
+            db.session.add(draft)
+        history_count = purge_tsr_draft_history(user_id, draft_key)
         db.session.commit()
     except Exception as save_error:
         db.session.rollback()
-        print(f"[TSR-DRAFT] Save failed for user={getattr(current_user, 'id', None)} key={draft_key}: {save_error}", flush=True)
+        latest = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).first() if existing else None
+        latest_revision = normalize_tsr_draft_revision(latest.revision) if latest else None
+        if latest and latest_revision != current_revision:
+            reason = 'revision_mismatch' if base_revision is not None else 'base_revision_required'
+            return tsr_draft_conflict_response(
+                user_id, draft_key, projected_payload, device_updated_at, base_revision, reason
+            )
+        print(f"[TSR-DRAFT] Save failed for user={user_id} key={draft_key}: {save_error}", flush=True)
         return jsonify({'status': 'error', 'message': 'TSR draft backup could not be saved.'}), 500
 
+    draft = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).first()
+    serialized = tsr_draft_to_dict(draft, history_count=history_count)
     return jsonify({
-        'status': 'success',
-        'success': True,
-        'reservation_token': reservation_token,
+        'status': 'success', 'success': True,
+        'reservation_token': reservation.reservation_token,
         'tsr_number': reservation.tsr_number,
-        'draft': tsr_draft_to_dict(draft),
+        'revision': serialized['revision'], 'hash': serialized['content_hash'],
+        'history_count': history_count, 'conflict': False,
+        'draft': serialized,
         'message': 'TSR draft backed up to your account.'
     })
 
@@ -17492,11 +17853,125 @@ def get_tsr_drafts():
         return denied()
     if not ensure_tsr_draft_schema():
         return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
-    drafts = TsrDraft.query.filter_by(user_id=getattr(current_user, 'id', None)).order_by(
+    user_id = getattr(current_user, 'id', None)
+    try:
+        purge_tsr_draft_history(user_id)
+        db.session.commit()
+    except Exception as history_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] History retention failed for user={user_id}: {history_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'TSR draft history is temporarily unavailable.'}), 503
+    drafts = TsrDraft.query.filter_by(user_id=user_id).order_by(
         TsrDraft.updated_at.desc(), TsrDraft.id.desc()
     ).all()
     serialized = [tsr_draft_to_dict(draft) for draft in drafts]
     return jsonify({'status': 'success', 'success': True, 'drafts': serialized, 'rows': serialized})
+
+
+@app.route('/save_tsr_draft_version', methods=['POST'])
+@login_required
+def save_tsr_draft_version():
+    """Archive a device TSR candidate without replacing the current account draft."""
+    if not can_back_up_tsr_drafts():
+        return denied()
+    if not ensure_tsr_draft_schema():
+        return jsonify({'status': 'error', 'message': 'TSR draft history is temporarily unavailable.'}), 503
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({'status': 'error', 'message': 'Invalid TSR draft version payload.'}), 400
+    draft_key = normalize_tsr_draft_key(body.get('draft_key') or body.get('id'))
+    payload = body.get('payload') if isinstance(body.get('payload'), dict) else {}
+    if not draft_key or not payload:
+        return jsonify({'status': 'error', 'message': 'A TSR draft key and payload are required.'}), 400
+    projected = tsr_draft_payload_with_identity(payload, draft_key)
+    payload_json = tsr_draft_payload_json(projected)
+    if len(payload_json.encode('utf-8')) > TSR_DRAFT_MAX_PAYLOAD_BYTES:
+        return jsonify({'status': 'error', 'message': 'This TSR version is too large to back up.'}), 413
+
+    user_id = getattr(current_user, 'id', None)
+    current = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).first()
+    if current:
+        try:
+            current_payload = json.loads(current.payload_json or '{}')
+        except (TypeError, ValueError):
+            current_payload = {}
+        current_payload = tsr_draft_payload_with_identity(
+            current_payload, draft_key, current.tsr_number, current.reservation_token
+        )
+        projected = tsr_draft_payload_with_identity(
+            projected,
+            draft_key,
+            current.tsr_number or projected.get('tsr-number') or projected.get('tsr_number'),
+            current.reservation_token or projected.get('reservation_token') or projected.get('tsr_reservation_token'),
+        )
+        if tsr_draft_content_hash(current_payload) == tsr_draft_content_hash(projected):
+            count = purge_tsr_draft_history(user_id, draft_key)
+            db.session.commit()
+            return jsonify({
+                'status': 'success', 'success': True, 'archived': False,
+                'deduplicated': True, 'revision': normalize_tsr_draft_revision(current.revision) or 1,
+                'hash': current.content_hash or tsr_draft_content_hash(current_payload),
+                'history_count': count, 'message': 'This version already matches the current account draft.'
+            })
+
+    version, created = archive_tsr_draft_version_record(
+        user_id,
+        draft_key,
+        projected,
+        tsr_number=projected.get('tsr-number') or projected.get('tsr_number'),
+        reservation_token=projected.get('reservation_token') or projected.get('tsr_reservation_token'),
+        device_updated_at=tsr_draft_text(body.get('device_updated_at'), 40),
+        source='device',
+        base_revision=normalize_tsr_draft_revision(body.get('base_revision')),
+    )
+    try:
+        count = purge_tsr_draft_history(user_id, draft_key)
+        db.session.commit()
+    except Exception as archive_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] Version archive failed for user={user_id} key={draft_key}: {archive_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'This version remains on the device; account history could not be updated.'}), 503
+    current = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).first()
+    current_revision = normalize_tsr_draft_revision(current.revision) if current else None
+    current_hash = current.content_hash if current else ''
+    return jsonify({
+        'status': 'success', 'success': True, 'archived': True,
+        'deduplicated': not created,
+        'version': tsr_draft_version_to_dict(version),
+        'revision': current_revision,
+        'hash': current_hash,
+        'history_count': count,
+        'message': 'This device copy was saved to account history without replacing the current draft.'
+    })
+
+
+@app.route('/get_tsr_draft_history', methods=['GET'])
+@login_required
+def get_tsr_draft_history():
+    """Return retained TSR versions belonging only to the signed-in account."""
+    if not can_back_up_tsr_drafts():
+        return denied()
+    if not ensure_tsr_draft_schema():
+        return jsonify({'status': 'error', 'message': 'TSR draft history is temporarily unavailable.'}), 503
+    user_id = getattr(current_user, 'id', None)
+    draft_key = normalize_tsr_draft_key(request.args.get('draft_key')) if request.args.get('draft_key') else None
+    try:
+        counts = purge_tsr_draft_history(user_id, draft_key)
+        db.session.commit()
+    except Exception as history_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] History read failed for user={user_id}: {history_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'TSR draft history is temporarily unavailable.'}), 503
+    query = TsrDraftVersion.query.filter_by(user_id=user_id)
+    if draft_key:
+        query = query.filter_by(draft_key=draft_key)
+    versions = query.order_by(TsrDraftVersion.captured_at.desc(), TsrDraftVersion.id.desc()).all()
+    serialized = [tsr_draft_version_to_dict(version) for version in versions]
+    return jsonify({
+        'status': 'success', 'success': True,
+        'versions': serialized,
+        'history_count': counts if isinstance(counts, int) else len(serialized),
+    })
 
 
 @app.route('/delete_tsr_draft', methods=['POST'])
@@ -17515,29 +17990,35 @@ def delete_tsr_draft():
         user_id=getattr(current_user, 'id', None),
         draft_key=draft_key,
     ).first()
-    if not draft:
+    history_query = TsrDraftVersion.query.filter_by(
+        user_id=getattr(current_user, 'id', None),
+        draft_key=draft_key,
+    )
+    if not draft and not history_query.first():
         return jsonify({'status': 'error', 'message': 'TSR draft was not found for this account.'}), 404
     try:
-        try:
-            draft_payload = json.loads(draft.payload_json or '{}')
-        except (TypeError, ValueError):
-            draft_payload = {}
-        release_online_tsr_number_reservation(
-            getattr(current_user, 'id', None),
-            reservation_token=(
-                getattr(draft, 'reservation_token', None) or
-                draft_payload.get('reservation_token') or
-                draft_payload.get('tsr_reservation_token')
-            ),
-            draft_key=draft_key,
-        )
-        db.session.delete(draft)
+        if draft:
+            try:
+                draft_payload = json.loads(draft.payload_json or '{}')
+            except (TypeError, ValueError):
+                draft_payload = {}
+            release_online_tsr_number_reservation(
+                getattr(current_user, 'id', None),
+                reservation_token=(
+                    getattr(draft, 'reservation_token', None) or
+                    draft_payload.get('reservation_token') or
+                    draft_payload.get('tsr_reservation_token')
+                ),
+                draft_key=draft_key,
+            )
+            db.session.delete(draft)
+        history_query.delete(synchronize_session=False)
         db.session.commit()
     except Exception as delete_error:
         db.session.rollback()
         print(f"[TSR-DRAFT] Delete failed for user={getattr(current_user, 'id', None)} key={draft_key}: {delete_error}", flush=True)
         return jsonify({'status': 'error', 'message': 'TSR draft backup could not be deleted.'}), 500
-    return jsonify({'status': 'success', 'success': True, 'draft_key': draft_key, 'message': 'TSR draft backup deleted.'})
+    return jsonify({'status': 'success', 'success': True, 'draft_key': draft_key, 'history_deleted': True, 'message': 'TSR draft backup and history deleted.'})
 
 
 @app.route('/release_tsr_number_reservation', methods=['POST'])
@@ -22938,8 +23419,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v178-create-tsr-action-bar-layout.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v179-create-tsr-compact-action-bar.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v181-create-tsr-recovery-layout.
-    # Navigation shell bump: v182 stacks Create TSR recovery choices for narrow content columns.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v182-create-tsr-recovery-layout';
+    # Navigation shell bump: v183 preserves revisioned TSR draft history and concurrent copies.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v183-tsr-draft-history';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
