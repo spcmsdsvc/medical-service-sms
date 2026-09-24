@@ -34,6 +34,14 @@ class InventoryPmSourceContractTests(unittest.TestCase):
         self.assertIn("quarterly", source)
         self.assertIn("April", template)
         self.assertIn("March", template)
+        self.assertIn('id="pm-fiscal-year" class="form-control form-control-sm" type="number"', template)
+        self.assertIn('id="pm-fiscal-year-detail" class="form-control form-control-sm" type="number"', template)
+        self.assertIn('min="1900" max="2200" step="1"', template)
+        self.assertIn("PM_MIN_FISCAL_YEAR = 1900", template)
+        self.assertIn("PM_MAX_FISCAL_YEAR = 2200", template)
+        self.assertIn('id="pm-detail-fiscal-year-label"', template)
+        self.assertNotIn('<option value="{{ fiscal_year - 1 }}">', template)
+        self.assertNotIn('<option value="{{ fiscal_year + 1 }}">', template)
         self.assertIn('id="pm-month-filter"', template)
         self.assertIn('id="pm-cadence"', template)
         self.assertIn('id="pm-start-date"', template)
@@ -47,8 +55,15 @@ class InventoryPmSourceContractTests(unittest.TestCase):
         self.assertIn('.pm-tap { min-height: 44px; }', template)
         self.assertIn("Genoray PM", layout)
         self.assertIn("Vieworks PM", layout)
-        assert_cache_version_at_least(self, 166, source)
+        assert_cache_version_at_least(self, 184, source)
         releases = json.loads((ROOT / "static" / "changelog" / "releases.json").read_text(encoding="utf-8"))
+        navigation_release = next(
+            release for release in releases.get("releases", [])
+            if release.get("release_key") == "2026-09-24-inventory-pm-fiscal-year-navigation"
+        )
+        self.assertIn("2030", navigation_release["summary"])
+        self.assertIn("1900", navigation_release["items"][0]["description"])
+        self.assertIn("2200", navigation_release["items"][0]["description"])
         release = next(
             release for release in releases.get("releases", [])
             if release.get("release_key") == "2026-09-17-inventory-pm-history"
@@ -301,6 +316,47 @@ class InventoryPmTests(unittest.TestCase):
         self.assertEqual(client.get("/api/vieworks/pm").get_json()["visits"], [])
         self.assertEqual(client.get("/api/genoray/pm/items/" + self.gen_serial).get_json()["visits"], [])
         self.assertEqual(client.get("/api/vieworks/pm/items/" + self.view_serial).get_json()["visits"], [])
+
+    def test_future_fiscal_year_page_and_api_use_april_to_march_boundaries(self):
+        client = self.client_for(self.ids["admin"])
+        created = self.create_plan(client, cadence="semi_annual", start_date="2030-04-01")
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+
+        overview_page = client.get("/genoray/pm?fiscal_year=2030")
+        self.assertEqual(overview_page.status_code, 200)
+        overview_html = overview_page.get_data(as_text=True)
+        self.assertIn('id="pm-fiscal-year"', overview_html)
+        self.assertIn('value="2030"', overview_html)
+
+        overview = client.get("/api/genoray/pm?fiscal_year=2030").get_json()
+        self.assertEqual(overview["fiscal_year"], 2030)
+        self.assertEqual(overview["start_date"], "2030-04-01")
+        self.assertEqual(overview["end_date"], "2031-03-31")
+        self.assertEqual(overview["months"][0]["label"], "April 2030")
+        self.assertEqual(overview["months"][-1]["label"], "March 2031")
+        self.assertEqual(overview["months"][0]["visits"][0]["target_date"], "2030-04-01")
+
+        detail_page = client.get(f"/genoray/pm/{self.gen_serial}?fiscal_year=2030")
+        self.assertEqual(detail_page.status_code, 200)
+        detail_html = detail_page.get_data(as_text=True)
+        self.assertIn('id="pm-fiscal-year-detail"', detail_html)
+        self.assertIn('value="2030"', detail_html)
+        self.assertIn('id="pm-detail-fiscal-year-label"', detail_html)
+
+        detail = client.get(
+            f"/api/genoray/pm/items/{self.gen_serial}?fiscal_year=2030"
+        ).get_json()
+        self.assertEqual(detail["fiscal_year"], 2030)
+        self.assertEqual(detail["planned_visits"][0]["target_date"], "2030-04-01")
+
+    def test_fiscal_year_helper_keeps_supported_range_and_rejects_invalid_years(self):
+        default_year = app_module.inventory_pm_fiscal_year()
+        self.assertEqual(app_module.inventory_pm_fiscal_year("2030"), 2030)
+        self.assertEqual(app_module.inventory_pm_fiscal_year("1900"), 1900)
+        self.assertEqual(app_module.inventory_pm_fiscal_year("2200"), 2200)
+        self.assertEqual(app_module.inventory_pm_fiscal_year("1899"), default_year)
+        self.assertEqual(app_module.inventory_pm_fiscal_year("2201"), default_year)
+        self.assertEqual(app_module.inventory_pm_fiscal_year("2030.5"), default_year)
 
     def test_navigation_and_product_template_keep_brand_specific_pm_actions(self):
         client = self.client_for(self.ids["admin"])

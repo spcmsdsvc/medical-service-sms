@@ -105,14 +105,12 @@
     <section class="pm-visits-card card border-0 shadow-sm" aria-labelledby="pm-visits-heading">
         <div class="pm-section-heading">
             <div>
-                <div class="pm-eyebrow">FY {{ fiscal_year }}</div>
+                <div id="pm-detail-fiscal-year-label" class="pm-eyebrow">FY {{ fiscal_year }}</div>
                 <h2 id="pm-visits-heading" class="h5 mb-1">Planned visits</h2>
                 <p class="small text-muted mb-0">Status and schedule details refresh from the linked calendar record.</p>
             </div>
             <label class="pm-year-control no-print" for="pm-fiscal-year-detail">Fiscal year
-                <select id="pm-fiscal-year-detail" class="form-select form-select-sm">
-                    <option value="{{ fiscal_year }}">FY {{ fiscal_year }}</option>
-                </select>
+                <input id="pm-fiscal-year-detail" class="form-control form-control-sm" type="number" min="1900" max="2200" step="1" value="{{ fiscal_year }}" inputmode="numeric">
             </label>
         </div>
         <div id="pm-detail-state" class="pm-state" role="status">Loading planned visits…</div>
@@ -135,11 +133,7 @@
         <div class="row g-3 align-items-end">
             <div class="col-12 col-sm-6 col-lg-3">
                 <label for="pm-fiscal-year" class="form-label small fw-bold text-uppercase">Fiscal year</label>
-                <select id="pm-fiscal-year" class="form-select form-select-sm">
-                    <option value="{{ fiscal_year }}">FY {{ fiscal_year }}</option>
-                    <option value="{{ fiscal_year - 1 }}">FY {{ fiscal_year - 1 }}</option>
-                    <option value="{{ fiscal_year + 1 }}">FY {{ fiscal_year + 1 }}</option>
-                </select>
+                <input id="pm-fiscal-year" class="form-control form-control-sm" type="number" min="1900" max="2200" step="1" value="{{ fiscal_year }}" inputmode="numeric">
             </div>
             <div class="col-12 col-sm-6 col-lg-3">
                 <label for="pm-search" class="form-label small fw-bold text-uppercase">Search equipment</label>
@@ -208,6 +202,8 @@
     const BRAND_LABEL = {{ brand_label|tojson }};
     const DETAIL_SERIAL = {{ detail_serial|default('')|tojson }};
     const INITIAL_FISCAL_YEAR = {{ fiscal_year|int }};
+    const PM_MIN_FISCAL_YEAR = 1900;
+    const PM_MAX_FISCAL_YEAR = 2200;
     const PM_API = `/api/${BRAND}/pm`;
     const PM_DETAIL_API = `${PM_API}/items/${encodeURIComponent(DETAIL_SERIAL)}`;
     const MONTH_NAMES = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
@@ -257,6 +253,17 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.message || data.error || `Request failed (HTTP ${response.status}).`);
         return data;
+    }
+
+    function readFiscalYear(inputId, fallbackYear) {
+        const input = document.getElementById(inputId);
+        const year = Number(input?.value);
+        if (!Number.isInteger(year) || year < PM_MIN_FISCAL_YEAR || year > PM_MAX_FISCAL_YEAR) {
+            if (input) input.value = String(fallbackYear);
+            showPmNotice(`Fiscal year must be a whole year from ${PM_MIN_FISCAL_YEAR} to ${PM_MAX_FISCAL_YEAR}.`);
+            return null;
+        }
+        return year;
     }
 
     function statusClass(status) {
@@ -352,11 +359,15 @@
     }
 
     async function loadOverview() {
-        const year = document.getElementById('pm-fiscal-year')?.value || INITIAL_FISCAL_YEAR;
+        const fallbackYear = Number(window.__pmOverviewData?.fiscal_year) || INITIAL_FISCAL_YEAR;
+        const year = readFiscalYear('pm-fiscal-year', fallbackYear);
+        if (year === null) return;
         const state = document.getElementById('pm-overview-state');
         if (state) state.textContent = 'Loading fiscal-year visits…';
         try {
             const data = await pmJson(`${PM_API}?fiscal_year=${encodeURIComponent(year)}`);
+            const input = document.getElementById('pm-fiscal-year');
+            if (input) input.value = String(data.fiscal_year);
             window.__pmOverviewData = data;
             renderOverview(data);
         } catch (error) {
@@ -375,6 +386,8 @@
         const state = document.getElementById('pm-detail-state');
         const container = document.getElementById('pm-detail-visits');
         const visits = (data.planned_visits || data.visits || []).filter(visit => !visit.is_history);
+        const yearLabel = document.getElementById('pm-detail-fiscal-year-label');
+        if (yearLabel) yearLabel.textContent = `FY ${data.fiscal_year}`;
         if (state) state.textContent = visits.length ? `${visits.length} planned visit${visits.length === 1 ? '' : 's'} in FY ${data.fiscal_year}.` : `No planned visits in FY ${data.fiscal_year}.`;
         if (!container) return;
         if (!visits.length) { container.innerHTML = '<div class="pm-empty-card">Choose a cadence and initial date above to start monitoring this equipment.</div>'; return; }
@@ -555,11 +568,15 @@
     }
 
     async function loadDetail() {
-        const year = document.getElementById('pm-fiscal-year-detail')?.value || INITIAL_FISCAL_YEAR;
+        const fallbackYear = Number(window.__pmDetailData?.fiscal_year) || INITIAL_FISCAL_YEAR;
+        const year = readFiscalYear('pm-fiscal-year-detail', fallbackYear);
+        if (year === null) return;
         const state = document.getElementById('pm-detail-state');
         if (state) state.textContent = 'Loading planned visits…';
         try {
             const data = await pmJson(`${PM_DETAIL_API}?fiscal_year=${encodeURIComponent(year)}`);
+            const input = document.getElementById('pm-fiscal-year-detail');
+            if (input) input.value = String(data.fiscal_year);
             renderDetailEquipment(data.item || data.equipment);
             renderDetailVisits(data);
             renderHistoryVisits(data);

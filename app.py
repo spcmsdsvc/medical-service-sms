@@ -23419,8 +23419,9 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v178-create-tsr-action-bar-layout.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v179-create-tsr-compact-action-bar.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v181-create-tsr-recovery-layout.
-    # Navigation shell bump: v183 preserves revisioned TSR draft history and concurrent copies.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v183-tsr-draft-history';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v183-tsr-draft-history.
+    # Navigation shell bump: v184 adds unrestricted supported PM fiscal-year navigation.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v184-pm-fiscal-year-navigation';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

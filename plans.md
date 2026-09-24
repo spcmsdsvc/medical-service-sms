@@ -1,5 +1,102 @@
 # Medical Service SMS — Approved Plans
 
+## Genoray/Vieworks PM fiscal-year navigation
+
+**Status:** Executed — local implementation and verification complete on 2026-09-24; uncommitted.
+**Approved:** 2026-09-24 — the owner approved the fiscal-year navigation change and requested implementation.
+**Execution authorized:** 2026-09-24 — the owner explicitly instructed Codex to implement this plan.
+**Detailed:** 2026-09-24.
+
+### Summary
+
+The Genoray and Vieworks PM overview currently renders only the current fiscal year plus
+the immediately preceding and following fiscal years. With the current Manila FY of 2026,
+the visible choices stop at FY 2027 even though the backend already accepts fiscal years
+from 1900 through 2200 and PM plans may contain dates beyond 2030. Replace the overview
+and equipment-detail selectors with validated numeric fiscal-year inputs so administrators
+can inspect any supported year, including FY 2030 and later. Keep the existing April-to-March
+semantics, current-FY default, PM storage, and API behavior.
+
+### Decisions and boundaries
+
+1. Both overview and equipment-detail controls use a numeric year input with integer bounds
+   1900–2200, matching `inventory_pm_fiscal_year()` in `app.py`.
+2. The current Manila fiscal year remains the initial value. A valid changed year requests
+   the existing overview/detail API with `fiscal_year=<year>`; no new endpoint or schema is
+   introduced.
+3. Invalid, blank, fractional, or out-of-range input does not issue an API request. The
+   control returns to the most recently accepted year and shows the existing PM notice UI.
+4. Detail-page FY heading text follows the loaded response year. Overview filtering, PM
+   visit creation/editing, recurring-date generation, brand isolation, and permissions are
+   unchanged.
+5. Scope is limited to the shared PM template, focused PM tests, release/cache metadata,
+   plans, and changes records. Do not alter `scheduler.db`, handoff files, `.claude/`,
+   `output/`, `tmp/`, production data, Railway settings, or Git history.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Confirm the applicable `AGENTS.md`, complete `changes.md`,
+   this approved plan, protected dirty paths, current PM template/API/tests, active service-
+   worker marker, and release manifest. Keep the plan `In progress` before source edits and
+   preserve all unrelated worktree changes.
+2. **Fail-first contracts.** Extend `tests/test_inventory_pm.py` with rendered-shell
+   assertions for numeric overview/detail controls, 1900/2200 bounds, removal of the
+   three-option year list, and a FY 2030 overview/detail request with April–March grouping.
+   Run the focused module against the unchanged template and record the expected failures;
+   the existing FY 2026 and invalid-year behavior remains a positive control.
+3. **PM controls and validation — `templates/inventory_pm.html`.** Replace both hard-coded
+   `<select>` controls with numeric inputs. Add client-side integer/range validation before
+   `loadOverview()` or `loadDetail()` calls, restore the last accepted value after invalid
+   input, and update the detail FY heading from the loaded API payload. Keep the existing
+   API URLs, fetch flow, filters, notices, permissions, and April–March month rendering.
+4. **Focused verification.** Rerun `tests.test_inventory_pm` and the related Genoray,
+   Vieworks, navigation, and service-worker tests. Verify FY 2030 data through the Flask
+   test client, rendered Jinja output, inline JavaScript syntax, and release/cache contracts.
+5. **Release and records.** Bump the embedded navigation-shell marker in `app.py` from v183
+   to v184 with a historical/current comment, add a 2026-09-24 PM navigation item to
+   `static/changelog/releases.json`, and record factual implementation/test results in
+   `changes.md` and this plan.
+6. **Self-review and closeout.** Inspect only the intended diff, run Python/Jinja/JavaScript/
+   JSON checks, `git diff --check`, and isolated full unittest discovery. Report exact pass,
+   fail, and skip counts plus any pre-existing baseline failures. Do not run browser
+   automation without separate authorization, and do not commit, push, deploy, or perform
+   Railway/production operations.
+
+### Verification and completion criteria
+
+- FY 2030 and later supported years can be entered on both PM page types and load the
+  correct April–March data without backend/API changes.
+- Invalid year values are rejected locally and restore the previous valid selection.
+- Existing FY 2026 behavior, PM CRUD, filters, history, permissions, and brand isolation
+  remain green.
+- The service-worker marker, release manifest, `changes.md`, and plan outcome are accurate.
+- Protected dirty artifacts remain unmodified and no commit, push, deployment, or Railway
+  operation occurs.
+
+### Execution outcome — 2026-09-24
+
+- Updated `templates/inventory_pm.html` so both Genoray and Vieworks PM overview/detail pages
+  accept whole fiscal years from 1900 through 2200. Invalid, blank, fractional, and out-of-range
+  entries restore the last accepted year without an API request; detail headings follow the
+  loaded fiscal year. Existing PM API, April–March grouping, visit CRUD, filters, history,
+  permissions, and brand isolation were not changed.
+- Kept `inventory_pm_fiscal_year()` and all PM routes unchanged; added FY 2030 page/API boundary
+  coverage and supported-range regression checks in `tests/test_inventory_pm.py`.
+- Bumped the service-worker navigation marker from v183 to v184 and added the dated PM release
+  manifest entry. The new same-day release follows the existing Create TSR release to preserve
+  legacy manifest-consumer ordering.
+- Fail-first PM checkpoint: 37 tests ran with 2 expected failures against the old template.
+  Final focused results: PM 37/37, Genoray 15/15, Vieworks 11/11, sidebar 22/22,
+  service-worker 5/5, changelog/release workflow 44/44, and TSR release contracts 31/31.
+- Final isolated full discovery ran 1,274 tests with 1,253 passed, 20 pre-existing failures,
+  and 1 skip. Failures remained in the known stale changelog/release expectation, changelog
+  fixture state, Purchase Order HTTP 429 setup limits, and staff fixture HTTP 400 categories;
+  no PM test failed. Python AST, authenticated Jinja rendering, inline PM JavaScript syntax,
+  release JSON, and `git diff --check` passed. Browser QA was skipped under project rules.
+- No database/schema migration, production record access, commit, push, deployment, Railway
+  operation, or browser/Codex UI navigation was performed. Protected dirty paths remain outside
+  the implementation package.
+
 ## Create TSR durable draft history and overwrite prevention
 
 **Status:** Executed — local implementation and verification complete on 2026-09-24; no commit was authorized.

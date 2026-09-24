@@ -2,6 +2,41 @@
 
 codex changes - 2026-09-24
 
+- Recorded the owner-approved and explicitly authorized Genoray/Vieworks PM fiscal-year
+  navigation package in `plans.md` with status **In progress**. The package is limited to
+  replacing the current ±1-year PM controls with validated 1900–2200 numeric inputs,
+  preserving existing API/date semantics, adding FY 2030 coverage, and updating release/cache
+  records; no source behavior or protected artifact had been changed at this checkpoint.
+- Added fail-first PM navigation contracts in `tests/test_inventory_pm.py` for numeric overview
+  and detail controls, 1900–2200 bounds, FY 2030 April–March page/API data, and existing
+  fiscal-year validation. The new UI assertions are expected to fail against the unchanged
+  three-option template; the test uses its disposable SQLite database and does not target
+  protected `scheduler.db`.
+- Fail-first checkpoint completed with `venv\\Scripts\\python.exe -m unittest
+  tests.test_inventory_pm`: **37 tests ran, 2 expected failures** in the new numeric-control
+  contracts; all existing PM behavior tests passed. The app import emitted the existing
+  changelog synchronization and reimbursement migration messages; protected database and
+  unrelated dirty artifacts remain outside the intended change.
+- Updated `templates/inventory_pm.html` so Genoray and Vieworks overview and equipment-detail
+  PM pages use whole-year numeric inputs bounded to FY 1900–2200. Client-side validation now
+  rejects blank, fractional, and out-of-range values before API calls, restores the last valid
+  year, and updates the detail FY heading after a successful year load. Existing PM API,
+  April–March grouping, visit CRUD, filtering, and permissions remain unchanged.
+- Bumped the embedded navigation shell from v183 to v184 in `app.py` and added the published
+  `2026-09-24-inventory-pm-fiscal-year-navigation` release item. Added focused tests for the
+  FY 2030 page/API boundary and the 1900–2200 contract; the implementation remains uncommitted
+  and unpublished, with protected `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/`
+  paths excluded.
+- Kept the existing 2026-09-24 Create TSR release as the first manifest entry so legacy
+  release-consumer contracts remain stable; the PM release follows it in the same-date block.
+- Final verification completed for the PM package: `tests.test_inventory_pm` 37/37,
+  Genoray 15/15, Vieworks 11/11, sidebar 22/22, service-worker 5/5, changelog/release
+  workflow 44/44, and TSR release contracts 31/31. Full isolated discovery ran 1,274 tests:
+  1,253 passed, 20 known baseline failures, and 1 skip; no PM test failed. Python AST,
+  authenticated Jinja rendering, inline PM JavaScript syntax, release JSON, and `git diff
+  --check` passed. Browser QA, commit, push, deployment, Railway operations, and production
+  data access were not performed.
+
 - Recorded the approved Create TSR draft recovery and overwrite-protection plan in `plans.md`.
   It preserves differing same-ID IndexedDB, localStorage, and account-backup copies for explicit
   selection under the original draft/reservation identity, and treats stale backup responses as
