@@ -2,7 +2,7 @@
 
 ## Genoray/Vieworks PM fiscal-year navigation
 
-**Status:** Executed — local implementation and verification complete on 2026-09-24; uncommitted.
+**Status:** Executed — implementation commit `4ba2984` pushed to `origin/main`; Railway deployment is building.
 **Approved:** 2026-09-24 — the owner approved the fiscal-year navigation change and requested implementation.
 **Execution authorized:** 2026-09-24 — the owner explicitly instructed Codex to implement this plan.
 **Detailed:** 2026-09-24.
@@ -59,8 +59,10 @@ semantics, current-FY default, PM storage, and API behavior.
 6. **Self-review and closeout.** Inspect only the intended diff, run Python/Jinja/JavaScript/
    JSON checks, `git diff --check`, and isolated full unittest discovery. Report exact pass,
    fail, and skip counts plus any pre-existing baseline failures. Do not run browser
-   automation without separate authorization, and do not commit, push, deploy, or perform
-   Railway/production operations.
+   automation without separate authorization, and do not perform manual redeploys or Railway/
+   production operations beyond the owner-authorized publication. The owner later authorized
+   the feature commit and push separately; no manual redeploy or Railway setting change is
+   included.
 
 ### Verification and completion criteria
 
@@ -93,9 +95,11 @@ semantics, current-FY default, PM storage, and API behavior.
   fixture state, Purchase Order HTTP 429 setup limits, and staff fixture HTTP 400 categories;
   no PM test failed. Python AST, authenticated Jinja rendering, inline PM JavaScript syntax,
   release JSON, and `git diff --check` passed. Browser QA was skipped under project rules.
-- No database/schema migration, production record access, commit, push, deployment, Railway
-  operation, or browser/Codex UI navigation was performed. Protected dirty paths remain outside
-  the implementation package.
+- No database/schema migration, production record access, manual redeploy, Railway setting
+  change, or browser/Codex UI navigation was performed. The owner separately authorized
+  publication; implementation commit `4ba2984` was pushed to `origin/main`, and Railway
+  accepted it as deployment `b70e46c9-b5ec-4623-8f52-6fdf9a5d02e2`, reported `BUILDING` at
+  verification. Protected dirty paths remain outside the implementation package.
 
 ## Create TSR durable draft history and overwrite prevention
 

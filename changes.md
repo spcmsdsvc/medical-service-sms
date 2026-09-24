@@ -2,8 +2,8 @@
 
 codex changes - 2026-09-24
 
-- Recorded the owner-approved and explicitly authorized Genoray/Vieworks PM fiscal-year
-  navigation package in `plans.md` with status **In progress**. The package is limited to
+- Recorded and executed the owner-approved and explicitly authorized Genoray/Vieworks PM
+  fiscal-year navigation package in `plans.md`. The package is limited to
   replacing the current ±1-year PM controls with validated 1900–2200 numeric inputs,
   preserving existing API/date semantics, adding FY 2030 coverage, and updating release/cache
   records; no source behavior or protected artifact had been changed at this checkpoint.
@@ -24,9 +24,9 @@ codex changes - 2026-09-24
   April–March grouping, visit CRUD, filtering, and permissions remain unchanged.
 - Bumped the embedded navigation shell from v183 to v184 in `app.py` and added the published
   `2026-09-24-inventory-pm-fiscal-year-navigation` release item. Added focused tests for the
-  FY 2030 page/API boundary and the 1900–2200 contract; the implementation remains uncommitted
-  and unpublished, with protected `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/`
-  paths excluded.
+  FY 2030 page/API boundary and the 1900–2200 contract; implementation commit `4ba2984`
+  contains only this package, with protected `scheduler.db`, handoff, `.claude/`, `output/`,
+  and `tmp/` paths excluded.
 - Kept the existing 2026-09-24 Create TSR release as the first manifest entry so legacy
   release-consumer contracts remain stable; the PM release follows it in the same-date block.
 - Final verification completed for the PM package: `tests.test_inventory_pm` 37/37,
@@ -34,8 +34,12 @@ codex changes - 2026-09-24
   workflow 44/44, and TSR release contracts 31/31. Full isolated discovery ran 1,274 tests:
   1,253 passed, 20 known baseline failures, and 1 skip; no PM test failed. Python AST,
   authenticated Jinja rendering, inline PM JavaScript syntax, release JSON, and `git diff
-  --check` passed. Browser QA, commit, push, deployment, Railway operations, and production
-  data access were not performed.
+  --check` passed. Browser QA and production data access were not performed. The owner then
+  authorized publication of commit `4ba2984` to `origin/main`; no manual redeploy or Railway
+  setting change was performed.
+- Publication verification: `git ls-remote origin refs/heads/main` returned
+  `4ba29847892aa120a77d124e98dc22ddb2dd0d5c`. Railway accepted that exact commit as deployment
+  `b70e46c9-b5ec-4623-8f52-6fdf9a5d02e2`, branch `main`, status **BUILDING** at verification.
 
 - Recorded the approved Create TSR draft recovery and overwrite-protection plan in `plans.md`.
   It preserves differing same-ID IndexedDB, localStorage, and account-backup copies for explicit
