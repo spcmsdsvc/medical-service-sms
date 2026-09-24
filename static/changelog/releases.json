@@ -1,6 +1,45 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-24-create-tsr-draft-recovery",
+      "release_date": "2026-09-24",
+      "title": "Create TSR Draft Recovery",
+      "summary": "Engineers can compare saved TSR draft copies and continue from the one that contains their work.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-24-create-tsr-draft-recovery-engineers-admins",
+          "category": "Create TSR",
+          "description": "Create TSR keeps different copies of an unfinished draft available from this device and your account. Choose which copy to continue; choosing it does not save or submit the TSR. If the account kept a newer version, the page reports that the backup needs review instead of claiming the current draft was backed up.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-09-24-create-tsr-draft-recovery-clear-labels",
+          "category": "Create TSR",
+          "description": "Continue Saved Work uses clear labels for versions saved on this device or to your account. The version choices are easier to read and use on narrow screens.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-09-24-create-tsr-draft-recovery-narrow-layout",
+          "category": "Create TSR",
+          "description": "Saved draft versions show their source, save time, and open button in a clear vertical layout, even when the form's content column is narrow.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-23-equipment-first-tsr",
       "release_date": "2026-09-23",
       "title": "Equipment-First TSR Workflow",

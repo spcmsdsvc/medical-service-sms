@@ -1,5 +1,65 @@
 # Project Change Log
 
+codex changes - 2026-09-24
+
+- Recorded the approved Create TSR draft recovery and overwrite-protection plan in `plans.md`.
+  It preserves differing same-ID IndexedDB, localStorage, and account-backup copies for explicit
+  selection under the original draft/reservation identity, and treats stale backup responses as
+  unresolved. Source review found the account merge can replace the IndexedDB version while the
+  same-ID localStorage mirror is hidden; affected browser/account data was not inspected. No
+  application code, tests, databases, or production records had been changed at the time this
+  plan was recorded. Implementation required a separate go-ahead under the repository workflow.
+- The owner separately authorized implementation on 2026-09-24. Draft recovery and overwrite
+  protection are implemented and remain uncommitted; protected dirty paths, engineer
+  browser/account data, and production records remain excluded.
+- Updated `templates/offline_tsr.html` to retain differing same-ID IndexedDB, localStorage, and
+  account-backup payloads, group distinct versions under one saved-work entry, and require an
+  explicit `Use this copy` action. Applying a version rehydrates its attachments/signatures,
+  keeps the existing draft ID/TSR number/reservation, and does not save or submit. Unresolved
+  conflicts block local draft overwrites and background account sync; `stale_ignored` remains an
+  unresolved backup state. No backend route, database, or schema changed.
+- Added focused draft-sync contracts for copy comparison, merge preservation, explicit selection,
+  original reservation identity, stale backup status, and normal single-copy opening. The initial
+  fail-first run before implementation produced five assertion failures and one missing-function
+  error, as expected. Final focused Create TSR page, draft/sync/signature, and offline-follow-up
+  coverage passed 79 tests; the draft-sync module passed 24/24 and standalone changelog workflow
+  coverage passed 41/41. Full discovery ran 1,265 tests with 20 failures and 1 skip, matching the
+  recorded baseline categories (2 stale changelog/release expectations, 16 Purchase Order setup
+  HTTP 429 rate limits, and 2 staff fixture HTTP 400 responses); no TSR tests failed.
+- Bumped the embedded service-worker cache to v180 and added the 2026-09-24 Create TSR draft
+  recovery release item. These changes are not committed or published.
+- Preserved the v179 marker as a historical cache comment for the existing source contract, while
+  keeping v180 as the active worker cache version. The targeted offline-save and page-design
+  contracts initially exposed an isolated Node harness missing the new conflict-state globals;
+  the application now safely skips that optional conflict guard when the extracted helper runs
+  without page initialization.
+- Verified an authenticated `/offline-tsr` Jinja render against a temporary SQLite database;
+  all 16 rendered inline JavaScript blocks passed Node syntax checking. The release manifest,
+  v180 cache marker, app-shell Create TSR precache entry, and Python source syntax were checked;
+  `git diff --check` passed. Browser QA was not performed because it requires separate owner
+  authorization. No engineer browser/account data or production records were inspected, and no
+  commit, push, deployment, or Railway operation was performed.
+- Simplified the Create TSR recovery choices in `templates/offline_tsr.html`: engineers now see
+  “Saved on this device” and “Saved to your account” instead of browser-storage names, and the
+  action reads “Open this version.” Removed repeated source badges from conflicted draft headings.
+- Added responsive saved-work and version-choice styling in `static/css/app-offline-tsr.css` so
+  copy details wrap safely and action buttons retain readable, unbroken labels on narrow screens.
+  Bumped the page asset and app-shell precache to v5 and the service-worker cache to v181; added
+  a 2026-09-24 release item.
+- Added plain-language and responsive-layout contracts. Focused page-design and TSR draft-sync
+  tests passed 36/36; release JSON parsing and `git diff --check` passed. No browser check,
+  commit, push, deployment, Railway action, or production-data inspection was performed.
+- After the owner supplied a screenshot showing the source text compressed into a vertical strip,
+  changed the recovery layout to stack each version's details and button at all widths. The whole
+  saved-work card now uses one content column, so the Delete action no longer narrows the draft
+  details. Bumped the stylesheet URL and app-shell precache to v6 and the service-worker cache to
+  v182; added a release item and a regression contract for the stacked choice layout.
+- Focused Create TSR page-design and draft-sync checks passed 36/36, release JSON parsing passed,
+  and `git diff --check` passed. An isolated synthetic browser fixture was prepared, but Browser
+  Use blocked its local-file URL. Browser testing stopped at that denial; no live engineer or
+  account page was opened and no draft was selected or saved. The visual result still needs an
+  approved browser QA path. No commit, push, or deployment was performed.
+
 codex changes - 2026-09-23
 
 - Removed the unused “Copy Draft Text” and “Start New TSR” buttons from the Create TSR action bar.

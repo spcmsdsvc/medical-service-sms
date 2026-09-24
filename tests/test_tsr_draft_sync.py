@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import subprocess
 import tempfile
 import unittest
 
@@ -10,6 +11,7 @@ from tests.sw_cache_version import assert_cache_version_at_least
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+NODE = pathlib.Path(r"C:\Users\Jonamar\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe")
 
 try:
     import app as app_module
@@ -124,6 +126,276 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         self.assertIn("serverSync:'immediate'", self.template_source)
         self.assertIn('Supporting files remain local to this device', self.app_source)
 
+    def test_divergent_account_copy_is_preserved_without_hydration_overwrite(self):
+        merge = self.template_source.split(
+            'async function mergeServerStandaloneTSRDrafts', 1
+        )[1].split('async function refreshStandaloneTSRDraftPanel', 1)[0]
+        self.assertIn('standaloneTSRAccountDraftCandidates', merge)
+        self.assertIn('groupStandaloneTSRDraftVersions', merge)
+        self.assertIn('rememberStandaloneTSRDraftConflict', merge)
+        preserve = merge.index('if(hasDivergentCopy || standaloneTSRDraftConflictIds.has(draftKey))')
+        self.assertLess(preserve, merge.index('continue;', preserve))
+        self.assertLess(merge.index('continue;', preserve), merge.index('offlineTSRDBPut', preserve),
+                      'A differing account copy must not replace or upload the device copy.')
+
+    def test_same_id_localstorage_mirror_remains_a_recovery_candidate(self):
+        records = self.template_source.split(
+            'async function getStandaloneTSRDraftRecords', 1
+        )[1].split('function getStandaloneTSRSignatureRecoveryPayload', 1)[0]
+        self.assertIn("source:'localstorage'", records)
+        self.assertIn('groupStandaloneTSRDraftVersions', records,
+                      'Matching device mirrors may be deduplicated, differing mirrors may not.')
+        self.assertNotIn('!records.some', records,
+                         'The localStorage mirror must not be hidden solely because IDs match.')
+        self.assertIn('records.push', records)
+
+    def test_conflicts_are_grouped_and_require_explicit_copy_selection(self):
+        panel = self.template_source.split(
+            'async function renderStandaloneTSRDraftPanel', 1
+        )[1].split('async function openStandaloneTSRDraft', 1)[0]
+        self.assertIn('groupStandaloneTSRDraftVersions', panel)
+        self.assertIn('Open this version', panel)
+        self.assertIn('useStandaloneTSRDraftCopy', panel)
+        self.assertIn('Choose one to open', panel)
+
+    def test_recovery_sources_use_plain_language(self):
+        labels = self.template_source.split(
+            'function standaloneTSRDraftSourceLabel', 1
+        )[1].split('function rememberStandaloneTSRDraftConflict', 1)[0]
+        self.assertIn("'Saved to your account'", labels)
+        self.assertIn("'Saved on this device'", labels)
+        for implementation_term in ('IndexedDB', 'localStorage', 'fallback storage'):
+            self.assertNotIn(implementation_term, labels)
+
+    def test_selected_copy_keeps_draft_identity_without_saving_or_finalizing(self):
+        self.assertIn('async function useStandaloneTSRDraftCopy', self.template_source)
+        selection = self.template_source.split(
+            'async function useStandaloneTSRDraftCopy', 1
+        )[1].split('\n}', 1)[0]
+        for marker in (
+            '_draft_id', 'reservation_token', "'tsr-number'", 'originalNumber',
+            'originalReservation', 'rehydrateStandaloneTSRDraftPayload', 'applyStandaloneTSRDraftData',
+        ):
+            self.assertIn(marker, selection)
+        for forbidden in (
+            'saveStandaloneTSRDraftLocally(',
+            'syncStandaloneTSRDraftToServer(',
+            'submitStandaloneTSROnline(',
+        ):
+            self.assertNotIn(forbidden, selection)
+
+    def test_stale_server_response_is_not_reported_as_account_backup(self):
+        sync = self.template_source.split(
+            'async function syncStandaloneTSRDraftToServer', 1
+        )[1].split('function standaloneTSRServerBackupFailureText', 1)[0]
+        queued = self.template_source.split(
+            'function enqueueStandaloneTSRServerDraftSync', 1
+        )[1].split('function readStandaloneTSRServerDraftDeleteQueue', 1)[0]
+        self.assertIn('stale_ignored', sync)
+        self.assertIn('result?.stale_ignored', queued)
+        self.assertIn('account-backup-conflict', queued)
+
+    def test_unresolved_conflict_blocks_background_sync_and_draft_overwrite(self):
+        sync = self.template_source.split(
+            'function enqueueStandaloneTSRServerDraftSync', 1
+        )[1].split('function readStandaloneTSRServerDraftDeleteQueue', 1)[0]
+        local_save = self.template_source.split(
+            'async function saveStandaloneTSRDraftLocally(data', 1
+        )[1].split('async function clearStandaloneTSRDraftLocally', 1)[0]
+        self.assertIn('draft_source_conflict', sync)
+        self.assertIn('!standaloneTSRDraftRecoveryChoices.has(draftId)', sync)
+        self.assertIn('draft_source_conflict', local_save)
+
+    def test_nonconflicting_single_copy_keeps_existing_open_action(self):
+        panel = self.template_source.split(
+            'async function renderStandaloneTSRDraftPanel', 1
+        )[1].split('async function openStandaloneTSRDraft', 1)[0]
+        self.assertIn('openStandaloneTSRDraft', panel)
+        self.assertIn('group.versions.length > 1', panel)
+
+    def test_source_grouping_and_copy_selection_keep_original_reservation_without_saving(self):
+        grouping_helpers = self.template_source.split(
+            'function standaloneTSRDraftComparableSignature', 1
+        )[1].split('function parseOfflineTSRDate', 1)[0]
+        selection = self.template_source.split(
+            'async function useStandaloneTSRDraftCopy', 1
+        )[1].split('async function openStandaloneTSRDraft', 1)[0]
+        script = r"""
+function parseOfflineTSRDate(value){const stamp=Date.parse(String(value||''));return Number.isFinite(stamp)?stamp:null;}
+function getStandaloneTSRDraftTitle(){return 'Saved TSR';}
+function getStandaloneTSRDraftSubtitle(){return 'Service visit';}
+let standaloneTSRDraftRecoveryChoices = new Map();
+let applied = null;
+let saveCalls = 0;
+let syncCalls = 0;
+let submitCalls = 0;
+const local = {
+  id:'draft-recovery-one', source:'offline_tsr_page',
+  recoverySourceKey:'indexeddb', recoverySourceKind:'indexeddb',
+  tsr_number:'20260924-01-ABC', reservation_token:'original-reservation-token',
+  updated_at:'2026-09-24T08:00:00Z',
+  payload:{_draft_id:'draft-recovery-one', savedAt:'2026-09-24T08:00:00Z',
+    'tsr-number':'20260924-01-ABC', reservation_token:'original-reservation-token',
+    'tsr-complaint':'device copy', signatures:{serviced:'device-signature', acknowledged:''},
+    attachments:[{name:'device.pdf', blob_id:'device-blob'}]}
+};
+const mirror = {
+  id:'draft-recovery-one', source:'localstorage', recoverySourceKey:'localstorage', recoverySourceKind:'localstorage',
+  updated_at:'2026-09-24T08:05:00Z',
+  payload:{...local.payload, savedAt:'2026-09-24T08:05:00Z', _server_draft_attachment_count:1}
+};
+const account = {
+  id:'draft-recovery-one', source:'server_draft', recoverySourceKey:'account', recoverySourceKind:'account',
+  tsr_number:'20260924-99-XYZ', reservation_token:'different-server-token', updated_at:'2026-09-24T08:10:00Z',
+  payload:{_draft_id:'draft-recovery-one', 'tsr-number':'20260924-99-XYZ', reservation_token:'different-server-token',
+    'tsr-complaint':'account copy', signatures:{serviced:'account-signature', acknowledged:'client-signature'},
+    attachments:[{name:'account.pdf', blob_id:'account-blob'}]}
+};
+const sourceRecords = [local, mirror, account];
+function waitForStandaloneTSRLocalSaves(){return Promise.resolve();}
+function getStandaloneTSRDraftRecords(){return Promise.resolve(sourceRecords);}
+function rehydrateStandaloneTSRDraftPayload(data){return Promise.resolve({...data});}
+function refreshStandaloneScheduleOptions(){return Promise.resolve();}
+function applyStandaloneTSRDraftData(data){applied = data;return true;}
+function setStandaloneTSRSaveStatus(){}
+function showTSRStatus(){}
+function renderStandaloneTSRDraftPanel(){return Promise.resolve();}
+function saveStandaloneTSRDraftLocally(){saveCalls++;}
+function syncStandaloneTSRDraftToServer(){syncCalls++;}
+function submitStandaloneTSROnline(){submitCalls++;}
+function escapeAttr(value){return String(value);}
+function escapeHTML(value){return String(value);}
+function normalizeQueuedAttachments(value){return value||[];}
+function hasStandaloneScheduleSelection(){return true;}
+function isStandaloneTSRDraftMeaningful(){return true;}
+""" + "function standaloneTSRDraftComparableSignature" + grouping_helpers + "\n" + "async function useStandaloneTSRDraftCopy" + selection + r"""
+(async()=>{
+  const groups = groupStandaloneTSRDraftVersions(sourceRecords);
+  await useStandaloneTSRDraftCopy('draft-recovery-one','account');
+  console.log(JSON.stringify({
+    distinctVersions:groups[0].versions.length,
+    deviceSources:groups[0].versions[0].recoverySourceKeys,
+    loadedComplaint:applied?.['tsr-complaint'],
+    draftId:applied?._draft_id,
+    tsrNumber:applied?.['tsr-number'],
+    reservationToken:applied?.reservation_token,
+    signatures:applied?.signatures,
+    attachments:applied?.attachments,
+    selected:standaloneTSRDraftRecoveryChoices.get('draft-recovery-one'),
+    saveCalls,syncCalls,submitCalls
+  }));
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertEqual(output['distinctVersions'], 2)
+        self.assertIn('indexeddb', output['deviceSources'])
+        self.assertIn('localstorage', output['deviceSources'])
+        self.assertEqual(output['loadedComplaint'], 'account copy')
+        self.assertEqual(output['draftId'], 'draft-recovery-one')
+        self.assertEqual(output['tsrNumber'], '20260924-01-ABC')
+        self.assertEqual(output['reservationToken'], 'original-reservation-token')
+        self.assertEqual(output['signatures']['serviced'], 'account-signature')
+        self.assertEqual(output['attachments'][0]['blob_id'], 'account-blob')
+        self.assertEqual(output['selected'], 'account')
+        self.assertEqual((output['saveCalls'], output['syncCalls'], output['submitCalls']), (0, 0, 0))
+
+    def test_merge_keeps_a_divergent_device_record_and_exposes_account_copy(self):
+        helper_functions = self.template_source.split(
+            'function buildStandaloneTSRAccountDraftCandidate', 1
+        )[1].split('function parseOfflineTSRDate', 1)[0]
+        merge = self.template_source.split(
+            'async function mergeServerStandaloneTSRDrafts', 1
+        )[1].split('async function refreshStandaloneTSRDraftPanel', 1)[0]
+        script = r"""
+function parseOfflineTSRDate(value){const stamp=Date.parse(String(value||''));return Number.isFinite(stamp)?stamp:null;}
+function getStandaloneTSRDraftTitle(){return 'Saved TSR';}
+function getStandaloneTSRDraftSubtitle(){return 'Service visit';}
+Object.defineProperty(globalThis,'navigator',{value:{onLine:true},configurable:true});
+const standaloneTSRAccountDraftCandidates = new Map();
+const standaloneTSRDraftConflictIds = new Set();
+const standaloneTSRDraftRecoveryVariants = new Map();
+const standaloneTSRDraftRecoveryChoices = new Map();
+const OFFLINE_TSR_DB_STORES={drafts:'drafts'};
+const OFFLINE_TSR_ACTIVE_DRAFT_ID='active';
+let standaloneTSRServerDraftsHydrated=false;
+let writes=0, uploads=0;
+const local={id:'draft-divergent',source:'offline_tsr_page',updated_at:'2026-09-24T08:00:00Z',
+  schedule_id:'17',tsr_number:'20260924-01-ABC',reservation_token:'reservation-one',
+  payload:{_draft_id:'draft-divergent','tsr-number':'20260924-01-ABC',reservation_token:'reservation-one',
+    'tsr-complaint':'device work',signatures:{serviced:'device-signature',acknowledged:''},
+    attachments:[{name:'device.pdf',blob_id:'device-file'}]}};
+const remote={draft_key:'draft-divergent',updated_at:'2026-09-24T08:10:00Z',device_updated_at:'2026-09-24T08:10:00Z',
+  schedule_id:'17',tsr_number:'20260924-01-ABC',reservation_token:'reservation-one',
+  payload:{_draft_id:'draft-divergent','tsr-number':'20260924-01-ABC',reservation_token:'reservation-one',
+    'tsr-complaint':'account work',signatures:{serviced:'account-signature',acknowledged:'client-signature'},
+    attachments:[{name:'account.pdf',blob_id:'account-file'}]}};
+globalThis.fetch=async()=>({ok:true,json:async()=>({status:'success',drafts:[remote]})});
+function flushStandaloneTSRServerDraftDeletes(){return Promise.resolve();}
+function waitForStandaloneTSRLocalSaves(){return Promise.resolve();}
+function readStandaloneTSRServerDraftDeleteQueue(){return [];}
+function loadStandaloneTSRDraftRecordsFromIndexedDB(){return Promise.resolve([local]);}
+function loadStandaloneTSRDraftFromLocalStorageFallback(){return null;}
+function isStandaloneTSRDraftMeaningful(){return true;}
+function enqueueStandaloneTSRServerDraftSync(){uploads++;return Promise.resolve({status:'success'});}
+function offlineTSRDBPut(){writes++;return Promise.resolve();}
+""" + "function buildStandaloneTSRAccountDraftCandidate" + helper_functions + "\n" + "async function mergeServerStandaloneTSRDrafts" + merge + r"""
+(async()=>{
+  const result=await mergeServerStandaloneTSRDrafts();
+  const variants=standaloneTSRDraftRecoveryVariants.get('draft-divergent')||[];
+  console.log(JSON.stringify({
+    merged:result.success===true,
+    writes,uploads,
+    conflict:standaloneTSRDraftConflictIds.has('draft-divergent'),
+    accountCandidate:standaloneTSRAccountDraftCandidates.get('draft-divergent')?.payload?.['tsr-complaint'],
+    savedVariants:variants.map(item=>item.payload?.['tsr-complaint']).sort()
+  }));
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertTrue(output['merged'])
+        self.assertEqual((output['writes'], output['uploads']), (0, 0))
+        self.assertTrue(output['conflict'])
+        self.assertEqual(output['accountCandidate'], 'account work')
+        self.assertEqual(output['savedVariants'], ['account work', 'device work'])
+
+    def test_stale_backup_result_uses_unresolved_status_until_real_success(self):
+        enqueue = self.template_source.split(
+            'function enqueueStandaloneTSRServerDraftSync', 1
+        )[1].split('function readStandaloneTSRServerDraftDeleteQueue', 1)[0]
+        script = r"""
+Object.defineProperty(globalThis,'navigator',{value:{onLine:true},configurable:true});
+let standaloneTSRServerDraftSyncTimer=null;
+let standaloneTSRServerDraftSyncChain=Promise.resolve();
+const standaloneTSRDraftConflictIds=new Set();
+const standaloneTSRDraftRecoveryChoices=new Map();
+const standaloneTSRAccountDraftCandidates=new Map();
+const standaloneTSRDraftRecoveryVariants=new Map();
+const standaloneTSRSaveStatusGeneration=1;
+const standaloneTSRActiveContextVersion=1;
+let nextResult={status:'success',stale_ignored:true};
+const states=[];
+function standaloneTSRSaveStatusContextIsActive(){return true;}
+function setStandaloneTSRSaveStatus(state){states.push(state);}
+function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
+""" + "function enqueueStandaloneTSRServerDraftSync" + enqueue + r"""
+(async()=>{
+  await enqueueStandaloneTSRServerDraftSync({id:'draft-status',payload:{}},{immediate:true,statusContext:{}});
+  nextResult={status:'success'};
+  await enqueueStandaloneTSRServerDraftSync({id:'draft-status',payload:{}},{immediate:true,statusContext:{}});
+  console.log(JSON.stringify(states));
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout.strip().splitlines()[-1]), [
+            'backup-in-progress', 'account-backup-conflict',
+            'backup-in-progress', 'account-backed-up',
+        ])
+
     def test_page_save_status_follows_actual_local_and_server_draft_results(self):
         local_save = self.template_source.split(
             'async function saveStandaloneTSRDraftLocally(data', 1
@@ -187,8 +459,14 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         to undo. The bump is a mandatory step for any APP_SHELL change; a test that punishes
         it is a test that trains people to skip it.
         """
-        assert_cache_version_at_least(self, 80, self.app_source)
+        assert_cache_version_at_least(self, 182, self.app_source)
         self.assertIn("'/offline-tsr',", self.app_source)
+
+    def test_draft_recovery_release_entry_is_present(self):
+        release = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases'][0]
+        self.assertEqual(release['release_key'], '2026-09-24-create-tsr-draft-recovery')
+        self.assertEqual(release['release_date'], '2026-09-24')
+        self.assertIn('Choose which copy to continue', release['items'][0]['description'])
 
 
 @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')

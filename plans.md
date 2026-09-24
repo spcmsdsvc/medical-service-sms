@@ -1,5 +1,131 @@
 # Medical Service SMS — Approved Plans
 
+## Create TSR draft recovery and overwrite protection
+
+**Status:** Executed — uncommitted and unpublished; commit/push were not authorized.
+**Approved:** 2026-09-24 — the owner requested implementation of the proposed recovery plan.
+**Detailed:** 2026-09-24.
+
+### Summary
+
+Protect and recover differing versions of one Create TSR draft across browser IndexedDB,
+the device localStorage mirror, and the signed-in account backup. Let the engineer choose
+the copy to continue using under the existing draft ID, TSR number, and reservation. Never
+silently replace a differing device copy during background merge or report a server-stale
+response as a confirmed account backup. Existing final-save behavior remains unchanged.
+
+### Decisions and boundaries
+
+1. Keep the original `draft_key`, `_draft_id`, `tsr-number`, and reservation token when
+   restoring a version. The reservation is bound to its draft key; creating a new identity
+   can conflict with or duplicate TSR numbering.
+2. Show separate source candidates only when their TSR payload contents differ. Identify
+   each candidate by source and saved time. The localStorage mirror must remain visible as a
+   candidate even when IndexedDB contains the same logical draft ID.
+3. On a conflict, an explicit **Use this copy** action applies the chosen payload to the form.
+   Selection itself does not persist, account-sync, queue, or final-save it. Later saves use
+   the existing draft flow and the existing draft identity.
+4. Keep divergent local and remote payloads available without relying on timestamps to choose
+   a winner. A successful HTTP response with `stale_ignored` is not a successful backup of
+   the current device content and must remain visibly unresolved.
+5. Reuse `/get_tsr_drafts`; make no backend route/API, database, or schema changes. Keep TSR
+   payload content in the affected browser/account flows; do not add payload logging.
+6. No production record inspection, browser access, final-save, commit, push, deployment, or
+   Railway operation is authorized by this plan. Browser QA requires separate explicit
+   authorization under the project instructions.
+
+### Investigation and current state
+
+- `collectTSRData()` still collects the existing `.tsr-field` values, and the recent page
+  redesign did not change its draft payload format. The source review did not prove that the
+  redesign caused the reported empty form.
+- `mergeServerStandaloneTSRDrafts()` runs at startup and again on focus/visibility. It writes
+  a same-ID account record into the IndexedDB draft store unless the local timestamp is
+  strictly later than both server timestamps. `getStandaloneTSRDraftRecords()` suppresses a
+  same-ID localStorage mirror when an IndexedDB item is listed, and `openStandaloneTSRDraft()`
+  uses that IndexedDB record before trying the localStorage fallback.
+- The affected engineers still have the same browser/device and reported that nobody saved,
+  cleared, or deleted after opening the blank form. Their browser stores and account records
+  have not been inspected; surviving copies remain possible but are not yet confirmed.
+- Existing protected dirty paths are `scheduler.db`, `Handoffs/08-11-26 handoff.md`,
+  `.claude/`, `medical-service-sms-detailed-handoff-2026-07-26.md`, `output/`, and `tmp/`.
+
+### Numbered execution steps
+
+1. **Implementation preflight.** Before code changes, reread the current `changes.md`, inspect
+   the current Git status and complete diffs for each intended file, and recheck the draft
+   save, merge, open, account-sync, reservation, and test paths. Preserve all protected dirty
+   work and do not access engineer browsers or production records.
+2. **Fail-first draft-sync contracts.** Extend `tests/test_tsr_draft_sync.py` to cover separate
+   divergent IndexedDB/account candidates, a same-ID localStorage candidate, explicit source
+   selection without implicit persistence/final-save, preservation of the original draft ID
+   and reservation fields, stale-response status, and unchanged handling for a single
+   non-conflicting source. Run these focused contracts before implementation and record the
+   expected failures.
+3. **Preserve source versions.** In `templates/offline_tsr.html`, change
+   `mergeServerStandaloneTSRDrafts()` to retain the device record when a same-ID remote
+   payload differs, expose that account payload as a session candidate, and hydrate remote-only
+   drafts as before. Include the matching localStorage mirror in source comparison even when
+   IndexedDB has the ID. Compare stable TSR contents while ignoring only storage bookkeeping;
+   retain real field, signature, and attachment differences. When copies differ or cannot be
+   ordered reliably, do not auto-overwrite or auto-upload either copy.
+4. **Add explicit recovery UI.** Update the existing Continue Saved Work card/panel to group
+   source variants by logical draft, show source and saved time, and offer **Use this copy**
+   for each differing version. The action applies the selected payload under the original
+   draft ID and preserves its number/reservation. It must not invoke local/server save or
+   final-save as a side effect. Keep normal one-copy open behavior intact.
+5. **Correct backup outcome handling.** In `syncStandaloneTSRDraftToServer()` and the save-status
+   result handling, treat `stale_ignored` as unresolved rather than confirmed account backup.
+   Keep sync for a conflicting draft from silently replacing another version until an engineer
+   explicitly selects a source; after selection, use existing draft-save and sync behavior.
+6. **Cache, release, and records.** Bump the existing Create TSR embedded service-worker cache
+   marker monotonically from its current value, add one user-facing release item dated
+   2026-09-24, and update `changes.md` with actual implementation and verification results.
+   Keep this plan’s status current. Do not stage or modify protected artifacts.
+7. **Verification and closeout.** Run the new draft-sync contracts and focused related TSR
+   draft/signature/sync tests, then full unittest discovery with isolated temporary databases.
+   Compare unrelated full-suite failures against the recorded baseline. Check Jinja rendering,
+   inline JavaScript syntax, release JSON, app-shell/cache registration, and `git diff --check`.
+   Do not use a browser unless the owner separately authorizes it. Do not commit, push, deploy,
+   or touch Railway/production state.
+
+### Acceptance criteria
+
+- A differing same-ID IndexedDB, localStorage, or account copy remains selectable and is not
+  silently hidden or overwritten by background merge.
+- The engineer can apply a surviving version on the same browser while keeping the original
+  draft key, TSR number, reservation token, attachments, and signatures.
+- Selecting a version alone does not save, sync, queue, or final-save it.
+- `stale_ignored` cannot appear as confirmed account backup for the current content.
+- Single-source drafts continue through the existing open/save path without extra prompts.
+- No production data, database schema, protected dirty file, commit, push, or deployment is
+  changed.
+
+### Execution outcome — 2026-09-24
+
+- Implemented same-ID source comparison and conflict preservation for IndexedDB,
+  localStorage, and account backup. Divergent copies are grouped with source/save-time labels;
+  the engineer must choose **Use this copy**. Applying a version retains the draft ID, TSR
+  number, reservation token, signatures, and attachment payload and does not save, sync, queue,
+  or final-save. Unresolved conflicts block implicit local overwrite and background account
+  sync. `stale_ignored` remains an unresolved backup state. Single-copy opening remains intact.
+- The fail-first contracts produced five assertion failures and one missing-function error
+  before implementation. Final focused TSR page, draft/sync/signature, and offline-follow-up
+  coverage passed: 79 tests. Draft-sync coverage passed 24 tests; standalone changelog workflow
+  coverage passed 41 tests.
+- Full unittest discovery ran 1,265 tests: 1,244 passed, 20 failed, and 1 was skipped. The 20
+  failures match the previously recorded baseline categories: two stale changelog/release
+  expectations, 16 Purchase Order setup cases rate-limited with HTTP 429, and two staff setup
+  fixtures returning HTTP 400. No TSR tests failed.
+- An authenticated `/offline-tsr` Jinja render returned HTTP 200 using a temporary SQLite test
+  database; all 16 rendered inline JavaScript blocks passed Node syntax checking. The active
+  service-worker cache is v180, the app-shell precache includes Create TSR, the release manifest
+  parses and contains the 2026-09-24 entry, Python source compiles in memory, and `git diff
+  --check` passes.
+- Browser QA was not performed because the plan requires separate owner authorization. No
+  engineer browser/account data or production records were inspected. Protected dirty files
+  remain untouched; no commit, push, deployment, or Railway operation was performed.
+
 ## Create TSR readiness, save status, and theme polish — Package 2
 
 **Status:** Executed — implementation commit `711f287`; exact requested browser viewports remain unverified.

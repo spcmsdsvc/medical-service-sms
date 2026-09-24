@@ -22936,8 +22936,10 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v176-create-tsr-readiness-status.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v177-create-tsr-refresh-focus-fix.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v178-create-tsr-action-bar-layout.
-    # Navigation shell bump: v179 makes the Create TSR action bar more compact.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v179-create-tsr-compact-action-bar';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v179-create-tsr-compact-action-bar.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v181-create-tsr-recovery-layout.
+    # Navigation shell bump: v182 stacks Create TSR recovery choices for narrow content columns.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v182-create-tsr-recovery-layout';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -22956,7 +22958,7 @@ const APP_SHELL = [
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
   '/static/css/app-calibration-report.css?v=9',
-  '/static/css/app-offline-tsr.css?v=4',
+  '/static/css/app-offline-tsr.css?v=6',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',
