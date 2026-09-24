@@ -1,5 +1,103 @@
 # Medical Service SMS — Approved Plans
 
+## Create TSR draft deletion durability and account-scoped tombstones
+
+**Status:** Executed — local implementation and verification complete on 2026-09-24; commit,
+push, and deployment were not authorized.
+**Approved:** 2026-09-24 — prevent deleted Create TSR drafts from returning while preserving
+existing engineers' local drafts and account isolation.
+**Execution authorized:** 2026-09-24 — delegated implementation authorization received from the
+Planner / Orchestrator.
+**Detailed:** 2026-09-24.
+
+### Summary
+
+Make Create TSR draft deletion durable across pending local saves, browser storage mirrors,
+server backup retries, and startup/account refresh. Use a per-account deletion tombstone to hide
+stale account copies until server deletion succeeds, while retaining existing local drafts unless
+the engineer explicitly deletes one. Preserve draft identity, TSR numbering/reservation,
+signatures, attachments, history, and final-save behavior.
+
+### Decisions and boundaries
+
+1. In `templates/offline_tsr.html`, wait for queued local saves, cancel the deleted draft's
+   debounced account backup, wait for an in-flight account backup, and prevent pre-delete work
+   from recreating the draft after deletion begins.
+2. Store a durable delete tombstone scoped to the authenticated account and draft key. Keep it
+   through offline, session, and retry failures; treat a successful delete response or HTTP 404
+   as server deletion. Startup merge, history presentation, and background upload must honor it.
+3. Delete the selected draft from IndexedDB and its matching localStorage mirror, then verify
+   absence from both. Report local or account deletion failures truthfully. Explicitly opening or
+   saving a local draft remains a deliberate way to continue that work.
+4. Preserve pre-existing unowned local drafts and legacy fallback records. Do not bulk-delete,
+   migrate ownership onto, or suppress local records for another engineer. Tombstones are
+   created only for an explicit draft deletion/final-save cleanup and are account-scoped.
+5. Keep the change frontend-focused. No backend route/schema or final-save rule changes. Bump
+   the service-worker shell and add a release item only if the current offline page cache
+   convention requires it. Do not inspect browser/account/production records or run browser QA.
+6. Files: `templates/offline_tsr.html`, `tests/test_tsr_draft_sync.py`, `changes.md`, and this
+   plan; include `app.py` and `static/changelog/releases.json` only for the required shell-cache
+   bump/release record. Do not touch protected database, handoff, generated, temporary, or
+   unrelated source/test files.
+
+### Numbered execution steps
+
+1. **Preflight.** Read applicable `AGENTS.md`, the full `changes.md`, the current plan, Git
+   status/diffs, deletion/save/merge/open paths, current shell-cache rules, and relevant focused
+   tests. Preserve protected dirty work; do not inspect engineer browser/account or production
+   records.
+2. **Focused regression contracts.** Extend `tests/test_tsr_draft_sync.py` with bounded source
+   contracts for waiting/canceling local and server saves, account-scoped durable tombstones,
+   retry retention/404 completion, refresh and upload suppression, local absence verification,
+   truthful failure status, explicit open/save, and preservation of existing local records. Run
+   the focused unchanged-source checkpoint using a unique disposable `MEDICAL_SERVICE_TEST_DB`.
+3. **Durable delete flow.** Update the template to serialize deletion after local/server saves,
+   block stale saves, persist account-keyed tombstones, retry pending account deletion safely,
+   suppress only that account's remote current/history copies and uploads, delete both device
+   mirrors, verify absence, and return concrete deletion outcomes. Keep explicit opening/saving,
+   normal history/recovery, reservation release, and final-save callers working.
+4. **Cache and release records.** Confirm whether the changed `/offline-tsr` shell requires a
+   cache bump under the current service-worker rules. If required, advance the current worker
+   marker once and add a dated user-facing release item without disturbing existing records.
+5. **Verification and closeout.** Run the focused draft-sync module and proportionate syntax,
+   rendered-template/source, release/cache, and diff checks. Use a unique disposable external
+   test DB; do not access `scheduler.db`. Update `changes.md` with actual results and this plan's
+   execution outcome. No browser QA, database/schema change, commit, push, deploy, or Railway
+   operation.
+
+### Acceptance criteria
+
+- A pending local save or account backup cannot recreate a draft after its deletion begins.
+- A failed/offline/session-expired server delete remains durably queued and its stale account
+  copy does not reappear or upload during refresh; HTTP 404 completes deletion.
+- The requested device draft and matching localStorage mirror are absent after a verified local
+  deletion, and errors are not reported as success.
+- Existing legacy device drafts remain available unless individually selected for deletion;
+  another account's tombstone cannot delete or hide the current account's local work.
+- Explicit continuation/save, original draft/reservation identity, signatures, attachments,
+  history, and final-save rules remain intact.
+- Focused checks pass; browser and production data remain uninspected.
+
+### Execution outcome — 2026-09-24
+
+- Updated `templates/offline_tsr.html` with per-account V2 deletion tombstones, pending-save
+  fencing, draft-specific debounce cancellation, serialized account deletion/retry, and 404-as-
+  deleted handling. Account-backed current/history copies and background uploads honor the
+  tombstone; deliberate open and Save Draft actions can release it, while automatic saves cannot.
+- Device deletion now waits for local saves, removes the selected IndexedDB record and matching
+  localStorage mirror, verifies absence from both stores, and reports local versus queued/server
+  outcomes truthfully. Existing device records are not purged or claimed by another account.
+- Left V1 unscoped delete entries unmigrated because they contain no account owner and cannot be
+  safely attributed after account changes. Existing V1 device draft records remain recoverable.
+- Advanced the offline shell cache marker from v185 to v186 and added the dated release item.
+  No backend route, schema, reservation, final-save rule, or database change was needed.
+- Focused command `venv\Scripts\python.exe -m unittest tests.test_tsr_draft_sync
+  tests.test_tsr_offline_followup tests.test_tsr_signature_recovery` passed **75 tests**.
+  The rendered `/offline-tsr` route returned HTTP 200 and all 8 nonempty inline scripts passed
+  Node syntax checks using a disposable temporary test database. `git diff --check` passed.
+- Browser QA, account/production records, scheduler.db, and Railway were not accessed. No
+  commit, push, or deployment was performed.
+
 ## Late Calibration Report for Existing TSRs
 
 **Status:** Executed — implementation verified; no commit (commit/push explicitly excluded).

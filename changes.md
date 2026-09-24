@@ -2,6 +2,36 @@
 
 codex changes - 2026-09-24
 
+- Implemented durable Create TSR draft deletion in `templates/offline_tsr.html`. Deletion now
+  waits for local saves, cancels the selected draft's debounced account backup, serializes behind
+  in-flight account sync, and fences automatic saves/uploads with an account-scoped durable
+  tombstone. Failed/offline/session-rejected account deletes remain queued for retry, HTTP 404
+  counts as already deleted, and stale account/history copies stay suppressed. Deliberate open
+  and Save Draft actions can continue a tombstoned local copy; background saves cannot release
+  its marker.
+- Device deletion removes the selected IndexedDB record and matching localStorage mirror,
+  verifies both are absent, and displays truthful local-failure, retry-pending, and confirmed
+  outcomes. No startup migration purges existing device drafts. Unowned V1 delete-queue entries
+  were not migrated because they cannot safely be attributed to the current account.
+- Advanced the embedded `/offline-tsr` service-worker shell cache to v186 and added the
+  `2026-09-24-create-tsr-draft-deletion` release item in `static/changelog/releases.json`.
+  No backend/schema/database/final-save changes were required.
+- Added focused regression contracts in `tests/test_tsr_draft_sync.py`. The focused command
+  `venv\Scripts\python.exe -m unittest tests.test_tsr_draft_sync
+  tests.test_tsr_offline_followup tests.test_tsr_signature_recovery` passed 75 tests. Rendered
+  `/offline-tsr` returned HTTP 200; all 8 nonempty inline scripts passed Node syntax checks
+  using a disposable temporary test database; `git diff --check` passed. Browser QA,
+  account/production data, scheduler.db, Railway, commit, push, and deployment were not touched.
+- Recorded the approved Create TSR draft-deletion durability package in `plans.md` before
+  implementation. The package covers pending-save cancellation, account-scoped retryable
+  deletion tombstones, suppression of stale account copies, verified IndexedDB/localStorage
+  absence, and truthful deletion outcomes while preserving pre-existing local drafts and
+  final-save behavior. At the pre-implementation checkpoint, no source behavior had changed.
+- Added fail-first source contracts to `tests/test_tsr_draft_sync.py` for save fencing,
+  account-scoped tombstone retries, stale-copy suppression, local-store verification, explicit
+  open/save, and preservation of existing localStorage migration records. The unchanged-source
+  focused checkpoint ran 5 tests and produced 5 expected assertion failures; the test package
+  used its fresh temporary `MEDICAL_SERVICE_TEST_DB` and did not target `scheduler.db`.
 - Implemented late Calibration Report support for saved online TSRs. `app.py` now exposes
   the latest completed online TSR submission and `not_started`/`draft`/`uploaded` report
   state in Timeline, validates the late-upload contract, merges only the report payload,

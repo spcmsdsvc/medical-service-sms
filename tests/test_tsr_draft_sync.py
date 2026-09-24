@@ -249,6 +249,145 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         self.assertIn('TsrDraftVersion.query.filter_by', delete_route)
         self.assertIn('history_query.delete', delete_route)
 
+    def test_draft_deletion_fences_pending_local_and_server_saves(self):
+        clear = self.template_source.split(
+            'async function clearStandaloneTSRDraftLocally', 1
+        )[1].split('async function getStandaloneTSRDraftRecords', 1)[0]
+        delete_server = self.template_source.split(
+            'async function deleteStandaloneTSRDraftOnServer', 1
+        )[1].split('async function mergeServerStandaloneTSRDrafts', 1)[0]
+        save_now = self.template_source.split(
+            'async function saveStandaloneTSRDraftLocallyNow', 1
+        )[1].split('async function saveStandaloneTSRDraftLocally', 1)[0]
+        server_sync = self.template_source.split(
+            'function enqueueStandaloneTSRServerDraftSync', 1
+        )[1].split('function readStandaloneTSRServerDraftDeleteQueue', 1)[0]
+
+        pending_index = clear.find('markStandaloneTSRDraftDeletionPending')
+        local_wait_index = clear.find('await waitForStandaloneTSRLocalSaves()')
+        server_delete_index = clear.find('deleteStandaloneTSRDraftOnServer')
+        self.assertTrue(pending_index >= 0, 'Deletion must persist its tombstone first.')
+        self.assertTrue(local_wait_index >= 0, 'Deletion must wait for pending device saves.')
+        self.assertTrue(server_delete_index >= 0, 'Deletion must process the account copy.')
+        if min(pending_index, local_wait_index, server_delete_index) >= 0:
+            self.assertLess(pending_index, local_wait_index)
+            self.assertLess(local_wait_index, server_delete_index)
+        self.assertTrue('standaloneTSRServerDraftSyncTimerDraftId === draftKey' in delete_server,
+                        'Deletion must cancel only this draft’s debounced server backup.')
+        self.assertTrue('const operation = standaloneTSRServerDraftSyncChain' in delete_server and 'await operation' in delete_server,
+                        'Deletion must wait for an in-flight account backup.')
+        self.assertTrue('getStandaloneTSRDraftDeleteGeneration(context.draftId)' in save_now and
+                        'context.deleteGeneration < currentDeleteGeneration' in save_now,
+                        'A save queued before deletion must not recreate its draft.')
+        if 'context.deleteGeneration < currentDeleteGeneration' in save_now:
+            self.assertLess(save_now.index('context.deleteGeneration < currentDeleteGeneration'),
+                            save_now.index('saveStandaloneTSRDraftToIndexedDB(data'))
+        self.assertTrue('isStandaloneTSRDraftDeletionTombstoned(draftId)' in server_sync,
+                        'Background account backup must honor the tombstone.')
+
+    def test_delete_tombstones_are_durable_account_scoped_and_retryable(self):
+        self.assertTrue('current_user.get_id()' in self.template_source,
+                        'Delete tombstones must be scoped to the authenticated account.')
+        self.assertIn("'medicalServiceStandaloneTSRServerDraftDeletesV2'", self.template_source)
+        read_queue = self.template_source.split(
+            'function readStandaloneTSRServerDraftDeleteQueue', 1
+        )[1].split('function writeStandaloneTSRServerDraftDeleteQueue', 1)[0]
+        write_queue = self.template_source.split(
+            'function writeStandaloneTSRServerDraftDeleteQueue', 1
+        )[1].split('function queueStandaloneTSRServerDraftDelete', 1)[0]
+        flush = self.template_source.split(
+            'async function flushStandaloneTSRServerDraftDeletes', 1
+        )[1].split('async function deleteStandaloneTSRDraftOnServer', 1)[0]
+        remote_delete = self.template_source.split(
+            'async function deleteStandaloneTSRServerDraftRemote', 1
+        )[1].split('function readTSRReservationReleaseQueue', 1)[0]
+
+        self.assertTrue('STANDALONE_TSR_ACCOUNT_SCOPE' in read_queue and 'value.account_id' in read_queue,
+                        'Only the signed-in account’s server deletions may be retried.')
+        self.assertTrue('draft_key' in read_queue)
+        self.assertTrue('localStorage.setItem(STANDALONE_TSR_SERVER_DELETE_KEY' in write_queue)
+        self.assertTrue("status:'pending'" in self.template_source)
+        self.assertTrue("status:'deleted'" in self.template_source)
+        self.assertTrue('markStandaloneTSRDraftDeletionConfirmed' in self.template_source)
+        self.assertTrue("entry.status === 'pending'" in flush)
+        self.assertTrue("if(!currentTombstone || currentTombstone.status !== 'pending') continue;" in flush,
+                        'A retry snapshot must not delete after an explicit action clears its tombstone.')
+        self.assertTrue('markStandaloneTSRDraftDeletionConfirmed' in flush)
+        self.assertTrue('if(response.status === 404)' in remote_delete)
+        self.assertTrue("return { status:'success', success:true, deleted:false, not_found:true }" in remote_delete)
+
+    def test_refresh_hides_deleted_account_copies_but_preserves_device_records(self):
+        merge = self.template_source.split(
+            'async function mergeServerStandaloneTSRDrafts', 1
+        )[1].split('async function refreshStandaloneTSRDraftPanel', 1)[0]
+        records = self.template_source.split(
+            'async function getStandaloneTSRDraftRecords', 1
+        )[1].split('function getStandaloneTSRSignatureRecoveryPayload', 1)[0]
+        migration = self.template_source.split(
+            'async function migrateStandaloneDraftLocalStorageToIndexedDB', 1
+        )[1].split('function ', 1)[0]
+
+        self.assertTrue('isStandaloneTSRDraftDeletionTombstoned(localKey)' in merge,
+                        'A deleted local copy must not be uploaded during startup merge.')
+        self.assertTrue('isStandaloneTSRDraftDeletionTombstoned(draftKey)' in merge,
+                        'A queued account copy must not be rehydrated.')
+        self.assertTrue('records.push(...indexedRecords' in records)
+        self.assertTrue("source:'localstorage'" in records)
+        self.assertTrue('isStandaloneTSRDraftDeletionTombstoned(candidate.id)' in records,
+                        'Only stale server candidates should be hidden from recovery.')
+        self.assertTrue('loadStandaloneTSRDraftFromLocalStorageFallback()' in migration)
+        self.assertTrue('saveStandaloneTSRDraftToIndexedDB(fallbackDraft)' in migration)
+        self.assertTrue('offlineTSRDBDelete' not in migration,
+                        'Startup migration must not delete pre-existing device drafts.')
+        self.assertTrue('localStorage.removeItem' not in migration,
+                        'Startup migration must preserve the legacy localStorage copy.')
+
+    def test_local_delete_verifies_indexeddb_and_localstorage_absence(self):
+        clear_device = self.template_source.split(
+            'async function clearStandaloneTSRDraftFromIndexedDB', 1
+        )[1].split('function saveStandaloneTSRDraftToLocalStorageFallback', 1)[0]
+        delete_ui = self.template_source.split(
+            'async function deleteStandaloneTSRDraft(id)', 1
+        )[1].split('/* =========================================================', 1)[0]
+
+        self.assertTrue('offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, targetId)' in clear_device)
+        self.assertTrue('localStorage.removeItem(STANDALONE_TSR_KEY)' in clear_device)
+        self.assertTrue('offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, targetId)' in clear_device,
+                        'IndexedDB absence must be verified after the delete.')
+        self.assertTrue('localStorage.getItem(STANDALONE_TSR_KEY)' in clear_device,
+                        'The matching localStorage mirror must be verified absent.')
+        self.assertTrue('local_deleted' in clear_device)
+        self.assertTrue('if(!result?.local_deleted)' in delete_ui)
+        self.assertTrue('could not be confirmed' in delete_ui)
+        self.assertTrue('server_delete_pending' in delete_ui)
+
+    def test_explicit_open_and_save_can_intentionally_continue_a_tombstoned_draft(self):
+        open_draft = self.template_source.split(
+            'async function openStandaloneTSRDraft(id)', 1
+        )[1].split('async function deleteStandaloneTSRDraft', 1)[0]
+        save_draft = self.template_source.split(
+            'async function saveStandaloneTSRLocalDraft()', 1
+        )[1].split('async function resetStandaloneTSRForm', 1)[0]
+        local_save = self.template_source.split(
+            'async function saveStandaloneTSRDraftLocally(data', 1
+        )[1].split('async function clearStandaloneTSRDraftLocally', 1)[0]
+
+        self.assertTrue('clearStandaloneTSRDraftDeletionForExplicitAction' in open_draft,
+                        'An engineer must be able to deliberately open a local draft.')
+        if 'clearStandaloneTSRDraftDeletionForExplicitAction' in open_draft:
+            self.assertLess(open_draft.index('clearStandaloneTSRDraftDeletionForExplicitAction'),
+                            open_draft.index('applyStandaloneTSRDraftData'))
+        self.assertTrue('clearStandaloneTSRDraftDeletionForExplicitAction' in save_draft,
+                        'An engineer must be able to deliberately save after a deletion.')
+        self.assertTrue('if(!deletionReleased)' in save_draft,
+                        'A failed tombstone release must block the explicit save truthfully.')
+        self.assertTrue("reason:'draft_deletion_pending'" in local_save,
+                        'Queued background/local saves must not clear a deletion marker.')
+        self.assertNotIn('clearStandaloneTSRDraftDeletionForExplicitAction', local_save,
+                         'Only a deliberate open or Save Draft action may release the tombstone.')
+        self.assertTrue('OFFLINE_TSR_DB_VERSION = 1' in self.template_source,
+                        'Tombstones must not migrate or purge existing IndexedDB draft records.')
+
     def test_nonconflicting_single_copy_keeps_existing_open_action(self):
         panel = self.template_source.split(
             'async function renderStandaloneTSRDraftPanel', 1
@@ -383,6 +522,7 @@ globalThis.fetch=async(url)=>url==='/get_tsr_draft_history'
 function flushStandaloneTSRServerDraftDeletes(){return Promise.resolve();}
 function waitForStandaloneTSRLocalSaves(){return Promise.resolve();}
 function readStandaloneTSRServerDraftDeleteQueue(){return [];}
+function isStandaloneTSRDraftDeletionTombstoned(){return false;}
 function loadStandaloneTSRDraftRecordsFromIndexedDB(){return Promise.resolve([local]);}
 function loadStandaloneTSRDraftFromLocalStorageFallback(){return null;}
 function offlineTSRDBGet(){return Promise.resolve(null);}
@@ -421,6 +561,7 @@ function archiveStandaloneTSRDraftVersion(){return Promise.resolve({success:true
         script = r"""
 Object.defineProperty(globalThis,'navigator',{value:{onLine:true},configurable:true});
 let standaloneTSRServerDraftSyncTimer=null;
+let standaloneTSRServerDraftSyncTimerDraftId='';
 let standaloneTSRServerDraftSyncChain=Promise.resolve();
 const standaloneTSRDraftConflictIds=new Set();
 const standaloneTSRDraftRecoveryChoices=new Map();
@@ -432,6 +573,7 @@ let nextResult={status:'success',stale_ignored:true};
 const states=[];
 function standaloneTSRSaveStatusContextIsActive(){return true;}
 function setStandaloneTSRSaveStatus(state){states.push(state);}
+function isStandaloneTSRDraftDeletionTombstoned(){return false;}
 function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
 """ + "function enqueueStandaloneTSRServerDraftSync" + enqueue + r"""
 (async()=>{
@@ -511,7 +653,7 @@ function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
         to undo. The bump is a mandatory step for any APP_SHELL change; a test that punishes
         it is a test that trains people to skip it.
         """
-        assert_cache_version_at_least(self, 182, self.app_source)
+        assert_cache_version_at_least(self, 186, self.app_source)
         self.assertIn("'/offline-tsr',", self.app_source)
 
     def test_draft_recovery_release_entry_is_present(self):
@@ -521,6 +663,16 @@ function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
         self.assertEqual(release['release_date'], '2026-09-24')
         self.assertIn('Choose which copy to continue', release['items'][0]['description'])
         self.assertTrue(any(item['item_key'] == '2026-09-24-tsr-draft-version-history' for item in release['items']))
+
+    def test_draft_deletion_release_entry_is_present(self):
+        releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
+        release = next(item for item in releases if item['release_key'] == '2026-09-24-create-tsr-draft-deletion')
+        self.assertEqual(release['release_date'], '2026-09-24')
+        self.assertTrue(any(
+            item['item_key'] == '2026-09-24-create-tsr-draft-deletion-engineers' and
+            'keeps account deletion queued' in item['description']
+            for item in release['items']
+        ))
 
 
 @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')

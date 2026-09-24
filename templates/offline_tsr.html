@@ -717,6 +717,7 @@ async function invalidateTimelineSnapshotsAfterTSRSave(){
 }
 const LOGGED_IN_ENGINEER_NAME = "{{ (current_user.engineer_profile.name if current_user.engineer_profile else current_user.username)|e }}";
 const LOGGED_IN_ENGINEER_INITIALS = "{{ (current_user.engineer_profile.initials if current_user.engineer_profile and current_user.engineer_profile.initials else '')|e }}";
+const STANDALONE_TSR_ACCOUNT_SCOPE = String({{ current_user.get_id()|tojson }} || '').trim();
 const OFFLINE_TSR_STORAGE_HEALTH_ADMIN = String("{{ 'true' if offline_storage_health_admin else 'false' }}").toLowerCase() === 'true';
 const SIGNATURE_STAMP_SCALE = Number({{ signature_stamp_scale|tojson }}) || 1.5;
 // The signature footer's height is reserved by renderTSRPrintSheetCanvases before the
@@ -3163,11 +3164,14 @@ const OFFLINE_TSR_DB_STORES = {
 };
 
 const OFFLINE_TSR_STORAGE_PERSISTENCE_KEY = 'phase6_storage_persistence';
-const STANDALONE_TSR_SERVER_DELETE_KEY = 'medicalServiceStandaloneTSRServerDraftDeletesV1';
+// V1 deletion entries had no owner, so V2 does not migrate or apply them to a guessed account.
+const STANDALONE_TSR_SERVER_DELETE_KEY = 'medicalServiceStandaloneTSRServerDraftDeletesV2';
 const STANDALONE_TSR_RESERVATION_RELEASE_KEY = 'medicalServiceStandaloneTSRReservationReleasesV1';
 const STANDALONE_TSR_SERVER_DRAFT_DEBOUNCE_MS = 15 * 1000;
 let standaloneTSRServerDraftSyncTimer = null;
+let standaloneTSRServerDraftSyncTimerDraftId = '';
 let standaloneTSRServerDraftSyncChain = Promise.resolve();
+let standaloneTSRDraftDeleteGenerations = new Map();
 let standaloneTSRServerDraftsHydrated = false;
 let standaloneTSRAccountDraftCandidates = new Map();
 let standaloneTSRDraftServerStates = new Map();
@@ -3995,6 +3999,9 @@ function resetStandaloneTSRSaveStatus(){
 function enqueueStandaloneTSRServerDraftSync(record, { immediate=false, statusContext=null } = {}){
   if(!record?.id || !navigator.onLine) return { pending:true, skipped:true, reason:'offline_or_missing_key' };
   const draftId = String(record.id || '').trim();
+  if(isStandaloneTSRDraftDeletionTombstoned(draftId)){
+    return { pending:true, skipped:true, reason:'draft_deletion_pending' };
+  }
   if(typeof standaloneTSRDraftConflictIds !== 'undefined' && standaloneTSRDraftConflictIds.has(draftId) &&
     (typeof standaloneTSRDraftRecoveryChoices === 'undefined' ||
       !standaloneTSRDraftRecoveryChoices.has(draftId) || !statusContext)){
@@ -4049,23 +4056,37 @@ function enqueueStandaloneTSRServerDraftSync(record, { immediate=false, statusCo
   };
   if(!immediate){
     clearTimeout(standaloneTSRServerDraftSyncTimer);
+    standaloneTSRServerDraftSyncTimerDraftId = draftId;
     standaloneTSRServerDraftSyncTimer = setTimeout(() => {
       standaloneTSRServerDraftSyncTimer = null;
+      standaloneTSRServerDraftSyncTimerDraftId = '';
       const operation = startSync();
       void operation.catch(err => console.warn('[Offline TSR] Debounced server draft backup failed', err));
     }, STANDALONE_TSR_SERVER_DRAFT_DEBOUNCE_MS);
     return { pending:true, scheduled:true };
   }
 
-  clearTimeout(standaloneTSRServerDraftSyncTimer);
-  standaloneTSRServerDraftSyncTimer = null;
+  if(standaloneTSRServerDraftSyncTimerDraftId === draftId){
+    clearTimeout(standaloneTSRServerDraftSyncTimer);
+    standaloneTSRServerDraftSyncTimer = null;
+    standaloneTSRServerDraftSyncTimerDraftId = '';
+  }
   return startSync();
 }
 
 function readStandaloneTSRServerDraftDeleteQueue(){
   try{
     const values = JSON.parse(localStorage.getItem(STANDALONE_TSR_SERVER_DELETE_KEY) || '[]');
-    return Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean) : [];
+    if(!Array.isArray(values) || !STANDALONE_TSR_ACCOUNT_SCOPE) return [];
+    return values.filter(value => value && typeof value === 'object' && !Array.isArray(value) &&
+      String(value.account_id || '') === STANDALONE_TSR_ACCOUNT_SCOPE && String(value.draft_key || '').trim())
+      .map(value => ({
+        account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
+        draft_key:String(value.draft_key).trim(),
+        status:value.status === 'deleted' ? 'deleted' : 'pending',
+        generation:Number(value.generation || 0) || 0,
+        updated_at:String(value.updated_at || '')
+      }));
   }catch(err){
     return [];
   }
@@ -4073,18 +4094,97 @@ function readStandaloneTSRServerDraftDeleteQueue(){
 
 function writeStandaloneTSRServerDraftDeleteQueue(values){
   try{
-    const unique = [...new Set((values || []).map(value => String(value || '').trim()).filter(Boolean))];
-    if(unique.length) localStorage.setItem(STANDALONE_TSR_SERVER_DELETE_KEY, JSON.stringify(unique));
-    else localStorage.removeItem(STANDALONE_TSR_SERVER_DELETE_KEY);
+    if(!STANDALONE_TSR_ACCOUNT_SCOPE) return false;
+    let stored = [];
+    try{
+      const parsed = JSON.parse(localStorage.getItem(STANDALONE_TSR_SERVER_DELETE_KEY) || '[]');
+      if(Array.isArray(parsed)) stored = parsed;
+    }catch(err){}
+    const otherAccounts = stored.filter(value => value && typeof value === 'object' && !Array.isArray(value) &&
+      String(value.account_id || '') && String(value.account_id) !== STANDALONE_TSR_ACCOUNT_SCOPE &&
+      String(value.draft_key || '').trim());
+    const unique = new Map();
+    (values || []).forEach(value => {
+      const draftKey = String(value?.draft_key || '').trim();
+      if(!draftKey) return;
+      unique.set(`${STANDALONE_TSR_ACCOUNT_SCOPE}:${draftKey}`, {
+        account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
+        draft_key:draftKey,
+        status:value.status === 'deleted' ? 'deleted' : 'pending',
+        generation:Number(value.generation || 0) || 0,
+        updated_at:String(value.updated_at || new Date().toISOString())
+      });
+    });
+    localStorage.setItem(STANDALONE_TSR_SERVER_DELETE_KEY, JSON.stringify([...otherAccounts, ...unique.values()]));
+    return true;
   }catch(err){
     console.warn('[Offline TSR] Unable to persist pending server draft deletions', err);
+    return false;
   }
 }
 
+function getStandaloneTSRDraftDeletionTombstone(id){
+  const draftKey = String(id || '').trim();
+  if(!draftKey) return null;
+  return readStandaloneTSRServerDraftDeleteQueue().find(entry => entry.draft_key === draftKey) || null;
+}
+
+function getStandaloneTSRDraftDeleteGeneration(id){
+  const draftKey = String(id || '').trim();
+  const current = Number(standaloneTSRDraftDeleteGenerations.get(draftKey) || 0) || 0;
+  const stored = Number(getStandaloneTSRDraftDeletionTombstone(draftKey)?.generation || 0) || 0;
+  const generation = Math.max(current, stored);
+  if(draftKey && generation) standaloneTSRDraftDeleteGenerations.set(draftKey, generation);
+  return generation;
+}
+
+function isStandaloneTSRDraftDeletionTombstoned(id){
+  return Boolean(getStandaloneTSRDraftDeletionTombstone(id));
+}
+
+function markStandaloneTSRDraftDeletionConfirmed(id){
+  const draftKey = String(id || '').trim();
+  if(!draftKey) return false;
+  const current = readStandaloneTSRServerDraftDeleteQueue();
+  const existing = current.find(entry => entry.draft_key === draftKey);
+  if(!existing) return false;
+  return writeStandaloneTSRServerDraftDeleteQueue([
+    ...current.filter(value => value.draft_key !== draftKey),
+    Object.assign({}, existing, { status:'deleted', updated_at:new Date().toISOString() })
+  ]);
+}
+
+function markStandaloneTSRDraftDeletionPending(id){
+  const draftKey = String(id || '').trim();
+  if(!draftKey || !STANDALONE_TSR_ACCOUNT_SCOPE) return false;
+  const generation = getStandaloneTSRDraftDeleteGeneration(draftKey) + 1;
+  standaloneTSRDraftDeleteGenerations.set(draftKey, generation);
+  const current = readStandaloneTSRServerDraftDeleteQueue();
+  return writeStandaloneTSRServerDraftDeleteQueue([
+    ...current.filter(entry => entry.draft_key !== draftKey),
+    {
+      account_id:STANDALONE_TSR_ACCOUNT_SCOPE,
+      draft_key:draftKey,
+      status:'pending',
+      generation,
+      updated_at:new Date().toISOString()
+    }
+  ]);
+}
+
+async function clearStandaloneTSRDraftDeletionForExplicitAction(id){
+  const draftKey = String(id || '').trim();
+  if(!draftKey) return false;
+  if(!isStandaloneTSRDraftDeletionTombstoned(draftKey)) return true;
+  await standaloneTSRServerDraftSyncChain.catch(() => null);
+  const current = readStandaloneTSRServerDraftDeleteQueue();
+  const writeSucceeded = writeStandaloneTSRServerDraftDeleteQueue(current.filter(entry => entry.draft_key !== draftKey));
+  return writeSucceeded;
+}
+
 function queueStandaloneTSRServerDraftDelete(id){
-  const queued = readStandaloneTSRServerDraftDeleteQueue();
-  queued.push(String(id || '').trim());
-  writeStandaloneTSRServerDraftDeleteQueue(queued);
+  if(!isStandaloneTSRDraftDeletionTombstoned(id)) return markStandaloneTSRDraftDeletionPending(id);
+  return true;
 }
 
 async function deleteStandaloneTSRServerDraftRemote(id){
@@ -4172,47 +4272,71 @@ async function flushTSRReservationReleaseQueue(){
 
 async function flushStandaloneTSRServerDraftDeletes(){
   if(!navigator.onLine) return { skipped:true, reason:'offline' };
-  const queued = readStandaloneTSRServerDraftDeleteQueue();
+  const queued = readStandaloneTSRServerDraftDeleteQueue().filter(entry => entry.status === 'pending');
   if(!queued.length) return { deleted:0 };
-  const remaining = [];
+  await waitForStandaloneTSRLocalSaves();
   let deleted = 0;
-  for(const draftKey of queued){
+  let remaining = 0;
+  for(const entry of queued){
+    const draftKey = entry.draft_key;
+    const currentTombstone = getStandaloneTSRDraftDeletionTombstone(draftKey);
+    if(!currentTombstone || currentTombstone.status !== 'pending') continue;
+    if(standaloneTSRServerDraftSyncTimerDraftId === draftKey){
+      clearTimeout(standaloneTSRServerDraftSyncTimer);
+      standaloneTSRServerDraftSyncTimer = null;
+      standaloneTSRServerDraftSyncTimerDraftId = '';
+    }
     try{
-      await deleteStandaloneTSRServerDraftRemote(draftKey);
+      const operation = standaloneTSRServerDraftSyncChain
+        .catch(() => null)
+        .then(() => deleteStandaloneTSRServerDraftRemote(draftKey));
+      standaloneTSRServerDraftSyncChain = operation.catch(() => null);
+      await operation;
+      if(!markStandaloneTSRDraftDeletionConfirmed(draftKey)) throw new Error('Delete confirmation could not be stored on this device.');
       deleted += 1;
     }catch(err){
-      remaining.push(draftKey);
+      remaining += 1;
       console.warn('[Offline TSR] Pending server draft deletion failed', err);
     }
   }
-  writeStandaloneTSRServerDraftDeleteQueue(remaining);
-  return { deleted, remaining:remaining.length };
+  return { deleted, remaining };
 }
 
 async function deleteStandaloneTSRDraftOnServer(id){
   const draftKey = String(id || '').trim();
   if(!draftKey) return { skipped:true, reason:'missing_draft_key' };
-  clearTimeout(standaloneTSRServerDraftSyncTimer);
-  standaloneTSRServerDraftSyncTimer = null;
-  await standaloneTSRServerDraftSyncChain.catch(() => null);
-  if(!navigator.onLine){
-    queueStandaloneTSRServerDraftDelete(draftKey);
-    return { pending:true, reason:'offline' };
+  if(!isStandaloneTSRDraftDeletionTombstoned(draftKey) && !queueStandaloneTSRServerDraftDelete(draftKey)){
+    return { pending:true, server_delete_pending:true, reason:'tombstone_storage_failed' };
   }
+  if(standaloneTSRServerDraftSyncTimerDraftId === draftKey){
+    clearTimeout(standaloneTSRServerDraftSyncTimer);
+    standaloneTSRServerDraftSyncTimer = null;
+    standaloneTSRServerDraftSyncTimerDraftId = '';
+  }
+  if(!navigator.onLine){
+    return { pending:true, server_delete_pending:true, reason:'offline' };
+  }
+  const operation = standaloneTSRServerDraftSyncChain
+    .catch(() => null)
+    .then(() => deleteStandaloneTSRServerDraftRemote(draftKey));
+  standaloneTSRServerDraftSyncChain = operation.catch(() => null);
   try{
-    const result = await deleteStandaloneTSRServerDraftRemote(draftKey);
-    const remaining = readStandaloneTSRServerDraftDeleteQueue().filter(value => value !== draftKey);
-    writeStandaloneTSRServerDraftDeleteQueue(remaining);
-    return result;
+    const result = await operation;
+    if(!markStandaloneTSRDraftDeletionConfirmed(draftKey)){
+      return { pending:true, server_delete_pending:true, reason:'confirmation_storage_failed', result };
+    }
+    return Object.assign({}, result, { server_delete_confirmed:true });
   }catch(err){
-    queueStandaloneTSRServerDraftDelete(draftKey);
-    return { pending:true, error:err };
+    return { pending:true, server_delete_pending:true, error:err };
   }
 }
 
 async function mergeServerStandaloneTSRDrafts(){
   if(!navigator.onLine) return { skipped:true, reason:'offline' };
   await flushStandaloneTSRServerDraftDeletes();
+  const pendingServerDraftDeletes = new Set(
+    readStandaloneTSRServerDraftDeleteQueue().map(entry => entry.draft_key)
+  );
   await waitForStandaloneTSRLocalSaves();
   try{
     const response = await fetch('/get_tsr_drafts', { credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'} });
@@ -4233,7 +4357,7 @@ async function mergeServerStandaloneTSRDrafts(){
         standaloneTSRDraftHistoryCandidates = new Map();
         for(const version of Array.isArray(historyResult.versions) ? historyResult.versions : []){
           const key = String(version?.draft_key || '').trim();
-          if(!key) continue;
+          if(!key || isStandaloneTSRDraftDeletionTombstoned(key)) continue;
           const candidates = standaloneTSRDraftHistoryCandidates.get(key) || [];
           candidates.push(buildStandaloneTSRHistoryDraftCandidate(version, key));
           standaloneTSRDraftHistoryCandidates.set(key, candidates);
@@ -4250,7 +4374,6 @@ async function mergeServerStandaloneTSRDrafts(){
     }catch(historyError){
       standaloneTSRDraftHistoryWarning = 'Earlier account copies could not be loaded. Device copies remain available here.';
     }
-    const pendingServerDraftDeletes = new Set(readStandaloneTSRServerDraftDeleteQueue());
     await waitForStandaloneTSRLocalSaves();
     const localRecords = await loadStandaloneTSRDraftRecordsFromIndexedDB({ includeEmpty:true }).catch(() => []);
     const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
@@ -4298,7 +4421,8 @@ async function mergeServerStandaloneTSRDrafts(){
     const remoteKeys = new Set(remoteDrafts.map(draft => String(draft.draft_key || draft.id || '')));
     for(const localRecord of localRecords){
       const localKey = String(localRecord.id || '');
-      if(localKey && !remoteKeys.has(localKey) && isStandaloneTSRDraftMeaningful(localRecord.payload) &&
+      if(localKey && !isStandaloneTSRDraftDeletionTombstoned(localKey) && !remoteKeys.has(localKey) &&
+        isStandaloneTSRDraftMeaningful(localRecord.payload) &&
         !standaloneTSRDraftConflictIds.has(localKey)){
         await enqueueStandaloneTSRServerDraftSync(localRecord, { immediate:true }).catch(err => {
           console.warn('[Offline TSR] Local draft could not be uploaded during hydration', err);
@@ -4312,7 +4436,11 @@ async function mergeServerStandaloneTSRDrafts(){
       // A successful final save clears the device copy first and queues this account-draft
       // deletion when the network is unavailable or the delete request fails. Do not hydrate
       // that stale signed draft back into recovery while the deletion is being retried.
-      if(pendingServerDraftDeletes.has(draftKey)) continue;
+      if(pendingServerDraftDeletes.has(draftKey) || isStandaloneTSRDraftDeletionTombstoned(draftKey)){
+        standaloneTSRAccountDraftCandidates.delete(draftKey);
+        standaloneTSRDraftHistoryCandidates.delete(draftKey);
+        continue;
+      }
 
       const localCandidates = localCandidatesByKey.get(draftKey) || [];
       const local = indexedByKey.get(draftKey) || localCandidates[0] || null;
@@ -4412,16 +4540,43 @@ async function loadStandaloneTSRDraftRecordById(id){
 
 async function clearStandaloneTSRDraftFromIndexedDB(id=null){
   const targetId = id || standaloneCurrentDraftId || OFFLINE_TSR_ACTIVE_DRAFT_ID;
+  await waitForStandaloneTSRLocalSaves();
+  let indexedDBAbsent = !isIndexedDBSupported();
   try{
     await offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, targetId);
+    const remaining = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, targetId);
+    indexedDBAbsent = !remaining;
   }catch(err){
-    console.warn('[Offline TSR DB] Unable to clear IndexedDB TSR draft', err);
+    console.warn('[Offline TSR DB] Unable to verify TSR draft removal from IndexedDB', err);
   }
-  const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
-  if(targetId === OFFLINE_TSR_ACTIVE_DRAFT_ID || targetId === standaloneCurrentDraftId || fallback?._draft_id === targetId){
-    localStorage.removeItem(STANDALONE_TSR_KEY);
+
+  let localStorageAbsent = false;
+  try{
+    const raw = localStorage.getItem(STANDALONE_TSR_KEY);
+    if(raw){
+      const fallback = JSON.parse(raw);
+      const fallbackId = String(fallback?._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID).trim();
+      if(fallbackId === String(targetId).trim()) localStorage.removeItem(STANDALONE_TSR_KEY);
+    }
+    const remainingRaw = localStorage.getItem(STANDALONE_TSR_KEY);
+    if(!remainingRaw){
+      localStorageAbsent = true;
+    }else{
+      const remainingFallback = JSON.parse(remainingRaw);
+      const remainingId = String(remainingFallback?._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID).trim();
+      localStorageAbsent = remainingId !== String(targetId).trim();
+    }
+  }catch(err){
+    console.warn('[Offline TSR] Unable to verify localStorage TSR draft removal', err);
   }
-  if(standaloneCurrentDraftId === targetId) standaloneCurrentDraftId = '';
+
+  const localDeleted = indexedDBAbsent && localStorageAbsent;
+  if(localDeleted && standaloneCurrentDraftId === targetId) standaloneCurrentDraftId = '';
+  return {
+    local_deleted:localDeleted,
+    indexeddb_absent:indexedDBAbsent,
+    localstorage_absent:localStorageAbsent
+  };
 }
 
 function saveStandaloneTSRDraftToLocalStorageFallback(data){
@@ -4807,6 +4962,9 @@ function captureStandaloneTSRLocalSaveContext(data){
   return {
     data:snapshot,
     draftId,
+    deleteGeneration:typeof getStandaloneTSRDraftDeleteGeneration === 'function'
+      ? getStandaloneTSRDraftDeleteGeneration(draftId)
+      : 0,
     activeDraftId:String(standaloneCurrentDraftId || '').trim(),
     contextVersion:standaloneTSRActiveContextVersion
   };
@@ -4825,6 +4983,12 @@ function waitForStandaloneTSRLocalSaves(){
 
 async function saveStandaloneTSRDraftLocallyNow(context){
   const data = context.data;
+  const currentDeleteGeneration = typeof getStandaloneTSRDraftDeleteGeneration === 'function'
+    ? getStandaloneTSRDraftDeleteGeneration(context.draftId)
+    : Number(context.deleteGeneration || 0) || 0;
+  if(context.deleteGeneration < currentDeleteGeneration){
+    return { id:context.draftId, skipped:true, reason:'draft_deleted_before_save' };
+  }
   let record = null;
   try{
     await warnOfflineTSRStoragePressure({ silent:true });
@@ -4890,6 +5054,16 @@ async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = 
     });
     return { skipped:true, reason:'empty_tsr_draft' };
   }
+  const currentDeleteGeneration = typeof getStandaloneTSRDraftDeleteGeneration === 'function'
+    ? getStandaloneTSRDraftDeleteGeneration(context.draftId)
+    : Number(context.deleteGeneration || 0) || 0;
+  if(context.deleteGeneration < currentDeleteGeneration){
+    return { id:context.draftId, skipped:true, reason:'draft_deleted_before_save' };
+  }
+  if(typeof isStandaloneTSRDraftDeletionTombstoned === 'function' &&
+    isStandaloneTSRDraftDeletionTombstoned(context.draftId)){
+    return { id:context.draftId, skipped:true, reason:'draft_deletion_pending' };
+  }
   context.statusGeneration = ++standaloneTSRSaveStatusGeneration;
   setStandaloneTSRSaveStatus('saving-local', context);
 
@@ -4906,6 +5080,7 @@ async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = 
     setStandaloneTSRSaveStatus('local-save-failed', context, { error });
     throw error;
   }
+  if(record?.skipped) return record;
   if(record?.failed || record?.source === 'none'){
     setStandaloneTSRSaveStatus('local-save-failed', context, { record });
   }else{
@@ -4940,11 +5115,20 @@ async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = 
 
 async function clearStandaloneTSRDraftLocally(id=null){
   const targetId = id || standaloneCurrentDraftId || OFFLINE_TSR_ACTIVE_DRAFT_ID;
+  if(!markStandaloneTSRDraftDeletionPending(targetId)){
+    return {
+      local_deleted:false,
+      server_delete_pending:true,
+      error:new Error('The deletion marker could not be saved on this device.')
+    };
+  }
+  await waitForStandaloneTSRLocalSaves();
   const serverDelete = await deleteStandaloneTSRDraftOnServer(targetId);
   const reservationToken = normalizeTSRReservationToken(standaloneTSRReservationToken);
   const activeDraftId = String(standaloneCurrentDraftId || '').trim();
   const clearingActiveDraft = !id || (activeDraftId && String(targetId) === activeDraftId);
-  if(reservationToken && clearingActiveDraft){
+  const localDelete = await clearStandaloneTSRDraftFromIndexedDB(id);
+  if(localDelete.local_deleted && reservationToken && clearingActiveDraft){
     const reservationItem = { reservation_token:reservationToken, draft_key:targetId };
     if(navigator.onLine){
       try{ await releaseTSRReservationRemote(reservationItem); }
@@ -4953,9 +5137,12 @@ async function clearStandaloneTSRDraftLocally(id=null){
       queueTSRReservationRelease(reservationItem);
     }
   }
-  await clearStandaloneTSRDraftFromIndexedDB(id);
-  clearStandaloneTSRDraftRecoveryState(targetId);
-  return serverDelete;
+  if(localDelete.local_deleted) clearStandaloneTSRDraftRecoveryState(targetId);
+  return Object.assign({}, localDelete, {
+    server_delete_confirmed:serverDelete?.server_delete_confirmed === true,
+    server_delete_pending:serverDelete?.server_delete_pending === true,
+    server_delete:serverDelete
+  });
 }
 
 async function getStandaloneTSRDraftRecords(){
@@ -4986,10 +5173,20 @@ async function getStandaloneTSRDraftRecords(){
     });
   }
   for(const candidate of standaloneTSRAccountDraftCandidates.values()){
-    if(candidate?.payload && isStandaloneTSRDraftMeaningful(candidate.payload)) records.push(candidate);
+    if(candidate?.payload && isStandaloneTSRDraftMeaningful(candidate.payload) &&
+      !isStandaloneTSRDraftDeletionTombstoned(candidate.id)) records.push(candidate);
   }
-  for(const versions of standaloneTSRDraftHistoryCandidates.values()) records.push(...versions);
-  for(const variants of standaloneTSRDraftRecoveryVariants.values()) records.push(...variants);
+  for(const [draftKey, versions] of standaloneTSRDraftHistoryCandidates.entries()){
+    if(!isStandaloneTSRDraftDeletionTombstoned(draftKey)) records.push(...versions);
+  }
+  for(const [draftKey, variants] of standaloneTSRDraftRecoveryVariants.entries()){
+    const deviceVersions = variants.filter(candidate =>
+      ['indexeddb', 'localstorage'].includes(candidate?.recoverySourceKind) ||
+      ['indexeddb', 'localstorage'].includes(candidate?.source)
+    );
+    if(!isStandaloneTSRDraftDeletionTombstoned(draftKey)) records.push(...variants);
+    else records.push(...deviceVersions);
+  }
   groupStandaloneTSRDraftVersions(records).forEach(group => {
     if(group.versions.length > 1) rememberStandaloneTSRDraftConflict(group.id, group.versions);
   });
@@ -5683,6 +5880,9 @@ async function openStandaloneTSRDraft(id){
     await renderStandaloneTSRDraftPanel();
     return;
   }
+  if(isStandaloneTSRDraftDeletionTombstoned(requestedId)){
+    await clearStandaloneTSRDraftDeletionForExplicitAction(requestedId);
+  }
   try{
     try{
       await refreshStandaloneScheduleOptions(false);
@@ -5713,18 +5913,21 @@ async function deleteStandaloneTSRDraft(id){
     icon: 'trash'
   });
   if(!shouldDelete) return;
-  const existingRecord = await loadStandaloneTSRDraftRecordById(id).catch(() => null);
-  const wasServerBacked = existingRecord?.source === 'server_draft' || Boolean(existingRecord?.payload?._server_draft_attachment_count);
   const deletingCurrent = id === standaloneCurrentDraftId;
-  await clearStandaloneTSRDraftLocally(id);
-  if(deletingCurrent){
+  const result = await clearStandaloneTSRDraftLocally(id);
+  if(deletingCurrent && result?.local_deleted){
     initializeBlankStandaloneTSR();
   }
   await renderStandaloneTSRDraftPanel();
-  const deleteMessage = wasServerBacked
-    ? 'Saved TSR draft deleted from your account and this device.'
-    : 'Saved TSR draft deleted from this device and queued for account deletion.';
-  showTSRStatus(deleteMessage, 'info');
+  if(!result?.local_deleted){
+    showTSRStatus('Draft deletion could not be confirmed on this device. Any copy that remains in browser storage is still available to continue.', 'danger');
+  }else if(result.server_delete_pending){
+    showTSRStatus('Draft removed from this device. Account deletion is queued and will retry when the connection is available.', 'warning');
+  }else if(result.server_delete_confirmed){
+    showTSRStatus('Draft removed from this device and its account copy was deleted or already absent.', 'success');
+  }else{
+    showTSRStatus('Draft removed from this device.', 'success');
+  }
 }
 
 /* =========================================================
@@ -8456,6 +8659,11 @@ async function saveStandaloneTSRLocalDraft(){
   }
   try{
     const data=collectTSRData();
+    const deletionReleased = await clearStandaloneTSRDraftDeletionForExplicitAction(resolveStandaloneTSRDraftId(data));
+    if(!deletionReleased){
+      showTSRStatus('This draft is still marked for deletion on this device. Try saving again before continuing.', 'danger');
+      return;
+    }
     const result = await saveStandaloneTSRDraftLocally(data, { serverSync:'immediate' });
     if(result?.skipped){
       const message = result.reason === 'draft_source_conflict'

@@ -23560,8 +23560,9 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v179-create-tsr-compact-action-bar.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v181-create-tsr-recovery-layout.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v183-tsr-draft-history.
-    # Navigation shell bump: v185 adds late Calibration Report uploads for saved TSRs.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v185-late-calibration-report';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v185-late-calibration-report.
+    # Navigation shell bump: v186 makes Create TSR draft deletion durable.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v186-durable-tsr-draft-deletion';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
