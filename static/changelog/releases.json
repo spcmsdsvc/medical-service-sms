@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-24-late-calibration-report",
+      "release_date": "2026-09-24",
+      "title": "Late Calibration Reports",
+      "summary": "Engineers can add a Calibration Report to an already saved TSR from Timeline without creating a duplicate TSR revision.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-24-late-calibration-report-engineers",
+          "category": "Create TSR",
+          "description": "Timeline now offers Add Calibration Report, Finish Calibration Report, or View Calibration Report for saved online TSRs. The original TSR remains unchanged, uploaded reports are read-only, and interrupted uploads can be retried from the saved local report.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-24-create-tsr-draft-recovery",
       "release_date": "2026-09-24",
       "title": "Create TSR Draft Recovery",

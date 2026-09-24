@@ -1,5 +1,133 @@
 # Medical Service SMS — Approved Plans
 
+## Late Calibration Report for Existing TSRs
+
+**Status:** Executed — implementation verified; no commit (commit/push explicitly excluded).
+**Approved:** 2026-09-24 — the owner approved the proposed Timeline shortcut and
+calibration-only workflow.
+**Execution authorized:** 2026-09-24 — the owner explicitly instructed Codex to implement
+this plan.
+**Detailed:** 2026-09-24.
+
+### Summary
+
+Add a Calibration Report shortcut to saved TSR schedule actions in Timeline. It opens a
+calibration-only version of Create TSR, loads the latest saved TSR, and lets the engineer
+create or finish the report without creating a new TSR revision. Uploaded reports remain
+unchanged and cannot be replaced through this flow.
+
+### Decisions and boundaries
+
+1. Extend the Timeline payload with the latest online TSR submission ID and calibration
+   state (`not_started`, `draft`, or `uploaded`). Add Add/Finish/View Calibration Report
+   actions to desktop schedule cards, the schedule summary popover, and mobile schedule
+   actions. Route them to `/offline-tsr?...&mode=calibration_report`; hide them for
+   legacy/manual TSR files without an online TSR submission. Keep `reports.html` unchanged.
+2. Extend `POST /upload_online_tsr_attachment/<submission_id>` for late generated reports
+   using `attachment_source=generated_calibration_report`, `late_calibration_report=1`,
+   and `calibration_report_json`. Require the latest completed submission and existing
+   schedule permission, verify the generated attachment token, merge only the
+   calibration-report payload, preserve the original TSR and revision history, create the
+   linked file/conversion/certificate workflow, and retain retry-safe idempotency.
+3. A same-token retry returns the existing upload. A different report after an uploaded
+   report is rejected without mutation. Existing attachment type, size, count, and
+   authorization rules remain in force. No database migration or new TSR revision route
+   is introduced.
+4. Calibration-only Create TSR loads the saved submission through the existing endpoint,
+   auto-fills the report, locks/hides TSR fields, signatures, ordinary attachments, TSR
+   preview, and TSR save controls, and keeps only calibration editing and local draft
+   actions available. An uploaded report is read-only and continues to show conversion
+   and certificate status.
+5. Calibration-only final save uploads the generated DOCX and complete report payload
+   directly to the existing TSR. It must not save a normal TSR, create a revision,
+   regenerate the TSR PDF, or require client re-signature. Failed/offline uploads retain
+   the report in existing durable local storage with its target submission ID and state
+   that it is local-only until a later Timeline retry succeeds.
+6. Scope excludes the Reports archive, replacement/supersession of uploaded reports,
+   production/Railway actions, database reset/migration, commit, and push.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read the applicable `AGENTS.md` and complete `changes.md`,
+   inspect the current plans, Git state, protected dirty paths, Timeline payload/action
+   variants, latest-submission route, calibration upload route/helpers, Create TSR loading
+   and save paths, active service-worker marker, release manifest, and focused tests.
+   Preserve `scheduler.db`, handoff files, `.claude/`, `output/`, and `tmp/`.
+2. **Fail-first contracts.** Add focused backend, Timeline, and calibration-only client
+   tests before source changes. Run the focused tests against the current implementation
+   and record the expected failures for the late-upload fields, calibration-only mode,
+   Timeline actions, duplicate/replacement rules, and cache/release markers.
+3. **Timeline state and actions — `app.py`, `templates/timeline.html`.** Build a safe
+   latest-submission map for visible schedules and expose the online submission ID plus
+   calibration state, including HR/redacted payload compatibility. Add state-aware
+   desktop, summary, mobile-card, mobile-lite, and mobile-sticky actions that preserve
+   existing permissions and pass the `calibration_report` mode. Do not add an archive
+   surface or expose a shortcut for manual-only TSR files.
+4. **Late upload contract — `app.py`.** Extend the existing attachment route and the
+   calibration upload-payload helper. Parse and validate `calibration_report_json` only
+   for the explicit late-report mode, require a latest completed submission and matching
+   generated token, merge only the report object, set server-owned file/source markers,
+   and leave all TSR core fields/PDF/revision data unchanged. Return conversion and
+   certificate state. Handle same-token duplicate retries and different-token uploaded
+   report rejection without creating duplicate files or approval requests.
+5. **Calibration-only page mode — `templates/offline_tsr.html`.** Add a distinct
+   calibration context and URL loader that uses the existing latest-submission endpoint,
+   applies the saved TSR/report data, selects the schedule, and applies read-only page
+   gating. Add the page-level final-upload handler with CSRF, retry/error handling,
+   local durable fallback, submission-ID matching, and success cleanup that does not clear
+   the saved TSR. Keep ordinary Create TSR, revision, draft, and queue paths unchanged.
+6. **Calibration editor integration — `static/js/app-calibration-report.js`.** Branch
+   `saveFinalReport()` for calibration-only mode, send the generated DOCX plus complete
+   report JSON through the page handler, mark upload/conversion/certificate state after a
+   confirmed response, and disable replacement controls after upload. Preserve the
+   existing normal Create TSR final-save behavior.
+7. **Focused verification and release metadata.** Rerun the focused tests and then the
+   related TSR/timeline suite. Run Python AST checks, authenticated Jinja rendering,
+   inline JavaScript syntax/runtime tests, release JSON validation, and `git diff --check`.
+   Bump the embedded service-worker marker from v184 to v185 and the calibration script
+   query/precache from v31 to v32. Add the user-facing late-calibration release item to
+   `static/changelog/releases.json`.
+8. **Self-review and closeout.** Run isolated full unittest discovery, report exact
+   pass/fail/skip results and pre-existing baseline failures, inspect only the intended
+   diff, confirm protected paths are untouched, update `changes.md` with factual files,
+   behavior, tests, cache/release, and browser-skip results, and amend this plan with the
+   actual execution outcome. Do not use browser automation, commit, push, deploy, or
+   change Railway/database production state.
+
+### Verification and completion criteria
+
+- An engineer can open a saved TSR from Timeline and create or finish its Calibration
+  Report afterward.
+- The late report uploads against the existing TSR without a duplicate TSR or TSR
+  revision, while existing uploaded reports cannot be silently replaced.
+- Failed uploads remain recoverable locally and are never reported as server-uploaded.
+- Existing Create TSR calibration, revision, approval, conversion, attachment, and
+  ordinary TSR-save workflows remain functional.
+- Focused and full verification results, cache marker, release manifest, `changes.md`,
+  and this plan are truthful; browser QA remains skipped under project rules.
+
+### Execution results — 2026-09-24
+
+- Implemented the Timeline submission/state payload, desktop and mobile shortcuts, late
+  upload contract, calibration-only Create TSR mode, local retry recovery, uploaded-report
+  read-only behavior, service-worker v185/cache v32 bump, release entry, and focused tests
+  described above. The existing TSR save/revision route and `reports.html` were not changed.
+- Isolated focused verification passed: late-upload reliability 16/16, calibration report
+  contracts 20/20, offline follow-up 15/15, Timeline file/API tests 10/10, HR Timeline
+  tests 10/10, TSR contact suggestions 16/16, changelog workflow 41/41, draft-sync 31/31,
+  and release compatibility checks 10/10. The authenticated `/offline-tsr` render passed;
+  8 rendered inline JavaScript blocks parsed successfully. Python AST, external calibration
+  JavaScript syntax, release JSON, and `git diff --check` also passed.
+- Full `python -m unittest discover -s tests` ran 1,287 tests with 1,266 passes, 19
+  unrelated full-suite failures, and 2 skips. The remaining failures were one shared
+  changelog-manifest state failure, sixteen purchase-order setup HTTP 429 responses, and
+  two staff-fixture HTTP 400 responses; no late-calibration, Timeline, or calibration-editor
+  test failed in the final run.
+- Browser automation was skipped under project instructions. No database migration,
+  production/Railway operation, commit, push, or deployment was performed. Protected dirty
+  paths remained preserved.
+
+
 ## Genoray/Vieworks PM fiscal-year navigation
 
 **Status:** Executed — implementation commit `4ba2984` pushed to `origin/main`; Railway deployment is building.

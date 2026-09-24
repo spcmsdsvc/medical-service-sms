@@ -806,8 +806,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=9", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=31", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=31'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=32", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=32'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -838,6 +838,15 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('certificate: { bsid:', self.script_source)
         self.assertIn("'certificate','certificate_approval'].includes(key)", self.script_source)
         self.assertIn('certificateTemplateData', self.script_source)
+
+    def test_late_calibration_report_mode_contract(self):
+        self.assertIn('isOnlineTSRCalibrationMode', self.template_source)
+        self.assertIn('saveStandaloneCalibrationReport', self.template_source)
+        self.assertIn('late_calibration_report', self.template_source)
+        self.assertIn('calibration_report_json', self.template_source)
+        self.assertIn('calibration-only', self.template_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=32", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=32'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
@@ -846,6 +855,16 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('certificateDataFontSize', self.script_source)
         self.assertIn('setFontSize(dataSize)', self.script_source)
         self.assertNotIn('drawRectangle', self.script_source)
+
+    def test_calibration_only_final_save_uses_page_upload_without_normal_tsr_save(self):
+        final_save = self.script_source.split('async function saveFinalReport(){', 1)[1].split('  async function download(){', 1)[0]
+        self.assertIn('calibrationOnly', final_save)
+        self.assertIn('saveStandaloneCalibrationReport', final_save)
+        self.assertIn('No new TSR revision was created.', final_save)
+        self.assertLess(final_save.index('saveStandaloneCalibrationReport'), final_save.index('window.saveStandaloneTSRDraft(true)'))
+        self.assertIn('late_calibration_report', self.template_source)
+        self.assertIn('_late_calibration_report_submission_id', self.template_source)
+        self.assertIn('_late_calibration_report_pending', self.template_source)
 
     def test_node_catalog_fail_closed_controls(self):
         self.assertTrue(NODE.is_file(), f'Bundled Node runtime missing: {NODE}')

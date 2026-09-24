@@ -17064,8 +17064,76 @@ def online_tsr_submission_to_dict(submission, include_payload=True):
         'last_emailed_at': clean_str(payload.get('_last_emailed_at')),
         'recipients': parse_manual_recipient_emails(payload.get('_sent_recipient_emails') or []),
         'payload': payload if include_payload else None,
+        'calibration_report_state': calibration_report_state_for_submission(submission),
         'calibration_certificate': calibration_certificate_approval_to_dict(certificate_approval) if certificate_approval else None,
     }
+
+
+def calibration_report_state_for_submission(submission):
+    """Return the small state machine used by Timeline Calibration Report actions."""
+    payload = parse_online_tsr_payload_json(submission)
+    report = payload.get('calibration_report') if isinstance(payload, dict) else None
+    report = report if isinstance(report, dict) else {}
+    generated = report.get('generated') if isinstance(report.get('generated'), dict) else {}
+    marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+    marker = marker if isinstance(marker, dict) else {}
+
+    if (
+        clean_int(generated.get('file_id'))
+        or clean_int(marker.get('file_id'))
+    ) and (
+        clean_str(generated.get('source')) == 'generated_calibration_report'
+        or clean_str(marker.get('source')) == 'generated_calibration_report'
+    ):
+        return 'uploaded'
+
+    report_status = (clean_str(report.get('status')) or '').lower()
+    generated_has_content = any(
+        clean_str(generated.get(key))
+        for key in ('attachment_id', 'fingerprint', 'blob_id', 'filename', 'file_id', 'source')
+    )
+    marker_has_content = any(
+        clean_str(marker.get(key))
+        for key in ('attachment_id', 'fingerprint', 'file_id', 'source', 'filename')
+    )
+    if generated_has_content or marker_has_content or (report and report_status not in {'', 'not_started'}):
+        return 'draft'
+    return 'not_started'
+
+
+def merge_late_calibration_report_payload(submission, calibration_report):
+    """Merge only a late report into a saved TSR payload.
+
+    Server-owned attachment/conversion fields are discarded before the existing
+    upload recorder writes them back from the durable ShiftFile record.
+    """
+    if not isinstance(calibration_report, dict):
+        return False
+    generated = calibration_report.get('generated')
+    if not isinstance(generated, dict):
+        return False
+
+    report = dict(calibration_report)
+    report['generated'] = dict(generated)
+    for key in (
+        'file_id',
+        'uploaded_filename',
+        'upload_token',
+        'source',
+        'pdf_state',
+        'pdf_file_id',
+        'pdf_filename',
+        'pdf_error',
+        'pdf_attempts',
+    ):
+        report['generated'].pop(key, None)
+
+    payload = parse_online_tsr_payload_json(submission)
+    if not isinstance(payload, dict):
+        return False
+    payload['calibration_report'] = report
+    submission.payload_json = json.dumps(payload, ensure_ascii=False)
+    return True
 
 
 def get_latest_online_tsr_submission_for_shift(shift_id):
@@ -22767,6 +22835,77 @@ def upload_online_tsr_attachment(submission_id):
             'message': 'Unsupported TSR attachment source.'
         }), 400
 
+    late_calibration_report_requested = (clean_str(request.form.get('late_calibration_report')) or '').lower() in {'1', 'true', 'yes'}
+    if late_calibration_report_requested and attachment_source != 'generated_calibration_report':
+        return jsonify({
+            'status': 'error',
+            'message': 'Late Calibration Report uploads must use the generated report attachment source.'
+        }), 400
+
+    existing_file = ShiftFile.query.filter_by(upload_token=upload_token).first()
+    if existing_file and existing_file.online_tsr_submission_id != submission.id:
+        return jsonify({
+            'status': 'error',
+            'message': 'This attachment token belongs to another TSR.'
+        }), 409
+    late_calibration_report = None
+    if late_calibration_report_requested:
+        if not bool(getattr(submission, 'is_latest', True)):
+            return jsonify({
+                'status': 'error',
+                'message': 'Calibration Reports can only be added to the latest TSR revision.'
+            }), 409
+
+        raw_report = request.form.get('calibration_report_json')
+        try:
+            late_calibration_report = json.loads(raw_report or '')
+        except (TypeError, ValueError, json.JSONDecodeError):
+            late_calibration_report = None
+        if not isinstance(late_calibration_report, dict):
+            return jsonify({
+                'status': 'error',
+                'message': 'The final Calibration Report payload is missing or invalid.'
+            }), 400
+
+        generated = late_calibration_report.get('generated')
+        reported_token = normalize_online_tsr_submission_token(
+            generated.get('attachment_id') if isinstance(generated, dict) else None
+        )
+        report_status = (clean_str(late_calibration_report.get('status')) or '').lower()
+        if (
+            not isinstance(generated, dict)
+            or report_status in {'', 'not_started'}
+            or not clean_str(generated.get('fingerprint'))
+        ):
+            return jsonify({
+                'status': 'error',
+                'message': 'The final Calibration Report payload is incomplete.'
+            }), 400
+        if not reported_token or reported_token != upload_token:
+            return jsonify({
+                'status': 'error',
+                'message': 'The Calibration Report attachment token does not match the upload.'
+            }), 409
+
+        current_report_state = calibration_report_state_for_submission(submission)
+        if current_report_state == 'uploaded':
+            same_submission_file = bool(
+                existing_file
+                and existing_file.online_tsr_submission_id == submission.id
+                and normalize_online_tsr_submission_token(existing_file.upload_token) == upload_token
+            )
+            if not same_submission_file:
+                return jsonify({
+                    'status': 'error',
+                    'error_code': 'calibration_report_already_uploaded',
+                    'message': 'An uploaded Calibration Report already exists for this TSR and cannot be replaced.'
+                }), 409
+        elif not merge_late_calibration_report_payload(submission, late_calibration_report):
+            return jsonify({
+                'status': 'error',
+                'message': 'The final Calibration Report payload is invalid.'
+            }), 400
+
     generated_marker = calibration_report_upload_marker(submission, upload_token) if attachment_source == 'generated_calibration_report' else None
     if attachment_source == 'generated_calibration_report' and not generated_marker:
         return jsonify({
@@ -22775,7 +22914,6 @@ def upload_online_tsr_attachment(submission_id):
         }), 409
 
     certificate_result = {'ok': False, 'code': 'not_requested'}
-    existing_file = ShiftFile.query.filter_by(upload_token=upload_token).first()
     if existing_file:
         if existing_file.online_tsr_submission_id != submission.id:
             return jsonify({
@@ -22809,6 +22947,7 @@ def upload_online_tsr_attachment(submission_id):
             'file_id': existing_file.id,
             'filename': get_shift_file_display_name(existing_file),
             'attachment_source': attachment_source or 'manual_attachment',
+            'late_calibration_report': bool(late_calibration_report_requested),
             'calibration_report': calibration_report_conversion_state(existing_file.id) if attachment_source == 'generated_calibration_report' else None,
             'certificate': calibration_certificate_approval_to_dict(certificate_result['approval']) if certificate_result.get('ok') and certificate_result.get('approval') else {'status': certificate_result.get('code', 'retryable')},
         })
@@ -22917,6 +23056,7 @@ def upload_online_tsr_attachment(submission_id):
             'filename': get_shift_file_display_name(file_rec),
             'size': len(file_bytes),
             'attachment_source': attachment_source or 'manual_attachment',
+            'late_calibration_report': bool(late_calibration_report_requested),
             'calibration_report': conversion_state,
             'certificate': calibration_certificate_approval_to_dict(certificate_result['approval']) if certificate_result.get('ok') and certificate_result.get('approval') else {'status': certificate_result.get('code', 'not_requested'), 'message': certificate_result.get('message', '')},
         })
@@ -23420,8 +23560,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v179-create-tsr-compact-action-bar.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v181-create-tsr-recovery-layout.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v183-tsr-draft-history.
-    # Navigation shell bump: v184 adds unrestricted supported PM fiscal-year navigation.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v184-pm-fiscal-year-navigation';
+    # Navigation shell bump: v185 adds late Calibration Report uploads for saved TSRs.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v185-late-calibration-report';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -23446,7 +23586,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=31',
+  '/static/js/app-calibration-report.js?v=32',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
@@ -46520,6 +46660,8 @@ def redact_timeline_payload_for_hr(payload):
         'file_details': [],
         'service_file_delivery': None,
         'has_linked_tsr': False,
+        'online_tsr_submission_id': None,
+        'calibration_report_state': 'not_started',
         'travel_request_no': '',
         'travel_destination': '',
         'travel_purpose': '',
@@ -46815,6 +46957,24 @@ def get_timeline_data():
 
         weekly_shift_ids = [shift.id for shift in weekly_shifts]
         weekly_file_records = [file_record for shift in weekly_shifts for file_record in shift.files]
+        latest_online_tsr_map = {}
+        if weekly_shift_ids:
+            ensure_online_tsr_submission_table()
+            latest_online_tsr_rows = (
+                OnlineTsrSubmission.query
+                .filter(OnlineTsrSubmission.shift_id.in_(weekly_shift_ids))
+                .filter(OnlineTsrSubmission.status == 'completed')
+                .filter(OnlineTsrSubmission.is_latest.is_(True))
+                .order_by(
+                    OnlineTsrSubmission.shift_id.asc(),
+                    OnlineTsrSubmission.revision_no.desc(),
+                    OnlineTsrSubmission.created_at.desc(),
+                    OnlineTsrSubmission.id.desc(),
+                )
+                .all()
+            )
+            for online_tsr in latest_online_tsr_rows:
+                latest_online_tsr_map.setdefault(online_tsr.shift_id, online_tsr)
         certificate_approval_map = (
             calibration_certificate_approval_map_for_files(weekly_file_records)
         )
@@ -46916,6 +47076,7 @@ def get_timeline_data():
                 .get('tsr', {})
                 .get('total_count', 0)
             )
+            latest_online_tsr = latest_online_tsr_map.get(shift.id)
             equipment = resolve_shift_equipment(shift)
             equipment_source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
             equipment_available = bool(
@@ -46956,6 +47117,11 @@ def get_timeline_data():
                 ],
                 'service_file_delivery': service_file_delivery,
                 'has_linked_tsr': bool(service_file_tsr_total),
+                'online_tsr_submission_id': clean_int(getattr(latest_online_tsr, 'id', None)),
+                'calibration_report_state': (
+                    calibration_report_state_for_submission(latest_online_tsr)
+                    if latest_online_tsr else 'not_started'
+                ),
                 'engineers': assigned_engineer_ids,
                 'day_owner_engineer_id': shift.engineer_id,
                 'day_owner_engineer_name': shift.engineer.name if shift.engineer else '',

@@ -33,7 +33,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=31"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=32"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page offline-tsr-layout">
   <div class="offline-tsr-hero no-print">
@@ -852,6 +852,7 @@ let mySavedSignatureLoaded = false;
 let mySavedSignatureLoadingPromise = null;
 let offlineTSRAttachments = [];
 let onlineTSRRevisionContext = null;
+let onlineTSRCalibrationContext = null;
 let standaloneCurrentDraftId = '';
 let standaloneTSRReservationToken = '';
 let standaloneTSRActiveContextVersion = 0;
@@ -1190,6 +1191,9 @@ const TSR_REVISION_EDITABLE_EQUIPMENT_FIELD_IDS = [
 function isOnlineTSRRevisionMode(){
   return Boolean(onlineTSRRevisionContext);
 }
+function isOnlineTSRCalibrationMode(){
+  return Boolean(onlineTSRCalibrationContext);
+}
 function hasStandaloneScheduleSelection(){
   return Boolean(String(selectedStandaloneScheduleId || '').trim());
 }
@@ -1274,6 +1278,7 @@ function updateCreateTSRScheduleGate(options={}){
     }
   }
   renderStandaloneTSRCoreReadiness();
+  if(isOnlineTSRCalibrationMode()) applyOnlineTSRCalibrationOnlyGate();
 }
 function requireStandaloneScheduleForTSRAction(){
   if(hasStandaloneScheduleSelection()) return true;
@@ -3133,6 +3138,11 @@ function collectTSRData(){
       serial_no: originalSerialNo
     };
   }
+  const calibrationContext = typeof onlineTSRCalibrationContext !== 'undefined' ? onlineTSRCalibrationContext : null;
+  if(calibrationContext){
+    data._late_calibration_report_submission_id = String(calibrationContext.submission_id || '');
+    data._late_calibration_report_pending = true;
+  }
   return data;
 }
 const OFFLINE_TSR_QUEUE_KEY = 'medical_service_offline_tsr_queue_v1';
@@ -4620,6 +4630,164 @@ async function loadOnlineTSRRevisionFromUrl(){
     setOnlineTSRRevisionContext(null);
     showTSRStatus(err?.message || 'Unable to load saved TSR for correction.', 'danger');
     return false;
+  }
+}
+
+function setOnlineTSRCalibrationReportReadOnly(readOnly){
+  const editor = document.getElementById('calibration-report-editor');
+  if(!editor) return;
+  editor.querySelectorAll('input, textarea, select, button').forEach(el => {
+    if(el.tagName === 'BUTTON' || 'disabled' in el) el.disabled = Boolean(readOnly);
+    if(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'){
+      el.readOnly = Boolean(readOnly);
+      el.setAttribute('aria-readonly', readOnly ? 'true' : 'false');
+    }
+  });
+}
+
+function applyOnlineTSRCalibrationOnlyGate(){
+  const active = isOnlineTSRCalibrationMode();
+  document.body.classList.toggle('offline-tsr-calibration-only', active);
+  if(!active) return;
+
+  ['offline-tsr-action-bar', 'tsr-core-readiness-summary', 'standalone-tsr-drafts-disclosure', 'tsr-section-nav',
+    'tsr-section-customer-equipment', 'tsr-section-service-work', 'tsr-section-visit-signoff'
+  ].forEach(id => document.getElementById(id)?.classList.add('d-none'));
+
+  const supportingSection = document.getElementById('tsr-section-supporting-documents');
+  if(supportingSection){
+    supportingSection.querySelector(':scope > h3')?.classList.add('d-none');
+    Array.from(supportingSection.children).forEach(child => {
+      if(child.id !== 'calibration-report-card') child.classList.add('d-none');
+    });
+  }
+
+  const schedulePicker = document.getElementById('tsr-schedule-selection');
+  if(schedulePicker){
+    schedulePicker.querySelector('.schedule-picker-open-btn')?.setAttribute('disabled', 'disabled');
+    schedulePicker.querySelector('.schedule-picker-open-btn')?.setAttribute('aria-disabled', 'true');
+    schedulePicker.querySelector('button[onclick^="refreshStandaloneScheduleOptions"]')?.setAttribute('disabled', 'disabled');
+    schedulePicker.querySelector('select')?.setAttribute('disabled', 'disabled');
+    const help = document.getElementById('tsr-schedule-picker-help');
+    if(help) help.textContent = 'Saved TSR loaded. Schedule and TSR fields are read-only in Calibration Report mode.';
+  }
+
+  const heroTitle = document.querySelector('.offline-tsr-hero h2');
+  const heroSubtitle = document.querySelector('.offline-tsr-hero p');
+  if(heroTitle) heroTitle.innerHTML = '<i class="fa-solid fa-file-circle-check text-primary me-2"></i>Calibration Report';
+  if(heroSubtitle) heroSubtitle.textContent = 'Complete or review the Calibration Report attached to the saved TSR. The original TSR will not be revised.';
+
+  setOnlineTSRCalibrationReportReadOnly(String(onlineTSRCalibrationContext?.calibration_report_state || '').toLowerCase() === 'uploaded');
+}
+
+function getOnlineTSRCalibrationRequestFromUrl(){
+  const params = new URLSearchParams(window.location.search || '');
+  if(String(params.get('mode') || '').toLowerCase() !== 'calibration_report') return null;
+  const submissionId = params.get('submission_id') || params.get('edit_submission_id') || '';
+  const shiftId = params.get('shift_id') || params.get('schedule_id') || '';
+  if(submissionId) return { type:'submission', id:submissionId };
+  if(shiftId) return { type:'latest', id:shiftId };
+  return null;
+}
+
+function onlineTSRCalibrationReportState(submission, payload){
+  const explicit = String(submission?.calibration_report_state || '').toLowerCase();
+  if(['not_started','draft','uploaded'].includes(explicit)) return explicit;
+  const sourceMarker = payload?._generated_calibration_report || {};
+  const generated = payload?.calibration_report?.generated || {};
+  if((sourceMarker.file_id || generated.file_id) && (sourceMarker.source === 'generated_calibration_report' || generated.source === 'generated_calibration_report')) return 'uploaded';
+  return payload?.calibration_report && payload.calibration_report.status !== 'not_started' ? 'draft' : 'not_started';
+}
+
+async function restoreStandaloneLateCalibrationDraft(submissionId){
+  const targetId = String(submissionId || '').trim();
+  if(!targetId || String(onlineTSRCalibrationContext?.calibration_report_state || '').toLowerCase() === 'uploaded') return null;
+
+  let records = [];
+  try{
+    records = await loadStandaloneTSRDraftRecordsFromIndexedDB({ includeEmpty:true });
+  }catch(err){
+    console.warn('[Offline TSR] Late Calibration Report draft lookup failed', err);
+  }
+  const indexedCandidate = records.find(record => String(record?.payload?._late_calibration_report_submission_id || '') === targetId);
+  let candidate = indexedCandidate || null;
+  if(!candidate){
+    const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+    if(String(fallback?._late_calibration_report_submission_id || '') === targetId){
+      candidate = { id:fallback._draft_id || '', payload:fallback, source:'localstorage' };
+    }
+  }
+  if(!candidate?.payload?.calibration_report) return null;
+
+  const localId = String(candidate.id || candidate.payload._draft_id || '').trim();
+  if(localId) standaloneCurrentDraftId = localId;
+  if(onlineTSRCalibrationContext) onlineTSRCalibrationContext.local_draft_id = localId;
+  window.calibrationReport?.apply(candidate.payload.calibration_report);
+  showTSRStatus('Recovered the Calibration Report saved on this device after the previous upload did not complete. It is still not uploaded.', 'warning');
+  return candidate;
+}
+
+async function loadOnlineTSRCalibrationFromUrl(){
+  const requestInfo = getOnlineTSRCalibrationRequestFromUrl();
+  if(!requestInfo) return false;
+
+  const endpoint = requestInfo.type === 'submission'
+    ? `/get_online_tsr_submission/${encodeURIComponent(requestInfo.id)}`
+    : `/get_latest_online_tsr_for_shift/${encodeURIComponent(requestInfo.id)}`;
+  showTSRStatus('Loading saved TSR for Calibration Report...', 'info');
+
+  try{
+    const response = await fetch(endpoint, { cache:'no-store', credentials:'same-origin' });
+    const result = await response.json().catch(() => ({}));
+    if(!response.ok || result.status !== 'success' || !result.submission){
+      throw new Error(result.message || 'Saved TSR could not be loaded.');
+    }
+
+    const submission = result.submission;
+    const payload = submission.payload || {};
+    onlineTSRCalibrationContext = {
+      submission_id: submission.submission_id || submission.id,
+      shift_id: submission.shift_id,
+      revision_no: submission.revision_no || 1,
+      calibration_report_state: onlineTSRCalibrationReportState(submission, payload),
+      local_draft_id: ''
+    };
+    onlineTSRRevisionContext = null;
+    applyStandaloneTSRDraftData(payload);
+    if(submission.calibration_certificate && window.calibrationReport?.setApprovalStatus){
+      window.calibrationReport.setApprovalStatus(submission.calibration_certificate, submission.calibration_certificate.status);
+    }
+
+    const scheduleId = String(submission.shift_id || payload.schedule_id || payload.selectedScheduleId || '');
+    if(scheduleId){
+      const schedule = standaloneScheduleOptions.find(item =>
+        String(getStandaloneScheduleRealId(item)) === scheduleId || isSameScheduleSelection(scheduleId, item)
+      );
+      if(schedule){
+        applyScheduleToStandaloneTSR(schedule, false);
+        syncStandaloneTSRAddressFromSchedule(schedule);
+      }else{
+        selectedStandaloneScheduleId = scheduleId;
+      }
+    }
+    const restoredLateDraft = await restoreStandaloneLateCalibrationDraft(onlineTSRCalibrationContext.submission_id);
+    applyOnlineTSRCalibrationOnlyGate();
+    updateCreateTSRScheduleGate({ showMessage: !hasStandaloneScheduleSelection() });
+    const stateLabel = onlineTSRCalibrationContext.calibration_report_state === 'uploaded' ? 'uploaded and read-only' : onlineTSRCalibrationContext.calibration_report_state === 'draft' ? 'saved as a draft' : 'not started';
+    showTSRStatus(
+      restoredLateDraft
+        ? 'Calibration Report is saved locally but not uploaded. Retry Save Final Report to attach it to the existing TSR.'
+        : `Saved TSR REV${submission.revision_no || 1} loaded. Calibration Report is ${stateLabel}; the original TSR will not be revised.`,
+      restoredLateDraft ? 'warning' : (onlineTSRCalibrationContext.calibration_report_state === 'uploaded' ? 'info' : 'warning')
+    );
+    return true;
+  }catch(err){
+    console.warn('[Offline TSR] Unable to load Calibration Report context', err);
+    onlineTSRCalibrationContext = null;
+    onlineTSRRevisionContext = null;
+    applyOnlineTSRCalibrationOnlyGate();
+    showTSRStatus(err?.message || 'Unable to load saved TSR for Calibration Report.', 'danger');
+    return true;
   }
 }
 
@@ -6894,6 +7062,126 @@ async function uploadTSRSupportingAttachments(coreResult, attachments, options={
   return { uploaded, uploadedTokens:[...uploadedTokens], total:normalized.length, certificate };
 }
 
+async function saveStandaloneCalibrationReport(preparedPayload){
+  const submissionId = Number(onlineTSRCalibrationContext?.submission_id || 0);
+  if(!submissionId) throw makeTSRSyncError('Saved TSR submission ID is missing.', {
+    phase:'uploading_late_calibration_report',
+    errorCode:'missing_submission_id',
+    retryable:false
+  });
+
+  const payload = Object.assign({}, preparedPayload || collectTSRData());
+  const report = payload.calibration_report || window.calibrationReport?.collect?.();
+  const attachment = window.calibrationReport?.getAttachment?.({ calibration_report:report });
+  if(!report || !attachment?.id || !attachment?.blob_id){
+    throw makeTSRSyncError('Generate the final Calibration Report before uploading it.', {
+      phase:'uploading_late_calibration_report',
+      errorCode:'missing_calibration_report_attachment',
+      retryable:false
+    });
+  }
+
+  const blob = await window.calibrationReport.resolveAttachmentBlob(attachment);
+  if(!blob || !Number(blob.size || 0)){
+    throw makeTSRSyncError('The generated Calibration Report source is missing from this device.', {
+      phase:'uploading_late_calibration_report',
+      errorCode:'missing_attachment_blob',
+      retryable:false
+    });
+  }
+  if(Number(blob.size || 0) > TSR_SUPPORTING_ATTACHMENT_MAX_BYTES){
+    throw makeTSRSyncError('The Calibration Report is larger than 35MB.', {
+      phase:'uploading_late_calibration_report',
+      errorCode:'attachment_too_large',
+      retryable:false
+    });
+  }
+
+  const latePayload = Object.assign({}, payload, {
+    calibration_report:report,
+    _late_calibration_report_submission_id:String(submissionId),
+    _late_calibration_report_pending:true
+  });
+  const saveLocallyAfterFailure = async (uploadError) => {
+    const localResult = await saveStandaloneTSRDraftLocally(latePayload, { serverSync:'none' }).catch(storageError => ({
+      failed:true,
+      source:'none',
+      storage_error:storageError?.message || 'draft_storage_unavailable'
+    }));
+    if(localResult?.failed || localResult?.source === 'none'){
+      const storageFailure = makeTSRSyncError(
+        `${uploadError?.message || 'Calibration Report upload failed.'} The report could not be saved durably on this device.`,
+        {
+          phase:'saving_late_calibration_report_locally',
+          errorCode:'late_calibration_report_local_save_failed',
+          retryable:false,
+          originalError:uploadError,
+          localResult
+        }
+      );
+      throw storageFailure;
+    }
+    onlineTSRCalibrationContext.local_draft_id = localResult.id || latePayload._draft_id || '';
+    return {
+      status:'local_saved',
+      success:false,
+      local_saved:true,
+      message:'Calibration Report saved locally but not uploaded. Retry Save Final Report when you are online.',
+      local_result:localResult,
+      upload_error:uploadError?.message || 'Upload did not complete.'
+    };
+  };
+
+  if(!navigator.onLine){
+    return await saveLocallyAfterFailure(makeTSRSyncError('The device is offline.', {
+      phase:'uploading_late_calibration_report',
+      errorCode:'offline',
+      retryable:true
+    }));
+  }
+
+  const formData = new FormData();
+  formData.append('attachment_token', String(attachment.id));
+  formData.append('attachment', blob, attachment.filename || attachment.name || 'Calibration_Report.docx');
+  formData.append('attachment_source', 'generated_calibration_report');
+  formData.append('late_calibration_report', '1');
+  formData.append('calibration_report_json', JSON.stringify(report));
+  const headers = { 'Accept':'application/json' };
+  try{
+    const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+    if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+  }catch(tokenErr){}
+
+  let result;
+  try{
+    ({ result } = await fetchTSRSyncJSON(`/upload_online_tsr_attachment/${encodeURIComponent(submissionId)}`, {
+      method:'POST',
+      headers,
+      body:formData
+    }, { phase:'uploading_late_calibration_report', timeoutMs:120000 }));
+  }catch(error){
+    return await saveLocallyAfterFailure(error);
+  }
+
+  if(result.status !== 'success' && result.success !== true){
+    const uploadError = makeTSRSyncError(result.message || 'Calibration Report upload failed.', {
+      phase:'uploading_late_calibration_report',
+      errorCode:result.error_code || 'late_calibration_report_upload_failed',
+      retryable:result.retryable === true,
+      result
+    });
+    if(result.error_code === 'calibration_report_already_uploaded') throw uploadError;
+    return await saveLocallyAfterFailure(uploadError);
+  }
+
+  onlineTSRCalibrationContext.calibration_report_state = 'uploaded';
+  const localDraftId = String(onlineTSRCalibrationContext.local_draft_id || '').trim();
+  if(localDraftId) await clearStandaloneTSRDraftFromIndexedDB(localDraftId);
+  onlineTSRCalibrationContext.local_draft_id = '';
+  await invalidateTimelineSnapshotsAfterTSRSave().catch(() => {});
+  return result;
+}
+
 function stripStandaloneTSRClientSignatureForCompletedQueuePayload(payload){
   const persisted = Object.assign({}, payload || {});
   const signatures = persisted.signatures && typeof persisted.signatures === 'object'
@@ -8111,6 +8399,12 @@ async function confirmStandaloneTSRFinalSave(){
 
 async function saveStandaloneTSRDraft(silent=false){
   if(silent && standaloneTSRAutosavePaused) return;
+  if(isOnlineTSRCalibrationMode()){
+    const data = collectTSRData();
+    data._late_calibration_report_submission_id = String(onlineTSRCalibrationContext?.submission_id || '');
+    data._late_calibration_report_pending = true;
+    return await saveStandaloneTSRDraftLocally(data, { serverSync:'none' });
+  }
   if(!hasStandaloneScheduleSelection()){
     if(!silent) updateCreateTSRScheduleGate({ showMessage:true });
     return;
@@ -9782,9 +10076,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     scheduleOfflineTSRAutoSync();
     return refreshStandaloneScheduleOptions(false);
   }).then(()=>{
+    return loadOnlineTSRCalibrationFromUrl();
+  }).then((calibrationLoaded)=>{
+    if(calibrationLoaded) return true;
     return loadOnlineTSRRevisionFromUrl();
-  }).then((revisionLoaded)=>{
-    if(revisionLoaded){
+  }).then((contextLoaded)=>{
+    if(contextLoaded){
       return;
     }
 

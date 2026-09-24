@@ -1,5 +1,6 @@
 import json
 import inspect
+import io
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
@@ -106,6 +107,53 @@ class TsrSyncReliabilityTests(unittest.TestCase):
             app_module.db.session.commit()
             return user.id, submission.id, file_rec.id, token
 
+    @classmethod
+    def _make_late_upload_fixture(cls):
+        cls._fixture_number += 1
+        suffix = f'late-{cls._fixture_number:03d}'
+        token = f'calibration-late-token-{cls._fixture_number:03d}'
+        with app_module.app.app_context():
+            user = app_module.User(
+                username=f'calibration-late-user-{suffix}',
+                password='test-password',
+                role='engineer',
+            )
+            app_module.db.session.add(user)
+            app_module.db.session.flush()
+            engineer = app_module.Engineer(
+                user_id=user.id,
+                employee_id=f'CAL-LATE-{suffix}',
+                name='Late Calibration Engineer',
+                initials='LCE',
+            )
+            app_module.db.session.add(engineer)
+            app_module.db.session.flush()
+            shift = app_module.Shift(
+                title=f'Late Calibration fixture {suffix}',
+                start_time=datetime(2026, 8, 19, 8, 0),
+                end_time=datetime(2026, 8, 19, 17, 0),
+                engineer_id=engineer.id,
+                status='Completed',
+            )
+            app_module.db.session.add(shift)
+            app_module.db.session.flush()
+            payload = {
+                'tsr-equipment-model': 'Original Model',
+                'tsr-serial-no': 'ORIGINAL-SERIAL',
+                'calibration_report': {'status': 'not_started'},
+            }
+            submission = app_module.OnlineTsrSubmission(
+                shift_id=shift.id,
+                status='completed',
+                submission_token=f'tsr-late-{cls._fixture_number:03d}',
+                payload_json=json.dumps(payload),
+                revision_no=1,
+                is_latest=True,
+            )
+            app_module.db.session.add(submission)
+            app_module.db.session.commit()
+            return user.id, submission.id, token
+
     @staticmethod
     def _logged_in_client(user_id):
         client = app_module.app.test_client()
@@ -113,6 +161,18 @@ class TsrSyncReliabilityTests(unittest.TestCase):
             session['_user_id'] = str(user_id)
             session['_fresh'] = True
         return client
+
+    @staticmethod
+    def _late_report(token, fingerprint='late-report-fingerprint'):
+        return {
+            'status': 'draft',
+            'facility': {'name': 'Late Calibration Facility'},
+            'generated': {
+                'attachment_id': token,
+                'fingerprint': fingerprint,
+                'filename': 'Calibration_Report.docx',
+            },
+        }
 
     def test_duplicate_generated_report_rejects_persisted_non_docx_before_reclassification(self):
         user_id, submission_id, file_id, token = self._make_upload_fixture('Calibration Report.pdf')
@@ -220,6 +280,219 @@ class TsrSyncReliabilityTests(unittest.TestCase):
         self.assertIn("'generated_calibration_report'", source)
         self.assertIn('Unsupported TSR attachment source.', source)
         self.assertIn('Generated Calibration Report attachments must be DOCX files.', source)
+
+    def test_late_calibration_report_route_accepts_report_payload_contract(self):
+        source = inspect.getsource(app_module.upload_online_tsr_attachment)
+        self.assertIn('late_calibration_report', source)
+        self.assertIn('calibration_report_json', source)
+        self.assertIn('is_latest', source)
+
+    def test_late_calibration_report_is_attached_without_creating_tsr_revision(self):
+        self.assertTrue(hasattr(self, '_make_late_upload_fixture'))
+        user_id, submission_id, token = self._make_late_upload_fixture()
+        client = self._logged_in_client(user_id)
+        report = self._late_report(token)
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True), \
+                patch.object(app_module, 'managed_storage_write_bytes'), \
+                patch.object(app_module, 'schedule_calibration_report_conversion'), \
+                patch.object(app_module, 'submit_calibration_certificate_for_submission', return_value={'ok': False, 'code': 'patched'}):
+            response = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data={
+                    'attachment_token': token,
+                    'attachment_source': 'generated_calibration_report',
+                    'late_calibration_report': '1',
+                    'calibration_report_json': json.dumps(report),
+                    'attachment': (io.BytesIO(b'PK\\x03\\x04late-docx'), 'Calibration_Report.docx'),
+                },
+                content_type='multipart/form-data',
+            )
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        with app_module.app.app_context():
+            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            payload = json.loads(submission.payload_json)
+            self.assertEqual(submission.revision_no, 1)
+            self.assertEqual(payload['tsr-equipment-model'], 'Original Model')
+            self.assertEqual(payload['calibration_report']['facility']['name'], 'Late Calibration Facility')
+            self.assertEqual(payload['_generated_calibration_report']['source'], 'generated_calibration_report')
+
+    def test_late_calibration_report_rejects_metadata_token_mismatch_without_mutating_tsr(self):
+        user_id, submission_id, token = self._make_late_upload_fixture()
+        client = self._logged_in_client(user_id)
+        report = self._late_report(f'{token}-wrong')
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True):
+            response = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data={
+                    'attachment_token': token,
+                    'attachment_source': 'generated_calibration_report',
+                    'late_calibration_report': '1',
+                    'calibration_report_json': json.dumps(report),
+                    'attachment': (io.BytesIO(b'late-docx'), 'Calibration_Report.docx'),
+                },
+                content_type='multipart/form-data',
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('token', response.get_json()['message'].lower())
+        with app_module.app.app_context():
+            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            payload = json.loads(submission.payload_json)
+            self.assertEqual(payload['tsr-equipment-model'], 'Original Model')
+            self.assertEqual(payload['calibration_report']['status'], 'not_started')
+            self.assertNotIn('_generated_calibration_report', payload)
+
+    def test_late_calibration_report_requires_latest_submission(self):
+        user_id, submission_id, token = self._make_late_upload_fixture()
+        with app_module.app.app_context():
+            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            submission.is_latest = False
+            app_module.db.session.commit()
+        client = self._logged_in_client(user_id)
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True):
+            response = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data={
+                    'attachment_token': token,
+                    'attachment_source': 'generated_calibration_report',
+                    'late_calibration_report': '1',
+                    'calibration_report_json': json.dumps(self._late_report(token)),
+                    'attachment': (io.BytesIO(b'late-docx'), 'Calibration_Report.docx'),
+                },
+                content_type='multipart/form-data',
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('latest TSR revision', response.get_json()['message'])
+
+    def test_late_calibration_report_upload_failure_can_be_retried_without_revision(self):
+        user_id, submission_id, token = self._make_late_upload_fixture()
+        client = self._logged_in_client(user_id)
+        upload_report = self._late_report(token, 'retryable-late-report')
+        request_data = lambda: {
+            'attachment_token': token,
+            'attachment_source': 'generated_calibration_report',
+            'late_calibration_report': '1',
+            'calibration_report_json': json.dumps(upload_report),
+            'attachment': (io.BytesIO(b'late-docx'), 'Calibration_Report.docx'),
+        }
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True), \
+                patch.object(app_module, 'managed_storage_write_bytes', side_effect=[RuntimeError('temporary'), None]), \
+                patch.object(app_module, 'schedule_calibration_report_conversion'), \
+                patch.object(app_module, 'submit_calibration_certificate_for_submission', return_value={'ok': False, 'code': 'patched'}):
+            first = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data=request_data(),
+                content_type='multipart/form-data',
+            )
+            second = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data=request_data(),
+                content_type='multipart/form-data',
+            )
+
+        self.assertEqual(first.status_code, 500)
+        self.assertTrue(first.get_json()['retryable'])
+        self.assertEqual(second.status_code, 200, second.get_json())
+        with app_module.app.app_context():
+            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            self.assertEqual(submission.revision_no, 1)
+            self.assertEqual(json.loads(submission.payload_json)['calibration_report']['facility']['name'], 'Late Calibration Facility')
+
+    def test_late_calibration_report_same_token_retry_is_idempotent(self):
+        user_id, submission_id, token = self._make_late_upload_fixture()
+        client = self._logged_in_client(user_id)
+        request_data = lambda: {
+            'attachment_token': token,
+            'attachment_source': 'generated_calibration_report',
+            'late_calibration_report': '1',
+            'calibration_report_json': json.dumps(self._late_report(token, 'idempotent-late-report')),
+            'attachment': (io.BytesIO(b'late-docx'), 'Calibration_Report.docx'),
+        }
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True), \
+                patch.object(app_module, 'managed_storage_write_bytes'), \
+                patch.object(app_module, 'schedule_calibration_report_conversion'), \
+                patch.object(app_module, 'submit_calibration_certificate_for_submission', return_value={'ok': False, 'code': 'patched'}):
+            first = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data=request_data(),
+                content_type='multipart/form-data',
+            )
+            second = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data=request_data(),
+                content_type='multipart/form-data',
+            )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.get_json()['duplicate'])
+        with app_module.app.app_context():
+            files = app_module.ShiftFile.query.filter_by(online_tsr_submission_id=submission_id).all()
+            self.assertEqual(len(files), 1)
+
+    def test_late_calibration_report_rejects_replacement_after_upload(self):
+        user_id, submission_id, _file_id, original_token = self._make_upload_fixture('Calibration Report.DOCX')
+        client = self._logged_in_client(user_id)
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True):
+            initial = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data={'attachment_token': original_token, 'attachment_source': 'generated_calibration_report'},
+            )
+            replacement_token = 'calibration-replacement-token-001'
+            replacement = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data={
+                    'attachment_token': replacement_token,
+                    'attachment_source': 'generated_calibration_report',
+                    'late_calibration_report': '1',
+                    'calibration_report_json': json.dumps(self._late_report(replacement_token, 'replacement-report')),
+                    'attachment': (io.BytesIO(b'new-late-docx'), 'Calibration_Report.docx'),
+                },
+                content_type='multipart/form-data',
+            )
+
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(replacement.status_code, 409)
+        self.assertEqual(replacement.get_json()['error_code'], 'calibration_report_already_uploaded')
+
+    def test_late_calibration_report_obeys_attachment_count_limit(self):
+        user_id, submission_id, token = self._make_late_upload_fixture()
+        with app_module.app.app_context():
+            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            for index in range(app_module.TSR_SUPPORTING_ATTACHMENT_MAX_COUNT):
+                app_module.db.session.add(app_module.ShiftFile(
+                    shift_id=submission.shift_id,
+                    filename=f'limit-{index}.bin',
+                    original_filename=f'limit-{index}.pdf',
+                    upload_token=f'limit-token-{index:02d}',
+                    online_tsr_submission_id=submission.id,
+                ))
+            app_module.db.session.commit()
+        client = self._logged_in_client(user_id)
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True):
+            response = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data={
+                    'attachment_token': token,
+                    'attachment_source': 'generated_calibration_report',
+                    'late_calibration_report': '1',
+                    'calibration_report_json': json.dumps(self._late_report(token, 'limit-report')),
+                    'attachment': (io.BytesIO(b'late-docx'), 'Calibration_Report.docx'),
+                },
+                content_type='multipart/form-data',
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('supporting attachments', response.get_json()['message'])
 
 
 if __name__ == '__main__':

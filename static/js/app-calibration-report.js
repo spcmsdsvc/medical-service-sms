@@ -340,6 +340,11 @@
     return next;
   }
   function currentTSRData(){ try{ return typeof window.collectTSRData === 'function' ? window.collectTSRData() : {}; }catch(err){ return {}; } }
+  function payloadForReportDocument(actionLabel){
+    var payload = currentTSRData();
+    var calibrationOnly = typeof window.isOnlineTSRCalibrationMode === 'function' && window.isOnlineTSRCalibrationMode();
+    return calibrationOnly ? Promise.resolve(payload) : ensureAuthoritativeTSRNumber(payload, actionLabel);
+  }
   async function preserveTSRDraftAfterNumberFailure(){
     if(typeof window.saveStandaloneTSRDraft !== 'function') return;
     try{ await window.saveStandaloneTSRDraft(true); }
@@ -1229,6 +1234,27 @@
     return next;
   }
   function attachmentFromPayload(payload){ var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : state; if(!isActive(report) || !report.generated?.attachment_id || !report.generated?.blob_id) return null; return { id:report.generated.attachment_id, name:report.generated.filename, filename:report.generated.filename, type:DOCX_MIME, size:Number(report.generated.size || 0), blob_id:report.generated.blob_id, source:'generated_calibration_report', report_fingerprint:report.generated.fingerprint }; }
+  function isUploadedReport(report){ var generated = report?.generated || {}; return String(generated.source || '') === 'generated_calibration_report' && Number(generated.file_id || 0) > 0; }
+  function markUploaded(result){
+    var generated = Object.assign({}, state.generated || {}, {
+      file_id:result?.file_id || state.generated?.file_id || null,
+      source:'generated_calibration_report',
+      upload_token:result?.attachment_token || state.generated?.attachment_id || '',
+      uploaded_filename:result?.filename || state.generated?.filename || ''
+    });
+    state.generated = generated;
+    if(result?.calibration_report) setConversionStatus(result.calibration_report);
+    if(result?.certificate && typeof result.certificate === 'object'){
+      state.certificate_approval = Object.assign({}, state.certificate_approval || {}, {
+        status:String(result.certificate.status || state.certificate_approval?.status || 'queued'),
+        submission_id:result.certificate.submission_id || state.certificate_approval?.submission_id || '',
+        revision_no:Number(result.certificate.revision_no || state.certificate_approval?.revision_no || 0),
+        remarks:result.certificate.return_remarks || result.certificate.remarks || state.certificate_approval?.remarks || '',
+        error:result.certificate.error || ''
+      });
+    }
+    renderCard();
+  }
   async function resolveAttachmentBlob(attachment){ if(String(attachment?.source || '') !== 'generated_calibration_report') return null; if(attachment.blob instanceof Blob) return attachment.blob; if(attachment.blob_id && typeof window.loadOfflineTSRBlobRecord === 'function'){ var record = await window.loadOfflineTSRBlobRecord(attachment.blob_id); if(record?.blob){ if(String(state.generated?.blob_id || '') === String(attachment.blob_id)) generatedBlobState = 'available'; return record.blob; } } if(String(state.generated?.blob_id || '') === String(attachment?.blob_id || '')){ generatedBlobState = 'missing'; renderCard(); syncAutoDocument(); } return null; }
 
   function certificateError(code, message){ var error = new Error(message); error.code = code; return error; }
@@ -1280,7 +1306,7 @@
   }
   async function generateCertificateSample(){
     try{
-      var payload = await ensureAuthoritativeTSRNumber(currentTSRData(), 'Calibration Certificate sample'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state);
+      var payload = await payloadForReportDocument('Calibration Certificate sample'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state);
       var built = await buildCertificatePdf(payload, report); downloadBlob(built.blob, built.filename);
       showStatus('Sample Calibration Certificate PDF downloaded. It is not attached to the TSR.', 'success');
       if(built.missing.length) showStatus('Sample Calibration Certificate PDF downloaded. It is not attached. Some values are still missing: ' + built.missing.slice(0,4).join(', ') + (built.missing.length > 4 ? ', and more.' : '.'), 'warning');
@@ -1290,7 +1316,7 @@
 
   async function generateSample(){
     try{
-      var payload = await ensureAuthoritativeTSRNumber(currentTSRData(), 'Calibration Report sample'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); report = normalizeReportFitValues(report);
+      var payload = await payloadForReportDocument('Calibration Report sample'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); report = normalizeReportFitValues(report);
       var fit = exactFitViolations(report);
       if(fit.length){ var fitError = new Error(fit[0].message + (fit.length > 1 ? ' Fix the marked fields before generating the PDF.' : '')); fitError.code = 'calibration_report_exact_fit'; fitError.missing = fit.map(function(item){ return { path:item.path, label:item.label }; }); throw fitError; }
       var missing = missingFields(report);
@@ -1300,7 +1326,23 @@
   }
   async function saveFinalReport(){
     try{
-      var ready = await preparePayload(await ensureAuthoritativeTSRNumber(currentTSRData(), 'Final Calibration Report'), 'calibration-final', { regenerate:true, finalize:true });
+      var calibrationOnly = typeof window.isOnlineTSRCalibrationMode === 'function' && window.isOnlineTSRCalibrationMode();
+      var ready = await preparePayload(calibrationOnly ? currentTSRData() : await ensureAuthoritativeTSRNumber(currentTSRData(), 'Final Calibration Report'), 'calibration-final', { regenerate:true, finalize:true });
+      if(calibrationOnly){
+        if(typeof window.saveStandaloneCalibrationReport !== 'function') throw new Error('The late Calibration Report upload handler is unavailable. Reload Create TSR and try again.');
+        var lateResult = await window.saveStandaloneCalibrationReport(ready);
+        if(lateResult?.local_saved){
+          showStatus('Calibration Report saved locally but not uploaded. Retry Save Final Report when you are online.', 'warning');
+          renderCard();
+          return;
+        }
+        if(lateResult?.status !== 'success' && lateResult?.success !== true) throw new Error(lateResult?.message || 'Calibration Report upload was not confirmed.');
+        markUploaded(lateResult);
+        showStatus('Calibration Report uploaded to the existing TSR. No new TSR revision was created.', 'success');
+        renderCard();
+        close();
+        return;
+      }
       state.certificate_approval = Object.assign({}, state.certificate_approval || {}, { status: String(state.certificate?.bsid || '').trim() ? 'queued' : 'not_ready', error: '' });
       var persisted = typeof window.saveStandaloneTSRDraft === 'function' ? await window.saveStandaloneTSRDraft(true) : null;
       var persistenceSource = String(persisted?.source || '').toLowerCase();
@@ -1312,7 +1354,7 @@
   }
   async function download(){
     try{
-      var payload = await ensureAuthoritativeTSRNumber(currentTSRData(), 'Final Calibration Report download'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); var attachment = attachmentFromPayload({ calibration_report:report });
+      var payload = await payloadForReportDocument('Final Calibration Report download'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); var attachment = attachmentFromPayload({ calibration_report:report });
       if(!attachment || !hasGeneratedMetadata(report)){ throw notFinalizedError(); }
       var blob = await resolveAttachmentBlob(attachment); if(!blob){ generatedBlobState = 'missing'; renderCard(); syncAutoDocument(); throw missingGeneratedBlobError(); }
       var pdf = await convertDocxToPdf(blob, attachment.filename || report.generated.filename || 'Calibration_Report.docx'); downloadBlob(pdf.blob, pdf.filename); showStatus('Final Calibration Report PDF downloaded.', 'success');
@@ -1320,14 +1362,14 @@
   }
 
   function renderCard(){
-    var status = q('#calibration-report-status'); var summary = q('#calibration-report-summary'); var createButton = q('#calibration-report-create-btn'); var entryLabel = q('#calibration-report-entry-label'); var toolbarGenerate = q('#calibration-report-generate'); var toolbarGenerateLabel = q('#calibration-report-generate-label'); var toolbarFinal = q('#calibration-report-final-save'); var toolbarDownload = q('#calibration-report-download'); var toolbarClear = q('#calibration-report-clear'); var toolbarRemove = q('#calibration-report-toolbar-remove'); var note = q('#calibration-report-attachment-note'); var filename = q('#calibration-report-filename'); var capacity = q('#calibration-report-capacity');
-    var active = isActive(state); var validation = active ? validateForFinalSave({ calibration_report:state }) : { ok:false, missing:[] }; var capacityInfo = typeof window.getTSRAttachmentCapacity === 'function' ? window.getTSRAttachmentCapacity({ calibration_report:state }) : null; var overCapacity = !!(capacityInfo && capacityInfo.total > capacityInfo.max); var hasGenerated = hasGeneratedMetadata(state); var conversionState = String(state.conversion?.state || state.generated?.pdf_state || '').toLowerCase(); var ready = active && validation.ok && !overCapacity; var downloadReady = reportReadyForAutoDocument();
-    var cardLabel = !active ? 'Create Calibration Report' : (downloadReady ? 'Open Calibration Report' : 'Continue Calibration Report');
-    if(status){ status.textContent = !active ? 'Not Started' : (downloadReady ? 'Final Saved' : 'Draft'); status.className = 'calibration-report-status ' + (!active ? 'muted' : (downloadReady ? 'ready' : 'draft')); }
-    if(summary) summary.textContent = !active ? 'Create an optional Calibration Report using the supplied form. It remains separate from the main TSR PDF.' : (hasGenerated && generatedBlobState === 'missing' ? 'The final report source is missing from this device. Save Final Report again before downloading or saving the TSR.' : (conversionState === 'failed' ? 'PDF conversion failed after synchronization. Retry the report conversion before emailing or approving it.' : (conversionState === 'pending' ? 'Final report source saved. The PDF will become available after synchronization.' : (ready ? (downloadReady ? 'Final report saved locally. PDF conversion is available online and after TSR sync.' : 'Complete. Generate a sample PDF for review or save the final report to attach it.') : 'Incomplete report or attachment capacity issue. Finish the marked fields, save the final report, or remove the report before saving.'))));
+    var status = q('#calibration-report-status'); var summary = q('#calibration-report-summary'); var createButton = q('#calibration-report-create-btn'); var entryLabel = q('#calibration-report-entry-label'); var toolbarGenerate = q('#calibration-report-generate'); var toolbarGenerateLabel = q('#calibration-report-generate-label'); var toolbarDraft = q('#calibration-report-save'); var toolbarFinal = q('#calibration-report-final-save'); var toolbarDownload = q('#calibration-report-download'); var toolbarClear = q('#calibration-report-clear'); var toolbarRemove = q('#calibration-report-toolbar-remove'); var note = q('#calibration-report-attachment-note'); var filename = q('#calibration-report-filename'); var capacity = q('#calibration-report-capacity');
+    var active = isActive(state); var calibrationOnly = typeof window.isOnlineTSRCalibrationMode === 'function' && window.isOnlineTSRCalibrationMode(); var uploaded = calibrationOnly && isUploadedReport(state); var validation = active ? validateForFinalSave({ calibration_report:state }) : { ok:false, missing:[] }; var capacityInfo = typeof window.getTSRAttachmentCapacity === 'function' ? window.getTSRAttachmentCapacity({ calibration_report:state }) : null; var overCapacity = !!(capacityInfo && capacityInfo.total > capacityInfo.max); var hasGenerated = hasGeneratedMetadata(state); var conversionState = String(state.conversion?.state || state.generated?.pdf_state || '').toLowerCase(); var ready = active && validation.ok && !overCapacity; var downloadReady = reportReadyForAutoDocument();
+    var cardLabel = uploaded ? 'View Calibration Report' : (!active ? 'Create Calibration Report' : (downloadReady ? 'Open Calibration Report' : 'Continue Calibration Report'));
+    if(status){ status.textContent = uploaded ? 'Uploaded' : (!active ? 'Not Started' : (downloadReady ? 'Final Saved' : 'Draft')); status.className = 'calibration-report-status ' + (uploaded ? 'ready' : (!active ? 'muted' : (downloadReady ? 'ready' : 'draft'))); }
+    if(summary) summary.textContent = uploaded ? 'Calibration Report uploaded to this TSR. The original TSR and revision history are unchanged.' : (!active ? 'Create an optional Calibration Report using the supplied form. It remains separate from the main TSR PDF.' : (hasGenerated && generatedBlobState === 'missing' ? 'The final report source is missing from this device. Save Final Report again before downloading or saving the report.' : (conversionState === 'failed' ? 'PDF conversion failed after synchronization. Retry the report conversion before emailing or approving it.' : (conversionState === 'pending' ? 'Final report source saved. The PDF will become available after synchronization.' : (ready ? (downloadReady ? 'Final report saved locally. PDF conversion is available online and after TSR sync.' : 'Complete. Generate a sample PDF for review or save the final report to attach it.') : 'Incomplete report or attachment capacity issue. Finish the marked fields, save the final report, or remove the report before saving.')))));
     if(entryLabel) entryLabel.textContent = cardLabel; if(createButton) createButton.setAttribute('aria-label', cardLabel);
     if(toolbarGenerateLabel) toolbarGenerateLabel.textContent = 'Generate Sample PDF';
-    if(toolbarGenerate) toolbarGenerate.classList.toggle('d-none', !active); if(toolbarFinal) toolbarFinal.classList.toggle('d-none', !active); if(toolbarDownload) toolbarDownload.classList.toggle('d-none', !downloadReady); if(toolbarClear) toolbarClear.classList.toggle('d-none', !active); if(toolbarRemove) toolbarRemove.classList.toggle('d-none', !active);
+    if(toolbarGenerate) toolbarGenerate.classList.toggle('d-none', !active || uploaded); if(toolbarDraft) toolbarDraft.classList.toggle('d-none', uploaded); if(toolbarFinal) toolbarFinal.classList.toggle('d-none', !active || uploaded); if(toolbarDownload) toolbarDownload.classList.toggle('d-none', !downloadReady); if(toolbarClear) toolbarClear.classList.toggle('d-none', !active || uploaded); if(toolbarRemove) toolbarRemove.classList.toggle('d-none', !active || uploaded);
     if(filename) filename.textContent = active && state.generated?.filename ? pdfFilenameFor(state.generated.filename) : 'No PDF generated yet.';
     if(capacity){ if(!capacityInfo) capacity.textContent = 'Supporting attachment capacity is checked when the TSR is saved.'; else if(overCapacity) capacity.textContent = `${capacityInfo.total} of ${capacityInfo.max} supporting attachments selected. Remove an ordinary attachment before attaching this report; files will not be truncated.`; else capacity.textContent = `${capacityInfo.total} of ${capacityInfo.max} supporting attachment slots used${active ? ' including this report' : ''}.`; capacity.classList.toggle('is-over', overCapacity); }
     var cert = state.certificate_approval || {};
@@ -1341,7 +1383,8 @@
     else if(certStatusKey === 'awaiting_route' || certStatusKey === 'awaiting_approver_assignment') certStatus = 'Certificate awaiting approver assignment.';
     else if(certStatusKey === 'error' || certStatusKey === 'retryable') certStatus = 'Certificate submission failed; retry after TSR sync.';
     var conversionNote = conversionState === 'ready' ? 'PDF is ready for archive and delivery. ' : (conversionState === 'failed' ? 'PDF conversion failed; retry is available. ' : 'PDF is created after TSR synchronization. ');
-    if(note) note.textContent = (downloadReady ? 'Auto-managed document chip: Calibration Report · ' + conversionNote : 'Sample PDFs are not attached. Save Final Report to create the TSR attachment. ') + certStatus;
+    if(note) note.textContent = uploaded ? 'Uploaded to the saved TSR. Uploaded Calibration Reports cannot be replaced through this page. ' + certStatus : (downloadReady ? 'Auto-managed document chip: Calibration Report · ' + conversionNote : 'Sample PDFs are not attached. Save Final Report to create the TSR attachment. ') + certStatus;
+    if(calibrationOnly && typeof window.setOnlineTSRCalibrationReportReadOnly === 'function') window.setOnlineTSRCalibrationReportReadOnly(uploaded);
   }
   function setApprovalStatus(approval, statusLabel){
     if(!approval || typeof approval !== 'object') return;
@@ -1381,6 +1424,10 @@
     renderCard();
   }
   async function saveReportDraft(){
+    if(typeof window.isOnlineTSRCalibrationMode === 'function' && window.isOnlineTSRCalibrationMode() && isUploadedReport(state)){
+      showStatus('Uploaded Calibration Reports are read-only and cannot be replaced.', 'info');
+      return;
+    }
     if(typeof window.saveStandaloneTSRDraft !== 'function') return;
     try{
       var result = await window.saveStandaloneTSRDraft(true);
@@ -1420,6 +1467,6 @@
   }
   function ensureEditor(){ if(!editorBuilt) buildEditor(); }
 
-  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
+  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, markUploaded:markUploaded, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
   document.addEventListener('DOMContentLoaded', function(){ ensureEditor(); renderCard(); q('#calibration-report-close')?.addEventListener('click', close); q('#calibration-report-save')?.addEventListener('click', saveReportDraft); q('#calibration-report-generate')?.addEventListener('click', generateSample); q('#calibration-report-certificate-generate')?.addEventListener('click', generateCertificateSample); q('#calibration-report-final-save')?.addEventListener('click', saveFinalReport); q('#calibration-report-download')?.addEventListener('click', download); q('#calibration-report-clear')?.addEventListener('click', clearForm); q('#calibration-report-create-btn')?.addEventListener('click', createReport); q('#calibration-report-toolbar-remove')?.addEventListener('click', removeReport); document.addEventListener('keydown', handleDialogKeydown); });
 })();

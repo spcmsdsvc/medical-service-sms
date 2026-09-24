@@ -2,6 +2,46 @@
 
 codex changes - 2026-09-24
 
+- Implemented late Calibration Report support for saved online TSRs. `app.py` now exposes
+  the latest completed online TSR submission and `not_started`/`draft`/`uploaded` report
+  state in Timeline, validates the late-upload contract, merges only the report payload,
+  preserves the original TSR/PDF/revision history, and keeps same-token retries idempotent
+  while rejecting replacement after an uploaded report. Existing authorization, DOCX,
+  35MB, and supporting-attachment count rules remain in force; no migration was added.
+- Added state-aware Add/Finish/View Calibration Report actions to desktop schedule cards,
+  the schedule summary popover, mobile schedule cards, mobile full-calendar details, and
+  mobile sticky actions in `templates/timeline.html`. Actions route to calibration-only
+  Create TSR mode and remain hidden for legacy/manual TSR files without an online submission;
+  HR-redacted timeline payloads do not expose the shortcut.
+- Added calibration-only loading and gating in `templates/offline_tsr.html`. It loads the
+  saved submission through the existing endpoint, keeps TSR fields/signatures/ordinary
+  attachments/preview/save controls out of the flow, retains Calibration Report editing and
+  local Save Draft, restores a locally retained late report by target submission ID, and
+  reports local-only state truthfully after offline or failed uploads. `static/js/
+  app-calibration-report.js` now sends final reports through the page-level late-upload
+  handler, shows conversion/certificate state, and makes uploaded reports read-only without
+  changing normal Create TSR save/revision behavior.
+- Bumped the service-worker shell marker to v185 and the calibration script cache query to
+  v32, and added the published `2026-09-24-late-calibration-report` engineer release item
+  to `static/changelog/releases.json`. Updated affected release-order test expectations to
+  locate their own historical entries instead of requiring them to remain newest.
+- Added backend, Timeline, calibration-only frontend, retry/idempotency, authorization,
+  attachment-limit, preservation, and legacy-gating coverage in the TSR and Timeline test
+  modules. Isolated focused results: `tests.test_tsr_sync_reliability` 16/16,
+  `tests.test_tsr_calibration_report` 20/20, `tests.test_tsr_offline_followup` 15/15,
+  `tests.test_timeline_tsr_file_details` 10/10, `tests.test_hr_schedule_viewer` 10/10,
+  `tests.test_tsr_contact_suggestions` 16/16, `tests.test_accounting_branch_codes` 10/10,
+  `tests.test_changelog_workflow` 41/41, and `tests.test_tsr_draft_sync` 31/31. Backend
+  database tests used newly created temporary SQLite databases and did not touch protected
+  `scheduler.db`.
+- Final checks passed: Python AST syntax, `node --check` for the calibration script,
+  authenticated `/offline-tsr` rendering with all 8 inline JavaScript blocks parsed, release
+  JSON validation, and `git diff --check`. Full `unittest discover -s tests` ran 1,287 tests:
+  1,266 passed, 19 unrelated full-suite failures (one shared changelog-manifest state
+  failure, 16 purchase-order setup rate-limit responses, and 2 staff-fixture responses),
+  and 2 skips. Browser automation, commit, push, deployment, production data, and Railway
+  changes were not performed.
+
 - Recorded and executed the owner-approved and explicitly authorized Genoray/Vieworks PM
   fiscal-year navigation package in `plans.md`. The package is limited to
   replacing the current ±1-year PM controls with validated 1900–2200 numeric inputs,

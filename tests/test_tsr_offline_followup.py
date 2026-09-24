@@ -258,6 +258,38 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
             self.assertIn("'TSR Contact'", contact_name)
             self.assertNotIn("payload.get('tsr-requested-by')", contact_name)
 
+    def test_timeline_exposes_late_calibration_report_shortcuts(self):
+        for marker in (
+            "online_tsr_submission_id",
+            "calibration_report_state",
+            "redirectToCalibrationReportFromSchedule",
+            "mode: 'calibration_report'",
+            "Add Calibration Report",
+            "Finish Calibration Report",
+            "View Calibration Report",
+        ):
+            self.assertIn(marker, self.app_source + self.timeline_source)
+        for marker in (
+            'openTimelineSummaryCalibrationReport',
+            'openMobileFullCalendarLiteCalibrationReportAction',
+            'schedule-card-action-tsr',
+            'mobile-sticky-offline-tsr',
+            'canOpenCalibrationReportForSchedule',
+        ):
+            self.assertIn(marker, self.timeline_source)
+        legacy_gate = self.timeline_source.split('function canOpenCalibrationReportForSchedule', 1)[1].split('function getCalibrationReportTimelineLabel', 1)[0]
+        self.assertIn('getScheduleOnlineTSRSubmissionId(shift)', legacy_gate)
+
+    def test_create_tsr_contains_calibration_only_upload_contract(self):
+        for marker in (
+            "isOnlineTSRCalibrationMode",
+            "loadOnlineTSRCalibrationFromUrl",
+            "saveStandaloneCalibrationReport",
+            "late_calibration_report",
+            "calibration_report_json",
+        ):
+            self.assertIn(marker, self.tsr_source)
+
     def test_requester_email_capture_remains_available(self):
         auto = self._helper_body(
             'def auto_capture_tsr_client_contact_from_payload(shift, payload):',

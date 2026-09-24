@@ -53,7 +53,12 @@ class TimelineTsrFileDetailsSourceTests(unittest.TestCase):
     def test_release_and_cache_metadata(self):
         self.assertIn('2026-08-05-schedule-card-tsr-preview-links', self.releases)
         self.assertIn('2026-08-26-calibration-report-schedule-download', self.releases)
-        assert_cache_version_at_least(self, 118, self.app_source)
+        assert_cache_version_at_least(self, 185, self.app_source)
+
+    def test_timeline_payload_has_online_tsr_calibration_state_contract(self):
+        self.assertIn("'online_tsr_submission_id'", self.app_source)
+        self.assertIn("'calibration_report_state'", self.app_source)
+        self.assertIn("calibration_report_state", self.timeline_source)
 
 
 class TimelineTsrFileDetailsApiTests(unittest.TestCase):

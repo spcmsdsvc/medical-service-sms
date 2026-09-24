@@ -515,7 +515,8 @@ function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
         self.assertIn("'/offline-tsr',", self.app_source)
 
     def test_draft_recovery_release_entry_is_present(self):
-        release = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases'][0]
+        releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
+        release = next(item for item in releases if item['release_key'] == '2026-09-24-create-tsr-draft-recovery')
         self.assertEqual(release['release_key'], '2026-09-24-create-tsr-draft-recovery')
         self.assertEqual(release['release_date'], '2026-09-24')
         self.assertIn('Choose which copy to continue', release['items'][0]['description'])
