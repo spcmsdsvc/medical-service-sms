@@ -23568,7 +23568,8 @@ def pwa_service_worker():
     # Navigation shell bump: v192 isolates late Calibration Report drafts from finalized TSR draft deletion markers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v193-reimbursement-lpr-availability.
     # Navigation shell bump: v194 distributes the collapsed Historical Report Repair notice.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v194-calibration-repair-notice';
+    # Navigation shell bump: v195 distributes the pre-submission Calibration Report shortcut.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

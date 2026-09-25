@@ -340,7 +340,7 @@ class CalibrationCenterContracts(unittest.TestCase):
 
     def test_service_worker_uses_v158_network_first_center_prefix(self):
         self.assertIn('medical-service-pwa-offline-navigation-v158-calibration-center', APP_SOURCE)
-        self.assertIn("medical-service-pwa-offline-navigation-v194-calibration-repair-notice';", APP_SOURCE)
+        self.assertIn("medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report';", APP_SOURCE)
         self.assertIn("'/admin/calibration-center'", APP_SOURCE)
         self.assertIn('NETWORK_FIRST_AUTHENTICATED_PREFIXES', APP_SOURCE)
         page_route = APP_SOURCE.split("@app.route('/admin/calibration-center')", 1)[1].split(

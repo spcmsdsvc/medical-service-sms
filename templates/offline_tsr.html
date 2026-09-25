@@ -860,6 +860,7 @@ let onlineTSRRevisionContext = null;
 let onlineTSRCalibrationContext = null;
 let onlineTSRCalibrationContextReadyPromise = Promise.resolve({ requested:false, ready:true });
 let onlineTSRCalibrationLoadError = '';
+let calibrationReportHandoffOpened = false;
 let standaloneCurrentDraftId = '';
 let standaloneTSRReservationToken = '';
 let standaloneTSRActiveContextVersion = 0;
@@ -1700,6 +1701,7 @@ function normalizeStandaloneCreateTSRContext(rawContext){
   const dateIso = ctx.date || ctx.day_iso || ctx.dayIso || ctx.start_date || ctx.date_iso || '';
   // A schedule still sitting in the device queue arrives by creation token instead of id.
   const pendingToken = ctx.pending_schedule_token || ctx.pending_schedule || '';
+  const openCalibrationReport = ['1', 'true', 'yes'].includes(String(ctx.open_calibration_report || '').trim().toLowerCase());
 
   if(!shiftId && !pendingToken && !ctx.client_name && !ctx.product_name && !ctx.task) return null;
 
@@ -1708,6 +1710,7 @@ function normalizeStandaloneCreateTSRContext(rawContext){
     schedule_id: shiftId,
     shift_id: shiftId,
     pending_schedule_token: pendingToken,
+    open_calibration_report: openCalibrationReport,
     date_iso: String(dateIso || '').slice(0, 10),
     date_label: String(dateIso || '').slice(0, 10),
     start_date: String(ctx.start_date || dateIso || '').slice(0, 10),
@@ -1742,6 +1745,7 @@ function getStandaloneCreateTSRHandoffContext(){
     shift_id: params.get('schedule_id') || '',
     id: params.get('schedule_id') || '',
     pending_schedule_token: params.get('pending_schedule') || '',
+    open_calibration_report: params.get('open_calibration_report') || '',
     engineer_id: params.get('engineer_id') || '',
     date: params.get('date') || ''
   });
@@ -1762,6 +1766,7 @@ function getStandaloneCreateTSRHandoffContext(){
       schedule_id: urlContext.schedule_id || storedContext.schedule_id,
       shift_id: urlContext.shift_id || storedContext.shift_id,
       pending_schedule_token: urlContext.pending_schedule_token || storedContext.pending_schedule_token,
+      open_calibration_report: Boolean(urlContext.open_calibration_report || storedContext.open_calibration_report),
       engineer_id: urlContext.engineer_id || storedContext.engineer_id,
       date_iso: urlContext.date_iso || storedContext.date_iso,
       date_label: urlContext.date_label || storedContext.date_label,
@@ -1836,11 +1841,26 @@ function applyCreateTSRHandoffToStandaloneTSR(){
   const context = getStandaloneCreateTSRHandoffContext();
   if(!context) return false;
 
-  const schedule = findStandaloneScheduleFromCreateTSRContext(context) || ensureStandaloneScheduleOptionFromContext(context);
-  if(!schedule) return false;
+  const openCalibrationReport = Boolean(context.open_calibration_report);
+  const targetScheduleId = String(context.schedule_id || context.shift_id || context.id || '').trim();
+  // A pre-submission report must bind to the live schedule selected in Timeline. Do not inject
+  // stale handoff data into the picker, because that could open a report against an unbound or
+  // deleted schedule. Ordinary Create TSR handoffs retain their existing context fallback.
+  const schedule = openCalibrationReport
+    ? (targetScheduleId
+      ? standaloneScheduleOptions.find(item => getStandaloneScheduleRealId(item) === targetScheduleId)
+      : null)
+    : (findStandaloneScheduleFromCreateTSRContext(context) || ensureStandaloneScheduleOptionFromContext(context));
+  if(!schedule){
+    if(openCalibrationReport){
+      showTSRStatus('The selected schedule is no longer available. Choose it again from Calendar before creating a Calibration Report.', 'warning');
+      return true;
+    }
+    return false;
+  }
   if(!isScheduleEquipmentAssignable(schedule)){
     showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
-    return false;
+    return openCalibrationReport;
   }
 
   const runtimeId = getStandaloneScheduleRuntimeId(schedule);
@@ -1855,6 +1875,16 @@ function applyCreateTSRHandoffToStandaloneTSR(){
   try{
     sessionStorage.removeItem('create_tsr_schedule_context');
   }catch(err){}
+
+  if(openCalibrationReport && !calibrationReportHandoffOpened){
+    const createCalibrationReport = window.calibrationReport?.create;
+    if(typeof createCalibrationReport !== 'function'){
+      showTSRStatus('Calibration Report editor is unavailable. Reload Create TSR and try again.', 'danger');
+      return true;
+    }
+    calibrationReportHandoffOpened = true;
+    createCalibrationReport();
+  }
 
   return true;
 }

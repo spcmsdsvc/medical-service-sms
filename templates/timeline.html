@@ -15909,13 +15909,20 @@ if(shift.engineers){
     }
 
     function canOpenCalibrationReportForSchedule(shift){
-        return Boolean(
-            getScheduleOnlineTSRSubmissionId(shift) &&
-            hasScheduleTSRAttachment(shift)
-        );
+        if(!shift || !String(shift.id || '').trim() || shift.pending_sync || shift.queue_id || shift.creation_token || shift.is_pending_schedule){
+            return false;
+        }
+        if(!hasScheduleTSREquipmentAssignment(shift)) return false;
+
+        const submissionId = getScheduleOnlineTSRSubmissionId(shift);
+        // A saved schedule without an online submission starts the ordinary Create TSR flow.
+        // Existing submitted TSRs still require a visible TSR attachment before late-report mode.
+        if(!submissionId) return true;
+        return hasScheduleTSRAttachment(shift);
     }
 
     function getCalibrationReportTimelineLabel(shift){
+        if(!getScheduleOnlineTSRSubmissionId(shift)) return 'Create Calibration Report';
         const state = String(shift?.calibration_report_state || 'not_started').trim().toLowerCase();
         if(state === 'uploaded') return 'View Calibration Report';
         if(state === 'draft') return 'Finish Calibration Report';
@@ -20155,6 +20162,8 @@ function buildCreateTSRPageUrlFromContext(context={}){
     const engineerId = context.engineer_id || context.engineerId || '';
     const dateIso = context.date || context.day_iso || context.dayIso || context.start_date || '';
     const mode = context.mode || '';
+    const openCalibrationReport = context.open_calibration_report === true
+        || ['1', 'true', 'yes'].includes(String(context.open_calibration_report || '').toLowerCase());
 
     // A queued schedule has no server id to put in the URL, so it travels by its creation
     // token instead. The two are mutually exclusive by construction.
@@ -20166,6 +20175,7 @@ function buildCreateTSRPageUrlFromContext(context={}){
     if(engineerId) params.set('engineer_id', engineerId);
     if(dateIso) params.set('date', dateIso);
     if(mode) params.set('mode', mode);
+    if(openCalibrationReport) params.set('open_calibration_report', '1');
 
     const query = params.toString();
     return query ? `/offline-tsr?${query}` : '/offline-tsr';
@@ -20285,22 +20295,26 @@ function redirectToEditLatestTSRFromSchedule(shiftPayload, engineerId, dayIso){
 function redirectToCalibrationReportFromSchedule(shiftPayload, engineerId, dayIso){
     const shift = normalizeOfflineTSRShiftPayload(shiftPayload || {});
     const submissionId = getScheduleOnlineTSRSubmissionId(shift);
-    if(!shift || !shift.id || !submissionId){
-        timelineAlert('Calibration Report is only available for a saved online TSR.');
+    if(!shift || !shift.id){
+        timelineAlert('Calibration Report is only available for a saved schedule.');
+        return;
+    }
+    if(!hasScheduleTSREquipmentAssignment(shift)){
+        timelineAlert('Select equipment on Calendar first before creating a TSR.');
         return;
     }
     if(!canOpenCalibrationReportForSchedule(shift)){
-        timelineAlert('Save the online TSR before adding a Calibration Report.');
+        timelineAlert(submissionId
+            ? 'Save the online TSR before adding a Calibration Report.'
+            : 'Calibration Report is only available for a saved schedule with assigned equipment.');
         return;
     }
 
-    redirectToCreateTSRPage({
+    const context = {
         shift_id: shift.id,
         id: shift.id,
-        submission_id: submissionId,
         engineer_id: engineerId || '',
         date: dayIso || shift.start_date || '',
-        mode: 'calibration_report',
         client_id: shift.client_id || '',
         product_id: shift.product_id || '',
         equipment_source: shift.equipment_source || 'product',
@@ -20313,7 +20327,14 @@ function redirectToCalibrationReportFromSchedule(shiftPayload, engineerId, dayIs
         end_date: shift.end_date || shift.start_date || dayIso || '',
         time_start: shift.time_start || '',
         time_end: shift.time_end || ''
-    });
+    };
+    if(submissionId){
+        context.submission_id = submissionId;
+        context.mode = 'calibration_report';
+    }else{
+        context.open_calibration_report = true;
+    }
+    redirectToCreateTSRPage(context);
 }
 
 function openOfflineTSRDraftFromShiftModal(){

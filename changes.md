@@ -2,6 +2,60 @@
 
 codex changes - 2026-09-25
 
+- The owner separately authorized committing and pushing only the Pre-Submission Calibration Report
+  Shortcut package to the Railway production branch. Publication is limited to the Timeline/Create
+  TSR implementation, focused tests, cache/release metadata, and required plan/change records;
+  protected and unrelated dirty paths remain excluded.
+
+- Began the owner-authorized Pre-Submission Calibration Report Shortcut implementation after the
+  explicit “PLEASE IMPLEMENT THIS PLAN” go-ahead. Recorded the complete executable plan in
+  `plans.md` as **In progress**. The package is limited to Timeline eligibility/routing, Create TSR
+  handoff behavior, focused tests, cache/release metadata, and required records; protected
+  `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, unrelated dirty work, browser/Codex UI,
+  commit, push, deployment, Railway, and production actions remain excluded.
+
+- Updated `templates/timeline.html` so saved equipment-assigned schedules expose **Create
+  Calibration Report** before an online TSR submission exists, including schedules with legacy/manual
+  TSR attachments. The existing submitted-TSR Add/Finish/View labels and late-report routing remain
+  unchanged. The shared eligibility gate and direct action handler are used by desktop cards, schedule
+  summaries, mobile cards, full-calendar details, and sticky actions; queued/unsynced, equipment-less,
+  HR-redacted, and submitted-without-visible-TSR schedules remain hidden.
+
+- Updated `templates/offline_tsr.html` to carry `open_calibration_report=1` through URL/session
+  handoff normalization. Pre-submission navigation now requires the exact saved schedule to be
+  available and equipment-assignable, applies/selects that schedule before invoking the existing
+  Calibration Report `create` API, and fails safely without opening an unbound editor when context is
+  missing or stale. Ordinary TSR draft, attachment, offline persistence, final-save, and sync
+  behavior remains active.
+
+- Advanced the embedded service-worker shell marker in `app.py` to
+  `medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report` and added the
+  published `2026-09-25-pre-submission-calibration-report` release item to
+  `static/changelog/releases.json`. Updated the current service-worker contract in
+  `tests/test_calibration_center.py` to assert the active v195 marker while preserving the existing
+  Calibration Center coverage.
+
+- Added fail-first and post-change source/runtime contracts in
+  `tests/test_tsr_offline_followup.py` for pre-submission/manual-attachment eligibility, submitted
+  routing, queued/equipment/HR exclusions, flag propagation, safe schedule binding, and
+  apply-before-editor ordering. The two new fail-first checks returned the expected `FF` before the
+  product edits; the four new contracts pass **4/4** afterward.
+
+- Verification: `tests.test_tsr_offline_followup` ran **19 tests** with **15 passing** and **4
+  pre-existing failures** from incomplete Node local-save stubs (`offlineTSRDBGet` and
+  `STANDALONE_TSR_ACCOUNT_SCOPE`). Calibration Center passed **18/18**; changelog, HR visibility,
+  timeline file-detail, cache, and release coverage passed **87/87** with **1 skip**; Calibration
+  Report, TSR draft rendering/inline-script parsing, sync/reliability, signature recovery, contact
+  suggestions, offline API status, and cache coverage passed **143/143**. Full discovery ran 1,316
+  tests before the v195 expectation update with 1,289 passing, 25 failing, and 2 skipped; the one
+  stale v194 cache assertion was corrected and rerun successfully, leaving 24 unrelated baseline
+  failures in changelog/LPR/purchase-order/staff/TSR-offline areas.
+
+- `app.py` AST parsing, release JSON parsing, rendered Timeline/Create TSR checks, extracted Create
+  TSR inline JavaScript syntax, and `git diff --check` passed. No browser/Codex UI, schema/database,
+  storage, production, Railway, commit, push, or deployment operation was performed; the package
+  remains uncommitted and unpublished and protected dirty artifacts remain outside scope.
+
 - Committed only the authorized Historical Report Repair notice package as `925b6ad` and pushed it
   to `origin/main`. Remote verification resolved `refs/heads/main` to
   `925b6ada47f2501846efce2c6007fd557f8ec8d8`. Railway deployment

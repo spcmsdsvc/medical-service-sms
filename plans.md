@@ -1,5 +1,143 @@
 # Medical Service SMS — Approved Plans
 
+## Pre-Submission Calibration Report Shortcut
+
+**Status:** Executed — uncommitted
+**Approved:** 2026-09-25 — the owner approved the plan by explicitly requesting its implementation.
+**Execution authorized:** 2026-09-25 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
+**Publication authorized:** 2026-09-25 — the owner instructed “commit and push this change only”.
+**Detailed:** 2026-09-25.
+
+### Context and decisions
+
+Timeline currently shows Add/Finish/View Calibration Report only when a schedule has both a latest
+completed `OnlineTsrSubmission` and a visible TSR attachment. Older/manual schedules can have a TSR
+file that Timeline recognizes while lacking an online-submission row, so their Calibration Report
+shortcut is hidden. The existing ordinary Create TSR page already supports creating a Calibration
+Report before TSR submission: the report is stored with the TSR draft and uploaded when that TSR is
+eventually submitted.
+
+The shortcut will therefore be available on saved server schedules that have assigned operational
+equipment even when they have no online TSR submission. In that case it will open ordinary Create
+TSR, prefill the selected schedule, and automatically open the Calibration Report editor. Existing
+completed online TSRs retain the current calibration-only late-report workflow and Add/Finish/View
+state labels. Device-only queued schedules, schedules without assigned equipment, HR-redacted
+payloads, and malformed submitted records remain ineligible. A legacy/manual attachment is not
+converted into an online TSR and no standalone report-upload endpoint is introduced.
+
+### Files and boundaries
+
+- `templates/timeline.html`: split shortcut eligibility/routing between pre-submission draft mode
+  and the existing submitted-TSR calibration-only mode across desktop, summary, and mobile actions.
+- `templates/offline_tsr.html`: carry an internal `open_calibration_report=1` handoff through URL and
+  session normalization, load/autofill the selected schedule first, then initialize/open the existing
+  report editor while retaining the ordinary TSR draft workflow.
+- `tests/test_tsr_offline_followup.py` and the smallest relevant existing Calibration Report/Timeline
+  test module: add fail-first source/runtime contracts for eligibility, routing, handoff ordering,
+  safe failure, and preserved late-report behavior.
+- `app.py`: advance only the embedded service-worker shell marker required to distribute the changed
+  Timeline/Create TSR pages; no backend route or data behavior changes.
+- `static/changelog/releases.json`, `changes.md`, and this plan: record delivery and exact verification.
+- Deliberately excluded: schema/database changes, standalone report upload, conversion of legacy
+  attachments, queued-schedule support, authorization changes, browser/Codex UI automation, commit,
+  push, deployment, Railway/production work, `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`,
+  and unrelated dirty work.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first controls.** Re-read applicable instructions, protected Git state,
+   current Timeline gates/routing, Create TSR handoff/loading order, report draft behavior, cache and
+   release contracts. Add focused assertions that fail on the current submission-only gate and absent
+   handoff intent before changing product code. Stop if protected work or current source invalidates
+   this plan.
+2. **Timeline eligibility and routing — `templates/timeline.html`.** Make a saved schedule eligible
+   when it has assigned equipment and no online TSR submission. Keep the existing submitted path
+   eligible only with its submission ID and visible TSR attachment. Label the former **Create
+   Calibration Report**, retain Add/Finish/View for the latter, and apply the shared decision across
+   desktop cards, summary actions, mobile cards, full-calendar details, and sticky actions. Route the
+   pre-submission case to normal Create TSR with `open_calibration_report=1`; retain
+   `mode=calibration_report` plus submission ID for the late-report case. Done means queued,
+   equipment-less, HR-redacted, and malformed submitted schedules remain hidden.
+3. **Safe Create TSR handoff — `templates/offline_tsr.html`.** Preserve the new intent in the URL and
+   stored handoff context without treating it as calibration-only mode. After the intended saved
+   schedule has been resolved, selected, locked, and autofilled, invoke the existing report `create`
+   API once. Missing/stale/unassignable context must not open an unbound editor. Keep ordinary draft,
+   attachment, offline persistence, final-save, and sync behavior unchanged.
+4. **Focused regression coverage.** Prove no-submission and legacy/manual-file schedules expose the
+   pre-submission action; its URL/context omit late mode and include the new flag; submitted TSRs keep
+   existing routing/labels; ineligible/HR/queued schedules stay hidden; schedule application precedes
+   editor creation; safe failures do not open it; and existing draft/final synchronization contracts
+   remain green.
+5. **Distribution and records.** Advance the embedded shell marker monotonically from the verified
+   current value, add one focused published release entry, update cache/release assertions only where
+   exact-current values require it, and append factual implementation details to `changes.md`.
+6. **Verification and handoff.** Run the new fail-first control and post-change test, focused Timeline,
+   TSR handoff, Calibration Report, HR visibility, offline/cache, and changelog suites, then the
+   proportionate broader suite. Validate Python AST, Jinja rendering, extracted JavaScript syntax,
+   release JSON, and `git diff --check`. Do not use browser automation; browser verification requires
+   separate owner permission. Self-review the diff, record exact pass/fail/skip results and any
+   deviation here and in `changes.md`, and leave the package uncommitted and unpublished.
+
+### Acceptance and risks
+
+- A saved equipment-assigned schedule with no online submission, including one with only a manual
+  TSR attachment, visibly offers **Create Calibration Report** and opens a correctly bound ordinary
+  TSR draft with the editor open.
+- The report remains part of that draft and follows the existing TSR submission/sync path; no report
+  is uploaded directly to the schedule.
+- Existing submitted TSR Add/Finish/View behavior and read-only uploaded reports are unchanged.
+- The primary risk is accidentally invoking late-report mode without a submission ID or opening the
+  editor before schedule autofill. Explicit routing branches and ordering tests contain that risk.
+
+### Execution outcome — 2026-09-25
+
+Implemented the pre-submission shortcut in `templates/timeline.html`. Saved schedules with assigned
+equipment now expose **Create Calibration Report** when they have no `OnlineTsrSubmission`, including
+legacy/manual TSR attachments. The shared gate and direct action handler are used by desktop cards,
+schedule summaries, mobile cards, full-calendar details, and sticky actions. Queued/unsynced schedules,
+equipment-less schedules, HR-redacted payloads, and submitted schedules without a visible TSR
+attachment remain ineligible.
+Submitted TSRs retain the existing Add/Finish/View labels and `mode=calibration_report` plus
+submission-ID routing. Pre-submission clicks use ordinary Create TSR with the internal
+`open_calibration_report=1` handoff.
+
+Implemented the handoff in `templates/offline_tsr.html`: URL and session context preserve the flag;
+the exact saved schedule must be present and equipment-assignable; it is selected and autofilled
+before the existing `window.calibrationReport.create()` API is called once. Missing, stale, or
+unassignable context reports a safe warning and does not open an unbound editor. Ordinary TSR draft,
+attachment, offline persistence, final-save, and synchronization paths remain unchanged.
+
+Added focused contracts in `tests/test_tsr_offline_followup.py` and updated the service-worker marker
+expectation in `tests/test_calibration_center.py`. Advanced the embedded shell marker to
+`medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report` in `app.py` and
+added the published release item `2026-09-25-pre-submission-calibration-report` to
+`static/changelog/releases.json`.
+
+Verification:
+
+- Fail-first checkpoint: the two new handoff/eligibility tests failed against the unchanged source
+  (`FF`); after implementation the four new source/runtime contracts passed **4/4**.
+- `tests.test_tsr_offline_followup` ran **19 tests** with **15 passing** and **4 pre-existing
+  harness failures** caused by missing `offlineTSRDBGet`/`STANDALONE_TSR_ACCOUNT_SCOPE` stubs in
+  unrelated local-save tests.
+- `tests.test_calibration_center` passed **18/18**. Changelog, HR visibility, timeline file-detail,
+  cache, and release coverage passed **87/87** with **1 skip**. Calibration Report, TSR draft
+  rendering/inline-script parsing, sync/reliability, signature recovery, contact suggestions,
+  offline API status, and cache coverage passed **143/143**.
+- Full discovery ran **1,316 tests** before the active-cache assertion update: **1,289 passed,
+  25 failed, and 2 skipped**. One failure was the stale v194 assertion in
+  `test_calibration_center.py`, corrected and rerun successfully; the remaining 24 were unrelated
+  baseline failures in changelog synchronization/order, LPR, purchase-order rate-limit setup,
+  staff creation, and the pre-existing TSR offline harness.
+- `app.py` AST parsing, release JSON parsing, rendered Timeline/Create TSR template checks, extracted
+  Create TSR inline JavaScript syntax, and `git diff --check` passed. Browser/Codex UI verification
+  was not used per project rule.
+
+No schema/database, backend route, storage, production, Railway, commit, push, deployment, or
+browser operation was performed. Protected dirty artifacts were not intentionally modified. The
+package is left uncommitted and unpublished.
+
+
 ## Collapse Historical Report Repair into an Actionable Notice
 
 **Status:** Executed — implementation commit `925b6ad` published to `origin/main`; Railway deployment `c4024b83-7842-4025-b46a-7673fa6d74f9` succeeded.

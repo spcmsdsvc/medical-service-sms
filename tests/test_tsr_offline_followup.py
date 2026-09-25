@@ -263,7 +263,7 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
             "online_tsr_submission_id",
             "calibration_report_state",
             "redirectToCalibrationReportFromSchedule",
-            "mode: 'calibration_report'",
+            "context.mode = 'calibration_report'",
             "Add Calibration Report",
             "Finish Calibration Report",
             "View Calibration Report",
@@ -279,6 +279,151 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
             self.assertIn(marker, self.timeline_source)
         legacy_gate = self.timeline_source.split('function canOpenCalibrationReportForSchedule', 1)[1].split('function getCalibrationReportTimelineLabel', 1)[0]
         self.assertIn('getScheduleOnlineTSRSubmissionId(shift)', legacy_gate)
+
+    def test_timeline_exposes_pre_submission_calibration_report_shortcuts(self):
+        gate = self.timeline_source.split(
+            'function canOpenCalibrationReportForSchedule', 1
+        )[1].split('function getCalibrationReportTimelineLabel', 1)[0]
+        self.assertIn('hasScheduleTSREquipmentAssignment(shift)', gate)
+        self.assertIn('if(!submissionId) return true;', gate)
+        self.assertIn('pending_sync', gate)
+        self.assertIn('queue_id', gate)
+
+        route = self.timeline_source.split(
+            'function redirectToCalibrationReportFromSchedule', 1
+        )[1].split('function openOfflineTSRDraftFromShiftModal', 1)[0]
+        self.assertIn('context.open_calibration_report = true', route)
+        self.assertIn("context.mode = 'calibration_report'", route)
+        self.assertIn('context.submission_id = submissionId', route)
+
+    def test_create_tsr_preserves_pre_submission_calibration_handoff_and_order(self):
+        context = self.tsr_source.split(
+            'function normalizeStandaloneCreateTSRContext', 1
+        )[1].split('function getStandaloneCreateTSRHandoffContext', 1)[0]
+        self.assertIn('open_calibration_report', context)
+
+        url_context = self.tsr_source.split(
+            'function getStandaloneCreateTSRHandoffContext', 1
+        )[1].split('function findStandaloneScheduleFromCreateTSRContext', 1)[0]
+        self.assertIn('open_calibration_report', url_context)
+
+        url_builder = self.timeline_source.split(
+            'function buildCreateTSRPageUrlFromContext', 1
+        )[1].split('function storeCreateTSRContextForPage', 1)[0]
+        self.assertIn('open_calibration_report', url_builder)
+
+        handoff = self.tsr_source.split(
+            'function applyCreateTSRHandoffToStandaloneTSR', 1
+        )[1].split('function normalizeStandaloneScheduleOptions', 1)[0]
+        self.assertIn('calibrationReport', handoff)
+        self.assertIn('.create', handoff)
+        self.assertLess(
+            handoff.index('applyScheduleToStandaloneTSR(schedule, true)'),
+            handoff.index('.create'),
+        )
+        self.assertIn('findStandaloneScheduleFromCreateTSRContext(context)', handoff)
+        self.assertIn('openCalibrationReport\n    ? (targetScheduleId', handoff)
+        self.assertIn(
+            ': (findStandaloneScheduleFromCreateTSRContext(context) || ensureStandaloneScheduleOptionFromContext(context))',
+            handoff,
+        )
+
+    @unittest.skipUnless(NODE.exists(), f'Node runtime unavailable at {NODE}')
+    def test_pre_submission_calibration_gate_runtime_matrix(self):
+        gate_start = self.timeline_source.index('function canOpenCalibrationReportForSchedule')
+        gate_end = self.timeline_source.index('function getCalibrationReportTimelineLabel', gate_start)
+        gate = self.timeline_source[gate_start:gate_end]
+        url_start = self.timeline_source.index('function buildCreateTSRPageUrlFromContext')
+        url_end = self.timeline_source.index('function storeCreateTSRContextForPage', url_start)
+        url_builder = self.timeline_source[url_start:url_end]
+        script = """
+function getScheduleOnlineTSRSubmissionId(shift){ return Number(shift?.online_tsr_submission_id || 0) || 0; }
+function hasScheduleTSRAttachment(shift){ return Number(shift?.service_file_delivery?.categories?.tsr?.total_count || 0) > 0 || (shift?.file_details || []).some(file => Boolean(file?.is_tsr)); }
+function hasScheduleTSREquipmentAssignment(shift){ const source = String(shift?.equipment_source || '').trim().toLowerCase(); return Boolean(shift && shift.client_id && String(shift.product_id || '').trim() && String(shift.product_name || '').trim() && ['product', 'genoray', 'vieworks'].includes(source) && shift.equipment_available !== false); }
+""" + gate + url_builder + """
+const base = { id:42, client_id:7, product_id:'SN-42', product_name:'Flexavision F3', equipment_source:'product', equipment_available:true };
+const cases = {
+  pre_submission: canOpenCalibrationReportForSchedule({...base}),
+  pre_submission_manual_tsr: canOpenCalibrationReportForSchedule({...base, file_details:[{is_tsr:true}]}),
+  submitted_with_tsr: canOpenCalibrationReportForSchedule({...base, online_tsr_submission_id:9, file_details:[{is_tsr:true}]}),
+  submitted_without_tsr: canOpenCalibrationReportForSchedule({...base, online_tsr_submission_id:9}),
+  queued: canOpenCalibrationReportForSchedule({...base, pending_sync:true, queue_id:'q-1'}),
+  no_equipment: canOpenCalibrationReportForSchedule({...base, product_id:'', product_name:''}),
+  hr_redacted: canOpenCalibrationReportForSchedule({...base, client_id:null, product_id:null, product_name:''}),
+  pre_url: buildCreateTSRPageUrlFromContext({ shift_id:42, date:'2026-09-25', open_calibration_report:true }),
+  submitted_url: buildCreateTSRPageUrlFromContext({ shift_id:42, submission_id:9, mode:'calibration_report' })
+};
+console.log(JSON.stringify(cases));
+"""
+        output = self._run_node_json(script)
+        self.assertEqual(output['pre_submission'], True)
+        self.assertEqual(output['pre_submission_manual_tsr'], True)
+        self.assertEqual(output['submitted_with_tsr'], True)
+        self.assertEqual(output['submitted_without_tsr'], False)
+        self.assertEqual(output['queued'], False)
+        self.assertEqual(output['no_equipment'], False)
+        self.assertEqual(output['hr_redacted'], False)
+        self.assertIn('open_calibration_report=1', output['pre_url'])
+        self.assertNotIn('mode=calibration_report', output['pre_url'])
+        self.assertIn('mode=calibration_report', output['submitted_url'])
+        self.assertNotIn('open_calibration_report', output['submitted_url'])
+
+    @unittest.skipUnless(NODE.exists(), f'Node runtime unavailable at {NODE}')
+    def test_pre_submission_handoff_opens_only_after_safe_schedule_binding(self):
+        normalize_start = self.tsr_source.index('function normalizeStandaloneCreateTSRContext')
+        normalize_end = self.tsr_source.index('function getStandaloneCreateTSRHandoffContext', normalize_start)
+        context_start = normalize_end
+        context_end = self.tsr_source.index('function findStandaloneScheduleFromCreateTSRContext', context_start)
+        handoff_start = self.tsr_source.index('function applyCreateTSRHandoffToStandaloneTSR')
+        handoff_end = self.tsr_source.index('function normalizeStandaloneScheduleOptions', handoff_start)
+        real_id_start = self.tsr_source.index('function getStandaloneScheduleRealId')
+        real_id_end = self.tsr_source.index('function normalizeStandaloneCreateTSRContext', real_id_start)
+        script = """
+const events = [];
+const sessionStorage = { getItem(){ return null; }, removeItem(){ events.push('context-removed'); } };
+const window = { location:{ search:'?schedule_id=42&open_calibration_report=1' }, calibrationReport:{ create(){ events.push('create'); } } };
+const document = { getElementById(){ return { value:'' }; } };
+const LOGGED_IN_ENGINEER_NAME = 'Engineer';
+const LOGGED_IN_ENGINEER_INITIALS = 'EN';
+let standaloneScheduleOptions = [];
+let selectedStandaloneScheduleId = '';
+let calibrationReportHandoffOpened = false;
+function isScheduleEquipmentAssignable(schedule){ return Boolean(schedule?.client_id && schedule?.product_id && schedule?.product_name && schedule?.equipment_available !== false); }
+function getStandaloneScheduleRuntimeId(schedule){ return String(schedule?.id || ''); }
+function applyScheduleToStandaloneTSR(schedule){ events.push('apply:' + schedule.id); }
+function showTSRStatus(message){ events.push('status:' + message); }
+""" + self.tsr_source[real_id_start:real_id_end] + self.tsr_source[normalize_start:normalize_end] + self.tsr_source[context_start:context_end] + self.tsr_source[handoff_start:handoff_end] + """
+function resetContext(){ events.splice(0, events.length); calibrationReportHandoffOpened = false; selectedStandaloneScheduleId = ''; }
+const good = { id:42, client_id:7, product_id:'SN-42', product_name:'Flexavision F3', equipment_available:true };
+standaloneScheduleOptions = [good];
+const success = applyCreateTSRHandoffToStandaloneTSR();
+const successEvents = events.slice();
+resetContext();
+standaloneScheduleOptions = [];
+const missing = applyCreateTSRHandoffToStandaloneTSR();
+const missingEvents = events.slice();
+resetContext();
+standaloneScheduleOptions = [{...good, id:99}];
+const stale = applyCreateTSRHandoffToStandaloneTSR();
+const staleEvents = events.slice();
+resetContext();
+standaloneScheduleOptions = [{...good, product_id:'', product_name:''}];
+const unassignable = applyCreateTSRHandoffToStandaloneTSR();
+const unassignableEvents = events.slice();
+console.log(JSON.stringify({ success, successEvents, missing, missingEvents, stale, staleEvents, unassignable, unassignableEvents }));
+"""
+        output = self._run_node_json(script)
+        self.assertTrue(output['success'])
+        self.assertEqual(output['successEvents'][0], 'apply:42')
+        self.assertIn('context-removed', output['successEvents'])
+        self.assertEqual(output['successEvents'].count('create'), 1)
+        self.assertLess(output['successEvents'].index('apply:42'), output['successEvents'].index('create'))
+        self.assertTrue(output['missing'])
+        self.assertTrue(output['stale'])
+        self.assertTrue(output['unassignable'])
+        self.assertNotIn('create', output['missingEvents'])
+        self.assertNotIn('create', output['staleEvents'])
+        self.assertNotIn('create', output['unassignableEvents'])
 
     def test_create_tsr_contains_calibration_only_upload_contract(self):
         for marker in (
@@ -324,6 +469,11 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
             "medical-service-pwa-offline-navigation-v158-calibration-center",
             self.app_source,
         )
+        self.assertIn(
+            "medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report",
+            self.app_source,
+        )
+        self.assertIn('2026-09-25-pre-submission-calibration-report', self.release_source)
         self.assertIn('2026-09-08-tsr-offline-draft-save-order', self.release_source)
         self.assertIn('Service Requested By and Acknowledged By', self.release_source)
 

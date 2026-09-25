@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-25-pre-submission-calibration-report",
+      "release_date": "2026-09-25",
+      "title": "Create Calibration Reports Before TSR Submission",
+      "summary": "Timeline now lets engineers start a Calibration Report from an equipment-assigned schedule before its TSR is submitted.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-25-pre-submission-calibration-report-engineers",
+          "category": "Create TSR",
+          "description": "Equipment-assigned saved schedules now show Create Calibration Report even when the TSR is not submitted yet. The report opens inside the ordinary TSR draft and follows the existing TSR save and submission workflow.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-25-calibration-repair-notice",
       "release_date": "2026-09-25",
       "title": "Clearer Historical Report Repair Alerts",
