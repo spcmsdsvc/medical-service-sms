@@ -76,30 +76,43 @@
         <div class="calibration-center-summary-card"><span class="label">Sent</span><span id="summary-sent" class="value text-success">0</span></div>
     </section>
 
-    <section id="calibration-center-repair-panel" class="card border-0 shadow-sm rounded-4 mb-4 calibration-center-repair-panel" aria-labelledby="calibration-center-repair-title">
-        <div class="card-body p-3">
-            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-                <div>
-                    <h2 id="calibration-center-repair-title" class="h5 fw-bold mb-1"><i class="fa-solid fa-wrench me-2 text-warning" aria-hidden="true"></i>Historical Report Repair</h2>
-                    <p class="small text-muted mb-2">Preview every recognized generated Calibration Report revision, including superseded revisions. Repair changes only the Page 3 headings; numeric values, focal sizes, file IDs, approval/delivery status, and email history remain unchanged.</p>
-                </div>
-                <button id="calibration-center-repair-all" type="button" class="btn btn-warning rounded-3 fw-bold">Repair All</button>
-            </div>
-            <div id="calibration-center-repair-warning" class="alert alert-warning small mb-3">Approved or emailed artifacts will change headings. Existing email previews become stale and must be regenerated before delivery.</div>
-            <div id="calibration-center-repair-loading" class="small text-muted" role="status"><i class="fa-solid fa-circle-notch fa-spin me-2" aria-hidden="true"></i>Loading repair inventory...</div>
-            <div id="calibration-center-repair-summary" class="calibration-center-repair-summary d-none mb-3" aria-label="Historical repair totals"><span class="badge text-bg-primary">Total <strong id="repair-total">0</strong></span><span class="badge text-bg-warning">Repairable <strong id="repair-repairable">0</strong></span><span class="badge text-bg-success">Already repaired <strong id="repair-already">0</strong></span><span class="badge text-bg-danger">Blocked <strong id="repair-blocked">0</strong></span></div>
-            <div id="calibration-center-repair-progress" class="small text-muted d-none mb-2" role="status"></div>
-            <div id="calibration-center-repair-error" class="alert alert-danger small d-none" role="alert"></div>
-            <div id="calibration-center-repair-empty" class="small text-muted d-none">No generated Calibration Report revisions were found.</div>
-            <div id="calibration-center-repair-table-wrap" class="calibration-center-repair-table-wrap d-none">
-                <table class="table table-sm table-hover calibration-center-repair-table mb-0"><thead><tr><th>Revision</th><th>Source</th><th>Linked PDF</th><th>Target units / source</th><th>Impact</th><th>Status</th><th>Action</th></tr></thead><tbody id="calibration-center-repair-table-body"></tbody></table>
-            </div>
-            <div id="calibration-center-repair-confirm" class="calibration-center-repair-confirm d-none mt-3 p-3" role="dialog" aria-labelledby="calibration-center-repair-confirm-title" aria-modal="false">
-                <div id="calibration-center-repair-confirm-title" class="fw-bold mb-1">Confirm Repair All</div>
-                <p class="small mb-2">This runs sequential single-report repairs for every currently repairable revision. Type <code>REPAIR ALL</code> to continue.</p>
-                <div class="d-flex gap-2 flex-wrap"><input id="calibration-center-repair-confirm-input" class="form-control rounded-3" style="max-width:260px" type="text" autocomplete="off" aria-label="Type REPAIR ALL to confirm"><button id="calibration-center-repair-confirm-button" type="button" class="btn btn-warning rounded-3 fw-bold" disabled>Confirm</button><button id="calibration-center-repair-cancel-button" type="button" class="btn btn-outline-secondary rounded-3">Cancel</button></div>
+    <section id="calibration-center-repair-area" class="d-none mb-4" aria-live="polite" aria-atomic="true">
+        <div id="calibration-center-repair-notice" class="alert alert-warning small d-none mb-3" role="status">
+            <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                <div><strong>Historical Report Repair needs attention.</strong> <span id="repair-notice-repairable">0</span> repairable · <span id="repair-notice-blocked">0</span> blocked.</div>
+                <button id="calibration-center-repair-view" type="button" class="btn btn-sm btn-warning rounded-3 fw-bold" aria-expanded="false" aria-controls="calibration-center-repair-panel">View repairs</button>
             </div>
         </div>
+        <div id="calibration-center-repair-success" class="alert alert-success small d-none mb-3" role="status">All historical report repairs are complete.</div>
+        <div id="calibration-center-repair-load-error" class="alert alert-danger small d-none mb-3" role="alert"><strong>Historical Report Repair is unavailable.</strong> <span id="calibration-center-repair-load-error-message">Inventory could not be loaded.</span></div>
+        <section id="calibration-center-repair-panel" class="d-none card border-0 shadow-sm rounded-4 calibration-center-repair-panel" aria-labelledby="calibration-center-repair-title" aria-hidden="true">
+            <div class="card-body p-3">
+                <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                    <div>
+                        <h2 id="calibration-center-repair-title" class="h5 fw-bold mb-1"><i class="fa-solid fa-wrench me-2 text-warning" aria-hidden="true"></i>Historical Report Repair</h2>
+                        <p class="small text-muted mb-2">Preview every recognized generated Calibration Report revision, including superseded revisions. Repair changes only the Page 3 headings; numeric values, focal sizes, file IDs, approval/delivery status, and email history remain unchanged.</p>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button id="calibration-center-repair-hide" type="button" class="btn btn-outline-secondary rounded-3 fw-bold" aria-expanded="true" aria-controls="calibration-center-repair-panel">Hide details</button>
+                        <button id="calibration-center-repair-all" type="button" class="btn btn-warning rounded-3 fw-bold">Repair All</button>
+                    </div>
+                </div>
+                <div id="calibration-center-repair-warning" class="alert alert-warning small mb-3">Approved or emailed artifacts will change headings. Existing email previews become stale and must be regenerated before delivery.</div>
+                <div id="calibration-center-repair-loading" class="small text-muted" role="status"><i class="fa-solid fa-circle-notch fa-spin me-2" aria-hidden="true"></i>Loading repair inventory...</div>
+                <div id="calibration-center-repair-summary" class="calibration-center-repair-summary d-none mb-3" aria-label="Historical repair totals"><span class="badge text-bg-primary">Total <strong id="repair-total">0</strong></span><span class="badge text-bg-warning">Repairable <strong id="repair-repairable">0</strong></span><span class="badge text-bg-success">Already repaired <strong id="repair-already">0</strong></span><span class="badge text-bg-danger">Blocked <strong id="repair-blocked">0</strong></span></div>
+                <div id="calibration-center-repair-progress" class="small text-muted d-none mb-2" role="status"></div>
+                <div id="calibration-center-repair-error" class="alert alert-danger small d-none" role="alert"></div>
+                <div id="calibration-center-repair-empty" class="small text-muted d-none">No generated Calibration Report revisions were found.</div>
+                <div id="calibration-center-repair-table-wrap" class="calibration-center-repair-table-wrap d-none">
+                    <table class="table table-sm table-hover calibration-center-repair-table mb-0"><thead><tr><th>Revision</th><th>Source</th><th>Linked PDF</th><th>Target units / source</th><th>Impact</th><th>Status</th><th>Action</th></tr></thead><tbody id="calibration-center-repair-table-body"></tbody></table>
+                </div>
+                <div id="calibration-center-repair-confirm" class="calibration-center-repair-confirm d-none mt-3 p-3" role="dialog" aria-labelledby="calibration-center-repair-confirm-title" aria-modal="false">
+                    <div id="calibration-center-repair-confirm-title" class="fw-bold mb-1">Confirm Repair All</div>
+                    <p class="small mb-2">This runs sequential single-report repairs for every currently repairable revision. Type <code>REPAIR ALL</code> to continue.</p>
+                    <div class="d-flex gap-2 flex-wrap"><input id="calibration-center-repair-confirm-input" class="form-control rounded-3" style="max-width:260px" type="text" autocomplete="off" aria-label="Type REPAIR ALL to confirm"><button id="calibration-center-repair-confirm-button" type="button" class="btn btn-warning rounded-3 fw-bold" disabled>Confirm</button><button id="calibration-center-repair-cancel-button" type="button" class="btn btn-outline-secondary rounded-3">Cancel</button></div>
+                </div>
+            </div>
+        </section>
     </section>
 
     <section class="card border-0 shadow-sm rounded-4 mb-4">
@@ -154,7 +167,7 @@
 <script>
 (function () {
     'use strict';
-    const state = { q: '', delivery: 'all', page: 1, records: [], email: null, manifest: '', message: null, sending: false, confirmKey: '', repairCandidates: [], repairRunning: false };
+    const state = { q: '', delivery: 'all', page: 1, records: [], email: null, manifest: '', message: null, sending: false, confirmKey: '', repairCandidates: [], repairRunning: false, repairDetailsOpen: false, repairActionOccurred: false, repairAttention: 0 };
     const byId = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value == null ? '' : value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
     const csrf = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -167,6 +180,42 @@
         return data;
     };
     const setVisible = (id, visible) => byId(id)?.classList.toggle('d-none', !visible);
+    function setRepairDetails(open) {
+        state.repairDetailsOpen = !!open;
+        const panel = byId('calibration-center-repair-panel');
+        const view = byId('calibration-center-repair-view');
+        const hide = byId('calibration-center-repair-hide');
+        if (panel) { panel.classList.toggle('d-none', !state.repairDetailsOpen); panel.setAttribute('aria-hidden', String(!state.repairDetailsOpen)); }
+        if (view) view.setAttribute('aria-expanded', String(state.repairDetailsOpen));
+        if (hide) hide.setAttribute('aria-expanded', String(state.repairDetailsOpen));
+    }
+    function renderRepairSurface(summary) {
+        const repairable = Number(summary?.repairable || 0);
+        const blocked = Number(summary?.blocked || 0);
+        const attention = repairable + blocked;
+        state.repairAttention = attention;
+        const repairableNotice = byId('repair-notice-repairable');
+        const blockedNotice = byId('repair-notice-blocked');
+        if (repairableNotice) repairableNotice.textContent = String(repairable);
+        if (blockedNotice) blockedNotice.textContent = String(blocked);
+        if (attention > 0) {
+            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', true); setVisible('calibration-center-repair-success', false); setVisible('calibration-center-repair-load-error', false);
+            setRepairDetails(state.repairDetailsOpen || state.repairRunning);
+        } else if (state.repairRunning) {
+            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', false); setVisible('calibration-center-repair-load-error', false);
+            setRepairDetails(true);
+        } else if (state.repairActionOccurred) {
+            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', true); setVisible('calibration-center-repair-load-error', false);
+            setRepairDetails(false);
+        } else {
+            setVisible('calibration-center-repair-area', false); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', false); setVisible('calibration-center-repair-load-error', false);
+            setRepairDetails(false);
+        }
+    }
+    function showRepairLoadError(message) {
+        setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', false); setVisible('calibration-center-repair-load-error', true); setRepairDetails(false);
+        const el = byId('calibration-center-repair-load-error-message'); if (el) el.textContent = message || 'Inventory could not be loaded.';
+    }
     const statusHtml = (record) => `<span class="calibration-center-status ${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}">${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}</span>`;
     const artifactButton = (url, label) => url ? `<a class="btn btn-sm btn-outline-secondary rounded-3" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>` : `<span class="text-muted small">Unavailable</span>`;
     const sendButton = (record) => record.can_send ? `<button type="button" class="btn btn-sm btn-primary rounded-3 js-calibration-email" data-approval-id="${record.approval_id}">Email</button>` : `<span class="text-danger small" title="${escapeHtml(record.unavailable_reason)}">${escapeHtml(record.unavailable_reason || 'Not ready')}</span>`;
@@ -195,7 +244,8 @@
         const summary = data.summary || {};
         ['total','repairable','already_repaired','blocked'].forEach((key) => { const el = byId(`repair-${key === 'already_repaired' ? 'already' : key}`); if (el) el.textContent = summary[key] ?? 0; });
         state.repairCandidates = data.candidates || [];
-        setVisible('calibration-center-repair-loading', false); setVisible('calibration-center-repair-summary', true); setVisible('calibration-center-repair-empty', !state.repairCandidates.length); setVisible('calibration-center-repair-table-wrap', !!state.repairCandidates.length);
+        setVisible('calibration-center-repair-loading', false); setVisible('calibration-center-repair-error', false); setVisible('calibration-center-repair-summary', true); setVisible('calibration-center-repair-empty', !state.repairCandidates.length); setVisible('calibration-center-repair-table-wrap', !!state.repairCandidates.length);
+        renderRepairSurface(summary);
         const body = byId('calibration-center-repair-table-body');
         if (!body) return;
         body.innerHTML = state.repairCandidates.map((candidate) => {
@@ -211,12 +261,13 @@
         const repairAll = byId('calibration-center-repair-all'); if (repairAll) repairAll.disabled = state.repairRunning || !state.repairCandidates.some((item) => item.status === 'repairable');
     }
     async function loadRepairInventory() {
-        setVisible('calibration-center-repair-loading', true); setVisible('calibration-center-repair-error', false);
+        setVisible('calibration-center-repair-loading', true); setVisible('calibration-center-repair-error', false); setVisible('calibration-center-repair-load-error', false);
         try { renderRepairInventory(await request('/admin/calibration-center/repair-preview')); }
-        catch (error) { setVisible('calibration-center-repair-loading', false); const el = byId('calibration-center-repair-error'); if (el) { el.textContent = error.message; el.classList.remove('d-none'); } }
+        catch (error) { setVisible('calibration-center-repair-loading', false); showRepairLoadError(error.message); }
     }
     async function applyRepair(sourceFileId, button) {
         if (state.repairRunning) return;
+        state.repairActionOccurred = true; state.repairDetailsOpen = true;
         if (button) { button.disabled = true; button.textContent = 'Applying...'; }
         try {
             const result = await request(`/admin/calibration-center/${sourceFileId}/repair`, {method:'POST', body:JSON.stringify({})});
@@ -235,7 +286,7 @@
         if (!input || input.value.trim().toUpperCase() !== 'REPAIR ALL' || state.repairRunning) return;
         const candidates = state.repairCandidates.filter((item) => item.status === 'repairable');
         if (!candidates.length) { closeRepairConfirmation(); return; }
-        state.repairRunning = true; closeRepairConfirmation(); const button = byId('calibration-center-repair-all'); if (button) { button.disabled = true; button.textContent = 'Repairing...'; }
+        state.repairActionOccurred = true; state.repairDetailsOpen = true; state.repairRunning = true; closeRepairConfirmation(); const button = byId('calibration-center-repair-all'); if (button) { button.disabled = true; button.textContent = 'Repairing...'; }
         const progress = byId('calibration-center-repair-progress'); if (progress) { progress.classList.remove('d-none'); progress.textContent = `Repairing 0 of ${candidates.length}...`; }
         let failures = 0;
         for (let index = 0; index < candidates.length; index += 1) {
@@ -245,6 +296,7 @@
             await loadRepairInventory();
         }
         state.repairRunning = false; if (button) { button.disabled = !state.repairCandidates.some((item) => item.status === 'repairable'); button.textContent = 'Repair All'; }
+        if (state.repairAttention === 0) renderRepairSurface({repairable: 0, blocked: 0}); else setRepairDetails(true);
         if (progress) progress.textContent = `Repair All complete: ${candidates.length - failures} repaired, ${failures} failed.`;
     }
     function setModalError(message) { const el = byId('calibration-center-modal-error'); if (el) { el.textContent = message || ''; el.classList.toggle('d-none', !message); } }
@@ -276,6 +328,8 @@
     byId('calibration-center-delivery')?.addEventListener('change', (event) => { state.delivery = event.target.value; state.page = 1; loadRecords(); });
     byId('calibration-center-modal-close')?.addEventListener('click', closeModal); byId('calibration-center-modal-backdrop')?.addEventListener('click', (event) => { if (event.target.id === 'calibration-center-modal-backdrop') closeModal(); });
     byId('calibration-center-preview')?.addEventListener('click', previewEmail); byId('calibration-center-send')?.addEventListener('click', sendEmail);
+    byId('calibration-center-repair-view')?.addEventListener('click', () => setRepairDetails(true));
+    byId('calibration-center-repair-hide')?.addEventListener('click', () => { setRepairDetails(false); byId('calibration-center-repair-view')?.focus(); });
     byId('calibration-center-repair-all')?.addEventListener('click', openRepairConfirmation); byId('calibration-center-repair-confirm-button')?.addEventListener('click', runRepairAll); byId('calibration-center-repair-cancel-button')?.addEventListener('click', closeRepairConfirmation);
     byId('calibration-center-repair-confirm-input')?.addEventListener('input', (event) => { const button = byId('calibration-center-repair-confirm-button'); if (button) button.disabled = event.target.value.trim().toUpperCase() !== 'REPAIR ALL'; });
     ['calibration-center-to','calibration-center-manual-cc','calibration-center-font'].forEach((id) => ['input', 'change'].forEach((eventName) => byId(id)?.addEventListener(eventName, () => { state.confirmKey = ''; })));

@@ -8,6 +8,9 @@ or repository scheduler.db access is performed.
 
 import json
 import pathlib
+import re
+import subprocess
+import textwrap
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -17,6 +20,7 @@ import app as app_module
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP_SOURCE = (ROOT / 'app.py').read_text(encoding='utf-8')
+TEMPLATE_SOURCE = (ROOT / 'templates' / 'calibration_center.html').read_text(encoding='utf-8')
 LAYOUT_SOURCE = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
 SETTINGS_SOURCE = (ROOT / 'templates' / 'settings.html').read_text(encoding='utf-8')
 
@@ -184,7 +188,7 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertIn('calibration_report_certificate_cc_cebu_davao', SETTINGS_SOURCE)
 
     def test_template_contains_required_safe_states_and_controls(self):
-        template = (ROOT / 'templates' / 'calibration_center.html').read_text(encoding='utf-8')
+        template = TEMPLATE_SOURCE
         for marker in (
             'calibration-center-loading',
             'calibration-center-empty',
@@ -210,8 +214,133 @@ class CalibrationCenterContracts(unittest.TestCase):
         ):
             self.assertIn(marker, template)
 
+    def test_historical_repair_starts_hidden_and_exposes_accessible_toggle(self):
+        self.assertRegex(
+            TEMPLATE_SOURCE,
+            r'id="calibration-center-repair-area"[^>]*class="[^"]*d-none',
+        )
+        self.assertRegex(
+            TEMPLATE_SOURCE,
+            r'id="calibration-center-repair-panel"[^>]*class="[^"]*d-none',
+        )
+        self.assertRegex(
+            TEMPLATE_SOURCE,
+            r'id="calibration-center-repair-view"[^>]*aria-expanded="false"[^>]*aria-controls="calibration-center-repair-panel"',
+        )
+        self.assertRegex(
+            TEMPLATE_SOURCE,
+            r'id="calibration-center-repair-hide"[^>]*aria-expanded="true"[^>]*aria-controls="calibration-center-repair-panel"',
+        )
+
+    def test_historical_repair_notice_uses_only_repairable_and_blocked_attention(self):
+        self.assertIn('calibration-center-repair-notice', TEMPLATE_SOURCE)
+        self.assertIn('repair-notice-repairable', TEMPLATE_SOURCE)
+        self.assertIn('repair-notice-blocked', TEMPLATE_SOURCE)
+        self.assertRegex(TEMPLATE_SOURCE, r'const attention\s*=\s*repairable\s*\+\s*blocked')
+        self.assertIn('if (attention > 0)', TEMPLATE_SOURCE)
+        self.assertIn('state.repairActionOccurred', TEMPLATE_SOURCE)
+        self.assertIn('already_repaired', TEMPLATE_SOURCE)
+
+    def test_historical_repair_completion_and_load_failure_stay_viewable(self):
+        self.assertIn('calibration-center-repair-success', TEMPLATE_SOURCE)
+        self.assertIn('All historical report repairs are complete', TEMPLATE_SOURCE)
+        self.assertIn('calibration-center-repair-load-error', TEMPLATE_SOURCE)
+        self.assertIn('Inventory could not be loaded', TEMPLATE_SOURCE)
+        self.assertIn('setVisible(\'calibration-center-repair-area\', true)', TEMPLATE_SOURCE)
+
+    def test_historical_repair_details_keep_existing_actions(self):
+        for marker in (
+            'calibration-center-repair-warning',
+            'calibration-center-repair-summary',
+            'calibration-center-repair-table-wrap',
+            'calibration-center-repair-confirm',
+            'calibration-center-repair-all',
+            'js-calibration-repair',
+            '`/admin/calibration-center/${sourceFileId}/repair`',
+            'state.repairRunning',
+        ):
+            self.assertIn(marker, TEMPLATE_SOURCE)
+
+    def test_historical_repair_surface_states_execute_in_node(self):
+        script_match = re.search(r'<script>\s*(.*?)\s*</script>', TEMPLATE_SOURCE, re.DOTALL)
+        self.assertIsNotNone(script_match)
+        source = script_match.group(1)
+        bootstrap = '    loadRecords(); loadRepairInventory();\n})();'
+        self.assertIn(bootstrap, source)
+        source = source.replace(
+            bootstrap,
+            '    globalThis.__repairTest = {state, renderRepairSurface, setRepairDetails, showRepairLoadError};\n})();',
+            1,
+        )
+        node_script = textwrap.dedent(f'''
+            const assert = require('assert');
+            class ClassList {{
+              constructor() {{ this.names = new Set(); }}
+              toggle(name, force) {{
+                const shouldHave = force === undefined ? !this.names.has(name) : Boolean(force);
+                if (shouldHave) this.names.add(name); else this.names.delete(name);
+                return shouldHave;
+              }}
+              contains(name) {{ return this.names.has(name); }}
+            }}
+            class Element {{
+              constructor(id) {{ this.id = id; this.classList = new ClassList(); this.attributes = {{}}; this.listeners = {{}}; this.textContent = ''; this.value = ''; }}
+              setAttribute(name, value) {{ this.attributes[name] = String(value); }}
+              getAttribute(name) {{ return this.attributes[name] ?? null; }}
+              addEventListener(name, handler) {{ this.listeners[name] = handler; }}
+              focus() {{}}
+              querySelector() {{ return null; }}
+              querySelectorAll() {{ return []; }}
+            }}
+            const elements = new Map();
+            const getElement = id => {{ if (!elements.has(id)) elements.set(id, new Element(id)); return elements.get(id); }};
+            globalThis.document = {{
+              getElementById: getElement,
+              querySelector: () => null,
+              querySelectorAll: () => [],
+            }};
+            globalThis.fetch = async () => {{ throw new Error('fetch should not run in this state harness'); }};
+            eval({json.dumps(source)});
+            const api = globalThis.__repairTest;
+            const visible = id => !getElement(id).classList.contains('d-none');
+            ['calibration-center-repair-area', 'calibration-center-repair-panel', 'calibration-center-repair-notice', 'calibration-center-repair-success', 'calibration-center-repair-load-error'].forEach(id => getElement(id).classList.toggle('d-none', true));
+            getElement('calibration-center-repair-view').setAttribute('aria-expanded', 'false');
+            getElement('calibration-center-repair-hide').setAttribute('aria-expanded', 'true');
+            assert.strictEqual(visible('calibration-center-repair-area'), false);
+            assert.strictEqual(getElement('calibration-center-repair-view').getAttribute('aria-expanded'), 'false');
+            api.renderRepairSurface({{repairable: 2, blocked: 1, already_repaired: 9}});
+            assert.strictEqual(visible('calibration-center-repair-area'), true);
+            assert.strictEqual(visible('calibration-center-repair-notice'), true);
+            assert.strictEqual(visible('calibration-center-repair-panel'), false);
+            assert.strictEqual(getElement('repair-notice-repairable').textContent, '2');
+            assert.strictEqual(getElement('repair-notice-blocked').textContent, '1');
+            api.setRepairDetails(true);
+            assert.strictEqual(visible('calibration-center-repair-panel'), true);
+            assert.strictEqual(getElement('calibration-center-repair-view').getAttribute('aria-expanded'), 'true');
+            assert.strictEqual(getElement('calibration-center-repair-hide').getAttribute('aria-expanded'), 'true');
+            api.setRepairDetails(false);
+            assert.strictEqual(visible('calibration-center-repair-panel'), false);
+            api.renderRepairSurface({{repairable: 0, blocked: 0, already_repaired: 9}});
+            assert.strictEqual(visible('calibration-center-repair-area'), false);
+            api.state.repairActionOccurred = true;
+            api.renderRepairSurface({{repairable: 0, blocked: 0}});
+            assert.strictEqual(visible('calibration-center-repair-area'), true);
+            assert.strictEqual(visible('calibration-center-repair-success'), true);
+            assert.strictEqual(visible('calibration-center-repair-panel'), false);
+            api.showRepairLoadError('request failed');
+            assert.strictEqual(visible('calibration-center-repair-area'), true);
+            assert.strictEqual(visible('calibration-center-repair-load-error'), true);
+            assert.strictEqual(getElement('calibration-center-repair-load-error-message').textContent, 'request failed');
+            assert.strictEqual(visible('calibration-center-repair-panel'), false);
+            console.log('repair surface states: PASS');
+        ''')
+        result = subprocess.run(['node', '-e', node_script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        self.assertIn('repair surface states: PASS', result.stdout)
+
     def test_service_worker_uses_v158_network_first_center_prefix(self):
         self.assertIn('medical-service-pwa-offline-navigation-v158-calibration-center', APP_SOURCE)
+        self.assertIn("medical-service-pwa-offline-navigation-v194-calibration-repair-notice';", APP_SOURCE)
         self.assertIn("'/admin/calibration-center'", APP_SOURCE)
         self.assertIn('NETWORK_FIRST_AUTHENTICATED_PREFIXES', APP_SOURCE)
         page_route = APP_SOURCE.split("@app.route('/admin/calibration-center')", 1)[1].split(
@@ -229,6 +358,7 @@ class CalibrationCenterContracts(unittest.TestCase):
         ]
         self.assertTrue(matching)
         self.assertTrue(any('admins' in item.get('audiences', []) for item in matching))
+        self.assertTrue(any(item.get('item_key') == '2026-09-25-calibration-center-repair-notice-admins' for item in matching))
 
 
 if __name__ == '__main__':

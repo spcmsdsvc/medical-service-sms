@@ -23566,8 +23566,9 @@ def pwa_service_worker():
     # Historical navigation-shell marker: v190 added conditional two-tube Calibration Report output pages.
     # Historical navigation-shell marker: v191 made direct-calendar Calibration Report draft context readiness explicit.
     # Navigation shell bump: v192 isolates late Calibration Report drafts from finalized TSR draft deletion markers.
-    # Navigation shell bump: v193 distributes availability-aware Reimbursement readiness.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v193-reimbursement-lpr-availability';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v193-reimbursement-lpr-availability.
+    # Navigation shell bump: v194 distributes the collapsed Historical Report Repair notice.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v194-calibration-repair-notice';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
