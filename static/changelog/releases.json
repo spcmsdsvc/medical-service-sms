@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-25-reimbursement-lpr-availability",
+      "release_date": "2026-09-25",
+      "title": "Reimbursement LPR Availability Guidance",
+      "summary": "Reimbursement readiness no longer asks for an unavailable LPR.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-25-reimbursement-lpr-availability-everyone",
+          "category": "Reimbursement",
+          "description": "Office/Field Items reimbursements no longer show an LPR blocker or attention warning when LPR is unavailable. Enabled LPRs remain required, and an existing linked LPR remains validated while new LPR creation is paused.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-25-calibration-report-draft-id-isolation",
       "release_date": "2026-09-25",
       "title": "Calibration Report Draft Save Correction",

@@ -1,5 +1,114 @@
 # Medical Service SMS — Approved Plans
 
+## Reimbursement readiness follows LPR availability
+
+**Status:** Executed — uncommitted; implementation and local verification complete.
+**Approved:** 2026-09-25 — the owner asked to implement the proposed removal of the stale LPR attention warning; repository rules require a separate implementation go-ahead after this approval record.
+**Detailed:** 2026-09-25.
+
+### Context and decisions
+
+The Reimbursement page already hides its Attached LPR controls when LPR is fully disabled, and the
+backend already permits an Office/Field Items reimbursement to submit when no usable LPR workflow
+exists. The client-side submission-readiness model does not follow those feature switches: it
+unconditionally treats every positive Office/Field Items amount as requiring an LPR. That leaves the
+action dock showing an LPR blocker and a misleading “needs attention” count even though the user
+cannot open or repair an LPR.
+
+The readiness model will mirror the existing backend policy. A linked LPR is required while new LPRs
+are accepted. During drain mode, an already-linked LPR remains subject to the existing validation,
+but a reimbursement without a linked LPR will not be told to create one. When LPR is fully disabled,
+the readiness checklist will contain neither an LPR blocker nor a misleading LPR advisory. If the
+feature is restored, the current enabled-state requirement and review actions return automatically.
+
+### Files and boundaries
+
+- `templates/reimbursement.html`: expose the existing server-rendered LPR enabled/accepting-new
+  state to the readiness snapshot, include whether the current reimbursement has a linked LPR, and
+  apply the same enabled/drain/off decision as backend submission. Preserve the existing Attached
+  LPR panel, review actions, reconciliation, save-version tracking, and enabled-state submission
+  path.
+- `tests/test_reimbursement_readiness.py`: add focused runtime coverage for hard-off, enabled, and
+  drain-mode readiness, including the absence of both blocker and advisory when LPR is unavailable.
+- `app.py`: advance only the application-shell cache marker needed to distribute the changed
+  server-rendered Reimbursement page; do not change backend LPR or reimbursement routes.
+- `static/changelog/releases.json`, `changes.md`, and this plan: record the user-visible correction,
+  cache impact, verification, and execution outcome.
+- Deliberately excluded: backend/API/schema/database changes, stored LPR deletion or migration,
+  approval-routing changes, LPR feature-flag or Railway-variable changes, browser automation,
+  production operations, commit, push, deployment, `scheduler.db`, handoff files, `.claude/`,
+  `output/`, `tmp/`, and unrelated working-tree changes.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first coverage.** Re-read the applicable instructions and `changes.md`,
+   inspect Git status and the current reimbursement readiness/LPR feature-switch paths, and add the
+   smallest focused regression that reproduces a positive Office/Field claim remaining blocked
+   while LPR is unavailable. Confirm the new assertion fails before changing application code.
+   Stop if protected dirty work or changed source invalidates this plan.
+2. **Availability-aware readiness — `templates/reimbursement.html`.** Pass the rendered
+   `lpr_enabled` and `lpr_accepting_new` values plus linked-LPR presence into
+   `buildReimbursementReadinessSnapshot`. Require LPR only when Office/Field Items is positive and
+   either new LPR creation is accepted or drain mode has an existing linked LPR. Omit all LPR
+   checklist entries when the workflow is unavailable for that reimbursement. Done means the dock
+   no longer counts LPR as “needs attention” in hard-off or drain-without-link states, while enabled
+   and drain-with-link behavior remains intact.
+3. **Focused regression coverage — `tests/test_reimbursement_readiness.py`.** Prove that a saved,
+   signed Office/Field reimbursement is ready with no LPR blocker/advisory when LPR is off; enabled
+   mode retains the current blocker; and drain mode validates an existing link but does not demand a
+   new one. Retain the existing amount, save, signature, row, receipt, and lifecycle expectations.
+4. **Cache and release records.** Advance the application-shell cache marker in `app.py`, add one
+   published Reimbursement release item, update `changes.md`, and keep this plan's status current.
+   Do not modify service-worker routing or any protected/unrelated file.
+5. **Verification and handoff.** Run the fail-first regression after the fix, the focused
+   reimbursement readiness and LPR feature-switch suites, enabled/drain/off template rendering,
+   rendered inline-JavaScript syntax, related cache/release checks, the proportionate full unittest
+   suite, and `git diff --check`. Self-review the final diff against this plan and report exact
+   pass/fail/skip results and any unrelated baseline failures. Browser automation is excluded by
+   repository instruction. Leave all work uncommitted, unpushed, undeployed, and without Railway
+   changes unless separately authorized.
+
+### Acceptance and risks
+
+- Office/Field Items does not create an LPR warning or increase the “needs attention” count when no
+  usable LPR workflow is available.
+- Enabled LPR behavior is unchanged, and drain mode continues to protect an existing linked LPR.
+- Backend submission, reconciliation, approval, stored data, and feature flags remain unchanged.
+- Existing devices receive the corrected page through the cache-marker advance, and protected dirty
+  artifacts remain untouched.
+
+### Outcome
+
+Implemented in `templates/reimbursement.html`, `tests/test_reimbursement_readiness.py`, `app.py`,
+`static/changelog/releases.json`, and `changes.md`. The readiness model now receives the effective
+LPR enabled/accepting-new flags and linked-LPR presence. It requires LPR for positive Office/Field
+Items only when new LPRs are accepted or an existing link must be validated in drain mode; hard-off
+and drain-without-link states omit both the blocker and LPR advisory. Existing LPR panel/actions,
+reconciliation, save tracking, and enabled-state submit handling were not changed.
+
+Verification completed:
+
+- The new regression failed before the application fix, then `tests.test_reimbursement_readiness`
+  passed 10/10 after the fix.
+- Focused readiness/LPR integration suites passed 41/41; reimbursement tracker checks passed 30/30.
+- Cache/release checks passed 24 with 1 documented skip; JSON parsing and release-presence checks
+  passed; rendered enabled, drain, and hard-off pages each parsed their reimbursement inline
+  JavaScript successfully.
+- Final scope review also covered a hard-off reimbursement with zero Office/Field Items, ensuring
+  that unavailable LPR never appears as a readiness advisory. The post-review focused rerun passed
+  readiness/LPR feature-switch 21/21, Reimbursement Tracker 30/30, and offline/cache/changelog
+  checks with 65 passed and 1 skip.
+- `compile()` syntax validation for `app.py` and `git diff --check` passed. Direct `py_compile`
+  could not write the pre-existing protected `__pycache__` path, so no bytecode artifact was made.
+- Full discovery ran 1,307 tests: 1,282 passed, 2 skipped, and 23 unrelated baseline/order-dependent
+  failures. They were the changelog manifest state check, 16 purchase-order setup requests limited
+  with HTTP 429, two shared-state staff-creation setup failures, and four pre-existing offline TSR
+  harness `ReferenceError` failures. The affected reimbursement/LPR tests were green.
+
+No backend/API, schema, database, feature-flag, Railway, production, browser, commit, push, or
+deployment action was performed. `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, and
+all unrelated working-tree changes remain protected and outside this implementation.
+
 ## Calibration Report direct-calendar Save Draft context readiness
 
 **Status:** Executed — original commit `6a1a4a5` and follow-up draft-ID correction commit `cf15229` published to `origin/main`; Railway deployment `97fe3fe0-453e-45b8-ace5-c75619ef80fd` succeeded.

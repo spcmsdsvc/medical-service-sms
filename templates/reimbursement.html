@@ -3819,6 +3819,8 @@
 
 </div>
 <script>
+    const reimbursementLprEnabled = {{ 'true' if lpr_enabled else 'false' }};
+    const reimbursementLprAcceptingNew = {{ 'true' if lpr_accepting_new else 'false' }};
     const reimbursementExpenseKeys = [
         'representation',
         'car_repair',
@@ -3931,7 +3933,12 @@
         const saveState = String(options.saveState || 'idle').toLowerCase();
         const unsaved = options.unsaved !== false;
         const signature = String(options.signature || 'pending').toLowerCase();
-        const lprRequired = Number(options.officeFieldTotal || 0) > 0.005;
+        const lprEnabled = options.lprEnabled !== false;
+        const lprAcceptingNew = options.lprAcceptingNew !== false;
+        const lprLinked = !!options.lprLinked;
+        const lprAvailable = lprAcceptingNew || (lprEnabled && lprLinked);
+        const lprRequired = Number(options.officeFieldTotal || 0) > 0.005
+            && lprAvailable;
         const lpr = String(options.lpr || 'pending').toLowerCase();
         const lprNeedsSave = !!options.unsaved || !options.hasSavedRecord;
         const blockers = [];
@@ -3995,7 +4002,7 @@
             });
         } else if (lprRequired) {
             advisories.push({ id: 'lpr-ready', title: 'LPR', detail: 'Required linked LPR refreshed after the latest save.', state: 'ready' });
-        } else {
+        } else if (lprAvailable) {
             advisories.push({ id: 'lpr-not-required', title: 'LPR', detail: 'Not required because Office/Field Items is zero.', state: 'ready' });
         }
 
@@ -4084,6 +4091,9 @@
             signature: reimbursementReadinessState.signature,
             officeFieldTotal: reimbursementOfficeFieldTotal(rows),
             lpr: reimbursementReadinessState.lpr,
+            lprEnabled: reimbursementLprEnabled,
+            lprAcceptingNew: reimbursementLprAcceptingNew,
+            lprLinked: !!reimbursementReadinessState.lprItem,
             savedVersion: reimbursementSavedEditVersion,
             hasSavedRecord: Number(currentReimbursementId || 0) > 0,
             receiptCount: (reimbursementAdditionalReceipts || []).length

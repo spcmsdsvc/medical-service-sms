@@ -2,6 +2,45 @@
 
 codex changes - 2026-09-25
 
+- Set the ignored local `.env` flag `LPR_ACCEPTING_NEW=false` at the owner's request so the local
+  Reimbursement readiness model matches production drain mode: Office/Field Items without an
+  existing linked LPR no longer produces an LPR attention item, while an existing linked LPR
+  remains reviewable and validated. No process was listening on the configured local port 5000.
+  A local start was attempted, but application startup invokes database migrations and failed on
+  the protected read-only `scheduler.db`; the requested unsandboxed retry was rejected because the
+  owner had not separately authorized database writes. No server remained running and no database,
+  Railway variable, production environment, commit, push, or deployment was changed. The flag will
+  load the next time the owner starts the app in its normal database-capable local environment.
+
+- Began implementation of the approved **Reimbursement readiness follows LPR availability** plan.
+  Added fail-first runtime coverage for hard-off and drain-without-link Office/Field Items claims,
+  enabled-LPR blocking, and drain-mode validation of an existing linked LPR. The implementation
+  now passes the server-rendered LPR feature state and linked-LPR presence into readiness, advances
+  the application-shell marker to v193, adds the published Reimbursement release entry, and
+  verifies that the current cache/release records point to this correction. Focused readiness/LPR
+  integration coverage passed 41 tests, reimbursement tracker checks passed 30 tests, rendered
+  enabled/drain/hard-off pages passed inline-JavaScript syntax checks, and `git diff --check` passed.
+  Full discovery ran 1,307 tests with 1,282 passed, 2 skipped, and 23 unrelated baseline/order-dependent
+  failures; no protected artifact was staged, committed, pushed, or deployed.
+
+- Final scope review tightened the unavailable-LPR checklist boundary so hard-off and
+  drain-without-link states omit the LPR advisory even when Office/Field Items is zero, matching
+  the approved requirement that an unavailable workflow has no readiness entry at all. Added the
+  zero-Office/Field hard-off regression and marked the plan **Executed — uncommitted**. The final
+  rerun passed reimbursement readiness/LPR feature-switch **21/21**, Reimbursement Tracker
+  **30/30**, and offline/cache/changelog **65 passed with 1 skip**; `git diff --check` passed. One
+  attempted command named a nonexistent `tests.test_changelog_manifest` module; it made no change
+  and was replaced by the repository's actual changelog workflow and coverage suites above.
+
+- Recorded the owner-approved **Reimbursement readiness follows LPR availability** plan in
+  `plans.md`. The plan removes the stale LPR blocker and checklist entry only when users cannot
+  create or access a required LPR, preserves enabled and existing-link drain-mode validation, and
+  includes focused readiness/feature-switch tests plus cache and release verification. Its status
+  was initially **Approved — awaiting go-ahead** under the repository's separate approval and
+  implementation authorization rule; the owner has since authorized execution and the current plan
+  status is implementation and local verification complete. No application code, test, cache,
+  database, LPR, Railway, or production behavior changed in that original record-only step.
+
 - Published the Calendar Calibration Report draft-ID correction as `cf15229` on
   `origin/main` and verified the remote branch points to that commit. Railway accepted
   deployment `97fe3fe0-453e-45b8-ace5-c75619ef80fd`, which succeeded; no manual redeploy or

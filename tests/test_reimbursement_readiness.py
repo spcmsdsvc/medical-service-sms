@@ -49,6 +49,16 @@ class ReimbursementReadinessSourceTests(unittest.TestCase):
         ):
             self.assertIn(token, TEMPLATE)
 
+    def test_readiness_receives_lpr_feature_state_and_link_presence(self):
+        for token in (
+            "const reimbursementLprEnabled = {{ 'true' if lpr_enabled else 'false' }};",
+            "const reimbursementLprAcceptingNew = {{ 'true' if lpr_accepting_new else 'false' }};",
+            "lprEnabled: reimbursementLprEnabled",
+            "lprAcceptingNew: reimbursementLprAcceptingNew",
+            "lprLinked: !!reimbursementReadinessState.lprItem",
+        ):
+            self.assertIn(token, TEMPLATE)
+
     def test_readiness_refreshes_from_existing_mutation_paths(self):
         for token in (
             "updateReimbursementReadiness();",
@@ -101,11 +111,53 @@ class ReimbursementReadinessSourceTests(unittest.TestCase):
             const blocked = buildReimbursementReadinessSnapshot({{
                 rows: [{{ amounts: {{ office_supplies: 15 }} }}],
                 editable: true, saveState: 'unsaved', unsaved: true, signature: 'missing',
-                officeFieldTotal: 15, lpr: 'missing', savedVersion: 0, hasSavedRecord: false, receiptCount: 0
+                officeFieldTotal: 15, lpr: 'missing', savedVersion: 0, hasSavedRecord: false, receiptCount: 0,
+                lprEnabled: true, lprAcceptingNew: true, lprLinked: false
             }});
             assert.strictEqual(blocked.ready, false);
             assert.deepStrictEqual(blocked.blockers.map(item => item.id), ['save', 'signature', 'lpr']);
             assert.strictEqual(blocked.blockers.find(item => item.id === 'lpr').action, 'saveAndReviewReimbursementLpr');
+
+            const hardOff = buildReimbursementReadinessSnapshot({{
+                rows: [{{ amounts: {{ office_supplies: 15 }} }}],
+                editable: true, saveState: 'saved', unsaved: false, signature: 'ready',
+                officeFieldTotal: 15, lpr: 'missing', savedVersion: 1, hasSavedRecord: true, receiptCount: 0,
+                lprEnabled: false, lprAcceptingNew: false, lprLinked: false
+            }});
+            assert.strictEqual(hardOff.ready, true);
+            assert.strictEqual(hardOff.lprRequired, false);
+            assert.ok(!hardOff.blockers.some(item => item.id === 'lpr'));
+            assert.ok(!hardOff.advisories.some(item => item.id === 'lpr-ready' || item.id === 'lpr-not-required'));
+
+            const hardOffWithoutOfficeField = buildReimbursementReadinessSnapshot({{
+                rows: [{{ amounts: {{ transpo: 15 }} }}],
+                editable: true, saveState: 'saved', unsaved: false, signature: 'ready',
+                officeFieldTotal: 0, lpr: 'not-required', savedVersion: 1, hasSavedRecord: true, receiptCount: 0,
+                lprEnabled: false, lprAcceptingNew: false, lprLinked: false
+            }});
+            assert.strictEqual(hardOffWithoutOfficeField.ready, true);
+            assert.ok(!hardOffWithoutOfficeField.advisories.some(item => item.id === 'lpr-ready' || item.id === 'lpr-not-required'));
+
+            const drainWithoutLink = buildReimbursementReadinessSnapshot({{
+                rows: [{{ amounts: {{ office_supplies: 15 }} }}],
+                editable: true, saveState: 'saved', unsaved: false, signature: 'ready',
+                officeFieldTotal: 15, lpr: 'missing', savedVersion: 1, hasSavedRecord: true, receiptCount: 0,
+                lprEnabled: true, lprAcceptingNew: false, lprLinked: false
+            }});
+            assert.strictEqual(drainWithoutLink.ready, true);
+            assert.strictEqual(drainWithoutLink.lprRequired, false);
+            assert.ok(!drainWithoutLink.blockers.some(item => item.id === 'lpr'));
+            assert.ok(!drainWithoutLink.advisories.some(item => item.id === 'lpr-ready' || item.id === 'lpr-not-required'));
+
+            const drainWithLink = buildReimbursementReadinessSnapshot({{
+                rows: [{{ amounts: {{ office_supplies: 15 }} }}],
+                editable: true, saveState: 'saved', unsaved: false, signature: 'ready',
+                officeFieldTotal: 15, lpr: 'missing', savedVersion: 1, hasSavedRecord: true, receiptCount: 0,
+                lprEnabled: true, lprAcceptingNew: false, lprLinked: true
+            }});
+            assert.strictEqual(drainWithLink.ready, false);
+            assert.strictEqual(drainWithLink.lprRequired, true);
+            assert.deepStrictEqual(drainWithLink.blockers.map(item => item.id), ['lpr']);
 
             const locked = buildReimbursementReadinessSnapshot({{
                 rows: [{{ amounts: {{ transpo: 99 }} }}], editable: false,
@@ -191,6 +243,14 @@ class ReimbursementReadinessSourceTests(unittest.TestCase):
 
     def test_current_cache_and_published_release_are_current(self):
         self.assertIn("medical-service-pwa-offline-navigation-v158-calibration-center", APP_SOURCE)
+        self.assertIn("medical-service-pwa-offline-navigation-v193-reimbursement-lpr-availability", APP_SOURCE)
+        availability_matches = [
+            release for release in RELEASES.get("releases", [])
+            if release.get("release_key") == "2026-09-25-reimbursement-lpr-availability"
+        ]
+        self.assertEqual(len(availability_matches), 1)
+        self.assertTrue(availability_matches[0].get("is_published"))
+        self.assertTrue(any(item.get("category") == "Reimbursement" for item in availability_matches[0].get("items", [])))
         matches = [
             release for release in RELEASES.get("releases", [])
             if release.get("release_key") == "2026-09-11-reimbursement-readiness"
