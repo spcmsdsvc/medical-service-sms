@@ -1,6 +1,44 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-25-dark-mode-readability",
+      "release_date": "2026-09-25",
+      "title": "Clearer Dark-Mode Forms and History",
+      "summary": "Product service history and Calibration Report entry are now easier to read in dark mode.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-25-dark-mode-readability-users",
+          "category": "Appearance",
+          "description": "Product service-history cards now use readable dark surfaces, and the interactive Calibration Report editor uses coordinated dark fields, sections, tables, and focus states while generated reports remain unchanged.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-25-product-link-history",
+      "release_date": "2026-09-25",
+      "title": "Product Links and Service History",
+      "summary": "Inventory records now support same-client Vieworks links, read-only engineer access, and source-scoped service history.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-25-product-link-history-inventory",
+          "category": "Inventory",
+          "description": "Administrators can link regular Products to same-client Vieworks/Canon equipment. Engineers retain read access and can open asset history with service visits, permitted artifacts, parts supplied, and linked equipment references.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-25-pre-submission-calibration-report",
       "release_date": "2026-09-25",
       "title": "Create Calibration Reports Before TSR Submission",

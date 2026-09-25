@@ -2575,6 +2575,26 @@ class VieworksItem(db.Model):
     owner = db.relationship('Client', foreign_keys=[client_id])
 
 
+class ProductVieworksLink(db.Model):
+    """Current master-data link between one Product and a Vieworks item.
+
+    The association intentionally stores serial identities without foreign-key
+    constraints so legacy serial-number replacement can be performed atomically
+    by the inventory endpoints.  Route-level validation and cleanup keep the
+    rows consistent while preserving existing inventory data.
+    """
+    __tablename__ = 'product_vieworks_link'
+
+    product_serial = db.Column(db.String(100), primary_key=True)
+    vieworks_serial = db.Column(db.String(100), primary_key=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('vieworks_serial', name='uq_product_vieworks_link_vieworks'),
+        db.Index('ix_product_vieworks_link_product', 'product_serial'),
+    )
+
+
 class VieworksBsidCounter(db.Model):
     """Durable, Vieworks-only sequence state for automatically assigned BSIDs."""
     __tablename__ = 'vieworks_bsid_counter'
@@ -2728,6 +2748,148 @@ def operational_equipment_model(source):
     }.get(normalize_equipment_source(source, default=''))
 
 
+def product_vieworks_linked_items(product_serial=None, vieworks_serial=None):
+    """Return current link rows resolved inside the requested inventory tables."""
+    ensure_product_vieworks_link_table()
+    query = ProductVieworksLink.query
+    if product_serial is not None:
+        query = query.filter_by(product_serial=clean_str(product_serial) or '')
+    if vieworks_serial is not None:
+        query = query.filter_by(vieworks_serial=clean_str(vieworks_serial) or '')
+    rows = query.order_by(ProductVieworksLink.vieworks_serial.asc()).all()
+    items = []
+    for row in rows:
+        item = db.session.get(VieworksItem, row.vieworks_serial)
+        if not item and row.vieworks_serial:
+            item = VieworksItem.query.filter(
+                func.lower(VieworksItem.serial_number) == row.vieworks_serial.casefold()
+            ).first()
+        if item:
+            items.append((row, item))
+    return items
+
+
+def product_vieworks_link_payload(product_serial):
+    """Serialize linked Vieworks identity without exposing unrelated fields."""
+    payload = []
+    for _link, item in product_vieworks_linked_items(product_serial=product_serial):
+        owner = getattr(item, 'owner', None)
+        payload.append({
+            'serial_number': clean_str(getattr(item, 'serial_number', None)) or '',
+            'name': clean_str(getattr(item, 'name', None)) or '',
+            'bsid': normalize_vieworks_bsid(getattr(item, 'bsid', None)),
+            'client_id': clean_int(getattr(item, 'client_id', None)),
+            'client_name': clean_str(getattr(owner, 'name', None)) or 'N/A',
+        })
+    return payload
+
+
+def product_vieworks_parent_payload(vieworks_serial):
+    """Serialize the regular Product parent for one Vieworks serial."""
+    links = product_vieworks_linked_items(vieworks_serial=vieworks_serial)
+    if not links:
+        return None
+    product = db.session.get(Product, links[0][0].product_serial)
+    if not product:
+        return None
+    owner = getattr(product, 'owner', None)
+    return {
+        'serial_number': clean_str(getattr(product, 'serial_number', None)) or '',
+        'name': clean_str(getattr(product, 'name', None)) or '',
+        'bsid': normalize_product_bsid(getattr(product, 'bsid', None)),
+        'client_id': clean_int(getattr(product, 'client_id', None)),
+        'client_name': clean_str(getattr(owner, 'name', None)) or 'N/A',
+    }
+
+
+def normalize_product_vieworks_serials(payload):
+    """Normalize the Product-only Vieworks multi-select payload."""
+    raw = payload.get('linked_vieworks_serials', payload.get('linked_vieworks', []))
+    if isinstance(raw, str):
+        raw = [value for value in re.split(r'[,\n]', raw) if value]
+    if not isinstance(raw, (list, tuple, set)):
+        raw = []
+    serials = []
+    for value in raw:
+        serial = (clean_str(value) or '').upper()
+        if serial and serial not in serials:
+            serials.append(serial)
+    return serials
+
+
+def validate_product_vieworks_links(product_client_id, linked_serials, existing_product_serial=None):
+    """Validate same-client ownership and one-parent uniqueness for Product links."""
+    linked_serials = list(linked_serials or [])
+    if not linked_serials:
+        return None
+    client_id = clean_int(product_client_id)
+    if not client_id:
+        return 'Select a medical center before linking Vieworks/Canon equipment.'
+    ensure_vieworks_item_table()
+    items = {
+        (clean_str(item.serial_number) or '').casefold(): item
+        for item in VieworksItem.query.filter(
+            func.lower(VieworksItem.serial_number).in_([serial.casefold() for serial in linked_serials])
+        ).all()
+    }
+    missing = [serial for serial in linked_serials if serial.casefold() not in items]
+    if missing:
+        return f'Vieworks item(s) not found: {", ".join(missing)}.'
+    if any(clean_int(getattr(item, 'client_id', None)) != client_id for item in items.values()):
+        return 'All linked Vieworks/Canon equipment must belong to the same medical center.'
+
+    ensure_product_vieworks_link_table()
+    occupied = ProductVieworksLink.query.filter(
+        func.lower(ProductVieworksLink.vieworks_serial).in_([serial.casefold() for serial in linked_serials])
+    )
+    if existing_product_serial:
+        occupied = occupied.filter(
+            func.lower(ProductVieworksLink.product_serial) != (clean_str(existing_product_serial) or '').casefold()
+        )
+    conflict = occupied.first()
+    if conflict:
+        return (
+            f'Vieworks item {conflict.vieworks_serial} is already linked to '
+            f'Product {conflict.product_serial}.'
+        )
+    return None
+
+
+def replace_product_vieworks_links(product_serial, linked_serials):
+    """Replace one Product's current Vieworks links inside the caller transaction."""
+    ensure_product_vieworks_link_table()
+    serial = clean_str(product_serial) or ''
+    ProductVieworksLink.query.filter_by(product_serial=serial).delete(synchronize_session=False)
+    for vieworks_serial in linked_serials or []:
+        normalized_vieworks_serial = clean_str(vieworks_serial) or ''
+        item = VieworksItem.query.filter(
+            func.lower(VieworksItem.serial_number) == normalized_vieworks_serial.casefold()
+        ).first()
+        db.session.add(ProductVieworksLink(
+            product_serial=serial,
+            vieworks_serial=item.serial_number if item else normalized_vieworks_serial,
+        ))
+
+
+def product_link_state_from_payload(payload):
+    """Return whether a Product payload explicitly changes its Vieworks links."""
+    payload = payload or {}
+    fields_present = (
+        'with_vieworks_canon' in payload or
+        'linked_vieworks_serials' in payload or
+        'linked_vieworks' in payload
+    )
+    if not fields_present:
+        return False, None, None
+    serials = normalize_product_vieworks_serials(payload)
+    enabled = parse_bool_flag(payload.get('with_vieworks_canon'), default=bool(serials))
+    if enabled and not serials:
+        return True, None, 'Select at least one Vieworks/Canon item when the option is enabled.'
+    if not enabled:
+        serials = []
+    return True, serials, None
+
+
 def resolve_operational_equipment(serial_number, source='product'):
     """Resolve one equipment row only inside its declared inventory table."""
     normalized_source = normalize_equipment_source(source, default='')
@@ -2753,6 +2915,8 @@ def operational_equipment_to_dict(record, source, certificate=None):
     owner = getattr(record, 'owner', None) if record else None
     end_date = getattr(record, 'end_warranty_date', None) if record else None
     under_contract = bool(getattr(record, 'under_contract', False)) if record else False
+    linked_vieworks = product_vieworks_link_payload(getattr(record, 'serial_number', None)) if source == 'product' else []
+    linked_product = product_vieworks_parent_payload(getattr(record, 'serial_number', None)) if source == 'vieworks' else None
     return {
         'serial_number': clean_str(getattr(record, 'serial_number', None)) or '',
         'name': clean_str(getattr(record, 'name', None)) or '',
@@ -2767,7 +2931,10 @@ def operational_equipment_to_dict(record, source, certificate=None):
             under_contract=under_contract,
         ),
         'equipment_source': source,
+        'with_vieworks_canon': bool(linked_vieworks) if source == 'product' else False,
         'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS.get(source, source),
+        'linked_vieworks': linked_vieworks,
+        'linked_product': linked_product,
         'calibration_certificate': certificate,
     }
 
@@ -3300,6 +3467,7 @@ _genoray_item_table_ready = False
 _genoray_bsid_counter_ready = False
 _vieworks_item_table_ready = False
 _vieworks_bsid_counter_ready = False
+_product_vieworks_link_table_ready = False
 _calibration_report_conversion_table_ready = False
 _calibration_report_conversion_worker = None
 _calibration_report_conversion_worker_lock = threading.Lock()
@@ -3478,6 +3646,41 @@ def ensure_vieworks_item_table():
         _vieworks_bsid_counter_ready = True
     except Exception as table_error:
         print(f"[Vieworks] Unable to ensure vieworks_item table: {table_error}", flush=True)
+        raise
+
+
+def ensure_product_vieworks_link_table():
+    """Create the additive Product/Vieworks association table and indexes."""
+    global _product_vieworks_link_table_ready
+    if _product_vieworks_link_table_ready:
+        return
+    try:
+        # Ensure the two referenced inventory tables exist before creating the
+        # additive association on an older database volume.
+        ensure_product_contract_column()
+        ensure_vieworks_item_table()
+        # A read-only request can leave the scoped ORM session holding a
+        # SQLite snapshot while this additive DDL runs on a separate engine
+        # connection.  Clear only an idle session; never roll back pending
+        # inventory writes that are being prepared by the caller.
+        if not (db.session.new or db.session.dirty or db.session.deleted):
+            db.session.rollback()
+        # Keep table creation and index creation on one connection so SQLite
+        # never has to upgrade a second DDL connection while the first one is
+        # still finishing the CREATE TABLE transaction.
+        with db.engine.begin() as connection:
+            ProductVieworksLink.__table__.create(connection, checkfirst=True)
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_product_vieworks_link_vieworks_serial "
+                "ON product_vieworks_link (vieworks_serial)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_product_vieworks_link_product_serial "
+                "ON product_vieworks_link (product_serial)"
+            )
+        _product_vieworks_link_table_ready = True
+    except Exception as link_table_error:
+        print(f"[Product/Vieworks] Unable to ensure link table: {link_table_error}", flush=True)
         raise
 
 
@@ -7584,6 +7787,20 @@ def can_access_products_page(user=None):
         not is_stock_inventory_only_user(target) and
         not is_hr_schedule_only_user(target)
     )
+
+
+def can_administer_products_inventory(user=None):
+    """Return whether an active administrator may add or edit Product rows."""
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True))
+    ):
+        return False
+
+    role = (getattr(target, 'role', '') or '').strip().lower()
+    return bool(role == 'admin' or is_admin_authorized(target))
 
 
 def can_administer_genoray_inventory(user=None):
@@ -13015,6 +13232,8 @@ def get_offline_tsr_schedule_options():
             'product_bsid': (getattr(product, 'bsid', None) or '') if product else '',
             'equipment_source': equipment_source,
             'equipment_available': equipment_available,
+            'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(product, 'serial_number', None))),
+            'linked_vieworks': product_vieworks_link_payload(getattr(product, 'serial_number', None)) if equipment_source == 'product' and product else [],
             'engineers': assigned_ids,
             'engineer_names': [eng.name for eng in assigned_engineers],
             'serviced_by': serviced_engineer.name if serviced_engineer else '',
@@ -23568,8 +23787,8 @@ def pwa_service_worker():
     # Navigation shell bump: v192 isolates late Calibration Report drafts from finalized TSR draft deletion markers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v193-reimbursement-lpr-availability.
     # Navigation shell bump: v194 distributes the collapsed Historical Report Repair notice.
-    # Navigation shell bump: v195 distributes the pre-submission Calibration Report shortcut.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report';
+    # Navigation shell bump: v197 distributes dark-mode Product History and Calibration Report readability.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v197-dark-mode-readability';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -23587,7 +23806,7 @@ const APP_SHELL = [
   '/static/css/app-dashboard.css',
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
-  '/static/css/app-calibration-report.css?v=9',
+  '/static/css/app-calibration-report.css?v=10',
   '/static/css/app-offline-tsr.css?v=7',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
@@ -25331,7 +25550,7 @@ def products_page():
     return render_template(
         'products.html',
         inventory_mode='product',
-        product_can_edit=bool(is_admin_authorized() or current_user.role == 'engineer'),
+        product_can_edit=bool(can_administer_products_inventory()),
         product_can_delete=bool(is_admin_authorized()),
         product_can_pm=False,
     )
@@ -25347,7 +25566,7 @@ def genoray_page():
     return render_template(
         'products.html',
         inventory_mode='genoray',
-        product_can_edit=bool(can_access_genoray_inventory()),
+        product_can_edit=bool(can_administer_genoray_inventory()),
         product_can_delete=bool(can_administer_genoray_inventory()),
         product_can_pm=bool(can_access_inventory_pm('genoray')),
     )
@@ -25363,7 +25582,7 @@ def vieworks_page():
     return render_template(
         'products.html',
         inventory_mode='vieworks',
-        product_can_edit=bool(can_access_vieworks_inventory()),
+        product_can_edit=bool(can_administer_vieworks_inventory()),
         product_can_delete=bool(can_administer_vieworks_inventory()),
         product_can_pm=bool(can_access_inventory_pm('vieworks')),
     )
@@ -29201,6 +29420,7 @@ def operational_equipment_rows():
 def get_products():
     """ Inventory Retrieval API featuring machine ownership mapping """
     ensure_product_contract_column()
+    ensure_product_vieworks_link_table()
     if is_hr_schedule_only_user():
         return jsonify([])
     if (clean_str(request.args.get('operational')) or '').lower() in {'1', 'true', 'yes'}:
@@ -29214,6 +29434,7 @@ def get_products():
     results = []
 
     for p in products:
+        linked_vieworks = product_vieworks_link_payload(p.serial_number)
         results.append({
             'serial_number': p.serial_number,
             'name': p.name,
@@ -29227,6 +29448,9 @@ def get_products():
             'calibration_certificate': certificate_approvals.get(p.serial_number),
             'equipment_source': 'product',
             'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS['product'],
+            'linked_vieworks': linked_vieworks,
+            'with_vieworks_canon': bool(linked_vieworks),
+            'linked_product': None,
         })
 
     return jsonify(results)
@@ -29288,6 +29512,11 @@ def genoray_item_to_dict(item):
             end_date=end_date,
             under_contract=bool(getattr(item, 'under_contract', False)),
         ),
+        'equipment_source': 'genoray',
+        'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS['genoray'],
+        'with_vieworks_canon': False,
+        'linked_vieworks': [],
+        'linked_product': None,
     }
 
 
@@ -29350,6 +29579,11 @@ def vieworks_item_to_dict(item):
             end_date=end_date,
             under_contract=bool(getattr(item, 'under_contract', False)),
         ),
+        'equipment_source': 'vieworks',
+        'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS['vieworks'],
+        'with_vieworks_canon': False,
+        'linked_vieworks': [],
+        'linked_product': product_vieworks_parent_payload(item.serial_number),
     }
 
 
@@ -29394,6 +29628,91 @@ def vieworks_summary_for(items):
     return counts
 
 
+def service_history_parts_for_shifts(shifts):
+    """Return parts from the newest saved TSR revision in a service group."""
+    submissions = []
+    for shift in shifts or []:
+        try:
+            submission = get_latest_online_tsr_submission_for_shift(shift.id)
+        except Exception:
+            submission = None
+        if submission:
+            submissions.append(submission)
+    submissions.sort(
+        key=lambda row: (
+            clean_int(getattr(row, 'revision_no', None)) or 0,
+            getattr(row, 'created_at', None) or datetime.min,
+            clean_int(getattr(row, 'id', None)) or 0,
+        ),
+        reverse=True,
+    )
+    if not submissions:
+        return []
+    payload = parse_online_tsr_payload_json(submissions[0])
+    raw_parts = payload.get('parts') if isinstance(payload.get('parts'), list) else []
+    parts = []
+    for part in raw_parts:
+        if not isinstance(part, dict):
+            continue
+        normalized = {
+            'item': clean_str(part.get('item')) or '',
+            'number': clean_str(part.get('number') or part.get('part_number')) or '',
+            'description': clean_str(part.get('description')) or '',
+            'qty': clean_str(part.get('qty') or part.get('quantity')) or '',
+            'dr': clean_str(part.get('dr') or part.get('delivery_receipt')) or '',
+        }
+        if any(normalized.values()):
+            parts.append(normalized)
+    return parts
+
+
+def service_history_file_payload(file_record, certificate_map, report_context):
+    """Classify one currently visible service attachment for asset history."""
+    if not file_record or calibration_report_source_file_is_private(file_record):
+        return None
+    file_id = clean_int(getattr(file_record, 'id', None))
+    if not file_id:
+        return None
+    artifact_ids = report_context.get('artifact_ids', set())
+    visible_report_ids = report_context.get('visible_ids', set())
+    is_report = file_id in artifact_ids
+    if is_report and file_id not in visible_report_ids:
+        return None
+    approval = certificate_map.get(file_id)
+    is_signed_certificate = bool(
+        approval and
+        clean_str(getattr(approval, 'status', None)) == 'Approved' and
+        bool(getattr(approval, 'is_latest', False)) and
+        clean_int(getattr(approval, 'signed_shift_file_id', None)) == file_id
+    )
+    # A file represented by the certificate approval table is a managed
+    # certificate artifact, not a generic supporting PDF.  Pending, returned,
+    # superseded, and no-signature variants stay out of service history even
+    # when their filename uses an otherwise permitted attachment extension.
+    if approval and not is_signed_certificate:
+        return None
+    is_tsr = bool(shift_file_is_recognized_tsr(file_record))
+    display_name = get_shift_file_display_name(file_record) or file_record.filename
+    extension = schedule_attachment_extension(display_name)
+    if is_report:
+        category = 'calibration_report'
+    elif is_signed_certificate:
+        category = 'calibration_certificate'
+    elif is_tsr:
+        category = 'tsr'
+    elif extension in SCHEDULE_ATTACHMENT_EXTENSIONS:
+        category = 'supporting'
+    else:
+        return None
+    return {
+        'id': file_id,
+        'name': display_name,
+        'filename': display_name,
+        'category': category,
+        'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else '',
+    }
+
+
 @app.route('/api/vieworks/items', methods=['GET'])
 @login_required
 def get_vieworks_items():
@@ -29403,6 +29722,142 @@ def get_vieworks_items():
     ensure_vieworks_item_table()
     items = VieworksItem.query.order_by(VieworksItem.serial_number).all()
     return jsonify([vieworks_item_to_dict(item) for item in items])
+
+
+def service_history_asset_payload(source, record):
+    """Serialize the source-aware identity shown above service history."""
+    source = normalize_equipment_source(source, default='')
+    owner = getattr(record, 'owner', None)
+    linked_vieworks = product_vieworks_link_payload(record.serial_number) if source == 'product' else []
+    linked_product = product_vieworks_parent_payload(record.serial_number) if source == 'vieworks' else None
+    return {
+        'source': source,
+        'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS.get(source, source),
+        'serial_number': clean_str(getattr(record, 'serial_number', None)) or '',
+        'name': clean_str(getattr(record, 'name', None)) or '',
+        'bsid': normalize_product_bsid(getattr(record, 'bsid', None)),
+        'client_id': clean_int(getattr(record, 'client_id', None)),
+        'client_name': clean_str(getattr(owner, 'name', None)) or 'N/A',
+        'start_warranty': getattr(record, 'start_warranty_date', None).isoformat() if getattr(record, 'start_warranty_date', None) else '',
+        'end_warranty': getattr(record, 'end_warranty_date', None).isoformat() if getattr(record, 'end_warranty_date', None) else '',
+        'under_contract': bool(getattr(record, 'under_contract', False)),
+        'computed_status': product_contract_status(record) if source == 'product' else product_contract_status(
+            end_date=getattr(record, 'end_warranty_date', None),
+            under_contract=bool(getattr(record, 'under_contract', False)),
+        ),
+        'with_vieworks_canon': bool(linked_vieworks) if source == 'product' else False,
+        'linked_vieworks': linked_vieworks,
+        'linked_product': linked_product,
+    }
+
+
+def service_history_visits_for_groups(grouped, source):
+    """Serialize grouped, source-filtered service visits for inventory history."""
+    visits = []
+    for group_shifts in grouped.values():
+        ordered_shifts = sorted(
+            group_shifts,
+            key=lambda row: (
+                getattr(row, 'start_time', None) or datetime.min,
+                getattr(row, 'id', 0) or 0,
+            ),
+        )
+        first_shift = ordered_shifts[0]
+        last_shift = ordered_shifts[-1]
+        engineers = []
+        engineer_ids = set()
+        for group_shift in ordered_shifts:
+            for engineer in get_shift_engineer_records(group_shift):
+                engineer_id = clean_int(getattr(engineer, 'id', None))
+                if engineer_id in engineer_ids:
+                    continue
+                if engineer_id:
+                    engineer_ids.add(engineer_id)
+                engineers.append({
+                    'id': engineer_id,
+                    'name': clean_str(getattr(engineer, 'name', None)) or '',
+                    'initials': clean_str(getattr(engineer, 'initials', None)) or '',
+                })
+        file_records = []
+        file_ids = set()
+        for group_shift in ordered_shifts:
+            for file_record in getattr(group_shift, 'files', []) or []:
+                file_id = clean_int(getattr(file_record, 'id', None))
+                if file_id and file_id not in file_ids:
+                    file_ids.add(file_id)
+                    file_records.append(file_record)
+        report_context = calibration_report_visibility_context_for_files(file_records)
+        certificate_map = calibration_certificate_approval_map_for_files(file_records)
+        artifacts = []
+        for file_record in file_records:
+            if not user_can_view_shift_tsr_archive(first_shift, 'all'):
+                continue
+            artifact = service_history_file_payload(file_record, certificate_map, report_context)
+            if artifact:
+                try:
+                    detail = timeline_file_detail_payload(
+                        file_record,
+                        certificate_approval_map=certificate_map,
+                        calibration_report_context=report_context,
+                    )
+                except Exception:
+                    detail = {}
+                artifact['preview_url'] = detail.get('preview_url', '')
+                artifact['download_url'] = detail.get('download_url', '')
+                artifacts.append(artifact)
+        client = getattr(first_shift, 'client', None)
+        start_time = getattr(first_shift, 'start_time', None)
+        end_time = getattr(last_shift, 'end_time', None)
+        visits.append({
+            'id': clean_int(getattr(first_shift, 'id', None)),
+            'shift_ids': [clean_int(getattr(row, 'id', None)) for row in ordered_shifts],
+            'group_id': clean_str(getattr(first_shift, 'group_id', None)) or '',
+            'date': start_time.date().isoformat() if start_time else '',
+            'start_date': start_time.date().isoformat() if start_time else '',
+            'end_date': end_time.date().isoformat() if end_time else '',
+            'task': clean_str(getattr(first_shift, 'title', None)) or '',
+            'title': clean_str(getattr(first_shift, 'title', None)) or '',
+            'status': clean_str(getattr(first_shift, 'status', None)) or '',
+            'client_id': clean_int(getattr(first_shift, 'client_id', None)),
+            'client_name': clean_str(getattr(client, 'name', None)) or 'N/A',
+            'engineers': engineers,
+            'engineer_names': [person['name'] for person in engineers if person['name']],
+            'parts_supplied': service_history_parts_for_shifts(ordered_shifts),
+            'artifacts': artifacts,
+            'files': artifacts,
+        })
+    visits.sort(key=lambda row: (row.get('start_date', ''), row.get('id') or 0), reverse=True)
+    return visits
+
+
+def service_history_pm_payload(source, record):
+    """Serialize standalone PM planning/completion entries for inventory history."""
+    if source not in {'genoray', 'vieworks'}:
+        return []
+    try:
+        ensure_inventory_pm_visit_table()
+        rows = InventoryPmVisit.query.filter_by(
+            brand=source,
+            equipment_serial=record.serial_number,
+        ).order_by(InventoryPmVisit.target_date.desc(), InventoryPmVisit.id.desc()).all()
+    except Exception:
+        return []
+    history = []
+    for row in rows:
+        try:
+            snapshot = json.loads(getattr(row, 'completion_snapshot_json', None) or '{}')
+        except (TypeError, ValueError):
+            snapshot = {}
+        history.append({
+            'id': clean_int(getattr(row, 'id', None)),
+            'target_date': getattr(row, 'target_date', None).isoformat() if getattr(row, 'target_date', None) else '',
+            'cadence': clean_str(getattr(row, 'cadence', None)) or '',
+            'status': 'Completed' if getattr(row, 'completed_at', None) else 'Planned',
+            'completed_at': getattr(row, 'completed_at', None).isoformat() if getattr(row, 'completed_at', None) else '',
+            'shift_id': clean_int(getattr(row, 'shift_id', None)),
+            'completion_snapshot': snapshot if isinstance(snapshot, dict) else {},
+        })
+    return history
 
 
 @app.route('/api/vieworks/summary', methods=['GET'])
@@ -29434,6 +29889,68 @@ def get_genoray_summary():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
     return jsonify(genoray_summary_for(GenorayItem.query.all()))
+
+
+@app.route('/api/inventory/<source>/<path:serial_number>/history', methods=['GET'])
+@app.route('/api/products/<path:serial_number>/history', defaults={'source': 'product'}, methods=['GET'])
+@app.route('/api/genoray/items/<path:serial_number>/history', defaults={'source': 'genoray'}, methods=['GET'])
+@app.route('/api/vieworks/items/<path:serial_number>/history', defaults={'source': 'vieworks'}, methods=['GET'])
+@login_required
+def inventory_service_history(source, serial_number):
+    """Return one source-scoped asset's read-only service history."""
+    source = normalize_equipment_source(source, default='')
+    if source == 'product':
+        allowed = can_access_products_page()
+        model = Product
+        ensure_product_contract_column()
+    elif source == 'genoray':
+        allowed = can_access_genoray_inventory()
+        model = GenorayItem
+        ensure_genoray_item_table()
+    elif source == 'vieworks':
+        allowed = can_access_vieworks_inventory()
+        model = VieworksItem
+        ensure_vieworks_item_table()
+    else:
+        return jsonify({'message': 'Invalid inventory source.'}), 400
+    if not allowed:
+        return jsonify({'message': 'Denied'}), 403
+
+    ensure_product_vieworks_link_table()
+    serial = (clean_str(serial_number) or '').upper()
+    record = db.session.get(model, serial)
+    if not record:
+        record = model.query.filter(func.lower(model.serial_number) == serial.casefold()).first()
+    if not record:
+        return jsonify({'message': 'Equipment not found.'}), 404
+
+    shift_query = Shift.query.options(
+        joinedload(Shift.client),
+        selectinload(Shift.files),
+    ).filter(func.lower(Shift.product_id) == record.serial_number.casefold())
+    if source == 'product':
+        shift_query = shift_query.filter(
+            or_(Shift.equipment_source == 'product', Shift.equipment_source.is_(None))
+        )
+    else:
+        shift_query = shift_query.filter(Shift.equipment_source == source)
+    shifts = shift_query.order_by(Shift.start_time.desc(), Shift.id.desc()).all()
+
+    grouped = {}
+    for shift in shifts:
+        key = f"group:{shift.group_id}" if shift.group_id else f"shift:{shift.id}"
+        grouped.setdefault(key, []).append(shift)
+
+    visits = service_history_visits_for_groups(grouped, source)
+    pm_history = service_history_pm_payload(source, record)
+    return jsonify({
+        'success': True,
+        'asset': service_history_asset_payload(source, record),
+        'visits': visits,
+        'service_visits': visits,
+        'preventive_maintenance': pm_history,
+        'pm_history': pm_history,
+    })
 
 
 def genoray_payload_dates(payload, existing=None):
@@ -47123,6 +47640,8 @@ def get_timeline_data():
                 'equipment_source': equipment_source,
                 'equipment_available': equipment_available,
                 'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
+                'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(equipment, 'serial_number', None))),
+                'linked_vieworks': product_vieworks_link_payload(getattr(equipment, 'serial_number', None)) if equipment_source == 'product' and equipment else [],
                 'status': shift.status,
                 # Keep default legacy payload unchanged.
                 # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
@@ -47306,6 +47825,8 @@ def get_shift_details(shift_id):
             'equipment_source': equipment_source,
             'equipment_available': equipment_available,
             'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
+            'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(equipment, 'serial_number', None))),
+            'linked_vieworks': product_vieworks_link_payload(getattr(equipment, 'serial_number', None)) if equipment_source == 'product' and equipment else [],
             'status': shift.status,
             'files': [
                 get_shift_file_display_name(file_record) or file_record.filename
@@ -57753,18 +58274,22 @@ def force_change_password_api():
 @app.route('/add_product', methods=['POST'])
 @login_required
 def add_product():
-    """ Equipment entry logic. Access: Admin Levels & Engineers.
+    """Equipment entry logic for authorized administrators only.
 
     Safety fix:
     - Prevents duplicate serial numbers from crashing SQLite UNIQUE constraint.
     - Returns a clean 409 response instead of a 500 server error.
     - Rolls back the session if a commit fails for any unexpected reason.
     """
-    if not (is_admin_authorized() or current_user.role == 'engineer'):
+    if not can_administer_products_inventory():
         return jsonify({'message': 'Denied'}), 403
 
     ensure_product_contract_column()
+    ensure_product_vieworks_link_table()
     d = request.get_json() or {}
+    link_fields_present, linked_vieworks_serials, link_error = product_link_state_from_payload(d)
+    if link_fields_present and link_error:
+        return jsonify({'message': link_error, 'field': 'linked_vieworks_serials'}), 400
 
     serial_number = clean_str(d.get('serial_number')).upper()
     product_name = clean_str(d.get('name'))
@@ -57805,9 +58330,16 @@ def add_product():
         under_contract=parse_bool_flag(d.get('under_contract')),
         bsid=bsid or None,
     )
+    if link_fields_present:
+        link_error = validate_product_vieworks_links(new_p.client_id, linked_vieworks_serials)
+        if link_error:
+            return jsonify({'message': link_error, 'field': 'linked_vieworks_serials'}), 400
+    else:
+        linked_vieworks_serials = []
 
     try:
         db.session.add(new_p)
+        replace_product_vieworks_links(new_p.serial_number, linked_vieworks_serials)
         db.session.commit()
     except Exception as product_error:
         db.session.rollback()
@@ -57940,11 +58472,13 @@ def update_product(serial_number):
     linked schedules from the old serial to the new serial. This prevents the
     old delete/recreate workaround from breaking historical schedule links.
     """
-    if not (is_admin_authorized() or current_user.role == 'engineer'):
+    if not can_administer_products_inventory():
         return jsonify({'message': 'Denied'}), 403
 
     ensure_product_contract_column()
     ensure_purchase_order_schema()
+    db.session.rollback()
+    ensure_product_vieworks_link_table()
     d = request.get_json() or {}
     old_serial = clean_str(serial_number)
     p = db.session.get(Product, old_serial)
@@ -57985,6 +58519,30 @@ def update_product(serial_number):
             'message': f'BSID {new_bsid} already exists in inventory.'
         }), 409
 
+    link_fields_present, linked_vieworks_serials, link_error = product_link_state_from_payload(d)
+    if link_fields_present and link_error:
+        return jsonify({'message': link_error, 'field': 'linked_vieworks_serials'}), 400
+    if link_fields_present:
+        link_error = validate_product_vieworks_links(
+            new_client_id,
+            linked_vieworks_serials,
+            existing_product_serial=old_serial,
+        )
+        if link_error:
+            return jsonify({'message': link_error, 'field': 'linked_vieworks_serials'}), 400
+    else:
+        linked_vieworks_serials = [
+            row.vieworks_serial
+            for row, _item in product_vieworks_linked_items(product_serial=old_serial)
+        ]
+        link_error = validate_product_vieworks_links(
+            new_client_id,
+            linked_vieworks_serials,
+            existing_product_serial=old_serial,
+        )
+        if link_error:
+            return jsonify({'message': link_error, 'field': 'client_id'}), 400
+
     try:
         if new_serial != old_serial:
             existing_product = db.session.get(Product, new_serial)
@@ -57996,7 +58554,10 @@ def update_product(serial_number):
                     'existing_name': existing_product.name or ''
                 }), 409
 
-            linked_schedule_count = Shift.query.filter_by(product_id=old_serial).count()
+            linked_schedule_count = Shift.query.filter(
+                Shift.product_id == old_serial,
+                or_(Shift.equipment_source == 'product', Shift.equipment_source.is_(None)),
+            ).count()
             linked_purchase_order_count = purchase_order_count_for_machine(old_serial)
 
             replacement = Product(
@@ -58011,7 +58572,18 @@ def update_product(serial_number):
             db.session.add(replacement)
             db.session.flush()
 
-            Shift.query.filter_by(product_id=old_serial).update(
+            ProductVieworksLink.query.filter_by(product_serial=old_serial).delete(
+                synchronize_session=False
+            )
+            replace_product_vieworks_links(new_serial, linked_vieworks_serials)
+            ProductVieworksLink.query.filter_by(product_serial=old_serial).delete(
+                synchronize_session=False
+            )
+
+            Shift.query.filter(
+                Shift.product_id == old_serial,
+                or_(Shift.equipment_source == 'product', Shift.equipment_source.is_(None)),
+            ).update(
                 {'product_id': new_serial},
                 synchronize_session=False
             )
@@ -58026,7 +58598,16 @@ def update_product(serial_number):
                 synchronize_session=False
             )
 
-            db.session.delete(p)
+            # Shift.product is a legacy serial-only relationship.  A
+            # Vieworks/Genoray schedule can legitimately reuse this serial,
+            # so deleting through the ORM relationship would null that other
+            # source's product_id.  Delete the Product row directly after the
+            # Product-source schedules have been moved, preserving the
+            # source-scoped serial on unrelated schedules.
+            db.session.expunge(p)
+            db.session.execute(
+                Product.__table__.delete().where(Product.serial_number == old_serial)
+            )
             db.session.commit()
 
             log_activity(
@@ -58052,6 +58633,7 @@ def update_product(serial_number):
         p.end_warranty_date = new_end
         p.under_contract = new_contract
         p.bsid = new_bsid or None
+        replace_product_vieworks_links(p.serial_number, linked_vieworks_serials)
         db.session.commit()
 
         changed_fields = []
@@ -58105,6 +58687,7 @@ def delete_product(serial_number):
     """ Restricted to Admin Levels. """
     if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
     ensure_purchase_order_schema()
+    ensure_product_vieworks_link_table()
     target = db.session.get(Product, serial_number)
     if target:
         linked_purchase_order_count = purchase_order_count_for_machine(target.serial_number)
@@ -58118,7 +58701,18 @@ def delete_product(serial_number):
                 'linked_purchase_order_count': linked_purchase_order_count,
             }), 409
         name = target.name
-        db.session.delete(target); db.session.commit()
+        ProductVieworksLink.query.filter_by(product_serial=target.serial_number).delete(
+            synchronize_session=False
+        )
+        Shift.query.filter(
+            Shift.product_id == target.serial_number,
+            or_(Shift.equipment_source == 'product', Shift.equipment_source.is_(None)),
+        ).update({'product_id': None}, synchronize_session=False)
+        db.session.expunge(target)
+        db.session.execute(
+            Product.__table__.delete().where(Product.serial_number == serial_number)
+        )
+        db.session.commit()
         log_activity(f"Purged product record: {name}")
     return jsonify({'status': 'success'})
 
@@ -58824,7 +59418,7 @@ def inventory_pm_schedule_options_api(brand, serial_number=None):
 @login_required
 def add_vieworks_item():
     """Add one standalone Vieworks inventory item."""
-    if not can_access_vieworks_inventory():
+    if not can_administer_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
     begin_vieworks_write_transaction()
@@ -58880,9 +59474,10 @@ def add_vieworks_item():
 @login_required
 def update_vieworks_item(serial_number):
     """Update a Vieworks item without touching Product or related workflows."""
-    if not can_access_vieworks_inventory():
+    if not can_administer_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
+    ensure_product_vieworks_link_table()
     ensure_inventory_pm_visit_table()
     begin_vieworks_write_transaction()
     old_serial = (clean_str(serial_number) or '').upper()
@@ -58927,10 +59522,33 @@ def update_vieworks_item(serial_number):
             'message': f'BSID {values["bsid"]} already exists in Vieworks inventory.',
         }), 409
 
+    existing_links = product_vieworks_linked_items(vieworks_serial=old_serial)
+    if existing_links:
+        parent = db.session.get(Product, existing_links[0][0].product_serial)
+        parent_client_id = clean_int(getattr(parent, 'client_id', None)) if parent else None
+        if not parent or not parent_client_id or clean_int(values['client_id']) != parent_client_id:
+            db.session.rollback()
+            return jsonify({
+                'message': 'A linked Vieworks/Canon item must remain with the same medical center as its Product.',
+                'field': 'client_id',
+            }), 400
+
+    schedule_count = 0
     pm_visit_count = 0
     try:
         reserve_vieworks_manual_bsid(values['bsid'])
         if new_serial != old_serial:
+            schedule_count = Shift.query.filter(
+                Shift.product_id == old_serial,
+                Shift.equipment_source == 'vieworks',
+            ).count()
+            Shift.query.filter(
+                Shift.product_id == old_serial,
+                Shift.equipment_source == 'vieworks',
+            ).update(
+                {'product_id': new_serial},
+                synchronize_session=False,
+            )
             pm_visit_count = InventoryPmVisit.query.filter_by(
                 brand='vieworks', equipment_serial=old_serial
             ).update(
@@ -58944,6 +59562,10 @@ def update_vieworks_item(serial_number):
         item.start_warranty_date = values['start_warranty_date']
         item.end_warranty_date = values['end_warranty_date']
         item.under_contract = values['under_contract']
+        if new_serial != old_serial:
+            ProductVieworksLink.query.filter_by(vieworks_serial=old_serial).update(
+                {'vieworks_serial': new_serial}, synchronize_session=False
+            )
         db.session.commit()
     except IntegrityError as item_error:
         db.session.rollback()
@@ -58969,6 +59591,7 @@ def update_vieworks_item(serial_number):
         'serial_changed': new_serial != old_serial,
         'old_serial': old_serial,
         'new_serial': new_serial,
+        'linked_schedule_count': schedule_count,
         'pm_visit_count': pm_visit_count,
         'item': vieworks_item_to_dict(item),
         **vieworks_item_to_dict(item),
@@ -58982,6 +59605,7 @@ def delete_vieworks_item(serial_number):
     if not can_administer_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
+    ensure_product_vieworks_link_table()
     ensure_inventory_pm_visit_table()
     requested_serial = (clean_str(serial_number) or '').upper()
     item = db.session.get(VieworksItem, requested_serial)
@@ -58999,6 +59623,7 @@ def delete_vieworks_item(serial_number):
                 'pm_visit_count': linked_pm_count,
             }), 409
         item_name = item.name
+        ProductVieworksLink.query.filter_by(vieworks_serial=item.serial_number).delete(synchronize_session=False)
         db.session.delete(item)
         db.session.commit()
         log_activity(f'Purged Vieworks equipment: {item_name}')
@@ -59168,7 +59793,7 @@ def export_vieworks_items():
 @login_required
 def add_genoray_item():
     """Add one standalone Genoray inventory item."""
-    if not can_access_genoray_inventory():
+    if not can_administer_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
     begin_genoray_write_transaction()
@@ -59224,7 +59849,7 @@ def add_genoray_item():
 @login_required
 def update_genoray_item(serial_number):
     """Update a Genoray item without touching Product or related workflows."""
-    if not can_access_genoray_inventory():
+    if not can_administer_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
     ensure_inventory_pm_visit_table()
@@ -59271,10 +59896,22 @@ def update_genoray_item(serial_number):
             'message': f'BSID {values["bsid"]} already exists in Genoray inventory.',
         }), 409
 
+    schedule_count = 0
     pm_visit_count = 0
     try:
         reserve_genoray_manual_bsid(values['bsid'])
         if new_serial != old_serial:
+            schedule_count = Shift.query.filter(
+                Shift.product_id == old_serial,
+                Shift.equipment_source == 'genoray',
+            ).count()
+            Shift.query.filter(
+                Shift.product_id == old_serial,
+                Shift.equipment_source == 'genoray',
+            ).update(
+                {'product_id': new_serial},
+                synchronize_session=False,
+            )
             pm_visit_count = InventoryPmVisit.query.filter_by(
                 brand='genoray', equipment_serial=old_serial
             ).update(
@@ -59313,6 +59950,7 @@ def update_genoray_item(serial_number):
         'serial_changed': new_serial != old_serial,
         'old_serial': old_serial,
         'new_serial': new_serial,
+        'linked_schedule_count': schedule_count,
         'pm_visit_count': pm_visit_count,
         'item': genoray_item_to_dict(item),
         **genoray_item_to_dict(item),

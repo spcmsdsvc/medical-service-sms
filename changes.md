@@ -1,6 +1,19 @@
 # Project Change Log
 
+codex changes - 2026-09-26
+
+- The owner authorized committing and pushing only the completed Product Linking/Service History and Dark-Mode Readability packages to `origin/main`. Publication is limited to their application, template, stylesheet, focused test, cache/release, plan, and change-record files; `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated dirty or untracked files remain excluded.
+
 codex changes - 2026-09-25
+
+- Implemented the Product Linking, Read-Only Engineer Access, and Service History package in `app.py`, `templates/products.html`, and `templates/timeline.html`. Engineers retain inventory read/search/export/history access but receive `403` for Product, Genoray, and Vieworks add/update mutations; authorized administrators retain maintenance access.
+- Added additive `product_vieworks_link` schema ensure logic with same-client validation, one-parent uniqueness, clear/rename/delete cleanup, Product and operational-equipment linkage JSON, Vieworks parent references, and schedule payload linkage metadata without changing `Shift.product_id` or `Shift.equipment_source`.
+- Added Product-only **With Vieworks/Canon?** multi-select controls, linked equipment display, Timeline schedule context badge, and responsive clickable history modal/API for Product, Genoray, and Vieworks service visits, grouped schedules, latest TSR parts, engineers, permitted artifacts, PM history, and linked navigation.
+- Added focused `tests/test_product_vieworks_links_history.py` coverage plus updated Genoray/Vieworks engineer permission expectations. Advanced the embedded service-worker marker to `medical-service-pwa-offline-navigation-v196-product-link-history` and added the `2026-09-25-product-link-history` release entry. No commit, push, deployment, browser automation, or protected owner data operation was performed.
+- Source-scoped Product, Genoray, and Vieworks serial renames now move only their own schedule rows; Product deletion preserves unrelated source serials while removing Product-source schedules and link rows. Managed pending/returned/superseded/no-signature certificate files are excluded from history artifacts, and affected product/Timeline/offline-cache contract tests were updated.
+- Added component-scoped dark-mode styles to the Product History modal so visit cards, metadata, linked assets, artifacts, empty/loading/error states, borders, and keyboard focus remain readable on both AMOLED and Graphite themes.
+- Added dark interactive Calibration Report editor styling for the toolbar, sections, tables, labels, fields, read-only values, help text, placeholders, disabled states, semantic status tones, and focus rings; the signature canvas and generated/print document surfaces remain white.
+- Bumped the Calibration Report CSS query from v9 to v10 and advanced the embedded service-worker shell marker to `medical-service-pwa-offline-navigation-v197-dark-mode-readability`; added the published `2026-09-25-dark-mode-readability` release entry and focused dark-mode source contracts. No backend, schema/API, document-template, JavaScript, browser, database, Railway, commit, push, or deployment operation was performed.
 
 - Committed only the authorized Pre-Submission Calibration Report Shortcut package as `4f0e4d9`
   and pushed it to `origin/main`. Remote verification resolved `refs/heads/main` to

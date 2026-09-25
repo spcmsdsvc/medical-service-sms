@@ -1,5 +1,211 @@
 # Medical Service SMS — Approved Plans
 
+## Dark-Mode Readability for Product History and Calibration Report
+
+**Status:** Executed — publication authorized; awaiting commit
+**Approved:** 2026-09-25 — the owner approved this plan by explicitly requesting its implementation.
+**Execution authorized:** 2026-09-25 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
+**Publication authorized:** 2026-09-26 — the owner instructed “commit and push these changes only. no db or dirty files”.
+**Detailed:** 2026-09-25.
+
+### Context and decisions
+
+Dark mode currently leaves Product service-history visit cards with a light surface and low-contrast
+text. The interactive Calibration Report editor also retains light document/editor surfaces and fields
+inside the dark workspace, making labels and inputs difficult to read. This package is limited to
+presentation and asset-distribution changes; generated reports, print output, document templates,
+backend behavior, schema/API behavior, and JavaScript behavior remain unchanged. The signature canvas
+stays white so black ink remains visible.
+
+### Files and boundaries
+
+- `templates/products.html`: component-scoped dark-mode history surfaces, text, borders, links, and
+  focus states without changing history behavior or row actions.
+- `static/css/app-calibration-report.css`: dark interactive toolbar/workspace/editor surfaces,
+  sections, tables, labels, fields, read-only values, help, placeholders, disabled states, and focus
+  states while preserving state colors and the white signature canvas/document sheet.
+- `templates/offline_tsr.html`: increment the calibration-report CSS query string.
+- `app.py`: advance the embedded service-worker cache marker and precached calibration CSS URL.
+- `static/changelog/releases.json`, `changes.md`, and this plan: release/change/verification records.
+- Focused existing/new CSS contracts only; no backend, schema, API, document-template, or JavaScript
+  behavior changes; no browser/Codex UI, database, production, Railway, commit, push, or deployment.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first coverage.** Read applicable instructions and `changes.md`, inspect current
+   Git state and protected dirty artifacts, review the existing Product history styles and Calibration
+   Report CSS/theme contracts, and add focused source contracts where practical before the CSS edits.
+2. **Product history readability — `templates/products.html`.** Add dark-mode rules scoped to the
+   Product History modal for the visit cards, primary/muted text, borders, artifact and linked-item
+   links, empty/loading/error states, and keyboard focus. Preserve the modal layout, status badges,
+   click navigation, light mode, responsive behavior, and independent inventory actions.
+3. **Calibration editor readability — `static/css/app-calibration-report.css`.** Add coordinated
+   dark-mode rules for the interactive toolbar, certificate controls, status/help areas, tabs,
+   workspace, editor pages, sections/tables, labels, inputs/selects/textareas, read-only values,
+   model messages, placeholders, disabled controls, and focus rings. Keep success/warning/error
+   tones distinct; explicitly keep the signature canvas and document/print sheet white.
+4. **Distribution and records.** Increment the CSS query in `templates/offline_tsr.html`, advance the
+   service-worker shell marker in `app.py`, add one published release item, append factual bullets to
+   the existing 2026-09-25 `changes.md` section, and finish this plan with exact execution results.
+5. **Focused verification.** Run the relevant Product history, appearance/theme, Calibration Report,
+   cache, and changelog tests plus Jinja/CSS-reference/release-JSON/AST and `git diff --check`
+   validations. Do not run browser/Codex UI automation or alter protected owner data. Leave the
+   package uncommitted and unpublished.
+
+### Acceptance criteria
+
+- Product History visit cards and linked/artifact content are readable in dark mode with visible
+  surfaces, borders, muted text, and focus/link states; light mode remains unchanged.
+- The interactive Calibration Report editor is consistently dark and readable in dark mode, while
+  the signature canvas and generated/print document surfaces remain white.
+- CSS cache references and the service-worker marker advance so existing clients receive the fix.
+- No backend, schema/API, document-template, or JavaScript behavior changes occur.
+
+### Assumptions
+
+- “Fully dark editor” applies to the interactive workspace only; official generated/printed artifacts
+  remain white.
+- Existing uncommitted Product linking/history changes and protected owner files remain untouched.
+
+### Execution outcome (2026-09-25)
+
+Implemented the scoped dark-mode readability correction in `templates/products.html` and
+`static/css/app-calibration-report.css`. Product History now uses dark raised visit cards with
+readable primary/muted text, artifact and linked-item links, borders, empty/error states, and
+keyboard focus. The interactive Calibration Report workspace now has coordinated dark toolbar,
+sections, tables, fields, read-only values, help, placeholders, disabled states, semantic status
+tones, and focus styling; the signature canvas remains white and generated/print document surfaces
+remain governed by their existing white-output rules. Advanced the CSS query to v10 and the embedded
+service-worker marker to v197, added the published release entry, focused source contracts, and
+updated the change log. No backend, schema/API, document-template, JavaScript behavior, browser,
+database, Railway, commit, push, or deployment operation occurred.
+
+Verification completed: the new dark-mode contracts intentionally failed 3/3 before the CSS edits;
+after implementation, the focused batch passed 65 tests with 1 expected skip across dark-mode
+contracts, Product/Vieworks history, appearance themes, service-worker helpers, changelog checks,
+and Calibration Report contracts. AST, Jinja template compilation, release JSON, CSS brace/reference,
+and `git diff --check` validations passed. Protected `scheduler.db`, handoffs, `.claude/`, `output/`,
+`tmp/`, and unrelated dirty work remain outside this package.
+
+
+## Product Linking, Read-Only Engineer Access, and Service History
+
+**Status:** Executed — publication authorized; awaiting commit
+**Approved:** 2026-09-25 — the owner approved this plan by explicitly requesting its implementation.
+**Execution authorized:** 2026-09-25 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
+**Publication authorized:** 2026-09-26 — the owner instructed “commit and push these changes only. no db or dirty files”.
+**Detailed:** 2026-09-25.
+
+### Context and decisions
+
+Product, Genoray, and Vieworks inventory pages currently allow engineers to mutate inventory
+through UI and direct endpoints. Regular Product records need an additive, same-client relationship
+to one or more Vieworks records, while each Vieworks record may have only one Product parent.
+Schedules keep their existing single `Shift.product_id`/`Shift.equipment_source` storage model; the
+relationship is contextual display metadata only. All three inventory surfaces also need a read-only
+asset history view covering schedules, permitted TSR artifacts, parts supplied, certificates, and
+linked inventory.
+
+### Files and boundaries
+
+- `app.py`: additive `product_vieworks_link` schema/model and migration helper; administrator-only
+  inventory mutations; Product/Vieworks relationship validation/serialization; operational equipment
+  linkage metadata; source-aware service-history API and artifact/parts serialization.
+- `templates/products.html`: Product-only linking checkbox/multi-select, linked-equipment display,
+  engineer read-only controls, clickable desktop/mobile inventory identity, and history modal.
+- `templates/timeline.html`: linked Vieworks/Canon badge and item context for schedule create/edit,
+  including operational/offline equipment feeds.
+- Focused inventory/history/Timeline tests and existing affected contracts: mutation permissions,
+  relationship validation/rename/delete behavior, schedule metadata, history isolation/artifact
+  visibility, and rendering/source contracts.
+- `app.py` embedded service-worker marker, `static/changelog/releases.json`, `changes.md`, and this
+  plan: distribution and implementation records.
+- Deliberately excluded: automatic linking of existing records, a separate Canon inventory, merging
+  linked equipment into schedules or history, changes to `Shift.product_id`/`Shift.equipment_source`,
+  destructive migrations or data resets, browser/Codex UI automation, Railway/production/deployment
+  work, commits/pushes, and protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and
+  unrelated dirty work.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first coverage.** Read applicable instructions, `changes.md`, current plans,
+   protected Git state, inventory mutations, operational-equipment serialization, schedule selection,
+   existing file visibility, and TSR payload helpers. Add focused tests where practical and capture
+   truthful fail-first evidence before product edits. Stop if protected work or current source makes
+   the scope unsafe or materially different.
+2. **Administrator-only inventory maintenance — `app.py`, `templates/products.html`.** Keep Product,
+   Genoray, and Vieworks pages readable/searchable by engineers, but expose Add/Edit only to authorized
+   administrators and enforce the same boundary on every Product/Genoray/Vieworks add/update endpoint.
+   Preserve existing delete/import authorization and non-inventory engineer workflows.
+3. **Product-to-Vieworks linking — `app.py`.** Add the additive association table with Product serial
+   and Vieworks serial keys, one-parent uniqueness, same nonblank client validation, transactional
+   replace/clear semantics, serial-rename propagation, and safe delete cleanup. Extend Product and
+   operational equipment JSON with `with_vieworks_canon` and `linked_vieworks` metadata; expose a
+   Vieworks parent Product reference without changing schedule storage.
+4. **Linking controls — `templates/products.html`.** Add the Product-only **With Vieworks/Canon?**
+   checkbox and same-client multi-select, refresh eligibility on client changes, preserve existing
+   links during edit, require a valid selection when checked, and show linked serial/name/BSID rows.
+5. **Schedule context — `app.py`, `templates/timeline.html`.** Include Product linkage metadata in
+   operational equipment JSON and display a badge plus linked item names/serials after a regular
+   Product is selected or restored during schedule edit/offline cache use. Do not add a secondary
+   schedule choice or alter the submission shape/storage.
+6. **Clickable service history — `app.py`, `templates/products.html`.** Add a read-only,
+   source-aware history endpoint for Product, Genoray, and Vieworks. Scope schedules by source and
+   serial, group multi-day service rows, include engineers/status/client/task/date, extract parts
+   from the latest TSR revision, and categorize only currently permitted TSRs, latest approved
+   Calibration Reports, current approved signed Certificates, and other visible attachments. Exclude
+   private DOCX/pending/returned/superseded/unauthorized files. Add loading, error, empty, and linked
+   asset navigation states in the responsive modal while preserving independent row actions.
+7. **Regression coverage.** Verify engineer 403s and administrator access, same-client/multi-link and
+   one-parent rules, mismatch/rollback/clear/rename/delete behavior, operational/schedule badge
+   persistence, source isolation, multi-day grouping, latest-revision parts, artifact categorization,
+   linked navigation, empty states, and existing permission/file visibility contracts.
+8. **Distribution, records, and verification.** Advance the embedded shell marker monotonically, add
+   one release item, update `changes.md`, finish this plan with exact execution results, and run
+   focused tests followed by relevant broader suites plus AST/Jinja/JavaScript/JSON/diff checks.
+   Leave work uncommitted, unpublished, undeployed, and without database/production/browser actions.
+
+### Execution outcome (2026-09-25)
+
+Implemented the approved package in `app.py`, `templates/products.html`, `templates/timeline.html`,
+the affected inventory/Timeline/offline contract tests, `static/changelog/releases.json`, and
+`changes.md`. Engineers retain read-only Product, Genoray, and Vieworks access; authorized
+administrators retain inventory maintenance. Regular Products now support transactional,
+same-client multi-linking to Vieworks records with one-parent enforcement, source-scoped serial
+rename/delete cleanup, and linkage metadata in inventory, operational-equipment, schedule-edit, and
+offline feeds. All three inventory sources expose source-aware clickable service history with
+linked references, grouped visits, engineers, latest-TSR parts, permitted artifacts, and PM history.
+
+Verification completed: focused linking/history coverage passed 5 tests; inventory, operational
+equipment, Timeline, and PM coverage passed 82 tests; the relevant product/calibration/Timeline/
+offline regression batch passed 118 tests; permission coverage passed 76 tests; service-worker cache
+contract coverage passed 5 tests. Python AST, Jinja rendering with extracted JavaScript syntax,
+release JSON, and `git diff --check` checks passed. The separate 112-test offline TSR follow-up batch
+still reports 4 existing harness `ReferenceError` failures (`offlineTSRDBGet` and
+`STANDALONE_TSR_ACCOUNT_SCOPE`); the changed cache marker assertion itself is updated and passes in
+the cache contract suite. No commit, push, deployment, browser automation, protected database
+operation, or production/Railway action was performed.
+
+### Acceptance criteria
+
+- Engineers can view/search all currently accessible inventories and open history, but cannot add or
+  edit Product, Genoray, or Vieworks records through UI or direct API calls.
+- Authorized administrators can link a regular Product to multiple same-client Vieworks/Canon items,
+  and a Vieworks item cannot have two Product parents.
+- Selecting that Product in Create/Edit Schedule visibly identifies **With Vieworks/Canon** and lists
+  linked equipment while storing only the selected regular Product.
+- Clicking any Product, Genoray, or Vieworks asset opens only its source-aware service history with
+  permitted TSRs, approved calibration artifacts, parts supplied, engineers, and linked references.
+- Existing inventory, scheduling, TSR, PM, certificate, offline, and authorization behavior remains
+  unchanged outside this scope.
+
+### Assumptions
+
+- “Vieworks/Canon” labels the existing Vieworks inventory; no separate Canon inventory is created.
+- Product history is not merged with linked Vieworks history; linked assets navigate separately.
+- Links are current master-data relationships, not snapshots stored on schedules.
+- Existing Products and Vieworks items are not automatically linked.
+
 ## Pre-Submission Calibration Report Shortcut
 
 **Status:** Executed — implementation commit `4f0e4d9` published to `origin/main`; Railway deployment `a20ee955-155b-437b-806f-1e219cacf42f` accepted and building at verification time.

@@ -15,6 +15,8 @@ class TimelineProductCoverageTests(unittest.TestCase):
         self.assertIn('id="product-coverage-status"', self.source)
         self.assertIn('id="product-coverage-badge"', self.source)
         self.assertIn("Product Coverage", self.source)
+        self.assertIn('id="product-vieworks-status"', self.source)
+        self.assertIn('With Vieworks/Canon', self.source)
 
     def test_all_product_statuses_are_supported(self):
         for status in (
@@ -32,10 +34,15 @@ class TimelineProductCoverageTests(unittest.TestCase):
         self.assertIn("renderProductCoverageStatus(shift.product_id || null);", self.source)
         self.assertIn("renderProductCoverageStatus(masterProduct);", self.source)
         self.assertGreaterEqual(self.source.count("renderProductCoverageStatus(null);"), 4)
+        self.assertIn("renderProductVieworksStatus(m);", self.source)
+        self.assertIn("renderProductVieworksStatus(shift.product_id || null);", self.source)
+        self.assertIn("renderProductVieworksStatus(masterProduct);", self.source)
 
     def test_coverage_is_not_saved_as_schedule_data(self):
         self.assertNotIn("dataSet.append('under_contract'", self.source)
         self.assertNotIn('dataSet.append("under_contract"', self.source)
+        self.assertNotIn("dataSet.append('linked_vieworks'", self.source)
+        self.assertNotIn('dataSet.append("linked_vieworks"', self.source)
 
 
 if __name__ == "__main__":

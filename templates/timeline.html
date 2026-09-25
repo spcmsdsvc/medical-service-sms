@@ -1026,6 +1026,13 @@
                             </div>
                             <span id="product-coverage-badge" class="timeline-product-coverage-badge"></span>
                         </div>
+                        <div id="product-vieworks-status" class="timeline-product-coverage d-none mt-2" role="status" aria-live="polite">
+                            <div class="timeline-product-coverage-label">
+                                <i class="fa-solid fa-link"></i>
+                                <span>With Vieworks/Canon</span>
+                            </div>
+                            <div id="product-vieworks-items" class="timeline-product-vieworks-items"></div>
+                        </div>
                     </div>
 
                     <!-- Site Visit Billing / Commercial Flags (Optional) -->
@@ -13241,8 +13248,10 @@ function collectMobileEngineerSchedules(){
             if(prodField) prodField.value = display;
             if(prodResults) prodResults.innerHTML = '';
             renderProductCoverageStatus(masterProduct);
+            renderProductVieworksStatus(masterProduct);
         }else{
             renderProductCoverageStatus(null);
+            renderProductVieworksStatus(null);
         }
 
         const categoryDropdown = document.getElementById('f-category');
@@ -13529,6 +13538,7 @@ function collectMobileEngineerSchedules(){
         }
         if(prodResults) prodResults.innerHTML = "";
         renderProductCoverageStatus(null);
+        renderProductVieworksStatus(null);
     }
 
     function updateProductInputState(){
@@ -13619,6 +13629,7 @@ if (selectedVal === "Leave") {
             document.getElementById('f-prod-source').value = "product";
             document.getElementById('f-prod-search').value = "";
             renderProductCoverageStatus(null);
+            renderProductVieworksStatus(null);
         } else if (selectedVal === "Training" || selectedVal === "Office" || selectedVal === "Travel" || selectedVal === "Pullout" || selectedVal === "Holiday") {
             // Internal Training / Office / Travel / Pull-out Logic
             workArea.classList.add('d-none');
@@ -13635,6 +13646,7 @@ if (selectedVal === "Leave") {
             document.getElementById('f-prod-source').value = "product";
             document.getElementById('f-prod-search').value = "";
             renderProductCoverageStatus(null);
+            renderProductVieworksStatus(null);
         } else {
             // Technical Site Visit (Work)
             workArea.classList.remove('d-none');
@@ -15245,6 +15257,7 @@ async function loadGrid(options={}) {
                 hiddenInp.value = "";
                 if(sourceInp) sourceInp.value = 'product';
                 renderProductCoverageStatus(null);
+                renderProductVieworksStatus(null);
             }
             if (!val) return;
 
@@ -15310,6 +15323,7 @@ async function loadGrid(options={}) {
                         updateProductInputState();
                     }else{
                         renderProductCoverageStatus(m);
+                        renderProductVieworksStatus(m);
                     }
                 };
                 resultsDiv.appendChild(element);
@@ -15580,6 +15594,7 @@ if(shift.engineers){
         document.getElementById('f-prod-source').value = shift.equipment_source || 'product';
         document.getElementById('f-prod-search').value = getProductDisplayBySerial(shift.product_id, shift.equipment_source || 'product') || shift.product_name || "";
         renderProductCoverageStatus(shift.product_id || null);
+        renderProductVieworksStatus(shift.product_id || null);
         document.getElementById('f-start-date').value = shift.start_date || date;
         document.getElementById('f-end-date').value = shift.end_date || shift.start_date || date;
         document.getElementById('f-original-start-date').value = shift.start_date || date;
@@ -16140,6 +16155,24 @@ if(shift.engineers){
             panel.classList.add('d-none');
             return;
         }
+        panel.classList.remove('d-none');
+    }
+
+    function renderProductVieworksStatus(productOrSerial){
+        const panel = document.getElementById('product-vieworks-status');
+        const itemsContainer = document.getElementById('product-vieworks-items');
+        if(!panel || !itemsContainer) return;
+        const source = document.getElementById('f-prod-source')?.value || 'product';
+        const product = typeof productOrSerial === 'string'
+            ? (masterProducts || []).find(item => String(item.serial_number || '') === String(productOrSerial) && String(item.equipment_source || 'product') === String(source))
+            : productOrSerial;
+        const links = source === 'product' && product && Array.isArray(product.linked_vieworks) ? product.linked_vieworks : [];
+        if(!links.length){
+            panel.classList.add('d-none');
+            itemsContainer.innerHTML = '';
+            return;
+        }
+        itemsContainer.innerHTML = links.map(item => `<span class="badge text-bg-light border me-1 mb-1">${escapeHtml(item.name || 'Vieworks item')} · ${escapeHtml(item.serial_number || '')}${item.bsid ? ` · ${escapeHtml(item.bsid)}` : ''}</span>`).join('');
         panel.classList.remove('d-none');
     }
 
@@ -20903,6 +20936,11 @@ document.addEventListener('DOMContentLoaded', function(){
         line-height: 1.2;
         text-align: center;
         white-space: normal;
+    }
+
+    .timeline-product-vieworks-items {
+        flex: 1 1 auto;
+        min-width: 0;
     }
 
     .timeline-product-search-row {

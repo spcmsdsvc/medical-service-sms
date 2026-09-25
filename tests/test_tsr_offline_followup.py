@@ -470,7 +470,7 @@ console.log(JSON.stringify({ success, successEvents, missing, missingEvents, sta
             self.app_source,
         )
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report",
+            "medical-service-pwa-offline-navigation-v197-dark-mode-readability",
             self.app_source,
         )
         self.assertIn('2026-09-25-pre-submission-calibration-report', self.release_source)

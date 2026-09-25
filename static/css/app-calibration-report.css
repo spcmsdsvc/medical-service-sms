@@ -128,20 +128,58 @@
   .calibration-report-exposure-unit{flex:1 1 100%;order:3;}
 }
 
-[data-app-theme="dark"] .calibration-report-toolbar,[data-app-theme="dark"] .calibration-report-page{color:#111;}
-[data-app-theme="dark"] .calibration-report-toolbar{background:#0f172a;border-color:#334155;color:#f8fafc;}
-[data-app-theme="dark"] .calibration-report-toolbar-title small{color:#cbd5e1;}
-[data-app-theme="dark"] .calibration-report-workspace{background:#1e293b;}
-[data-app-theme="dark"] .calibration-report-tab{background:#0f172a;border-color:#475569;color:#e2e8f0;}
-[data-app-theme="dark"] .calibration-report-tab.is-active{background:var(--app-primary,#c8102e);color:#fff;}
-[data-app-theme="dark"] .calibration-report-card{background:linear-gradient(135deg,#172033,#111827);border-color:#334155;}
-[data-app-theme="dark"] .calibration-report-certificate-controls{background:#172554;border-color:#1d4ed8;}
-[data-app-theme="dark"] .calibration-report-certificate-field,[data-app-theme="dark"] .calibration-report-certificate-preview{color:#bfdbfe;}
-[data-app-theme="dark"] .calibration-report-certificate-field input,[data-app-theme="dark"] .calibration-report-certificate-preview output{background:#0f172a;border-color:#60a5fa;color:#dbeafe;}
-[data-app-theme="dark"] .calibration-report-certificate-preview small{color:#cbd5e1;}
-[data-app-theme="dark"] .calibration-report-field select{background:#0f172a;border-color:#475569;color:#e2e8f0;}
-[data-app-theme="dark"] .calibration-report-catalog-help{color:#cbd5e1;}
-[data-app-theme="dark"] .calibration-report-model-match{background:#0f172a;border-color:#475569;color:#cbd5e1;}
+[data-app-theme="dark"] .calibration-report-toolbar{background:#202124;border-color:#85888d;color:#ededed;}
+[data-app-theme="dark"] .calibration-report-toolbar-title small{color:#b8bbc2;}
+[data-app-theme="dark"] .calibration-report-workspace{background:#202124;color:#ededed;}
+[data-app-theme="dark"] .calibration-report-template-note{background:#333438;border-color:#85888d;color:#ededed;}
+[data-app-theme="dark"] .calibration-report-tab{background:#292a2d;border-color:#85888d;color:#ededed;}
+[data-app-theme="dark"] .calibration-report-tab.is-active{background:var(--app-primary,#c8102e);border-color:var(--app-primary,#c8102e);color:#fff;}
+[data-app-theme="dark"] .calibration-report-card{background:linear-gradient(135deg,#333438,#202124);border-color:#85888d;color:#ededed;}
+[data-app-theme="dark"] .calibration-report-certificate-controls{background:#172554;border-color:#60a5fa;}
+[data-app-theme="dark"] .calibration-report-certificate-field,[data-app-theme="dark"] .calibration-report-certificate-preview{color:#dbeafe;}
+[data-app-theme="dark"] .calibration-report-certificate-field input,[data-app-theme="dark"] .calibration-report-certificate-preview output{background:#202124 !important;border-color:#60a5fa !important;color:#dbeafe !important;}
+[data-app-theme="dark"] .calibration-report-certificate-field input::placeholder{color:#b8bbc2 !important;opacity:1;}
+[data-app-theme="dark"] .calibration-report-certificate-preview small{color:#b8bbc2;}
+[data-app-theme="dark"] .calibration-report-modal-status{background:#292a2d;border-color:#85888d;color:#ededed;}
+[data-app-theme="dark"] .calibration-report-modal-status.tone-success{background:#052e16;color:#bbf7d0;}
+[data-app-theme="dark"] .calibration-report-modal-status.tone-info{background:#172554;color:#bfdbfe;}
+[data-app-theme="dark"] .calibration-report-modal-status.tone-warning{background:#451a03;color:#fde68a;}
+[data-app-theme="dark"] .calibration-report-modal-status.tone-danger{background:#450a0a;color:#fecaca;}
+[data-app-theme="dark"] .calibration-report-page{background:#292a2d !important;color:#ededed !important;border-color:#85888d;box-shadow:0 12px 36px rgba(0,0,0,.45);}
+[data-app-theme="dark"] .calibration-report-paper-header{border-color:#b8bbc2;}
+[data-app-theme="dark"] .calibration-report-paper-title,[data-app-theme="dark"] .calibration-report-paper-brand{color:#f8fafc;}
+[data-app-theme="dark"] .calibration-report-section{border-color:#85888d;}
+[data-app-theme="dark"] .calibration-report-section-title{background:#333438;color:#f8fafc;border-color:#85888d;}
+[data-app-theme="dark"] .calibration-report-field{border-color:#85888d;}
+[data-app-theme="dark"] .calibration-report-field label{color:#d7d9df;}
+[data-app-theme="dark"] .calibration-report-field input,[data-app-theme="dark"] .calibration-report-field textarea,[data-app-theme="dark"] .calibration-report-check-result,[data-app-theme="dark"] .calibration-report-exposure-input,[data-app-theme="dark"] .calibration-report-performance-result{background:#202124 !important;border-color:#85888d !important;color:#f8fafc !important;}
+[data-app-theme="dark"] .calibration-report-field select{background:#202124 !important;border-color:#85888d !important;color:#f8fafc !important;}
+[data-app-theme="dark"] .calibration-report-field input::placeholder,[data-app-theme="dark"] .calibration-report-field textarea::placeholder,[data-app-theme="dark"] .calibration-report-check-result::placeholder,[data-app-theme="dark"] .calibration-report-exposure-input::placeholder,[data-app-theme="dark"] .calibration-report-performance-result::placeholder{color:#b8bbc2 !important;opacity:1;}
+[data-app-theme="dark"] .calibration-report-field input:focus,[data-app-theme="dark"] .calibration-report-field textarea:focus,[data-app-theme="dark"] .calibration-report-check-result:focus,[data-app-theme="dark"] .calibration-report-exposure-input:focus,[data-app-theme="dark"] .calibration-report-performance-result:focus,[data-app-theme="dark"] .calibration-report-reference-bar input:focus,[data-app-theme="dark"] .calibration-report-field select:focus{outline:2px solid #60a5fa;border-color:#60a5fa !important;box-shadow:0 0 0 .2rem rgba(96,165,250,.28);}
+[data-app-theme="dark"] .calibration-report-catalog-help,[data-app-theme="dark"] .calibration-report-help,[data-app-theme="dark"] .calibration-report-attachment-note,[data-app-theme="dark"] .calibration-report-capacity,[data-app-theme="dark"] .calibration-report-doc-chip-note{color:#b8bbc2;}
+[data-app-theme="dark"] .calibration-report-model-match{background:#202124;border-color:#85888d;color:#d7d9df;}
+[data-app-theme="dark"] .calibration-report-model-match small{color:#b8bbc2;}
 [data-app-theme="dark"] .calibration-report-model-match.is-accepted{background:#052e16;border-color:#16a34a;color:#bbf7d0;}
 [data-app-theme="dark"] .calibration-report-model-match.is-warning{background:#451a03;border-color:#d97706;color:#fde68a;}
+[data-app-theme="dark"] .calibration-report-model-match.is-empty{color:#b8bbc2;}
 [data-app-theme="dark"] .calibration-report-model-suggestion{background:#451a03;border-color:#f59e0b;color:#fde68a;}
+[data-app-theme="dark"] .calibration-report-model-suggestion:hover,[data-app-theme="dark"] .calibration-report-model-suggestion:focus{background:#713f12;color:#fef3c7;outline:2px solid rgba(245,158,11,.45);}
+[data-app-theme="dark"] .calibration-report-readonly{background:#333438;border-color:#85888d;color:#ededed;}
+[data-app-theme="dark"] .calibration-report-check-table,[data-app-theme="dark"] .calibration-report-exposure-table,[data-app-theme="dark"] .calibration-report-criteria-table{color:#ededed;}
+[data-app-theme="dark"] .calibration-report-check-table th,[data-app-theme="dark"] .calibration-report-check-table td,[data-app-theme="dark"] .calibration-report-exposure-table th,[data-app-theme="dark"] .calibration-report-exposure-table td,[data-app-theme="dark"] .calibration-report-criteria-table th,[data-app-theme="dark"] .calibration-report-criteria-table td{border-color:#85888d;}
+[data-app-theme="dark"] .calibration-report-check-table th,[data-app-theme="dark"] .calibration-report-exposure-table th,[data-app-theme="dark"] .calibration-report-criteria-table th{background:#333438;color:#f8fafc;}
+[data-app-theme="dark"] .calibration-report-check-label,[data-app-theme="dark"] .calibration-report-check-criteria{color:#ededed;}
+[data-app-theme="dark"] .calibration-report-signature-panel{background:#333438;border-color:#b8bbc2;color:#ededed;}
+[data-app-theme="dark"] .calibration-report-signature-canvas{background:#fff !important;color:#111 !important;border-color:#b8bbc2;}
+[data-app-theme="dark"] .calibration-report-signature-status{color:#b8bbc2;}
+[data-app-theme="dark"] .calibration-report-reference-bar{background:#292a2d;color:#ededed;border-color:#85888d;}
+[data-app-theme="dark"] .calibration-report-exposure-unit legend{color:#d7d9df;}
+[data-app-theme="dark"] .calibration-report-focal-size input{background:#202124 !important;border-color:#85888d !important;color:#f8fafc !important;}
+[data-app-theme="dark"] .calibration-report-focal-size input::placeholder{color:#b8bbc2 !important;opacity:1;}
+[data-app-theme="dark"] .calibration-report-focal-group.is-disabled .calibration-report-exposure-input,[data-app-theme="dark"] .calibration-report-focal-group.is-disabled .calibration-report-exposure-unit-option{background:#3b3c40 !important;color:#b8bbc2 !important;}
+[data-app-theme="dark"] .calibration-report-file-meta{color:#d7d9df;}
+[data-app-theme="dark"] .calibration-report-capacity.is-over{color:#fecaca;}
+
+@media(max-width:768px){
+  [data-app-theme="dark"] .calibration-report-tabs{background:rgba(32,33,36,.96);}
+}
