@@ -1,5 +1,120 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Report direct-calendar Save Draft context readiness
+
+**Status:** Executed — uncommitted; commit and push explicitly deferred by owner.
+**Approved:** 2026-09-25 — the owner approved the proposed fix for the generic Calibration Report draft-save error.
+**Execution authorized:** 2026-09-25 — the owner separately instructed implementation and explicitly excluded commit and push.
+**Detailed:** 2026-09-25.
+
+### Context and decisions
+
+The Calendar **Create Calibration Report** action already builds the intended
+`/offline-tsr?mode=calibration_report&submission_id=...` URL. The defect is in the receiving page:
+`onlineTSRCalibrationContext` is assigned only after the asynchronous IndexedDB migration, server
+draft merge, queue load, schedule refresh, and saved-TSR request finish. If the user presses the
+Calibration Report **Save Draft** button before that chain finishes, or if the saved-TSR request
+fails, `saveStandaloneTSRDraft` falls through to the ordinary TSR schedule gate and returns no
+save result. The report toolbar then shows the misleading generic device-storage error.
+
+The fix will make the report save path wait for the calibration-context bootstrap, keep a failed
+calibration request out of ordinary TSR mode, and return an actionable status without saving a
+report that cannot be safely associated with its existing submission. A successful calibration
+context will continue to use the existing IndexedDB-first/localStorage-fallback local draft
+writer. No server endpoint, database schema, saved TSR payload, final upload, or authorization
+rule will change.
+
+### Files and boundaries
+
+- `templates/offline_tsr.html`: expose the calibration-context readiness promise and load error,
+  complete the promise after the existing startup chain, and guard
+  `saveStandaloneTSRDraft` so a direct-calendar request cannot enter the ordinary schedule path
+  while its submission context is loading or unavailable.
+- `static/js/app-calibration-report.js`: make the toolbar Save Draft action await the page-level
+  readiness hook and show a truthful calibration-context message for a failed or unavailable
+  saved TSR. Preserve the existing success and local-storage failure messages for normal cases.
+- `tests/test_tsr_calibration_report.py`: add regression coverage for an immediate Save Draft
+  click while the calibration context is pending, for a failed context load, and for successful
+  report-only persistence. Keep ordinary TSR behavior out of the new guard.
+- `app.py`: bump the embedded service-worker shell marker so the changed inline `/offline-tsr`
+  page is refreshed on existing devices; do not change service-worker routing or server routes.
+- `static/changelog/releases.json`, `changes.md`, and this plan: record the user-visible bug fix,
+  cache compatibility impact, tests, and the uncommitted implementation outcome.
+- Deliberately excluded: `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, unrelated
+  worktree changes, backend/API/database work, browser automation, production data, Railway
+  settings, commit, push, deployment, and manual redeploy.
+
+### Numbered execution steps
+
+1. **Preflight and protected-state check.** Re-read the applicable instructions and `changes.md`,
+   inspect the current Git status, current direct-calendar URL builder, calibration loader/save
+   functions, report toolbar handler, existing tests, embedded worker marker, and release format.
+   Stop before editing if the current source or protected dirty work invalidates this scope.
+2. **Fail-first regression.** Add the smallest Node/source-contract regression that models the
+   direct-calendar URL, a pending context promise, and a rejected context load. Confirm the
+   unchanged implementation either calls the ordinary schedule path or reports the generic
+   failure, then proceed with the implementation. Done when the new test isolates the reported
+   behavior and does not require a browser or live database.
+3. **Context readiness — `templates/offline_tsr.html`.** Add a page-level readiness hook that
+   resolves after the existing startup/context chain, retain the loader's actual error text, and
+   make `saveStandaloneTSRDraft` await the hook only for a calibration-report URL. Return a
+   structured skipped result when the context is unavailable; never write a late report with an
+   empty submission ID and never alter ordinary Create TSR saves. Done when an early click waits
+   for a successful context and a failed load cannot fall through to the schedule gate.
+4. **Toolbar status — `static/js/app-calibration-report.js`.** Await the readiness hook before
+   invoking the existing local persistence function. Map context-loading failure to an actionable
+   message while retaining the established success, empty-draft, and actual-storage-failure
+   outcomes. Done when the user can distinguish “saved successfully,” “saved TSR could not be
+   loaded,” and “browser storage failed.”
+5. **Cache/release/control records.** Bump only the embedded service-worker version required to
+   distribute the inline page change, add one release entry, and update `changes.md` in the same
+   task. Keep `plans.md` status **In progress** until verification, then record exact outcomes and
+   mark it **Executed — uncommitted**. Do not stage or modify protected dirty files.
+6. **Verification and handoff.** Run the new focused regression first, the focused Calibration
+   Report/late-TSR tests, JavaScript syntax checks, isolated authenticated template rendering and
+   inline-script parsing where available, embedded worker syntax/release checks, and
+   `git diff --check`; run the full unittest suite proportionately and report any baseline
+   failures exactly. Perform a self-review against this plan and inspect the final diff/status.
+   Browser QA is excluded by the project instruction unless separately authorized. Review the
+   commit checklist but leave the work uncommitted, unpushed, undeployed, and without Railway
+   changes.
+
+### Acceptance and risks
+
+- A report opened from Calendar waits for its saved TSR context before Save Draft persists locally.
+- A context fetch failure cannot be mistaken for a local-storage failure or enter ordinary TSR
+  schedule mode; the user receives the saved-TSR load error and no unsafe unassociated draft is
+  written.
+- Existing report-only local persistence and ordinary Create TSR draft behavior remain unchanged.
+- The service-worker bump ensures the fixed inline page is distributed without changing API or
+  database behavior. Protected dirty artifacts remain untouched, and no commit or push occurs.
+
+### Execution outcome — 2026-09-25
+
+1. Added `onlineTSRCalibrationContextReadyPromise` and the page-level
+   `waitForOnlineTSRCalibrationContext`/load-error hooks in `templates/offline_tsr.html`. The
+   existing Calendar calibration URL now waits through IndexedDB/draft/queue/schedule startup and
+   the saved-TSR request; failed or empty contexts return `calibration_context_unavailable` and
+   cannot enter ordinary TSR draft mode.
+2. Updated `static/js/app-calibration-report.js` so the toolbar waits for that context and shows
+   the saved-TSR load error instead of the generic device-storage error. Successful report-only
+   persistence and ordinary storage-failure handling remain unchanged.
+3. Added the pending/success/failure Node regression in `tests/test_tsr_calibration_report.py`,
+   bumped the report script asset from v33 to v34 and the embedded worker shell marker from v190
+   to v191 in `app.py`/`templates/offline_tsr.html`, added the release entry, and updated
+   `changes.md`.
+4. Verification passed: the new regression **1/1**; `tests.test_tsr_calibration_report`
+   **22/22**; `tests.test_tsr_sync_reliability` **16/16**; `tests.test_offline_api_status`
+   **17/17**; `tests.test_timeline_tsr_file_details` plus
+   `tests.test_tsr_contact_suggestions` **26/26**; JavaScript syntax; `app.py` AST; release JSON;
+   and `git diff --check`. Full discovery ran **1,305 tests** with **23 failures and 2 skips**;
+   the failures are outside this change in changelog manifest synchronization, purchase-order
+   setup/rate-limit assumptions, staff-creation responses, and the pre-existing TSR offline
+   follow-up Node harness missing its IndexedDB/account-scope stubs.
+5. Browser QA was not run under the repository instruction that prohibits browser automation
+   without separate authorization. No backend/API/database/Railway/production operation,
+   commit, or push was performed.
+
 ## Calibration Report separate X-ray tube output pages
 
 **Status:** Executed — implementation commit `63bd0b0`; owner-authorized publication pending verification.

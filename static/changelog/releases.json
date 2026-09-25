@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-25-calibration-report-draft-context-readiness",
+      "release_date": "2026-09-25",
+      "title": "Reliable Calibration Report Draft Saving",
+      "summary": "Calibration Reports opened from Timeline now wait for the saved TSR context before saving a device draft.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-25-calibration-report-draft-context-readiness-engineers",
+          "category": "Create TSR",
+          "description": "Opening Add Calibration Report from the calendar now keeps Save Draft waiting for the existing TSR to load. If that TSR cannot be loaded, the page reports the actual load problem and does not fall through to ordinary TSR draft mode.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-24-create-tsr-draft-chooser-simplification",
       "release_date": "2026-09-24",
       "title": "A Simpler Way to Continue TSR Drafts",

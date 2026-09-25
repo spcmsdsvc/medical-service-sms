@@ -1,5 +1,25 @@
 # Project Change Log
 
+codex changes - 2026-09-25
+
+- Fixed direct-calendar Calibration Report draft saving in `templates/offline_tsr.html` and
+  `static/js/app-calibration-report.js`: Save Draft now waits for the existing TSR context to
+  finish loading before persisting the report-only device draft, and a failed context load is
+  surfaced as the actual load error instead of silently falling through to ordinary TSR mode.
+
+- Added readiness/failure regression coverage in `tests/test_tsr_calibration_report.py`, bumped
+  the report script asset from v33 to v34 and the embedded offline navigation shell marker to
+  v191 in `app.py`/`templates/offline_tsr.html`, and added the engineer-facing release entry
+  `2026-09-25-calibration-report-draft-context-readiness`. No backend, database, Railway,
+  deployment, commit, or push operation was performed.
+
+- Verification passed: the new regression **1/1**, Calibration Report **22/22**, TSR sync
+  reliability **16/16**, offline API status **17/17**, timeline/contact **26/26**, JavaScript
+  syntax, `app.py` AST, release JSON, and `git diff --check`. Full discovery ran **1,305 tests**
+  with **23 failures and 2 skips** in unrelated changelog, purchase-order, staff-creation, and
+  existing TSR offline-follow-up harness areas. Browser QA remained excluded by project
+  instructions. The implementation is complete but intentionally uncommitted and unpushed.
+
 codex changes - 2026-09-24
 
 - Recorded the owner-approved Calibration Report two-tube output-page implementation plan in

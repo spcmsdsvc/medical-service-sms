@@ -809,9 +809,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('?v=9', self.template_source)
         self.assertIn("app-calibration-report.css?v=9", self.app_source)
         self.assertIn('app-calibration-report.js', self.template_source)
-        self.assertIn('?v=33', self.template_source)
+        self.assertIn('?v=34', self.template_source)
         self.assertIn("app-calibration-report.css?v=9", self.app_source)
-        self.assertIn("app-calibration-report.js?v=33", self.app_source)
+        self.assertIn("app-calibration-report.js?v=34", self.app_source)
         assert_cache_version_at_least(self, 190, self.app_source)
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
         calibration_release = next(item for item in releases if item['release_key'] == '2026-09-24-late-calibration-report')
@@ -880,8 +880,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=9", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=33", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=33'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=34", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=34'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -915,12 +915,15 @@ class CalibrationReportContractTests(unittest.TestCase):
 
     def test_late_calibration_report_mode_contract(self):
         self.assertIn('isOnlineTSRCalibrationMode', self.template_source)
+        self.assertIn('onlineTSRCalibrationContextReadyPromise', self.template_source)
+        self.assertIn('waitForOnlineTSRCalibrationContext', self.template_source)
+        self.assertIn('calibration_context_unavailable', self.template_source)
         self.assertIn('saveStandaloneCalibrationReport', self.template_source)
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=33", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=33'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=34", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=34'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
@@ -1012,6 +1015,16 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertTrue(payload['reportValueRestored'])
         self.assertTrue(payload['successStatus'])
         self.assertEqual(payload['failureStatuses'], ['skipped', 'failed', 'none', 'missing'])
+
+    def test_report_save_waits_for_direct_calendar_context_and_reports_load_failure(self):
+        self.assertTrue(NODE.is_file(), f'Bundled Node runtime missing: {NODE}')
+        result = subprocess.run([str(NODE), '-e', NODE_CALIBRATION_CONTEXT_READY_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertTrue(payload['waitedForContext'])
+        self.assertTrue(payload['savedAfterContextReady'])
+        self.assertTrue(payload['failureWasActionable'])
+        self.assertTrue(payload['saveWasBlockedAfterContextFailure'])
 
     def test_attachment_capacity_guard_does_not_allow_silent_truncation(self):
         self.assertIn('function getTSRAttachmentCapacity', self.template_source)
@@ -1105,6 +1118,75 @@ context.saveStandaloneTSRDraft = async silent => {
     if (status?.message !== 'Calibration Report draft could not be saved on this device.' || status?.tone !== 'danger') throw new Error(mode + ' save incorrectly showed success');
   }
   console.log(JSON.stringify({ meaningful:true, persistenceInvoked:true, reportValueRestored:true, successStatus:true, failureStatuses:failureModes }));
+})().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
+
+'''
+
+NODE_CALIBRATION_CONTEXT_READY_SCRIPT = r'''
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = process.cwd();
+const statuses = [];
+const context = {
+  console,
+  Blob,
+  Uint8Array,
+  ArrayBuffer,
+  Promise,
+  Date,
+  Math,
+  JSON,
+  URLSearchParams,
+  setTimeout,
+  clearTimeout,
+  URL: { createObjectURL:() => 'blob:test', revokeObjectURL:() => {} },
+  document: { querySelector:() => null, querySelectorAll:() => [], createElement:() => ({}), addEventListener:() => {} },
+  CalibrationReportConfig: {},
+  location: { search:'?mode=calibration_report&submission_id=41' },
+  showTSRStatus: (message, tone) => statuses.push({ message, tone })
+};
+context.window = context;
+context.self = context;
+context.globalThis = context;
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(path.join(root, 'static', 'js', 'app-calibration-report.js'), 'utf8'), context);
+
+const api = context.calibrationReport;
+api.apply({ status:'draft', facility:{ name:'Calendar Facility' } });
+let order = [];
+let resolveReady;
+const ready = new Promise(resolve => { resolveReady = resolve; });
+context.waitForOnlineTSRCalibrationContext = async () => {
+  order.push('wait-start');
+  const result = await ready;
+  order.push('wait-end');
+  return result;
+};
+context.saveStandaloneTSRDraft = async () => {
+  order.push('save');
+  return { source:'offline_tsr_page' };
+};
+
+(async () => {
+  const pendingSave = api.saveDraft();
+  await Promise.resolve();
+  if(order.join(',') !== 'wait-start') throw new Error('Save Draft did not wait for the calendar TSR context');
+  resolveReady({ requested:true, ready:true });
+  await pendingSave;
+  if(order.join(',') !== 'wait-start,wait-end,save') throw new Error('Save Draft ran before the calendar TSR context was ready');
+  if(statuses.at(-1)?.message !== 'Calibration Report draft saved with the TSR draft.') throw new Error('ready context did not show the saved status');
+
+  order = [];
+  statuses.length = 0;
+  context.waitForOnlineTSRCalibrationContext = async () => ({ requested:true, ready:false, message:'Saved TSR could not be loaded.' });
+  context.saveStandaloneTSRDraft = async () => { order.push('save'); return { source:'offline_tsr_page' }; };
+  await api.saveDraft();
+  const failure = statuses.at(-1);
+  if(order.length !== 0) throw new Error('Save Draft proceeded after the calendar TSR context failed');
+  if(failure?.message !== 'Saved TSR could not be loaded.' || failure?.tone !== 'danger') throw new Error('context failure did not show an actionable status');
+  console.log(JSON.stringify({ waitedForContext:true, savedAfterContextReady:true, failureWasActionable:true, saveWasBlockedAfterContextFailure:true }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 
 '''

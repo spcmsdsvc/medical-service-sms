@@ -33,7 +33,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=33"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=34"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page offline-tsr-layout">
   <div class="offline-tsr-hero no-print">
@@ -858,6 +858,8 @@ let mySavedSignatureLoadingPromise = null;
 let offlineTSRAttachments = [];
 let onlineTSRRevisionContext = null;
 let onlineTSRCalibrationContext = null;
+let onlineTSRCalibrationContextReadyPromise = Promise.resolve({ requested:false, ready:true });
+let onlineTSRCalibrationLoadError = '';
 let standaloneCurrentDraftId = '';
 let standaloneTSRReservationToken = '';
 let standaloneTSRActiveContextVersion = 0;
@@ -1199,6 +1201,27 @@ function isOnlineTSRRevisionMode(){
 function isOnlineTSRCalibrationMode(){
   return Boolean(onlineTSRCalibrationContext);
 }
+
+// Calendar opens this page with an existing-submission context, but the context is loaded
+// after the offline database, draft, queue, and schedule startup work. Expose that readiness
+// state to the report toolbar so an early Save Draft cannot fall through to ordinary TSR mode.
+window.waitForOnlineTSRCalibrationContext = async function(){
+  const requestInfo = getOnlineTSRCalibrationRequestFromUrl();
+  if(!requestInfo) return { requested:false, ready:true };
+  try{
+    await onlineTSRCalibrationContextReadyPromise;
+  }catch(err){
+    onlineTSRCalibrationLoadError = onlineTSRCalibrationLoadError || err?.message || 'Saved TSR could not be loaded.';
+  }
+  return {
+    requested:true,
+    ready:Boolean(onlineTSRCalibrationContext),
+    message:onlineTSRCalibrationLoadError || (onlineTSRCalibrationContext ? '' : 'Saved TSR could not be loaded for Calibration Report.')
+  };
+};
+window.getOnlineTSRCalibrationLoadError = function(){
+  return onlineTSRCalibrationLoadError || '';
+};
 function hasStandaloneScheduleSelection(){
   return Boolean(String(selectedStandaloneScheduleId || '').trim());
 }
@@ -5130,6 +5153,7 @@ async function restoreStandaloneLateCalibrationDraft(submissionId){
 async function loadOnlineTSRCalibrationFromUrl(){
   const requestInfo = getOnlineTSRCalibrationRequestFromUrl();
   if(!requestInfo) return false;
+  onlineTSRCalibrationLoadError = '';
 
   const endpoint = requestInfo.type === 'submission'
     ? `/get_online_tsr_submission/${encodeURIComponent(requestInfo.id)}`
@@ -5183,10 +5207,11 @@ async function loadOnlineTSRCalibrationFromUrl(){
     return true;
   }catch(err){
     console.warn('[Offline TSR] Unable to load Calibration Report context', err);
+    onlineTSRCalibrationLoadError = err?.message || 'Unable to load saved TSR for Calibration Report.';
     onlineTSRCalibrationContext = null;
     onlineTSRRevisionContext = null;
     applyOnlineTSRCalibrationOnlyGate();
-    showTSRStatus(err?.message || 'Unable to load saved TSR for Calibration Report.', 'danger');
+    showTSRStatus(onlineTSRCalibrationLoadError, 'danger');
     return true;
   }
 }
@@ -8899,9 +8924,30 @@ async function confirmStandaloneTSRFinalSave(){
 
 async function saveStandaloneTSRDraft(silent=false){
   if(silent && standaloneTSRAutosavePaused) return;
+  const calibrationRequest = getOnlineTSRCalibrationRequestFromUrl();
+  if(calibrationRequest){
+    const contextResult = typeof window.waitForOnlineTSRCalibrationContext === 'function'
+      ? await window.waitForOnlineTSRCalibrationContext()
+      : { requested:true, ready:isOnlineTSRCalibrationMode(), message:'Saved TSR could not be loaded for Calibration Report.' };
+    if(!contextResult?.ready || !isOnlineTSRCalibrationMode()){
+      return {
+        skipped:true,
+        reason:'calibration_context_unavailable',
+        message:contextResult?.message || onlineTSRCalibrationLoadError || 'Saved TSR could not be loaded for Calibration Report.'
+      };
+    }
+  }
   if(isOnlineTSRCalibrationMode()){
+    const submissionId = String(onlineTSRCalibrationContext?.submission_id || '').trim();
+    if(!submissionId){
+      return {
+        skipped:true,
+        reason:'calibration_context_unavailable',
+        message:'Saved TSR could not be loaded for Calibration Report.'
+      };
+    }
     const data = collectTSRData();
-    data._late_calibration_report_submission_id = String(onlineTSRCalibrationContext?.submission_id || '');
+    data._late_calibration_report_submission_id = submissionId;
     data._late_calibration_report_pending = true;
     return await saveStandaloneTSRDraftLocally(data, { serverSync:'none' });
   }
@@ -10569,7 +10615,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     .catch(err => console.warn('[Offline TSR Migration] Startup migration check failed', err));
   window.tsrInlineKnowledgeEntries={complaint:[],action:[]};
   resetAllInlineTSRKnowledgeSuggestions();
-  offlineTSRStartup.then(()=>mergeServerStandaloneTSRDrafts()).then(()=>{
+  const offlineTSRContextReady = offlineTSRStartup.then(()=>mergeServerStandaloneTSRDrafts()).then(()=>{
     initializeBlankStandaloneTSR();
     return renderStandaloneTSRDraftPanel();
   }).then(()=>{
@@ -10604,7 +10650,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   }).finally(()=>{
     updateCreateTSRScheduleGate();
+  }).catch(err=>{
+    onlineTSRCalibrationLoadError = onlineTSRCalibrationLoadError || err?.message || 'Saved TSR could not be loaded for Calibration Report.';
+    console.warn('[Offline TSR] Startup context initialization failed', err);
+    return false;
   });
+  onlineTSRCalibrationContextReadyPromise = offlineTSRContextReady;
   document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>{
     renderStandaloneTSRCoreReadiness();
     saveStandaloneTSRDraft(true);

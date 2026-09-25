@@ -1532,9 +1532,25 @@
     }
     if(typeof window.saveStandaloneTSRDraft !== 'function') return;
     try{
+      var calibrationRequest = false;
+      try{
+        var search = window.location && typeof window.location.search === 'string' ? window.location.search : '';
+        if(typeof URLSearchParams === 'function'){
+          calibrationRequest = String(new URLSearchParams(search).get('mode') || '').toLowerCase() === 'calibration_report';
+        }
+      }catch(ignore){ }
+      if(calibrationRequest && typeof window.waitForOnlineTSRCalibrationContext === 'function'){
+        var contextResult = await window.waitForOnlineTSRCalibrationContext();
+        if(contextResult && contextResult.ready === false){
+          showStatus(contextResult.message || (typeof window.getOnlineTSRCalibrationLoadError === 'function' ? window.getOnlineTSRCalibrationLoadError() : '') || 'Saved TSR could not be loaded for Calibration Report.', 'danger');
+          return;
+        }
+      }
       var result = await window.saveStandaloneTSRDraft(true);
       if(!result || result.skipped || result.failed || String(result.source || '').toLowerCase() === 'none'){
-        showStatus('Calibration Report draft could not be saved on this device.','danger');
+        showStatus(result?.reason === 'calibration_context_unavailable'
+          ? (result.message || 'Saved TSR could not be loaded for Calibration Report.')
+          : 'Calibration Report draft could not be saved on this device.','danger');
         return;
       }
       showStatus('Calibration Report draft saved with the TSR draft.', 'success');
