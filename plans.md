@@ -2,7 +2,7 @@
 
 ## Pre-Submission Calibration Report Shortcut
 
-**Status:** Executed — uncommitted
+**Status:** Executed — implementation commit `4f0e4d9` published to `origin/main`; Railway deployment `a20ee955-155b-437b-806f-1e219cacf42f` accepted and building at verification time.
 **Approved:** 2026-09-25 — the owner approved the plan by explicitly requesting its implementation.
 **Execution authorized:** 2026-09-25 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
 **Publication authorized:** 2026-09-25 — the owner instructed “commit and push this change only”.
@@ -134,8 +134,14 @@ Verification:
   was not used per project rule.
 
 No schema/database, backend route, storage, production, Railway, commit, push, deployment, or
-browser operation was performed. Protected dirty artifacts were not intentionally modified. The
-package is left uncommitted and unpublished.
+browser operation was performed during implementation. Protected dirty artifacts were not
+intentionally modified. The owner subsequently authorized publishing only this package. The eight
+authorized implementation, test, release, cache, and record files were committed as `4f0e4d9` and
+pushed to `origin/main`; `git ls-remote` resolved the production branch to
+`4f0e4d944d27547a735205e6da7689bb0d4b696b`. Railway accepted deployment
+`a20ee955-155b-437b-806f-1e219cacf42f` for that exact commit and reported **BUILDING** at the first
+verification. No Railway variable, manual redeploy, production-data, database, or browser action was
+performed, and protected dirty artifacts remained excluded from staging and publication.
 
 
 ## Collapse Historical Report Repair into an Actionable Notice

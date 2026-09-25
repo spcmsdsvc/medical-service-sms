@@ -2,6 +2,14 @@
 
 codex changes - 2026-09-25
 
+- Committed only the authorized Pre-Submission Calibration Report Shortcut package as `4f0e4d9`
+  and pushed it to `origin/main`. Remote verification resolved `refs/heads/main` to
+  `4f0e4d944d27547a735205e6da7689bb0d4b696b`. Railway accepted deployment
+  `a20ee955-155b-437b-806f-1e219cacf42f` for that exact commit and reported **BUILDING** at the
+  first check. Protected `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and unrelated
+  untracked files remained unstaged and unpublished; no Railway variable, manual redeploy,
+  production-data, database, or browser operation occurred.
+
 - The owner separately authorized committing and pushing only the Pre-Submission Calibration Report
   Shortcut package to the Railway production branch. Publication is limited to the Timeline/Create
   TSR implementation, focused tests, cache/release metadata, and required plan/change records;
