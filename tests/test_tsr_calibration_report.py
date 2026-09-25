@@ -1026,6 +1026,17 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertTrue(payload['failureWasActionable'])
         self.assertTrue(payload['saveWasBlockedAfterContextFailure'])
 
+    def test_late_report_draft_does_not_reuse_deleted_final_tsr_draft_id(self):
+        self.assertTrue(NODE.is_file(), f'Bundled Node runtime missing: {NODE}')
+        result = subprocess.run([str(NODE), '-e', NODE_LATE_REPORT_DRAFT_ID_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertEqual(payload['draftId'], 'standalone_tsr_draft_late_calibration_7_41')
+        self.assertTrue(payload['draftSaved'])
+        self.assertTrue(payload['failedUploadSavedLocally'])
+        self.assertTrue(payload['skippedRecoveryRejected'])
+        self.assertTrue(payload['accountScoped'])
+
     def test_attachment_capacity_guard_does_not_allow_silent_truncation(self):
         self.assertIn('function getTSRAttachmentCapacity', self.template_source)
         self.assertIn("errorCode:'too_many_attachments'", self.template_source)
@@ -1187,6 +1198,83 @@ context.saveStandaloneTSRDraft = async () => {
   if(order.length !== 0) throw new Error('Save Draft proceeded after the calendar TSR context failed');
   if(failure?.message !== 'Saved TSR could not be loaded.' || failure?.tone !== 'danger') throw new Error('context failure did not show an actionable status');
   console.log(JSON.stringify({ waitedForContext:true, savedAfterContextReady:true, failureWasActionable:true, saveWasBlockedAfterContextFailure:true }));
+})().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
+
+'''
+
+NODE_LATE_REPORT_DRAFT_ID_SCRIPT = r'''
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const template = fs.readFileSync(path.join(process.cwd(), 'templates', 'offline_tsr.html'), 'utf8');
+function section(start, end){
+  const first = template.indexOf(start);
+  const last = template.indexOf(end, first);
+  if(first < 0 || last <= first) throw new Error('Calibration Report save section missing: ' + start);
+  return template.slice(first, last);
+}
+const snippets = [
+  section("const OFFLINE_TSR_DRAFT_PREFIX =", 'function getStandaloneTSRDraftTitle(data){'),
+  section('async function saveStandaloneCalibrationReport(preparedPayload){', 'function stripStandaloneTSRClientSignatureForCompletedQueuePayload'),
+  section('async function saveStandaloneTSRDraft(silent=false){', 'async function loadStandaloneTSRDraft(){')
+];
+const originalId = 'standalone_tsr_draft_25-2026-09-25';
+const report = { status:'draft', facility:{ name:'Calibration Facility' } };
+const saved = [];
+const context = {
+  console, Promise, Date, Math, JSON,
+  OFFLINE_TSR_ACTIVE_DRAFT_ID:'active_standalone_tsr_draft',
+  standaloneCurrentDraftId:originalId,
+  standaloneTSRAutosavePaused:false,
+  STANDALONE_TSR_ACCOUNT_SCOPE:'7',
+  TSR_SUPPORTING_ATTACHMENT_MAX_BYTES:35 * 1024 * 1024,
+  onlineTSRCalibrationContext:{ submission_id:41, local_draft_id:'' },
+  getOnlineTSRCalibrationRequestFromUrl:() => ({ type:'submission', id:'41' }),
+  isOnlineTSRCalibrationMode:() => true,
+  collectTSRData:() => ({ _draft_id:context.standaloneCurrentDraftId, calibration_report:report }),
+  advanceStandaloneTSRActiveContext:() => 1,
+  saveStandaloneTSRDraftLocally:async data => {
+    if(data._draft_id === originalId) return { skipped:true, reason:'draft_deletion_pending' };
+    saved.push(data);
+    return { id:data._draft_id, source:'offline_tsr_page' };
+  },
+  makeTSRSyncError:message => new Error(message),
+  navigator:{ onLine:false },
+  hasStandaloneScheduleSelection:() => false,
+  updateCreateTSRScheduleGate:() => {},
+  beginStandaloneTSRFinalPreview:() => {}
+};
+context.window = context;
+context.window.waitForOnlineTSRCalibrationContext = async () => ({ requested:true, ready:true });
+context.window.calibrationReport = {
+  collect:() => report,
+  getAttachment:() => ({ id:'report-docx', blob_id:'report-blob', filename:'Calibration_Report.docx' }),
+  resolveAttachmentBlob:async () => ({ size:1 })
+};
+vm.createContext(context);
+vm.runInContext(snippets.join('\n'), context);
+
+(async () => {
+  const result = await context.saveStandaloneTSRDraft(true);
+  if(result?.source !== 'offline_tsr_page' || saved.length !== 1) throw new Error('Save Draft reused the deleted TSR draft key');
+  const expectedId = 'standalone_tsr_draft_late_calibration_7_41';
+  if(saved[0]._draft_id !== expectedId || context.standaloneCurrentDraftId !== expectedId) throw new Error('late report draft did not get its own stable key');
+  if(saved[0]._late_calibration_report_submission_id !== '41') throw new Error('late report submission link was lost');
+  context.STANDALONE_TSR_ACCOUNT_SCOPE = '8';
+  const otherAccount = context.prepareStandaloneLateCalibrationDraft({}, '41');
+  if(otherAccount._draft_id === expectedId) throw new Error('late report draft key was shared across signed-in accounts');
+  context.STANDALONE_TSR_ACCOUNT_SCOPE = '7';
+  context.standaloneCurrentDraftId = originalId;
+  const uploadResult = await context.saveStandaloneCalibrationReport({ _draft_id:originalId, calibration_report:report });
+  if(uploadResult?.status !== 'local_saved' || uploadResult.local_result?.source !== 'offline_tsr_page' || saved.at(-1)?._draft_id !== expectedId){
+    throw new Error('failed final upload did not save the report under its separate draft key');
+  }
+  context.saveStandaloneTSRDraftLocally = async () => ({ skipped:true, reason:'draft_deletion_pending' });
+  let rejected = false;
+  try{ await context.saveStandaloneCalibrationReport({ _draft_id:originalId, calibration_report:report }); }
+  catch(error){ rejected = String(error.message || '').includes('could not be saved durably'); }
+  if(!rejected) throw new Error('skipped recovery save was incorrectly reported as saved');
+  console.log(JSON.stringify({ draftId:expectedId, draftSaved:true, failedUploadSavedLocally:true, skippedRecoveryRejected:true, accountScoped:true }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 
 '''

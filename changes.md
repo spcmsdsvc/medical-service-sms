@@ -2,6 +2,24 @@
 
 codex changes - 2026-09-25
 
+- Corrected the remaining Calendar Calibration Report Save Draft failure in
+  `templates/offline_tsr.html`: report-only local drafts now use a stable key derived from the
+  signed-in account and saved online TSR submission instead of reusing the completed TSR draft
+  ID, which can carry a deletion marker after final save. The same key is used when a final
+  report upload fails and must be kept locally; a skipped recovery save is no longer reported
+  as successful. Previously recovered report drafts remain available until a successful upload
+  clears their device copies.
+  Added a fail-first direct-save and failed-upload regression in
+  `tests/test_tsr_calibration_report.py`, advanced the service-worker shell marker to v192 in
+  `app.py`, and added release `2026-09-25-calibration-report-draft-id-isolation`.
+
+- Verification for the draft-ID correction passed: Calibration Report **23/23**, related TSR
+  sync/offline suites **81/81**, rendered Create TSR inline-script parse **1/1**, `app.py` AST,
+  release JSON, and `git diff --check`. The full suite ran **1,306 tests** with **23 failures
+  and 2 skips**, matching the prior unrelated failure areas: changelog synchronization,
+  purchase-order login rate limiting, staff creation, and incomplete TSR offline-follow-up
+  Node harness stubs. Browser QA remained excluded by project instructions.
+
 - Fixed direct-calendar Calibration Report draft saving in `templates/offline_tsr.html` and
   `static/js/app-calibration-report.js`: Save Draft now waits for the existing TSR context to
   finish loading before persisting the report-only device draft, and a failed context load is

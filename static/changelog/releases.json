@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-25-calibration-report-draft-id-isolation",
+      "release_date": "2026-09-25",
+      "title": "Calibration Report Draft Save Correction",
+      "summary": "Calibration Reports opened from Calendar now save under their own device draft, separate from the completed TSR.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-25-calibration-report-draft-id-isolation-engineers",
+          "category": "Create TSR",
+          "description": "Save Draft for a Calibration Report opened from Calendar no longer reuses the completed TSR's deleted draft key. Reports saved on this device remain linked to the original TSR submission, and interrupted final uploads can still be retried.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-25-calibration-report-draft-context-readiness",
       "release_date": "2026-09-25",
       "title": "Reliable Calibration Report Draft Saving",

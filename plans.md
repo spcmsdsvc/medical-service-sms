@@ -2,7 +2,7 @@
 
 ## Calibration Report direct-calendar Save Draft context readiness
 
-**Status:** Executed — commit `6a1a4a5` pushed to `origin/main`; Railway deployment `c8364e03-2434-43a9-83c4-78869c43834a` is building.
+**Status:** Executed — original commit `6a1a4a5` published; follow-up draft-ID correction verified locally, publication pending.
 **Approved:** 2026-09-25 — the owner approved the proposed fix for the generic Calibration Report draft-save error.
 **Execution authorized:** 2026-09-25 — the owner separately instructed implementation and explicitly excluded commit and push.
 **Detailed:** 2026-09-25.
@@ -118,8 +118,37 @@ rule will change.
 6. The source fix was committed as `6a1a4a5` on local `main` and pushed to `origin/main`. Remote
    verification resolves `refs/heads/main` to
    `6a1a4a5b8f2608719ac44939f0e4b967251aafef`. Railway accepted production deployment
-   `c8364e03-2434-43a9-83c4-78869c43834a`, currently reported as **BUILDING**; the previously
-   successful deployment remains the serving deployment until the new one completes.
+   `c8364e03-2434-43a9-83c4-78869c43834a`, which later reached **SUCCESS**.
+
+### Follow-up correction — 2026-09-25
+
+The owner reported that the same Save Draft error persisted after deployment. The first fix
+handled context-loading timing but missed a second path: a completed TSR's draft ID remains in
+the device deletion queue. The late Calibration Report inherited that ID from the saved TSR,
+and local persistence skipped it as `draft_deletion_pending`. The toolbar then showed its generic
+device-storage error. A new regression using the real page save functions reproduced that skip
+before code changes.
+
+1. In `templates/offline_tsr.html`, assign the late report a stable draft ID based on its signed-in
+   account and online submission ID for both Save Draft and failed final-upload recovery. Keep the existing report
+   submission link and ordinary TSR draft IDs unchanged. Preserve an older recovered local
+   report until a successful upload removes it.
+2. In `templates/offline_tsr.html`, treat a skipped local recovery save as a failure so the
+   upload path cannot claim the report is safely saved when it is not.
+3. In `tests/test_tsr_calibration_report.py`, prove the completed TSR's deletion marker no longer
+   blocks report Save Draft or failed-upload recovery, then run focused report and offline tests.
+4. Bump the embedded service-worker shell marker in `app.py`, add a release entry in
+   `static/changelog/releases.json`, update `changes.md`, and verify syntax, JSON, rendered
+   inline JavaScript, diff scope, and the full suite with known unrelated failures documented.
+5. Preserve the protected dirty database, handoff, and untracked directories. Browser automation
+   and Railway variable/manual redeploy changes remain outside this correction.
+
+The correction regression failed before the code change with “Save Draft reused the deleted TSR
+draft key,” then passed after the change. Calibration Report tests passed **23/23**, related TSR
+sync/offline tests **81/81**, rendered Create TSR inline JavaScript parsing **1/1**, and AST,
+release JSON, and diff checks passed. Full discovery ran **1,306 tests** with **23 failures and 2
+skips** in the same unrelated areas observed before this correction. No browser automation was
+used, and the protected local database, handoff, and untracked files were left unstaged.
 
 ## Calibration Report separate X-ray tube output pages
 
