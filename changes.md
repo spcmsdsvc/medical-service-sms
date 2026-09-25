@@ -3,6 +3,7 @@
 codex changes - 2026-09-26
 
 - The owner authorized committing and pushing only the completed Product Linking/Service History and Dark-Mode Readability packages to `origin/main`. Publication is limited to their application, template, stylesheet, focused test, cache/release, plan, and change-record files; `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated dirty or untracked files remain excluded.
+- Committed the authorized implementation and focused tests as `ee6390d`. Required plan/change records are being published separately so the execution status identifies the immutable implementation commit; no protected database, handoff, or unrelated dirty file was included.
 
 codex changes - 2026-09-25
 

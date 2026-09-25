@@ -2,7 +2,7 @@
 
 ## Dark-Mode Readability for Product History and Calibration Report
 
-**Status:** Executed — publication authorized; awaiting commit
+**Status:** Executed — implementation commit `ee6390d`; publication authorized to `origin/main`.
 **Approved:** 2026-09-25 — the owner approved this plan by explicitly requesting its implementation.
 **Execution authorized:** 2026-09-25 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
 **Publication authorized:** 2026-09-26 — the owner instructed “commit and push these changes only. no db or dirty files”.
@@ -90,7 +90,7 @@ and `git diff --check` validations passed. Protected `scheduler.db`, handoffs, `
 
 ## Product Linking, Read-Only Engineer Access, and Service History
 
-**Status:** Executed — publication authorized; awaiting commit
+**Status:** Executed — implementation commit `ee6390d`; publication authorized to `origin/main`.
 **Approved:** 2026-09-25 — the owner approved this plan by explicitly requesting its implementation.
 **Execution authorized:** 2026-09-25 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
 **Publication authorized:** 2026-09-26 — the owner instructed “commit and push these changes only. no db or dirty files”.
