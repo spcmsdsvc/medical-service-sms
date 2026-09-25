@@ -2,6 +2,13 @@
 
 codex changes - 2026-09-25
 
+- Committed only the authorized Reimbursement LPR-readiness package as `a117995` and pushed it to
+  `origin/main`. Remote verification resolved `refs/heads/main` to
+  `a11799565128aaa2a48aeb35a5cb574afb46e229`. Railway accepted production deployment
+  `ae19c184-73c5-49ff-9583-b3eb9a7f7e16`, which completed with **SUCCESS**. The ignored local
+  `.env`, protected `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and unrelated untracked
+  files were excluded; no Railway variable, manual redeploy, or production-data operation occurred.
+
 - Set the ignored local `.env` flag `LPR_ACCEPTING_NEW=false` at the owner's request so the local
   Reimbursement readiness model matches production drain mode: Office/Field Items without an
   existing linked LPR no longer produces an LPR attention item, while an existing linked LPR

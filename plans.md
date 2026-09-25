@@ -2,9 +2,11 @@
 
 ## Reimbursement readiness follows LPR availability
 
-**Status:** Executed — uncommitted; implementation and local verification complete.
+**Status:** Executed — implementation commit `a117995` published to `origin/main`; Railway deployment `ae19c184-73c5-49ff-9583-b3eb9a7f7e16` succeeded.
 **Approved:** 2026-09-25 — the owner asked to implement the proposed removal of the stale LPR attention warning; repository rules require a separate implementation go-ahead after this approval record.
 **Detailed:** 2026-09-25.
+**Execution authorized:** 2026-09-25 — the owner separately said “go ahead.”
+**Publication authorized:** 2026-09-25 — the owner separately instructed commit and push of only this reimbursement change.
 
 ### Context and decisions
 
@@ -105,9 +107,13 @@ Verification completed:
   with HTTP 429, two shared-state staff-creation setup failures, and four pre-existing offline TSR
   harness `ReferenceError` failures. The affected reimbursement/LPR tests were green.
 
-No backend/API, schema, database, feature-flag, Railway, production, browser, commit, push, or
-deployment action was performed. `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, and
-all unrelated working-tree changes remain protected and outside this implementation.
+No backend/API, schema, database, feature-flag, Railway-variable, production-data, or browser action
+was performed. The six authorized source/test/cache/release/record files were committed as
+`a117995` and pushed to `origin/main`; remote verification resolved that branch to the full commit
+`a11799565128aaa2a48aeb35a5cb574afb46e229`, and Railway deployment
+`ae19c184-73c5-49ff-9583-b3eb9a7f7e16` succeeded. `scheduler.db`, handoff files, `.claude/`,
+`output/`, `tmp/`, the ignored local `.env`, and all unrelated working-tree changes remained
+protected and outside the commit.
 
 ## Calibration Report direct-calendar Save Draft context readiness
 
