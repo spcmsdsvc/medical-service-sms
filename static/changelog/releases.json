@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-25-calibration-repair-notice",
+      "release_date": "2026-09-25",
+      "title": "Clearer Historical Report Repair Alerts",
+      "summary": "Calibration Center now keeps historical repair details out of the way until attention is needed.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-25-calibration-center-repair-notice-admins",
+          "category": "Calibration Center",
+          "description": "Authorized administrators now see a compact notice only when historical Calibration Report files are repairable or blocked. View repairs opens the existing details and actions, while completed repairs and inventory failures provide clear status feedback.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-25-reimbursement-lpr-availability",
       "release_date": "2026-09-25",
       "title": "Reimbursement LPR Availability Guidance",

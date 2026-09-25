@@ -1,5 +1,114 @@
 # Medical Service SMS — Approved Plans
 
+## Collapse Historical Report Repair into an Actionable Notice
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-25 — the owner approved the Historical Report Repair notice/collapse plan.
+**Execution authorized:** 2026-09-25 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
+**Detailed:** 2026-09-25.
+
+### Context and decisions
+
+The strict-admin Calibration Center currently renders the full Historical Report Repair inventory,
+warning, summary, table, and Repair All controls on every page load, even when every recognized
+revision is already repaired. The inventory endpoint already returns `repairable`,
+`already_repaired`, and `blocked` counts, so the page can make the repair workflow conditional
+without changing repair detection, file mutation, authorization, storage, or API behavior.
+
+The page will show only a compact, visible notice when `repairable + blocked` is greater than zero.
+The notice will distinguish repairable and blocked counts and expose a **View repairs** control;
+the existing details remain available behind that control. Already-repaired revisions can remain
+in the expanded inventory for context but do not trigger attention. A final successful action that
+clears all actionable items becomes a current-visit success notice; a fresh page load evaluates the
+server inventory again and hides the repair area when no attention is required. Inventory failures
+remain visible as a compact error notice.
+
+### Files and boundaries
+
+- `templates/calibration_center.html`: hide the repair card/loading state by default, add compact
+  attention/success/error notices and accessible View repairs/Hide details controls, and preserve
+  the existing warning, totals, inventory, Apply, Repair All, and confirmation behavior inside the
+  expandable details area. Keep expansion session-only and open during active repairs while
+  actionable inventory remains.
+- `tests/test_calibration_center.py`: add focused source/runtime-contract coverage for hidden
+  initial state, attention counts, already-repaired-only hiding, accessible expansion, completion
+  success, visible load failures, and preserved expanded actions.
+- `app.py`: advance only the embedded service-worker application-shell marker from v193 to v194
+  with a repair-notice label; do not change backend routes or service-worker routing.
+- `static/changelog/releases.json`, `changes.md`, and this plan: record the admin-facing behavior,
+  cache impact, verification, and uncommitted outcome.
+- Deliberately excluded: backend/API/repair logic, file/document/storage mutation, schema/database
+  work, authorization/CSRF changes, browser automation, Railway/production operations, commit,
+  push, deployment, `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, and unrelated
+  working-tree changes.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first coverage.** Re-read applicable instructions and `changes.md`, inspect
+   protected Git state, the current repair template/functions, tests, cache marker, and release
+   format. Add the smallest focused notice contract and run it against the unchanged template to
+   capture truthful fail-first evidence; stop if protected work or current source invalidates scope.
+2. **Expandable repair notice — `templates/calibration_center.html`.** Add hidden-by-default
+   repair markup and client state that reveals a compact notice only when repairable or blocked
+   inventory exists, separately displays both counts, expands/collapses the existing details with
+   `aria-expanded`/`aria-controls`, leaves already-repaired-only inventory hidden, keeps details open
+   while repairs/actionable items remain, and shows current-visit completion or load-error notices.
+   Preserve existing Apply and sequential Repair All actions and all API calls.
+3. **Focused verification contracts — `tests/test_calibration_center.py`.** Prove the required
+   DOM IDs/ARIA controls, no-flash hidden defaults, attention calculation, already-repaired-only
+   suppression, completion/error states, and preservation of expanded repair actions. Keep tests
+   source/inline-script based and do not use browser automation or live `scheduler.db`.
+4. **Distribution and records.** Advance the embedded shell marker to v194, add one published
+   admins-facing Calibration Center release item, append detailed same-day `changes.md` bullets,
+   and keep this plan In progress until verification, then record exact outcomes and mark it
+   **Executed — uncommitted**.
+5. **Verification and handoff.** Run the new notice contract fail-first checkpoint, focused
+   Calibration Center and historical-repair suites, cache/release checks, rendered inline-JavaScript
+   syntax validation, the proportionate full unittest suite, and `git diff --check`. Self-review the
+   final diff against this plan and report exact pass/fail/skip results, baseline failures, and any
+   deviations. Leave all work uncommitted, unpushed, undeployed, and without Railway changes.
+
+### Acceptance and risks
+
+- No repair card or loading flash is visible on initial load or when only already-repaired/empty
+  inventory exists.
+- Repairable and blocked files produce a compact notification with separate counts; View repairs
+  exposes all existing repair details and actions, and Hide details collapses them accessibly.
+- Applying the last actionable repair produces a current-visit success notice; a failed inventory
+  request remains visible as an error notice.
+- Repair detection, API payloads, document/file behavior, authorization, CSRF, storage, and schema
+  remain unchanged; protected dirty artifacts remain untouched.
+
+### Execution outcome — 2026-09-25
+
+Implemented the notice/collapse behavior in `templates/calibration_center.html`, added focused
+source and Node state coverage in `tests/test_calibration_center.py`, advanced the live embedded
+shell marker from v193 to
+`medical-service-pwa-offline-navigation-v194-calibration-repair-notice` in `app.py`, and added
+the published admins-facing `2026-09-25-calibration-center-repair-notice-admins` release item.
+The v193 identifier remains only as a historical source marker for existing feature-contract tests;
+the emitted `CACHE_VERSION` is v194.
+
+Verification completed:
+
+- Fail-first checkpoint: the four new notice contracts failed against the unchanged template;
+  after implementation `tests.test_calibration_center` passed **18/18**.
+- Historical repair/document coverage passed **45/45** across Calibration Center, historical
+  repair PDF, and calibration certificate title-repair suites.
+- Cache/release coverage passed **7/7** with **1 documented skip**; Reimbursement readiness
+  compatibility passed **10/10**. Release JSON/entry validation, `app.py` AST parsing, isolated
+  Jinja rendering, inline Calibration Center JavaScript syntax, and `git diff --check` passed.
+- Full discovery ran **1,312 tests: 1,286 passed, 24 unrelated failures, and 2 skips**. Failures
+  were the pre-existing changelog manifest sync/order issue, LPR single-flight authorization
+  setup, purchase-order renewal/coverage setup rate limiting, staff-creation setup/validation,
+  and TSR offline-follow-up harness references. No Calibration Center or historical repair test
+  failed in the final run.
+
+No backend/API, repair logic, database schema, document/storage, authorization, Railway, production,
+browser, commit, push, or deployment action was performed. Protected `scheduler.db`, handoff,
+`.claude/`, `output/`, `tmp/`, and unrelated working-tree changes remain untouched and uncommitted.
+
+
 ## Reimbursement readiness follows LPR availability
 
 **Status:** Executed — implementation commit `a117995` published to `origin/main`; Railway deployment `ae19c184-73c5-49ff-9583-b3eb9a7f7e16` succeeded.

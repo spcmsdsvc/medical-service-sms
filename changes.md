@@ -2,6 +2,66 @@
 
 codex changes - 2026-09-25
 
+- Began the owner-authorized Historical Report Repair notice package. Recorded the complete
+  implementation plan in `plans.md` with status **In progress**; protected `scheduler.db`, handoff,
+  `.claude/`, `output/`, `tmp/`, and unrelated working-tree changes remain outside scope. The
+  repair template, focused contracts, cache marker, release manifest, and this log are the only
+  authorized records/code surfaces for this package; no backend, database, storage, Railway,
+  commit, push, or deployment action has occurred.
+
+- Added fail-first Calibration Center contracts for the hidden repair surface, separate repairable
+  and blocked notice counts, accessible expansion controls, completion/error notices, and retained
+  Apply/Repair All actions. The new assertions intentionally precede the template implementation
+  and are expected to fail until the notice behavior is added.
+
+- Implemented the Calibration Center Historical Report Repair notice: the repair area and loading
+  state start hidden, repairable/blocked inventory produces separate-count View repairs notice,
+  existing details use accessible View repairs/Hide details controls, already-repaired-only and
+  empty inventories stay hidden, completed actions show a current-visit success notice, and
+  inventory failures show a compact error. Existing repair API calls, Apply/Repair All flow, and
+  document/storage/auth behavior remain unchanged.
+
+- Advanced the embedded application-shell marker from v193 to
+  `medical-service-pwa-offline-navigation-v194-calibration-repair-notice` so existing devices
+  receive the changed Calibration Center page. No service-worker route, backend endpoint, or
+  production/Railway setting changed.
+
+- Added the published admins-facing release item
+  `2026-09-25-calibration-center-repair-notice-admins` describing the compact actionable notice,
+  expandable repair details, completion feedback, and visible inventory failure state.
+
+- Extended Calibration Center contracts to pin the v194 cache marker and the new published
+  admins release item, so later cache/release edits cannot silently omit this distribution record.
+
+- Added a small Node-based Calibration Center surface harness that executes the inline state
+  transitions without browser automation: initial hidden state, repairable/blocked notice counts,
+  accessible expansion, already-repaired-only hiding, completion success, and visible load error.
+
+- Corrected the Node state harness to seed the template's initial hidden/ARIA attributes before
+  exercising the extracted controller; it remains a test-only DOM model and does not alter the
+  production template or browser behavior.
+
+- Corrected the harness's fake `classList.toggle` presence semantics so its DOM model matches the
+  browser API; the production controller was unchanged.
+
+- Retained the v193 Reimbursement shell identifier as an explicit historical marker beside the
+  v194 cache value. This keeps the existing feature-specific source contract truthful while the
+  live application shell advances to v194 for the repair notice.
+
+- Verification completed for the Historical Report Repair package: the new fail-first contracts
+  initially failed 4/17 against the unchanged template, then Calibration Center passed 18/18;
+  combined Calibration Center, historical repair PDF, and certificate title-repair coverage passed
+  45/45; cache/release coverage passed 7/7 with 1 skip; Reimbursement readiness compatibility
+  passed 10/10; app AST, Jinja rendering, inline JavaScript syntax, release JSON, and
+  `git diff --check` passed. Full discovery ran 1,312 tests with 1,286 passed, 24 unrelated
+  failures, and 2 skips in changelog/order/rate-limit, LPR, staff-creation, and TSR offline
+  follow-up areas. No Calibration Center or historical-repair test failed.
+
+- Marked the Historical Report Repair notice plan **Executed — uncommitted** in `plans.md`. The
+  package remains uncommitted, unpushed, undeployed, and without Railway or production changes;
+  protected database, handoff, `.claude/`, `output/`, `tmp/`, and unrelated worktree changes were
+  not staged or modified by this implementation.
+
 - Committed only the authorized Reimbursement LPR-readiness package as `a117995` and pushed it to
   `origin/main`. Remote verification resolved `refs/heads/main` to
   `a11799565128aaa2a48aeb35a5cb574afb46e229`. Railway accepted production deployment
