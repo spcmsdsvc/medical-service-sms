@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-25
 
+- Published the Calendar Calibration Report draft-ID correction as `cf15229` on
+  `origin/main` and verified the remote branch points to that commit. Railway accepted
+  deployment `97fe3fe0-453e-45b8-ace5-c75619ef80fd`, which succeeded; no manual redeploy or
+  Railway-variable change was made. `scheduler.db`, the handoff file, and unrelated
+  untracked files stayed unstaged and were not included in the published commit.
+
 - Corrected the remaining Calendar Calibration Report Save Draft failure in
   `templates/offline_tsr.html`: report-only local drafts now use a stable key derived from the
   signed-in account and saved online TSR submission instead of reusing the completed TSR draft

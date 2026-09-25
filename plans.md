@@ -2,7 +2,7 @@
 
 ## Calibration Report direct-calendar Save Draft context readiness
 
-**Status:** Executed — original commit `6a1a4a5` published; follow-up draft-ID correction verified locally, publication pending.
+**Status:** Executed — original commit `6a1a4a5` and follow-up draft-ID correction commit `cf15229` published to `origin/main`; Railway deployment `97fe3fe0-453e-45b8-ace5-c75619ef80fd` succeeded.
 **Approved:** 2026-09-25 — the owner approved the proposed fix for the generic Calibration Report draft-save error.
 **Execution authorized:** 2026-09-25 — the owner separately instructed implementation and explicitly excluded commit and push.
 **Detailed:** 2026-09-25.
