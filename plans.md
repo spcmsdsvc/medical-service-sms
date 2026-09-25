@@ -2,9 +2,10 @@
 
 ## Collapse Historical Report Repair into an Actionable Notice
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `925b6ad` published to `origin/main`; Railway deployment `c4024b83-7842-4025-b46a-7673fa6d74f9` succeeded.
 **Approved:** 2026-09-25 — the owner approved the Historical Report Repair notice/collapse plan.
 **Execution authorized:** 2026-09-25 — the owner explicitly said “PLEASE IMPLEMENT THIS PLAN”.
+**Publication authorized:** 2026-09-25 — the owner instructed “commit and push only this change”.
 **Detailed:** 2026-09-25.
 
 ### Context and decisions
@@ -104,9 +105,12 @@ Verification completed:
   and TSR offline-follow-up harness references. No Calibration Center or historical repair test
   failed in the final run.
 
-No backend/API, repair logic, database schema, document/storage, authorization, Railway, production,
-browser, commit, push, or deployment action was performed. Protected `scheduler.db`, handoff,
-`.claude/`, `output/`, `tmp/`, and unrelated working-tree changes remain untouched and uncommitted.
+No backend/API, repair logic, database schema, document/storage, authorization, Railway-variable,
+production-data, or browser action was performed. The six authorized files were committed as
+`925b6ad` and pushed to `origin/main`; remote verification resolved that branch to
+`925b6ada47f2501846efce2c6007fd557f8ec8d8`, and Railway deployment
+`c4024b83-7842-4025-b46a-7673fa6d74f9` succeeded. Protected `scheduler.db`, handoff, `.claude/`,
+`output/`, `tmp/`, and unrelated working-tree changes remained excluded.
 
 
 ## Reimbursement readiness follows LPR availability
