@@ -10,15 +10,21 @@ codex changes - 2026-09-25
 - Added readiness/failure regression coverage in `tests/test_tsr_calibration_report.py`, bumped
   the report script asset from v33 to v34 and the embedded offline navigation shell marker to
   v191 in `app.py`/`templates/offline_tsr.html`, and added the engineer-facing release entry
-  `2026-09-25-calibration-report-draft-context-readiness`. No backend, database, Railway,
-  deployment, commit, or push operation was performed.
+  `2026-09-25-calibration-report-draft-context-readiness`. No backend/database change or Railway
+  variable/manual redeploy operation was performed.
 
 - Verification passed: the new regression **1/1**, Calibration Report **22/22**, TSR sync
   reliability **16/16**, offline API status **17/17**, timeline/contact **26/26**, JavaScript
   syntax, `app.py` AST, release JSON, and `git diff --check`. Full discovery ran **1,305 tests**
   with **23 failures and 2 skips** in unrelated changelog, purchase-order, staff-creation, and
   existing TSR offline-follow-up harness areas. Browser QA remained excluded by project
-  instructions. The implementation is complete but intentionally uncommitted and unpushed.
+  instructions.
+
+- Committed the fix as `6a1a4a5` on `main` and pushed `origin/main`, verified remotely as
+  `6a1a4a5b8f2608719ac44939f0e4b967251aafef`. Railway accepted production deployment
+  `c8364e03-2434-43a9-83c4-78869c43834a`, which is currently **BUILDING**; no Railway variables or
+  manual redeploy were changed. The unrelated handoff, scheduler database, and untracked local
+  directories remain unstaged.
 
 codex changes - 2026-09-24
 

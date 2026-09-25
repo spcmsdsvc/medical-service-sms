@@ -2,7 +2,7 @@
 
 ## Calibration Report direct-calendar Save Draft context readiness
 
-**Status:** Executed — uncommitted; commit and push explicitly deferred by owner.
+**Status:** Executed — commit `6a1a4a5` pushed to `origin/main`; Railway deployment `c8364e03-2434-43a9-83c4-78869c43834a` is building.
 **Approved:** 2026-09-25 — the owner approved the proposed fix for the generic Calibration Report draft-save error.
 **Execution authorized:** 2026-09-25 — the owner separately instructed implementation and explicitly excluded commit and push.
 **Detailed:** 2026-09-25.
@@ -87,7 +87,8 @@ rule will change.
   written.
 - Existing report-only local persistence and ordinary Create TSR draft behavior remain unchanged.
 - The service-worker bump ensures the fixed inline page is distributed without changing API or
-  database behavior. Protected dirty artifacts remain untouched, and no commit or push occurs.
+  database behavior. Protected dirty artifacts remain unstaged; no Railway variables or manual
+  redeploy were used.
 
 ### Execution outcome — 2026-09-25
 
@@ -112,8 +113,13 @@ rule will change.
    setup/rate-limit assumptions, staff-creation responses, and the pre-existing TSR offline
    follow-up Node harness missing its IndexedDB/account-scope stubs.
 5. Browser QA was not run under the repository instruction that prohibits browser automation
-   without separate authorization. No backend/API/database/Railway/production operation,
-   commit, or push was performed.
+   without separate authorization. No backend/API/database change or Railway variable/manual
+   redeploy operation was performed.
+6. The source fix was committed as `6a1a4a5` on local `main` and pushed to `origin/main`. Remote
+   verification resolves `refs/heads/main` to
+   `6a1a4a5b8f2608719ac44939f0e4b967251aafef`. Railway accepted production deployment
+   `c8364e03-2434-43a9-83c4-78869c43834a`, currently reported as **BUILDING**; the previously
+   successful deployment remains the serving deployment until the new one completes.
 
 ## Calibration Report separate X-ray tube output pages
 
