@@ -2,6 +2,14 @@
 
 codex changes - 2026-09-25
 
+- Committed only the authorized Historical Report Repair notice package as `925b6ad` and pushed it
+  to `origin/main`. Remote verification resolved `refs/heads/main` to
+  `925b6ada47f2501846efce2c6007fd557f8ec8d8`. Railway deployment
+  `c4024b83-7842-4025-b46a-7673fa6d74f9` completed with **SUCCESS**. The pre-existing local
+  reimbursement publication-record commit, protected `scheduler.db`, handoff, `.claude/`,
+  `output/`, `tmp/`, and unrelated untracked files were excluded from the remote publication; no
+  Railway variable, manual redeploy, production-data, or browser operation occurred.
+
 - Began the owner-authorized Historical Report Repair notice package. Recorded the complete
   implementation plan in `plans.md` with status **In progress**; protected `scheduler.db`, handoff,
   `.claude/`, `output/`, `tmp/`, and unrelated working-tree changes remain outside scope. The
