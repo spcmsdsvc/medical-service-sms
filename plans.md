@@ -2,9 +2,10 @@
 
 ## Calibration Report Result Capacity, Excel Paste, and 8% Criteria
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `b03fc23`; publication authorized to `origin/main`.
 **Approved:** 2026-09-26 — the owner approved this plan by explicitly saying “implement the plan”.
 **Execution authorized:** 2026-09-26 — the owner separately authorized implementation and requested that it not be over-engineered or over-checked.
+**Publication authorized:** 2026-09-26 — the owner instructed “commit and push these changes only”.
 **Detailed:** 2026-09-26.
 
 ### Summary and boundaries
@@ -86,6 +87,10 @@ limiting), and 2 skips. The available DOCX renderer could not run because bundle
 `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated owner files remain
 untouched; no browser/Codex UI, commit, push, deployment, Railway, production, or destructive
 database operation occurred.
+
+The owner later authorized publication of this package only. The implementation, focused tests,
+cache/release metadata, canonical template, and execution records were committed as `b03fc23`;
+protected dirty and unrelated files remained excluded from staging and publication.
 
 
 ## Visible Client Group Picker
