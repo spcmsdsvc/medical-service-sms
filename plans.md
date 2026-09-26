@@ -1,5 +1,132 @@
 # Medical Service SMS — Approved Plans
 
+## Regional Engineer Add/Edit Access for All Equipment Inventories
+
+**Status:** Executed — implementation commit `c29a00e`; publication authorized to `origin/main`.
+**Approved:** 2026-09-26 — the owner explicitly authorized implementation with “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-26 — the same owner instruction authorizes this bounded implementation package.
+**Publication authorized:** 2026-09-26 — the owner instructed “commit and push this change only”.
+**Detailed:** 2026-09-26.
+
+### Context and intended outcome
+
+Engineers currently have read-only access to the regular Products, Genoray, and Vieworks
+inventories. Restore Add/Edit access for engineers whose linked Engineer profile resolves to
+Cebu/BC02 or Davao/BC03. Manila/Main/BC01 engineers remain read-only unless their account already
+has existing administrator authority. Inventory records are global and have no branch owner, so
+the actor's resolved profile branch controls permission but does not restrict which record may be
+edited.
+
+### Decisions taken
+
+- Use one shared active, authenticated, non-approver-only regional-engineer predicate based on the
+  linked Engineer profile and `resolve_engineer_profile_branch_code()`; only BC02 and BC03 pass.
+- Missing, unsupported, blank, or BC01/Manila profiles do not receive the engineer Add/Edit path.
+- Preserve generic `admin`, validated regional-admin, superadmin, and other existing administrator
+  behavior. Regional engineers may add/edit any global inventory record.
+- Add/Edit covers Products, Genoray, and Vieworks POST/PUT and page controls only. Delete, CSV
+  import, PM administration, Product-linked purchase-order coverage editing, migrations, and
+  branch ownership remain on their existing administrator-only boundaries.
+
+### Investigation
+
+- `app.py:7673-7684` already provides the strict `resolve_engineer_profile_branch_code()` mapping
+  through `STOCK_INVENTORY_BRANCH_ALIASES`, returning empty for unsupported or missing branches.
+- `app.py:7827-7915` currently gates Product, Genoray, and Vieworks access through administrator
+  helpers, while `app.py:3941-3949` keeps inventory PM administration on those strict gates.
+- `app.py:25580-25624` renders the three inventory pages with `product_can_edit` and separate
+  delete/PM flags; `app.py:58323`, `58515`, `59464`, `59520`, `59839`, and `59895` guard the
+  Product/Genoray/Vieworks Add/Edit endpoints.
+- Existing focused tests in `tests/test_product_vieworks_links_history.py`,
+  `tests/test_genoray_inventory.py`, and `tests/test_vieworks_inventory.py` establish the current
+  engineer read-only behavior, page/sidebar controls, CRUD flows, delete/import, PM, and admin
+  controls. They will be extended with linked Cebu, Davao, Manila, unresolved/unsupported, and
+  inactive profile cases.
+
+### Numbered execution steps
+
+1. Preserve the protected dirty state, add this complete plan at the top of `plans.md` as In
+   progress, and append the factual start entry to the existing 2026-09-26 section of
+   `changes.md`. Do not touch `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, or unrelated
+   owner work.
+2. Add focused fail-first authorization contracts to the three inventory test modules before
+   changing `app.py`. Fixtures must link active Cebu and Davao Engineer profiles, Manila/BC01,
+   missing and unsupported profiles, an inactive engineer, and existing admin/superadmin/regional
+   admin accounts. Positive controls must assert the new Cebu/Davao Add/Edit expectation and fail
+   against the unchanged source; negative controls must cover page controls, direct POST/PUT,
+   unchanged records, Delete, CSV Import, and PM denial.
+3. In `app.py`, add one shared predicate for an active authenticated account that is not
+   approver-only, has a linked Engineer profile, and resolves to BC02 or BC03. Add narrow Product,
+   Genoray, and Vieworks edit predicates that combine the existing administrator predicate with
+   this regional-engineer predicate. Use the narrow predicates only for `product_can_edit` and the
+   matching Add/Edit POST/PUT routes. Keep Product Delete, Genoray/Vieworks Delete and CSV Import,
+   PM, and Product P.O. coverage on existing administrator-only gates.
+4. Update the focused tests so active Cebu/Davao engineers can add and edit records in all three
+   inventories and see the Add/Edit controls; Manila, missing, unsupported, and inactive profiles
+   remain read-only/denied; generic admin, validated regional admin, and superadmin retain access;
+   and regional engineers remain denied from Delete, import, and PM administration without record
+   mutation on denied requests.
+5. Add one concise published 2026-09-26 release item to `static/changelog/releases.json` for
+   administrators and engineers. Do not bump the service worker because only server-side
+   authorization and existing server-rendered flags change. Append exact fail-first, focused,
+   compile/Jinja/AST/release, diff, full-discovery, and protected-state results to `changes.md`.
+   Close this plan with a truthful execution outcome and leave all changes uncommitted,
+   unpushed, undeployed, and without Railway/production/database changes.
+
+### Deliberately excluded
+
+No schema or migration, inventory branch ownership, frontend permission architecture, new API
+payload, client-side authorization rule, Delete/CSV import/PM/PO coverage broadening, service-worker
+bump, browser/Codex UI automation, database reset or production operation, Railway change, commit,
+push, merge, rebase, or deployment is authorized.
+
+### Verification and after implementation
+
+- Run the new focused authorization assertions against unchanged source first and record the
+  expected Cebu/Davao failures without discarding owner work.
+- Run the three focused inventory suites plus `tests/test_admin_capabilities.py` and
+  `tests/test_product_inventory_mutations.py` after implementation. Validate Python compilation/
+  AST, relevant Jinja rendering, release JSON, and `git diff --check`.
+- Run full unittest discovery once with a unique disposable database; report exact totals and
+  distinguish unrelated baseline failures. Do not use browser automation. Perform a final diff and
+  protected-path review, and do not commit or publish.
+
+### Risks and safety net
+
+The main risk is accidentally widening destructive/admin-only inventory functions while restoring
+edit access. Separate edit predicates and direct endpoint/page assertions protect those boundaries;
+the existing validation, linking, rename, BSID, history, export, and read paths remain unchanged.
+
+### Execution outcome (2026-09-26)
+
+Implemented the shared `can_manage_regional_inventory_as_engineer()` predicate in `app.py`. It
+requires an authenticated active account that is not approver-only, follows the linked Engineer
+profile through `resolve_engineer_profile_branch_code()`, and accepts only BC02/Cebu or BC03/Davao.
+Added narrow Product, Genoray, and Vieworks edit helpers that preserve all existing administrator
+paths. The three inventory page flags and only their Add/Edit POST/PUT endpoints use the new helpers;
+Delete, CSV import, PM, and Product P.O. coverage remain administrator-only.
+
+Updated the three focused inventory test modules with linked Cebu/Davao positive controls, Manila,
+missing, unsupported, and inactive denials, page `productCanEdit` assertions, direct mutation/no-
+mutation checks, administrator coverage, and preserved delete/import/PM denial. The pre-change
+fail-first run against the unchanged source recorded the expected failures: Product focused cases
+ran 2 with 2 failures and 4 errors; Genoray cases ran 2 with 1 failure and 4 errors; Vieworks
+cases ran 2 with 5 errors. After implementation, the focused inventory/admin/mutation batch passed
+45/45.
+
+Added the published `2026-09-26-regional-engineer-inventory-edit` release item for admins and
+engineers. No service-worker marker changed. AST parsing for `app.py` and the focused tests,
+`products.html` Jinja parsing, release JSON parsing, and `git diff --check` passed. One full
+`unittest discover -s tests` run used the suite's unique disposable database and ran 1,335 tests:
+1,314 passed, 19 unrelated baseline/order-dependent failures (older Calibration Center v195
+expectation, changelog manifest synchronization, standalone LPR creation, and purchase-order
+rate-limit setup), and 2 skips. No browser/Codex UI, commit, push, deployment, Railway,
+production, database, or destructive operation occurred; protected dirty paths remain untouched.
+
+The owner subsequently authorized publishing this package only. The application change, focused
+tests, and release metadata were committed as `c29a00e`; protected dirty and unrelated files remain
+excluded from staging and publication.
+
 ## Calibration Report Result Capacity, Excel Paste, and 8% Criteria
 
 **Status:** Executed — implementation commit `b03fc23`; publication authorized to `origin/main`.
