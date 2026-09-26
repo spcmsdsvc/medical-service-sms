@@ -16,7 +16,7 @@
       { label: '5.4 Exposure Time Accuracy', criteria: 'The actual time shall be within +-10% of the set time. For exposure time less than 100ms, +-20%' }
     ],
     performance: [
-      'The average kVp shall not differ from the nominal kVp by ±6% for voltages less than or equal to 100kVp, or 6kV for voltages greater than 100kVp.',
+      'The average kVp shall not differ from the nominal kVp by ±8% for voltages less than or equal to 100kVp, or 6kV for voltages greater than 100kVp.',
       'The actual time shall be within +-10% of the set time. For exposure time less than 100ms, +-20%'
     ],
     exposureHeadersSmall: ['Nominal kVP Settings', 'Measured kVP', 'mA / mAs', 'Dose (uGy)', 'Dose Rate (mGy/s)', 'Time Settings (msec)', 'Measured Exposure Time (msec)'],
@@ -32,7 +32,7 @@
   var EXACT_FIT_CAPACITIES = {
     page1_value: { name:'page1_value', maxLength:40, label:'Page 1 identity/value' },
     page1_narrow: { name:'page1_narrow', maxLength:22, label:'Page 1 narrow value' },
-    page2_result: { name:'page2_result', maxLength:28, label:'Page 2 check result' },
+    page2_result: { name:'page2_result', maxLength:60, label:'Page 2 check result' },
     page2_detail: { name:'page2_detail', maxLength:30, label:'Page 2 calibration detail' },
     page3_exposure: { name:'page3_exposure', maxLength:12, label:'Page 3 exposure value' },
     page3_performance: { name:'page3_performance', maxLength:36, label:'Page 3 performance result' }
@@ -576,6 +576,7 @@
     qa('.calibration-report-tab').forEach(function(button){ button.addEventListener('click', function(){ setEditorPage(Number(button.getAttribute('data-cr-page') || 1)); }); button.addEventListener('keydown', handleTabKeydown); });
     editor.addEventListener('input', onEditorInput);
     editor.addEventListener('change', onEditorInput);
+    editor.addEventListener('paste', onEditorPaste);
     q('#cr-signature-clear')?.addEventListener('click', clearSignature);
     setupSignatureCanvas();
     applyDomFromState();
@@ -723,6 +724,10 @@
     syncTube2PageVisibility();
   }
 
+  function finishEditorChange(){
+    state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); updateSignatureStatus(); renderCertificateControls(); syncTube2PageVisibility(); renderCard(); syncAutoDocument(); scheduleDraftSave();
+  }
+
   function onEditorInput(event){
     var element = event.target;
     setCalibrationSaveStatus('unsaved');
@@ -744,7 +749,60 @@
       syncCertificateModel(state);
     }
     if(element.matches('[data-cr-field="machine.modality"]')) syncCertificateModel(state);
-    state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); updateSignatureStatus(); renderCertificateControls(); syncTube2PageVisibility(); renderCard(); syncAutoDocument(); scheduleDraftSave();
+    finishEditorChange();
+    renderModelMatch();
+  }
+
+  function onEditorPaste(event){
+    var element = event?.target;
+    if(!element?.matches?.('[data-cr-exposure]')) return;
+    var clipboardText = String(event?.clipboardData?.getData?.('text/plain') || '');
+    if(!/[\t\r\n]/.test(clipboardText)) return;
+    var normalizedText = clipboardText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    var rows = normalizedText.split('\n');
+    if(rows.length > 1 && rows[rows.length - 1] === '') rows.pop();
+    var matrix = rows.map(function(row){ return row.split('\t'); });
+    if(matrix.length <= 1 && (matrix[0] || []).length <= 1) return;
+    if(typeof event.preventDefault === 'function') event.preventDefault();
+    setCalibrationSaveStatus('unsaved');
+
+    var start = outputDomParts(element.getAttribute('data-cr-exposure'));
+    var startRow = Number(start.rest[0]);
+    var startColumn = Number(start.rest[1]);
+    var columnCount = matrix.reduce(function(maximum, row){ return Math.max(maximum, row.length); }, 0);
+    var exposureOutput = outputState(state, start.tube);
+    var exposureRows = exposureOutput?.exposure?.[start.key];
+    if(!Number.isInteger(startRow) || !Number.isInteger(startColumn) || !Array.isArray(exposureRows) || startRow < 0 || startColumn < 0 || startRow + matrix.length > CALIBRATION_REPORT_EXPOSURE_ROW_COUNT || startColumn + columnCount > EXPOSURE_KEYS.length){
+      showStatus('Excel paste could not be applied: select a rectangle that fits within this measurement table.', 'danger');
+      return;
+    }
+
+    var pending = [];
+    for(var rowIndex = 0; rowIndex < matrix.length; rowIndex += 1){
+      for(var columnIndex = 0; columnIndex < matrix[rowIndex].length; columnIndex += 1){
+        var value = String(matrix[rowIndex][columnIndex] || '');
+        if(value.length > EXACT_FIT_CAPACITIES.page3_exposure.maxLength){
+          showStatus('Excel paste could not be applied: each measurement cell must be 12 characters or fewer.', 'danger');
+          return;
+        }
+        var targetRow = startRow + rowIndex;
+        var targetColumn = startColumn + columnIndex;
+        var target = qa('[data-cr-exposure]').find(function(candidate){
+          var parts = outputDomParts(candidate.getAttribute('data-cr-exposure'));
+          return parts.tube === start.tube && parts.key === start.key && Number(parts.rest[0]) === targetRow && Number(parts.rest[1]) === targetColumn;
+        });
+        if(!target || !exposureRows[targetRow]){
+          showStatus('Excel paste could not be applied: select a rectangle that fits within this measurement table.', 'danger');
+          return;
+        }
+        pending.push({ value:value, target:target, row:targetRow, column:targetColumn });
+      }
+    }
+    pending.forEach(function(item){
+      item.target.value = item.value;
+      exposureRows[item.row][EXPOSURE_KEYS[item.column]] = item.value;
+    });
+    finishEditorChange();
     renderModelMatch();
   }
 

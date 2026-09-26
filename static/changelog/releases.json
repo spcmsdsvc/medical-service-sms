@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-26-calibration-report-paste-criteria",
+      "release_date": "2026-09-26",
+      "title": "Calibration Report Entry Improvements",
+      "summary": "Calibration Report results accept longer notes, Excel grids paste cleanly, and Page 3/4 kVp criteria now use 8%.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-26-calibration-report-paste-criteria-users",
+          "category": "Calibration Report",
+          "description": "Page 2 result fields now allow up to 60 characters, Pages 3/4 measurement tables accept rectangular Excel pastes, and the first Page 3/4 performance criterion uses ±8% while retaining the 6kV rule above 100kVp.",
+          "audiences": [
+            "admins",
+            "engineers",
+            "schedulers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-26-tsr-autosave-client-groups",
       "release_date": "2026-09-26",
       "title": "TSR Draft Autosave and Client Groups",

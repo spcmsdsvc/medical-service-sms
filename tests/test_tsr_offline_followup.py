@@ -472,7 +472,7 @@ console.log(JSON.stringify({ success, successEvents, missing, missingEvents, sta
             self.app_source,
         )
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v199-client-group-picker",
+            "medical-service-pwa-offline-navigation-v200-calibration-report-paste-criteria",
             self.app_source,
         )
         self.assertIn('2026-09-25-pre-submission-calibration-report', self.release_source)

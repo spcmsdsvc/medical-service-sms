@@ -1,5 +1,93 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Report Result Capacity, Excel Paste, and 8% Criteria
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-26 — the owner approved this plan by explicitly saying “implement the plan”.
+**Execution authorized:** 2026-09-26 — the owner separately authorized implementation and requested that it not be over-engineered or over-checked.
+**Detailed:** 2026-09-26.
+
+### Summary and boundaries
+
+Increase the exact-fit/UI capacity of every Page 2 Mechanical and Generator Result field from 28
+to 60 characters while retaining authoritative rejection of 61-character and multiline values.
+Add rectangular Excel/TSV paste to the Page 3 and Page 4 Small/Large 8x7 exposure grids only,
+starting at the focused cell, preserving blank cells as clears, remaining within the same tube and
+table, and applying the paste atomically. Change only the Page 3/4 first performance percentage
+criterion from ±6% to ±8%; retain Page 2 generator 5.2 at 6% and the above-100kVp 6kV rule.
+
+The package is limited to the calibration-report JavaScript, canonical DOCX template, focused
+Calibration Report tests, offline asset query, service-worker marker/reference, release record,
+approved plan, and change log. Existing reports, backend APIs, database/storage, Railway,
+production data, browser/Codex UI automation, commits, pushes, deploys, protected dirty files,
+and unrelated source are deliberately excluded.
+
+### Numbered execution steps
+
+1. Re-read project instructions and `changes.md`, inspect protected Git state and affected source,
+   then add focused fail-first contracts for the 60-character boundary, atomic rectangular paste
+   success/rejections including Tube 2 independence, criteria wording, DOCX package integrity,
+   and cache/release registration.
+2. Update `static/js/app-calibration-report.js`: raise the shared Page 2 result rule to 60; add
+   delegated multi-cell clipboard parsing for `[data-cr-exposure]` with CRLF/LF rows and tabs as
+   columns, one terminal Excel empty row removal, same-table/tube bounds checks, 12-character
+   cell validation, blank-cell clears, atomic mutation, and the existing dirty/invalidation/
+   autosave flow. Change the Page 3/4 first performance criterion to ±8% only.
+3. Patch `static/templates/calibration-report/calibration-report-template.docx` in place through
+   a narrow OOXML text replacement, preserving all package parts, geometry, styles, tables,
+   page breaks, and footers; update the pinned SHA in the focused tests.
+4. Bump the Calibration Report JavaScript query, advance the next monotonic service-worker marker
+   and precache reference, add one concise published release item, append factual bullets to the
+   current `changes.md` section, and close this plan with truthful results.
+5. Run the focused fail-first check before implementation, then focused Calibration Report/PDF
+   tests, JavaScript syntax, Jinja/static-reference/release JSON/DOCX package checks, `git diff
+   --check`, and one full unittest discovery with a disposable database only if project
+   conventions support it. If an available non-browser DOCX renderer can run, perform one
+   representative page-count/layout check; otherwise report it without installing tooling.
+   Preserve all protected dirty artifacts and do not commit, push, deploy, modify Railway, or
+   perform production/database operations.
+
+### Acceptance criteria
+
+- Page 2 result fields expose and accept exactly 60 characters, while 61 characters and embedded
+  line breaks remain validation failures without silent truncation.
+- Excel/TSV paste fills the focused Page 3/4 grid rectangle, including intentional blank clears,
+  only within its current tube and Small/Large table; invalid rectangles/cells make no changes and
+  show an existing-style status message.
+- New editor and generated reports use ±8% for the first Page 3/4 criterion; Page 2 remains at
+  6%, and the above-100kVp 6kV wording remains unchanged.
+- The canonical DOCX package remains structurally intact, protected dirty paths are untouched,
+  and no unauthorized external or destructive operation occurs.
+
+### Execution outcome (2026-09-26)
+
+Raised Page 2 Mechanical and Generator Result exact-fit capacity to 60 characters. Added delegated
+Excel/TSV rectangle paste for the Page 3/4 exposure grids: CRLF/LF rows and tab columns are parsed,
+one terminal empty row is removed, blank cells clear targets, Tube 1/Tube 2 and Small/Large tables
+remain independent, invalid 12-character or out-of-bounds input is rejected atomically, and valid
+paste uses the existing dirty/generated-invalidation/autosave flow. Ordinary single-cell paste remains
+native. Changed only the Page 3/4 first performance criterion to ±8%; Page 2 5.2 remains 6% and
+the above-100kVp 6kV rule remains unchanged.
+
+Patched the canonical DOCX `word/document.xml` once from ±6% to ±8% and updated its pinned SHA to
+`E2FB97EF0C9FDEDADE42478ED727A31AE10135C2671D154B11570DC1C99B00AD`; package part count and
+required template content remain intact. Bumped the Calibration Report JavaScript asset to v36,
+advanced the service-worker marker/reference to v200, and added the published release item.
+
+The focused fail-first contract failed 1/1 before implementation on the old cap/paste/criteria;
+after implementation `tests.test_tsr_calibration_report` passed 24/24 and the combined
+Calibration Report/PDF/offline follow-up batch passed 55/55. Bundled Node syntax, Jinja/Python
+AST, release JSON, DOCX content/package assertions, and `git diff --check` passed. One full
+discovery against a unique external database ran 1,332 tests with 1,311 passes, 19 unrelated
+baseline/stale or environment failures (Calibration Center's older v195 marker expectation,
+changelog manifest synchronization, standalone LPR authorization, and purchase-order rate
+limiting), and 2 skips. The available DOCX renderer could not run because bundled LibreOffice
+`soffice.exe` was unavailable, so no PNG/PDF render inspection was claimed. Protected
+`scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated owner files remain
+untouched; no browser/Codex UI, commit, push, deployment, Railway, production, or destructive
+database operation occurred.
+
+
 ## Visible Client Group Picker
 
 **Status:** Executed — implementation commit `6bb4a12`; publication authorized to `origin/main`.

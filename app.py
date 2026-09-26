@@ -23823,7 +23823,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v193-reimbursement-lpr-availability.
     # Navigation shell bump: v194 distributes the collapsed Historical Report Repair notice.
     # Navigation shell bump: v199 distributes the visible reusable Client group picker.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v199-client-group-picker';
+    # Navigation shell bump: v200 distributes Calibration Report paste and criteria updates.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v200-calibration-report-paste-criteria';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -23848,7 +23849,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=35',
+  '/static/js/app-calibration-report.js?v=36',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

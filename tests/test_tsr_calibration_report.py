@@ -22,7 +22,7 @@ CERT_RUNTIME_TEMPLATE = ROOT / 'static' / 'templates' / 'calibration-certificate
 CERT_DATA = ROOT / 'static' / 'templates' / 'calibration-certificate' / 'calibration-certificate-template-data.js'
 CERT_RUNTIME = ROOT / 'static' / 'vendor' / 'pdf-lib' / 'pdf-lib.min.js'
 CERT_LICENSE = ROOT / 'static' / 'vendor' / 'pdf-lib' / 'LICENSE'
-EXPECTED_TEMPLATE_SHA256 = '53749AE89A35A8387B89D45725CD755A5CEB7CADC358E447BBBD3D3EED24A26B'
+EXPECTED_TEMPLATE_SHA256 = 'E2FB97EF0C9FDEDADE42478ED727A31AE10135C2671D154B11570DC1C99B00AD'
 EXPECTED_CERT_TEMPLATE_SHA256 = 'C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC'
 EXPECTED_CERT_RUNTIME_SHA256 = '20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8'
 DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -328,7 +328,7 @@ const tube1SmallTable = generatedTables[2].replace(/<[^>]+>/g, '').replace(/&amp
 const tube2SmallTable = generatedTables[5].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
 if (!tube1SmallTable.includes('80.2') || tube1SmallTable.includes('22.3') || !tube2SmallTable.includes('22.3') || tube2SmallTable.includes('80.2')) throw new Error('Tube 1 and Tube 2 output values were mixed in the generated DOCX');
 if ((generatedDocument.match(/<w:tr\b/g) || []).length < 55) throw new Error('generated DOCX lost source table rows');
-if (!generatedDocument.includes('CALIBRATION REPORT') || !generatedDocument.includes('PERFORMANCE CRITERIA')) throw new Error('generated DOCX lost source wording');
+if (!generatedDocument.includes('CALIBRATION REPORT') || !generatedDocument.includes('PERFORMANCE CRITERIA') || !generatedDocument.includes('±8%') || generatedDocument.includes('±6% for voltages less than or equal to 100kVp') || !generatedDocument.includes('within +-6% of the set') || !generatedDocument.includes('6kV for voltages greater than 100kVp')) throw new Error('generated DOCX lost or changed source criteria wording');
 if (!generatedDocument.includes('RESULT: Pass') || !generatedDocument.includes('RESULT: Pass &amp; verified')) throw new Error('result lines were not filled');
 if (generatedDocument.includes('________________')) throw new Error('result underscores were not removed');
 if (!generatedDocument.includes('Calibration signature') || !generatedRels.includes('media/calibration-signature.png')) throw new Error('signature relationship was not added');
@@ -662,6 +662,117 @@ const backInput = editorControl("facility.name"); if(!backInput) fail("Back pers
 '''
 
 
+NODE_PASTE_SCRIPT = r'''
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = process.cwd();
+const script = fs.readFileSync(path.join(root, 'static', 'js', 'app-calibration-report.js'), 'utf8');
+const statuses = [];
+let savedDrafts = 0;
+
+class FakeElement {
+  constructor(attributes) {
+    this.attributes = attributes || {};
+    this.value = '';
+    this.listeners = {};
+    this.classList = { contains: () => false, toggle: () => {}, add: () => {}, remove: () => {} };
+  }
+  getAttribute(name) { return this.attributes[name] || null; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  removeAttribute(name) { delete this.attributes[name]; }
+  matches(selector) {
+    const exact = String(selector).match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);
+    if (exact) return Object.prototype.hasOwnProperty.call(this.attributes, exact[1]) && (exact[2] === undefined || this.attributes[exact[1]] === exact[2]);
+    if (String(selector).startsWith('.')) return String(this.attributes.class || '').split(/\s+/).includes(String(selector).slice(1));
+    return false;
+  }
+  addEventListener(name, handler) { (this.listeners[name] ||= []).push(handler); }
+  dispatch(name, event) { for (const handler of this.listeners[name] || []) handler(event || { target: this }); }
+  focus() { this.focused = true; }
+  scrollIntoView() {}
+}
+
+const editor = new FakeElement();
+Object.defineProperty(editor, 'innerHTML', {
+  set(value) {
+    this.html = value;
+    this.elements = [];
+    const pattern = /<([a-z]+)\b([^>]*)>/gi;
+    let match;
+    while ((match = pattern.exec(value))) {
+      const attributes = {};
+      for (const item of match[2].matchAll(/([:\w-]+)(?:="([^"]*)")?/g)) attributes[item[1]] = item[2] || '';
+      if (Object.keys(attributes).some(attribute => attribute.indexOf('data-cr-') === 0)) {
+        const element = new FakeElement(attributes);
+        element.tagName = match[1];
+        this.elements.push(element);
+      }
+    }
+  },
+  get() { return this.html || ''; }
+});
+editor.elements = [];
+
+const context = {
+  console, Blob, Uint8Array, ArrayBuffer, Promise, Date, Math, JSON, setTimeout: fn => { fn(); return 0; }, clearTimeout: () => {},
+  atob, btoa, URL: { createObjectURL: () => 'blob:test', revokeObjectURL: () => {} },
+  CalibrationReportConfig: { certificateCatalog: { equipment_names: ['Digital Radiography System'], models: ['Mobile Dart Evolution MX9'], approved_models: [] } },
+  showTSRStatus: (message, tone) => statuses.push({ message: String(message || ''), tone }),
+  saveStandaloneTSRDraft: async () => { savedDrafts += 1; return { source:'localstorage' }; },
+  collectTSRData: () => ({})
+};
+context.window = context;
+context.self = context;
+context.globalThis = context;
+context.document = {
+  querySelector: selector => selector === '#calibration-report-editor' ? editor : null,
+  querySelectorAll: selector => editor.elements.filter(element => element.matches(selector)),
+  createElement: () => ({}),
+  addEventListener: () => {}
+};
+vm.createContext(context);
+vm.runInContext(script, context);
+
+function cell(value) { return editor.elements.find(element => element.getAttribute('data-cr-exposure') === value); }
+function paste(target, text) {
+  let prevented = false;
+  editor.dispatch('paste', { target, clipboardData: { getData: () => text }, preventDefault: () => { prevented = true; } });
+  return prevented;
+}
+
+const api = context.calibrationReport;
+api.apply({
+  status:'draft',
+  exposure:{ small:[{ nominal_kvp:'OLD' }], large:[{}] },
+  tube2_output:{ exposure:{ small:[{}], large:[{}] }, performance_results:['',''] }
+});
+const first = cell('small:1:0');
+if (!first) throw new Error('Tube 1 measurement input was not built');
+if (!paste(first, '80\t81\n\t82')) throw new Error('valid rectangular paste was not intercepted');
+let report = api.collect();
+if (report.exposure.small[1].nominal_kvp !== '80' || report.exposure.small[1].measured_kvp !== '81' || report.exposure.small[2].nominal_kvp !== '' || report.exposure.small[2].measured_kvp !== '82') throw new Error('paste did not fill or clear the Tube 1 rectangle');
+if (report.generated.blob_id || savedDrafts !== 1) throw new Error('successful paste did not invalidate output and schedule the existing save');
+
+const tube2 = cell('tube2:small:0:0');
+if (!tube2 || !paste(tube2, 'TUBE2\t')) throw new Error('Tube 2 rectangular grid paste was not intercepted');
+report = api.collect();
+if (report.tube2_output.exposure.small[0].nominal_kvp !== 'TUBE2' || report.exposure.small[1].nominal_kvp !== '80') throw new Error('Tube 1 and Tube 2 paste state is not independent');
+
+const beforeLong = JSON.stringify(report);
+if (!paste(first, '1234567890123\tok')) throw new Error('overlong paste was not intercepted');
+if (JSON.stringify(api.collect()) !== beforeLong || !statuses.at(-1)?.message.includes('could not be applied')) throw new Error('overlong paste was not atomic or actionable');
+
+const edge = cell('small:7:6');
+const beforeBounds = JSON.stringify(api.collect());
+if (!paste(edge, 'a\tb')) throw new Error('out-of-bounds paste was not intercepted');
+if (JSON.stringify(api.collect()) !== beforeBounds || !statuses.at(-1)?.message.includes('could not be applied')) throw new Error('out-of-bounds paste was not atomic or actionable');
+
+console.log(JSON.stringify({ rectangular:true, blankClears:true, tube2Independent:true, atomicRejections:true, saveFlow:true }));
+'''
+
+
 class CalibrationReportContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -795,6 +906,22 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertRegex(self.css_source, r'\.calibration-report-exposure-scroll[^\{]*\{[^}]*max-height:\s*\d+px')
         self.assertIn('overflow-x:auto', self.css_source)
 
+    def test_result_capacity_excel_paste_and_eight_percent_contract(self):
+        self.assertIn("page2_result: { name:'page2_result', maxLength:60", self.script_source)
+        self.assertIn('function onEditorPaste', self.script_source)
+        self.assertIn("editor.addEventListener('paste', onEditorPaste)", self.script_source)
+        self.assertIn('±8% for voltages less than or equal to 100kVp', self.script_source)
+        self.assertIn('+-6% of the set kVp', self.script_source)
+        self.assertNotIn('±6% for voltages less than or equal to 100kVp', self.script_source)
+        document_xml = zipfile.ZipFile(TEMPLATE).read('word/document.xml')
+        self.assertEqual(document_xml.count('±6%'.encode('utf-8')), 0)
+        self.assertEqual(document_xml.count('±8%'.encode('utf-8')), 1)
+        self.assertIn('6kV for voltages greater than 100kVp'.encode('utf-8'), document_xml)
+        result = subprocess.run([str(NODE), '-e', NODE_PASTE_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertTrue(all(payload.values()))
+
     def test_compact_output_contract_is_present(self):
         self.assertIn('isNonblankExposureRow', self.script_source)
         self.assertIn('replaceFocalMeasurementRows', self.script_source)
@@ -809,11 +936,13 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('?v=11', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
         self.assertIn('app-calibration-report.js', self.template_source)
-        self.assertIn('?v=35', self.template_source)
+        self.assertIn('?v=36', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
-        self.assertIn("app-calibration-report.js?v=35", self.app_source)
-        assert_cache_version_at_least(self, 190, self.app_source)
+        self.assertIn("app-calibration-report.js?v=36", self.app_source)
+        assert_cache_version_at_least(self, 200, self.app_source)
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
+        paste_release = next(item for item in releases if item['release_key'] == '2026-09-26-calibration-report-paste-criteria')
+        self.assertTrue(any(item['item_key'] == '2026-09-26-calibration-report-paste-criteria-users' for item in paste_release['items']))
         calibration_release = next(item for item in releases if item['release_key'] == '2026-09-24-late-calibration-report')
         self.assertTrue(any(item['item_key'] == '2026-09-24-calibration-report-two-tube-output' for item in calibration_release['items']))
 
@@ -880,8 +1009,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=11", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=35", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=35'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=36", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=36'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -922,8 +1051,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=35", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=35'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=36", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=36'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
