@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-26-regional-engineer-inventory-edit",
+      "release_date": "2026-09-26",
+      "title": "Regional Engineer Inventory Editing",
+      "summary": "Cebu and Davao engineers can add and edit equipment inventory again while Manila engineers remain read-only.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-26-regional-engineer-inventory-edit-users",
+          "category": "Inventory",
+          "description": "Active engineers linked to Cebu or Davao can add and edit Products, Genoray, and Vieworks records; Manila engineers remain read-only and delete, import, and PM administration stay administrator-only.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-26-calibration-report-paste-criteria",
       "release_date": "2026-09-26",
       "title": "Calibration Report Entry Improvements",

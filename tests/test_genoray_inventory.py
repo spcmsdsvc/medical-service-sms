@@ -84,6 +84,15 @@ class GenorayInventoryTests(unittest.TestCase):
                 cls.client_record,
                 cls.product,
             ])
+            app_module.db.session.flush()
+            cls.engineer_profile = app_module.Engineer(
+                employee_id=f"GEN-ENG-{uuid.uuid4().hex[:8].upper()}",
+                name="Genoray Cebu Engineer",
+                initials="GCE",
+                branch="Cebu",
+                user_id=cls.engineer.id,
+            )
+            app_module.db.session.add(cls.engineer_profile)
             app_module.db.session.commit()
             cls.user_ids = [
                 cls.admin.id,
@@ -106,6 +115,7 @@ class GenorayInventoryTests(unittest.TestCase):
     def tearDownClass(cls):
         with cls.app.app_context():
             app_module.GenorayItem.query.delete()
+            app_module.Engineer.query.filter(app_module.Engineer.user_id.in_(cls.user_ids)).delete(synchronize_session=False)
             for model, identifier in (
                 (app_module.Product, cls.product_serial),
                 (app_module.Client, cls.client_id),
@@ -145,7 +155,30 @@ class GenorayInventoryTests(unittest.TestCase):
         payload = {"serial_number": serial, "name": name, **extra}
         return client.post("/api/genoray/items", json=payload)
 
-    def test_permission_helper_allows_active_engineer_use_but_not_admin_actions(self):
+    def create_linked_engineer_user(self, branch=None, active=True):
+        suffix = uuid.uuid4().hex[:8].upper()
+        with self.app.app_context():
+            user = app_module.User(
+                username=f"genoray_regional_{suffix}",
+                password="test",
+                role="engineer",
+                is_active=active,
+            )
+            app_module.db.session.add(user)
+            app_module.db.session.flush()
+            if branch is not None:
+                app_module.db.session.add(app_module.Engineer(
+                    employee_id=f"GEN-REG-{suffix}",
+                    name=f"Genoray Regional {suffix}",
+                    initials="GR",
+                    branch=branch,
+                    user_id=user.id,
+                ))
+            app_module.db.session.commit()
+            self.__class__.user_ids.append(user.id)
+            return user.id
+
+    def test_permission_helper_allows_regional_engineer_edit_but_not_admin_actions(self):
         with self.app.app_context():
             users = [app_module.db.session.get(app_module.User, user_id) for user_id in (
                 self.admin_id, self.superadmin_id, self.regional_id,
@@ -158,20 +191,50 @@ class GenorayInventoryTests(unittest.TestCase):
             self.assertFalse(app_module.can_access_genoray_inventory(users[4]))
             self.assertFalse(app_module.can_access_genoray_inventory(users[5]))
             self.assertFalse(app_module.can_administer_genoray_inventory(users[3]))
+            self.assertTrue(app_module.can_edit_genoray_inventory(users[3]))
             self.assertTrue(app_module.can_access_inventory_pm('genoray', users[0]))
             self.assertFalse(app_module.can_access_inventory_pm('genoray', users[3]))
 
-    def test_engineer_can_use_genoray_inventory_but_cannot_delete_or_import(self):
+    def test_regional_engineer_can_add_and_edit_but_cannot_delete_import_or_pm(self):
         client = self.client_for(self.engineer_id)
         self.assertEqual(client.get("/genoray").status_code, 200)
         self.assertEqual(client.get("/api/genoray/items").status_code, 200)
         self.assertEqual(client.get("/api/genoray/summary").status_code, 200)
         created = self.add_item(client, "ENGINEER-GENORAY")
-        self.assertEqual(created.status_code, 403, created.get_data(as_text=True))
-        self.assertEqual(client.put("/api/genoray/items/ENGINEER-GENORAY", json={"name": "Updated"}).status_code, 403)
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        self.assertEqual(client.put("/api/genoray/items/ENGINEER-GENORAY", json={"name": "Updated"}).status_code, 200)
         self.assertEqual(client.get("/genoray/export").status_code, 200)
         self.assertEqual(client.delete("/api/genoray/items/ENGINEER-GENORAY").status_code, 403)
         self.assertEqual(self.import_csv(client, "Serial Number,Description\nENGINEER-IMPORT,Nope\n").status_code, 403)
+        self.assertEqual(client.get("/genoray/pm").status_code, 403)
+
+    def test_manila_missing_unsupported_and_inactive_engineers_cannot_edit(self):
+        users = [
+            self.create_linked_engineer_user("Manila"),
+            self.create_linked_engineer_user(None),
+            self.create_linked_engineer_user("Unsupported Branch"),
+            self.create_linked_engineer_user("Davao", active=False),
+        ]
+        client = self.client_for(self.admin_id)
+        self.assertEqual(self.add_item(client, "DENIED-GENORAY", "Existing" ).status_code, 200)
+        for user_id in users:
+            restricted = self.client_for(user_id)
+            inactive = user_id == users[-1]
+            with self.subTest(user_id=user_id):
+                with self.app.app_context():
+                    user = app_module.db.session.get(app_module.User, user_id)
+                    self.assertFalse(app_module.can_edit_genoray_inventory(user))
+                page = restricted.get("/genoray")
+                self.assertEqual(page.status_code, 302 if inactive else 200)
+                if not inactive:
+                    self.assertIn("const productCanEdit = false;", page.get_data(as_text=True))
+                expected_denied = 302 if inactive else 403
+                self.assertEqual(self.add_item(restricted, f"DENIED-{user_id}").status_code, expected_denied)
+                self.assertEqual(restricted.put("/api/genoray/items/DENIED-GENORAY", json={"name": "Changed"}).status_code, expected_denied)
+                self.assertEqual(restricted.delete("/api/genoray/items/DENIED-GENORAY").status_code, expected_denied)
+                self.assertEqual(self.import_csv(restricted, "Serial Number,Description\nDENIED-IMPORT,Nope\n").status_code, expected_denied)
+        with self.app.app_context():
+            self.assertEqual(app_module.db.session.get(app_module.GenorayItem, "DENIED-GENORAY").name, "Existing")
 
     def test_other_roles_remain_denied_from_genoray_routes(self):
         paths = [

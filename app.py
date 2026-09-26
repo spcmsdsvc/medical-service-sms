@@ -7894,6 +7894,48 @@ def can_administer_vieworks_inventory(user=None):
     )
 
 
+def can_manage_regional_inventory_as_engineer(user=None):
+    """Return whether an active non-approver Engineer may add or edit inventory."""
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True)) and
+        not is_approver_only_user(target)
+    ):
+        return False
+
+    profile = getattr(target, 'engineer_profile', None)
+    return bool(
+        profile and
+        resolve_engineer_profile_branch_code(profile) in {'BC02', 'BC03'}
+    )
+
+
+def can_edit_products_inventory(user=None):
+    """Return whether an account may add or edit regular Product rows."""
+    return bool(
+        can_administer_products_inventory(user) or
+        can_manage_regional_inventory_as_engineer(user)
+    )
+
+
+def can_edit_genoray_inventory(user=None):
+    """Return whether an account may add or edit Genoray rows."""
+    return bool(
+        can_administer_genoray_inventory(user) or
+        can_manage_regional_inventory_as_engineer(user)
+    )
+
+
+def can_edit_vieworks_inventory(user=None):
+    """Return whether an account may add or edit Vieworks rows."""
+    return bool(
+        can_administer_vieworks_inventory(user) or
+        can_manage_regional_inventory_as_engineer(user)
+    )
+
+
 def can_access_vieworks_inventory(user=None):
     """Return whether an active administrator or engineer may use Vieworks inventory."""
     target = user or current_user
@@ -25586,7 +25628,7 @@ def products_page():
     return render_template(
         'products.html',
         inventory_mode='product',
-        product_can_edit=bool(can_administer_products_inventory()),
+        product_can_edit=bool(can_edit_products_inventory()),
         product_can_delete=bool(is_admin_authorized()),
         product_can_pm=False,
     )
@@ -25602,7 +25644,7 @@ def genoray_page():
     return render_template(
         'products.html',
         inventory_mode='genoray',
-        product_can_edit=bool(can_administer_genoray_inventory()),
+        product_can_edit=bool(can_edit_genoray_inventory()),
         product_can_delete=bool(can_administer_genoray_inventory()),
         product_can_pm=bool(can_access_inventory_pm('genoray')),
     )
@@ -25618,7 +25660,7 @@ def vieworks_page():
     return render_template(
         'products.html',
         inventory_mode='vieworks',
-        product_can_edit=bool(can_administer_vieworks_inventory()),
+        product_can_edit=bool(can_edit_vieworks_inventory()),
         product_can_delete=bool(can_administer_vieworks_inventory()),
         product_can_pm=bool(can_access_inventory_pm('vieworks')),
     )
@@ -58328,7 +58370,7 @@ def add_product():
     - Returns a clean 409 response instead of a 500 server error.
     - Rolls back the session if a commit fails for any unexpected reason.
     """
-    if not can_administer_products_inventory():
+    if not can_edit_products_inventory():
         return jsonify({'message': 'Denied'}), 403
 
     ensure_product_contract_column()
@@ -58519,7 +58561,7 @@ def update_product(serial_number):
     linked schedules from the old serial to the new serial. This prevents the
     old delete/recreate workaround from breaking historical schedule links.
     """
-    if not can_administer_products_inventory():
+    if not can_edit_products_inventory():
         return jsonify({'message': 'Denied'}), 403
 
     ensure_product_contract_column()
@@ -59465,7 +59507,7 @@ def inventory_pm_schedule_options_api(brand, serial_number=None):
 @login_required
 def add_vieworks_item():
     """Add one standalone Vieworks inventory item."""
-    if not can_administer_vieworks_inventory():
+    if not can_edit_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
     begin_vieworks_write_transaction()
@@ -59521,7 +59563,7 @@ def add_vieworks_item():
 @login_required
 def update_vieworks_item(serial_number):
     """Update a Vieworks item without touching Product or related workflows."""
-    if not can_administer_vieworks_inventory():
+    if not can_edit_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
     ensure_product_vieworks_link_table()
@@ -59840,7 +59882,7 @@ def export_vieworks_items():
 @login_required
 def add_genoray_item():
     """Add one standalone Genoray inventory item."""
-    if not can_administer_genoray_inventory():
+    if not can_edit_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
     begin_genoray_write_transaction()
@@ -59896,7 +59938,7 @@ def add_genoray_item():
 @login_required
 def update_genoray_item(serial_number):
     """Update a Genoray item without touching Product or related workflows."""
-    if not can_administer_genoray_inventory():
+    if not can_edit_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
     ensure_inventory_pm_visit_table()

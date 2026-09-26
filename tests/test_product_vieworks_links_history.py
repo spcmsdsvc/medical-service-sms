@@ -1,6 +1,7 @@
 """Focused Product/Vieworks linking, permissions, and service-history coverage."""
 
 import json
+import io
 import os
 import pathlib
 import tempfile
@@ -33,9 +34,10 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             cls.engineer_user = app_module.User(username=f"history-engineer-{suffix}", password="test", role="engineer", is_active=True)
             cls.client_one = app_module.Client(name=f"History Center One {suffix}", address="A")
             cls.client_two = app_module.Client(name=f"History Center Two {suffix}", address="B")
-            cls.engineer = app_module.Engineer(employee_id=f"HIST-{suffix}", name="History Engineer", initials="HE", user_id=None)
+            cls.engineer = app_module.Engineer(employee_id=f"HIST-{suffix}", name="History Engineer", initials="HE", user_id=None, branch="Cebu")
             app_module.db.session.add_all([cls.admin, cls.superadmin, cls.engineer_user, cls.client_one, cls.client_two, cls.engineer])
             app_module.db.session.flush()
+            cls.engineer.user_id = cls.engineer_user.id
             cls.product = app_module.Product(serial_number=f"PRODUCT-{suffix}", name="Linked Product", client_id=cls.client_one.id)
             cls.vieworks = app_module.VieworksItem(serial_number=f"VIEWORKS-{suffix}", name="Linked Vieworks", client_id=cls.client_one.id, bsid=f"V-{suffix}")
             cls.vieworks_collision = app_module.VieworksItem(serial_number=cls.product.serial_number, name="Vieworks Collision", client_id=cls.client_one.id, bsid=f"VC-{suffix}")
@@ -71,14 +73,148 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             session['_fresh'] = True
         return client
 
-    def test_engineers_are_read_only_for_all_inventory_mutations(self):
-        client = self.client_for(self.engineer_user_id)
-        self.assertEqual(client.post('/add_product', json={'serial_number': 'NOPE', 'name': 'Nope'}).status_code, 403)
-        self.assertEqual(client.put(f'/update_product/{self.product_serial}', json={'serial_number': self.product_serial, 'name': 'Nope'}).status_code, 403)
-        self.assertEqual(client.post('/api/genoray/items', json={'serial_number': 'GEN-NOPE', 'name': 'Nope'}).status_code, 403)
-        self.assertEqual(client.put('/api/genoray/items/GEN-NOPE', json={'name': 'Nope'}).status_code, 403)
-        self.assertEqual(client.post('/api/vieworks/items', json={'serial_number': 'VW-NOPE', 'name': 'Nope'}).status_code, 403)
-        self.assertEqual(client.put(f'/api/vieworks/items/{self.vieworks_serial}', json={'name': 'Nope'}).status_code, 403)
+    def create_linked_engineer_user(self, branch=None, active=True):
+        suffix = uuid.uuid4().hex[:8].upper()
+        with self.app.app_context():
+            user = app_module.User(
+                username=f"history-regional-{suffix}",
+                password="test",
+                role="engineer",
+                is_active=active,
+            )
+            app_module.db.session.add(user)
+            app_module.db.session.flush()
+            if branch is not None:
+                app_module.db.session.add(app_module.Engineer(
+                    employee_id=f"HIST-REG-{suffix}",
+                    name=f"History Regional {suffix}",
+                    initials="HR",
+                    branch=branch,
+                    user_id=user.id,
+                ))
+            app_module.db.session.commit()
+            return user.id
+
+    def test_regional_engineers_can_add_and_edit_all_inventories_but_not_admin_actions(self):
+        for admin_id in (self.admin_id, self.superadmin_id):
+            admin_page = self.client_for(admin_id).get("/products_page")
+            self.assertEqual(admin_page.status_code, 200)
+            self.assertIn("const productCanEdit = true;", admin_page.get_data(as_text=True))
+        users = [self.engineer_user_id, self.create_linked_engineer_user("Davao")]
+        for index, user_id in enumerate(users):
+            client = self.client_for(user_id)
+            with self.subTest(user_id=user_id):
+                for path in ("/products_page", "/genoray", "/vieworks"):
+                    page = client.get(path)
+                    self.assertEqual(page.status_code, 200)
+                    self.assertIn("const productCanEdit = true;", page.get_data(as_text=True))
+
+                product_serial = f"REGIONAL-PRODUCT-{index}-{uuid.uuid4().hex[:8].upper()}"
+                added_product = client.post(
+                    "/add_product",
+                    json={"serial_number": product_serial, "name": "Regional Product"},
+                )
+                self.assertEqual(added_product.status_code, 200, added_product.get_data(as_text=True))
+                updated_product = client.put(
+                    f"/update_product/{product_serial}",
+                    json={"serial_number": product_serial, "name": "Regional Product Updated"},
+                )
+                self.assertEqual(updated_product.status_code, 200, updated_product.get_data(as_text=True))
+
+                genoray_serial = f"REGIONAL-GEN-{index}-{uuid.uuid4().hex[:8].upper()}"
+                added_genoray = client.post(
+                    "/api/genoray/items",
+                    json={"serial_number": genoray_serial, "name": "Regional Genoray"},
+                )
+                self.assertEqual(added_genoray.status_code, 200, added_genoray.get_data(as_text=True))
+                updated_genoray = client.put(
+                    f"/api/genoray/items/{genoray_serial}",
+                    json={"name": "Regional Genoray Updated"},
+                )
+                self.assertEqual(updated_genoray.status_code, 200, updated_genoray.get_data(as_text=True))
+
+                vieworks_serial = f"REGIONAL-VIEWORKS-{index}-{uuid.uuid4().hex[:8].upper()}"
+                added_vieworks = client.post(
+                    "/api/vieworks/items",
+                    json={"serial_number": vieworks_serial, "name": "Regional Vieworks"},
+                )
+                self.assertEqual(added_vieworks.status_code, 200, added_vieworks.get_data(as_text=True))
+                updated_vieworks = client.put(
+                    f"/api/vieworks/items/{vieworks_serial}",
+                    json={"name": "Regional Vieworks Updated"},
+                )
+                self.assertEqual(updated_vieworks.status_code, 200, updated_vieworks.get_data(as_text=True))
+
+                self.assertEqual(client.delete(f"/delete_product/{product_serial}").status_code, 403)
+                self.assertEqual(client.delete(f"/api/genoray/items/{genoray_serial}").status_code, 403)
+                self.assertEqual(client.delete(f"/api/vieworks/items/{vieworks_serial}").status_code, 403)
+                self.assertEqual(client.post(
+                    "/import_products",
+                    data={"file": (io.BytesIO(b"Serial Number,Description\nBLOCKED,Nope\n"), "blocked.csv")},
+                    content_type="multipart/form-data",
+                ).status_code, 403)
+                self.assertEqual(client.post(
+                    "/genoray/import",
+                    data={"file": (io.BytesIO(b"Serial Number,Description\nBLOCKED,Nope\n"), "blocked.csv")},
+                    content_type="multipart/form-data",
+                ).status_code, 403)
+                self.assertEqual(client.post(
+                    "/vieworks/import",
+                    data={"file": (io.BytesIO(b"Serial Number,Description\nBLOCKED,Nope\n"), "blocked.csv")},
+                    content_type="multipart/form-data",
+                ).status_code, 403)
+                self.assertEqual(client.get("/genoray/pm").status_code, 403)
+                self.assertEqual(client.get("/vieworks/pm").status_code, 403)
+
+    def test_manila_unresolved_unsupported_and_inactive_engineers_remain_read_only(self):
+        users = [
+            self.create_linked_engineer_user("Manila"),
+            self.create_linked_engineer_user(None),
+            self.create_linked_engineer_user("Unsupported Branch"),
+            self.create_linked_engineer_user("Cebu", active=False),
+        ]
+        with self.app.app_context():
+            genoray = app_module.GenorayItem(
+                serial_number=f"DENIED-GEN-{uuid.uuid4().hex[:8].upper()}",
+                name="Denied Genoray",
+            )
+            app_module.db.session.add(genoray)
+            app_module.db.session.commit()
+            denied_genoray_serial = genoray.serial_number
+
+        for user_id in users:
+            client = self.client_for(user_id)
+            inactive = user_id == users[-1]
+            with self.subTest(user_id=user_id):
+                with self.app.app_context():
+                    user = app_module.db.session.get(app_module.User, user_id)
+                    self.assertFalse(app_module.can_manage_regional_inventory_as_engineer(user))
+                for path in ("/products_page", "/genoray", "/vieworks"):
+                    page = client.get(path)
+                    self.assertEqual(page.status_code, 302 if inactive else 200)
+                    if not inactive:
+                        self.assertIn("const productCanEdit = false;", page.get_data(as_text=True))
+                expected_denied = 302 if inactive else 403
+                self.assertEqual(client.post("/add_product", json={"serial_number": "DENIED", "name": "Nope"}).status_code, expected_denied)
+                self.assertEqual(client.put(
+                    f"/update_product/{self.product_serial}",
+                    json={"serial_number": self.product_serial, "name": "Nope"},
+                ).status_code, expected_denied)
+                self.assertEqual(client.post("/api/genoray/items", json={"serial_number": "DENIED-GEN-NEW", "name": "Nope"}).status_code, expected_denied)
+                self.assertEqual(client.put(
+                    f"/api/genoray/items/{denied_genoray_serial}",
+                    json={"name": "Nope"},
+                ).status_code, expected_denied)
+                self.assertEqual(client.post("/api/vieworks/items", json={"serial_number": "DENIED-VIEWORKS", "name": "Nope"}).status_code, expected_denied)
+                self.assertEqual(client.put(
+                    f"/api/vieworks/items/{self.vieworks_serial}",
+                    json={"name": "Nope"},
+                ).status_code, expected_denied)
+
+        with self.app.app_context():
+            self.assertEqual(app_module.db.session.get(app_module.Product, self.product_serial).name, "Linked Product")
+            self.assertEqual(app_module.db.session.get(app_module.VieworksItem, self.vieworks_serial).name, "Linked Vieworks")
+            self.assertEqual(app_module.db.session.get(app_module.GenorayItem, denied_genoray_serial).name, "Denied Genoray")
 
     def test_same_client_links_and_parent_serialization(self):
         client = self.client_for(self.admin_id)
