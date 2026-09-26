@@ -48,8 +48,8 @@ class DarkModeReadabilityTests(unittest.TestCase):
         self.assertRegex(css, r'\[data-app-theme="dark"\] \.calibration-report-signature-canvas\{[^}]*background:#fff')
 
     def test_calibration_css_cache_and_shell_marker_are_advanced(self):
-        self.assertIn("css/app-calibration-report.css') }}?v=10", self.offline_tsr)
-        self.assertIn("app-calibration-report.css?v=10", self.app_source)
+        self.assertIn("css/app-calibration-report.css') }}?v=11", self.offline_tsr)
+        self.assertIn("app-calibration-report.css?v=11", self.app_source)
         match = re.search(r"const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v(\d+)-", self.app_source)
         self.assertIsNotNone(match)
         self.assertGreaterEqual(int(match.group(1)), 197)

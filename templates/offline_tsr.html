@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=10">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=11">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=7">
 <script>
 (() => {
@@ -33,7 +33,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=34"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=35"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page offline-tsr-layout">
   <div class="offline-tsr-hero no-print">
@@ -486,6 +486,9 @@ window.CalibrationReportConfig = {
     </div>
   </div>
   <div id="calibration-report-modal-status" class="calibration-report-modal-status" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="calibration-report-save-status" class="calibration-report-save-status" data-state="no-changes" role="status" aria-live="polite" aria-atomic="true">
+    <i class="fa-solid fa-circle-minus" aria-hidden="true"></i><span>Calibration Report changes will be saved automatically.</span>
+  </div>
   <div class="calibration-report-workspace">
     <div id="calibration-report-editor" class="calibration-report-editor"></div>
   </div>
@@ -3258,7 +3261,7 @@ const OFFLINE_TSR_STORAGE_PERSISTENCE_KEY = 'phase6_storage_persistence';
 // V1 deletion entries had no owner, so V2 does not migrate or apply them to a guessed account.
 const STANDALONE_TSR_SERVER_DELETE_KEY = 'medicalServiceStandaloneTSRServerDraftDeletesV2';
 const STANDALONE_TSR_RESERVATION_RELEASE_KEY = 'medicalServiceStandaloneTSRReservationReleasesV1';
-const STANDALONE_TSR_SERVER_DRAFT_DEBOUNCE_MS = 15 * 1000;
+const STANDALONE_TSR_SERVER_DRAFT_DEBOUNCE_MS = 900;
 let standaloneTSRServerDraftSyncTimer = null;
 let standaloneTSRServerDraftSyncTimerDraftId = '';
 let standaloneTSRServerDraftSyncChain = Promise.resolve();
@@ -3937,6 +3940,12 @@ function standaloneTSRDraftVersionReadiness(record){
   };
 }
 
+function standaloneTSRDraftVersionHasCalibrationReport(version){
+  const report = version?.payload?.calibration_report || version?.calibration_report;
+  const status = String(report?.status || '').trim().toLowerCase();
+  return Boolean(report && status && status !== 'not_started');
+}
+
 function standaloneTSRDraftVersionSignatureSummary(readiness){
   if(readiness.hasEngineerSignature && readiness.hasClientSignature) return 'Includes both signatures';
   if(readiness.hasEngineerSignature) return 'Engineer signature included; client signature missing';
@@ -4185,6 +4194,11 @@ function setStandaloneTSRSaveStatus(state, context=null, details={}){
   const messageNode = status.querySelector('.offline-tsr-save-status-message');
   if(messageNode && messageNode.textContent !== message){
     messageNode.textContent = message;
+  }
+  try{
+    window.calibrationReport?.setSaveStatusFromTSR?.(state, details);
+  }catch(error){
+    console.warn('[Offline TSR] Calibration save status update failed', error);
   }
   return true;
 }
@@ -6100,6 +6114,9 @@ async function renderStandaloneTSRDraftPanel(){
     const recoveryNote = (!conflicted || selectedVersion) && missingSignatureTargets.length
       ? `<div class="standalone-tsr-draft-meta text-warning"><i class="fa-solid fa-signature me-1"></i>${conflicted ? 'Currently open version missing: ' : 'Missing: '}${missingSignatureTargets.map(target => target === 'serviced' ? 'engineer signature' : 'client signature').join(' and ')}</div>`
       : '';
+    const recommendationCalibrationNote = standaloneTSRDraftVersionHasCalibrationReport(record)
+      ? '<div class="standalone-tsr-draft-meta text-success"><i class="fa-solid fa-file-circle-check me-1"></i>Calibration Report saved with this draft</div>'
+      : '';
     const recoveryAction = (!conflicted || selectedVersion) && missingSignatureTargets.length
       ? `<button class="btn btn-warning btn-sm fw-bold" type="button" onclick="beginStandaloneTSRSignatureRecovery('${escapeAttr(draftId)}')"><i class="fa-solid fa-signature me-1"></i>Recover available signatures</button>`
       : '';
@@ -6117,11 +6134,15 @@ async function renderStandaloneTSRDraftPanel(){
               const availability = versionSources.length
                 ? `<div class="standalone-tsr-draft-source-note">${versionSources.map(label => escapeHTML(label)).join(' · ')}</div>`
                 : '';
+              const calibrationNote = standaloneTSRDraftVersionHasCalibrationReport(version)
+                ? '<div class="standalone-tsr-draft-meta text-success"><i class="fa-solid fa-file-circle-check me-1"></i>Calibration Report saved with this draft</div>'
+                : '';
               return `<div class="standalone-tsr-draft-version">
                 <div class="standalone-tsr-draft-version-copy">
                   <strong>${escapeHTML(standaloneTSRDraftVersionSourceText(version))}</strong>
                   <div class="standalone-tsr-draft-meta">${versionReadiness.completedCount} of 5 requirements completed · ${escapeHTML(standaloneTSRDraftVersionSignatureSummary(versionReadiness))}</div>
                   <div class="standalone-tsr-draft-meta">Saved ${escapeHTML(versionTime)}</div>
+                  ${calibrationNote}
                   ${availability}
                 </div>
                 ${isOpen
@@ -6149,6 +6170,7 @@ async function renderStandaloneTSRDraftPanel(){
           </div>
           <div class="standalone-tsr-draft-meta standalone-tsr-draft-completion">${conflicted ? 'Recommended — ' : ''}${readiness.completedCount} of 5 requirements completed</div>
           <div class="standalone-tsr-draft-meta">${escapeHTML(signatureSummary)}</div>
+          ${recommendationCalibrationNote}
           ${continueAction}
         </section>
         ${copyChoices}

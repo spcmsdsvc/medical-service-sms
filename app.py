@@ -1863,6 +1863,10 @@ class Client(db.Model):
     name = db.Column(db.String(100), nullable=False)
     
     address = db.Column(db.String(200))
+
+    # Optional reusable client grouping for administrator-maintained directory views.
+    # Kept as one text value so existing client/contact workflows remain unchanged.
+    group_name = db.Column(db.String(100), nullable=True)
     
     # --- Departmental Contact Matrix ---
     
@@ -3439,6 +3443,7 @@ _tsr_draft_table_ready = False
 _tsr_number_reservation_table_ready = False
 _engineer_signature_column_ready = False
 _contact_designation_column_ready = False
+_client_group_column_ready = False
 _universal_approval_audit_table_ready = False
 _travel_request_tables_ready = False
 _travel_request_participant_table_ready = False
@@ -4929,6 +4934,36 @@ def ensure_contact_designation_column():
     except Exception as contact_designation_error:
         db.session.rollback()
         print(f"[CLIENTS] Contact designation column migration skipped: {contact_designation_error}", flush=True)
+
+
+def ensure_client_group_column():
+    """Add the optional Client.group_name field without replacing an existing database."""
+    global _client_group_column_ready
+
+    if _client_group_column_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            table_exists = connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='client'"
+            ).fetchone()
+            if not table_exists:
+                _client_group_column_ready = True
+                return
+
+            columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(client)").fetchall()
+            }
+            if 'group_name' not in columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE client ADD COLUMN group_name VARCHAR(100)"
+                )
+                print("[DB MIGRATION] Added client.group_name", flush=True)
+
+        _client_group_column_ready = True
+    except Exception as client_group_error:
+        print(f"[CLIENTS] Client group column migration skipped: {client_group_error}", flush=True)
 
 
 def ensure_universal_approval_audit_table():
@@ -23787,8 +23822,8 @@ def pwa_service_worker():
     # Navigation shell bump: v192 isolates late Calibration Report drafts from finalized TSR draft deletion markers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v193-reimbursement-lpr-availability.
     # Navigation shell bump: v194 distributes the collapsed Historical Report Repair notice.
-    # Navigation shell bump: v197 distributes dark-mode Product History and Calibration Report readability.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v197-dark-mode-readability';
+    # Navigation shell bump: v199 distributes the visible reusable Client group picker.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v199-client-group-picker';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -23806,14 +23841,14 @@ const APP_SHELL = [
   '/static/css/app-dashboard.css',
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
-  '/static/css/app-calibration-report.css?v=10',
+  '/static/css/app-calibration-report.css?v=11',
   '/static/css/app-offline-tsr.css?v=7',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=34',
+  '/static/js/app-calibration-report.js?v=35',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
@@ -29164,6 +29199,7 @@ def get_engineers():
 @app.route('/get_clients')
 @login_required
 def get_clients():
+    ensure_client_group_column()
     ensure_contact_designation_column()
 
     if is_hr_schedule_only_user():
@@ -29265,7 +29301,12 @@ def get_clients():
                 getattr(c, 'email_address_3', '')
             )
 
-        entry = {'id': c.id, 'name': c.name, 'address': c.address}
+        entry = {
+            'id': c.id,
+            'name': c.name,
+            'address': c.address,
+            'group_name': clean_str(getattr(c, 'group_name', None)) or None,
+        }
         for idx, contact_values in enumerate(merged_contacts, start=1):
             name, phone, email, designation = contact_values
             entry[f'cp{idx}'] = name
@@ -50034,9 +50075,11 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
 def add_client():
     """ Hospital record entry with conflict detection. Access: Admin Levels. """
     if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
+    ensure_client_group_column()
     ensure_contact_designation_column()
     payload = request.get_json()
     name = clean_str(payload.get('name')); addr = clean_str(payload.get('address'))
+    group_name = clean_str(payload.get('group_name')) or None
 
     if not payload.get('force'):
         collision = check_for_duplicate_client(name, addr)
@@ -50044,7 +50087,7 @@ def add_client():
             return jsonify({'status': 'conflict', 'message': f'Duplicate Found: "{collision.name}"', 'existing_id': collision.id}), 409
 
     new_hospital = Client(
-        name=name, address=addr,
+        name=name, address=addr, group_name=group_name,
         contact_person_1=clean_str(payload.get('cp1')), contact_number_1=clean_str(payload.get('cn1')), email_address_1=clean_str(payload.get('ce1')),
         contact_person_2=clean_str(payload.get('cp2')), contact_number_2=clean_str(payload.get('cn2')), email_address_2=clean_str(payload.get('ce2')),
         contact_person_3=clean_str(payload.get('cp3')), contact_number_3=clean_str(payload.get('cn3')), email_address_3=clean_str(payload.get('ce3'))
@@ -50081,6 +50124,7 @@ def update_client(id):
     Engineers can add/edit contact rows only; they cannot delete contacts or
     modify the client name/address.
     """
+    ensure_client_group_column()
     payload = request.get_json(silent=True) or {}
     client_rec = db.session.get(Client, id)
     if not client_rec:
@@ -50123,6 +50167,8 @@ def update_client(id):
         }), 409
 
     client_rec.name, client_rec.address = new_name, new_address
+    if 'group_name' in payload:
+        client_rec.group_name = clean_str(payload.get('group_name')) or None
     submitted_count = apply_client_contacts_without_deleting_existing(
         id,
         payload,
@@ -60447,6 +60493,7 @@ def ensure_runtime_sqlite_migrations_before_request():
 
     # Safe on existing SQLite databases; creates tables only when missing.
     db.create_all()
+    ensure_client_group_column()
     try:
         schedule_calibration_report_conversion()
     except Exception as conversion_worker_error:
@@ -60676,6 +60723,7 @@ def initialize_database():
     """
     with app.app_context():
         db.create_all()
+        ensure_client_group_column()
         # User model queries during startup require additive columns before any
         # hierarchy/account migration loads an existing user record.
         ensure_user_approval_columns()

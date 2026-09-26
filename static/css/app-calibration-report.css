@@ -27,6 +27,12 @@
 .calibration-report-modal-status.tone-info{background:#eff6ff;color:#1d4ed8;}
 .calibration-report-modal-status.tone-warning{background:#fffbeb;color:#92400e;}
 .calibration-report-modal-status.tone-danger{background:#fef2f2;color:#b91c1c;}
+.calibration-report-save-status{display:flex;align-items:center;gap:8px;margin:0;padding:8px 18px;border-bottom:1px solid #cbd5e1;background:#f8fafc;color:#475569;font:800 12px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;}
+.calibration-report-save-status[data-state="unsaved"]{background:#fffbeb;color:#92400e;}
+.calibration-report-save-status[data-state="saving"]{background:#eff6ff;color:#1d4ed8;}
+.calibration-report-save-status[data-state="device-saved"]{background:#f0fdf4;color:#166534;}
+.calibration-report-save-status[data-state="account-backed-up"]{background:#ecfdf5;color:#166534;}
+.calibration-report-save-status[data-state="conflict"],.calibration-report-save-status[data-state="failed"]{background:#fef2f2;color:#b91c1c;}
 .calibration-report-workspace{min-height:0;overflow:auto;padding:20px;}
 .calibration-report-editor{width:min(100%,980px);margin:0 auto;}
 .calibration-report-template-note{margin:0 auto 12px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;color:#475569;font:700 12px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;}
@@ -145,6 +151,11 @@
 [data-app-theme="dark"] .calibration-report-modal-status.tone-info{background:#172554;color:#bfdbfe;}
 [data-app-theme="dark"] .calibration-report-modal-status.tone-warning{background:#451a03;color:#fde68a;}
 [data-app-theme="dark"] .calibration-report-modal-status.tone-danger{background:#450a0a;color:#fecaca;}
+[data-app-theme="dark"] .calibration-report-save-status{background:#333438;color:#d7d9df;border-color:#85888d;}
+[data-app-theme="dark"] .calibration-report-save-status[data-state="unsaved"]{background:#451a03;color:#fde68a;}
+[data-app-theme="dark"] .calibration-report-save-status[data-state="saving"]{background:#172554;color:#bfdbfe;}
+[data-app-theme="dark"] .calibration-report-save-status[data-state="device-saved"],[data-app-theme="dark"] .calibration-report-save-status[data-state="account-backed-up"]{background:#052e16;color:#bbf7d0;}
+[data-app-theme="dark"] .calibration-report-save-status[data-state="conflict"],[data-app-theme="dark"] .calibration-report-save-status[data-state="failed"]{background:#450a0a;color:#fecaca;}
 [data-app-theme="dark"] .calibration-report-page{background:#292a2d !important;color:#ededed !important;border-color:#85888d;box-shadow:0 12px 36px rgba(0,0,0,.45);}
 [data-app-theme="dark"] .calibration-report-paper-header{border-color:#b8bbc2;}
 [data-app-theme="dark"] .calibration-report-paper-title,[data-app-theme="dark"] .calibration-report-paper-brand{color:#f8fafc;}

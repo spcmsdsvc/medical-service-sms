@@ -43,7 +43,8 @@
         <div class="row g-2 mb-4 no-print bg-light p-3 rounded">
             <div class="col-md-4"><label class="small fw-bold">SEARCH NAME</label><input type="text" id="s-name" class="form-control form-control-sm" oninput="applyFilters()"></div>
             <div class="col-md-4"><label class="small fw-bold">SEARCH ADDRESS</label><input type="text" id="s-addr" class="form-control form-control-sm" oninput="applyFilters()"></div>
-            <div class="col-md-4"><label class="small fw-bold">SEARCH DESIGNATION</label><input type="text" id="s-designation" class="form-control form-control-sm" oninput="applyFilters()"></div>
+            <div class="col-md-2"><label class="small fw-bold">SEARCH GROUP</label><input type="text" id="s-group" class="form-control form-control-sm" oninput="applyFilters()"></div>
+            <div class="col-md-2"><label class="small fw-bold">SEARCH DESIGNATION</label><input type="text" id="s-designation" class="form-control form-control-sm" oninput="applyFilters()"></div>
         </div>
 
         <div class="table-responsive">
@@ -52,6 +53,7 @@
                     <tr>
                         <th><button type="button" class="client-sort-btn" data-sort-key="name" onclick="setClientSort('name')">Name <span class="client-sort-indicator" data-sort-indicator="name">↕</span></button></th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="address" onclick="setClientSort('address')">Address <span class="client-sort-indicator" data-sort-indicator="address">↕</span></button></th>
+                        <th>Group</th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="contact" onclick="setClientSort('contact')">Main Contact <span class="client-sort-indicator" data-sort-indicator="contact">↕</span></button></th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="designation" onclick="setClientSort('designation')">Designation <span class="client-sort-indicator" data-sort-indicator="designation">↕</span></button></th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="phone" onclick="setClientSort('phone')">Phone <span class="client-sort-indicator" data-sort-indicator="phone">↕</span></button></th>
@@ -123,11 +125,22 @@
                 <div class="row">
                     <div class="col-md-6 mb-3"><label class="small fw-bold">Company Name</label><input type="text" id="c-name" class="form-control" oninput="liveDuplicateCheck(); autoCompleteClient()"></div>
                     <div class="col-md-6 mb-3"><label class="small fw-bold">Office Address</label><input type="text" id="c-address" class="form-control" oninput="liveDuplicateCheck(); autoCompleteClient()"></div>
+                    <div class="col-md-6 mb-3">
+                        <label class="small fw-bold" for="c-group">Group</label>
+                        <select id="c-group" class="form-select" onchange="syncClientGroupPicker()">
+                            <option value="">No group</option>
+                            <option value="__add_new_group__">+ Add new group…</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3 d-none" id="c-group-new-wrap">
+                        <label class="small fw-bold" for="c-group-new">New Group Name</label>
+                        <input type="text" id="c-group-new" class="form-control" maxlength="100" placeholder="Enter new group name">
+                    </div>
                 </div>
                 <hr>
                 <div class="alert alert-warning border-0 small py-2 d-none" id="client-contact-only-note">
                     <i class="fa-solid fa-user-lock me-1"></i>
-                    Contact-only access: you may add/edit contact rows. Client name/address remain restricted.
+                    Contact-only access: you may add/edit contact rows. Client name/address/group remain restricted.
                 </div>
 
                 <div id="contacts-container"></div>
@@ -591,10 +604,14 @@ function toggleSection(id, el){
 function setClientModalContactOnlyMode(contactOnly){
     const nameField = document.getElementById('c-name');
     const addressField = document.getElementById('c-address');
+    const groupField = document.getElementById('c-group');
+    const groupNewField = document.getElementById('c-group-new');
     const note = document.getElementById('client-contact-only-note');
 
     if(nameField) nameField.disabled = contactOnly;
     if(addressField) addressField.disabled = contactOnly;
+    if(groupField) groupField.disabled = contactOnly;
+    if(groupNewField) groupNewField.disabled = contactOnly;
     if(note) note.classList.toggle('d-none', !contactOnly);
 }
 
@@ -632,6 +649,7 @@ function getActiveClientFilters(){
     return {
         name: document.getElementById('s-name')?.value || '',
         address: document.getElementById('s-addr')?.value || '',
+        group: document.getElementById('s-group')?.value || '',
         designation: document.getElementById('s-designation')?.value || ''
     };
 }
@@ -640,7 +658,72 @@ function restoreClientFilters(filters){
     if(!filters) return;
     if(document.getElementById('s-name')) document.getElementById('s-name').value = filters.name || '';
     if(document.getElementById('s-addr')) document.getElementById('s-addr').value = filters.address || '';
+    if(document.getElementById('s-group')) document.getElementById('s-group').value = filters.group || '';
     if(document.getElementById('s-designation')) document.getElementById('s-designation').value = filters.designation || '';
+}
+
+const CLIENT_GROUP_ADD_NEW_VALUE = '__add_new_group__';
+
+function getExistingClientGroups(){
+    const groupsByKey = new Map();
+    clientsData.forEach(client => {
+        const group = String(client.group_name || '').trim();
+        const key = group.toLocaleLowerCase();
+        if(group && !groupsByKey.has(key)) groupsByKey.set(key, group);
+    });
+    return Array.from(groupsByKey.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity:'base' }));
+}
+
+function refreshClientGroupOptions(selectedValue=''){
+    const select = document.getElementById('c-group');
+    if(!select) return;
+
+    const requested = String(selectedValue || '').trim();
+    const groups = getExistingClientGroups();
+    let selected = groups.find(group => group.toLocaleLowerCase() === requested.toLocaleLowerCase()) || requested;
+    if(selected && !groups.includes(selected)) groups.push(selected);
+    groups.sort((a, b) => a.localeCompare(b, undefined, { sensitivity:'base' }));
+
+    select.innerHTML = [
+        '<option value="">No group</option>',
+        ...groups.map(group => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`),
+        `<option value="${CLIENT_GROUP_ADD_NEW_VALUE}">+ Add new group…</option>`
+    ].join('');
+    select.value = selected || '';
+    syncClientGroupPicker();
+}
+
+function syncClientGroupPicker(){
+    const select = document.getElementById('c-group');
+    const wrap = document.getElementById('c-group-new-wrap');
+    const input = document.getElementById('c-group-new');
+    const adding = select?.value === CLIENT_GROUP_ADD_NEW_VALUE;
+    if(wrap) wrap.classList.toggle('d-none', !adding);
+    if(input){
+        input.required = adding;
+        input.disabled = Boolean(select?.disabled) || !adding;
+        if(adding && !input.value) setTimeout(() => input.focus(), 0);
+    }
+}
+
+function setClientGroupSelection(value=''){
+    const input = document.getElementById('c-group-new');
+    if(input) input.value = '';
+    refreshClientGroupOptions(value);
+}
+
+function getSelectedClientGroupName(){
+    const select = document.getElementById('c-group');
+    if(!select || select.value !== CLIENT_GROUP_ADD_NEW_VALUE) return String(select?.value || '').trim();
+
+    const input = document.getElementById('c-group-new');
+    const newName = String(input?.value || '').trim();
+    if(!newName){
+        clientAlert('Please enter a new group name.');
+        input?.focus();
+        return null;
+    }
+    return getExistingClientGroups().find(group => group.toLocaleLowerCase() === newName.toLocaleLowerCase()) || newName;
 }
 
 function addContact(name="", phone="", email="", designation=""){
@@ -674,6 +757,7 @@ function openAddModal(){
     document.getElementById('edit-client-id').value = "";
     document.getElementById('c-name').value = "";
     document.getElementById('c-address').value = "";
+    setClientGroupSelection('');
     document.getElementById('contacts-container').innerHTML = "";
     contactCount = 0;
     addContact();
@@ -692,6 +776,7 @@ function openEditModal(id){
     document.getElementById('edit-client-id').value = id;
     document.getElementById('c-name').value = c.name;
     document.getElementById('c-address').value = c.address;
+    setClientGroupSelection(c.group_name || '');
 
     document.getElementById('contacts-container').innerHTML = "";
     contactCount = 0;
@@ -745,6 +830,11 @@ async function saveClient(){
         }
 
         let data = { name, address };
+        if(isAdminUser){
+            const selectedGroup = getSelectedClientGroupName();
+            if(selectedGroup === null) return;
+            data.group_name = selectedGroup;
+        }
 
         document.querySelectorAll('#contacts-container > div').forEach((c, i)=>{
             let idx = i + 1;
@@ -790,6 +880,7 @@ async function loadClients(options = {}) {
 
     clientsData = await res.json(); 
     clientSummary = await summaryRes.json().catch(() => ({ total_clients: clientsData.length, total_contacts: 0, clients_with_contacts: 0 }));
+    refreshClientGroupOptions(document.getElementById('c-group')?.value || '');
 
     if(options.preserveFilters){
         restoreClientFilters(filters);
@@ -975,6 +1066,10 @@ function renderClientMobileCards(data){
                             <i class="fa-solid fa-location-dot"></i>
                             <span>${escapeHtml(c.address || 'No address saved')}</span>
                         </div>
+                        <div class="client-mobile-address">
+                            <i class="fa-solid fa-layer-group"></i>
+                            <span>${escapeHtml(c.group_name || 'No group')}</span>
+                        </div>
                     </div>
                     <div class="client-mobile-icon-actions">
                         ${phoneAction}
@@ -1020,8 +1115,9 @@ function updateClientCountFooter(filteredData){
 
     const nameFilter = document.getElementById('s-name')?.value.trim();
     const addrFilter = document.getElementById('s-addr')?.value.trim();
+    const groupFilter = document.getElementById('s-group')?.value.trim();
     const designationFilter = document.getElementById('s-designation')?.value.trim();
-    const hasFilter = Boolean(nameFilter || addrFilter || designationFilter);
+    const hasFilter = Boolean(nameFilter || addrFilter || groupFilter || designationFilter);
 
     const label = document.getElementById('client-count-label');
     const contacts = document.getElementById('client-contact-count');
@@ -1060,6 +1156,7 @@ ${escapeHtml(c.name)}
 </span>
 </td>
             <td><small>${escapeHtml(c.address || '-')}</small></td>
+            <td>${escapeHtml(c.group_name || '-')}</td>
             <td>${contactDisplay}</td>
             <td>${escapeHtml(c.cd1 || '-')}</td>
             <td>${escapeHtml(c.cn1 || '-')}</td>
@@ -1094,6 +1191,7 @@ async function viewContacts(id){
         <div>
             <div class="fw-bold fs-5">${c.name}</div>
             <div class="text-muted small">${c.address || "No address provided"}</div>
+            <div class="text-muted small"><strong>Group:</strong> ${escapeHtml(c.group_name || 'No group')}</div>
         </div>
         <div class="d-flex gap-2">
             <button class="btn btn-sm btn-outline-success" onclick="window.open('/export_client_excel/${c.id}')">Export Excel</button>
@@ -1247,13 +1345,15 @@ function clientHasDesignationMatch(c, designationFilter){
 function applyFilters(){
     const nameFilter = document.getElementById('s-name').value.toLowerCase();
     const addrFilter = document.getElementById('s-addr').value.toLowerCase();
+    const groupFilter = (document.getElementById('s-group')?.value || '').toLowerCase();
     const designationFilter = (document.getElementById('s-designation')?.value || '').toLowerCase();
 
     const filtered = clientsData.filter(c => {
         const nameMatch = (c.name || "").toLowerCase().includes(nameFilter);
         const addrMatch = (c.address || "").toLowerCase().includes(addrFilter);
+        const groupMatch = (c.group_name || "").toLowerCase().includes(groupFilter);
         const designationMatch = clientHasDesignationMatch(c, designationFilter);
-        return nameMatch && addrMatch && designationMatch;
+        return nameMatch && addrMatch && groupMatch && designationMatch;
     });
 
     renderTable(sortClientRows(filtered));

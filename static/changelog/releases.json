@@ -1,6 +1,35 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-26-tsr-autosave-client-groups",
+      "release_date": "2026-09-26",
+      "title": "TSR Draft Autosave and Client Groups",
+      "summary": "Create TSR drafts now save progress more clearly, and clients can be organized with reusable groups.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-26-tsr-autosave-client-groups-users",
+          "category": "Create TSR and Clients",
+          "description": "Create TSR shows Calibration Report draft indicators and save status, while the Clients directory supports one optional administrator-managed group with filtering and suggestions.",
+          "audiences": [
+            "admins",
+            "engineers",
+            "schedulers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-09-26-visible-client-group-picker-admins",
+          "category": "Clients",
+          "description": "Add and Edit Client now show every existing group in a clear dropdown, with separate No group and Add new group options.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-25-dark-mode-readability",
       "release_date": "2026-09-25",
       "title": "Clearer Dark-Mode Forms and History",

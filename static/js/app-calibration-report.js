@@ -457,6 +457,55 @@
     }
   }
 
+  function setCalibrationSaveStatus(stateName, details){
+    var status = q('#calibration-report-save-status');
+    if(!status) return;
+    var stateMap = {
+      'unsaved':'unsaved',
+      'saving-local':'saving',
+      'backup-in-progress':'saving',
+      'saving':'saving',
+      'local-saved-pending':'device-saved',
+      'account-backed-up':'account-backed-up',
+      'account-backup-conflict':'conflict',
+      'local-save-failed':'failed',
+      'account-backup-failed':'failed',
+      'copy-selected':'unsaved',
+      'no-changes':'no-changes'
+    };
+    var normalized = stateMap[stateName] || 'no-changes';
+    var message = {
+      'no-changes':'Calibration Report changes will be saved automatically.',
+      'unsaved':'Unsaved Calibration Report changes.',
+      'saving':'Saving Calibration Report…',
+      'device-saved':'Saved on this device. Account backup is pending.',
+      'account-backed-up':'Saved on this device and backed up to your account.',
+      'conflict':'Saved on this device, but account backup needs your attention.',
+      'failed':'Calibration Report could not be saved. Keep this page open and try again.'
+    }[normalized] || 'Calibration Report save status unavailable.';
+    if(details?.syncNotRequested && normalized === 'device-saved'){
+      message = 'Saved on this device only until Save Final Report uploads it.';
+    }else if(details?.message){
+      message = String(details.message);
+    }
+    status.dataset.state = normalized;
+    var icon = status.querySelector('i');
+    if(icon){
+      var iconByState = {
+        'no-changes':'fa-circle-minus',
+        'unsaved':'fa-pen-to-square',
+        'saving':'fa-spinner fa-spin',
+        'device-saved':'fa-mobile-screen-button',
+        'account-backed-up':'fa-circle-check',
+        'conflict':'fa-triangle-exclamation',
+        'failed':'fa-circle-exclamation'
+      };
+      icon.className = 'fa-solid ' + (iconByState[normalized] || iconByState['no-changes']);
+    }
+    var messageNode = status.querySelector('span');
+    if(messageNode) messageNode.textContent = message;
+  }
+
   function fieldMarkup(path, label, type, placeholder){
     var rule = fitRuleForPath(path); var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : '';
     return '<div class="calibration-report-field"><label>' + escapeHtml(label) + '</label><input data-cr-field="' + escapeHtml(path) + '" type="' + escapeHtml(type || 'text') + '" placeholder="' + escapeHtml(placeholder || '') + '"' + limit + '></div>';
@@ -676,6 +725,7 @@
 
   function onEditorInput(event){
     var element = event.target;
+    setCalibrationSaveStatus('unsaved');
     if(element.matches('[data-cr-field]')) setPath(state, element.getAttribute('data-cr-field'), element.value);
     if(element.matches('[data-cr-check]')){ var check = String(element.getAttribute('data-cr-check')).split(':'); var list = check[0] === 'mechanical' ? state.mechanical_checks : state.generator_checks; if(list[Number(check[1])]) list[Number(check[1])].result = element.value; }
     if(element.matches('[data-cr-focal-spot]')){ var focalParts = outputDomParts(element.getAttribute('data-cr-focal-spot')); var focalOutput = outputState(state,focalParts.tube); focalOutput.focal_spots[focalParts.key] = !!element.checked; applyDomFromState(); }
@@ -758,7 +808,7 @@
     context.fillStyle = '#ffffff'; context.fillRect(0, 0, canvas.width, canvas.height); context.lineWidth = 4; context.lineCap = 'round'; context.lineJoin = 'round'; context.strokeStyle = '#111827';
     function finish(){
       if(!signatureDrawing) return;
-      signatureDrawing = false; state.signature.image = canvas.toDataURL('image/png'); state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); updateSignatureStatus(); renderCard(); syncAutoDocument(); scheduleDraftSave();
+      signatureDrawing = false; state.signature.image = canvas.toDataURL('image/png'); state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); updateSignatureStatus(); renderCard(); syncAutoDocument(); setCalibrationSaveStatus('unsaved'); scheduleDraftSave();
     }
     canvas.addEventListener('pointerdown', function(event){ signatureDrawing = true; canvas.setPointerCapture?.(event.pointerId); var point = signaturePoint(canvas, event); context.beginPath(); context.moveTo(point.x, point.y); });
     canvas.addEventListener('pointermove', function(event){ if(!signatureDrawing) return; var point = signaturePoint(canvas, event); context.lineTo(point.x, point.y); context.stroke(); });
@@ -771,7 +821,7 @@
     if(!state.signature.image) return;
     var image = new Image(); image.onload = function(){ context.drawImage(image, 0, 0, canvas.width, canvas.height); }; image.src = state.signature.image;
   }
-  function clearSignature(){ state.signature.image = ''; state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); drawSignature(); updateSignatureStatus(); renderCard(); scheduleDraftSave(); }
+  function clearSignature(){ state.signature.image = ''; state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); drawSignature(); updateSignatureStatus(); renderCard(); setCalibrationSaveStatus('unsaved'); scheduleDraftSave(); }
   function updateSignatureStatus(){ var element = q('#cr-signature-status'); if(element) element.textContent = state.signature.image ? 'Calibration signature saved.' : 'No calibration signature saved.'; }
 
   function hasGeneratedMetadata(report){ return !!(report && report.generated && report.generated.attachment_id && report.generated.blob_id && report.generated.fingerprint && String(report.generated.fingerprint) === fingerprint(report)); }
@@ -813,7 +863,17 @@
       generatedBlobState = 'missing'; renderCard(); syncAutoDocument();
     });
   }
-  function scheduleDraftSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(function(){ if(isActive(state) && typeof window.saveStandaloneTSRDraft === 'function') window.saveStandaloneTSRDraft(true).catch(function(err){ console.warn('[Calibration Report] Autosave failed', err); }); }, 500); }
+  function scheduleDraftSave(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){
+      if(!isActive(state) || typeof window.saveStandaloneTSRDraft !== 'function') return;
+      setCalibrationSaveStatus('saving');
+      Promise.resolve(window.saveStandaloneTSRDraft(true)).catch(function(err){
+        setCalibrationSaveStatus('failed');
+        console.warn('[Calibration Report] Autosave failed', err);
+      });
+    }, 900);
+  }
 
   function autofill(schedule){
     var tsr = currentTSRData(); var contact = schedule?.client_contact || {};
@@ -1585,6 +1645,6 @@
   }
   function ensureEditor(){ if(!editorBuilt) buildEditor(); }
 
-  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, markUploaded:markUploaded, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
+  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, setSaveStatusFromTSR:setCalibrationSaveStatus, markUploaded:markUploaded, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
   document.addEventListener('DOMContentLoaded', function(){ ensureEditor(); renderCard(); q('#calibration-report-close')?.addEventListener('click', close); q('#calibration-report-save')?.addEventListener('click', saveReportDraft); q('#calibration-report-generate')?.addEventListener('click', generateSample); q('#calibration-report-certificate-generate')?.addEventListener('click', generateCertificateSample); q('#calibration-report-final-save')?.addEventListener('click', saveFinalReport); q('#calibration-report-download')?.addEventListener('click', download); q('#calibration-report-clear')?.addEventListener('click', clearForm); q('#calibration-report-create-btn')?.addEventListener('click', createReport); q('#calibration-report-toolbar-remove')?.addEventListener('click', removeReport); document.addEventListener('keydown', handleDialogKeydown); });
 })();

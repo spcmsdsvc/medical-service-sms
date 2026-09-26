@@ -67,6 +67,7 @@ let standaloneTSRSaveStatusGeneration = 0;
 let offlineTSRAttachments = [];
 let standaloneTSRLocalSaveChain = Promise.resolve();
 const OFFLINE_TSR_DB_STORES = {{ drafts: 'drafts' }};
+const STANDALONE_TSR_ACCOUNT_SCOPE = 'test-account';
 const STANDALONE_TSR_ACTIVE_DRAFT_ID = 'active';
 const navigator = {{ onLine: false }};
 const localStorage = {{
@@ -86,6 +87,7 @@ function isStandaloneTSRDraftMeaningful() {{ return true; }}
 function isQueuedTSRSignatureAttachment() {{ return false; }}
 function projectOfflineTSRPayloadForLocalStorage(value) {{ return Object.assign({{}}, value || {{}}); }}
 function warnOfflineTSRStoragePressure() {{ return Promise.resolve({{ available:true }}); }}
+function offlineTSRDBGet() {{ return Promise.resolve(null); }}
 let stored = null;
 let writes = [];
 {write_body}
@@ -470,7 +472,7 @@ console.log(JSON.stringify({ success, successEvents, missing, missingEvents, sta
             self.app_source,
         )
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v197-dark-mode-readability",
+            "medical-service-pwa-offline-navigation-v199-client-group-picker",
             self.app_source,
         )
         self.assertIn('2026-09-25-pre-submission-calibration-report', self.release_source)

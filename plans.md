@@ -1,5 +1,155 @@
 # Medical Service SMS — Approved Plans
 
+## Visible Client Group Picker
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-26 — the owner explicitly requested implementation with “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-26 — the same request authorizes this bounded follow-up.
+**Detailed:** 2026-09-26.
+
+### Summary and boundaries
+
+Replace the Clients modal's browser-dependent Group datalist with an explicit dropdown containing
+**No group**, every existing saved group, and **Add new group…**. Choosing the add-new option reveals
+a required, 100-character input. Editing preselects the saved group, contact-only users can see but
+cannot change it, and a newly saved group appears in later add/edit sessions after the existing client
+reload. Reuse the current `group_name` field and API; no backend, schema, migration, import/export,
+group-management page, browser automation, production, Railway, commit, push, or deployment work is
+included.
+
+### Numbered execution steps
+
+1. Add focused fail-first contracts for the explicit picker, add-new field and validation, edit
+   preselection, no-group clearing, and contact-only disabling while preserving protected dirty work.
+2. Update `templates/clients.html` to populate a visible group select from `clientsData`, reveal and
+   validate the new-name input only for **Add new group…**, reuse existing spelling for a
+   case-insensitive match, and submit the resolved value through the existing `group_name` payload.
+3. Advance the service-worker marker, add one concise release item, update `changes.md`, and close
+   this plan with truthful results.
+4. Run the focused client-group tests, Jinja/JavaScript/static checks, `git diff --check`, and one
+   full unittest discovery with a disposable database. Do not use browser/Codex UI automation or
+   modify protected artifacts.
+
+### Acceptance criteria
+
+- Existing groups are visible immediately in both Add and Edit Client modals.
+- **No group** clears the assignment; **Add new group…** requires a nonblank name and saves it.
+- Edit preselects the current group, and contact-only editors cannot change group controls.
+- No backend/schema/API behavior changes, and protected dirty files remain untouched.
+
+### Execution outcome (2026-09-26)
+
+Replaced the Group datalist in `templates/clients.html` with an explicit select that lists **No group**,
+the distinct groups already present in `clientsData`, and **Add new group…**. The add-new option reveals
+a required 100-character field, reuses canonical existing spelling for case-insensitive matches, and
+submits through the unchanged `group_name` payload. Add resets the picker, Edit preselects the saved
+group, and contact-only editors see disabled group controls. No backend, schema, migration, import/export,
+or standalone group-management behavior changed.
+
+The focused fail-first contract failed 1/1 before the modal change. Post-change client-group, page-design,
+and cache checks passed 20/20. Clients Jinja parsing and inline JavaScript syntax, app AST, release JSON,
+and `git diff --check` passed. Full discovery ran once on a disposable database: 1,331 tests with 19
+unrelated existing/stale or environment failures and 2 skips, matching the prior Calibration Center,
+changelog, standalone LPR, and purchase-order rate-limit failure areas. Advanced the service-worker
+marker to v199 and added the release/change records. No browser/Codex UI automation, commit, push,
+deployment, Railway, production, destructive database, or protected-file operation occurred.
+
+
+## TSR Autosave, Calibration Draft Indicator, and Client Groups
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-26 — the owner explicitly requested implementation with “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-26 — the same request authorizes this bounded implementation package.
+**Detailed:** 2026-09-26.
+
+### Summary and boundaries
+
+Strengthen the existing Create TSR and Calibration Report local/account autosave path rather than
+creating another save system. Reduce the normal account-backup debounce to 900 ms and expose clear
+Unsaved, Saving, device-saved, account-backed-up, conflict, and failure feedback on Create TSR and
+inside the Calibration Report editor. Show whether each independently selectable saved TSR version
+contains an active Calibration Report. Keep late Calibration Reports for completed TSRs device-only
+until Save Final Report performs the existing upload.
+
+Add one optional reusable `Client.group_name` value. Existing databases receive a guarded additive
+column migration. Administrator add/update and the normal `/get_clients` response carry the value;
+the HR response remains exactly `{id, name}`. The Clients modal gets a Group input with existing
+group suggestions, desktop/mobile rows display the group, and the group filter is case-insensitive.
+Engineer/scheduler contact-only updates cannot change group values, and Timeline quick-add keeps its
+blank default. CSV import/export, new TSR/Calibration endpoints, database resets, production data,
+Railway, browser/Codex UI automation, commit, push, deploy, and unrelated dirty work are excluded.
+
+### Files and numbered execution steps
+
+1. **Preflight and fail-first coverage.** Re-read all applicable instructions and `changes.md` in
+   full, inspect current plans/source/tests/configuration and protected Git state, then add focused
+   contracts for the saved-version calibration indicator, 900 ms debounce/status propagation,
+   calibration-editor autosave status and late-report device-only behavior, Client group migration/
+   CRUD/payload/role protection, modal/filter/display, HR shape, and cache/release registration.
+   Run the focused tests against unchanged source and retain truthful intentional failures.
+2. **Saved TSR indicator and autosave — `templates/offline_tsr.html`,
+   `static/js/app-calibration-report.js`.** Reuse the existing grouped saved-version payload and
+   nested `calibration_report` state to render **Calibration Report saved with this draft** per
+   recommendation and alternate only when the report is active (not missing or `not_started`).
+   Change the ordinary account backup debounce to 900 ms. Keep serialized IndexedDB/localStorage
+   persistence, account conflict/revision handling, explicit Save Draft, and the late completed-TSR
+   calibration `serverSync:'none'` device-only path. Add a small persistent Calibration editor save
+   status fed by the existing TSR save coordinator, with no duplicate persistence or unload/beacon
+   path.
+3. **Client group storage/API — `app.py`.** Add nullable `Client.group_name` and a guarded additive
+   SQLite startup migration. Normalize/trim the optional value for admin `/add_client` and
+   `/update_client/<id>`, include it in non-HR `/get_clients`, preserve the exact HR `{id, name}`
+   response, ignore it for contact-only role updates, and leave Timeline quick-add/import/export
+   defaults unchanged.
+4. **Client UI — `templates/clients.html`.** Add an admin-only Group field with a datalist of
+   existing group names in the add/edit modal, include the value in administrator saves, keep it
+   disabled and omitted for contact-only editors, add Group filter input, and show group labels in
+   desktop/mobile client rows and client details without changing contact behavior.
+5. **Distribution and records.** Advance the embedded service-worker/cache marker and any affected
+   asset query/precache references, add one concise published `releases.json` entry, append factual
+   bullets to the current `changes.md` date, and finish this plan with exact execution outcomes.
+6. **Verification and closeout.** Prove fail-first results, run focused TSR/Calibration/client tests,
+   static Python/Jinja/JavaScript/JSON and `git diff --check` validations, then one full unittest
+   discovery with a unique disposable test database following project conventions. Do not use browser
+   or Codex UI automation. Preserve `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and all
+   unrelated working-tree changes. Mark this plan Executed only after local verification; do not
+   commit, push, deploy, modify Railway, or access production.
+
+### Interfaces and acceptance criteria
+
+- `Client` gains nullable `group_name`; admin add/update accept it; non-HR `/get_clients` includes
+  it; HR `/get_clients` remains exactly `{id, name}`; no new TSR/Calibration endpoint is added.
+- Each client has at most one optional reusable group text value. Existing groups appear as modal
+  suggestions, new text is retained on save, and desktop/mobile display and case-insensitive filter
+  match the stored value.
+- Ordinary TSR/Calibration edits autosave through the existing coordinator after 900 ms idle, show
+  truthful save states, and late completed-TSR Calibration stays local until final upload.
+- Focused and full checks are truthful, protected dirty artifacts remain preserved, and no external or
+  destructive operation is performed.
+
+### Execution outcome (2026-09-26)
+
+Implemented the package in `app.py`, `templates/offline_tsr.html`, `static/js/app-calibration-report.js`,
+`static/css/app-calibration-report.css`, and `templates/clients.html`. Create TSR saved-version cards
+now independently show **Calibration Report saved with this draft** only for active nested report state.
+The existing serialized TSR/Calibration autosave path now uses a 900 ms ordinary account-backup debounce,
+and the Calibration editor displays Unsaved, Saving, device-saved, account-backed-up, conflict, and
+failure states while preserving the completed-TSR device-only path until Save Final Report. Client groups
+use a nullable guarded additive migration, administrator-only CRUD, non-HR payload support, reusable modal
+suggestions, desktop/mobile display, and case-insensitive filtering; HR payload shape and Timeline quick-add
+behavior remain unchanged.
+
+Added `tests/test_tsr_autosave_client_groups.py` and updated affected asset-marker contracts. The intentional
+fail-first run reported 6 tests with 4 failures and 2 errors before implementation. The focused batch passed
+126 tests. Python AST, JavaScript syntax, release JSON, and `git diff --check` checks passed. Full unittest
+discovery used a unique disposable database and ran 1,330 tests with 19 failures and 2 skips; those failures
+were existing/stale or environment-related (old Calibration Center marker, changelog manifest sync, LPR
+authorization, and purchase-order rate limiting), outside this package. No browser or Codex UI automation
+was used. Python AST, Jinja template parsing, JavaScript syntax, release JSON, and `git diff --check`
+validations passed. The service-worker marker, asset queries, release entry, and change log were updated. No commit,
+push, deployment, Railway, production, destructive database, or protected-file operation occurred; the
+pre-existing protected dirty state remains preserved.
+
 ## Dark-Mode Readability for Product History and Calibration Report
 
 **Status:** Executed — implementation commit `ee6390d`; publication authorized to `origin/main`.
