@@ -2,6 +2,9 @@
 
 codex changes - 2026-09-26
 
+- The owner authorized committing and pushing only the completed TSR autosave, Calibration draft indicator, Client Groups, and visible Group picker packages to `origin/main`. Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated files remain excluded.
+- Committed the authorized implementation, focused tests, cache/release metadata, and required records as `6bb4a12`. Publication records are being committed separately so both approved plans identify the immutable implementation commit.
+
 - Replaced the Clients add/edit modal's browser-dependent Group datalist with an explicit dropdown that immediately lists **No group**, every saved group, and **Add new group…**. The add-new choice reveals a required 100-character name field, reuses existing spelling on a case-insensitive match, and newly saved groups appear after the existing client refresh.
 - Preserved edit preselection, group clearing, administrator-only changes, and the disabled current-group view for engineer/scheduler contact-only editors. No backend, schema, migration, import/export, or group-management API behavior changed.
 - Added a focused fail-first picker contract (1 expected failure before implementation), advanced the service-worker marker to `medical-service-pwa-offline-navigation-v199-client-group-picker`, and added the administrator-facing release item. Post-change client-group/page/cache checks passed 20/20; Clients Jinja and inline JavaScript syntax, app AST, release JSON, and `git diff --check` passed.

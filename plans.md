@@ -2,9 +2,10 @@
 
 ## Visible Client Group Picker
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `6bb4a12`; publication authorized to `origin/main`.
 **Approved:** 2026-09-26 — the owner explicitly requested implementation with “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-26 — the same request authorizes this bounded follow-up.
+**Publication authorized:** 2026-09-26 — the owner instructed “commit and push these changes only”.
 **Detailed:** 2026-09-26.
 
 ### Summary and boundaries
@@ -57,9 +58,10 @@ deployment, Railway, production, destructive database, or protected-file operati
 
 ## TSR Autosave, Calibration Draft Indicator, and Client Groups
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `6bb4a12`; publication authorized to `origin/main`.
 **Approved:** 2026-09-26 — the owner explicitly requested implementation with “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-26 — the same request authorizes this bounded implementation package.
+**Publication authorized:** 2026-09-26 — the owner instructed “commit and push these changes only”.
 **Detailed:** 2026-09-26.
 
 ### Summary and boundaries
