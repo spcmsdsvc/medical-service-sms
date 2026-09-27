@@ -525,7 +525,9 @@ class GenorayInventoryTests(unittest.TestCase):
         for marker in (
             "'/api/genoray/items'", "'/api/genoray/summary'", "'/genoray/import'", "'/genoray/export'",
             "medicalServiceGenoraySortV1", "medicalServiceGenorayFreezeV1",
-            "if(isGenorayInventory) return '';", "!isGenorayInventory",
+            "function renderProductCalibrationDocumentLinks(product, mobile = false)",
+            "if(summary.calibration_report_preview_url)", "if(summary.certificate_preview_url)",
+            "!isGenorayInventory",
             "Assigned automatically on save", "cannot be cleared once it has been assigned",
             "bsidField.disabled = isGenorayInventory", "responseData.item || responseData",
         ):

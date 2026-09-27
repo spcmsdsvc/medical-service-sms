@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-27-machine-calibration-history",
+      "release_date": "2026-09-27",
+      "title": "Machine Calibration History and Due-Date Warnings",
+      "summary": "Products and Calendar now show source-aware calibration history, compact due-date status, and approved report/certificate previews as read-only attachments with inventory shortcuts.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-27-machine-calibration-history-users",
+          "category": "Inventory and Calendar",
+          "description": "Product, Genoray, and Vieworks records show approved calibration history and authorized report/certificate previews; active engineers can view and download the exact approved generated Calibration Report PDF. Calendar places the ready report in TSR Attachments, marks unavailable conversion without exposing the source DOCX, locks approved reports from editing, keeps full machine identities visible, uses compact due-date badges, prioritizes machines needing attention, and provides informational calibration details while selecting equipment.",
+          "audiences": [
+            "admins",
+            "engineers",
+            "schedulers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-26-regional-engineer-inventory-edit",
       "release_date": "2026-09-26",
       "title": "Regional Engineer Inventory Editing",

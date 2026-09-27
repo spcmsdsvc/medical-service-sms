@@ -1122,7 +1122,8 @@ function renderProductMobileCards(data){
                 <div class="product-mobile-top">
                     <div class="product-mobile-main">
                         <div class="product-mobile-sn">${escapeHtml(p.serial_number)}</div>
-                        ${renderProductSerialCertificateLink(p, true)}
+                        ${renderProductCalibrationDocumentLinks(p, true)}
+                        ${renderProductCalibrationBadge(p)}
                         <div class="product-mobile-name">${escapeHtml(p.name || fallbackName)}</div>
                         ${renderProductLinkedVieworks(p, true)}
                         <div class="product-mobile-sn">BSID: ${escapeHtml(p.bsid || 'Not assigned')}</div>
@@ -1161,23 +1162,51 @@ function renderProductMobileCards(data){
     }).join('');
 }
 
-function renderProductSerialCertificateLink(product, mobile = false){
-    if(isGenorayInventory) return '';
-    if(isVieworksInventory) return '';
-    const certificate = product.calibration_certificate;
-    if(!certificate || !certificate.preview_url) return '';
-
-    const serial = escapeHtml(product.serial_number || 'product');
-    const previewUrl = escapeHtml(certificate.preview_url);
+function renderProductCalibrationDocumentLinks(product, mobile = false){
+    const summary = product?.calibration_summary || {};
+    const serial = escapeHtml(product?.serial_number || 'product');
     const linkClass = mobile
         ? 'product-serial-certificate-link product-serial-certificate-link-mobile'
         : 'product-serial-certificate-link';
+    const links = [];
 
-    return `
-        <a class="${linkClass}" href="${previewUrl}" onclick="event.stopPropagation()" target="_blank" rel="noopener" title="View calibration certificate for ${serial}" aria-label="View calibration certificate for ${serial}">
-            <i class="fa-solid fa-certificate" aria-hidden="true"></i>
-            <span>View Certificate</span>
-        </a>`;
+    if(summary.calibration_report_preview_url){
+        const reportUrl = escapeHtml(summary.calibration_report_preview_url);
+        links.push(`
+            <a class="${linkClass}" href="${reportUrl}" onclick="event.stopPropagation()" target="_blank" rel="noopener" title="View calibration report for ${serial}" aria-label="View calibration report for ${serial}">
+                <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+                <span>View Report</span>
+            </a>`);
+    }
+
+    if(summary.certificate_preview_url){
+        const certificateUrl = escapeHtml(summary.certificate_preview_url);
+        links.push(`
+            <a class="${linkClass}" href="${certificateUrl}" onclick="event.stopPropagation()" target="_blank" rel="noopener" title="View calibration certificate for ${serial}" aria-label="View calibration certificate for ${serial}">
+                <i class="fa-solid fa-certificate" aria-hidden="true"></i>
+                <span>View Certificate</span>
+            </a>`);
+    }
+
+    return links.length
+        ? `<div class="product-serial-document-actions ${mobile ? 'product-serial-document-actions-mobile' : ''}">${links.join('')}</div>`
+        : '';
+}
+
+function productCalibrationStatusClass(summary){
+    const key = String(summary?.status_key || '').toLowerCase();
+    if(key === 'valid') return 'is-valid';
+    if(key === 'due_today' || key === 'due_1_month' || key === 'due_2_months' || key === 'due_3_months') return 'is-due';
+    if(key === 'expired') return 'is-expired';
+    return 'is-missing';
+}
+
+function renderProductCalibrationBadge(product){
+    const summary = product?.calibration_summary || {};
+    const status = summary.status || 'No calibration record';
+    return `<div class="product-calibration-summary ${productCalibrationStatusClass(summary)}" aria-label="${productEscape(status)}">
+        <span class="product-calibration-badge">${productEscape(status)}</span>
+    </div>`;
 }
 
 function productHistoryUrl(serial, source){
@@ -1191,6 +1220,7 @@ function renderProductHistory(data){
     const asset = data?.asset || {};
     const visits = Array.isArray(data?.visits) ? data.visits : [];
     const pmHistory = Array.isArray(data?.pm_history) ? data.pm_history : [];
+    const calibrations = Array.isArray(data?.calibrations) ? data.calibrations : [];
     const coverageDates = [asset.start_warranty, asset.end_warranty].filter(Boolean).join(' – ') || 'No warranty dates recorded';
     const coverageLabel = asset.under_contract ? 'Under Contract' : 'No Contract';
     const linked = [];
@@ -1226,12 +1256,40 @@ function renderProductHistory(data){
     const pmHtml = pmHistory.length
         ? `<div class="mt-3"><h6>Preventive Maintenance</h6>${pmHistory.map(row => `<div class="small border-bottom py-2"><strong>${productEscape(row.target_date || '')}</strong> · ${productEscape(row.status || '')}${row.cadence ? ` · ${productEscape(row.cadence)}` : ''}</div>`).join('')}</div>`
         : '';
+    const calibrationHtml = `<section class="product-calibration-history mt-3" aria-labelledby="product-calibration-history-title">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h6 id="product-calibration-history-title" class="mb-0">Calibration History</h6>
+            <span class="small text-muted">${calibrations.length} record${calibrations.length === 1 ? '' : 's'}</span>
+        </div>
+        ${calibrations.length ? calibrations.map(row => {
+            const links = [];
+            if(row.calibration_report_preview_url) links.push(`<a href="${productEscape(row.calibration_report_preview_url)}" target="_blank" rel="noopener">Calibration report</a>`);
+            if(row.certificate_preview_url) links.push(`<a href="${productEscape(row.certificate_preview_url)}" target="_blank" rel="noopener">Signed certificate</a>`);
+            const approvalInfo = [
+                row.approval_id ? `Approval ${productEscape(row.approval_id)}` : '',
+                row.revision_no ? `Revision ${productEscape(row.revision_no)}` : '',
+                row.approved_at ? `Approved ${productEscape(row.approved_at)}` : '',
+                row.approver_name ? `By ${productEscape(row.approver_name)}` : ''
+            ].filter(Boolean).join(' · ');
+            return `<article class="product-calibration-history-record border rounded-3 p-3 mb-2">
+                <div class="d-flex flex-wrap justify-content-between gap-2">
+                    <strong>${productEscape(row.status || 'Calibration record')}</strong>
+                    <span class="small text-muted">${productEscape(row['calibration_' + 'date'] || 'Date not recorded')}</span>
+                </div>
+                <div class="small mt-1"><strong>Valid through:</strong> ${productEscape(row.valid_until || 'Not available')}</div>
+                <div class="small mt-1"><strong>Calibrated by:</strong> ${productEscape(row.calibrated_by || row.report_recorded_calibrator || 'Not recorded')}</div>
+                <div class="small mt-1"><strong>Certificate:</strong> ${productEscape(row['certificate_' + 'number'] || 'Not recorded')}</div>
+                ${approvalInfo ? `<div class="small mt-1"><strong>Approval:</strong> ${approvalInfo}</div>` : ''}
+                ${links.length ? `<div class="small mt-2 d-flex flex-wrap gap-2">${links.map(link => `<span class="badge text-bg-light border">${link}</span>`).join('')}</div>` : ''}
+            </article>`;
+        }).join('') : '<div class="product-history-state text-muted">No approved calibration records found.</div>'}
+    </section>`;
     return `<div class="product-history-asset mb-3">
         <div class="d-flex flex-wrap justify-content-between gap-2"><div><h6 class="mb-1">${productEscape(asset.name || 'Inventory item')}</h6><div class="small text-muted">${productEscape(asset.source_label || '')} · S/N ${productEscape(asset.serial_number || '')} · BSID ${productEscape(asset.bsid || 'Not assigned')}</div></div><span class="badge text-bg-light border align-self-start">${productEscape(asset.computed_status || '')}</span></div>
         <div class="small mt-2"><strong>Client:</strong> ${productEscape(asset.client_name || 'N/A')}</div>
         <div class="small mt-1"><strong>Coverage:</strong> ${productEscape(coverageLabel)} · ${productEscape(coverageDates)}</div>
         <div class="small mt-2"><strong>Linked equipment:</strong> ${linkedHtml}</div>
-    </div><hr>${visitsHtml}${pmHtml}`;
+    </div><hr>${calibrationHtml}${visitsHtml}${pmHtml}`;
 }
 
 async function openProductHistory(serial, source=inventoryMode){
@@ -1433,7 +1491,8 @@ function renderTable(data) {
                     <tr data-serial="${escapeHtml(p.serial_number)}" class="product-clickable-row" onclick="openProductHistory('${escapeHtml(p.serial_number)}', '${inventoryMode}')">
                         <td class="product-identity-cell">
                         <strong>${escapeHtml(p.serial_number)}</strong>
-                        ${renderProductSerialCertificateLink(p)}
+                        ${renderProductCalibrationDocumentLinks(p)}
+                        ${renderProductCalibrationBadge(p)}
                         </td>
                         <td class="product-name-cell">
                             <div class="product-name-content">
@@ -2381,6 +2440,15 @@ function openAddModal() {
         }
     }
 
+    .product-serial-document-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.3rem;
+        max-width: 100%;
+        margin-top: 0.3rem;
+    }
+
     .product-serial-certificate-link {
         width: fit-content;
         max-width: 100%;
@@ -2388,7 +2456,7 @@ function openAddModal() {
         display: flex;
         align-items: center;
         gap: 0.25rem;
-        margin-top: 0.3rem;
+        margin-top: 0;
         border: 1px solid #bfdbfe;
         border-radius: 0.45rem;
         padding: 0.12rem 0.4rem;
@@ -2418,6 +2486,87 @@ function openAddModal() {
     :root[data-app-theme="dark"] .product-serial-certificate-link:focus-visible {
         background: #1e3a8a;
         color: #dbeafe;
+    }
+
+    .product-calibration-summary {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.3rem 0.45rem;
+        margin-top: 0.3rem;
+        color: #475569;
+        font-size: 0.66rem;
+        line-height: 1.25;
+    }
+
+    .product-calibration-badge {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        padding: 0.2rem 0.45rem;
+        font-weight: 900;
+    }
+
+    .product-calibration-summary.is-valid .product-calibration-badge {
+        border-color: #86efac;
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .product-calibration-summary.is-due .product-calibration-badge {
+        border-color: #fcd34d;
+        background: #fef3c7;
+        color: #854d0e;
+    }
+
+    .product-calibration-summary.is-expired .product-calibration-badge {
+        border-color: #fca5a5;
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .product-calibration-summary.is-missing .product-calibration-badge {
+        border-color: #cbd5e1;
+        background: #f1f5f9;
+        color: #475569;
+    }
+
+    .product-calibration-history-record {
+        background: var(--app-surface-raised, #f8fafc);
+    }
+
+    :root[data-app-theme="dark"] .product-calibration-summary {
+        color: #cbd5e1;
+    }
+
+    :root[data-app-theme="dark"] .product-calibration-summary.is-valid .product-calibration-badge {
+        border-color: #258558;
+        background: #123d2a;
+        color: #bbf7d0;
+    }
+
+    :root[data-app-theme="dark"] .product-calibration-summary.is-due .product-calibration-badge {
+        border-color: #9a7418;
+        background: #493812;
+        color: #fde68a;
+    }
+
+    :root[data-app-theme="dark"] .product-calibration-summary.is-expired .product-calibration-badge {
+        border-color: #9f3547;
+        background: #4a1d25;
+        color: #fecaca;
+    }
+
+    :root[data-app-theme="dark"] .product-calibration-summary.is-missing .product-calibration-badge {
+        border-color: #53647a;
+        background: #283548;
+        color: #e2e8f0;
+    }
+
+    :root[data-app-theme="dark"] #productHistoryModal .product-calibration-history-record {
+        border-color: var(--app-border, #85888d) !important;
+        background: var(--app-surface-raised, #333438) !important;
     }
 
     @media screen and (max-width: 768px) {

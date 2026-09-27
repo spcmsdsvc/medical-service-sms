@@ -463,6 +463,81 @@ class TsrSyncReliabilityTests(unittest.TestCase):
         self.assertEqual(replacement.status_code, 409)
         self.assertEqual(replacement.get_json()['error_code'], 'calibration_report_already_uploaded')
 
+    def test_approved_calibration_report_rejects_replacement_but_allows_exact_retry(self):
+        user_id, submission_id, token = self._make_late_upload_fixture()
+        client = self._logged_in_client(user_id)
+        with app_module.app.app_context():
+            # Keep this focused fixture isolated when the shared test DB is reused locally.
+            app_module.CalibrationCertificateApproval.query.filter_by(
+                online_tsr_submission_id=submission_id,
+            ).delete(synchronize_session=False)
+            app_module.db.session.commit()
+        initial_data = lambda report_token, fingerprint: {
+            'attachment_token': report_token,
+            'attachment_source': 'generated_calibration_report',
+            'late_calibration_report': '1',
+            'calibration_report_json': json.dumps(self._late_report(report_token, fingerprint)),
+            'attachment': (io.BytesIO(b'approved-report-docx'), 'Calibration_Report.docx'),
+        }
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True), \
+                patch.object(app_module, 'managed_storage_write_bytes'), \
+                patch.object(app_module, 'schedule_calibration_report_conversion'), \
+                patch.object(app_module, 'submit_calibration_certificate_for_submission', return_value={'ok': False, 'code': 'patched'}):
+            initial = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data=initial_data(token, 'approved-report-original'),
+                content_type='multipart/form-data',
+            )
+        self.assertEqual(initial.status_code, 200, initial.get_json())
+
+        with app_module.app.app_context():
+            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            approval = app_module.CalibrationCertificateApproval(
+                shift_id=submission.shift_id,
+                online_tsr_submission_id=submission.id,
+                requester_user_id=user_id,
+                revision_no=1,
+                is_latest=True,
+                status='Approved',
+                certificate_number=f'CAL-APPROVED-{submission_id}',
+                mapped_data_json='{}',
+                template_sha256='test-template',
+                unsigned_artifact_path='test/approved-certificate.pdf',
+            )
+            app_module.db.session.add(approval)
+            app_module.db.session.commit()
+
+        replacement_token = f'{token}-replacement'
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True):
+            replacement = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data=initial_data(replacement_token, 'approved-report-replacement'),
+                content_type='multipart/form-data',
+            )
+            retry = client.post(
+                f'/upload_online_tsr_attachment/{submission_id}',
+                data=initial_data(token, 'approved-report-retry'),
+                content_type='multipart/form-data',
+            )
+
+        self.assertEqual(replacement.status_code, 409)
+        self.assertEqual(replacement.get_json()['error_code'], 'calibration_report_approved_immutable')
+        self.assertEqual(retry.status_code, 200, retry.get_json())
+        self.assertTrue(retry.get_json()['duplicate'])
+        with app_module.app.app_context():
+            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            payload = json.loads(submission.payload_json)
+            self.assertEqual(
+                payload['calibration_report']['facility']['name'],
+                'Late Calibration Facility',
+            )
+            self.assertEqual(
+                payload['calibration_report']['generated']['fingerprint'],
+                'approved-report-original',
+            )
+
     def test_late_calibration_report_obeys_attachment_count_limit(self):
         user_id, submission_id, token = self._make_late_upload_fixture()
         with app_module.app.app_context():

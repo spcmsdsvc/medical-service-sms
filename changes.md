@@ -1,5 +1,119 @@
 # Project Change Log
 
+codex changes - 2026-09-27
+
+- The owner authorized committing and pushing the completed machine-calibration history, compact
+  calibration UI/report shortcuts, all-engineer approved-report access, and approved-report
+  attachment/edit-lock packages to `origin/main`. Publication is limited to their application,
+  template, focused-test, cache/release, plan, and change-record files; `scheduler.db`, handoffs,
+  `.claude/`, `output/`, `tmp/`, and unrelated dirty or untracked files remain excluded.
+
+- Began the separately authorized Approved Calibration Report Attachment and Edit Lock package.
+  Scope is limited to immutable latest-approved report handling, Calendar TSR attachment/status
+  projection, approved-action suppression, existing inventory report shortcuts, focused tests,
+  v203 cache metadata, and these records. Private DOCX exposure, schema/migration/endpoint or
+  dependency changes, general TSR revision restrictions, protected dirty files, commits, pushes,
+  deployment, Railway, production, and database operations remain excluded.
+- Added compact approval, lock, and PDF-conversion state to Calendar and saved TSR projections.
+  Latest approved reports now appear as non-deletable generated PDFs in TSR Attachments; when no
+  ready PDF exists, the response supplies only `Calibration Report · PDF unavailable` metadata and
+  never exposes the retained private DOCX.
+- Suppressed approved-report editor shortcuts across Calendar desktop/mobile/sticky/summary
+  surfaces and added a server-side upload guard that preserves exact same-token idempotent retries
+  while rejecting replacement uploads after approval. Existing draft/pending/returned correction
+  workflows remain unchanged.
+- Focused verification passed 63 tests across engineer authorization, Product/Genoray/Vieworks
+  inventory, Calendar attachment/action, approved-upload immutability, calibration history, and
+  service-worker/cache checks. Python AST, Jinja, release JSON, and `git diff --check` validation
+  also passed; browser automation and the full suite were intentionally not run.
+
+- Began the separately authorized Machine Calibration History and Due-Date Warnings package. The
+  approved scope is limited to source-aware calibration summaries/history for Product, Genoray,
+  and Vieworks, Product History and Calendar status UI, focused verification, release/cache
+  records, and this plan/change record. Protected `scheduler.db`, handoffs, `.claude/`, `output/`,
+  `tmp/`, unrelated owner work, commits, pushes, deployment, Railway, production, and database
+  operations remain excluded.
+- Added `tests/test_machine_calibration_history.py` with focused source-aware summary/history,
+  approval filtering, calendar date-boundary, and Products/Timeline markup contracts. The intended
+  fail-first run against the unchanged implementation ran 4 tests with 3 errors and 1 failure,
+  because the calibration summary/status/history payload and UI were not implemented yet.
+- Added source-aware calibration summaries/history to Product, Genoray, and Vieworks inventory and
+  service-history responses. Current approved, signed calibration reports use the report-recorded
+  machine calibration date and clamped one-year validity; approval filtering prevents draft,
+  superseded, unsigned, or serial-collision records from appearing.
+- Added compact calibration badges/date details under Products serial numbers and a Calibration
+  History section to the existing Product History modal, including calibrator, certificate,
+  approval details, and only authorized generated-report/certificate links.
+- Added Calendar machine-picker priority ordering before the ten-result limit, selected-date
+  calibration statuses, edit/reset/date refresh behavior, and a keyboard-accessible informational
+  details modal that uses the existing source-aware service-history endpoint and reports when
+  detailed history is unavailable offline.
+- Marked the Calendar calibration panel and details modal as informational only; calibration
+  warnings do not block schedule save.
+- Preserved the existing Products certificate-markup contract while extending the same serial
+  identity area with calibration status/history details.
+- Normalized datetime inputs in the shared backend status helper so API/date-boundary callers use
+  the same calendar-day comparison as the Products and Calendar views.
+- Added the published `2026-09-27-machine-calibration-history` release entry and advanced the
+  service-worker shell marker to v201 for the changed Calendar cached payload/UI.
+- Kept calibration history certificate display resilient to approval records that retain the
+  certificate number only in the mapped Calibration Certificate field.
+- Retained the prior v200 cache marker as historical source documentation while using v201 as the
+  active service-worker cache version.
+- Kept inventory and operational calibration summaries compact by leaving artifact URLs to the
+  existing source-aware service-history response, where authorization and artifact availability
+  are checked for the requesting user.
+- Final source/inventory regression run passed 58/58 across the new calibration-history,
+  Products, Genoray, Vieworks, operational-equipment, and service-history coverage.
+- Focused post-change verification passed the new 4-test calibration-history suite, the Product/
+  operational/Calendar regression batches, cache/release checks, and changelog workflow checks;
+  Python, Jinja, extracted JavaScript, JSON, and `git diff --check` validations also passed. The
+  plan is recorded as executed locally and remains uncommitted as required.
+- Began the separately authorized Calibration UI Layout Correction and Report Shortcut package.
+  Scope is limited to the existing Products/Genoray/Vieworks document-action row, the Calendar
+  picker two-line layout and compact picker labels, page-facing calibration preview URLs, the v202
+  service-worker marker, focused contracts, and these records. Calibration rules, history/source
+  matching, authorization behavior, sorting, scheduling validation, protected dirty files,
+  commits, pushes, deployment, Railway, production, and database operations remain excluded.
+- Updated page-facing Product, Genoray, and Vieworks inventory serializers in `app.py` to pass
+  authorized report and certificate preview URLs through `calibration_summary`; retained empty
+  document URLs in `/get_products?operational=1` so Calendar's cached equipment payload stays
+  compact and lazy-loads detail history.
+- Updated `templates/products.html` desktop and mobile identity areas to render one compact
+  calibration badge, remove the redundant `Calibrated YYYY-MM-DD` line, and show wrapping `View
+  Report`/`View Certificate` actions only when the corresponding authorized preview exists. The
+  existing Product History calibration section continues to show both document links.
+- Updated `templates/timeline.html` machine-picker results so serial/name identity uses a full-width
+  first line and compact warranty/calibration badges wrap on an independent second line. Picker-only
+  labels are now `Valid to YYYY-MM-DD`, `Due 1/2/3 mo`, `Due today`, `Expired`, and `No calibration`;
+  selected-machine detailed labels, due-first ordering, date thresholds, and informational-only
+  scheduling remain unchanged.
+- Amended the existing `2026-09-27-machine-calibration-history` release item and advanced the active
+  service-worker shell marker from v201 to `v202-calibration-ui-report-shortcut` for the Timeline
+  markup/cache change; no duplicate release was added.
+- Updated focused contracts for all three inventory sources, page-facing/operational URL exposure,
+  document-action rendering, removed secondary date markup, and the two-line picker. Verification
+  passed 67/67 focused inventory/history/Calendar/cache tests and 41/41 standalone changelog tests;
+  Python AST, Jinja, extracted JavaScript, JSON, cache-marker, and `git diff --check` checks passed.
+- Began and implemented the separately authorized Approved Calibration Report Access for All
+  Engineers correction. The focused scope is limited to the existing `app.py` report-summary and
+  approval-scoped archive authorization paths, engineer/denial regression tests, this plan/change
+  record, and the existing machine-calibration release description; no service-worker bump or UI,
+  schema, endpoint, certificate workflow, schedule, inventory, Railway, production, database,
+  commit, push, or deployment change was authorized.
+- Added one shared approved-report predicate requiring an Approved latest approval, linked signed
+  certificate file, exact ready system-generated report PDF, and matching shift/submission/file
+  identities. Active authenticated users with normalized role `engineer` now join the existing
+  requester, assigned approver, and administrator report visibility paths; private source DOCX,
+  pending/returned/superseded/not-latest, unsigned, unready/failed, and mismatched artifacts stay
+  hidden or denied.
+- Added `tests/test_calibration_report_engineer_access.py` covering an unassigned different-branch
+  engineer's page-facing report URLs and approval-scoped preview/download access, a non-engineer
+  denial, requester preservation, and stale/unready/unsigned/private/mismatched artifact denial.
+- Amended the existing `2026-09-27-machine-calibration-history` release description to state that
+  active engineers can open approved generated Calibration Report PDFs. No duplicate release or
+  cache marker was added.
+
 codex changes - 2026-09-26
 
 - Began the separately authorized Calibration Report result-capacity, Excel-grid-paste, and Page 3/4 performance-criteria package. Added focused fail-first coverage for the 60-character Page 2 boundary, atomic Tube 1/Tube 2 rectangular paste behavior, 12-character/out-of-bounds rejection, criteria wording, and canonical DOCX content. Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, unrelated owner files, commit/push/deployment, Railway, production, and database operations remain excluded.

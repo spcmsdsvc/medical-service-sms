@@ -2913,7 +2913,7 @@ def resolve_operational_equipment(serial_number, source='product'):
     return model.query.filter(func.lower(model.serial_number) == serial.casefold()).first()
 
 
-def operational_equipment_to_dict(record, source, certificate=None):
+def operational_equipment_to_dict(record, source, certificate=None, calibration_summary=None):
     """Serialize the small shared equipment projection used by field pickers."""
     source = normalize_equipment_source(source, default='')
     owner = getattr(record, 'owner', None) if record else None
@@ -2940,6 +2940,7 @@ def operational_equipment_to_dict(record, source, certificate=None):
         'linked_vieworks': linked_vieworks,
         'linked_product': linked_product,
         'calibration_certificate': certificate,
+        'calibration_summary': calibration_summary or calibration_summary_without_record(),
     }
 
 
@@ -17330,12 +17331,11 @@ def online_tsr_submission_to_dict(submission, include_payload=True):
         return {}
 
     payload = parse_online_tsr_payload_json(submission) if include_payload else {}
-    certificate_approval = None
-    try:
-        ensure_calibration_certificate_approval_table()
-        certificate_approval = CalibrationCertificateApproval.query.filter_by(online_tsr_submission_id=submission.id).first()
-    except Exception:
-        certificate_approval = None
+    certificate_approval = calibration_report_approval_for_submission(submission)
+    calibration_timeline_state = calibration_report_timeline_state_for_submission(
+        submission,
+        approval=certificate_approval,
+    )
     return {
         'id': submission.id,
         'submission_id': submission.id,
@@ -17361,6 +17361,9 @@ def online_tsr_submission_to_dict(submission, include_payload=True):
         'recipients': parse_manual_recipient_emails(payload.get('_sent_recipient_emails') or []),
         'payload': payload if include_payload else None,
         'calibration_report_state': calibration_report_state_for_submission(submission),
+        'calibration_report_approval_status': calibration_timeline_state['approval_status'],
+        'calibration_report_locked': calibration_timeline_state['locked'],
+        'calibration_report_conversion_state': calibration_timeline_state['conversion_state'],
         'calibration_certificate': calibration_certificate_approval_to_dict(certificate_approval) if certificate_approval else None,
     }
 
@@ -17395,6 +17398,79 @@ def calibration_report_state_for_submission(submission):
     if generated_has_content or marker_has_content or (report and report_status not in {'', 'not_started'}):
         return 'draft'
     return 'not_started'
+
+
+def calibration_report_approval_for_submission(submission):
+    """Return the certificate approval attached to one TSR submission."""
+    submission_id = clean_int(getattr(submission, 'id', None)) if submission else None
+    if not submission_id or not has_app_context():
+        return None
+    try:
+        ensure_calibration_certificate_approval_table()
+        return (
+            CalibrationCertificateApproval.query
+            .filter_by(online_tsr_submission_id=submission_id)
+            .order_by(CalibrationCertificateApproval.id.desc())
+            .first()
+        )
+    except Exception:
+        return None
+
+
+def calibration_report_timeline_state_for_submission(submission, approval=None):
+    """Return compact approval/conversion state without exposing the private DOCX."""
+    approval = approval if approval is not None else calibration_report_approval_for_submission(submission)
+    approval_status = clean_str(getattr(approval, 'status', None)) if approval else ''
+    locked = bool(approval and approval_status == 'Approved' and getattr(approval, 'is_latest', False))
+    conversion_state = 'none'
+    if approval:
+        source_file = calibration_certificate_generated_report_source_file(approval)
+        if source_file:
+            conversion = calibration_report_conversion_for_source(source_file.id)
+            conversion_state = clean_str(getattr(conversion, 'state', None)) if conversion else 'pending'
+    return {
+        'approval_status': approval_status,
+        'locked': locked,
+        'conversion_state': conversion_state or 'pending',
+    }
+
+
+def calibration_report_unavailable_attachment_detail(submission, approval=None):
+    """Return one safe placeholder for an approved report with no ready PDF."""
+    approval = approval if approval is not None else calibration_report_approval_for_submission(submission)
+    state = calibration_report_timeline_state_for_submission(submission, approval=approval)
+    if not state['locked']:
+        return None
+    source_file = calibration_certificate_generated_report_source_file(approval)
+    if not source_file or calibration_report_pdf_file_for_source(source_file.id):
+        return None
+    label = 'Calibration Report · PDF unavailable'
+    return {
+        'id': None,
+        'filename': label,
+        'disk_filename': '',
+        'display_name': label,
+        'is_tsr': False,
+        'is_calibration_report': True,
+        'calibration_report_unavailable': True,
+        'calibration_report_conversion_state': state['conversion_state'],
+        'calibration_approval_id': clean_int(getattr(approval, 'id', None)),
+        'calibration_approval_status': state['approval_status'],
+        'certificate_kind': '',
+        'is_managed_certificate': False,
+        'is_no_signature': False,
+        'locked': True,
+        'can_preview': False,
+        'can_download': False,
+        'can_delete': False,
+        'preview_url': '',
+        'download_url': '',
+        'attachment_type': 'calibration_report',
+        'source_type': 'calibration_report',
+        'uploaded_at': '',
+        'was_sent': False,
+        'last_emailed_at': '',
+    }
 
 
 def merge_late_calibration_report_payload(submission, calibration_report):
@@ -21324,30 +21400,194 @@ def calibration_certificate_private_path(stored_name):
     return os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(stored_name))
 
 
-def latest_approved_calibration_certificates_for_products(products):
-    """Return minimal metadata for one current approved signed certificate per Product.
+def calibration_history_date(value):
+    """Parse the ISO or mapped-slash date used by Calibration Reports."""
+    raw = clean_str(value) or ''
+    match = re.match(r'^(\d{4})[-/](\d{2})[-/](\d{2})', raw)
+    if not match:
+        return None
+    try:
+        return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError:
+        return None
 
-    The approval workflow remains shift-owned. This batch lookup follows the existing
-    Shift-to-Product relationship once, then chooses the newest eligible approval for each
-    Product without exposing the larger approval snapshot used by certificate workflows.
-    """
-    product_serials = {
-        product.serial_number
-        for product in (products or [])
-        if clean_str(getattr(product, 'serial_number', None))
+
+def calibration_valid_until(calibration_date):
+    """Return the one-calendar-year expiry, clamped to the destination month end."""
+    parsed = calibration_date if isinstance(calibration_date, date) else calibration_history_date(calibration_date)
+    return add_inventory_pm_months(parsed, 12) if parsed else None
+
+
+def calibration_status_for_summary(summary, reference_date=None):
+    """Return the informational calibration label for one reference date."""
+    summary = summary if isinstance(summary, dict) else {}
+    calibration_date = calibration_history_date(summary.get('calibration_date'))
+    expiry = calibration_history_date(summary.get('valid_until')) or calibration_valid_until(calibration_date)
+    if isinstance(reference_date, datetime):
+        reference_date = reference_date.date()
+    reference = reference_date if isinstance(reference_date, date) else calibration_history_date(reference_date)
+    reference = reference or get_manila_today()
+    if not calibration_date or not expiry:
+        return {'key': 'missing', 'label': 'No calibration record', 'priority': 0, 'valid_until': ''}
+    if reference > expiry:
+        return {'key': 'expired', 'label': 'Calibration expired', 'priority': 0, 'valid_until': expiry.isoformat()}
+    if reference == expiry:
+        return {'key': 'due_today', 'label': 'Due today', 'priority': 0, 'valid_until': expiry.isoformat()}
+    if reference >= add_inventory_pm_months(expiry, -1):
+        key, label, priority = 'due_1_month', 'Due within 1 month', 1
+    elif reference >= add_inventory_pm_months(expiry, -2):
+        key, label, priority = 'due_2_months', 'Due within 2 months', 2
+    elif reference >= add_inventory_pm_months(expiry, -3):
+        key, label, priority = 'due_3_months', 'Due within 3 months', 3
+    else:
+        key, label, priority = 'valid', f'Calibrated · Valid until {expiry.isoformat()}', 4
+    return {'key': key, 'label': label, 'priority': priority, 'valid_until': expiry.isoformat()}
+
+
+def calibration_summary_without_record():
+    status = calibration_status_for_summary({})
+    return {
+        'status': status['label'],
+        'status_key': status['key'],
+        'priority': status['priority'],
+        'calibration_date': '',
+        'valid_until': '',
+        'calibrated_by': '',
+        'report_recorded_calibrator': '',
+        'certificate_number': '',
+        'approval_id': None,
+        'revision_no': None,
+        'approved_at': None,
+        'approver_name': '',
+        'approver_title': '',
+        'next_calibration_date': '',
+        'certificate_preview_url': '',
+        'certificate_download_url': '',
+        'calibration_report_preview_url': '',
+        'calibration_report_download_url': '',
     }
-    if not product_serials:
-        return {}
 
+
+def calibration_summary_for_approval(approval, include_urls=True):
+    """Serialize one current approved calibration for inventory and Calendar metadata."""
+    if not approval:
+        return calibration_summary_without_record()
+    try:
+        mapped = json.loads(approval.mapped_data_json or '{}')
+    except (TypeError, ValueError):
+        mapped = {}
+    if not isinstance(mapped, dict):
+        mapped = {}
+    submission = getattr(approval, 'online_tsr_submission', None)
+    if not submission and clean_int(getattr(approval, 'online_tsr_submission_id', None)):
+        submission = db.session.get(OnlineTsrSubmission, approval.online_tsr_submission_id)
+    payload = parse_online_tsr_payload_json(submission) if submission else {}
+    report = payload.get('calibration_report') if isinstance(payload, dict) else {}
+    report = report if isinstance(report, dict) else {}
+    calibration = report.get('calibration') if isinstance(report.get('calibration'), dict) else {}
+    calibration_date = calibration_history_date(
+        calibration.get('machine_calibration_date') or mapped.get('Text4')
+    )
+    valid_until = calibration_valid_until(calibration_date)
+    summary = {
+        'status': '',
+        'status_key': '',
+        'priority': 4,
+        'calibration_date': calibration_date.isoformat() if calibration_date else '',
+        'valid_until': valid_until.isoformat() if valid_until else '',
+        'calibrated_by': clean_str(calibration.get('engineer_name')) or '',
+        'report_recorded_calibrator': clean_str(calibration.get('engineer_name')) or '',
+        'certificate_number': clean_str(getattr(approval, 'certificate_number', None)) or clean_str(mapped.get('Textfield')) or '',
+        'approval_id': clean_int(getattr(approval, 'id', None)),
+        'revision_no': clean_int(getattr(approval, 'revision_no', None)) or 1,
+        'approved_at': approval.approved_at.isoformat() if getattr(approval, 'approved_at', None) else None,
+        'approver_name': clean_str(getattr(approval, 'approver_name_snapshot', None)) or '',
+        'approver_title': clean_str(getattr(approval, 'approver_title_snapshot', None)) or '',
+        'next_calibration_date': clean_str(mapped.get('Text5')) or '',
+        'certificate_preview_url': '',
+        'certificate_download_url': '',
+        'calibration_report_preview_url': '',
+        'calibration_report_download_url': '',
+    }
+    status = calibration_status_for_summary(summary)
+    summary['status'] = status['label']
+    summary['status_key'] = status['key']
+    summary['priority'] = status['priority']
+    if not include_urls:
+        return summary
+
+    signed_file = db.session.get(ShiftFile, clean_int(getattr(approval, 'signed_shift_file_id', None))) if getattr(approval, 'signed_shift_file_id', None) else None
+    signed_is_available = bool(
+        signed_file and
+        clean_int(getattr(signed_file, 'shift_id', None)) == clean_int(getattr(approval, 'shift_id', None)) and
+        calibration_report_filename_is_pdf(get_shift_file_display_name(signed_file))
+    )
+    signed_authorized = bool(
+        signed_is_available and (
+            products_page_calibration_certificate_can_view(approval) or
+            calibration_certificate_requester_can_view(approval) or
+            calibration_certificate_approver_can_act(approval) or
+            is_admin_authorized()
+        )
+    )
+    if signed_authorized:
+        summary['certificate_preview_url'] = url_for(
+            'calibration_certificate_preview', approval_id=approval.id, artifact='signed'
+        )
+        summary['certificate_download_url'] = url_for(
+            'calibration_certificate_pdf', approval_id=approval.id, artifact='signed'
+        )
+
+    try:
+        generated_report_file = calibration_certificate_generated_report_file(approval)
+    except Exception:
+        generated_report_file = None
+    report_authorized = bool(
+        generated_report_file and
+        calibration_report_approval_can_view(approval, generated_report_file)
+    )
+    if report_authorized:
+        summary['calibration_report_preview_url'] = url_for(
+            'preview_tsr_archive_file', file_id=generated_report_file.id, scope='all', approval_id=approval.id
+        )
+        summary['calibration_report_download_url'] = url_for(
+            'download_tsr_archive_file', file_id=generated_report_file.id, scope='all', approval_id=approval.id
+        )
+    return summary
+
+
+def _calibration_source_filter(source):
+    source = normalize_equipment_source(source, default='')
+    if source == 'product':
+        return or_(Shift.equipment_source == 'product', Shift.equipment_source.is_(None))
+    return Shift.equipment_source == source
+
+
+def latest_approved_calibration_approvals_for_equipment(equipment):
+    """Return newest eligible approvals keyed by source and case-folded serial."""
+    requested = {
+        (normalize_equipment_source(source, default=''), (clean_str(getattr(record, 'serial_number', None)) or '').casefold())
+        for record, source in (equipment or [])
+        if record and clean_str(getattr(record, 'serial_number', None))
+    }
+    requested = {key for key in requested if key[0] and key[1]}
+    if not requested:
+        return {}
     ensure_calibration_certificate_approval_table()
+    serials = {serial for _source, serial in requested}
+    sources = {source for source, _serial in requested}
+    source_filter = or_(*[_calibration_source_filter(source) for source in sources])
     approvals = (
         CalibrationCertificateApproval.query
         .join(Shift, CalibrationCertificateApproval.shift_id == Shift.id)
         .join(ShiftFile, CalibrationCertificateApproval.signed_shift_file_id == ShiftFile.id)
-        .options(joinedload(CalibrationCertificateApproval.shift))
+        .options(
+            joinedload(CalibrationCertificateApproval.shift),
+            joinedload(CalibrationCertificateApproval.online_tsr_submission),
+        )
         .filter(
-            Shift.product_id.in_(product_serials),
-            ShiftFile.shift_id == Shift.id,
+            func.lower(Shift.product_id).in_(serials),
+            source_filter,
             CalibrationCertificateApproval.status == 'Approved',
             CalibrationCertificateApproval.is_latest.is_(True),
             CalibrationCertificateApproval.signed_shift_file_id.isnot(None),
@@ -21358,13 +21598,32 @@ def latest_approved_calibration_certificates_for_products(products):
         )
         .all()
     )
-
     result = {}
     for approval in approvals:
-        product_id = clean_str(getattr(getattr(approval, 'shift', None), 'product_id', None))
-        if product_id in product_serials and product_id not in result:
-            result[product_id] = product_calibration_certificate_to_dict(approval)
+        shift = getattr(approval, 'shift', None)
+        source = normalize_equipment_source(getattr(shift, 'equipment_source', None)) if shift else ''
+        serial = (clean_str(getattr(shift, 'product_id', None)) or '').casefold()
+        key = (source, serial)
+        if key in requested and key not in result:
+            result[key] = approval
     return result
+
+
+def latest_approved_calibration_certificates_for_products(products):
+    """Return minimal metadata for one current approved signed certificate per Product.
+
+    The approval workflow remains shift-owned. This batch lookup follows the existing
+    Shift-to-Product relationship once, then chooses the newest eligible approval for each
+    Product without exposing the larger approval snapshot used by certificate workflows.
+    """
+    approvals = latest_approved_calibration_approvals_for_equipment(
+        [(product, 'product') for product in (products or [])]
+    )
+    return {
+        (clean_str(getattr(product, 'serial_number', None)) or ''): product_calibration_certificate_to_dict(approval)
+        for product in (products or [])
+        if (approval := approvals.get(('product', (clean_str(getattr(product, 'serial_number', None)) or '').casefold())))
+    }
 
 
 def product_calibration_certificate_to_dict(approval):
@@ -21383,6 +21642,37 @@ def product_calibration_certificate_to_dict(approval):
         'next_calibration_date': payload.get('Text5', '') or '',
         'preview_url': f'/calibration_certificate_preview/{approval.id}/signed',
     }
+
+
+def calibration_history_for_equipment(source, serial_number):
+    """Return current approved signed calibrations for one source-scoped machine."""
+    source = normalize_equipment_source(source, default='')
+    serial = (clean_str(serial_number) or '').strip()
+    if not source or not serial:
+        return []
+    ensure_calibration_certificate_approval_table()
+    approvals = (
+        CalibrationCertificateApproval.query
+        .join(Shift, CalibrationCertificateApproval.shift_id == Shift.id)
+        .join(ShiftFile, CalibrationCertificateApproval.signed_shift_file_id == ShiftFile.id)
+        .options(
+            joinedload(CalibrationCertificateApproval.shift),
+            joinedload(CalibrationCertificateApproval.online_tsr_submission),
+        )
+        .filter(
+            func.lower(Shift.product_id) == serial.casefold(),
+            _calibration_source_filter(source),
+            CalibrationCertificateApproval.status == 'Approved',
+            CalibrationCertificateApproval.is_latest.is_(True),
+            CalibrationCertificateApproval.signed_shift_file_id.isnot(None),
+        )
+        .order_by(
+            CalibrationCertificateApproval.approved_at.desc(),
+            CalibrationCertificateApproval.id.desc(),
+        )
+        .all()
+    )
+    return [calibration_summary_for_approval(approval) for approval in approvals]
 
 
 def products_page_calibration_certificate_can_view(approval):
@@ -21440,6 +21730,55 @@ def calibration_certificate_generated_report_file(approval):
     """Return the ready PDF linked to a certificate submission, never its DOCX source."""
     source_file = calibration_certificate_generated_report_source_file(approval)
     return calibration_report_pdf_file_for_source(source_file.id) if source_file else None
+
+
+def calibration_report_engineer_can_view(user=None):
+    """Return whether an active authenticated engineer may view approved reports."""
+    target = user or current_user
+    role = (clean_str(getattr(target, 'role', None)) or '').strip().lower()
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', False)) and
+        role == 'engineer'
+    )
+
+
+def calibration_report_approval_can_view(approval, file_record=None):
+    """Authorize one exact ready report PDF without exposing its private source."""
+    if not approval or clean_str(getattr(approval, 'status', None)) != 'Approved' or not bool(getattr(approval, 'is_latest', False)):
+        return False
+
+    signed_file_id = clean_int(getattr(approval, 'signed_shift_file_id', None))
+    signed_file = db.session.get(ShiftFile, signed_file_id) if signed_file_id else None
+    if not (
+        signed_file and
+        clean_int(getattr(signed_file, 'shift_id', None)) == clean_int(getattr(approval, 'shift_id', None)) and
+        clean_int(getattr(signed_file, 'online_tsr_submission_id', None)) == clean_int(getattr(approval, 'online_tsr_submission_id', None)) and
+        calibration_report_filename_is_pdf(get_shift_file_display_name(signed_file))
+    ):
+        return False
+
+    if not (
+        calibration_report_engineer_can_view() or
+        calibration_certificate_requester_can_view(approval) or
+        calibration_certificate_approver_can_act(approval) or
+        is_admin_authorized()
+    ):
+        return False
+
+    generated_report_file = calibration_certificate_generated_report_file(approval)
+    if not generated_report_file or not is_system_generated_calibration_report_pdf_file(generated_report_file):
+        return False
+    if (
+        clean_int(getattr(generated_report_file, 'shift_id', None)) != clean_int(getattr(approval, 'shift_id', None)) or
+        clean_int(getattr(generated_report_file, 'online_tsr_submission_id', None)) != clean_int(getattr(approval, 'online_tsr_submission_id', None))
+    ):
+        return False
+    return bool(
+        file_record is None or
+        clean_int(getattr(file_record, 'id', None)) == clean_int(getattr(generated_report_file, 'id', None))
+    )
 
 
 def calibration_certificate_approval_to_dict(approval, include_urls=True):
@@ -22668,23 +23007,7 @@ def calibration_certificate_report_approval_for_file_download(file_record, appro
         return None
 
     approval = db.session.get(CalibrationCertificateApproval, approval_id)
-    if not approval:
-        return None
-    if not (
-        calibration_certificate_requester_can_view(approval) or
-        calibration_certificate_approver_can_act(approval) or
-        is_admin_authorized()
-    ):
-        return None
-
-    generated_report_file = calibration_certificate_generated_report_file(approval)
-    if (
-        not generated_report_file or
-        not is_system_generated_calibration_report_pdf_file(file_record) or
-        clean_int(generated_report_file.id) != clean_int(file_record.id)
-    ):
-        return None
-    return approval
+    return approval if calibration_report_approval_can_view(approval, file_record) else None
 
 
 @app.route('/submit_calibration_certificate/<int:submission_id>', methods=['POST'])
@@ -23144,6 +23467,26 @@ def upload_online_tsr_attachment(submission_id):
             'status': 'error',
             'message': 'This attachment token belongs to another TSR.'
         }), 409
+    if late_calibration_report_requested:
+        approved_report = calibration_report_approval_for_submission(submission)
+        if (
+            approved_report and
+            clean_str(getattr(approved_report, 'status', None)) == 'Approved' and
+            bool(getattr(approved_report, 'is_latest', False))
+        ):
+            retry_marker = calibration_report_upload_marker(submission, upload_token)
+            same_report_retry = bool(
+                existing_file and
+                retry_marker and
+                clean_int(retry_marker.get('file_id')) == clean_int(existing_file.id) and
+                normalize_online_tsr_submission_token(existing_file.upload_token) == upload_token
+            )
+            if not same_report_retry:
+                return jsonify({
+                    'status': 'error',
+                    'error_code': 'calibration_report_approved_immutable',
+                    'message': 'The approved Calibration Report is read-only and cannot be replaced.',
+                }), 409
     late_calibration_report = None
     if late_calibration_report_requested:
         if not bool(getattr(submission, 'is_latest', True)):
@@ -23866,7 +24209,11 @@ def pwa_service_worker():
     # Navigation shell bump: v194 distributes the collapsed Historical Report Repair notice.
     # Navigation shell bump: v199 distributes the visible reusable Client group picker.
     # Navigation shell bump: v200 distributes Calibration Report paste and criteria updates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v200-calibration-report-paste-criteria';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v200-calibration-report-paste-criteria.
+    # Navigation shell bump: v201 distributes source-aware Calendar calibration summaries/history.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v201-machine-calibration-history.
+    # Navigation shell bump: v203 distributes approved Calibration Report attachment locking.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v203-calibration-report-attachment-lock';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -29475,8 +29822,14 @@ def operational_equipment_rows():
     ensure_vieworks_item_table()
 
     products = Product.query.order_by(Product.serial_number).all()
-    certificate_approvals = (
-        latest_approved_calibration_certificates_for_products(products)
+    genoray_items = GenorayItem.query.order_by(GenorayItem.serial_number).all()
+    vieworks_items = VieworksItem.query.order_by(VieworksItem.serial_number).all()
+    approval_map = (
+        latest_approved_calibration_approvals_for_equipment(
+            [(product, 'product') for product in products] +
+            [(item, 'genoray') for item in genoray_items] +
+            [(item, 'vieworks') for item in vieworks_items]
+        )
         if can_access_products_page()
         else {}
     )
@@ -29484,17 +29837,35 @@ def operational_equipment_rows():
         operational_equipment_to_dict(
             product,
             'product',
-            certificate=certificate_approvals.get(product.serial_number),
+            certificate=(
+                product_calibration_certificate_to_dict(approval_map[('product', product.serial_number.casefold())])
+                if ('product', product.serial_number.casefold()) in approval_map else None
+            ),
+            calibration_summary=calibration_summary_for_approval(
+                approval_map.get(('product', product.serial_number.casefold())), include_urls=False
+            ),
         )
         for product in products
     ]
     rows.extend(
-        operational_equipment_to_dict(item, 'genoray')
-        for item in GenorayItem.query.order_by(GenorayItem.serial_number).all()
+        operational_equipment_to_dict(
+            item,
+            'genoray',
+            calibration_summary=calibration_summary_for_approval(
+                approval_map.get(('genoray', item.serial_number.casefold())), include_urls=False
+            ),
+        )
+        for item in genoray_items
     )
     rows.extend(
-        operational_equipment_to_dict(item, 'vieworks')
-        for item in VieworksItem.query.order_by(VieworksItem.serial_number).all()
+        operational_equipment_to_dict(
+            item,
+            'vieworks',
+            calibration_summary=calibration_summary_for_approval(
+                approval_map.get(('vieworks', item.serial_number.casefold())), include_urls=False
+            ),
+        )
+        for item in vieworks_items
     )
     return rows
 
@@ -29515,6 +29886,11 @@ def get_products():
         if can_access_products_page()
         else {}
     )
+    calibration_approvals = (
+        latest_approved_calibration_approvals_for_equipment([(product, 'product') for product in products])
+        if can_access_products_page()
+        else {}
+    )
     results = []
 
     for p in products:
@@ -29530,6 +29906,10 @@ def get_products():
             'under_contract': bool(p.under_contract),
             'computed_status': product_contract_status(p),
             'calibration_certificate': certificate_approvals.get(p.serial_number),
+            'calibration_summary': calibration_summary_for_approval(
+                calibration_approvals.get(('product', p.serial_number.casefold())),
+                include_urls=True,
+            ),
             'equipment_source': 'product',
             'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS['product'],
             'linked_vieworks': linked_vieworks,
@@ -29583,6 +29963,9 @@ def genoray_item_to_dict(item):
     start_date = getattr(item, 'start_warranty_date', None)
     end_date = getattr(item, 'end_warranty_date', None)
     owner = getattr(item, 'owner', None)
+    calibration_approval = latest_approved_calibration_approvals_for_equipment([(item, 'genoray')]).get(
+        ('genoray', item.serial_number.casefold())
+    )
     return {
         'serial_number': item.serial_number,
         'name': item.name,
@@ -29601,6 +29984,7 @@ def genoray_item_to_dict(item):
         'with_vieworks_canon': False,
         'linked_vieworks': [],
         'linked_product': None,
+        'calibration_summary': calibration_summary_for_approval(calibration_approval, include_urls=True),
     }
 
 
@@ -29650,6 +30034,9 @@ def vieworks_item_to_dict(item):
     start_date = getattr(item, 'start_warranty_date', None)
     end_date = getattr(item, 'end_warranty_date', None)
     owner = getattr(item, 'owner', None)
+    calibration_approval = latest_approved_calibration_approvals_for_equipment([(item, 'vieworks')]).get(
+        ('vieworks', item.serial_number.casefold())
+    )
     return {
         'serial_number': item.serial_number,
         'name': item.name,
@@ -29668,6 +30055,7 @@ def vieworks_item_to_dict(item):
         'with_vieworks_canon': False,
         'linked_vieworks': [],
         'linked_product': product_vieworks_parent_payload(item.serial_number),
+        'calibration_summary': calibration_summary_for_approval(calibration_approval, include_urls=True),
     }
 
 
@@ -30027,13 +30415,18 @@ def inventory_service_history(source, serial_number):
 
     visits = service_history_visits_for_groups(grouped, source)
     pm_history = service_history_pm_payload(source, record)
+    calibrations = calibration_history_for_equipment(source, record.serial_number)
     return jsonify({
         'success': True,
-        'asset': service_history_asset_payload(source, record),
+        'asset': {
+            **service_history_asset_payload(source, record),
+            'calibration_summary': calibrations[0] if calibrations else calibration_summary_without_record(),
+        },
         'visits': visits,
         'service_visits': visits,
         'preventive_maintenance': pm_history,
         'pm_history': pm_history,
+        'calibrations': calibrations,
     })
 
 
@@ -47361,6 +47754,8 @@ def timeline_file_detail_payload(
         'display_name': get_shift_file_display_name(file_record),
         'is_tsr': is_tsr,
         'is_calibration_report': is_calibration_report,
+        'calibration_report_unavailable': False,
+        'calibration_report_conversion_state': 'ready' if is_calibration_report else '',
         'calibration_approval_id': clean_int(getattr(report_approval, 'id', None)) if report_approval else None,
         'calibration_approval_status': clean_str(getattr(report_approval, 'status', None)) if report_approval else '',
         'certificate_kind': 'no_signature' if is_no_signature else ('signed' if certificate_approval else ''),
@@ -47702,6 +48097,29 @@ def get_timeline_data():
                 .get('total_count', 0)
             )
             latest_online_tsr = latest_online_tsr_map.get(shift.id)
+            calibration_report_approval = calibration_report_approval_for_submission(latest_online_tsr)
+            calibration_timeline_state = calibration_report_timeline_state_for_submission(
+                latest_online_tsr,
+                approval=calibration_report_approval,
+            )
+            timeline_file_details = [] if timeline_lite else [
+                timeline_file_detail_payload(
+                    file_record,
+                    certificate_approval_map,
+                    calibration_report_approval_map,
+                    calibration_report_context,
+                )
+                for file_record in visible_shift_files
+            ]
+            unavailable_report_detail = (
+                calibration_report_unavailable_attachment_detail(
+                    latest_online_tsr,
+                    approval=calibration_report_approval,
+                )
+                if latest_online_tsr and not timeline_lite else None
+            )
+            if unavailable_report_detail:
+                timeline_file_details.append(unavailable_report_detail)
             equipment = resolve_shift_equipment(shift)
             equipment_source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
             equipment_available = bool(
@@ -47733,15 +48151,7 @@ def get_timeline_data():
                     get_shift_file_display_name(file_record) or file_record.filename
                     for file_record in visible_shift_files
                 ],
-                'file_details': [] if timeline_lite else [
-                    timeline_file_detail_payload(
-                        file_record,
-                        certificate_approval_map,
-                        calibration_report_approval_map,
-                        calibration_report_context,
-                    )
-                    for file_record in visible_shift_files
-                ],
+                'file_details': timeline_file_details,
                 'service_file_delivery': service_file_delivery,
                 'has_linked_tsr': bool(service_file_tsr_total),
                 'online_tsr_submission_id': clean_int(getattr(latest_online_tsr, 'id', None)),
@@ -47749,6 +48159,9 @@ def get_timeline_data():
                     calibration_report_state_for_submission(latest_online_tsr)
                     if latest_online_tsr else 'not_started'
                 ),
+                'calibration_report_approval_status': calibration_timeline_state['approval_status'],
+                'calibration_report_locked': calibration_timeline_state['locked'],
+                'calibration_report_conversion_state': calibration_timeline_state['conversion_state'],
                 'engineers': assigned_engineer_ids,
                 'day_owner_engineer_id': shift.engineer_id,
                 'day_owner_engineer_name': shift.engineer.name if shift.engineer else '',
@@ -47884,6 +48297,27 @@ def get_shift_details(shift_id):
         calibration_report_approval_map,
         calibration_report_context,
     )
+    latest_online_tsr = get_latest_online_tsr_submission_for_shift(shift.id)
+    calibration_report_approval = calibration_report_approval_for_submission(latest_online_tsr)
+    calibration_timeline_state = calibration_report_timeline_state_for_submission(
+        latest_online_tsr,
+        approval=calibration_report_approval,
+    )
+    timeline_file_details = [
+        timeline_file_detail_payload(
+            file_record,
+            certificate_approval_map,
+            calibration_report_approval_map,
+            calibration_report_context,
+        )
+        for file_record in visible_shift_files
+    ]
+    unavailable_report_detail = calibration_report_unavailable_attachment_detail(
+        latest_online_tsr,
+        approval=calibration_report_approval,
+    ) if latest_online_tsr else None
+    if unavailable_report_detail:
+        timeline_file_details.append(unavailable_report_detail)
     service_file_delivery = get_shift_service_file_delivery_summary(shift)
     equipment = resolve_shift_equipment(shift)
     equipment_source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
@@ -47917,13 +48351,7 @@ def get_shift_details(shift_id):
                 for file_record in visible_shift_files
             ],
             'file_details': [
-                timeline_file_detail_payload(
-                    file_record,
-                    certificate_approval_map,
-                    calibration_report_approval_map,
-                    calibration_report_context,
-                )
-                for file_record in visible_shift_files
+                *timeline_file_details,
             ],
             'manual_upload_count': get_linked_schedule_manual_upload_count(shift),
             'manual_upload_limit': SCHEDULE_MANUAL_UPLOAD_LIMIT,
@@ -47931,6 +48359,14 @@ def get_shift_details(shift_id):
                 service_file_delivery.get('categories', {}).get('tsr', {}).get('total_count', 0)
             ),
             'service_file_delivery': service_file_delivery,
+            'online_tsr_submission_id': clean_int(getattr(latest_online_tsr, 'id', None)),
+            'calibration_report_state': (
+                calibration_report_state_for_submission(latest_online_tsr)
+                if latest_online_tsr else 'not_started'
+            ),
+            'calibration_report_approval_status': calibration_timeline_state['approval_status'],
+            'calibration_report_locked': calibration_timeline_state['locked'],
+            'calibration_report_conversion_state': calibration_timeline_state['conversion_state'],
             'engineers': assigned_engineer_ids,
             'day_owner_engineer_id': shift.engineer_id,
             'day_owner_engineer_name': shift.engineer.name if shift.engineer else '',

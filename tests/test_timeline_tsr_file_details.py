@@ -58,7 +58,16 @@ class TimelineTsrFileDetailsSourceTests(unittest.TestCase):
     def test_timeline_payload_has_online_tsr_calibration_state_contract(self):
         self.assertIn("'online_tsr_submission_id'", self.app_source)
         self.assertIn("'calibration_report_state'", self.app_source)
+        self.assertIn("'calibration_report_locked'", self.app_source)
+        self.assertIn("Calibration Report · PDF unavailable", self.app_source)
         self.assertIn("calibration_report_state", self.timeline_source)
+        self.assertIn("calibration_report_locked", self.timeline_source)
+
+    def test_approved_report_actions_are_suppressed_and_direct_route_is_guarded(self):
+        picker = self.timeline_source.split('function canOpenCalibrationReportForSchedule', 1)[1].split('function getCalibrationReportTimelineLabel', 1)[0]
+        redirect = self.timeline_source.split('function redirectToCalibrationReportFromSchedule', 1)[1].split('function openOfflineTSRDraftFromShiftModal', 1)[0]
+        self.assertIn('calibration_report_locked', picker)
+        self.assertIn('Approved Calibration Report is read-only', redirect)
 
 
 class TimelineTsrFileDetailsApiTests(unittest.TestCase):
@@ -508,6 +517,48 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
                 else:
                     restored.status = original_status
                     restored.is_latest = original_latest
+                app_module.db.session.commit()
+
+    def test_failed_approved_report_is_one_unavailable_attachment_without_private_source(self):
+        with app_module.app.app_context():
+            report_file = app_module.db.session.get(app_module.ShiftFile, self.calibration_report_file_id)
+            job = app_module.CalibrationReportConversion.query.filter_by(
+                source_shift_file_id=self.calibration_report_source_file_id,
+            ).first()
+            original_file = {
+                'id': report_file.id,
+                'shift_id': report_file.shift_id,
+                'filename': report_file.filename,
+                'original_filename': report_file.original_filename,
+                'online_tsr_submission_id': report_file.online_tsr_submission_id,
+                'uploaded_at': report_file.uploaded_at,
+            }
+            original_job = {
+                'state': job.state,
+                'pdf_shift_file_id': job.pdf_shift_file_id,
+                'last_error': job.last_error,
+            }
+            app_module.db.session.delete(report_file)
+            job.state = 'failed'
+            job.pdf_shift_file_id = None
+            job.last_error = 'conversion failed in focused fixture'
+            app_module.db.session.commit()
+            try:
+                response = self._client_for_user().get(f'/get_shift_details/{self.shift_id}')
+                self.assertEqual(response.status_code, 200)
+                details = response.get_json()['shift']['file_details']
+                unavailable = [item for item in details if item.get('calibration_report_unavailable')]
+                self.assertEqual(len(unavailable), 1)
+                self.assertEqual(unavailable[0]['display_name'], 'Calibration Report · PDF unavailable')
+                self.assertFalse(unavailable[0]['preview_url'])
+                self.assertFalse(unavailable[0]['download_url'])
+                self.assertFalse(unavailable[0]['can_delete'])
+                self.assertNotIn('docx', json.dumps(details).lower())
+            finally:
+                app_module.db.session.add(app_module.ShiftFile(**original_file))
+                job.state = original_job['state']
+                job.pdf_shift_file_id = original_job['pdf_shift_file_id']
+                job.last_error = original_job['last_error']
                 app_module.db.session.commit()
 
 
