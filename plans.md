@@ -1,6 +1,6 @@
 # Approved Calibration Report Attachment and Edit Lock
 
-**Status:** Executed — implementation verified locally; left uncommitted by authorization boundary.
+**Status:** Executed — implementation commit `bf72a01`; publication authorized to `origin/main`.
 **Approved:** 2026-09-27 — the owner explicitly authorized implementation with “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-27 — this bounded package is the complete implementation scope.
 **Detailed:** 2026-09-27.
@@ -68,7 +68,7 @@ Python/Jinja/JavaScript/JSON/cache marker parsing, and `git diff --check` with f
 
 ## Approved Calibration Report Access for All Engineers
 
-**Status:** Executed — implementation verified locally; left uncommitted by authorization boundary.
+**Status:** Executed — implementation commit `bf72a01`; publication authorized to `origin/main`.
 **Approved:** 2026-09-27 — the owner explicitly authorized implementation with “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-27 — this bounded security correction is the complete implementation scope.
 **Detailed:** 2026-09-27.
@@ -139,7 +139,7 @@ results and leave protected paths untouched.
 
 ## Calibration UI Layout Correction and Report Shortcut
 
-**Status:** Executed — implementation verified locally; left uncommitted by authorization boundary.
+**Status:** Executed — implementation commit `bf72a01`; publication authorized to `origin/main`.
 **Approved:** 2026-09-27 — the owner explicitly authorized implementation with “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-27 — this bounded correction applies to the existing uncommitted calibration-history implementation.
 **Detailed:** 2026-09-27.
@@ -212,7 +212,7 @@ validations. Do not broaden verification unless a focused failure makes it mater
 
 ## Machine Calibration History and Due-Date Warnings
 
-**Status:** Executed — implementation verified locally; left uncommitted by authorization boundary.
+**Status:** Executed — implementation commit `bf72a01`; publication authorized to `origin/main`.
 **Approved:** 2026-09-27 — the owner approved the calibration-history plan and separately authorized implementation with “when you launch a builder. tell it to not overengineer. implement the plan”.
 **Execution authorized:** 2026-09-27 — the same instruction authorizes this bounded implementation package.
 **Detailed:** 2026-09-27.

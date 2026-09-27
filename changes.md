@@ -7,6 +7,9 @@ codex changes - 2026-09-27
   attachment/edit-lock packages to `origin/main`. Publication is limited to their application,
   template, focused-test, cache/release, plan, and change-record files; `scheduler.db`, handoffs,
   `.claude/`, `output/`, `tmp/`, and unrelated dirty or untracked files remain excluded.
+- Committed the authorized calibration implementation, UI, focused tests, cache/release metadata,
+  and execution records as `bf72a01`. The plan-status and publication record update is being
+  committed separately; protected and unrelated dirty files remain excluded.
 
 - Began the separately authorized Approved Calibration Report Attachment and Edit Lock package.
   Scope is limited to immutable latest-approved report handling, Calendar TSR attachment/status
