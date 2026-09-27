@@ -1,6 +1,6 @@
 # Activity Log signal-quality, scalability, and reimbursement access hardening
 
-**Status:** Executed — implementation verified; uncommitted (no commit, push, or deployment)
+**Status:** Executed — implementation commit `8d09cd8`; publication authorized to `origin/main`
 **Approved:** 2026-09-27 — the owner explicitly authorized implementation with “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-27 — this bounded package is the complete implementation scope.
 **Detailed:** 2026-09-27.

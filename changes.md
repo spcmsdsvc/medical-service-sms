@@ -2,6 +2,10 @@
 
 codex changes - 2026-09-27
 
+- Committed the authorized Activity Log signal-quality, scalability, and reimbursement access
+  hardening package as `8d09cd8`. Publication is limited to its application, templates, focused
+  tests, release metadata, plan, and change record; protected database, handoff, `.claude/`,
+  `output/`, `tmp/`, and unrelated untracked files remain excluded.
 - Began the authorized Activity Log signal-quality, scalability, and reimbursement access
   hardening package. Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and
   unrelated owner work remain untouched; no commit, push, deployment, Railway, production, or
