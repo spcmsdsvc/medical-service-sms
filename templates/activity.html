@@ -9,7 +9,7 @@
                 <i class="fa-solid fa-clock-rotate-left me-2 text-primary"></i>
                 Advanced Activity Logs
             </h2>
-            <p class="text-muted small mb-0">
+            <p class="text-muted small mb-0" id="activity-page-status" role="status" aria-live="polite">
                 Workflow-focused audit trail with smarter categories, severity badges, filters, pagination, and CSV export.
             </p>
         </div>
@@ -78,42 +78,39 @@
         <div class="card-body p-3">
             <div class="row g-3 align-items-end">
                 <div class="col-lg-3 col-md-6">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">Search</label>
+                    <label for="filter-q" class="small fw-bold text-muted text-uppercase mb-1">Search</label>
                     <input type="text" id="filter-q" class="form-control form-control-sm" placeholder="Search user, action, client, engineer..." oninput="debouncedLoadLogs()">
                 </div>
 
                 <div class="col-lg-2 col-md-6">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">Category</label>
+                    <label for="filter-type" class="small fw-bold text-muted text-uppercase mb-1">Category</label>
                     <select id="filter-type" class="form-select form-select-sm" onchange="loadLogs(1)">
                         <option value="">All Categories</option>
                     </select>
                 </div>
 
                 <div class="col-lg-2 col-md-6">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">Action</label>
+                    <label for="filter-action-type" class="small fw-bold text-muted text-uppercase mb-1">Action</label>
                     <select id="filter-action-type" class="form-select form-select-sm" onchange="loadLogs(1)">
                         <option value="">All Actions</option>
                     </select>
                 </div>
 
                 <div class="col-lg-2 col-md-6">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">User</label>
+                    <label for="filter-user" class="small fw-bold text-muted text-uppercase mb-1">User</label>
                     <input type="text" id="filter-user" class="form-control form-control-sm" list="activity-user-list" placeholder="e.g. Jonamar" oninput="debouncedLoadLogs()">
                     <datalist id="activity-user-list"></datalist>
                 </div>
 
                 <div class="col-lg-1 col-md-4">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">Branch</label>
+                    <label for="filter-branch" class="small fw-bold text-muted text-uppercase mb-1">Branch</label>
                     <select id="filter-branch" class="form-select form-select-sm" onchange="loadLogs(1)">
                         <option value="">All</option>
-                        <option value="Manila">Manila</option>
-                        <option value="Cebu">Cebu</option>
-                        <option value="Davao">Davao</option>
                     </select>
                 </div>
 
                 <div class="col-lg-1 col-md-4">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">Severity</label>
+                    <label for="filter-severity" class="small fw-bold text-muted text-uppercase mb-1">Severity</label>
                     <select id="filter-severity" class="form-select form-select-sm" onchange="loadLogs(1)">
                         <option value="">All</option>
                         <option value="warning_or_danger">Warnings / Failures</option>
@@ -124,12 +121,12 @@
                 </div>
 
                 <div class="col-lg-1 col-md-4">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">From</label>
+                    <label for="filter-start" class="small fw-bold text-muted text-uppercase mb-1">From</label>
                     <input type="date" id="filter-start" class="form-control form-control-sm" onchange="loadLogs(1)">
                 </div>
 
                 <div class="col-lg-1 col-md-4">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">To</label>
+                    <label for="filter-end" class="small fw-bold text-muted text-uppercase mb-1">To</label>
                     <input type="date" id="filter-end" class="form-control form-control-sm" onchange="loadLogs(1)">
                 </div>
             </div>
@@ -146,6 +143,12 @@
                 <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('Accounting')">Accounting</button>
                 <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setSeverityQuick('warning_or_danger')">Warnings / Failures</button>
             </div>
+            <div class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" id="filter-include-routine" onchange="loadLogs(1)">
+                <label class="form-check-label small fw-bold text-muted" for="filter-include-routine">
+                    Include routine reimbursement draft saves
+                </label>
+            </div>
         </div>
     </div>
 
@@ -156,11 +159,11 @@
                     <i class="fa-solid fa-list me-2 text-dark"></i>
                     Audit Trail
                 </h5>
-                <div class="xsmall text-muted mt-1" id="result-summary">Loading logs...</div>
+                <div class="xsmall text-muted mt-1" id="result-summary" role="status" aria-live="polite">Loading logs...</div>
             </div>
 
             <div class="d-flex align-items-center gap-2">
-                <label class="xsmall text-muted fw-bold text-uppercase mb-0">Rows</label>
+                <label for="per-page" class="xsmall text-muted fw-bold text-uppercase mb-0">Rows</label>
                 <select id="per-page" class="form-select form-select-sm" style="width: 90px;" onchange="loadLogs(1)">
                     <option value="25">25</option>
                     <option value="50">50</option>
@@ -171,14 +174,15 @@
 
         <div class="table-responsive activity-table-wrap">
             <table class="table table-hover align-middle mb-0">
+                <caption class="visually-hidden">Activity log entries</caption>
                 <thead class="table-light text-uppercase small fw-bold text-muted sticky-top">
                     <tr>
-                        <th class="ps-4" style="width: 16%;">Timestamp</th>
-                        <th style="width: 12%;">User</th>
-                        <th style="width: 12%;">Category</th>
-                        <th style="width: 12%;">Action</th>
-                        <th style="width: 10%;">Severity</th>
-                        <th>Details</th>
+                        <th scope="col" class="ps-4" style="width: 16%;">Timestamp</th>
+                        <th scope="col" style="width: 12%;">User</th>
+                        <th scope="col" style="width: 12%;">Category</th>
+                        <th scope="col" style="width: 12%;">Action</th>
+                        <th scope="col" style="width: 10%;">Severity</th>
+                        <th scope="col">Details</th>
                     </tr>
                 </thead>
                 <tbody id="activity-table-body">
@@ -211,6 +215,8 @@
 let currentPage = 1;
 let totalPages = 1;
 let debounceTimer = null;
+let activityLoadController = null;
+let activityLoadSequence = 0;
 
 function escapeHtml(value) {
     return String(value ?? '')
@@ -291,11 +297,13 @@ function getCategoryMeta(type) {
         'Travel Liquidation': ['fa-file-invoice-dollar', 'activity-travel-liquidation'],
         'Cash Advance': ['fa-money-check-dollar', 'activity-cash-advance'],
         'Cash Advance Liquidation': ['fa-file-circle-check', 'activity-cash-liquidation'],
+        'Leave Request': ['fa-calendar-minus', 'activity-leave-request'],
         Approval: ['fa-route', 'activity-approval'],
         Accounting: ['fa-calculator', 'activity-accounting'],
         Email: ['fa-envelope', 'activity-email'],
         Client: ['fa-hospital', 'activity-client'],
         Product: ['fa-boxes-stacked', 'activity-product'],
+        'Stock Inventory': ['fa-barcode', 'activity-stock-inventory'],
         Personnel: ['fa-user-gear', 'activity-personnel'],
         Export: ['fa-file-export', 'activity-export'],
         Security: ['fa-shield-halved', 'activity-security'],
@@ -407,6 +415,7 @@ function buildQueryParams(page = 1) {
     const severity = document.getElementById('filter-severity').value;
     const start = document.getElementById('filter-start').value;
     const end = document.getElementById('filter-end').value;
+    const includeRoutine = document.getElementById('filter-include-routine').checked;
 
     if (q) params.set('q', q);
     if (type) params.set('type', type);
@@ -416,6 +425,7 @@ function buildQueryParams(page = 1) {
     if (severity) params.set('severity', severity);
     if (start) params.set('start_date', start);
     if (end) params.set('end_date', end);
+    if (includeRoutine) params.set('include_routine', 'true');
 
     return params;
 }
@@ -440,6 +450,7 @@ async function loadFilterOptions() {
 
         populateActivitySelect('filter-type', data.categories || [], 'All Categories');
         populateActivitySelect('filter-action-type', data.action_types || [], 'All Actions');
+        populateActivitySelect('filter-branch', data.branches || [], 'All');
     } catch (error) {
         console.warn('Unable to load activity filter options', error);
     }
@@ -470,7 +481,9 @@ function updateSummaryCards(data) {
         'Travel Request',
         'Travel Liquidation',
         'Cash Advance',
-        'Cash Advance Liquidation'
+        'Cash Advance Liquidation',
+        'Leave Request',
+        'Stock Inventory'
     ];
     const workflowTotal = workflowCategories.reduce((sum, key) => sum + Number(categoryCounts[key] || 0), 0);
     const approvalAccountingTotal = Number(categoryCounts.Approval || 0) + Number(categoryCounts.Accounting || 0);
@@ -483,34 +496,82 @@ function updateSummaryCards(data) {
 
 async function loadLogs(page = 1) {
     const tbody = document.getElementById('activity-table-body');
+    const mobile = document.getElementById('activity-mobile-list');
+    const requestSequence = ++activityLoadSequence;
+    if (activityLoadController) activityLoadController.abort();
+    activityLoadController = typeof AbortController === 'function' ? new AbortController() : null;
     tbody.innerHTML = `
         <tr>
             <td colspan="6" class="text-center text-muted py-5">
                 <i class="fa-solid fa-spinner fa-spin me-1"></i>Loading activity logs...
             </td>
         </tr>`;
+    if (mobile) mobile.innerHTML = '';
+    document.getElementById('result-summary').innerText = 'Loading logs...';
+    document.getElementById('prev-btn').disabled = true;
+    document.getElementById('next-btn').disabled = true;
 
     const params = buildQueryParams(page);
-    const res = await fetch(`/get_activity_logs?${params.toString()}`);
+    let res;
+    try {
+        res = await fetch(`/get_activity_logs?${params.toString()}`, {
+            signal: activityLoadController ? activityLoadController.signal : undefined,
+            cache: 'no-store'
+        });
+    } catch (error) {
+        if (error && error.name === 'AbortError') return;
+        if (requestSequence !== activityLoadSequence) return;
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center text-danger py-5">
+                    Unable to load activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(${page})">Retry</button>
+                </td>
+            </tr>`;
+        if (mobile) mobile.innerHTML = '<div class="activity-mobile-empty text-danger">Unable to load activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(' + page + ')">Retry</button></div>';
+        document.getElementById('result-summary').innerText = 'Unable to load activity logs.';
+        return;
+    }
+
+    if (requestSequence !== activityLoadSequence) return;
 
     if (!res.ok) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="6" class="text-center text-danger py-5">
-                    Unable to load activity logs.
+                    Unable to load activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(${page})">Retry</button>
                 </td>
             </tr>`;
-        renderActivityMobileCards([]);
+        if (mobile) mobile.innerHTML = '<div class="activity-mobile-empty text-danger">Unable to load activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(' + page + ')">Retry</button></div>';
+        document.getElementById('result-summary').innerText = 'Unable to load activity logs.';
         return;
     }
 
-    const data = await res.json();
+    let data;
+    try {
+        data = await res.json();
+    } catch (error) {
+        if (requestSequence !== activityLoadSequence) return;
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center text-danger py-5">
+                    Unable to read activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(${page})">Retry</button>
+                </td>
+            </tr>`;
+        if (mobile) mobile.innerHTML = '<div class="activity-mobile-empty text-danger">Unable to read activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(' + page + ')">Retry</button></div>';
+        document.getElementById('result-summary').innerText = 'Unable to read activity logs.';
+        return;
+    }
+    if (requestSequence !== activityLoadSequence) return;
     currentPage = data.page;
     totalPages = data.pages || 1;
     updateSummaryCards(data);
 
+    const hiddenRoutineCount = Number(data.hidden_routine_count || 0);
     document.getElementById('result-summary').innerText =
-        `${data.total} matching log${data.total === 1 ? '' : 's'} found`;
+        `${data.total} matching log${data.total === 1 ? '' : 's'} found`
+        + (!document.getElementById('filter-include-routine').checked && hiddenRoutineCount
+            ? ` · ${hiddenRoutineCount} routine reimbursement save${hiddenRoutineCount === 1 ? '' : 's'} hidden`
+            : '');
 
     document.getElementById('page-label').innerText = `Page ${currentPage} of ${totalPages}`;
     document.getElementById('prev-btn').disabled = currentPage <= 1;
@@ -580,6 +641,7 @@ function resetFilters() {
     document.getElementById('filter-severity').value = "";
     document.getElementById('filter-start').value = "";
     document.getElementById('filter-end').value = "";
+    document.getElementById('filter-include-routine').checked = false;
     document.getElementById('per-page').value = "25";
     loadLogs(1);
 }
@@ -704,11 +766,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 .activity-travel-liquidation { background: #fef3c7; color: #92400e; }
 .activity-cash-advance { background: #ccfbf1; color: #0f766e; }
 .activity-cash-liquidation { background: #fae8ff; color: #a21caf; }
+.activity-leave-request { background: #ede9fe; color: #6d28d9; }
 .activity-approval { background: #fce7f3; color: #be185d; }
 .activity-accounting { background: #e2e8f0; color: #334155; }
 .activity-email { background: #e0f7fa; color: #087990; }
 .activity-client { background: #e9f8ef; color: #198754; }
 .activity-product { background: #fff6db; color: #946200; }
+.activity-stock-inventory { background: #fef3c7; color: #92400e; }
 .activity-personnel { background: #f1f3f5; color: #343a40; }
 .activity-export { background: #f3e8ff; color: #7e22ce; }
 .activity-security { background: #ffe8e8; color: #dc3545; }
@@ -849,7 +913,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     gap: 0.4rem;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
     .container-fluid {
         padding-left: 0.85rem;
         padding-right: 0.85rem;

@@ -93,7 +93,7 @@ class ReimbursementBulkSelectionSourceTests(unittest.TestCase):
         persist_start = TEMPLATE.index('async function persistReimbursementRowChange(')
         persist_end = TEMPLATE.index('\n    async function removeReimbursementRow', persist_start)
         persist_block = TEMPLATE[persist_start:persist_end]
-        self.assertIn('saveReimbursementDraft(true)', persist_block)
+        self.assertIn('saveReimbursementDraft(true, { background: true })', persist_block)
         self.assertIn('currentReimbursementRows = previousRows', persist_block)
         self.assertIn('currentReimbursementExcludedRows = previousExcludedRows', persist_block)
 

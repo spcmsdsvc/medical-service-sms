@@ -3812,7 +3812,7 @@
         </button>
         <span class="reim-save-status reim-dock-status" id="reimDraftStatus" data-save-state="idle" aria-live="polite">Not saved yet.</span>
         <div class="reim-dock-actions">
-            <button type="button" class="reim-btn reim-btn-secondary" id="reimSaveDraftBtn" onclick="saveReimbursementDraft()">Save Draft</button>
+            <button type="button" class="reim-btn reim-btn-secondary" id="reimSaveDraftBtn" onclick="saveReimbursementDraft(false, { manual: true })">Save Draft</button>
             <button type="button" class="reim-btn reim-btn-primary" id="reimSubmitBtn" onclick="submitReimbursement()">Submit</button>
         </div>
     </div>
@@ -4147,7 +4147,7 @@
     }
 
     async function saveReimbursementFromReadiness() {
-        const saved = await saveReimbursementDraft(false);
+        const saved = await saveReimbursementDraft(false, { manual: true });
         updateReimbursementReadiness();
         return saved;
     }
@@ -4159,7 +4159,7 @@
     }
 
     async function saveAndReviewReimbursementLpr() {
-        const saved = await saveReimbursementDraft(false);
+        const saved = await saveReimbursementDraft(false, { manual: true });
         if (!saved) return false;
         return openReimbursementLprForReviewFromReadiness();
     }
@@ -6679,6 +6679,10 @@ function renderReimbursementRows(rows) {
             },
             silent: !!silent,
             autosave: !!(options && options.autosave),
+            save_source: (options && options.save_source)
+                || ((options && options.autosave) ? 'autosave'
+                    : ((options && options.transition) ? 'transition'
+                        : ((options && options.manual) ? 'manual' : 'background'))),
             promise: null,
             resolve: null,
             controller: typeof AbortController === 'function' ? new AbortController() : null
@@ -7158,7 +7162,7 @@ function renderReimbursementRows(rows) {
 
         try {
             renderReimbursementRows(currentReimbursementRows);
-            const saved = await saveReimbursementDraft(true);
+            const saved = await saveReimbursementDraft(true, { background: true });
             if (!saved) {
                 currentReimbursementRows = previousRows;
                 currentReimbursementExcludedRows = previousExcludedRows;
@@ -7660,7 +7664,7 @@ async function downloadReimbursementExcel() {
             // Submitted/Approved records may already be locked, so skip silent save for non-editable statuses.
             const status = String(currentReimbursementStatus || 'Draft').toLowerCase();
             if (status === 'draft' || status === 'rejected') {
-                const saved = await saveReimbursementDraft(true);
+                const saved = await saveReimbursementDraft(true, { background: true });
                 if (!saved) return;
             }
 
@@ -7891,7 +7895,7 @@ async function saveReimbursementDraft(silent, options) {
 
         // IMPORTANT: do not save silently during Submit. If draft save fails,
         // the user must see the exact issue instead of the button appearing to do nothing.
-        const saved = await saveReimbursementDraft(false);
+        const saved = await saveReimbursementDraft(false, { transition: true });
         if (!saved) {
             setReimbursementSubmitNotice('Submit stopped because the draft could not be saved. Please check the message beside the buttons.', 'error');
             return;
@@ -7955,7 +7959,7 @@ async function saveReimbursementDraft(silent, options) {
         }
         if (reimbursementEditVersion !== submitEditVersion || reimbursementHasUnsavedEdits()) {
             setReimbursementSubmitNotice('Saving the latest reimbursement values before submit...', 'warn');
-            const latestSaved = await saveReimbursementDraft(false);
+            const latestSaved = await saveReimbursementDraft(false, { transition: true });
             if (!latestSaved) {
                 setReimbursementSubmitNotice('Submit stopped because the latest reimbursement values could not be saved.', 'error');
                 return;
@@ -8206,7 +8210,7 @@ async function saveReimbursementDraft(silent, options) {
         closeManualReimbursementModal();
 
         if (receiptValidation.files && receiptValidation.files.length) {
-            const saved = await saveReimbursementDraft(true);
+            const saved = await saveReimbursementDraft(true, { background: true });
             if (!saved) {
                 reimAlert('Manual item was added locally, but receipt upload needs a saved draft first.');
                 return;

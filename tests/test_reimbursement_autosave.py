@@ -87,7 +87,7 @@ class ReimbursementAutosaveSourceTests(unittest.TestCase):
         submit_block = TEMPLATE[submit_start:submit_end]
         self.assertIn('const submitContextKey = reimbursementCurrentContext().key;', submit_block)
         self.assertIn('const submitEditVersion = reimbursementEditVersion;', submit_block)
-        self.assertIn('const latestSaved = await saveReimbursementDraft(false);', submit_block)
+        self.assertIn("const latestSaved = await saveReimbursementDraft(false, { transition: true });", submit_block)
         self.assertIn('setReimbursementSubmitInputsBusy(true);', submit_block)
         self.assertIn('setReimbursementSubmitInputsBusy(false);', submit_block)
 

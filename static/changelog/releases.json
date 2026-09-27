@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-27-activity-log-signal-quality",
+      "release_date": "2026-09-27",
+      "title": "Clearer Activity Log and Reimbursement Access",
+      "summary": "Activity Log now focuses on meaningful workflow events, loads large histories efficiently, and keeps reimbursement documents limited to owners and routed approvers.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-27-activity-log-signal-quality-users",
+          "category": "Activity Log",
+          "description": "Routine reimbursement draft autosaves are hidden by default without deleting history; filters, pagination, CSV export, loading states, and mobile/tablet presentation are clearer, and generated reimbursement documents require owner or authorized approver access.",
+          "audiences": [
+            "admins",
+            "approvers",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-27-machine-calibration-history",
       "release_date": "2026-09-27",
       "title": "Machine Calibration History and Due-Date Warnings",

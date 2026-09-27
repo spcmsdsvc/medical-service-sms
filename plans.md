@@ -1,3 +1,84 @@
+# Activity Log signal-quality, scalability, and reimbursement access hardening
+
+**Status:** Executed — implementation verified; uncommitted (no commit, push, or deployment)
+**Approved:** 2026-09-27 — the owner explicitly authorized implementation with “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-27 — this bounded package is the complete implementation scope.
+**Detailed:** 2026-09-27.
+
+### Context and intended outcome
+
+Reimbursement worksheet autosaves currently create a global ActivityLog row every 900 ms,
+which makes the Activity Log noisy. Free-text classification also labels successful saved
+drafts as `Other` and ordinary row removal as `Failure`. The page additionally loads all
+matching rows before filtering and pagination, and reimbursement document routes allow
+any approval-center/accounting user to download a record by ID.
+
+### Numbered execution steps
+
+1. Preserve protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated
+   owner work. Read and update `changes.md`; do not commit, push, deploy, change Railway,
+   modify production data, or perform browser/Codex-app automation.
+2. In `app.py`, validate the backward-compatible `save_source` values on
+   `/save_reimbursement_draft`. Record only first draft creation and explicit manual Save
+   Draft events in global ActivityLog; keep autosave/transition/background saves silent while
+   preserving UniversalApprovalAuditTrail worksheet row events and lifecycle events.
+3. In the Activity Log classifier/query routes, recognize saved as Update and Success,
+   keep ordinary delete/reject/return outcomes out of Failure, prioritize workflow entities
+   over Accounting destinations, hide legacy `Saved reimbursement draft...` rows by default
+   with an `include_routine` toggle/count, scope users, use half-open date bounds, deterministic
+   timestamp/id ordering, SQL-side derived filters/counts, and formula-safe CSV export.
+4. In `templates/activity.html` and its page styles/scripts, add the routine-save toggle,
+   API-populated branches, complete workflow summary, abort/stale-response protection,
+   loading/error/retry states, mobile/tablet cards, and accessible labels/table/live-region
+   semantics while retaining existing filter/export behavior.
+5. Centralize reimbursement document authorization for Excel, PCV, RFP, and package routes:
+   permit only the owner or an approver authorized for that requester through existing
+   reimbursement routing, including the legacy approver, and return 403 before generation or
+   logging for unauthorized record IDs.
+6. Add focused regression tests for classifier/save-source/query/export/authorization contracts,
+   update the administrator-facing release manifest, bump the service-worker cache marker once,
+   append factual change-log entries, and close this plan with exact verification results.
+
+### Deliberately excluded
+
+No destructive audit-history cleanup, structured audit schema migration, entity-link redesign,
+retention policy, actor-ID backfill, unrelated workflow fixes, commit, push, deployment,
+Railway or production/database operations, protected-artifact cleanup, or browser verification.
+
+### Verification
+
+Run focused Activity Log/reimbursement tests first, then Python compilation, extracted
+JavaScript checks, Jinja rendering, release JSON validation, `git diff --check`, and the full
+isolated suite when feasible. Report skipped browser/full-suite checks truthfully.
+
+### Execution outcome — 2026-09-27
+
+- Added `save_source` handling to reimbursement draft saves. The first draft creation and
+  explicit manual Save Draft remain global ActivityLog events; autosave, transition, background,
+  receipt-prerequisite, and submit-preparation saves do not create generic rows. Existing
+  worksheet row removal/restoration UniversalApprovalAuditTrail records remain intact.
+- Corrected workflow-first classification and success/update handling, hid legacy routine draft
+  saves by default with `include_routine` and `hidden_routine_count`, and moved Activity Log
+  derived filtering, counts, half-open date bounds, deterministic pagination, scoped users, and
+  CSV formula protection into database-backed queries.
+- Added Activity Log routine toggle, API-driven branches, complete workflow summary metadata,
+  abort/stale-response protection, retry/error states, accessible table/filter semantics, and
+  tablet-width mobile cards. Centralized owner/routed-approver/legacy-approver authorization for
+  reimbursement Excel, PCV, RFP, and package downloads.
+- Focused suites passed: 59 Activity/reimbursement autosave/design tests; 41 reimbursement,
+  LPR, range, category, worksheet, and readiness tests; and a final 72-test combined cache,
+  bulk-selection, Activity Log, autosave, design, and calibration-history run. Temporary SQLite
+  endpoint checks passed for routine-save hiding/counting, opt-in recovery, deterministic ordering,
+  and save-source behavior. Python AST, Jinja rendering, extracted Activity JavaScript syntax,
+  release JSON, and `git diff --check` passed. Direct `py_compile` could not write the existing
+  `__pycache__` bytecode file (`PermissionError`), so the equivalent AST parse was used.
+- Full discovery was attempted once: 1,352 tests ran with 24 failures and 2 skips, attributable
+  to existing stale calibration/cache/archive contracts and purchase-order rate-limit setup,
+  plus one reimbursement source assertion updated and covered by the focused rerun. Browser
+  automation, commit, push, deployment, Railway, production/database operations, and protected
+  artifact changes were not performed.
+
+
 # Approved Calibration Report Attachment and Edit Lock
 
 **Status:** Executed — implementation commit `bf72a01`; publication authorized to `origin/main`.

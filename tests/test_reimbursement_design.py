@@ -20,7 +20,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
             'id="reimEndDate"',
             'id="reimExpenseTable"',
             'id="reimGrandTotal"',
-            'saveReimbursementDraft()',
+            'saveReimbursementDraft(false, { manual: true })',
             'submitReimbursement()',
             'loadReimbursementRows()',
             'recalculateReimbursementTotals()',

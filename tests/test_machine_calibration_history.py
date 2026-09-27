@@ -229,7 +229,7 @@ class MachineCalibrationHistoryTests(unittest.TestCase):
         self.assertIn("calibration-status-details", timeline_source)
         self.assertIn("calibrationHistory", timeline_source)
         self.assertIn("informational", timeline_source.lower())
-        self.assertIn("medical-service-pwa-offline-navigation-v203-calibration-report-attachment-lock", app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v204-activity-log", app_source)
         release = next(item for item in releases["releases"] if item["release_key"] == "2026-09-27-machine-calibration-history")
         self.assertIn("report/certificate", release["summary"])
 

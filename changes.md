@@ -2,6 +2,38 @@
 
 codex changes - 2026-09-27
 
+- Began the authorized Activity Log signal-quality, scalability, and reimbursement access
+  hardening package. Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and
+  unrelated owner work remain untouched; no commit, push, deployment, Railway, production, or
+  browser/Codex-app operation was performed.
+- Added backward-compatible reimbursement `save_source` handling. Autosave, transition,
+  background, receipt-prerequisite, and submit-preparation saves now persist without creating
+  generic ActivityLog rows; first draft creation and explicit Save Draft remain auditable, while
+  worksheet row removal/restoration continues through UniversalApprovalAuditTrail.
+- Corrected Activity Log classification so saved reimbursement drafts are Reimbursement / Update /
+  Success, workflow entities win over Accounting destinations, and ordinary remove/delete/reject/
+  return outcomes are not mislabeled as failures. Legacy routine draft-save rows remain immutable
+  and are hidden by default with an opt-in toggle and count.
+- Reworked Activity Log filtering, counts, date bounds, ordering, scoped user suggestions, and
+  pagination to use database predicates and deterministic timestamp/id ordering. CSV export now
+  follows the active routine toggle and neutralizes formula-leading user text.
+- Improved `templates/activity.html` with API-populated branches, complete workflow summaries,
+  cancellation/stale-response guards, loading/error/retry states, accessible labels/table/live
+  regions, and card rendering through cramped tablet widths.
+- Centralized reimbursement generated-document authorization for Excel, PCV, RFP, and package
+  routes: only the record owner or an existing routed/legacy reimbursement approver may download
+  by record ID; unauthorized requests return 403 before generation or logging.
+- Added focused Activity Log/access contracts, published release metadata under
+  `2026-09-27-activity-log-signal-quality`, and bumped the service-worker shell marker from v203
+  to v204. Focused verification passed 59 Activity/reimbursement autosave/design tests, 41
+  reimbursement/LPR/range/category/worksheet/readiness tests, and a final 72-test combined
+  cache/bulk/Activity/autosave/design/calibration-history run; AST, Jinja, extracted JavaScript,
+  release JSON, temporary SQLite endpoint checks, and `git diff --check` also passed. One full
+  discovery attempt ran 1,352 tests with 24 existing stale-contract/rate-limit failures and 2
+  skips. Direct `py_compile` could not write the existing `__pycache__` bytecode file, so an
+  equivalent AST parse was used. No browser verification, commit, push, deployment, Railway,
+  production/database, or protected-artifact operation was performed.
+
 - The owner authorized committing and pushing the completed machine-calibration history, compact
   calibration UI/report shortcuts, all-engineer approved-report access, and approved-report
   attachment/edit-lock packages to `origin/main`. Publication is limited to their application,

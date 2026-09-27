@@ -82,6 +82,7 @@ from sqlalchemy import (
     func, 
     and_, 
     or_,
+    case,
     event,
 )
 from sqlalchemy.exc import IntegrityError
@@ -24213,7 +24214,7 @@ def pwa_service_worker():
     # Navigation shell bump: v201 distributes source-aware Calendar calibration summaries/history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v201-machine-calibration-history.
     # Navigation shell bump: v203 distributes approved Calibration Report attachment locking.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v203-calibration-report-attachment-lock';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v204-activity-log';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -29139,8 +29140,6 @@ def classify_activity_action(action):
         return 'Leave Request'
     if 'password' in text or 'unauthorized' in text or 'denied' in text:
         return 'Security'
-    if 'accounting' in text or 'cash advance release' in text or 'marked reimbursement' in text and ('paid' in text or 'processing' in text):
-        return 'Accounting'
     if 'cash advance liquidation' in text or 'cal-' in text:
         return 'Cash Advance Liquidation'
     if 'travel liquidation' in text or 'tl-' in text:
@@ -29151,6 +29150,8 @@ def classify_activity_action(action):
         return 'Travel Request'
     if 'reimbursement' in text or 'pcv' in text or 'rfp' in text:
         return 'Reimbursement'
+    if 'accounting' in text or 'cash advance release' in text or 'marked reimbursement' in text and ('paid' in text or 'processing' in text):
+        return 'Accounting'
     if 'tsr' in text or 'service report' in text or 'online tsr' in text:
         return 'TSR'
     if 'approval route' in text or 'approval user' in text or 'approver' in text:
@@ -29199,9 +29200,9 @@ def classify_activity_verb(action):
         return 'Import'
     if any(token in text for token in ['added ', 'created ', 'registered ', 'new client', 'new schedule']):
         return 'Create'
-    if any(token in text for token in ['updated ', 'modified ', 'changed ', 'reset ', 'forced password']):
+    if any(token in text for token in ['updated ', 'modified ', 'changed ', 'reset ', 'forced password', 'saved ', ' save ', 'save:']):
         return 'Update'
-    if 'moved ' in text:
+    if re.search(r'\bmoved\b', text):
         return 'Move'
     if any(token in text for token in ['deleted ', 'removed ', 'purged ', 'wiped ', 'bulk-purged']):
         return 'Delete'
@@ -29215,15 +29216,11 @@ def classify_activity_severity(action):
 
     danger_tokens = [
         'failed',
+        'failure',
         'error',
         'unable',
         'unauthorized',
-        'denied',
-        'deleted',
-        'removed',
-        'purged',
-        'wiped',
-        'rejected'
+        'denied'
     ]
     warning_tokens = [
         'skipped',
@@ -29232,6 +29229,8 @@ def classify_activity_severity(action):
         'missing',
         'blocked',
         'returned',
+        'rejected',
+        'rejection',
         'warning'
     ]
     success_tokens = [
@@ -29330,9 +29329,10 @@ def activity_log_to_dict(log):
 
 def get_activity_users():
     """Return available users seen in activity logs for filter dropdowns."""
+    query = activity_scope_query(db.session.query(ActivityLog.user))
     return [
         user for (user,) in (
-            db.session.query(ActivityLog.user)
+            query
             .filter(ActivityLog.user.isnot(None))
             .distinct()
             .order_by(ActivityLog.user.asc())
@@ -29375,6 +29375,98 @@ def parse_activity_date_bounds():
 
 
 
+def activity_contains(*terms):
+    """Build a case-insensitive ActivityLog action predicate."""
+    return or_(*(ActivityLog.action.ilike(f'%{term}%') for term in terms))
+
+
+def activity_category_expression():
+    """Return the SQL expression matching classify_activity_action precedence."""
+    return case(
+        (activity_contains('stock inventory'), 'Stock Inventory'),
+        (activity_contains('leave request', 'form to follow', 'lr-'), 'Leave Request'),
+        (activity_contains('password', 'unauthorized', 'denied'), 'Security'),
+        (activity_contains('cash advance liquidation', 'cal-'), 'Cash Advance Liquidation'),
+        (activity_contains('travel liquidation', 'tl-'), 'Travel Liquidation'),
+        (activity_contains('cash advance', 'request for cash advance', 'ca-'), 'Cash Advance'),
+        (activity_contains('travel request', 'travel block', 'tr-'), 'Travel Request'),
+        (activity_contains('reimbursement', 'pcv', 'rfp'), 'Reimbursement'),
+        (or_(
+            activity_contains('accounting', 'cash advance release'),
+            and_(activity_contains('marked reimbursement'), activity_contains('paid', 'processing')),
+        ), 'Accounting'),
+        (activity_contains('approval route', 'approval user', 'approver'), 'Approval'),
+        (or_(
+            activity_contains('email notification'),
+            and_(activity_contains('sent schedule'), activity_contains('email')),
+            and_(activity_contains('sent '), activity_contains('email')),
+        ), 'Email'),
+        (activity_contains('export'), 'Export'),
+        (activity_contains('client', 'medical center'), 'Client'),
+        (activity_contains('product', 'equipment', 'inventory'), 'Product'),
+        (activity_contains('engineer', 'technical staff', 'personnel', 'profile'), 'Personnel'),
+        (activity_contains('schedule', 'calendar', 'record', 'bulk-purged', 'wiped technical'), 'Schedule'),
+        else_='System',
+    )
+
+
+def activity_action_expression():
+    """Return the SQL expression matching classify_activity_verb precedence."""
+    return case(
+        (activity_contains('password', 'unauthorized', 'denied'), 'Security'),
+        (activity_contains('rejected ', ' rejected', 'rejection'), 'Reject'),
+        (activity_contains('returned ', ' returned', 'return '), 'Return'),
+        (activity_contains('approved ', ' approved', 'approval stamp'), 'Approve'),
+        (activity_contains('submitted ', ' submitted', 'submit '), 'Submit'),
+        (activity_contains('completed ', ' completed', 'confirmed ', 'ready for liquidation', 'marked travel request ready'), 'Complete'),
+        (activity_contains('uploaded ', ' upload'), 'Upload'),
+        (activity_contains('downloaded ', ' download'), 'Download'),
+        (and_(activity_contains('sent '), activity_contains('email', 'accounting', 'client')), 'Email'),
+        (activity_contains('email notification'), 'Email'),
+        (activity_contains('export'), 'Export'),
+        (activity_contains('import'), 'Import'),
+        (activity_contains('added ', 'created ', 'registered ', 'new client', 'new schedule'), 'Create'),
+        (activity_contains('updated ', 'modified ', 'changed ', 'reset ', 'forced password', 'saved ', ' save ', 'save:'), 'Update'),
+        (or_(ActivityLog.action.ilike('Moved %'), ActivityLog.action.ilike('% moved %')), 'Move'),
+        (activity_contains('deleted ', 'removed ', 'purged ', 'wiped ', 'bulk-purged'), 'Delete'),
+        else_='Other',
+    )
+
+
+def activity_severity_expression():
+    """Return the SQL expression matching classify_activity_severity precedence."""
+    return case(
+        (activity_contains('failed', 'failure', 'error', 'unable', 'unauthorized', 'denied'), 'danger'),
+        (activity_contains('skipped', 'not sent', 'no recipients', 'missing', 'blocked', 'returned', 'rejected', 'rejection', 'warning'), 'warning'),
+        (activity_contains('sent', 'submitted', 'approved', 'completed', 'confirmed', 'paid', 'uploaded', 'downloaded', 'created', 'saved', 'imported', 'exported', 'updated', 'marked'), 'success'),
+        else_='normal',
+    )
+
+
+def activity_routine_save_expression():
+    """Identify legacy per-autosave reimbursement rows without deleting them."""
+    return ActivityLog.action.ilike('Saved reimbursement draft%')
+
+
+def activity_group_counts(query, expression):
+    """Count derived ActivityLog values without materialising every match."""
+    return {
+        value: int(count or 0)
+        for value, count in query.with_entities(expression, func.count(ActivityLog.id))
+        .group_by(expression)
+        .all()
+        if value
+    }
+
+
+def safe_activity_csv_cell(value):
+    """Prevent exported user-controlled text from being interpreted as a formula."""
+    text_value = '' if value is None else str(value)
+    if text_value.startswith(('=', '+', '-', '@')):
+        return "'" + text_value
+    return text_value
+
+
 def build_activity_query():
     """Shared activity query builder for full log API and CSV export."""
     query = activity_scope_query(ActivityLog.query)
@@ -29395,13 +29487,36 @@ def build_activity_query():
         query = query.filter(ActivityLog.user.ilike(user_filter))
 
     if start_date:
-        query = query.filter(func.date(ActivityLog.timestamp) >= start_date)
+        query = query.filter(ActivityLog.timestamp >= datetime.combine(start_date, datetime.min.time()))
 
     if end_date:
-        query = query.filter(func.date(ActivityLog.timestamp) <= end_date)
+        query = query.filter(ActivityLog.timestamp < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
 
-    # Derived filters are applied after query because category/action type/branch are inferred from action text.
-    return query, type_filter, action_filter, severity_filter, branch_filter
+    category_expression = activity_category_expression()
+    action_expression = activity_action_expression()
+    severity_expression = activity_severity_expression()
+
+    if type_filter:
+        type_filter = 'Personnel' if type_filter == 'Engineer' else type_filter
+        query = query.filter(category_expression == type_filter)
+
+    if action_filter:
+        query = query.filter(action_expression == action_filter)
+
+    if severity_filter == 'warning_or_danger':
+        query = query.filter(severity_expression.in_(['warning', 'danger']))
+    elif severity_filter:
+        query = query.filter(severity_expression == severity_filter)
+
+    if branch_filter:
+        query = query.filter(ActivityLog.action.ilike(f'%{branch_filter}%'))
+
+    hidden_routine_count = query.filter(activity_routine_save_expression()).count()
+    include_routine = parse_bool_flag(request.args.get('include_routine'), default=False)
+    if not include_routine:
+        query = query.filter(~activity_routine_save_expression())
+
+    return query, type_filter, action_filter, severity_filter, branch_filter, hidden_routine_count
 
 
 def filter_activity_logs_by_derived_fields(logs, type_filter='', action_filter='', severity_filter='', branch_filter=''):
@@ -29455,25 +29570,19 @@ def get_activity_logs():
     page = max(page, 1)
     per_page = min(max(per_page, 10), 100)
 
-    query, type_filter, action_filter, severity_filter, branch_filter = build_activity_query()
-    logs = query.order_by(ActivityLog.timestamp.desc()).all()
-    logs = filter_activity_logs_by_derived_fields(logs, type_filter, action_filter, severity_filter, branch_filter)
-
-    total = len(logs)
+    query, type_filter, action_filter, severity_filter, branch_filter, hidden_routine_count = build_activity_query()
+    total = query.order_by(None).count()
     start_idx = (page - 1) * per_page
-    end_idx = start_idx + per_page
-    page_logs = logs[start_idx:end_idx]
+    page_logs = (
+        query.order_by(ActivityLog.timestamp.desc(), ActivityLog.id.desc())
+        .offset(start_idx)
+        .limit(per_page)
+        .all()
+    )
 
-    category_counts = {}
-    action_counts = {}
-    severity_counts = {}
-    for log in logs:
-        category = classify_activity_action(log.action)
-        action_type = classify_activity_verb(log.action)
-        severity = classify_activity_severity(log.action)
-        category_counts[category] = category_counts.get(category, 0) + 1
-        action_counts[action_type] = action_counts.get(action_type, 0) + 1
-        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+    category_counts = activity_group_counts(query, activity_category_expression())
+    action_counts = activity_group_counts(query, activity_action_expression())
+    severity_counts = activity_group_counts(query, activity_severity_expression())
 
     return jsonify({
         'page': page,
@@ -29483,6 +29592,7 @@ def get_activity_logs():
         'category_counts': dict(sorted(category_counts.items())),
         'action_counts': dict(sorted(action_counts.items())),
         'severity_counts': dict(sorted(severity_counts.items())),
+        'hidden_routine_count': hidden_routine_count,
         'logs': [activity_log_to_dict(log) for log in page_logs]
     })
 
@@ -29494,9 +29604,8 @@ def export_activity_logs():
     if not is_admin_authorized():
         return denied()
 
-    query, type_filter, action_filter, severity_filter, branch_filter = build_activity_query()
-    logs = query.order_by(ActivityLog.timestamp.desc()).all()
-    logs = filter_activity_logs_by_derived_fields(logs, type_filter, action_filter, severity_filter, branch_filter)
+    query, type_filter, action_filter, severity_filter, branch_filter, _hidden_routine_count = build_activity_query()
+    logs = query.order_by(ActivityLog.timestamp.desc(), ActivityLog.id.desc()).all()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -29504,14 +29613,14 @@ def export_activity_logs():
 
     for log in logs:
         writer.writerow([
-            log.timestamp.strftime("%Y-%m-%d %H:%M"),
-            log.user,
+            safe_activity_csv_cell(log.timestamp.strftime("%Y-%m-%d %H:%M")),
+            safe_activity_csv_cell(log.user),
             classify_activity_action(log.action),
             classify_activity_verb(log.action),
             classify_activity_severity(log.action),
-            infer_activity_branch(log.action),
-            clean_activity_display_action(log.action),
-            log.action
+            safe_activity_csv_cell(infer_activity_branch(log.action)),
+            safe_activity_csv_cell(clean_activity_display_action(log.action)),
+            safe_activity_csv_cell(log.action)
         ])
 
     output.seek(0)
@@ -32750,7 +32859,7 @@ def reimbursement_fetch_download_header_from_request():
         header = db.session.get(ReimbursementHeader, header_id)
         if not header:
             raise ValueError('Reimbursement record not found.')
-        if header.user_id != current_user.id and not reimbursement_is_approver_user() and not can_access_accounting_center(current_user):
+        if not can_download_reimbursement_header(header):
             raise PermissionError('You are not allowed to download this reimbursement form.')
         return header
 
@@ -32760,6 +32869,16 @@ def reimbursement_fetch_download_header_from_request():
     if not header:
         raise LookupError('Please save a reimbursement draft before downloading the form.')
     return header
+
+
+def can_download_reimbursement_header(header, user=None):
+    """Allow generated reimbursement documents only to the owner or routed approver."""
+    target = user or current_user
+    if not header or not target or not getattr(target, 'is_authenticated', False):
+        return False
+    if clean_int(getattr(header, 'user_id', None)) == clean_int(getattr(target, 'id', None)):
+        return True
+    return can_user_approve_reimbursement_header(target, header)
 
 
 def reimbursement_pcv_line_items(header):
@@ -35979,6 +36098,12 @@ def save_reimbursement_draft():
     """Step 3: Save personal reimbursement entries as Draft."""
     ensure_reimbursement_approval_columns()
     payload = request.get_json(silent=True) or {}
+    save_source = clean_str(payload.get('save_source')) or 'manual'
+    if save_source not in {'manual', 'autosave', 'transition', 'background'}:
+        return jsonify({
+            'success': False,
+            'error': 'save_source must be manual, autosave, transition, or background.'
+        }), 400
 
     try:
         start_date = reimbursement_parse_date(payload.get('start') or payload.get('start_date'), 'start')
@@ -36010,6 +36135,10 @@ def save_reimbursement_draft():
         if embedded_lpr_enabled():
             ensure_lpr_tables()
         requested_header_id = clean_int(payload.get('id') or payload.get('reimbursement_id'))
+        existing_editable_header = (
+            db.session.get(ReimbursementHeader, requested_header_id)
+            if requested_header_id else reimbursement_find_editable_header(start_date, end_date)
+        )
         header = reimbursement_resolve_editable_header(
             start_date,
             end_date,
@@ -36021,6 +36150,8 @@ def save_reimbursement_draft():
                 'success': False,
                 'error': 'Reimbursement draft was not found or its date range no longer matches. Reload schedules and try again.'
             }), 404
+
+        header_was_created = existing_editable_header is None
 
         if not reimbursement_header_is_editable(header):
             return reimbursement_edit_lock_response(header, 'edited as draft')
@@ -36210,16 +36341,18 @@ def save_reimbursement_draft():
         total_summary = reimbursement_total_summary_for_response(header)
         print(f"[Reimbursement] Draft saved header #{header.id}; status={header.status}; rows={saved_count}", flush=True)
 
-        try:
-            exclusion_note = f", {len(sanitized_excluded_rows)} removed" if sanitized_excluded_rows else ''
-            log_activity(
-                f"Saved reimbursement draft {start_date.isoformat()} to {end_date.isoformat()} "
-                f"({saved_count} rows{exclusion_note}; total PHP {total_summary['grand_total']:,.2f})"
-            )
-            if total_summary.get('warning'):
-                print(f"[Reimbursement] Draft total consistency warning for header #{header.id}: {total_summary['warning']}", flush=True)
-        except Exception as log_err:
-            print(f"[Reimbursement] Activity log skipped: {log_err}")
+        if header_was_created or save_source == 'manual':
+            try:
+                exclusion_note = f", {len(sanitized_excluded_rows)} removed" if sanitized_excluded_rows else ''
+                event_word = 'Created' if header_was_created else 'Saved'
+                log_activity(
+                    f"{event_word} reimbursement draft {start_date.isoformat()} to {end_date.isoformat()} "
+                    f"({saved_count} rows{exclusion_note}; total PHP {total_summary['grand_total']:,.2f})"
+                )
+                if total_summary.get('warning'):
+                    print(f"[Reimbursement] Draft total consistency warning for header #{header.id}: {total_summary['warning']}", flush=True)
+            except Exception as log_err:
+                print(f"[Reimbursement] Activity log skipped: {log_err}")
 
         return jsonify({
             'success': True,
@@ -47487,21 +47620,9 @@ def submit_reimbursement():
 def download_reimbursement_form():
     """Generate the first reimbursement output: Excel workbook matching the accounting form."""
     header = None
-    header_id = clean_int(request.args.get('id') or request.args.get('reimbursement_id'))
 
     try:
-        if header_id:
-            header = db.session.get(ReimbursementHeader, header_id)
-            if not header:
-                return jsonify({'success': False, 'error': 'Reimbursement record not found.'}), 404
-            if header.user_id != current_user.id and not reimbursement_is_approver_user():
-                return jsonify({'success': False, 'error': 'You are not allowed to download this reimbursement form.'}), 403
-        else:
-            start_date = reimbursement_parse_date(request.args.get('start') or request.args.get('start_date'), 'start')
-            end_date = reimbursement_parse_date(request.args.get('end') or request.args.get('end_date'), 'end')
-            header = reimbursement_find_header(start_date, end_date, create=False)
-            if not header:
-                return jsonify({'success': False, 'error': 'Please save a reimbursement draft before downloading the form.'}), 404
+        header = reimbursement_fetch_download_header_from_request()
 
         wb = build_reimbursement_excel_workbook(header)
         output = io.BytesIO()
@@ -47523,6 +47644,10 @@ def download_reimbursement_form():
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
 
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
+    except LookupError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 404
     except ImportError:
         return jsonify({'success': False, 'error': 'Excel generation dependency is not installed.'}), 500
     except ValueError as exc:

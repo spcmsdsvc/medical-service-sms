@@ -154,7 +154,7 @@
                 let saved=null;
                 if(embeddedLprParentModule==='cash_advance' && window.saveCashAdvanceDraft) saved=await window.saveCashAdvanceDraft(true);
                 if(embeddedLprParentModule==='travel_request' && window.saveTravelRequestDraft) saved=await window.saveTravelRequestDraft();
-                if(embeddedLprParentModule==='reimbursement' && window.saveReimbursementDraft) await window.saveReimbursementDraft(false);
+                if(embeddedLprParentModule==='reimbursement' && window.saveReimbursementDraft) await window.saveReimbursementDraft(false, { background: true });
                 id=saved?.item?.id || saved?.cash_advance?.id || saved?.travel_request?.id || saved?.id || parentId() || $(embeddedLprParentModule==='cash_advance'?'cashAdvanceId':'travel-request-id')?.value || '';
             }
             if(!id){notify('Complete and save this request before attaching an LPR.','warn');return;}
