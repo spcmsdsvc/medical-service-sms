@@ -2,6 +2,13 @@
 
 codex changes - 2026-09-28
 
+- Committed only the approved `Preserve Product Identity for Future TSR History` implementation,
+  focused regression coverage, v210 cache assertion, release metadata, and required plan/change
+  records as `cd1206b` on `main`. The owner separately authorized pushing this bounded package to
+  `origin/main`; protected `scheduler.db`, the handoff, `.claude/`, `output/`, `tmp/`, and unrelated
+  untracked files remained unstaged. A records-only closeout commit will carry this implementation
+  commit reference before both commits are pushed together.
+
 - Began the owner-authorized implementation of `Preserve Product Identity for Future TSR
   History`. The bounded work will add nullable Shift product identity snapshots, capture them
   only during primary Product deletion for Product-source/legacy-null schedules, use them as TSR

@@ -1,6 +1,6 @@
 # Preserve Product Identity for Future TSR History
 
-**Status:** Executed — local changes not committed (commit was not authorized).
+**Status:** Executed — implementation commit `cd1206b`; publication authorized to `origin/main`.
 **Approved:** 2026-09-28 — the owner said “PLEASE IMPLEMENT THIS PLAN.” The owner separately
 authorized execution with “go ahead. do not over engineer and over check.”
 **Detailed:** 2026-09-28.
@@ -22,8 +22,9 @@ authorized execution with “go ahead. do not over engineer and over check.”
   direct `py_compile` command could not replace an existing locked `__pycache__` artifact, so the
   equivalent in-memory Python compilation check was used; no source syntax error was reported.
   A disposable legacy `shift` table also passed the additive migration and repeat-ensure check.
-- No protected owner path, production database, Railway setting, browser/Codex UI, commit, push,
-  or deployment was touched.
+- No protected owner path, production database, Railway setting, or browser/Codex UI was touched.
+  The bounded implementation was committed as `cd1206b`; the owner separately authorized
+  publication to `origin/main`.
 
 ### Context
 
@@ -146,10 +147,12 @@ after implementation. The already-affected Caraga Regional Hospital TSR and ever
 - A partial delete could lose the snapshot or inventory transaction; snapshot, unlink, link cleanup,
   and Product deletion remain in the existing single database transaction.
 
-### Approval gate
+### Execution and publication status
 
-This plan is approved and recorded. The owner must give a separate implementation go-ahead before
-application source, tests, database schema, cache metadata, release metadata, or behavior changes.
+The owner separately authorized implementation, then authorized committing and pushing only this
+bounded package. Implementation commit `cd1206b` contains the application, test, release, plan,
+and change-record files; protected owner artifacts remain excluded. Railway variables, manual
+redeploys, and production-data operations remain unauthorized.
 
 ##
 
