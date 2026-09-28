@@ -2,6 +2,15 @@
 
 codex changes - 2026-09-28
 
+- The owner authorized committing and pushing only the Preserve Client Signature and Full TSR
+  Snapshot During Editing package. Its nine intended application, template, focused-test,
+  release, plan, and change-record files were committed as `492b4c1` and pushed to `origin/main`;
+  `git ls-remote origin refs/heads/main` verified
+  `492b4c134897c02104c13ba204aec2b4fcd486cb`. Railway accepted that exact commit as deployment
+  `4c90f4cb-201b-4e63-84d3-9f0170daff63` in `empowering-integrity / production` and reported it
+  building. This plan/change closeout update is being committed separately; protected database,
+  handoff, `.claude/`, `output/`, `tmp/`, and unrelated owner artifacts remain unstaged, and no
+  Railway variable, manual redeploy, or production-data operation was performed.
 - Started the separately authorized Preserve Client Signature and Full TSR Snapshot During Editing
   package. The bounded implementation covers private per-submission client-signature retention,
   authorized revision-only hydration, complete saved TSR snapshot preservation during Edit TSR,

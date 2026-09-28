@@ -1,9 +1,12 @@
 # Preserve Client Signature and Full TSR Snapshot During Editing
 
-**Status:** Executed — local uncommitted; no commit authorized.
+**Status:** Executed — implementation commit `492b4c1` published to `origin/main`; Railway
+deployment `4c90f4cb-201b-4e63-84d3-9f0170daff63` accepted and building.
 **Approved:** 2026-09-28 — the owner requested “implement the plan. do not overengineer and over
 check things”; under the repository's mandatory two-message gate, this records approval only and
 implementation began after the owner's separate go-ahead on 2026-09-28.
+**Publication authorized:** 2026-09-28 — the owner instructed “now commit and push only this
+change”.
 **Detailed:** 2026-09-28.
 
 ### Execution outcome
