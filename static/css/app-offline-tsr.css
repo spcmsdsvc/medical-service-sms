@@ -536,3 +536,148 @@
   }
 
 }
+
+.offline-tsr-calibration-history {
+  background: color-mix(in srgb, var(--app-primary, #0d6efd) 5%, var(--app-surface, #fff));
+  border: 1px solid color-mix(in srgb, var(--app-primary, #0d6efd) 24%, var(--app-border, #dbe3ee));
+  border-left: 3px solid var(--app-primary, #0d6efd);
+  border-radius: 12px;
+  color: var(--app-text, #0f172a);
+  padding: 12px 14px;
+}
+
+.offline-tsr-calibration-workspace {
+  align-items: start;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(240px, .8fr) minmax(0, 1.2fr);
+}
+
+.offline-tsr-calibration-entry {
+  min-width: 0;
+}
+
+.offline-tsr-calibration-history-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.offline-tsr-calibration-count {
+  background: color-mix(in srgb, var(--app-primary, #0d6efd) 12%, var(--app-surface, #fff));
+  border-radius: 999px;
+  color: var(--app-primary, #0d6efd);
+  flex: 0 0 auto;
+  font-size: .72rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.offline-tsr-calibration-summary {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.offline-tsr-calibration-summary > div {
+  border: 1px solid var(--app-border, #dbe3ee);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.offline-tsr-calibration-summary span,
+.offline-tsr-calibration-summary strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.offline-tsr-calibration-summary span {
+  color: var(--app-muted, #64748b);
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.offline-tsr-calibration-summary strong {
+  font-size: .82rem;
+  margin-top: 2px;
+}
+
+.offline-tsr-calibration-details {
+  border-top: 1px solid var(--app-border, #dbe3ee);
+  margin-top: 12px;
+  padding-top: 9px;
+}
+
+.offline-tsr-calibration-details > summary {
+  color: var(--app-primary, #0d6efd);
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.offline-tsr-calibration-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.offline-tsr-calibration-row {
+  background: var(--app-surface, #fff);
+  border: 1px solid var(--app-border, #dbe3ee);
+  border-radius: 8px;
+  font-size: .78rem;
+  line-height: 1.45;
+  padding: 9px 10px;
+}
+
+.offline-tsr-calibration-row-top {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.offline-tsr-calibration-row-top span {
+  color: var(--app-muted, #64748b);
+  white-space: nowrap;
+}
+
+.offline-tsr-calibration-links {
+  border-top: 1px solid var(--app-border, #dbe3ee);
+  margin-top: 5px;
+  padding-top: 5px;
+}
+
+.offline-tsr-calibration-note {
+  color: var(--app-muted, #64748b);
+  font-size: .72rem;
+  line-height: 1.4;
+  margin-top: 10px;
+}
+
+@media (max-width: 768px) {
+  .offline-tsr-calibration-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .offline-tsr-calibration-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .offline-tsr-calibration-history-heading,
+  .offline-tsr-calibration-row-top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .offline-tsr-calibration-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

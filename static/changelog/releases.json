@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-28-offline-calibration-history-tsr",
+      "release_date": "2026-09-28",
+      "title": "Calibration History in Create TSR",
+      "summary": "Calendar and Create TSR now keep a compact approved calibration history copy available for field work, with live report and certificate links when connected.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-28-offline-calibration-history-tsr-users",
+          "category": "Calendar and Create TSR",
+          "description": "After equipment is selected, Create TSR shows the latest approved calibration summary and expandable history. Calendar and offline schedule caches retain metadata without document URLs; reports and certificates still require an internet connection.",
+          "audiences": [
+            "admins",
+            "engineers",
+            "schedulers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-27-activity-log-signal-quality",
       "release_date": "2026-09-27",
       "title": "Clearer Activity Log and Reimbursement Access",

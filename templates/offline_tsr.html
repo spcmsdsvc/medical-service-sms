@@ -2,7 +2,7 @@
 
 {% block page_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=11">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=7">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=8">
 <script>
 (() => {
   const navigation = window.performance?.getEntriesByType?.('navigation')?.[0];
@@ -412,19 +412,24 @@ window.CalibrationReportConfig = {
       </div>
 
       <div class="card p-3 p-md-4 mb-3 no-print calibration-report-card" id="calibration-report-card">
-        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
-          <div>
-            <label class="small fw-bold text-muted text-uppercase mb-0">Optional Calibration Report</label>
-            <div class="small text-muted" id="calibration-report-summary">Create an optional calibration report from the supplied form. It will remain separate from the main TSR PDF.</div>
+        <div class="offline-tsr-calibration-workspace">
+          <div class="offline-tsr-calibration-entry">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+              <div>
+                <label class="small fw-bold text-muted text-uppercase mb-0">Optional Calibration Report</label>
+                <div class="small text-muted" id="calibration-report-summary">Create an optional calibration report from the supplied form. It will remain separate from the main TSR PDF.</div>
+              </div>
+              <span id="calibration-report-status" class="calibration-report-status muted">Not Started</span>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-create-btn"><i class="fa-solid fa-file-circle-plus me-1"></i><span id="calibration-report-entry-label">Create Calibration Report</span></button>
+            </div>
+            <div id="calibration-report-filename" class="calibration-report-file-meta mt-2">No PDF generated yet.</div>
+            <div id="calibration-report-capacity" class="calibration-report-capacity mt-1">Supporting attachment capacity is checked when the TSR is saved.</div>
+            <div id="calibration-report-attachment-note" class="calibration-report-attachment-note mt-1">No generated report attachment.</div>
           </div>
-          <span id="calibration-report-status" class="calibration-report-status muted">Not Started</span>
+          <div id="tsr-calibration-history-panel" class="offline-tsr-calibration-history d-none" aria-live="polite"></div>
         </div>
-        <div class="d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-create-btn"><i class="fa-solid fa-file-circle-plus me-1"></i><span id="calibration-report-entry-label">Create Calibration Report</span></button>
-        </div>
-        <div id="calibration-report-filename" class="calibration-report-file-meta mt-2">No PDF generated yet.</div>
-        <div id="calibration-report-capacity" class="calibration-report-capacity mt-1">Supporting attachment capacity is checked when the TSR is saved.</div>
-        <div id="calibration-report-attachment-note" class="calibration-report-attachment-note mt-1">No generated report attachment.</div>
       </div>
 
       <div class="card p-3 p-md-4 mb-3 no-print">
@@ -864,6 +869,7 @@ let onlineTSRCalibrationContext = null;
 let onlineTSRCalibrationContextReadyPromise = Promise.resolve({ requested:false, ready:true });
 let onlineTSRCalibrationLoadError = '';
 let calibrationReportHandoffOpened = false;
+let standaloneCalibrationHistoryRequestKey = '';
 let standaloneCurrentDraftId = '';
 let standaloneTSRReservationToken = '';
 let standaloneTSRActiveContextVersion = 0;
@@ -1376,6 +1382,7 @@ function initializeBlankStandaloneTSR(){
     if(partsRows) partsRows.innerHTML = '';
     const selectedCard = document.getElementById('tsr-selected-schedule-card');
     if(selectedCard){ selectedCard.classList.add('d-none'); selectedCard.innerHTML = ''; }
+    clearStandaloneCalibrationHistory();
     const coveragePanel = document.getElementById('tsr-schedule-coverage-panel');
     if(coveragePanel){ coveragePanel.classList.add('d-none'); coveragePanel.innerHTML = ''; }
     const select = document.getElementById('tsr-schedule-select');
@@ -1729,6 +1736,10 @@ function normalizeStandaloneCreateTSRContext(rawContext){
     product_name: ctx.product_name || '',
     product_id: ctx.product_id || '',
     equipment_source: ctx.equipment_source || ctx.product_source || 'product',
+    calibration_summary: ctx.calibration_summary || ctx.calibrationSummary || null,
+    calibration_history: Array.isArray(ctx.calibration_history)
+      ? ctx.calibration_history
+      : (Array.isArray(ctx.calibrationHistory) ? ctx.calibrationHistory : []),
     equipment_available: ctx.equipment_available !== false,
     engineer_id: ctx.engineer_id || ctx.engineerId || '',
     serviced_by: ctx.engineer_name || ctx.serviced_by || LOGGED_IN_ENGINEER_NAME || '',
@@ -2050,6 +2061,10 @@ async function readPendingScheduleOptions(){
         product_name: summary.productName || '',
         product_id: summary.productId || '',
         equipment_source: summary.productSource || 'product',
+        calibration_summary: summary.calibrationSummary || summary.calibration_summary || null,
+        calibration_history: Array.isArray(summary.calibrationHistory)
+          ? summary.calibrationHistory
+          : (Array.isArray(summary.calibration_history) ? summary.calibration_history : []),
         equipment_available: Boolean(
           summary.clientId && summary.productId && summary.productName &&
           ['product', 'genoray', 'vieworks'].includes(String(summary.productSource || 'product').toLowerCase())
@@ -2121,6 +2136,8 @@ function readTimelineSnapshotSchedules(){
             product_name: shift.product_name || '',
             product_id: shift.product_id || '',
             equipment_source: shift.equipment_source || 'product',
+            calibration_summary: shift.calibration_summary || null,
+            calibration_history: Array.isArray(shift.calibration_history) ? shift.calibration_history : [],
             equipment_available: shift.equipment_available !== false && Boolean(shift.client_id && shift.product_id && shift.product_name),
             engineers: rawEngineers,
             engineer_names: [...new Set(engineerNames)],
@@ -2162,6 +2179,39 @@ function readCachedStandaloneScheduleOptions(){
     const parsed = JSON.parse(localStorage.getItem(STANDALONE_TSR_SCHEDULES_KEY) || 'null');
     return Array.isArray(parsed?.schedules) ? parsed.schedules : [];
   }catch(err){ return []; }
+}
+async function enrichCachedStandaloneScheduleCalibration(schedules){
+  const rows = Array.isArray(schedules) ? schedules : [];
+  if(!rows.length || !window.offlineSchedule?.getCachedReference) return rows;
+  let cached = null;
+  try{
+    cached = await window.offlineSchedule.getCachedReference();
+  }catch(err){
+    console.warn('[Offline TSR] Unable to read cached equipment calibration history', err);
+    return rows;
+  }
+  const products = Array.isArray(cached?.products) ? cached.products : [];
+  if(!products.length) return rows;
+  rows.forEach(schedule => {
+    const serial = String(schedule?.product_id || schedule?.serial_number || '').trim().toLowerCase();
+    const source = String(schedule?.equipment_source || schedule?.product_source || 'product').trim().toLowerCase();
+    if(!serial) return;
+    const product = products.find(item =>
+      String(item?.serial_number || '').trim().toLowerCase() === serial &&
+      String(item?.equipment_source || 'product').trim().toLowerCase() === source
+    );
+    if(!product) return;
+    const cachedHistory = Array.isArray(product.calibration_history) ? product.calibration_history : [];
+    if(!Array.isArray(schedule.calibration_history) || !schedule.calibration_history.length){
+      schedule.calibration_history = cachedHistory.map(item => Object.assign({}, item));
+    }
+    if(!schedule.calibration_summary || schedule.calibration_summary.record_count === undefined){
+      schedule.calibration_summary = product.calibration_summary
+        ? Object.assign({}, product.calibration_summary)
+        : null;
+    }
+  });
+  return rows;
 }
 function renderStandaloneScheduleOptions(schedules, sourceLabel='cached'){
   standaloneScheduleOptions = normalizeStandaloneScheduleOptions(schedules);
@@ -2381,6 +2431,8 @@ async function refreshStandaloneScheduleOptions(manual=false){
     source = source ? `${source} + this device's queue` : "this device's queue";
   }
 
+  schedules = await enrichCachedStandaloneScheduleCalibration(schedules);
+
   renderStandaloneScheduleOptions(schedules, source);
   const selectedLiveSchedule = standaloneScheduleOptionsAreLive && selectedStandaloneScheduleId
     ? standaloneScheduleOptions.find(item =>
@@ -2392,9 +2444,111 @@ async function refreshStandaloneScheduleOptions(manual=false){
     : null) || selectedStandaloneScheduleSnapshot;
   if(selectedLiveSchedule) syncStandaloneTSRAddressFromSchedule(selectedLiveSchedule);
   renderTSRClientContactSuggestions(selectedContactSchedule);
+  if(selectedContactSchedule) refreshStandaloneCalibrationHistory(selectedContactSchedule);
+  else if(!selectedStandaloneScheduleId) clearStandaloneCalibrationHistory();
   updateCreateTSRScheduleGate({ showMessage: manual && !hasStandaloneScheduleSelection() });
   if(manual){
     showTSRStatus(schedules.length ? 'Offline schedules loaded from saved cache.' : 'No saved schedules found. Open Calendar once while online to prepare offline mode.', schedules.length ? 'success' : 'info');
+  }
+}
+function standaloneCalibrationHistoryIdentity(schedule){
+  const source = String(schedule?.equipment_source || schedule?.product_source || 'product').trim().toLowerCase();
+  const serial = String(schedule?.product_id || schedule?.serial_number || schedule?.serial || '').trim().toLowerCase();
+  return source && serial ? `${source}|${serial}` : '';
+}
+function standaloneCalibrationHistorySnapshotForSelection(){
+  if(!selectedStandaloneScheduleId) return null;
+  return standaloneScheduleOptions.find(item => isSameScheduleSelection(selectedStandaloneScheduleId, item))
+    || selectedStandaloneScheduleSnapshot
+    || null;
+}
+function standaloneCalibrationHistoryUrl(schedule){
+  const source = String(schedule?.equipment_source || schedule?.product_source || 'product').trim().toLowerCase();
+  const serial = encodeURIComponent(schedule?.product_id || schedule?.serial_number || schedule?.serial || '');
+  return source === 'product' ? `/api/products/${serial}/history` : `/api/${source}/items/${serial}/history`;
+}
+function clearStandaloneCalibrationHistory(){
+  standaloneCalibrationHistoryRequestKey = '';
+  const panel = document.getElementById('tsr-calibration-history-panel');
+  if(panel){ panel.classList.add('d-none'); panel.innerHTML = ''; }
+}
+function renderStandaloneCalibrationHistory(schedule, calibrationHistory, { live=false, message='' } = {}){
+  const panel = document.getElementById('tsr-calibration-history-panel');
+  const identity = standaloneCalibrationHistoryIdentity(schedule);
+  if(!panel || !identity){
+    if(panel){ panel.classList.add('d-none'); panel.innerHTML = ''; }
+    return;
+  }
+  const history = (Array.isArray(calibrationHistory) ? calibrationHistory : [])
+    .slice()
+    .sort((left, right) => String(right?.calibration_date || '').localeCompare(String(left?.calibration_date || '')));
+  if(!history.length){
+    panel.classList.add('d-none');
+    panel.innerHTML = '';
+    return;
+  }
+  const latest = history[0] || {};
+  const recordCount = Number(latest.record_count || history.length) || history.length;
+  const linksFor = row => {
+    if(!live) return '';
+    const links = [];
+    if(String(row?.calibration_report_preview_url || '').startsWith('/')){
+      links.push(`<a href="${escapeAttr(row.calibration_report_preview_url)}" target="_blank" rel="noopener">Calibration report</a>`);
+    }
+    if(String(row?.certificate_preview_url || '').startsWith('/')){
+      links.push(`<a href="${escapeAttr(row.certificate_preview_url)}" target="_blank" rel="noopener">Signed certificate</a>`);
+    }
+    return links.length ? `<div class="offline-tsr-calibration-links">${links.join(' · ')}</div>` : '';
+  };
+  panel.innerHTML = `<div class="offline-tsr-calibration-history-heading">
+      <div><div class="small fw-bold text-primary text-uppercase">Previous Calibration</div>
+        <h4 class="h6 fw-bold mb-1">Approved calibration history</h4>
+        <div class="small text-muted">${live ? 'Live system data' : 'Saved offline copy'}${message ? ` · ${escapeHTML(message)}` : ''}</div>
+      </div>
+      <span class="offline-tsr-calibration-count">${recordCount} record${recordCount === 1 ? '' : 's'}</span>
+    </div>
+    <div class="offline-tsr-calibration-summary">
+      <div><span>Latest calibration</span><strong>${escapeHTML(latest.calibration_date || 'Not recorded')}</strong></div>
+      <div><span>Valid through</span><strong>${escapeHTML(latest.valid_until || 'Not available')}</strong></div>
+      <div><span>Calibrated by</span><strong>${escapeHTML(latest.calibrated_by || latest.report_recorded_calibrator || 'Not recorded')}</strong></div>
+      <div><span>Certificate</span><strong>${escapeHTML(latest.certificate_number || 'Not recorded')}</strong></div>
+    </div>
+    <details class="offline-tsr-calibration-details">
+      <summary>View full history (${recordCount})</summary>
+      <div class="offline-tsr-calibration-list">${history.map(row => `<article class="offline-tsr-calibration-row">
+          <div class="offline-tsr-calibration-row-top"><strong>${escapeHTML(row.status || 'Calibration record')}</strong><span>${escapeHTML(row.calibration_date || 'Date not recorded')}</span></div>
+          <div><b>Valid through:</b> ${escapeHTML(row.valid_until || 'Not available')}</div>
+          <div><b>Calibrated by:</b> ${escapeHTML(row.calibrated_by || row.report_recorded_calibrator || 'Not recorded')}</div>
+          <div><b>Certificate:</b> ${escapeHTML(row.certificate_number || 'Not recorded')}</div>
+          ${row.approved_at || row.approver_name ? `<div><b>Approval:</b> ${escapeHTML(row.approved_at || '')}${row.approver_name ? ` · ${escapeHTML(row.approver_name)}` : ''}</div>` : ''}
+          ${linksFor(row)}
+        </article>`).join('')}</div>
+    </details>
+    <div class="offline-tsr-calibration-note"><i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>Calibration reports and certificates require an internet connection to open.</div>`;
+  panel.dataset.calibrationIdentity = identity;
+  panel.classList.remove('d-none');
+}
+async function refreshStandaloneCalibrationHistory(schedule){
+  const identity = standaloneCalibrationHistoryIdentity(schedule);
+  if(!identity){ clearStandaloneCalibrationHistory(); return; }
+  standaloneCalibrationHistoryRequestKey = identity;
+  const cachedHistory = Array.isArray(schedule?.calibration_history) ? schedule.calibration_history : [];
+  renderStandaloneCalibrationHistory(schedule, cachedHistory, { live:false });
+  if(!navigator.onLine) return;
+  try{
+    const response = await fetch(standaloneCalibrationHistoryUrl(schedule), { cache:'no-store' });
+    const data = await response.json().catch(() => ({}));
+    if(!response.ok) throw new Error(data.message || 'Unable to load calibration history.');
+    const liveHistory = Array.isArray(data.calibrations) ? data.calibrations : [];
+    const activeSchedule = standaloneCalibrationHistorySnapshotForSelection();
+    if(standaloneCalibrationHistoryRequestKey !== identity || identity !== standaloneCalibrationHistoryIdentity(activeSchedule)) return;
+    schedule.calibration_history = liveHistory;
+    schedule.calibration_summary = liveHistory[0] || schedule.calibration_summary || null;
+    renderStandaloneCalibrationHistory(schedule, liveHistory, { live:true });
+  }catch(error){
+    if(standaloneCalibrationHistoryRequestKey !== identity) return;
+    console.warn('[Offline TSR] Calibration history refresh failed', error);
+    if(cachedHistory.length) renderStandaloneCalibrationHistory(schedule, cachedHistory, { live:false, message:'Live refresh unavailable' });
   }
 }
 function clearStandaloneTSRWorkFieldsForScheduleChange(){
@@ -2419,6 +2573,7 @@ function clearStandaloneTSRWorkFieldsForScheduleChange(){
     if(el) el.value = '';
   });
   standaloneDocuments = [];
+  clearStandaloneCalibrationHistory();
   window.calibrationReport?.clearForScheduleChange();
   signatureData = { serviced: '', acknowledged: '' };
   renderTSRClientContactSuggestions(null);
@@ -2522,6 +2677,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
   }
   renderTSRScheduleCoveragePanel(schedule);
   renderTSRClientContactSuggestions(schedule);
+  refreshStandaloneCalibrationHistory(schedule);
   setStandaloneScheduleLockedFields(true);
   updateCreateTSRScheduleGate();
   renderStandaloneTSRDraftPanel();
@@ -2543,6 +2699,7 @@ function clearStandaloneScheduleSelection(showMessage=true){
   if(select) select.value = '';
   const card = document.getElementById('tsr-selected-schedule-card');
   if(card){ card.classList.add('d-none'); card.innerHTML = ''; }
+  clearStandaloneCalibrationHistory();
   renderTSRScheduleCoveragePanel(null);
   setStandaloneScheduleLockedFields(false);
   updateCreateTSRScheduleGate({ showMessage });
@@ -4994,6 +5151,8 @@ function applyStandaloneTSRDraftData(data){
     window.calibrationReport?.apply(data.calibration_report || null);
     signatureData=data.signatures||{serviced:'',acknowledged:''};
     renderTSRScheduleCoveragePanel(data.selectedSchedule || data);
+    if(matchedOption) refreshStandaloneCalibrationHistory(matchedOption);
+    else clearStandaloneCalibrationHistory();
 
     const partsRows = document.getElementById('tsr-parts-rows');
     if(partsRows) partsRows.innerHTML = '';

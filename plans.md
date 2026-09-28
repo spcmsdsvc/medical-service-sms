@@ -1,3 +1,125 @@
+# Offline Calibration History in Calendar and Create TSR
+
+**Status:** Executed — local implementation complete; commit not authorized.
+**Approved:** 2026-09-28 — the owner approved the plan with “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-28 — the owner authorized implementation with “go ahead. do not over engineer and over check”.
+**Detailed:** 2026-09-28.
+
+### Context and intended outcome
+
+Show an informational previous-calibration panel after equipment is selected in Create TSR.
+The panel will show the latest approved calibration summary and an expandable full history.
+Calendar’s existing calibration-details view will use the same compact offline metadata.
+
+History is informational only: it will not be copied into the TSR draft, submission payload,
+or generated PDF. Reports and certificates remain online-only and subject to their existing
+authorization checks.
+
+### Numbered execution steps
+
+1. Preserve the existing dirty `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and
+   unrelated owner files. Read and update `changes.md`; do not commit, push, deploy, modify
+   Railway or production data, or use browser/Codex-app automation.
+2. In `app.py`, add a batched, source-aware calibration-history projection for Product,
+   Genoray, and Vieworks equipment. Include only current `Approved`, latest-revision records
+   with valid signed-certificate linkage, preserve source-and-serial collision protection and
+   newest-first ordering, and expose compact offline-safe dates, validity, calibrator,
+   certificate, approval, status, and count metadata without document URLs.
+3. Reuse that batch projection in `/get_products?operational=1` and
+   `/get_offline_tsr_schedule_options` so operational equipment rows gain
+   `calibration_history` and schedule rows gain `calibration_summary` plus
+   `calibration_history`, without per-machine query loops. Keep the existing service-history
+   endpoints as the live source for freshly authorized report and certificate links.
+4. In `templates/timeline.html`, make the existing calibration-details modal render the cached
+   equipment history when offline or when the live request fails. Continue preferring the live
+   endpoint while online, label cached results as a saved offline copy, state that documents
+   require connectivity, and preserve current status, due-date ordering, informational-only
+   scheduling, and no-record behavior.
+5. In `templates/offline_tsr.html`, enrich live, cached, queued, and Timeline-snapshot schedule
+   selections from the exact equipment source and serial. After selection, show a responsive
+   Previous Calibration panel with the latest date, validity, calibrator, certificate, record
+   count, and an expandable newest-first history. Fetch live authorized document links online,
+   use metadata only offline, guard asynchronous responses by equipment identity, and clear or
+   hide the panel when the schedule changes, clears, or has no approved history.
+6. In `static/css/app-offline-tsr.css`, add responsive and dark-mode-compatible styles for the
+   new summary/history panel. Do not add prior-calibration data to draft serialization,
+   submission payloads, generated TSR PDFs, or calibration approval state.
+7. Add focused fail-first and regression coverage for source scoping, approval filtering,
+   newest-first ordering, URL-free cached projections, operational and schedule response shapes,
+   queued/snapshot enrichment, stale-response protection, Calendar offline fallback, Create TSR
+   summary/expansion, offline document-link suppression, and schedule clear/switch behavior.
+8. Bump the Create TSR stylesheet query and service-worker navigation/cache marker once, add a
+   new 2026-09-28 administrator-facing entry to `static/changelog/releases.json`, append factual
+   implementation and verification results to `changes.md`, and close this plan with the exact
+   execution outcome.
+9. Self-review the bounded diff, retain the fail-first evidence, run the focused calibration,
+   Calendar, Create TSR, schedule-option, cache, and authorization suites, then run Python AST/
+   compile checks, Jinja rendering, extracted JavaScript syntax, release JSON validation,
+   service-worker assertions, and `git diff --check`. Attempt the full isolated suite once with
+   a disposable test database and report exact pass/fail/skip results. Browser automation stays
+   prohibited and must be reported as not run.
+10. Do not commit or publish without separate authorization. Before any later commit, stage only
+    the intended application, template, stylesheet, focused-test, release, plan, and change-log
+    files; verify protected and unrelated dirty artifacts remain excluded.
+
+### Public API additions
+
+- `/get_products?operational=1` equipment rows gain `calibration_history`, containing only
+  offline-safe approved-history metadata.
+- `/get_offline_tsr_schedule_options` schedule rows gain `calibration_summary` and
+  `calibration_history`.
+- Existing service-history routes, artifact authorization, and live document-link behavior
+  remain unchanged.
+- No database schema, migration, dependency, or TSR submission/PDF format changes are included.
+
+### Deliberately excluded
+
+No calibration calculation or approval-workflow change, artifact authorization expansion,
+offline caching of report/certificate files, TSR draft/submission/PDF content change, scheduling
+validation change, schema or migration, dependency, production/Railway/database operation,
+browser/Codex UI automation, commit, push, deployment, or unrelated cleanup.
+
+### Verification and acceptance
+
+- Product, Genoray, and Vieworks histories remain source-scoped and exclude pending, returned,
+  superseded, non-latest, unsigned, and mismatched records.
+- Calendar opened online once stores compact history metadata for operational equipment and can
+  later display that saved history offline; the server remains authoritative after reconnection.
+- Create TSR displays the correct machine’s latest summary and expandable history for live,
+  cached, queued, and Timeline-snapshot schedules, without leaking stale history across switches.
+- Offline views contain no active report/certificate links; live views continue to show only
+  links authorized by the existing endpoint.
+- Prior history remains on-screen guidance only and never enters a TSR draft, submission, or PDF.
+- Generated Calibration Report and certificate files themselves remain online-only.
+
+### Execution outcome
+
+Implemented locally on 2026-09-28. `app.py` now batches source-and-serial-scoped approved
+calibration metadata for Product, Genoray, and Vieworks equipment and reuses it for the
+operational equipment and offline TSR schedule projections. Calendar and Create TSR now use
+the cached URL-free history offline, refresh through the existing live history routes when
+connected, suppress cached document links, and guard Create TSR refreshes against schedule
+switches. At the owner's follow-up direction, Previous Calibration sits beside the Create
+Calibration Report action on wider screens and stacks below it on mobile. The Create TSR
+stylesheet query, service-worker navigation marker, release manifest,
+focused contracts, `changes.md`, and this plan were updated. No TSR draft/submission/PDF,
+schema, authorization, database, production, Railway, browser, commit, or push behavior was
+changed.
+
+Focused verification passed 60 tests across calibration history, operational equipment,
+offline resilience, schedule options, and cache/UI contracts. The targeted offline TSR
+catalog/dark-mode checks passed 2 tests, and the existing Create TSR stylesheet/service-worker
+registration contract was updated for v8 and passed its focused check. Python AST parsing,
+release JSON validation, and `git diff --check` passed. A broader 31-test calibration approval/dark-mode run was attempted;
+the dark-mode check and unrelated offline catalog check passed, while three existing
+approval-scoped download authorization cases returned 403. The full suite, browser/Codex-app
+automation, commit, push, deployment, Railway, production, and database operations were not
+run or performed.
+
+The follow-up placement adjustment passed its two focused history-position and Calibration
+Report card-contract checks, plus `git diff --check`.
+
+
 # Activity Log signal-quality, scalability, and reimbursement access hardening
 
 **Status:** Executed — implementation commit `8d09cd8`; publication authorized to `origin/main`

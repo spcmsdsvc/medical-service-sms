@@ -12536,12 +12536,15 @@ function collectMobileEngineerSchedules(){
         return source === 'product' ? `/api/products/${serial}/history` : `/api/${source}/items/${serial}/history`;
     }
 
-    function renderCalibrationDetailsRows(calibrationHistory){
-        if(!calibrationHistory.length) return '<div class="text-muted">No approved calibration records found.</div>';
-        return calibrationHistory.map(row => {
+    function renderCalibrationDetailsRows(calibrationHistory, { cached=false } = {}){
+        const copyLabel = cached
+            ? '<div class="alert alert-info py-2 small mb-3">Saved offline copy. Report and certificate files require an internet connection.</div>'
+            : '';
+        if(!calibrationHistory.length) return `${copyLabel}<div class="text-muted">No approved calibration records found.</div>`;
+        return copyLabel + calibrationHistory.map(row => {
             const links = [];
-            if(row.calibration_report_preview_url) links.push(`<a href="${escapeHtml(row.calibration_report_preview_url)}" target="_blank" rel="noopener">Calibration report</a>`);
-            if(row.certificate_preview_url) links.push(`<a href="${escapeHtml(row.certificate_preview_url)}" target="_blank" rel="noopener">Signed certificate</a>`);
+            if(!cached && row.calibration_report_preview_url) links.push(`<a href="${escapeHtml(row.calibration_report_preview_url)}" target="_blank" rel="noopener">Calibration report</a>`);
+            if(!cached && row.certificate_preview_url) links.push(`<a href="${escapeHtml(row.certificate_preview_url)}" target="_blank" rel="noopener">Signed certificate</a>`);
             return `<article class="border rounded-3 p-3 mb-2">
                 <div class="d-flex flex-wrap justify-content-between gap-2"><strong>${escapeHtml(row.status || 'Calibration record')}</strong><span class="small text-muted">${escapeHtml(row.calibration_date || 'Date not recorded')}</span></div>
                 <div class="small mt-1"><strong>Valid through:</strong> ${escapeHtml(row.valid_until || 'Not available')}</div>
@@ -12560,21 +12563,37 @@ function collectMobileEngineerSchedules(){
         const title = document.getElementById('calibration-status-details-title');
         const subtitle = document.getElementById('calibration-status-details-subtitle');
         if(!product || !modalElement || !body) return;
+        const productIdentity = `${String(product.equipment_source || 'product').toLowerCase()}|${String(product.serial_number || '').toLowerCase()}`;
+        const cachedHistory = Array.isArray(product.calibration_history) ? product.calibration_history : [];
         if(!window.timelineCalibrationDetailsModal) window.timelineCalibrationDetailsModal = new bootstrap.Modal(modalElement);
         const status = getProductCalibrationStatus(product, document.getElementById('f-start-date')?.value || timelineTodayISO());
         if(title) title.textContent = `Calibration details · ${product.serial_number || ''}`;
         if(subtitle) subtitle.textContent = status.label;
-        body.innerHTML = '<div class="text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading calibration history...</div>';
+        body.innerHTML = cachedHistory.length
+            ? renderCalibrationDetailsRows(cachedHistory, { cached:true })
+            : '<div class="text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading calibration history...</div>';
         window.timelineCalibrationDetailsModal.show();
+        if(!navigator.onLine){
+            if(!cachedHistory.length) body.innerHTML = renderCalibrationDetailsRows([], { cached:true });
+            return;
+        }
         try{
             const response = await fetch(freshUrl(timelineCalibrationHistoryUrl(product)), { cache: 'no-store' });
             const data = await response.json().catch(() => ({}));
             if(!response.ok) throw new Error(data.message || 'Unable to load calibration history.');
             const calibrationHistory = Array.isArray(data.calibrations) ? data.calibrations : [];
+            const selected = selectedTimelineProduct();
+            const selectedIdentity = `${String(selected?.equipment_source || 'product').toLowerCase()}|${String(selected?.serial_number || '').toLowerCase()}`;
+            if(selectedIdentity !== productIdentity) return;
             body.innerHTML = renderCalibrationDetailsRows(calibrationHistory);
         }catch(error){
             console.warn('[Timeline] Calibration history unavailable', error);
-            body.innerHTML = '<div class="alert alert-warning mb-0">Detailed calibration history is unavailable offline.</div>';
+            const selected = selectedTimelineProduct();
+            const selectedIdentity = `${String(selected?.equipment_source || 'product').toLowerCase()}|${String(selected?.serial_number || '').toLowerCase()}`;
+            if(selectedIdentity !== productIdentity) return;
+            body.innerHTML = cachedHistory.length
+                ? `${renderCalibrationDetailsRows(cachedHistory, { cached:true })}<div class="alert alert-warning py-2 mb-0 small">Live calibration history could not be refreshed.</div>`
+                : '<div class="alert alert-warning mb-0">Detailed calibration history is unavailable offline.</div>';
         }
     }
 
@@ -14291,6 +14310,8 @@ if (selectedVal === "Leave") {
             productId: queuedProductId,
             productSource: queuedProductSource,
             productName: productRecord?.name || productRecord?.product_name || '',
+            calibrationSummary: productRecord?.calibration_summary || null,
+            calibrationHistory: Array.isArray(productRecord?.calibration_history) ? productRecord.calibration_history : [],
             equipmentAvailable: Boolean(queuedClientId && queuedProductId && (productRecord?.name || productRecord?.product_name) && ['product', 'genoray', 'vieworks'].includes(String(queuedProductSource).toLowerCase())),
             status: dataSet.get('status') || 'In Progress'
         };

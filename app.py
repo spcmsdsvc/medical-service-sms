@@ -2914,7 +2914,7 @@ def resolve_operational_equipment(serial_number, source='product'):
     return model.query.filter(func.lower(model.serial_number) == serial.casefold()).first()
 
 
-def operational_equipment_to_dict(record, source, certificate=None, calibration_summary=None):
+def operational_equipment_to_dict(record, source, certificate=None, calibration_summary=None, calibration_history=None):
     """Serialize the small shared equipment projection used by field pickers."""
     source = normalize_equipment_source(source, default='')
     owner = getattr(record, 'owner', None) if record else None
@@ -2922,6 +2922,9 @@ def operational_equipment_to_dict(record, source, certificate=None, calibration_
     under_contract = bool(getattr(record, 'under_contract', False)) if record else False
     linked_vieworks = product_vieworks_link_payload(getattr(record, 'serial_number', None)) if source == 'product' else []
     linked_product = product_vieworks_parent_payload(getattr(record, 'serial_number', None)) if source == 'vieworks' else None
+    history = list(calibration_history or [])
+    summary = dict(calibration_summary or calibration_summary_without_record())
+    summary.setdefault('record_count', len(history))
     return {
         'serial_number': clean_str(getattr(record, 'serial_number', None)) or '',
         'name': clean_str(getattr(record, 'name', None)) or '',
@@ -2941,7 +2944,8 @@ def operational_equipment_to_dict(record, source, certificate=None, calibration_
         'linked_vieworks': linked_vieworks,
         'linked_product': linked_product,
         'calibration_certificate': certificate,
-        'calibration_summary': calibration_summary or calibration_summary_without_record(),
+        'calibration_summary': summary,
+        'calibration_history': history,
     }
 
 
@@ -13242,6 +13246,16 @@ def get_offline_tsr_schedule_options():
     current_engineer_profile = getattr(current_user, 'engineer_profile', None)
     current_engineer_id = getattr(current_engineer_profile, 'id', None)
 
+    shift_equipment = {}
+    equipment_for_history = []
+    for shift in shifts:
+        source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
+        equipment = resolve_shift_equipment(shift)
+        shift_equipment[shift.id] = (equipment, source)
+        if equipment and source in OPERATIONAL_EQUIPMENT_SOURCES:
+            equipment_for_history.append((equipment, source))
+    calibration_history_map = approved_calibration_history_for_equipment(equipment_for_history)
+
     for shift in shifts:
         # Standalone TSR is for real customer/equipment service work only.
         if not shift.client_id:
@@ -13274,8 +13288,10 @@ def get_offline_tsr_schedule_options():
             serviced_engineer = shift.engineer or (assigned_engineers[0] if assigned_engineers else None)
 
         client = shift.client
-        product = resolve_shift_equipment(shift)
-        equipment_source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
+        product, equipment_source = shift_equipment.get(
+            shift.id,
+            (None, normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')),
+        )
         equipment_available = bool(
             client and
             product and
@@ -13292,6 +13308,11 @@ def get_offline_tsr_schedule_options():
             for name in (row.get('engineer_names') or [])
             if clean_str(name)
         ))
+        calibration_key = (
+            equipment_source,
+            (clean_str(getattr(product, 'serial_number', None)) or '').casefold(),
+        )
+        calibration_history = calibration_history_map.get(calibration_key, [])
 
         options.append({
             'id': shift.id,
@@ -13321,6 +13342,8 @@ def get_offline_tsr_schedule_options():
             'group_id': shift.group_id or '',
             'parent_shift_id': shift.parent_shift_id,
             'schedule_coverage': schedule_coverage,
+            'calibration_summary': calibration_offline_summary(calibration_history),
+            'calibration_history': calibration_history,
             'linked_schedule_count': len(linked_shifts),
             'has_linked_schedules': len(linked_shifts) > 1,
             'is_multi_day': len({row.get('date_iso') for row in schedule_coverage if row.get('date_iso')}) > 1,
@@ -21557,11 +21580,115 @@ def calibration_summary_for_approval(approval, include_urls=True):
     return summary
 
 
+def calibration_history_offline_entry(approval):
+    """Return the URL-free calibration metadata safe to cache on a field device."""
+    summary = calibration_summary_for_approval(approval, include_urls=False)
+    return {
+        'status': summary.get('status', ''),
+        'status_key': summary.get('status_key', ''),
+        'priority': summary.get('priority', 0),
+        'calibration_date': summary.get('calibration_date', ''),
+        'valid_until': summary.get('valid_until', ''),
+        'calibrated_by': summary.get('calibrated_by', ''),
+        'report_recorded_calibrator': summary.get('report_recorded_calibrator', ''),
+        'certificate_number': summary.get('certificate_number', ''),
+        'approval_id': summary.get('approval_id'),
+        'revision_no': summary.get('revision_no'),
+        'approved_at': summary.get('approved_at'),
+        'approver_name': summary.get('approver_name', ''),
+        'approver_title': summary.get('approver_title', ''),
+        'next_calibration_date': summary.get('next_calibration_date', ''),
+    }
+
+
+def calibration_offline_summary(history):
+    """Return the newest URL-free entry plus count for offline schedule options."""
+    rows = list(history or [])
+    if not rows:
+        return {
+            'status': 'No calibration record',
+            'status_key': 'missing',
+            'priority': 0,
+            'calibration_date': '',
+            'valid_until': '',
+            'calibrated_by': '',
+            'report_recorded_calibrator': '',
+            'certificate_number': '',
+            'approval_id': None,
+            'revision_no': None,
+            'approved_at': None,
+            'approver_name': '',
+            'approver_title': '',
+            'next_calibration_date': '',
+            'record_count': 0,
+        }
+    summary = dict(rows[0])
+    summary['record_count'] = len(rows)
+    return summary
+
+
 def _calibration_source_filter(source):
     source = normalize_equipment_source(source, default='')
     if source == 'product':
         return or_(Shift.equipment_source == 'product', Shift.equipment_source.is_(None))
     return Shift.equipment_source == source
+
+
+def approved_calibration_history_for_equipment(equipment):
+    """Batch URL-free approved calibration history keyed by source and serial."""
+    requested = {
+        (
+            normalize_equipment_source(source, default=''),
+            (clean_str(getattr(record, 'serial_number', None)) or '').casefold(),
+        )
+        for record, source in (equipment or [])
+        if record and clean_str(getattr(record, 'serial_number', None))
+    }
+    requested = {key for key in requested if key[0] and key[1]}
+    if not requested:
+        return {}
+
+    ensure_calibration_certificate_approval_table()
+    serials = {serial for _source, serial in requested}
+    sources = {source for source, _serial in requested}
+    source_filter = or_(*[_calibration_source_filter(source) for source in sources])
+    approvals = (
+        CalibrationCertificateApproval.query
+        .join(Shift, CalibrationCertificateApproval.shift_id == Shift.id)
+        .join(ShiftFile, CalibrationCertificateApproval.signed_shift_file_id == ShiftFile.id)
+        .options(
+            joinedload(CalibrationCertificateApproval.shift),
+            joinedload(CalibrationCertificateApproval.online_tsr_submission),
+        )
+        .filter(
+            func.lower(Shift.product_id).in_(serials),
+            source_filter,
+            ShiftFile.shift_id == CalibrationCertificateApproval.shift_id,
+            CalibrationCertificateApproval.status == 'Approved',
+            CalibrationCertificateApproval.is_latest.is_(True),
+            CalibrationCertificateApproval.signed_shift_file_id.isnot(None),
+        )
+        .order_by(
+            CalibrationCertificateApproval.approved_at.desc(),
+            CalibrationCertificateApproval.id.desc(),
+        )
+        .all()
+    )
+
+    result = {}
+    for approval in approvals:
+        shift = getattr(approval, 'shift', None)
+        source = normalize_equipment_source(getattr(shift, 'equipment_source', None)) if shift else ''
+        serial = (clean_str(getattr(shift, 'product_id', None)) or '').casefold()
+        key = (source, serial)
+        if key not in requested:
+            continue
+        result.setdefault(key, []).append(calibration_history_offline_entry(approval))
+
+    for rows in result.values():
+        for row in rows:
+            row['record_count'] = len(rows)
+    return result
 
 
 def latest_approved_calibration_approvals_for_equipment(equipment):
@@ -24214,7 +24341,7 @@ def pwa_service_worker():
     # Navigation shell bump: v201 distributes source-aware Calendar calibration summaries/history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v201-machine-calibration-history.
     # Navigation shell bump: v203 distributes approved Calibration Report attachment locking.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v204-activity-log';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v205-calibration-history-tsr';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -24233,7 +24360,7 @@ const APP_SHELL = [
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
   '/static/css/app-calibration-report.css?v=11',
-  '/static/css/app-offline-tsr.css?v=7',
+  '/static/css/app-offline-tsr.css?v=8',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',
@@ -29942,6 +30069,15 @@ def operational_equipment_rows():
         if can_access_products_page()
         else {}
     )
+    history_map = (
+        approved_calibration_history_for_equipment(
+            [(product, 'product') for product in products] +
+            [(item, 'genoray') for item in genoray_items] +
+            [(item, 'vieworks') for item in vieworks_items]
+        )
+        if can_access_products_page()
+        else {}
+    )
     rows = [
         operational_equipment_to_dict(
             product,
@@ -29953,6 +30089,7 @@ def operational_equipment_rows():
             calibration_summary=calibration_summary_for_approval(
                 approval_map.get(('product', product.serial_number.casefold())), include_urls=False
             ),
+            calibration_history=history_map.get(('product', product.serial_number.casefold()), []),
         )
         for product in products
     ]
@@ -29963,6 +30100,7 @@ def operational_equipment_rows():
             calibration_summary=calibration_summary_for_approval(
                 approval_map.get(('genoray', item.serial_number.casefold())), include_urls=False
             ),
+            calibration_history=history_map.get(('genoray', item.serial_number.casefold()), []),
         )
         for item in genoray_items
     )
@@ -29973,6 +30111,7 @@ def operational_equipment_rows():
             calibration_summary=calibration_summary_for_approval(
                 approval_map.get(('vieworks', item.serial_number.casefold())), include_urls=False
             ),
+            calibration_history=history_map.get(('vieworks', item.serial_number.casefold()), []),
         )
         for item in vieworks_items
     )

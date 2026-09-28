@@ -1,5 +1,47 @@
 # Project Change Log
 
+codex changes - 2026-09-28
+
+- Began the separately authorized Offline Calibration History in Calendar and Create TSR package.
+  The implementation is limited to batched source-aware approved calibration metadata, cached
+  Calendar/Create TSR display, cache/release records, focused verification, and these control
+  records. Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, unrelated owner
+  work, commits, pushes, deployment, Railway, production/database operations, and browser/
+  Codex-app automation remain excluded.
+- Recorded the owner-approved Offline Calibration History in Calendar and Create TSR plan in
+  `plans.md` initially with status `Approved — awaiting go-ahead`; after the separate owner
+  go-ahead, implementation advanced the plan to `In progress` and then local execution complete.
+- Added a batched source-aware approved calibration projection in `app.py`. Product, Genoray,
+  and Vieworks operational rows and offline TSR schedule options now carry newest-first,
+  URL-free calibration history plus record-count summary metadata. Pending, returned,
+  superseded, non-latest, unsigned, and source/serial-mismatched records remain excluded by
+  the existing approval and signed-file linkage rules.
+- Updated `templates/timeline.html` to show cached calibration history in the Calendar details
+  modal offline or after a live request fails, while preserving live authorized links online and
+  explaining that cached report/certificate files require connectivity.
+- Updated `templates/offline_tsr.html` and `static/css/app-offline-tsr.css` with a responsive,
+  dark-compatible Previous Calibration summary and expandable history. Live refreshes are
+  source/serial scoped and stale schedule-switch results are discarded; cached, queued, and
+  Timeline-snapshot schedules stay metadata-only offline and history is not serialized into TSR
+  drafts, submissions, or PDFs.
+- Moved Previous Calibration into the Optional Calibration Report card beside the Create
+  Calibration Report action on wider screens, with single-column stacking on mobile, so engineers
+  see the machine history where they decide whether to start the report. The two focused history
+  placement and Calibration Report card-contract checks passed; `git diff --check` passed.
+- Bumped the Create TSR stylesheet query from `v=7` to `v=8`, advanced the service-worker
+  navigation/cache marker from v204 to v205, and added release manifest entry
+  `2026-09-28-offline-calibration-history-tsr`.
+- Added focused response-shape, source-scoping, ordering, URL-free projection, and Create
+  TSR/Calendar markup contracts. The focused 60-test calibration-history/operational/offline
+  suite passed; targeted offline TSR catalog/dark-mode checks passed 2 tests, and the existing
+  Create TSR stylesheet/service-worker registration contract was updated for v8 and passed its
+  focused check. Python AST, release JSON, and `git diff --check` validation passed. A broader 31-test calibration
+  approval/dark-mode run was attempted and had 3 unrelated approval-scoped download cases
+  return 403; the full suite and browser/Codex-app automation were skipped per owner direction.
+- Completed this package locally without commit, push, deployment, Railway, production, or
+  database operations; protected scheduler database, handoff, `.claude/`, `output/`, `tmp/`,
+  and unrelated owner files remain preserved.
+
 codex changes - 2026-09-27
 
 - Committed the authorized Activity Log signal-quality, scalability, and reimbursement access

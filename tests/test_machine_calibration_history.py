@@ -155,6 +155,15 @@ class MachineCalibrationHistoryTests(unittest.TestCase):
         self.assertEqual(genoray_summary["calibration_date"], "2026-08-20")
         self.assertEqual(product_summary["certificate_preview_url"], "")
         self.assertEqual(product_summary["calibration_report_preview_url"], "")
+        for source, machine, approval in (
+            ("product", self.product, product_approval),
+            ("genoray", self.genoray, genoray_approval),
+            ("vieworks", self.vieworks, vieworks_approval),
+        ):
+            row = rows[(source, machine.serial_number)]
+            self.assertEqual(row["calibration_summary"]["record_count"], 1)
+            self.assertEqual(row["calibration_history"][0]["approval_id"], approval.id)
+            self.assertFalse(any("url" in key for key in row["calibration_history"][0]))
 
         page_response = self.client_for_user().get("/get_products")
         self.assertEqual(page_response.status_code, 200, page_response.get_data(as_text=True))
@@ -188,6 +197,30 @@ class MachineCalibrationHistoryTests(unittest.TestCase):
         self.assertNotIn(pending.id, {row["approval_id"] for row in rows})
         self.assertTrue(rows[0]["certificate_preview_url"])
 
+        operational_response = self.client_for_user().get("/get_products?operational=1")
+        self.assertEqual(operational_response.status_code, 200, operational_response.get_data(as_text=True))
+        operational_row = next(
+            row for row in operational_response.get_json()
+            if row["equipment_source"] == "product" and row["serial_number"] == self.product.serial_number
+        )
+        self.assertEqual(
+            [row["approval_id"] for row in operational_row["calibration_history"]],
+            [newer.id, older.id],
+        )
+        self.assertEqual(operational_row["calibration_summary"]["record_count"], 2)
+        self.assertFalse(any("url" in key for key in operational_row["calibration_history"][0]))
+        self.assertNotIn("certificate_preview_url", operational_row["calibration_history"][0])
+
+        schedule_response = self.client_for_user().get("/get_offline_tsr_schedule_options")
+        self.assertEqual(schedule_response.status_code, 200, schedule_response.get_data(as_text=True))
+        schedule = next(row for row in schedule_response.get_json()["schedules"] if row["id"] == newer.shift_id)
+        self.assertEqual(
+            [row["approval_id"] for row in schedule["calibration_history"]],
+            [newer.id, older.id],
+        )
+        self.assertEqual(schedule["calibration_summary"]["record_count"], 2)
+        self.assertFalse(any("url" in key for key in schedule["calibration_summary"]))
+
     def test_date_boundaries_use_clamped_calendar_months(self):
         expiry = app_module.calibration_valid_until(date(2024, 2, 29))
         self.assertEqual(expiry, date(2025, 2, 28))
@@ -206,6 +239,7 @@ class MachineCalibrationHistoryTests(unittest.TestCase):
     def test_products_and_timeline_markup_exposes_calibration_history_and_priority(self):
         products_source = (ROOT / "templates" / "products.html").read_text(encoding="utf-8")
         timeline_source = (ROOT / "templates" / "timeline.html").read_text(encoding="utf-8")
+        offline_tsr_source = (ROOT / "templates" / "offline_tsr.html").read_text(encoding="utf-8")
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         releases = json.loads((ROOT / "static" / "changelog" / "releases.json").read_text(encoding="utf-8"))
         self.assertIn("calibration_summary", products_source)
@@ -229,7 +263,19 @@ class MachineCalibrationHistoryTests(unittest.TestCase):
         self.assertIn("calibration-status-details", timeline_source)
         self.assertIn("calibrationHistory", timeline_source)
         self.assertIn("informational", timeline_source.lower())
-        self.assertIn("medical-service-pwa-offline-navigation-v204-activity-log", app_source)
+        self.assertIn("offline-tsr-calibration-history", offline_tsr_source)
+        self.assertIn("refreshStandaloneCalibrationHistory", offline_tsr_source)
+        self.assertIn("calibration_history", offline_tsr_source)
+        self.assertIn("require an internet connection", offline_tsr_source)
+        calibration_card = offline_tsr_source.split('id="calibration-report-card"', 1)[1].split(
+            '<div class="card p-3 p-md-4 mb-3 no-print">', 1
+        )[0]
+        self.assertIn('offline-tsr-calibration-workspace', calibration_card)
+        self.assertLess(
+            calibration_card.index('id="calibration-report-create-btn"'),
+            calibration_card.index('id="tsr-calibration-history-panel"'),
+        )
+        self.assertIn("medical-service-pwa-offline-navigation-v205-calibration-history-tsr", app_source)
         release = next(item for item in releases["releases"] if item["release_key"] == "2026-09-27-machine-calibration-history")
         self.assertIn("report/certificate", release["summary"])
 

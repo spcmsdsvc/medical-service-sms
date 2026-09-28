@@ -128,6 +128,11 @@ class OperationalEquipmentWorkflowTests(unittest.TestCase):
         self.assertIn(("product", self.product_serial), rows)
         self.assertIn(("genoray", self.genoray_serial), rows)
         self.assertIn(("vieworks", self.vieworks_serial), rows)
+        for row in rows.values():
+            self.assertIn("calibration_summary", row)
+            self.assertIn("calibration_history", row)
+            self.assertTrue(all(not value for key, value in row["calibration_summary"].items() if "url" in key))
+            self.assertFalse(any("url" in key for history in row["calibration_history"] for key in history))
         self.assertEqual(rows[("genoray", self.genoray_serial)]["bsid"], self.genoray_bsid)
         self.assertEqual(rows[("vieworks", self.vieworks_serial)]["client_id"], self.client_id)
 
@@ -163,6 +168,10 @@ class OperationalEquipmentWorkflowTests(unittest.TestCase):
         self.assertEqual(selected["product_bsid"], self.genoray_bsid)
         self.assertEqual(selected["equipment_source"], "genoray")
         self.assertTrue(selected["equipment_available"])
+        self.assertIn("calibration_summary", selected)
+        self.assertIn("calibration_history", selected)
+        self.assertFalse(any("url" in key for key in selected["calibration_summary"]))
+        self.assertFalse(any("url" in key for history in selected["calibration_history"] for key in history))
 
     def test_schedule_rejects_wrong_client_and_unknown_equipment_source(self):
         client = self.client_for(self.engineer_user_id)
