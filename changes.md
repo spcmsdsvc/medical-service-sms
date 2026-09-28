@@ -2,6 +2,48 @@
 
 codex changes - 2026-09-28
 
+- Began the owner-authorized implementation of `Preserve Product Identity for Future TSR
+  History`. The bounded work will add nullable Shift product identity snapshots, capture them
+  only during primary Product deletion for Product-source/legacy-null schedules, use them as TSR
+  archive fallback metadata, and update the cache/release records. Protected owner artifacts,
+  production data, Railway, browser/Codex UI, commit, and push remain excluded.
+
+- Added the focused deleted-Product TSR regression package in
+  `tests/test_deleted_product_tsr_history.py`. The fail-first run against the unchanged source
+  produced 4 tests: 2 expected failures for missing snapshot behavior, 1 expected failure for
+  the absent migration helper, and 1 passing control for existing live/productless archive
+  behavior. The test fixture uses a disposable SQLite database and did not touch `scheduler.db`.
+
+- Implemented the Shift Product identity snapshot columns and guarded additive migration in
+  `app.py`, including both startup migration paths. Primary Product deletion now snapshots the
+  Product name/serial only for Product-source or legacy-null shifts before clearing `product_id`;
+  Genoray/Vieworks schedules remain source-isolated. Added the shared TSR archive identity
+  resolver used by both archive serializers, with live equipment taking precedence and snapshots
+  used only when live equipment is unavailable.
+
+- Advanced the embedded service-worker cache marker from v209 to v210 for the TSR history change,
+  updated the directly affected current-marker assertion, and added the administrator/engineer
+  `Product Identity Preserved in TSR History` release item to `static/changelog/releases.json`.
+
+- Verification completed locally without commit or push: the focused Product/TSR package and
+  related Product, Vieworks/Genoray, archive/pagination, cache, and TSR workflow checks passed
+  (34/34); changelog workflow/coverage passed (44/44, one intentional skip). Full discovery on a
+  unique disposable SQLite database ran 1,367 tests with 1,343 passed, 22 unrelated existing
+  failures, and 2 skipped. Python source compilation, release JSON validation, and `git diff --check`
+  passed; a disposable legacy `shift` table also passed additive migration/repeat-ensure checks.
+  No protected owner artifact, production database, Railway setting, browser/Codex UI, commit,
+  push, or deployment was touched.
+
+- Recorded the owner-approved `Preserve Product Identity for Future TSR History` plan at the top
+  of `plans.md` with status `Approved — awaiting go-ahead`. The plan keeps permanent primary
+  Product deletion while snapshotting the deleted Product name/serial on linked Product-source
+  schedules for future TSR Files display and search. It explicitly excludes repair/backfill of
+  the existing Caraga Regional Hospital `N/A` row and all other historical records, soft deletion,
+  Genoray/Vieworks deletion changes, production/database actions, browser/Codex UI automation,
+  commit, push, and deployment. Under the repository's two-step gate, no application source,
+  tests, schema, cache marker, release manifest, system behavior, protected owner artifact, or
+  production state was changed in this approval-recording step.
+
 - Committed only the Francis-only equipmentless TSR implementation, focused test, release
   metadata, and required plan/change records as `7cd4388` on `main`. The owner separately
   authorized commit and push to `origin/main`; the protected database, handoff, and unrelated

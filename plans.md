@@ -1,3 +1,158 @@
+# Preserve Product Identity for Future TSR History
+
+**Status:** Executed — local changes not committed (commit was not authorized).
+**Approved:** 2026-09-28 — the owner said “PLEASE IMPLEMENT THIS PLAN.” The owner separately
+authorized execution with “go ahead. do not over engineer and over check.”
+**Detailed:** 2026-09-28.
+
+### Execution outcome
+
+- Implemented the nullable Shift Product name/serial snapshots, guarded additive migration,
+  deletion capture, and shared archive fallback described below. The Product remains permanently
+  deleted from active inventory; existing `N/A` history is unchanged.
+- Added `tests/test_deleted_product_tsr_history.py` with archive display/search, live precedence,
+  productless, source-collision, and repeatable/no-backfill migration coverage. The fail-first run
+  was 4 tests: 2 expected behavior failures, 1 missing-helper failure, and 1 passing control.
+- Final focused package ran 34 tests with 34 passed. Changelog workflow/coverage ran 44 tests with
+  44 passed and 1 skipped. Full discovery on a unique disposable SQLite database ran 1,367 tests:
+  1,343 passed, 22 unrelated failures, and 2 skipped. The failures were in existing calibration
+  approval download, changelog sync under shared discovery, LPR, offline-resilience source
+  assertions, and purchase-order login/rate-limit setup; none involved this package's tests.
+- Python source compilation, release-manifest JSON validation, and `git diff --check` passed. The
+  direct `py_compile` command could not replace an existing locked `__pycache__` artifact, so the
+  equivalent in-memory Python compilation check was used; no source syntax error was reported.
+  A disposable legacy `shift` table also passed the additive migration and repeat-ensure check.
+- No protected owner path, production database, Railway setting, browser/Codex UI, commit, push,
+  or deployment was touched.
+
+### Context
+
+When an administrator permanently deletes a Product, `delete_product()` removes the inventory
+row and clears that Product's serial from Product-source schedules. The TSR Files archive resolves
+its Product and serial only through the remaining live equipment record, so files attached to
+those schedules become `N/A` even though the TSR itself is retained.
+
+The owner chose to keep permanent Product deletion available while preserving the Product's name
+and serial as read-only historical schedule metadata. This applies only to deletions performed
+after implementation. The already-affected Caraga Regional Hospital TSR and every other existing
+`N/A` record will not be restored, backfilled, inferred from filenames, or extracted from PDFs.
+
+### Decisions taken
+
+1. Add nullable Product name and serial snapshot columns to `Shift`; use an idempotent additive
+   SQLite migration and leave all existing rows untouched.
+2. Immediately before a primary Product is deleted, snapshot its current name and serial only on
+   linked Product-source or legacy-null-source shifts, then preserve the current Product deletion
+   behavior, including clearing `Shift.product_id`.
+3. In TSR archive serialization, live equipment remains authoritative. Use the stored snapshot
+   only when live Product resolution is unavailable; records with neither source remain
+   `N/A`/blank.
+4. Keep the `/get_tsr_archive` response contract and Reports frontend unchanged. This is not soft
+   deletion and does not change Genoray or Vieworks deletion behavior.
+
+### Investigation
+
+- `app.py:3170-3226` defines `Shift`; it currently stores `product_id` and `equipment_source` but
+  has no historical equipment identity fields.
+- `app.py:2953-2967` resolves schedule equipment only through live inventory. A missing Product
+  therefore yields no name or serial for archive serialization.
+- `app.py:49603-49664` and `app.py:49727-49910` are the two TSR archive serializers. Both emit a
+  live resolved Product name or `N/A`, and a live resolved serial or blank.
+- `app.py:59742-59775` is the primary Product deletion route. It correctly scopes cleanup to
+  Product-source/legacy-null schedules, clears their `product_id`, deletes the inventory row, and
+  preserves same-serial Genoray/Vieworks schedules; this scope must remain intact.
+- The affected screenshot is a manual Uploaded TSR. Manual `ShiftFile` records do not carry an
+  `OnlineTsrSubmission` Product snapshot, so submission-only fallback would not solve the reported
+  workflow. A Shift-level snapshot is the smallest complete future-facing fix.
+- The current embedded service-worker marker is v209. The working tree has protected owner changes
+  in `scheduler.db`, `Handoffs/08-11-26 handoff.md`, `.claude/`, `output/`, and `tmp/`; they are
+  excluded from this package.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Re-read applicable `AGENTS.md`, this complete plan, the full
+   `changes.md`, current Git status, the Product deletion/archive source, focused tests, release
+   rules, and active v209 cache marker. Mark this plan `In progress` and add a factual start entry
+   to `changes.md` only after the owner gives a separate go-ahead. Stop before source edits if
+   intervening changes invalidate the plan. Done when protected dirty paths are identified and
+   excluded.
+2. **Add fail-first regression coverage.** Extend the focused Product mutation/archive tests with
+   a Product-source schedule and manual recognized TSR file. Prove that the current code loses the
+   identity after deletion, then add controls for archive search, live-Product precedence, a truly
+   productless schedule, source-collision isolation, and idempotent migration/no-backfill behavior.
+   Done when the new positive behavior fails for the intended missing-snapshot reason before
+   implementation.
+3. **Add Shift snapshots and migration.** In `app.py`, add nullable Product-name and Product-serial
+   snapshot columns to `Shift` plus one guarded, idempotent additive SQLite ensure called from the
+   established runtime schema path. Do not populate existing rows. Done when fresh and legacy
+   schemas both start safely and repeated ensures leave values unchanged.
+4. **Snapshot primary Product deletions.** In `delete_product()` update only shifts whose serial
+   matches the target and whose source is `product` or legacy null. Store the target's current name
+   and serial before clearing `product_id`; keep the existing P.O. block, Product/Vieworks cleanup,
+   authorization, transaction, activity log, response, and cross-source isolation. Done when the
+   Product is still permanently removed while affected shifts retain only the historical identity.
+5. **Resolve TSR archive history.** Add one small archive identity helper in `app.py` and use it in
+   `tsr_archive_shift_to_dict()` and `/get_tsr_archive`. Prefer live equipment; otherwise use both
+   snapshot values; otherwise retain `N/A` and blank. Keep `product`/`serial` JSON keys and
+   `templates/reports.html` unchanged. Done when future-deleted Products remain labeled and
+   searchable across their manual TSR files without relabeling existing productless history.
+6. **Update delivery records.** Advance the active embedded service-worker marker from v209 to
+   v210 and update only the exact affected current-marker assertion. Add one administrator/engineer
+   release item to `static/changelog/releases.json`. Append factual implementation and verification
+   results to `changes.md`; amend this plan only if execution materially differs. Done when cache,
+   release, plan, and change records agree with the bounded behavior.
+7. **Self-review and verification.** Run the fail-first and final focused regression, then Product
+   mutation, Product/Vieworks history, TSR archive/pagination, cache-version, and changelog suites.
+   Run full discovery once against a unique disposable SQLite database, followed by Python
+   compilation, release JSON validation, and `git diff --check`. Record exact pass/fail/skip counts,
+   baseline failures, and deviations. Do not use browser/Codex UI automation; leave commit, push,
+   deployment, Railway, and production/database operations for separate authorization.
+
+### Verification and acceptance
+
+- Deleting a primary Product permanently removes it from active inventory and clears its live
+  schedule assignment while preserving its name and serial snapshot on linked Product-source
+  schedules.
+- Manual TSR files for those schedules continue to show and search by the historical Product name
+  and serial in TSR Files.
+- A live Product takes precedence over snapshot values. A genuinely productless or already-
+  affected schedule with no snapshot remains `N/A`/blank.
+- Same-serial Genoray/Vieworks schedules are not snapshotted, cleared, or otherwise changed by
+  primary Product deletion.
+- The migration is additive, repeatable, and performs no historical backfill.
+- Browser verification is not required for this unchanged frontend contract. If later considered
+  essential, project rules require separate owner authorization before any browser/Codex UI use.
+
+### Deliberately excluded
+
+- No repair, restoration, or backfill for the displayed Caraga Regional Hospital TSR or other
+  existing `N/A` rows; no filename/PDF parsing and no production-data edit.
+- No Product soft-delete system, restore workflow, serial-reuse redesign, schedule-creation change,
+  or broader analytics/report fallback.
+- No change to Genoray/Vieworks deletion, inventory queries, archive response shape, or Reports UI.
+- No commit, push, deployment, Railway variable/action, production database/storage operation,
+  browser/Codex UI automation, or protected owner-artifact change.
+- Formal post-implementation review requires the owner's separate “Review the implementation.”
+  instruction.
+
+### Risks and safety nets
+
+- A broad bulk update could corrupt another equipment source that reuses the serial; retain the
+  current source filter and cover the collision in tests.
+- A snapshot fallback could display stale data while a live Product still exists; the resolver
+  must always prefer live equipment.
+- An automatic migration backfill could invent history for existing productless schedules; the
+  migration adds nullable columns only and never updates existing rows.
+- A partial delete could lose the snapshot or inventory transaction; snapshot, unlink, link cleanup,
+  and Product deletion remain in the existing single database transaction.
+
+### Approval gate
+
+This plan is approved and recorded. The owner must give a separate implementation go-ahead before
+application source, tests, database schema, cache metadata, release metadata, or behavior changes.
+
+##
+
 # Francis-only TSRs without assigned equipment
 
 **Status:** Executed — implementation commit `7cd4388`; publication authorized to `origin/main`.

@@ -3188,6 +3188,10 @@ class Shift(db.Model):
     # Operational equipment may come from Product, Genoray, or Vieworks inventory.
     # product_id remains the historical serial field; this source disambiguates tables.
     equipment_source = db.Column(db.String(20), nullable=False, default='product', index=True)
+
+    # Read-only identity retained for TSR archive history after a Product is deleted.
+    product_name_snapshot = db.Column(db.String(200), nullable=True)
+    product_serial_snapshot = db.Column(db.String(100), nullable=True)
     
     status = db.Column(db.String(50), default='In Progress')
 
@@ -3474,6 +3478,7 @@ _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
 _shift_creation_token_ready = False
 _shift_equipment_source_ready = False
+_shift_product_identity_snapshot_ready = False
 _travel_liquidation_tables_ready = False
 _stock_inventory_tables_ready = False
 _genoray_item_table_ready = False
@@ -6492,6 +6497,41 @@ def ensure_shift_equipment_source_column():
         raise
 
 
+def ensure_shift_product_identity_snapshot_columns():
+    """Add nullable Product identity fields used only for future TSR history."""
+    global _shift_product_identity_snapshot_ready
+
+    if _shift_product_identity_snapshot_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            shift_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(shift)").fetchall()
+            }
+            if not shift_columns:
+                # A fresh test/development database may run this hook before db.create_all().
+                return
+            if 'product_name_snapshot' not in shift_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE shift ADD COLUMN product_name_snapshot VARCHAR(200)"
+                )
+                print("[DB MIGRATION] Added shift.product_name_snapshot", flush=True)
+            if 'product_serial_snapshot' not in shift_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE shift ADD COLUMN product_serial_snapshot VARCHAR(100)"
+                )
+                print("[DB MIGRATION] Added shift.product_serial_snapshot", flush=True)
+
+        _shift_product_identity_snapshot_ready = True
+    except Exception as snapshot_error:
+        print(
+            f"[Schedule] Unable to ensure Product identity snapshot columns: {snapshot_error}",
+            flush=True,
+        )
+        raise
+
+
 def ensure_travel_liquidation_tables():
     """S13B safe live SQLite migration for Travel Liquidation drafts."""
     global _travel_liquidation_tables_ready
@@ -6622,6 +6662,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_shift_travel_block_columns()
     ensure_shift_creation_token_column()
     ensure_shift_equipment_source_column()
+    ensure_shift_product_identity_snapshot_columns()
     ensure_stock_inventory_tables()
 
     if new_workflows_enabled():
@@ -24593,8 +24634,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v208-calibration-certificate-name.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v204-activity-log.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report';
-    # Navigation shell bump: v209 distributes Francis-only equipment-less TSR workflow changes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v209-francis-tsr-no-equipment';
+    # Navigation shell bump: v210 preserves deleted Product identity in TSR history.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v210-deleted-product-tsr-history';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -49600,6 +49641,20 @@ def get_legacy_incomplete_tsr_file_policy(shift):
     return policy
 
 
+def resolve_tsr_archive_identity(shift):
+    """Return live equipment identity, falling back to a saved Product snapshot."""
+    equipment = resolve_shift_equipment(shift)
+    if equipment:
+        return {
+            'product': clean_str(getattr(equipment, 'name', None)) or 'N/A',
+            'serial': clean_str(getattr(equipment, 'serial_number', None)) or '',
+        }
+    return {
+        'product': clean_str(getattr(shift, 'product_name_snapshot', None)) or 'N/A',
+        'serial': clean_str(getattr(shift, 'product_serial_snapshot', None)) or '',
+    }
+
+
 def tsr_archive_shift_to_dict(shift):
     """Serialize one shift with TSR files for the archive UI.
 
@@ -49651,14 +49706,14 @@ def tsr_archive_shift_to_dict(shift):
         })
 
     engineers = get_shift_engineer_records(shift)
-    equipment = resolve_shift_equipment(shift)
+    archive_identity = resolve_tsr_archive_identity(shift)
 
     return {
         'id': shift.id,
         'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
         'client': shift.client.name if shift.client else 'N/A',
-        'product': getattr(equipment, 'name', None) or 'N/A',
-        'serial': getattr(equipment, 'serial_number', None) or '',
+        'product': archive_identity['product'],
+        'serial': archive_identity['serial'],
         'task': shift.title or '',
         'status': shift.status or '',
         'engineers': ', '.join([engineer.name for engineer in engineers]) or 'N/A',
@@ -49826,14 +49881,14 @@ def get_tsr_archive():
             calibration_certificate_no_signature_admin_can_view(certificate_approval)
         )
 
-        equipment = resolve_shift_equipment(shift)
+        archive_identity = resolve_tsr_archive_identity(shift)
         row = {
             'id': file_rec.id,
             'shift_id': shift.id,
             'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
             'client': shift.client.name if shift.client else 'N/A',
-            'product': getattr(equipment, 'name', None) or 'N/A',
-            'serial': getattr(equipment, 'serial_number', None) or '',
+            'product': archive_identity['product'],
+            'serial': archive_identity['serial'],
             'task': shift.title or '',
             'status': shift.status or '',
             'engineers': engineer_label,
@@ -59746,6 +59801,7 @@ def delete_product(serial_number):
     if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
     ensure_purchase_order_schema()
     ensure_product_vieworks_link_table()
+    ensure_shift_product_identity_snapshot_columns()
     target = db.session.get(Product, serial_number)
     if target:
         linked_purchase_order_count = purchase_order_count_for_machine(target.serial_number)
@@ -59765,7 +59821,11 @@ def delete_product(serial_number):
         Shift.query.filter(
             Shift.product_id == target.serial_number,
             or_(Shift.equipment_source == 'product', Shift.equipment_source.is_(None)),
-        ).update({'product_id': None}, synchronize_session=False)
+        ).update({
+            'product_name_snapshot': name,
+            'product_serial_snapshot': target.serial_number,
+            'product_id': None,
+        }, synchronize_session=False)
         db.session.expunge(target)
         db.session.execute(
             Product.__table__.delete().where(Product.serial_number == serial_number)
@@ -61523,6 +61583,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_genoray_item_table()
     ensure_vieworks_item_table()
     ensure_shift_equipment_source_column()
+    ensure_shift_product_identity_snapshot_columns()
     ensure_inventory_pm_visit_table()
     ensure_calibration_certificate_approval_table()
     ensure_schedule_delete_indexes()
@@ -61751,6 +61812,7 @@ def initialize_database():
         ensure_tsr_number_reservation_schema()
         ensure_shift_file_last_emailed_at_column()
         ensure_product_contract_column()
+        ensure_shift_product_identity_snapshot_columns()
         ensure_calibration_certificate_approval_table()
         ensure_schedule_delete_indexes()
         ensure_approval_routing_schema()

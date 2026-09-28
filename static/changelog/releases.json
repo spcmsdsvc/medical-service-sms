@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-28-deleted-product-tsr-history",
+      "release_date": "2026-09-28",
+      "title": "Product Identity Preserved in TSR History",
+      "summary": "TSR Files keep showing the Product name and serial after an administrator removes that Product from inventory.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-28-deleted-product-tsr-history-admins-engineers",
+          "category": "TSR Files",
+          "description": "Deleting a Product no longer turns future TSR Files into N/A: linked Product schedules retain the historical Product name and serial for display and search while the Product is still removed from active inventory.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-28-francis-tsr-without-equipment",
       "release_date": "2026-09-28",
       "title": "Francis TSRs Without Assigned Equipment",
