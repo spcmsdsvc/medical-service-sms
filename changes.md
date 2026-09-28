@@ -2,6 +2,47 @@
 
 codex changes - 2026-09-28
 
+- The owner authorized committing and pushing only the Calendar TSR-First Action Buttons package
+  to `origin/main`. Publication is limited to its Calendar template, focused tests, service-worker
+  marker, release metadata, plan, and change record; protected `scheduler.db`, handoffs,
+  `.claude/`, `output/`, `tmp/`, and unrelated owner work remain excluded.
+- Started the separately authorized Calendar TSR-First Action Buttons package. The bounded
+  implementation will update Calendar TSR/Calibration Report action predicates and renderers,
+  focused regression contracts, the service-worker marker, release metadata, and these control
+  records. Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, unrelated owner
+  work, backend/database/production/Railway state, browser/Codex-app automation, commit, push,
+  and deployment remain excluded.
+- Implemented Calendar TSR-first action rules in `templates/timeline.html`. Incomplete work
+  schedules with assigned operational equipment and no online/recognized TSR now expose Create
+  TSR directly across desktop cards, schedule summaries, edit-modal controls, mobile detail and
+  cards, pure-engineer workflow actions, and sticky actions; saved and queued schedules retain
+  their existing Create TSR routes. Completed schedules never expose Create TSR, existing TSRs
+  expose Edit TSR instead, and missing-equipment surfaces retain their disabled guidance.
+- Restricted Calendar Calibration Report actions to existing `draft` and `uploaded` states,
+  showing Finish or View respectively. Removed Calendar’s pre-submission Create/Add report
+  branch while preserving Create TSR’s internal Calibration Report handoff and approved-report
+  attachment locking.
+- Added fail-first/runtime/rendered-action contracts to `tests/test_tsr_offline_followup.py` and
+  kept the focused harness compatible with the existing calibration-history cleanup helper.
+  The new predicate test failed against the unchanged source because the shared Create TSR
+  predicate was absent; after implementation the focused 19-test module passed.
+- Advanced `app.py`’s service-worker marker to
+  `medical-service-pwa-offline-navigation-v206-calendar-tsr-actions`, added release item
+  `2026-09-28-calendar-tsr-action-rules` to `static/changelog/releases.json`, and updated the
+  directly affected machine-calibration cache assertion.
+- Verification passed: Timeline TSR attachment 12 tests; machine calibration/cache 9; week
+  navigation 12; Calibration Report 24; changelog 44 with 1 skip; queued schedule 30; offline
+  schedule 19; HR viewer 10. Flask Timeline returned 200 with seven inline scripts parsed;
+  Jinja compile, Python AST, release JSON, and `git diff --check` passed. Full suite and browser/
+  Codex-app automation were skipped per owner direction. No commit, push, deployment, Railway,
+  database, or protected-artifact operation was performed.
+- Recorded the owner-approved Calendar TSR-First Action Buttons plan in `plans.md` with status
+  `Approved — awaiting go-ahead`. The approved scope makes Create TSR directly available on
+  eligible non-completed Calendar schedules, keeps Create/Edit TSR mutually exclusive, and limits
+  Calendar Calibration Report actions to existing Finish/View states across desktop and mobile.
+  No implementation, test behavior, cache/release metadata, database, Railway/production state,
+  commit, push, deployment, browser/Codex-app action, or protected dirty artifact was changed in
+  this approval-recording step.
 - Began the separately authorized Offline Calibration History in Calendar and Create TSR package.
   The implementation is limited to batched source-aware approved calibration metadata, cached
   Calendar/Create TSR display, cache/release records, focused verification, and these control

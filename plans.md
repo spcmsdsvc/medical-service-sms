@@ -1,3 +1,133 @@
+# Calendar TSR-First Action Buttons
+
+**Status:** Executed — local implementation complete; uncommitted.
+**Approved:** 2026-09-28 — the owner approved the plan with “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-28 — the owner authorized implementation with “go ahead. do not over engineer and over check”.
+**Publication authorized:** 2026-09-28 — the owner instructed “now commit and push these changes only”.
+**Detailed:** 2026-09-28.
+
+### Summary
+
+Correct Calendar actions across desktop and mobile so engineers can open Create TSR directly
+without first editing a schedule. Calendar will no longer offer creation of a new Calibration
+Report; it will only show **Finish Calibration Report** or **View Calibration Report** when a
+report already exists.
+
+No backend, database, authorization, TSR payload, or report-generation behavior will change.
+
+### Action rules
+
+- **Create TSR:** show for non-completed work schedules with assigned operational equipment and
+  no existing online TSR or recognized TSR attachment. Support saved schedules and existing
+  queued/offline schedules through their current routing functions. If equipment is missing,
+  retain the established disabled action and “Select equipment on Calendar first” guidance where
+  that surface already supports disabled actions. Never show Create TSR for completed schedules.
+- **Edit TSR:** preserve the existing action when a recognized TSR already exists; do not show
+  Create and Edit TSR together.
+- **Calibration Report:** hide the action when `calibration_report_state` is `not_started`,
+  regardless of schedule status. Show **Finish Calibration Report** for an existing `draft` and
+  **View Calibration Report** for an existing `uploaded` report. Preserve existing locked/
+  approved-report handling through TSR Attachments. Remove Calendar’s **Create/Add Calibration
+  Report** entry path without deleting its backend or direct Create TSR capabilities.
+- Apply these rules consistently to desktop schedule cards, schedule summaries, the edit modal,
+  mobile cards, the mobile detail sheet, pure-engineer workflow actions, and sticky actions.
+
+### Numbered execution steps
+
+1. Preserve the pre-existing dirty `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and
+   unrelated owner work. Before implementation, re-read applicable instructions, this approved
+   plan, current Git state, the affected Timeline source, focused tests, cache/release records,
+   and `changes.md`. Do not commit, push, deploy, modify Railway/production/database state, or use
+   browser/Codex-app automation.
+2. In `tests/test_tsr_offline_followup.py`, add fail-first runtime and rendered-markup coverage
+   for the chosen matrix: incomplete eligible schedules expose Create TSR; completed schedules do
+   not; recognized TSRs expose Edit rather than Create; `not_started` reports have no Calendar
+   calibration action; `draft`/`uploaded` reports expose Finish/View; queued eligible schedules
+   use the existing queued route; missing-equipment actions stay unavailable/disabled; and locked
+   approved reports have no editable shortcut. Run the focused test against unchanged product code
+   and retain the expected failure evidence.
+3. In `templates/timeline.html`, add small shared predicates for Create TSR and existing
+   Calibration Report eligibility. Reuse the existing status, equipment, TSR-attachment,
+   submission-ID, queued-schedule, and lock helpers rather than duplicating rules.
+4. Update every Calendar action renderer to use those predicates and current redirect functions:
+   add the compact Create TSR icon to eligible desktop cards; add Create TSR to the schedule
+   summary; make mobile detail, card, workflow, and sticky actions mutually exclusive between
+   Create TSR and Edit TSR; gate the edit-modal Create TSR buttons by incomplete status; route
+   saved schedules through `redirectToCreateTSRPageFromSchedule` and queued schedules through
+   `redirectToCreateTSRPageFromQueuedSchedule`; and restrict Calibration Report actions to
+   existing `draft` or `uploaded` states. Reuse current classes and icons; add no CSS unless a
+   concrete layout regression is found during verification.
+5. Remove or revise obsolete tests that require pre-submission or `not_started` Calendar
+   Calibration Report shortcuts. Preserve Create TSR’s internal Calibration Report feature,
+   report persistence, late-report backend routes, and existing Finish/View routing.
+6. In `app.py`, advance the embedded service-worker cache marker from the verified active v205
+   marker to `medical-service-pwa-offline-navigation-v206-calendar-tsr-actions`. Add one
+   engineer-facing `2026-09-28-calendar-tsr-action-rules` item to
+   `static/changelog/releases.json`, and update exact cache assertions only where required.
+7. Append factual implementation and exact verification results to `changes.md`; update this
+   plan’s status and execution outcome without altering prior history.
+8. Self-review only the bounded diff. Confirm no changes to protected paths, backend APIs,
+   schema, production data, Railway settings, or unrelated owner work. Leave the implementation
+   uncommitted and unpublished unless separately authorized.
+
+### Verification and acceptance
+
+- Run the new focused tests fail-first, then rerun them after implementation.
+- Run the relevant Timeline, TSR offline-follow-up, Calibration Report, schedule-option,
+  HR-redaction, service-worker/cache, and changelog suites.
+- Render Timeline with the Flask test client and validate Jinja output and extracted JavaScript
+  syntax. Validate Python syntax/AST, release JSON, and `git diff --check`.
+- Attempt the full suite once using a disposable isolated test database, never `scheduler.db`,
+  and report exact pass/fail/skip totals plus baseline failures.
+- Do not use browser or Codex-app automation. Report browser verification as not run unless the
+  owner separately authorizes it.
+- Acceptance requires consistent TSR-first actions on all named Calendar surfaces, mutually
+  exclusive Create/Edit TSR actions, no new-report Calibration shortcut, preserved Finish/View
+  behavior, and no backend or data-format change.
+
+### Public interfaces, assumptions, and exclusions
+
+- No public API, schema, migration, dependency, TSR document, or Calibration Report format
+  changes are included.
+- “Not completed” means every schedule status other than case-insensitive `Completed`.
+- Internal, leave, travel, training, and other schedules without valid TSR equipment remain
+  ineligible.
+- Calendar no longer starts a new Calibration Report. Engineers create an optional new report
+  from the normal Create TSR workflow; Calendar only resumes or views an existing report.
+- Excluded: unrelated UI redesign, backend route or authorization changes, database/schema work,
+  production/Railway operations, browser/Codex UI automation, commit, push, deployment, and
+  protected-artifact cleanup.
+
+### Execution outcome
+
+Implemented the shared Calendar TSR-first predicates and applied them to desktop cards, the
+schedule summary, edit-modal buttons, mobile full-calendar details, mobile schedule cards,
+pure-engineer workflow actions, and the sticky action bar. Create TSR now requires an incomplete
+work schedule with assigned operational equipment and no online or recognized TSR; saved and
+queued schedules use their existing routes, while missing equipment remains an unavailable action
+where those surfaces provide one. Existing TSRs use Edit TSR instead of Create TSR.
+
+Calendar Calibration Report actions now appear only for existing `draft` or `uploaded` reports,
+labelled Finish or View respectively. The old Calendar Create/Add entry path and pre-submission
+route branch were removed; Create TSR’s internal Calibration Report handoff remains in
+`offline_tsr.html`, and approved locked reports remain available through TSR Attachments.
+
+Added focused fail-first/runtime/rendered-action contracts in
+`tests/test_tsr_offline_followup.py`, advanced the service-worker marker to
+`medical-service-pwa-offline-navigation-v206-calendar-tsr-actions`, added the engineer release
+entry, and updated the directly affected calibration-history cache assertion. The initial new
+predicate test failed against the unchanged source because `canCreateTSRForSchedule` was absent;
+the implemented matrix then passed.
+
+Focused verification passed: TSR offline follow-up 19 tests; Timeline TSR attachment 12;
+machine calibration/cache 9; week navigation 12; Calibration Report 24; changelog 44 with 1
+expected skip; queued schedule 30; offline schedule 19; HR viewer 10. Flask Timeline rendering
+returned 200 and seven inline scripts parsed successfully; Jinja compile, Python AST, release
+JSON, and `git diff --check` passed. The repository-wide suite was skipped per the owner’s
+“do not over engineer and over check” direction. Browser/Codex-app automation, commit, push,
+deployment, Railway, database, and protected-artifact operations were not performed.
+
+
 # Offline Calibration History in Calendar and Create TSR
 
 **Status:** Executed — implementation commit `170a094` published to `origin/main`; Railway deployment `6699918545` succeeded.

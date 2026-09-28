@@ -93,6 +93,7 @@ let writes = [];
 {write_body}
 function saveStandaloneTSRDraftToLocalStorageFallback(data) {{ localStorage.value = JSON.parse(JSON.stringify(data)); return true; }}
 function enqueueStandaloneTSRServerDraftSync() {{ return {{ skipped:true, reason:'disabled' }}; }}
+function clearStandaloneCalibrationHistory() {{}}
 {segment}
 (async()=>{{
   {call_body}
@@ -266,7 +267,6 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
             "calibration_report_state",
             "redirectToCalibrationReportFromSchedule",
             "context.mode = 'calibration_report'",
-            "Add Calibration Report",
             "Finish Calibration Report",
             "View Calibration Report",
         ):
@@ -279,24 +279,48 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
             'canOpenCalibrationReportForSchedule',
         ):
             self.assertIn(marker, self.timeline_source)
-        legacy_gate = self.timeline_source.split('function canOpenCalibrationReportForSchedule', 1)[1].split('function getCalibrationReportTimelineLabel', 1)[0]
-        self.assertIn('getScheduleOnlineTSRSubmissionId(shift)', legacy_gate)
+        self.assertNotIn('Create Calibration Report', self.timeline_source)
+        self.assertNotIn('Add Calibration Report', self.timeline_source)
+        calibration_gate = self.timeline_source.split('function canOpenCalibrationReportForSchedule', 1)[1].split('function getCalibrationReportTimelineLabel', 1)[0]
+        self.assertIn('calibration_report_state', calibration_gate)
+        self.assertIn("'draft'", calibration_gate)
+        self.assertIn("'uploaded'", calibration_gate)
 
-    def test_timeline_exposes_pre_submission_calibration_report_shortcuts(self):
-        gate = self.timeline_source.split(
-            'function canOpenCalibrationReportForSchedule', 1
-        )[1].split('function getCalibrationReportTimelineLabel', 1)[0]
-        self.assertIn('hasScheduleTSREquipmentAssignment(shift)', gate)
-        self.assertIn('if(!submissionId) return true;', gate)
-        self.assertIn('pending_sync', gate)
-        self.assertIn('queue_id', gate)
+    def test_timeline_exposes_calendar_tsr_first_action_contract(self):
+        create_gate = self.timeline_source.split(
+            'function canCreateTSRForSchedule', 1
+        )[1].split('function canOpenCalibrationReportForSchedule', 1)[0]
+        for marker in (
+            'isScheduleCompleted(shift)',
+            'hasScheduleTSREquipmentAssignment(shift)',
+            'getScheduleOnlineTSRSubmissionId(shift)',
+            'hasScheduleTSRAttachment(shift)',
+        ):
+            self.assertIn(marker, create_gate)
+
+        for marker in (
+            'canCreateTSRForSchedule(s)',
+            'canCreateTSRForSchedule(shift)',
+            'redirectToCreateTSRPageFromSchedule',
+            'redirectToCreateTSRPageFromQueuedSchedule',
+        ):
+            self.assertIn(marker, self.timeline_source)
+
+        desktop_actions = self.timeline_source.split('const scheduleActionButtons =', 1)[1].split('cellCards.push', 1)[0]
+        self.assertIn('canCreateTSRForSchedule(s)', desktop_actions)
+        self.assertIn('Create TSR', desktop_actions)
+        summary_actions = self.timeline_source.split('function buildTimelineScheduleSummaryActionsHtml', 1)[1].split('function showTimelineScheduleDetailsPopover', 1)[0]
+        self.assertIn('canCreateTSRForSchedule(shift)', summary_actions)
+        mobile_actions = self.timeline_source.split('function buildMobileScheduleCard', 1)[1].split('function collectMobileRoleAwareSchedules', 1)[0]
+        self.assertIn('calendarTSRAction', mobile_actions)
+        self.assertIn('canCreateTSRForSchedule(shift)', mobile_actions)
 
         route = self.timeline_source.split(
             'function redirectToCalibrationReportFromSchedule', 1
         )[1].split('function openOfflineTSRDraftFromShiftModal', 1)[0]
-        self.assertIn('context.open_calibration_report = true', route)
         self.assertIn("context.mode = 'calibration_report'", route)
         self.assertIn('context.submission_id = submissionId', route)
+        self.assertNotIn('context.open_calibration_report = true', route)
 
     def test_create_tsr_preserves_pre_submission_calibration_handoff_and_order(self):
         context = self.tsr_source.split(
@@ -331,44 +355,59 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
         )
 
     @unittest.skipUnless(NODE.exists(), f'Node runtime unavailable at {NODE}')
-    def test_pre_submission_calibration_gate_runtime_matrix(self):
-        gate_start = self.timeline_source.index('function canOpenCalibrationReportForSchedule')
-        gate_end = self.timeline_source.index('function getCalibrationReportTimelineLabel', gate_start)
-        gate = self.timeline_source[gate_start:gate_end]
-        url_start = self.timeline_source.index('function buildCreateTSRPageUrlFromContext')
-        url_end = self.timeline_source.index('function storeCreateTSRContextForPage', url_start)
-        url_builder = self.timeline_source[url_start:url_end]
+    def test_calendar_action_predicates_runtime_matrix(self):
+        def function_block(signature, next_signature):
+            start = self.timeline_source.index(signature)
+            end = self.timeline_source.index(next_signature, start)
+            return self.timeline_source[start:end]
+
+        predicate_source = ''.join((
+            function_block('function isScheduleCompleted', 'function hasScheduleTSRAttachment'),
+            function_block('function hasScheduleTSRAttachment', 'function getScheduleOnlineTSRSubmissionId'),
+            function_block('function getScheduleOnlineTSRSubmissionId', 'function canCreateTSRForSchedule'),
+            function_block('function canCreateTSRForSchedule', 'function canOpenCalibrationReportForSchedule'),
+            function_block('function canOpenCalibrationReportForSchedule', 'function getCalibrationReportTimelineLabel'),
+            function_block('function getCalibrationReportTimelineLabel', 'function hasScheduleTSREquipmentAssignment'),
+            function_block('function hasScheduleTSREquipmentAssignment', 'function updateDesktopCreateTSRButtons'),
+        ))
         script = """
-function getScheduleOnlineTSRSubmissionId(shift){ return Number(shift?.online_tsr_submission_id || 0) || 0; }
-function hasScheduleTSRAttachment(shift){ return Number(shift?.service_file_delivery?.categories?.tsr?.total_count || 0) > 0 || (shift?.file_details || []).some(file => Boolean(file?.is_tsr)); }
-function hasScheduleTSREquipmentAssignment(shift){ const source = String(shift?.equipment_source || '').trim().toLowerCase(); return Boolean(shift && shift.client_id && String(shift.product_id || '').trim() && String(shift.product_name || '').trim() && ['product', 'genoray', 'vieworks'].includes(source) && shift.equipment_available !== false); }
-""" + gate + url_builder + """
-const base = { id:42, client_id:7, product_id:'SN-42', product_name:'Flexavision F3', equipment_source:'product', equipment_available:true };
+function getShiftFileDetails(shift){ return shift?.file_details || []; }
+""" + predicate_source + """
+const base = { id:42, client_id:7, product_id:'SN-42', product_name:'Flexavision F3', equipment_source:'product', equipment_available:true, status:'In Progress' };
+const submitted = {...base, online_tsr_submission_id:9, file_details:[{is_tsr:true}]};
 const cases = {
-  pre_submission: canOpenCalibrationReportForSchedule({...base}),
-  pre_submission_manual_tsr: canOpenCalibrationReportForSchedule({...base, file_details:[{is_tsr:true}]}),
-  submitted_with_tsr: canOpenCalibrationReportForSchedule({...base, online_tsr_submission_id:9, file_details:[{is_tsr:true}]}),
-  submitted_without_tsr: canOpenCalibrationReportForSchedule({...base, online_tsr_submission_id:9}),
-  queued: canOpenCalibrationReportForSchedule({...base, pending_sync:true, queue_id:'q-1'}),
-  no_equipment: canOpenCalibrationReportForSchedule({...base, product_id:'', product_name:''}),
-  hr_redacted: canOpenCalibrationReportForSchedule({...base, client_id:null, product_id:null, product_name:''}),
-  pre_url: buildCreateTSRPageUrlFromContext({ shift_id:42, date:'2026-09-25', open_calibration_report:true }),
-  submitted_url: buildCreateTSRPageUrlFromContext({ shift_id:42, submission_id:9, mode:'calibration_report' })
+  create_eligible: canCreateTSRForSchedule(base),
+  create_completed: canCreateTSRForSchedule({...base, status:'Completed'}),
+  create_online: canCreateTSRForSchedule(submitted),
+  create_attachment: canCreateTSRForSchedule({...base, file_details:[{is_tsr:true}]}),
+  create_queued: canCreateTSRForSchedule({...base, id:'', pending_sync:true, queue_id:'q-1'}),
+  create_missing_equipment: canCreateTSRForSchedule({...base, product_id:'', product_name:''}),
+  create_internal: canCreateTSRForSchedule({...base, client_id:null}),
+  calibration_not_started: canOpenCalibrationReportForSchedule(submitted),
+  calibration_draft: canOpenCalibrationReportForSchedule({...submitted, calibration_report_state:'draft'}),
+  calibration_uploaded: canOpenCalibrationReportForSchedule({...submitted, calibration_report_state:'uploaded'}),
+  calibration_locked: canOpenCalibrationReportForSchedule({...submitted, calibration_report_state:'uploaded', calibration_report_locked:true}),
+  label_not_started: getCalibrationReportTimelineLabel(submitted),
+  label_draft: getCalibrationReportTimelineLabel({...submitted, calibration_report_state:'draft'}),
+  label_uploaded: getCalibrationReportTimelineLabel({...submitted, calibration_report_state:'uploaded'})
 };
 console.log(JSON.stringify(cases));
 """
         output = self._run_node_json(script)
-        self.assertEqual(output['pre_submission'], True)
-        self.assertEqual(output['pre_submission_manual_tsr'], True)
-        self.assertEqual(output['submitted_with_tsr'], True)
-        self.assertEqual(output['submitted_without_tsr'], False)
-        self.assertEqual(output['queued'], False)
-        self.assertEqual(output['no_equipment'], False)
-        self.assertEqual(output['hr_redacted'], False)
-        self.assertIn('open_calibration_report=1', output['pre_url'])
-        self.assertNotIn('mode=calibration_report', output['pre_url'])
-        self.assertIn('mode=calibration_report', output['submitted_url'])
-        self.assertNotIn('open_calibration_report', output['submitted_url'])
+        self.assertTrue(output['create_eligible'])
+        self.assertFalse(output['create_completed'])
+        self.assertFalse(output['create_online'])
+        self.assertFalse(output['create_attachment'])
+        self.assertTrue(output['create_queued'])
+        self.assertFalse(output['create_missing_equipment'])
+        self.assertFalse(output['create_internal'])
+        self.assertFalse(output['calibration_not_started'])
+        self.assertTrue(output['calibration_draft'])
+        self.assertTrue(output['calibration_uploaded'])
+        self.assertFalse(output['calibration_locked'])
+        self.assertEqual(output['label_not_started'], '')
+        self.assertEqual(output['label_draft'], 'Finish Calibration Report')
+        self.assertEqual(output['label_uploaded'], 'View Calibration Report')
 
     @unittest.skipUnless(NODE.exists(), f'Node runtime unavailable at {NODE}')
     def test_pre_submission_handoff_opens_only_after_safe_schedule_binding(self):

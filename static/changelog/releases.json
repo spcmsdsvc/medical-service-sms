@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-28-calendar-tsr-action-rules",
+      "release_date": "2026-09-28",
+      "title": "Calendar TSR-First Actions",
+      "summary": "Calendar now opens Create TSR directly for eligible unfinished schedules and only offers existing Calibration Report follow-up actions.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-28-calendar-tsr-action-rules-engineers",
+          "category": "Calendar",
+          "description": "Unfinished equipment-assigned schedules expose Create TSR directly, existing TSRs use Edit TSR, completed schedules no longer show Create TSR, and Calendar Calibration Report actions are limited to Finish or View for existing reports.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-28-offline-calibration-history-tsr",
       "release_date": "2026-09-28",
       "title": "Calibration History in Create TSR",

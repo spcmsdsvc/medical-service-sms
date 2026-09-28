@@ -24341,7 +24341,8 @@ def pwa_service_worker():
     # Navigation shell bump: v201 distributes source-aware Calendar calibration summaries/history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v201-machine-calibration-history.
     # Navigation shell bump: v203 distributes approved Calibration Report attachment locking.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v205-calibration-history-tsr';
+    # Navigation shell bump: v206 distributes Calendar TSR-first action rules.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v206-calendar-tsr-actions';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

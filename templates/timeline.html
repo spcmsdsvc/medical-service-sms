@@ -10468,12 +10468,16 @@ function shouldUseEngineerMobileView(){
         const context = getMobileFullCalendarLiteActionContext(shiftId, dayIso, engineerId);
         if(!context) return;
 
-        if(!hasScheduleTSREquipmentAssignment(context.shift)){
+        if(!canCreateTSRForSchedule(context.shift)){
             timelineAlert('Select equipment on Calendar first before creating a TSR.');
             return;
         }
 
         closeMobileFullCalendarLiteDetails();
+        if(context.shift?.queue_id && !context.shift?.id && typeof redirectToCreateTSRPageFromQueuedSchedule === 'function'){
+            redirectToCreateTSRPageFromQueuedSchedule(context.shift, context.engineerId, context.dayIso);
+            return;
+        }
         if(typeof redirectToCreateTSRPageFromSchedule === 'function'){
             redirectToCreateTSRPageFromSchedule(context.shift, context.engineerId, context.dayIso);
             return;
@@ -10604,6 +10608,9 @@ function shouldUseEngineerMobileView(){
         const addressLabel = shift?.client_address || shift?.address || '';
         const files = getShiftFileDetails(shift);
         const canSendTSR = canSendTSRForSchedule(shift);
+        const canCreateTSR = canCreateTSRForSchedule(shift);
+        const canEditTSR = hasScheduleTSRAttachment(shift);
+        const showUnavailableCreateTSR = shouldShowUnavailableCreateTSRForSchedule(shift);
         const deliveryBadge = buildServiceFileDeliveryBadgeHtml(shift, 'mobile-lite');
 
         const backdrop = ensureMobileFullCalendarLiteDetailSheet();
@@ -10648,11 +10655,11 @@ function shouldUseEngineerMobileView(){
                             <i class="fa-solid fa-pen-to-square"></i>
                             Edit Schedule
                         </button>
-                        ${hasScheduleTSREquipmentAssignment(shift) ? `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-tsr" onclick="openMobileFullCalendarLiteCreateTSRAction('${escapeHtml(String(shift?.id || ''))}', '${escapeHtml(String(dayIso || ''))}', '${escapeHtml(String(engineerId || ''))}')">` : `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-tsr" disabled title="Select equipment on Calendar first" aria-disabled="true">`}
+                        ${canCreateTSR || showUnavailableCreateTSR ? (canCreateTSR ? `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-tsr" onclick="openMobileFullCalendarLiteCreateTSRAction('${escapeHtml(String(shift?.id || ''))}', '${escapeHtml(String(dayIso || ''))}', '${escapeHtml(String(engineerId || ''))}')">` : `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-tsr" disabled title="Select equipment on Calendar first" aria-disabled="true">`) + `
                             <i class="fa-solid fa-file-pen"></i>
                             Create TSR
-                        </button>
-                        ${hasScheduleTSRAttachment(shift) ? `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-tsr" onclick="openMobileFullCalendarLiteEditTSRAction('${escapeHtml(String(shift?.id || ''))}', '${escapeHtml(String(dayIso || ''))}', '${escapeHtml(String(engineerId || ''))}')">
+                        </button>` : ''}
+                        ${!canCreateTSR && canEditTSR ? `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-tsr" onclick="openMobileFullCalendarLiteEditTSRAction('${escapeHtml(String(shift?.id || ''))}', '${escapeHtml(String(dayIso || ''))}', '${escapeHtml(String(engineerId || ''))}')">
                             <i class="fa-solid fa-pen-to-square"></i>
                             Edit TSR
                         </button>` : ''}
@@ -11099,15 +11106,19 @@ async function openMobileAddSchedule(){
 
         const hasOfflineTSRDraft = shift?.id ? hasOfflineTSRDraftForShift(shift.id) : false;
         let offlineTsrBtn;
-        if(shift?.id && hasScheduleTSREquipmentAssignment(shift)){
+        if(canCreateTSRForSchedule(shift) && shift?.id){
             offlineTsrBtn = `<button type="button" class="mobile-sticky-btn mobile-sticky-offline-tsr ${hasOfflineTSRDraft ? 'has-draft' : ''}" title="Create TSR" aria-label="Create TSR" onclick="redirectToCreateTSRPageFromSchedule(${editPayload}, ${engineerId}, '${dayIso}')"><i class="fa-solid fa-file-pen"></i></button>`;
-        }else if(shift?.queue_id && hasScheduleTSREquipmentAssignment(shift)){
+        }else if(canCreateTSRForSchedule(shift) && shift?.queue_id){
             // A queued schedule has no server id yet, but the TSR is exactly what the engineer
             // is on site to write. It queues behind the schedule and is pointed at the real
             // shift when that schedule syncs.
             offlineTsrBtn = `<button type="button" class="mobile-sticky-btn mobile-sticky-offline-tsr" title="Create TSR" aria-label="Create TSR" onclick="redirectToCreateTSRPageFromQueuedSchedule(${editPayload}, ${engineerId}, '${dayIso}')"><i class="fa-solid fa-file-pen"></i></button>`;
-        }else{
+        }else if(hasScheduleTSRAttachment(shift)){
+            offlineTsrBtn = `<button type="button" class="mobile-sticky-btn mobile-sticky-offline-tsr" title="Edit TSR" aria-label="Edit TSR" onclick="redirectToEditLatestTSRFromSchedule(${editPayload}, ${engineerId}, '${dayIso}')"><i class="fa-solid fa-file-pen"></i></button>`;
+        }else if(shouldShowUnavailableCreateTSRForSchedule(shift)){
             offlineTsrBtn = `<button type="button" class="mobile-sticky-btn mobile-sticky-disabled" title="Select equipment on Calendar first" aria-label="Create TSR unavailable until equipment is assigned" disabled><i class="fa-solid fa-file-pen"></i></button>`;
+        }else{
+            offlineTsrBtn = '';
         }
 
         const calibrationBtn = canOpenCalibrationReportForSchedule(shift)
@@ -11887,11 +11898,15 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
             ? `<button type="button" class="mobile-action-btn mobile-action-primary" onclick="openEditModal(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-arrow-up"></i>Upload/Edit</button>`
             : `<button type="button" class="mobile-action-btn mobile-action-muted" disabled><i class="fa-solid fa-lock"></i>View Only</button>`;
 
-        const tsrAction = !hasScheduleTSREquipmentAssignment(shift)
-            ? `<button type="button" class="mobile-action-btn mobile-action-muted" disabled title="Select equipment on Calendar first"><i class="fa-solid fa-lock"></i>Create TSR unavailable</button>`
-            : (shift?.id
+        const tsrAction = canCreateTSRForSchedule(shift)
+            ? (shift?.id
                 ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`
-                : `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromQueuedSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`);
+                : `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromQueuedSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`)
+            : hasScheduleTSRAttachment(shift)
+                ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToEditLatestTSRFromSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-pen"></i>Edit TSR</button>`
+                : shouldShowUnavailableCreateTSRForSchedule(shift)
+                    ? `<button type="button" class="mobile-action-btn mobile-action-muted" disabled title="Select equipment on Calendar first"><i class="fa-solid fa-lock"></i>Create TSR unavailable</button>`
+                    : '';
         const calibrationAction = canOpenCalibrationReportForSchedule(shift)
             ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCalibrationReportFromSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-circle-check"></i>${escapeHtml(getCalibrationReportTimelineLabel(shift))}</button>`
             : '';
@@ -11931,6 +11946,15 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
             : `<button type="button" class="mobile-action-btn mobile-action-muted" disabled><i class="fa-solid fa-map-location-dot"></i>No Map</button>`;
 
         const editPayload = JSON.stringify(shift).replace(/"/g, '&quot;');
+        const calendarTSRAction = canCreateTSRForSchedule(shift)
+            ? (shift?.id
+                ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromSchedule(${editPayload}, ${rowEngineer.id}, '${day.iso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`
+                : `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromQueuedSchedule(${editPayload}, ${rowEngineer.id}, '${day.iso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`)
+            : hasScheduleTSRAttachment(shift)
+                ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToEditLatestTSRFromSchedule(${editPayload}, ${rowEngineer.id}, '${day.iso}')"><i class="fa-solid fa-file-pen"></i>Edit TSR</button>`
+                : shouldShowUnavailableCreateTSRForSchedule(shift)
+                    ? `<button type="button" class="mobile-action-btn mobile-action-muted" disabled title="Select equipment on Calendar first"><i class="fa-solid fa-lock"></i>Create TSR unavailable</button>`
+                    : '';
         const editAction = canManage
             ? `<button type="button" class="mobile-action-btn mobile-action-primary" onclick="openEditModal(${editPayload}, ${rowEngineer.id}, '${day.iso}')"><i class="fa-solid fa-file-arrow-up"></i>Upload TSR / Edit</button>`
             : `<button type="button" class="mobile-action-btn mobile-action-muted" disabled><i class="fa-solid fa-lock"></i>View Only</button>`;
@@ -12006,6 +12030,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
                 <div class="mobile-schedule-actions">
                     ${detailsAction}
                     ${editAction}
+                    ${calendarTSRAction}
                     ${calibrationAction}
                     ${tsrAction}
                     ${duplicateAction}
@@ -13154,6 +13179,8 @@ function collectMobileEngineerSchedules(){
         const shift = context?.shift || {};
         const canManage = canTimelineSummaryManageContext(context);
         const canSend = canSendTSRForSchedule(shift);
+        const canCreate = canCreateTSRForSchedule(shift);
+        const showUnavailableCreate = shouldShowUnavailableCreateTSRForSchedule(shift);
         const canEditTSR = hasScheduleTSRAttachment(shift);
         const canCalibration = canOpenCalibrationReportForSchedule(shift);
         const requestId = getTravelRequestIdFromShift(shift);
@@ -13167,6 +13194,11 @@ function collectMobileEngineerSchedules(){
                 <button type="button" class="timeline-summary-action-btn timeline-summary-action-delete" ${canManage ? '' : 'disabled'} onclick="openTimelineSummaryDelete(event)">
                     <i class="fa-solid fa-trash-can"></i>Delete
                 </button>
+                ${canCreate || showUnavailableCreate ? `
+                    <button type="button" class="timeline-summary-action-btn timeline-summary-action-edit" ${canCreate ? 'onclick="openTimelineSummaryCreateTSR(event)"' : 'disabled title="Select equipment on Calendar first"'}>
+                        <i class="fa-solid fa-file-pen"></i>Create TSR
+                    </button>
+                ` : ''}
                 ${canEditTSR ? `
                     <button type="button" class="timeline-summary-action-btn timeline-summary-action-edit" onclick="openTimelineSummaryEditTSR(event)">
                         <i class="fa-solid fa-file-pen"></i>Edit TSR
@@ -13279,6 +13311,25 @@ function collectMobileEngineerSchedules(){
         if(!context) return;
         hideTimelineScheduleHoverSummary();
         redirectToEditLatestTSRFromSchedule(context.shift, context.engineerId, context.dayIso);
+    }
+
+    function openTimelineSummaryCreateTSR(event){
+        if(event){
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        const context = window.timelineScheduleSummaryContext;
+        if(!context) return;
+        if(!canCreateTSRForSchedule(context.shift)){
+            timelineAlert('Select equipment on Calendar first before creating a TSR.');
+            return;
+        }
+        hideTimelineScheduleHoverSummary();
+        if(context.shift?.queue_id && !context.shift?.id){
+            redirectToCreateTSRPageFromQueuedSchedule(context.shift, context.engineerId, context.dayIso);
+        }else{
+            redirectToCreateTSRPageFromSchedule(context.shift, context.engineerId, context.dayIso);
+        }
     }
 
     function openTimelineSummaryCalibrationReport(event){
@@ -15180,6 +15231,11 @@ async function loadGrid(options={}) {
                                         <i class="fa-solid fa-pen-to-square"></i>
                                     </button>
                                 ` : ''}
+                                ${canCreateTSRForSchedule(s) ? `
+                                    <button type="button" class="schedule-card-action-btn schedule-card-action-tsr" draggable="false" title="Create TSR" aria-label="Create TSR" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); ${s?.queue_id && !s?.id ? `redirectToCreateTSRPageFromQueuedSchedule(${shiftActionPayload}, ${eng.id}, '${day.iso}')` : `redirectToCreateTSRPageFromSchedule(${shiftActionPayload}, ${eng.id}, '${day.iso}')`}">
+                                        <i class="fa-solid fa-file-pen"></i>
+                                    </button>
+                                ` : ''}
                                 ${hasScheduleTSRAttachment(s) ? `
                                     <button type="button" class="schedule-card-action-btn schedule-card-action-tsr" draggable="false" title="Edit TSR" aria-label="Edit TSR" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); redirectToEditLatestTSRFromSchedule(${shiftActionPayload}, ${eng.id}, '${day.iso}')">
                                         <i class="fa-solid fa-file-pen"></i>
@@ -15785,7 +15841,11 @@ async function loadGrid(options={}) {
         updateDesktopCreateTSRButtons(shift);
         const desktopOfflineTSRBtn = document.getElementById('desktop-offline-tsr-btn');
         if(desktopOfflineTSRBtn){
-            desktopOfflineTSRBtn.classList.toggle('d-none', !shift || !shift.id || isEditingTravelBlock);
+            desktopOfflineTSRBtn.classList.toggle(
+                'd-none',
+                !shift || !shift.id || isEditingTravelBlock ||
+                    (!canCreateTSRForSchedule(shift) && !shouldShowUnavailableCreateTSRForSchedule(shift))
+            );
         }
 
         document.getElementById('f-id').value = shift.id;
@@ -16161,7 +16221,8 @@ if(shift.engineers){
     }
 
     function isScheduleCompleted(shift){
-        return String(shift?.status || '').trim().toLowerCase() === 'completed';
+        return String(shift?.status || '').trim().toLowerCase() === 'completed'
+            || String(shift?.schedule_status || '').trim().toLowerCase() === 'completed';
     }
 
     function hasScheduleTSRAttachment(shift){
@@ -16174,6 +16235,27 @@ if(shift.engineers){
         return Number(shift?.online_tsr_submission_id || 0) || 0;
     }
 
+    function canCreateTSRForSchedule(shift){
+        return Boolean(
+            shift &&
+            !isScheduleCompleted(shift) &&
+            hasScheduleTSREquipmentAssignment(shift) &&
+            !getScheduleOnlineTSRSubmissionId(shift) &&
+            !hasScheduleTSRAttachment(shift)
+        );
+    }
+
+    function shouldShowUnavailableCreateTSRForSchedule(shift){
+        return Boolean(
+            shift &&
+            shift.client_id &&
+            !isScheduleCompleted(shift) &&
+            !getScheduleOnlineTSRSubmissionId(shift) &&
+            !hasScheduleTSRAttachment(shift) &&
+            !hasScheduleTSREquipmentAssignment(shift)
+        );
+    }
+
     function canOpenCalibrationReportForSchedule(shift){
         if(!shift || !String(shift.id || '').trim() || shift.pending_sync || shift.queue_id || shift.creation_token || shift.is_pending_schedule){
             return false;
@@ -16183,19 +16265,19 @@ if(shift.engineers){
         }
         if(!hasScheduleTSREquipmentAssignment(shift)) return false;
 
+        const state = String(shift?.calibration_report_state || 'not_started').trim().toLowerCase();
+        if(!['draft', 'uploaded'].includes(state)) return false;
+
         const submissionId = getScheduleOnlineTSRSubmissionId(shift);
-        // A saved schedule without an online submission starts the ordinary Create TSR flow.
-        // Existing submitted TSRs still require a visible TSR attachment before late-report mode.
-        if(!submissionId) return true;
+        if(!submissionId) return false;
         return hasScheduleTSRAttachment(shift);
     }
 
     function getCalibrationReportTimelineLabel(shift){
-        if(!getScheduleOnlineTSRSubmissionId(shift)) return 'Create Calibration Report';
         const state = String(shift?.calibration_report_state || 'not_started').trim().toLowerCase();
         if(state === 'uploaded') return 'View Calibration Report';
         if(state === 'draft') return 'Finish Calibration Report';
-        return 'Add Calibration Report';
+        return '';
     }
 
     function hasScheduleTSREquipmentAssignment(shift){
@@ -16212,8 +16294,10 @@ if(shift.engineers){
 
     function updateDesktopCreateTSRButtons(shift){
         const buttons = document.querySelectorAll('[data-create-tsr-button]');
-        const available = hasScheduleTSREquipmentAssignment(shift);
+        const available = canCreateTSRForSchedule(shift);
+        const showUnavailable = shouldShowUnavailableCreateTSRForSchedule(shift);
         buttons.forEach(button => {
+            button.classList.toggle('d-none', !available && !showUnavailable);
             button.disabled = !available;
             button.setAttribute('aria-disabled', available ? 'false' : 'true');
             button.title = available ? 'Create TSR' : 'Select equipment on Calendar first';
@@ -20491,8 +20575,10 @@ function redirectToCreateTSRPageFromSchedule(shiftPayload, engineerId, dayIso){
         timelineAlert('Create TSR is only available for saved schedule cards.');
         return;
     }
-    if(!hasScheduleTSREquipmentAssignment(shift)){
-        timelineAlert('Select equipment on Calendar first before creating a TSR.');
+    if(!canCreateTSRForSchedule(shift)){
+        timelineAlert(shouldShowUnavailableCreateTSRForSchedule(shift)
+            ? 'Select equipment on Calendar first before creating a TSR.'
+            : 'Create TSR is only available for incomplete schedules without an existing TSR.');
         return;
     }
 
@@ -20526,8 +20612,10 @@ function redirectToCreateTSRPageFromQueuedSchedule(shiftPayload, engineerId, day
         timelineAlert('This schedule is not queued on this device, so a TSR cannot be linked to it yet.');
         return;
     }
-    if(!hasScheduleTSREquipmentAssignment(shift)){
-        timelineAlert('Select equipment on Calendar first before creating a TSR.');
+    if(!canCreateTSRForSchedule(shift)){
+        timelineAlert(shouldShowUnavailableCreateTSRForSchedule(shift)
+            ? 'Select equipment on Calendar first before creating a TSR.'
+            : 'Create TSR is only available for incomplete schedules without an existing TSR.');
         return;
     }
 
@@ -20590,14 +20678,10 @@ function redirectToCalibrationReportFromSchedule(shiftPayload, engineerId, dayIs
         timelineAlert('Approved Calibration Report is read-only and available in TSR Attachments.');
         return;
     }
-    if(!hasScheduleTSREquipmentAssignment(shift)){
-        timelineAlert('Select equipment on Calendar first before creating a TSR.');
-        return;
-    }
     if(!canOpenCalibrationReportForSchedule(shift)){
         timelineAlert(submissionId
-            ? 'Save the online TSR before adding a Calibration Report.'
-            : 'Calibration Report is only available for a saved schedule with assigned equipment.');
+            ? 'Calibration Report is only available when a saved report is in Draft or Uploaded state.'
+            : 'Calibration Report is only available for an existing saved TSR report.');
         return;
     }
 
@@ -20622,8 +20706,6 @@ function redirectToCalibrationReportFromSchedule(shiftPayload, engineerId, dayIs
     if(submissionId){
         context.submission_id = submissionId;
         context.mode = 'calibration_report';
-    }else{
-        context.open_calibration_report = true;
     }
     redirectToCreateTSRPage(context);
 }
@@ -20636,8 +20718,10 @@ function openOfflineTSRDraftFromShiftModal(){
     }
 
     const baseShift = normalizeOfflineTSRShiftPayload(window.currentOfflineTSRDesktopShift || {});
-    if(!hasScheduleTSREquipmentAssignment(baseShift)){
-        timelineAlert('Select equipment on Calendar first before creating a TSR.');
+    if(!canCreateTSRForSchedule(baseShift)){
+        timelineAlert(shouldShowUnavailableCreateTSRForSchedule(baseShift)
+            ? 'Select equipment on Calendar first before creating a TSR.'
+            : 'Create TSR is only available for incomplete schedules without an existing TSR.');
         return;
     }
     const engineerId = window.currentOfflineTSRDesktopEngineerId || safeOfflineTSRValue('f-eng-id');
