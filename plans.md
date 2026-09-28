@@ -1,3 +1,105 @@
+# Restore Manila Engineer Inventory Add/Edit Access
+
+**Status:** Executed — implementation commit `90e9e3d`; publication authorized to `origin/main`.
+**Approved:** 2026-09-28 — the owner explicitly authorized implementation with “PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-28 — the same owner instruction authorizes this bounded implementation package.
+**Publication authorized:** 2026-09-28 — the owner instructed “commit and push only this change”.
+**Detailed:** 2026-09-28.
+
+### Summary
+
+Extend the existing inventory Add/Edit permission to active Manila/Main/BC01 engineers. Active
+engineers whose linked Engineer profile resolves to BC01, BC02, or BC03 may add and edit global
+Products, Genoray, and Vieworks records. Delete, CSV import, PM administration, and Product
+purchase-order coverage remain administrator-only.
+
+### Implementation decisions and boundaries
+
+- Rename `can_manage_regional_inventory_as_engineer()` in `app.py` to a name covering all
+  supported engineers, and accept only `BC01`, `BC02`, or `BC03` from
+  `resolve_engineer_profile_branch_code()`.
+- Preserve active/authenticated/non-approver requirements, missing/blank/unsupported branch
+  denial, existing administrator bypasses, and the existing Product/Genoray/Vieworks edit-helper
+  wiring. No endpoint, payload, schema, migration, template, or client-side permission change.
+- Update only the three focused inventory test modules to make Manila/Main/BC01 positive for page
+  Add/Edit controls and POST/PUT behavior while retaining Cebu/Davao, missing, unsupported,
+  inactive, administrator, delete/import, PM, and no-mutation coverage.
+- Add one published 2026-09-28 release item. Do not bump the service worker because this is a
+  server-side authorization and existing rendered-flag change.
+- Do not touch `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, unrelated owner work,
+  production/Railway state, commits, pushes, deployments, or browser/Codex UI automation.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read the applicable `AGENTS.md`, this plan, full `changes.md`,
+   current Git state, helper wiring, focused tests, and release shape. Record this plan at the
+   top of `plans.md` as `In progress` and append the factual start to the current 2026-09-28
+   section of `changes.md`. Done when protected dirty paths are identified and untouched.
+2. **Fail-first contracts.** In
+   `tests/test_product_vieworks_links_history.py`, `tests/test_genoray_inventory.py`, and
+   `tests/test_vieworks_inventory.py`, change the existing Manila denial expectations to positive
+   BC01/Add/Edit/page-control cases and update the helper name assertion. Run those focused
+   cases against the unchanged BC02/BC03-only helper and record the expected failures without
+   discarding owner work. Done when the new Manila positives fail for the expected authorization
+   reason and negative/admin-boundary cases remain meaningful.
+3. **Permission implementation.** In `app.py`, rename the shared engineer predicate and change
+   its accepted resolver result to `{'BC01', 'BC02', 'BC03'}`. Leave
+   `can_edit_products_inventory()`, `can_edit_genoray_inventory()`,
+   `can_edit_vieworks_inventory()`, page flags, Add/PUT routes, Delete/import/PM routes, and
+   Product P.O. coverage gates otherwise unchanged. Done when Manila engineer page controls and
+   direct Add/Edit routes are allowed while destructive/admin routes remain denied.
+4. **Delivery records and verification.** Add a concise published entry to
+   `static/changelog/releases.json`; append exact fail-first, focused, relevant-suite, AST/Jinja,
+   release JSON, `git diff --check`, full-discovery, and protected-state results to `changes.md`;
+   update this plan with a truthful execution outcome and `Executed` status. Do not update a
+   service-worker marker. Done when the bounded diff contains only authorized files and records.
+5. **Self-review and handoff.** Run the three focused suites plus
+   `tests/test_admin_capabilities.py` and `tests/test_product_inventory_mutations.py`, Python
+   AST/relevant Jinja/release JSON/diff checks, and one full `unittest discover -s tests` run with
+   the suite's unique disposable database. Inspect protected paths and leave all changes
+   uncommitted, unpushed, undeployed, and without Railway/production operations.
+
+### Verification and acceptance
+
+- BC01/Manila/Main, BC02/Cebu, and BC03/Davao active engineers see Add/Edit controls and can
+  POST/PUT Products, Genoray, and Vieworks records.
+- Missing, blank, unsupported, or inactive Engineer profiles remain denied; admins, superadmins,
+  and validated regional admins retain their existing access.
+- Manila engineers remain denied from Delete, CSV import, PM administration, and Product P.O.
+  coverage; denied mutation attempts do not alter existing rows.
+- The fail-first evidence and final test/check counts are truthful, and protected dirty state is
+  preserved.
+
+### Execution outcome — 2026-09-28
+
+- Renamed `can_manage_regional_inventory_as_engineer()` to
+  `can_manage_supported_inventory_as_engineer()` in `app.py` and expanded the shared resolver
+  allowlist to BC01, BC02, and BC03. Existing Product, Genoray, and Vieworks edit-helper/page/
+  POST/PUT wiring is unchanged; Delete, import, PM, and Product P.O. coverage remain gated by
+  their administrator predicates.
+- Updated the three focused inventory test modules with positive Manila/Main/BC01 controls across
+  all three inventories, retained Cebu/Davao coverage, and retained missing/unsupported/inactive
+  denial plus admin-boundary/no-mutation checks. The fail-first run against the unchanged source
+  ran 3 targeted tests and produced 9 expected authorization failures. The final focused
+  Product/Genoray/Vieworks/admin/mutation batch passed 46/46; changelog coverage/workflow passed
+  44 tests with 1 skip.
+- Added the published `2026-09-28-manila-engineer-inventory-edit` release item. AST parsing,
+  relevant `products.html` Jinja parsing, release JSON validation, and `git diff --check` passed;
+  no service-worker marker changed.
+- One full discovery run used a unique disposable database and ran 1,354 tests: 1,328 passed,
+  24 failed, and 2 skipped. The failures were the existing stale calibration/cache/archive and
+  purchase-order rate-limit setup baseline areas; no focused inventory, admin-capability,
+  product-mutation, or changelog test failed.
+- Final protected-state review confirmed the pre-existing `scheduler.db`, handoff, `.claude/`,
+  `output/`, and `tmp/` paths remain owner-controlled and excluded. No commit, push, deployment,
+  Railway/production/database operation, browser/Codex UI automation, or service-worker change
+  was performed.
+- The owner subsequently authorized publishing only this package. The application change, focused
+  tests, and release metadata were committed as `90e9e3d`; protected dirty and unrelated files
+  remain excluded from staging and publication.
+
+##
+
 # Preserve Client Signature and Full TSR Snapshot During Editing
 
 **Status:** Executed — implementation commit `492b4c1` published to `origin/main`; Railway

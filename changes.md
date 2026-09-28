@@ -2,6 +2,35 @@
 
 codex changes - 2026-09-28
 
+- Started the separately authorized Restore Manila Engineer Inventory Add/Edit Access package.
+  The bounded change extends the existing active Engineer-profile inventory Add/Edit path from
+  Cebu/Davao (BC02/BC03) to Manila/Main (BC01), updates only the three focused inventory test
+  modules and published release metadata, and keeps Delete, CSV import, PM, Product P.O.
+  coverage, service-worker assets, production/Railway state, commits, pushes, deployment,
+  browser/Codex UI automation, and protected owner artifacts excluded.
+- Implemented the Manila inventory access change in `app.py` by renaming the shared engineer
+  helper to `can_manage_supported_inventory_as_engineer()` and allowing linked Engineer profiles
+  resolved to BC01/Manila/Main in addition to existing BC02/Cebu and BC03/Davao. The existing
+  Products, Genoray, and Vieworks Add/Edit page and POST/PUT paths now accept active supported
+  engineers; Delete, CSV import, PM administration, and Product P.O. coverage remain unchanged.
+- Updated `tests/test_product_vieworks_links_history.py`, `tests/test_genoray_inventory.py`, and
+  `tests/test_vieworks_inventory.py` with Manila/Main/BC01 positive page/Add/Edit/boundary cases
+  while preserving missing/unsupported/inactive denial and administrator coverage. The fail-first
+  run against unchanged source ran 3 targeted tests with 9 expected authorization failures; the
+  post-change inventory/admin/mutation batch passed 46/46.
+- Added published release item `2026-09-28-manila-engineer-inventory-edit` to
+  `static/changelog/releases.json` without a service-worker bump. Changelog coverage/workflow
+  passed 44 tests with 1 skip; Python AST, relevant Jinja, release JSON, and `git diff --check`
+  passed.
+- Full discovery used a unique disposable test database and ran 1,354 tests: 1,328 passed, 24
+  failed, and 2 skipped. Failures remained in the existing stale calibration/cache/archive and
+  purchase-order rate-limit setup baseline areas; no focused package suite failed. Protected
+  database, handoff, `.claude/`, `output/`, and `tmp/` paths remain untouched; no commit, push,
+  deployment, Railway/production/database operation, or browser/Codex UI automation was done.
+- The owner authorized committing and pushing only the Restore Manila Engineer Inventory Add/Edit
+  Access package to `origin/main`. The application change, focused tests, and release metadata were
+  committed as `90e9e3d`; protected database, handoff, output, temporary, and unrelated files
+  remained excluded.
 - The owner authorized committing and pushing only the Preserve Client Signature and Full TSR
   Snapshot During Editing package. Its nine intended application, template, focused-test,
   release, plan, and change-record files were committed as `492b4c1` and pushed to `origin/main`;
