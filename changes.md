@@ -2,6 +2,42 @@
 
 codex changes - 2026-09-28
 
+- Started the separately authorized Preserve Client Signature and Full TSR Snapshot During Editing
+  package. The bounded implementation covers private per-submission client-signature retention,
+  authorized revision-only hydration, complete saved TSR snapshot preservation during Edit TSR,
+  focused regression contracts, the v207 service-worker/release metadata, and these records.
+  Protected scheduler.db, handoffs, .claude/, output/, tmp/, unrelated owner work, production/
+  Railway state, browser/Codex-app automation, commit, push, and deployment remain excluded.
+- Implemented private `OnlineTsrSubmission.client_signature_snapshot` storage with a guarded
+  additive SQLite column ensure. Successful initial and corrected TSR artifact flows now retain a
+  validated client signature privately while completed `payload_json` remains sanitized; corrected
+  revisions inherit a valid source signature when omitted, accept a newly supplied replacement,
+  preserve immutable original submissions/PDFs, and still reject legacy records with no snapshot.
+- Added explicit authorized `for_revision=1` hydration to the two saved-TSR lookup routes. Normal,
+  history, Calibration Report, and idempotent responses remain sanitized; revision responses inject
+  only a copied payload with a valid private snapshot.
+- Updated Edit TSR to request revision hydration, retain all saved user-facing fields and both
+  signatures, avoid live schedule/address/report overwrites, and show retained-signature versus
+  legacy fresh-signature guidance. Existing new-TSR, schedule-switch reset, contact, draft, queue,
+  and offline retry behavior remains unchanged.
+- Advanced the service-worker marker to
+  `medical-service-pwa-offline-navigation-v207-tsr-edit-signature-preservation`, added the
+  engineer-facing release manifest entry, and updated the exact affected cache assertion.
+- Added focused regression contracts for private persistence, ordinary/revision-only exposure,
+  inheritance/replacement/legacy rejection, and Edit TSR hydration. Fail-first intentionally
+  failed on the absent snapshot/hydration behavior; final focused verification passed signature
+  recovery 23, contact suggestions plus machine calibration history 20, offline follow-up plus
+  draft sync 62, page design 12, and offline API plus changelog coverage 20 (1 skip). AST/Jinja,
+  release JSON, and `git diff --check` also passed; full discovery and browser verification were
+  not run per owner direction and repository policy. No commit or publication was performed.
+- Recorded the owner-approved `Preserve Client Signature and Full TSR Snapshot During Editing`
+  plan at the top of `plans.md` with status `Approved — awaiting go-ahead`. The plan uses a private
+  per-submission signature snapshot for future TSR revisions, preserves the complete saved TSR
+  form during Edit TSR, keeps ordinary payload/history responses sanitized, and requires a fresh
+  signature for older records whose reusable image was already removed. Under the repository's
+  mandatory two-message approval gate, no application source, test behavior, database/schema,
+  cache/release metadata, production/Railway state, commit, push, deployment, or browser/Codex-app
+  action was performed; protected dirty files and unrelated owner work remain untouched.
 - The owner authorized committing and pushing only the Calendar TSR-First Action Buttons package
   to `origin/main`. Publication is limited to its Calendar template, focused tests, service-worker
   marker, release metadata, plan, and change record; protected `scheduler.db`, handoffs,

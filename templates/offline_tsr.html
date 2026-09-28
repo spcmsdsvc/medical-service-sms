@@ -2616,7 +2616,7 @@ function applyScheduleComplaintDefault(schedule, overwrite=true){
   }
 }
 
-function applyScheduleToStandaloneTSR(schedule, overwrite=true){
+function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
   if(!schedule) return;
   if(!isScheduleEquipmentAssignable(schedule)){
     showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
@@ -2643,18 +2643,20 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
     awaitingScheduleRepick = false;
     selectedStandaloneScheduleId = nextScheduleId;
     selectedStandaloneScheduleSnapshot = Object.assign({}, schedule);
-    setFieldValue('tsr-customer-name', schedule.client_name, overwrite);
-    setFieldValue('tsr-address', schedule.client_address, overwrite);
-    setFieldValue('tsr-equipment-model', schedule.product_name, overwrite);
-    setFieldValue('tsr-serial-no', schedule.product_id, overwrite);
-    applyScheduleComplaintDefault(schedule, overwrite);
-    setFieldValue('tsr-service-date', schedule.date_iso, overwrite);
-    setFieldValue('tsr-time-started', schedule.time_start, overwrite);
-    setFieldValue('tsr-time-finished', schedule.time_end, overwrite);
-    setFieldValue('tsr-serviced-by', schedule.serviced_by || LOGGED_IN_ENGINEER_NAME, overwrite);
-    setFieldValue('tsr-department', 'Radiology', false);
-    setFieldValue('tsr-machine-type', 'Medical', true);
-    window.calibrationReport?.onScheduleApplied(schedule, overwrite);
+    if(!options.preserveSavedRevision){
+      setFieldValue('tsr-customer-name', schedule.client_name, overwrite);
+      setFieldValue('tsr-address', schedule.client_address, overwrite);
+      setFieldValue('tsr-equipment-model', schedule.product_name, overwrite);
+      setFieldValue('tsr-serial-no', schedule.product_id, overwrite);
+      applyScheduleComplaintDefault(schedule, overwrite);
+      setFieldValue('tsr-service-date', schedule.date_iso, overwrite);
+      setFieldValue('tsr-time-started', schedule.time_start, overwrite);
+      setFieldValue('tsr-time-finished', schedule.time_end, overwrite);
+      setFieldValue('tsr-serviced-by', schedule.serviced_by || LOGGED_IN_ENGINEER_NAME, overwrite);
+      setFieldValue('tsr-department', 'Radiology', false);
+      setFieldValue('tsr-machine-type', 'Medical', true);
+      window.calibrationReport?.onScheduleApplied(schedule, overwrite);
+    }
   }finally{
     standaloneTSRAutosavePaused = wasPaused;
   }
@@ -5093,6 +5095,7 @@ function loadStandaloneTSRDraftFromLocalStorageFallback({ knownServerDraftKeys=n
 
 function syncStandaloneTSRAddressFromSchedule(schedule){
   if(!standaloneScheduleOptionsAreLive) return false;
+  if(isOnlineTSRRevisionMode()) return false;
   const matchedSchedule = standaloneScheduleOptions.find(item =>
     item === schedule && isSameScheduleSelection(selectedStandaloneScheduleId, item)
   );
@@ -5162,9 +5165,11 @@ function applyStandaloneTSRDraftData(data){
     if(actionsList) actionsList.innerHTML = '';
     (data['tsr-actions-taken']||'').split('\n').filter(Boolean).forEach(v=>addTSRActionItem(v));
 
-    setFieldValue('tsr-department','Radiology',false);
-    setFieldValue('tsr-machine-type','Medical',true);
-    setFieldValue('tsr-serviced-by',LOGGED_IN_ENGINEER_NAME,false);
+    if(!isOnlineTSRRevisionMode()){
+      setFieldValue('tsr-department','Radiology',false);
+      setFieldValue('tsr-machine-type','Medical',true);
+      setFieldValue('tsr-serviced-by',LOGGED_IN_ENGINEER_NAME,false);
+    }
     renderDocs();
     renderTSRAttachments();
     updateSignatureStatuses();
@@ -5209,8 +5214,8 @@ async function loadOnlineTSRRevisionFromUrl(){
   if(!requestInfo) return false;
 
   const endpoint = requestInfo.type === 'submission'
-    ? `/get_online_tsr_submission/${encodeURIComponent(requestInfo.id)}`
-    : `/get_latest_online_tsr_for_shift/${encodeURIComponent(requestInfo.id)}`;
+    ? `/get_online_tsr_submission/${encodeURIComponent(requestInfo.id)}?for_revision=1`
+    : `/get_latest_online_tsr_for_shift/${encodeURIComponent(requestInfo.id)}?for_revision=1`;
 
   showTSRStatus('Loading saved TSR for correction...', 'info');
 
@@ -5253,19 +5258,24 @@ async function loadOnlineTSRRevisionFromUrl(){
         ? payload.selectedSchedule
         : null);
       if(schedule){
-        applyScheduleToStandaloneTSR(schedule, false);
+        applyScheduleToStandaloneTSR(schedule, false, { preserveSavedRevision:true });
         syncStandaloneTSRAddressFromSchedule(schedule);
       }else{
         selectedStandaloneScheduleId = scheduleId;
       }
     }
     renderTSRClientContactSuggestions(correctionSchedule);
-    signatureData.acknowledged = '';
     updateSignatureStatuses();
     setStandaloneScheduleLockedFields(Boolean(selectedStandaloneScheduleId));
     updateCreateTSRScheduleGate({ showMessage: !hasStandaloneScheduleSelection() });
 
-    showTSRStatus(`Editing saved TSR REV${submission.revision_no || 1}. The client must sign this corrected TSR again before final saving. The original remains in history.`, 'warning');
+    const retainedClientSignature = Boolean(signatureData?.acknowledged);
+    showTSRStatus(
+      retainedClientSignature
+        ? `Editing saved TSR REV${submission.revision_no || 1}. The client's existing signature was retained; saved TSR details remain loaded for correction. The original remains in history.`
+        : `Editing saved TSR REV${submission.revision_no || 1}. This older TSR has no reusable client signature, so the client must sign this corrected TSR before final saving. The original remains in history.`,
+      retainedClientSignature ? 'info' : 'warning'
+    );
     return true;
   }catch(err){
     console.warn('[Offline TSR] Unable to load TSR revision context', err);
@@ -6060,7 +6070,7 @@ function renderStandaloneTSRSignatureRecoveryModal(){
     const warningText = (state.warnings || []).join(' ');
     noteEl.textContent = state.loading
       ? ''
-      : `${state.revisionMode ? 'Corrected TSR mode intentionally cleared the previous client signature. Choose only an unfinished matching saved source. ' : ''}${warningText}`.trim();
+      : warningText;
   }
   updateStandaloneTSRSignatureRecoveryApplyState();
 }

@@ -1,3 +1,222 @@
+# Preserve Client Signature and Full TSR Snapshot During Editing
+
+**Status:** Executed — local uncommitted; no commit authorized.
+**Approved:** 2026-09-28 — the owner requested “implement the plan. do not overengineer and over
+check things”; under the repository's mandatory two-message gate, this records approval only and
+implementation began after the owner's separate go-ahead on 2026-09-28.
+**Detailed:** 2026-09-28.
+
+### Execution outcome
+
+- Added the nullable per-submission client-signature snapshot with guarded SQLite column ensure,
+  post-artifact persistence for initial saves and revisions, revision-only authorized response
+  hydration, signature inheritance/replacement, and legacy missing-snapshot rejection.
+- Edit TSR now requests `for_revision=1`, restores the saved TSR fields/signatures without live
+  schedule/address overwrites, preserves Calibration Report state, and gives retained-versus-
+  legacy-signature guidance. New TSR, schedule-switch, contact, draft, and queue behavior remains
+  covered by the existing paths.
+- Advanced the service-worker marker to
+  `medical-service-pwa-offline-navigation-v207-tsr-edit-signature-preservation` and added the
+  engineer-facing release entry.
+- Fail-first focused run intentionally failed before implementation because the snapshot column,
+  revision hydration, and inheritance did not exist. Final focused results: signature recovery
+  23 passed; contact suggestions plus machine calibration history 20 passed; offline TSR
+  follow-up plus draft sync 62 passed; page design 12 passed; offline API plus changelog coverage
+  20 passed with 1 skip. AST/Jinja/release JSON parsing and `git diff --check` passed.
+- Full discovery and browser/Codex-app verification were not run under the owner's request to keep
+  checking proportional and the repository's browser restriction. No commit, push, deployment,
+  Railway/production/database operation, or protected-artifact change was performed.
+
+### Context
+
+Completed online TSRs currently preserve the client's signature in the immutable signed PDF but
+remove `signatures.acknowledged` from the durable submission payload. When an engineer opens Edit
+TSR, the revision loader clears the client signature again and requires the client to sign the
+corrected TSR. The owner instead wants future finalized TSRs to retain the client signature and the
+complete saved TSR details when editing, with the signature remaining valid across every engineer
+edit.
+
+The simplest safe implementation keeps the signed PDF and sanitized general payload behavior, but
+adds a private per-submission signature snapshot that is returned only through the authorized
+revision-loading path. Corrections remain new immutable revisions; they do not overwrite the
+original submission or PDF. Older submissions whose reusable signature was already removed are not
+backfilled and still require a fresh client signature.
+
+### Decisions taken
+
+1. Preserve the existing client signature across all edits, including service details, dates,
+   equipment, remarks, and client/contact fields. A newly captured signature replaces the retained
+   signature; otherwise the retained signature is used for the corrected PDF.
+2. Edit TSR loads the complete saved user-facing TSR snapshot: customer/contact details,
+   requester, address, equipment, dates/times, complaint, actions, remarks, parts, documents,
+   attachments, Calibration Report state, and both signatures. Current schedule/client data must
+   not silently overwrite those saved form values during revision loading.
+3. Keep server-controlled TSR number, schedule identity, revision metadata, authorization, and
+   authoritative schedule-coverage behavior unchanged.
+4. Add nullable private `OnlineTsrSubmission.client_signature_snapshot` text storage. Continue to
+   remove the client signature from completed `payload_json`; do not turn completed submissions
+   into ordinary recovery sources or expose signatures through normal/history responses.
+5. Add an explicit revision-load option to the existing authorized submission lookup routes. Only
+   that mode injects the private snapshot into a response-only payload copy. It must not mutate the
+   stored sanitized JSON or log the signature.
+6. Initial saves and revisions store the private snapshot only after signed PDF generation or
+   validation and attachment work succeeds. Failures roll back; idempotent retries reuse the
+   existing submission, file, and snapshot.
+7. Existing completed TSRs are future-compatible but not repaired. If their snapshot is null, Edit
+   TSR loads all saved details and requires a new client signature before final saving. Do not
+   extract, crop, reconstruct, or backfill signatures from historical PDFs.
+8. Keep blank/new TSR and schedule-switch signature resets, unfinished-draft recovery, pending/
+   failed offline retry retention, completed-queue cleanup, engineer Settings signature behavior,
+   and contact-edit signature preservation unchanged.
+
+### Investigation
+
+- `templates/offline_tsr.html:5207-5268` loads a revision, hydrates the saved payload, then
+  explicitly runs `signatureData.acknowledged = ''` and tells the engineer the client must sign
+  again.
+- `templates/offline_tsr.html:5110-5177` already restores all `.tsr-field` values, documents,
+  attachments, parts, report state, and `data.signatures`; `:2619-2657` subsequently applies live
+  schedule values, and `:5094-5107` forcibly refreshes the address. Revision loading must bind the
+  schedule without re-filling saved form fields.
+- `templates/offline_tsr.html:1160-1189` already preserves both signatures when applying saved
+  client contacts. New/changed schedule cleanup at `:2554-2592` deliberately clears both
+  signatures and remains unchanged.
+- `templates/offline_tsr.html:9625-9685` requires both signatures for final saving, and the vector
+  PDF path consumes the hydrated `signatureData`. The retained signature therefore reaches the
+  corrected PDF without a PDF-layout change.
+- `app.py:3243-3262` defines `OnlineTsrSubmission`; `app.py:4613-4689` safely adds missing nullable
+  columns to existing SQLite databases and is the established migration path.
+- `app.py:17352-17392` serializes revision/edit payloads. The current authorized lookup routes at
+  `app.py:23884-23924` return that serializer after `can_work_on_existing_schedule_shift()`.
+- `app.py:17601-17615` deliberately removes only `signatures.acknowledged` from completed payload
+  JSON. Both initial and revision completion paths use this helper after artifact work.
+- `app.py:23927-24236` creates a new correction submission/PDF, preserves the original history,
+  validates both signatures, and uses token-based idempotency and transaction rollback.
+- `tests/test_tsr_signature_recovery.py` currently encodes the opposite reset/stripping behavior;
+  `tests/test_tsr_contact_suggestions.py` already proves contact edits preserve signatures. These
+  are the focused regression surfaces.
+- Current protected dirty work is `scheduler.db`, `Handoffs/08-11-26 handoff.md`, `.claude/`,
+  `medical-service-sms-detailed-handoff-2026-07-26.md`, `output/`, and `tmp/`; none belongs to this
+  package.
+
+### Execution steps
+
+1. **Preflight and control records.** After a separate owner go-ahead, re-read applicable
+   instructions, this plan, full `changes.md`, current Git state, affected source/tests, release
+   shape, and cache assertions. Change this status to `In progress` and append a factual start
+   entry to `changes.md`. Preserve every protected dirty path. Do not commit, push, deploy, modify
+   Railway/production data, or use browser/Codex-app automation. Done when the authorized scope and
+   baseline state are recorded without touching application behavior.
+2. **Add fail-first contracts.** In `tests/test_tsr_signature_recovery.py` and the smallest relevant
+   contact/edit test module, add disposable-database Flask and controlled JavaScript cases for
+   private snapshot persistence, revision-only exposure, complete saved-field hydration, retained
+   signatures, legacy missing-snapshot behavior, immutable history, and unchanged new/schedule-
+   switch resets. Run them against unchanged source and record the intentional failures. Done when
+   positive controls pass and each absent behavior fails for the expected reason.
+3. **Add private storage safely.** In `app.py`, add nullable
+   `OnlineTsrSubmission.client_signature_snapshot` and a guarded additive `TEXT` column statement
+   in `ensure_online_tsr_submission_table()`. Do not add an index, dependency, standalone migration,
+   or backfill. Done when new and legacy disposable databases both initialize without destructive
+   changes.
+4. **Persist the signature after artifact success.** In `/save_offline_tsr_online` and
+   `/revise_online_tsr_submission`, capture the validated acknowledged-signature data URL, finish
+   PDF generation/validation and attachment work, then assign the private snapshot while continuing
+   to store `strip_persisted_online_tsr_client_signature(payload)` in `payload_json`. Preserve
+   rollback and idempotent response behavior. Done when successful records have a private snapshot
+   and sanitized JSON, while failed saves leave no completed or partially superseding revision.
+5. **Expose only revision-authorized hydration.** Extend `online_tsr_submission_to_dict()` with an
+   `include_client_signature=False` option. Let `/get_online_tsr_submission/<id>` and
+   `/get_latest_online_tsr_for_shift/<id>` enable it only for an explicit `for_revision=1` request
+   after their existing login and schedule-access checks. Inject into a copied response payload
+   only when the stored snapshot is a valid image data URL. Done when ordinary/history/Calibration
+   callers remain sanitized, authorized revision callers receive the snapshot, and unauthorized
+   callers remain denied.
+6. **Make revision saving resilient.** Before revision signature validation, use the source
+   submission's valid private snapshot only when the incoming correction lacks a valid client
+   signature; prefer a newly supplied valid signature. Legacy records with neither source nor
+   request signature retain the existing 400 requirement. Store the signature actually used on
+   the new revision. Done when inheritance, replacement, legacy rejection, rollback, and
+   idempotent retry cases all behave deterministically.
+7. **Preserve the full edit snapshot.** In `templates/offline_tsr.html`, request `for_revision=1`,
+   remove the unconditional acknowledged-signature reset, and bind the live schedule for context,
+   locks, suggestions, and display without applying live values over the saved revision fields.
+   Replace the forced address refresh in revision mode with exact saved-address retention. Keep
+   explicit engineer edits, contact selection, new/schedule-switch reset behavior, and normal
+   non-revision draft address refresh unchanged. Done when every saved form value and both
+   signatures survive opening Edit TSR unless the historical snapshot is absent.
+8. **Update revision guidance and recovery wording.** Show a retained-signature message when the
+   snapshot exists and a fresh-signature requirement only for legacy/missing-snapshot records.
+   Remove wording that says correction mode intentionally cleared the signature. Do not add
+   completed submissions to the unfinished recovery modal or expose a signature-vault action.
+9. **Refresh delivery metadata.** Advance the active embedded cache marker from v206 to
+   `medical-service-pwa-offline-navigation-v207-tsr-edit-signature-preservation`, update only exact
+   current-cache assertions, and add one engineer-facing `2026-09-28` release item explaining the
+   retained edit snapshot and the legacy fresh-signature limitation. Preserve all prior release
+   history.
+10. **Verify, self-review, and close records.** Run the focused tests and proportional related
+    suites below, inspect only the bounded diff, and confirm no ordinary response, log, contact,
+    Settings record, recovery source, or separate attachment exposes the client signature. Append
+    exact results and limitations to `changes.md` and this plan. Leave the package uncommitted and
+    unpublished pending separate instructions.
+
+### Deliberately excluded
+
+- No PDF signature extraction, historical backfill, database repair, signature vault, reusable
+  client/contact signature, global history recovery, or separate signature attachment. These add
+  risk and are unnecessary for the prospective requirement.
+- No replacement or mutation of original signed PDFs/submissions, PDF geometry/layout change,
+  contact-management redesign, dependency, encryption subsystem, or unrelated API/schema work.
+- No destructive migration, seed, `scheduler.db` access, production/Railway operation, deployment,
+  commit, push, merge, browser automation, Codex-app navigation, or protected-artifact cleanup.
+
+### Verification
+
+- Backend disposable-database cases: initial save stores the private snapshot while JSON stays
+  sanitized; authorized `for_revision=1` returns it; ordinary and unauthorized requests do not;
+  corrections inherit or replace it; legacy records require a fresh signature; original history
+  remains unchanged; retries do not duplicate; failures roll back without superseding the prior
+  latest revision.
+- Frontend/runtime cases: revision hydration preserves the full saved snapshot and both signatures;
+  live schedule/address data does not overwrite it; retained signatures reach final validation and
+  corrected-PDF input; missing legacy snapshots show correct guidance; contact edits preserve
+  signatures; new TSR and schedule changes still clear them.
+- Regression suites: focused TSR signature, contact, draft, offline queue, sync, revision, PDF,
+  and Calendar edit-routing modules. Run the smallest relevant sets first and stop expanding once
+  the material requirement is reasonably established.
+- Static checks: Python AST/compile, Jinja parse, extracted inline JavaScript syntax, release JSON
+  and cache assertions, plus `git diff --check`.
+- Attempt full unittest discovery once with a fresh disposable external
+  `MEDICAL_SERVICE_TEST_DB`, never `scheduler.db`, and report exact pass/fail/error/skip totals and
+  any established unrelated baseline failures. Do not chase unrelated or artificial harness issues.
+- Browser/Codex-app verification is not run because repository policy prohibits it. Report this
+  limitation; do not infer permission from implementation authorization.
+
+### After implementation
+
+1. Builder returns one consolidated report listing files changed, behavior delivered, exact tests
+   and results, tests not run, deviations, limitations, and protected-state confirmation, then
+   stops.
+2. Formal post-implementation review does not begin unless the owner separately says “Review the
+   implementation.” Any material correction requires a new focused plan and fresh authorization.
+3. Commit/push/deployment remain separately protected. If later authorized, stage only intended
+   source/test/release/record files; exclude all protected dirty paths, publish to `origin/main`,
+   then verify the remote main hash and Railway deployment metadata without changing variables or
+   manually redeploying.
+
+### Risks
+
+- A client signature is sensitive and, under the chosen policy, will attest to content edited after
+  the original signing. Revision-only authorized exposure, immutable originals, and explicit
+  revision history limit the blast radius while implementing the owner's selected behavior.
+- Returning the private snapshot through a general serializer could leak it to unrelated callers.
+  Default-off serialization and explicit route tests prevent this.
+- Live schedule hydration could silently alter saved details. Revision-specific no-refresh tests
+  protect exact snapshot restoration while leaving ordinary draft behavior unchanged.
+- A partial migration or failed save could strand a revision. The guarded nullable column,
+  transactional assignment after artifact work, rollback, and idempotency tests cover that risk.
+- Older records cannot satisfy automatic retention because their reusable image no longer exists.
+  Conditional guidance and fail-closed validation prevent unsigned corrected PDFs.
+
 # Calendar TSR-First Action Buttons
 
 **Status:** Executed — implementation commit `bbf6716` published to `origin/main`.

@@ -3257,6 +3257,7 @@ class OnlineTsrSubmission(db.Model):
     revision_no = db.Column(db.Integer, default=1, nullable=False, index=True)
     parent_submission_id = db.Column(db.Integer, db.ForeignKey('online_tsr_submission.id'), nullable=True, index=True)
     revision_reason = db.Column(db.Text, nullable=True)
+    client_signature_snapshot = db.Column(db.Text, nullable=True)
     is_latest = db.Column(db.Boolean, default=True, nullable=False, index=True)
     revised_at = db.Column(db.DateTime, nullable=True)
     revised_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
@@ -4662,6 +4663,7 @@ def ensure_online_tsr_submission_table():
                 'revision_no': "ALTER TABLE online_tsr_submission ADD COLUMN revision_no INTEGER DEFAULT 1 NOT NULL",
                 'parent_submission_id': "ALTER TABLE online_tsr_submission ADD COLUMN parent_submission_id INTEGER",
                 'revision_reason': "ALTER TABLE online_tsr_submission ADD COLUMN revision_reason TEXT",
+                'client_signature_snapshot': "ALTER TABLE online_tsr_submission ADD COLUMN client_signature_snapshot TEXT",
                 'is_latest': "ALTER TABLE online_tsr_submission ADD COLUMN is_latest BOOLEAN DEFAULT 1 NOT NULL",
                 'revised_at': "ALTER TABLE online_tsr_submission ADD COLUMN revised_at DATETIME",
                 'revised_by_user_id': "ALTER TABLE online_tsr_submission ADD COLUMN revised_by_user_id INTEGER",
@@ -17349,12 +17351,24 @@ def admin_repair_tsr_historical_coverage():
     })
 
 
-def online_tsr_submission_to_dict(submission, include_payload=True):
+def online_tsr_submission_to_dict(submission, include_payload=True, include_client_signature=False):
     """Serialize an online TSR submission for revision/edit flows."""
     if not submission:
         return {}
 
     payload = parse_online_tsr_payload_json(submission) if include_payload else {}
+    if include_payload and isinstance(payload, dict):
+        payload = strip_persisted_online_tsr_client_signature(payload)
+    if include_client_signature and include_payload and isinstance(payload, dict):
+        client_signature = online_tsr_signature_data_url(
+            getattr(submission, 'client_signature_snapshot', None)
+        )
+        if client_signature:
+            payload = dict(payload)
+            signatures = payload.get('signatures')
+            signatures = dict(signatures) if isinstance(signatures, dict) else {}
+            signatures['acknowledged'] = client_signature
+            payload['signatures'] = signatures
     certificate_approval = calibration_report_approval_for_submission(submission)
     calibration_timeline_state = calibration_report_timeline_state_for_submission(
         submission,
@@ -17587,15 +17601,25 @@ def online_tsr_has_serviced_signature(payload):
     return signature_value.startswith('data:image/') and ',' in signature_value
 
 
-def online_tsr_has_acknowledged_signature(payload):
-    """Return True when a current Create TSR payload includes the client signature."""
+def online_tsr_signature_data_url(value):
+    """Return a valid image data URL or an empty string."""
+    signature_value = clean_str(value) or ''
+    return signature_value if signature_value.startswith('data:image/') and ',' in signature_value else ''
+
+
+def online_tsr_acknowledged_signature_value(payload):
+    """Return the validated client signature from a TSR payload, if present."""
     if not isinstance(payload, dict):
-        return False
+        return ''
     signatures = payload.get('signatures')
     if not isinstance(signatures, dict):
-        return False
-    signature_value = clean_str(signatures.get('acknowledged')) or ''
-    return signature_value.startswith('data:image/') and ',' in signature_value
+        return ''
+    return online_tsr_signature_data_url(signatures.get('acknowledged'))
+
+
+def online_tsr_has_acknowledged_signature(payload):
+    """Return True when a current Create TSR payload includes the client signature."""
+    return bool(online_tsr_acknowledged_signature_value(payload))
 
 
 def strip_persisted_online_tsr_client_signature(payload):
@@ -18822,6 +18846,7 @@ def save_offline_tsr_online():
         payload['_completed_shift_ids'] = completed_shift_ids
         payload['_completion_scope'] = completion_scope
         payload['_generated_pdf_at'] = get_manila_time().isoformat()
+        submission.client_signature_snapshot = online_tsr_acknowledged_signature_value(payload) or None
         submission.payload_json = json.dumps(
             strip_persisted_online_tsr_client_signature(payload),
             ensure_ascii=False,
@@ -23897,9 +23922,14 @@ def get_online_tsr_submission(submission_id):
     if not can_work_on_existing_schedule_shift(shift):
         return denied('You are not allowed to view this TSR submission.')
 
+    include_client_signature = request.args.get('for_revision') == '1'
     return jsonify({
         'status': 'success',
-        'submission': online_tsr_submission_to_dict(submission, include_payload=True)
+        'submission': online_tsr_submission_to_dict(
+            submission,
+            include_payload=True,
+            include_client_signature=include_client_signature,
+        )
     })
 
 
@@ -23918,9 +23948,14 @@ def get_latest_online_tsr_for_shift(shift_id):
     if not submission:
         return jsonify({'status': 'error', 'message': 'No saved online TSR found for this schedule.'}), 404
 
+    include_client_signature = request.args.get('for_revision') == '1'
     return jsonify({
         'status': 'success',
-        'submission': online_tsr_submission_to_dict(submission, include_payload=True)
+        'submission': online_tsr_submission_to_dict(
+            submission,
+            include_payload=True,
+            include_client_signature=include_client_signature,
+        )
     })
 
 
@@ -23976,6 +24011,16 @@ def revise_online_tsr_submission(submission_id):
     if isinstance(payload.get('selectedSchedule'), dict):
         payload['selectedSchedule'] = dict(payload['selectedSchedule'])
         payload['selectedSchedule']['schedule_coverage'] = authoritative_coverage
+
+    if not online_tsr_has_acknowledged_signature(payload):
+        retained_client_signature = online_tsr_signature_data_url(
+            getattr(original, 'client_signature_snapshot', None)
+        )
+        if retained_client_signature:
+            signatures = payload.get('signatures')
+            signatures = dict(signatures) if isinstance(signatures, dict) else {}
+            signatures['acknowledged'] = retained_client_signature
+            payload['signatures'] = signatures
 
     equipment_inventory_result = ensure_product_from_tsr_payload(shift, payload)
     if equipment_inventory_result.get('status') == 'blocked':
@@ -24169,6 +24214,7 @@ def revise_online_tsr_submission(submission_id):
         payload['_pdf_source'] = pdf_source
         payload['_completed_shift_ids'] = completed_shift_ids
         payload['_generated_pdf_at'] = get_manila_time().isoformat()
+        revision.client_signature_snapshot = online_tsr_acknowledged_signature_value(payload) or None
         revision.payload_json = json.dumps(
             strip_persisted_online_tsr_client_signature(payload),
             ensure_ascii=False,
@@ -24341,8 +24387,8 @@ def pwa_service_worker():
     # Navigation shell bump: v201 distributes source-aware Calendar calibration summaries/history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v201-machine-calibration-history.
     # Navigation shell bump: v203 distributes approved Calibration Report attachment locking.
-    # Navigation shell bump: v206 distributes Calendar TSR-first action rules.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v206-calendar-tsr-actions';
+    # Navigation shell bump: v207 preserves saved client signatures/details during TSR edits.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v207-tsr-edit-signature-preservation';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

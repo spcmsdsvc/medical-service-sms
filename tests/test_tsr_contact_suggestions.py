@@ -101,7 +101,9 @@ class TSRContactSuggestionSourceTests(unittest.TestCase):
         revision_loader = self.tsr_source.split('async function loadOnlineTSRRevisionFromUrl', 1)[1].split(
             '\nasync function saveStandaloneTSRDraftLocally', 1
         )[0]
-        self.assertIn("signatureData.acknowledged = '';", revision_loader)
+        self.assertIn('for_revision=1', revision_loader)
+        self.assertNotIn("signatureData.acknowledged = '';", revision_loader)
+        self.assertIn('preserveSavedRevision', revision_loader)
 
     def test_frontend_renders_contacts_after_each_schedule_restore_path(self):
         for function_name in (
@@ -229,6 +231,7 @@ function isSameScheduleSelection() {{ return false; }}
 function getStandaloneScheduleRuntimeId() {{ return ''; }}
 function renderTSRClientContactSuggestions() {{}}
 function renderTSRScheduleCoveragePanel() {{}}
+function clearStandaloneCalibrationHistory() {{}}
 function addTSRPartRow() {{}}
 function setFieldValue(id, value) {{ if(fields[id]) fields[id].value = value || ''; }}
 function renderDocs() {{}}
@@ -239,6 +242,7 @@ function setStandaloneScheduleLockedFields() {{}}
 function hasStandaloneScheduleSelection() {{ return false; }}
 function updateCreateTSRScheduleGate() {{}}
 function advanceStandaloneTSRActiveContext() {{ standaloneTSRActiveContextVersion += 1; }}
+function isOnlineTSRRevisionMode() {{ return Boolean(onlineTSRRevisionContext); }}
 {collect}
 {apply_draft}
 const persisted = JSON.parse(JSON.stringify(collectTSRData()));

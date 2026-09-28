@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-28-tsr-edit-signature-preservation",
+      "release_date": "2026-09-28",
+      "title": "Preserved TSR Details During Editing",
+      "summary": "Editing a finalized TSR now keeps the saved client details and retained client signature for the corrected revision.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-28-tsr-edit-signature-preservation-engineers",
+          "category": "TSR",
+          "description": "Engineers can edit a saved TSR without losing its client details or retained client signature. Older TSRs without a stored signature still require the client to sign again.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-28-calendar-tsr-action-rules",
       "release_date": "2026-09-28",
       "title": "Calendar TSR-First Actions",

@@ -192,8 +192,10 @@ let selectedStandaloneScheduleId = '';
 let selectedStandaloneScheduleSnapshot = null;
 let standaloneScheduleOptions = [];
 let awaitingScheduleRepick = false;
+let onlineTSRRevisionContext = null;
 let standaloneDocuments = [];
 function isSameScheduleSelection() {{ return false; }}
+function isOnlineTSRRevisionMode() {{ return Boolean(onlineTSRRevisionContext); }}
 function renderTSRClientContactSuggestions() {{}}
 function renderTSRScheduleCoveragePanel() {{}}
 function normalizeQueuedAttachments(value) {{ return Array.isArray(value) ? value : []; }}

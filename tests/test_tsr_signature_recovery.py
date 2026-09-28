@@ -166,11 +166,15 @@ class TsrSignatureRecoverySourceTests(unittest.TestCase):
         self.assertIn("localPayload", merge_fn)
         self.assertIn("remotePayload", merge_fn)
 
-    def test_correction_reset_and_hydration_deletion_guard_remain(self):
+    def test_correction_hydration_retains_signature_and_saved_snapshot(self):
         revision_loader = self.template.split("async function loadOnlineTSRRevisionFromUrl", 1)[1].split(
             "\nfunction captureStandaloneTSRLocalSaveContext", 1
         )[0]
-        self.assertIn("signatureData.acknowledged = '';", revision_loader)
+        self.assertIn("for_revision=1", revision_loader)
+        self.assertNotIn("signatureData.acknowledged = '';", revision_loader)
+        self.assertIn("signatureData?.acknowledged", revision_loader)
+        self.assertIn("retained", revision_loader.lower())
+        self.assertIn("preserveSavedRevision", revision_loader)
         hydration = self.template.split("async function mergeServerStandaloneTSRDrafts", 1)[1].split(
             "\nasync function refreshStandaloneTSRDraftPanel", 1
         )[0]
@@ -663,6 +667,7 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             generated.assert_called_once()
             self.assertIn("acknowledged", generated.call_args.args[2]["signatures"])
             stored = app_module.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            self.assertEqual(stored.client_signature_snapshot, payload["signatures"]["acknowledged"])
             persisted = json.loads(stored.payload_json)
             self.assertNotIn("acknowledged", persisted["signatures"])
             self.assertEqual(persisted["signatures"]["serviced"], payload["signatures"]["serviced"])
@@ -675,6 +680,16 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             self.assertEqual(replay.status_code, 200, replay.get_json())
             self.assertTrue(replay.get_json()["duplicate"])
             self.assertNotIn("payload", replay.get_json())
+
+            ordinary = self.client.get(f"/get_online_tsr_submission/{submission_id}")
+            self.assertEqual(ordinary.status_code, 200, ordinary.get_json())
+            self.assertNotIn("acknowledged", ordinary.get_json()["submission"]["payload"].get("signatures", {}))
+            revision_view = self.client.get(f"/get_online_tsr_submission/{submission_id}?for_revision=1")
+            self.assertEqual(revision_view.status_code, 200, revision_view.get_json())
+            self.assertEqual(
+                revision_view.get_json()["submission"]["payload"]["signatures"]["acknowledged"],
+                payload["signatures"]["acknowledged"],
+            )
 
     def test_core_save_commits_schedule_completed_and_links_the_tsr(self):
         token = f"route-completion-{uuid4().hex}"
@@ -713,7 +728,7 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             ).one()
             self.assertEqual(linked.original_filename, "completion.pdf")
 
-    def test_revision_success_strips_client_signature_and_requires_it_before_save(self):
+    def test_revision_inherits_client_signature_and_legacy_records_still_require_it(self):
         original_token = f"route-original-{uuid4().hex}"
         with self.app.app_context(), self.route_patches("signed-original.pdf"):
             original_response = self.client.post(
@@ -727,6 +742,7 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
         revision_token = f"route-revision-{uuid4().hex}"
         revision_payload = self.payload(revision_token)
         revision_payload["revision_reason"] = "Corrected signature lifecycle test"
+        revision_payload["signatures"] = {"serviced": revision_payload["signatures"]["serviced"]}
         with self.app.app_context(), self.route_patches("signed-revision.pdf"), patch.object(
             app_module,
             "get_latest_online_tsr_submission_for_shift",
@@ -745,13 +761,39 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             self.submission_ids.append(revision_id)
             generated.assert_called_once()
             self.assertIn("acknowledged", generated.call_args.args[2]["signatures"])
-            persisted = json.loads(app_module.db.session.get(app_module.OnlineTsrSubmission, revision_id).payload_json)
+            revision_record = app_module.db.session.get(app_module.OnlineTsrSubmission, revision_id)
+            self.assertEqual(
+                revision_record.client_signature_snapshot,
+                "data:image/png;base64,client",
+            )
+            persisted = json.loads(revision_record.payload_json)
             self.assertNotIn("acknowledged", persisted["signatures"])
             self.assertEqual(persisted["signatures"]["serviced"], revision_payload["signatures"]["serviced"])
 
+            replacement_payload = self.payload(f"route-replacement-{uuid4().hex}")
+            replacement_payload["revision_reason"] = "Replaced client signature lifecycle test"
+            replacement_payload["signatures"]["acknowledged"] = "data:image/png;base64,replacement-client"
+            with patch.object(app_module, "generate_online_tsr_submission_pdf", return_value="signed-replacement.pdf"):
+                replacement = self.client.post(
+                    f"/revise_online_tsr_submission/{original_id}",
+                    json=replacement_payload,
+                )
+            self.assertEqual(replacement.status_code, 200, replacement.get_json())
+            replacement_id = replacement.get_json()["submission_id"]
+            self.submission_ids.append(replacement_id)
+            self.assertEqual(
+                app_module.db.session.get(
+                    app_module.OnlineTsrSubmission,
+                    replacement_id,
+                ).client_signature_snapshot,
+                "data:image/png;base64,replacement-client",
+            )
+
+            original = app_module.db.session.get(app_module.OnlineTsrSubmission, original_id)
+            original.client_signature_snapshot = None
+            app_module.db.session.commit()
             rejected_payload = dict(revision_payload)
             rejected_payload["submission_token"] = f"route-rejected-{uuid4().hex}"
-            rejected_payload["signatures"] = {"serviced": revision_payload["signatures"]["serviced"]}
             rejected = self.client.post(
                 f"/revise_online_tsr_submission/{original_id}",
                 json=rejected_payload,
