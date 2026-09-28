@@ -2,6 +2,17 @@
 
 codex changes - 2026-09-28
 
+- Published the verified Reimbursement lock fix and zero-write correction commit range to
+  `origin/main`; remote head resolved to `86bbbf16bb202a189e16bf638dc87db09963b6aa` before this
+  records-only closeout. The outgoing range contained only `app.py`, the focused disposable-DB
+  test, release metadata, and plan/change records. Dirty `scheduler.db`, the handoff, `.claude/`,
+  `output/`, `tmp/`, and unrelated files were absent from every commit and remained local/unstaged.
+  Railway deployment `1ae750a2-acd3-4424-a2f5-8914ba75a735` completed successfully for that exact
+  commit. Read-only checks returned `/login` HTTP 200 and signed-out `/timeline` HTTP 302 to login
+  in milliseconds; Railway HTTP logs showed repeated authenticated `/timeline` HTTP 200 responses,
+  and the new deployment had no filtered Reimbursement/database-lock error. No live database
+  query/write, Railway variable/storage change, manual restart, or manual redeploy was performed.
+
 - Committed the approved zero-write correction as `97237ac` using only `app.py`,
   `tests/test_reimbursement_migration_lock.py`, `plans.md`, and `changes.md`. The commit removes
   the runtime status backfill while preserving additive schema checks and lock release. Protected

@@ -1,6 +1,7 @@
 # Zero-Write Publication Correction for the Reimbursement Lock Fix
 
-**Status:** Executed — correction commit `97237ac`; publication authorized to `origin/main`.
+**Status:** Executed and published — correction commit `97237ac`; first recovered deployment
+head `86bbbf1`.
 **Approved:** 2026-09-28 — the owner approved removing the current-schema status backfill and
 repeated that the database must never be pushed.
 **Detailed:** 2026-09-28.
@@ -33,6 +34,15 @@ repeated that the database must never be pushed.
   handoff, `scheduler.db`, `.claude/`, `output/`, and `tmp/` changes remained untouched and
   unstaged. No production database, Railway state, or browser/Codex UI was accessed or changed.
   A records-only closeout commit carries this correction reference before the authorized push.
+- The authorized commit range was inspected before publication and contained only `app.py`,
+  `tests/test_reimbursement_migration_lock.py`, `static/changelog/releases.json`, `plans.md`, and
+  `changes.md`; `scheduler.db` and every protected/dirty path were absent. `origin/main` advanced
+  from `8c60fba` to `86bbbf1`. Railway deployment `1ae750a2-acd3-4424-a2f5-8914ba75a735` deployed
+  that exact commit successfully. Read-only verification returned HTTP 200 for `/login` and the
+  expected immediate HTTP 302 from signed-out `/timeline` to `/login`; live HTTP logs also showed
+  authenticated `/timeline` HTTP 200 responses. The deployment log filter returned no
+  Reimbursement/database-lock error. No production database query/write, Railway variable/storage
+  operation, manual restart, or manual redeploy was performed.
 
 ### Context and decision
 
