@@ -3473,6 +3473,7 @@ _engineer_initials_correction_ready = False
 # Cached so the per-request hook can return the last scan instead of re-reading every
 # engineer row. Reset the _ready flag above to force a fresh pass.
 _engineer_initials_duplicates = {}
+_reimbursement_approval_columns_ready = False
 _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
@@ -54109,6 +54110,10 @@ def ensure_reimbursement_approval_columns():
     to existing tables, so this additive migration keeps Submit and Rodito's
     approval queue from failing with a silent no-such-column error.
     """
+    global _reimbursement_approval_columns_ready
+    if _reimbursement_approval_columns_ready:
+        return
+
     try:
         table_check = db.session.execute(
             db.text("SELECT name FROM sqlite_master WHERE type='table' AND name='reimbursement_header'")
@@ -54153,8 +54158,8 @@ def ensure_reimbursement_approval_columns():
         if 'status' in existing_columns or any(col == 'status' and col not in existing_columns for col, _ in migrations):
             db.session.execute(db.text("UPDATE reimbursement_header SET status = 'Draft' WHERE status IS NULL OR TRIM(status) = ''"))
 
-        if changed:
-            db.session.commit()
+        db.session.commit()
+        _reimbursement_approval_columns_ready = True
     except Exception as exc:
         db.session.rollback()
         print(f"[Reimbursement] Approval column migration skipped: {exc}", flush=True)

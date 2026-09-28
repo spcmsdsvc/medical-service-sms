@@ -2,6 +2,54 @@
 
 codex changes - 2026-09-28
 
+- Began the separately authorized implementation of `Restore Live Access by Releasing the
+  Reimbursement Migration Lock`. The bounded work is limited to the approval-column migration
+  transaction/one-time success guard, a disposable-SQLite regression, the server availability
+  release item, and required plan/change records. `scheduler.db`, all handoffs, `.claude/`,
+  `output/`, `tmp/`, Railway variables/storage/deployment state, production data, browser/Codex UI,
+  commit, push, restart, and deployment remain explicitly untouched.
+
+- Ran the required fail-first `venv\\Scripts\\python.exe -m unittest
+  tests.test_reimbursement_migration_lock` against unchanged `app.py`: 3 tests ran with 2
+  failures and 1 error. The current-schema control reproduced `sqlite3.OperationalError: database
+  is locked` on the immediate independent write; legacy and injected-failure controls confirmed
+  the missing one-time readiness guard. The regression used only a unique disposable SQLite file;
+  no protected or live database was opened.
+
+- Implemented the bounded Reimbursement migration repair in `app.py`: added a module-level
+  success guard, committed the existing status backfill on every successful helper run even when
+  no column is added, and left rollback/retry behavior intact on exceptions. Added
+  `tests/test_reimbursement_migration_lock.py` with current-schema lock release, legacy additive
+  backfill/valid-status preservation, second-call no-op, and failure-retry controls on unique
+  disposable SQLite databases.
+
+- Added the manifest entry `2026-09-28-reimbursement-migration-availability` to
+  `static/changelog/releases.json` for all users. This is a server-side availability repair, so
+  the active service-worker marker stayed at v210 and no cache bump was required.
+
+- Final verification passed: focused migration 3/3; related Reimbursement readiness/range/worksheet
+  batch 24/24; changelog workflow/coverage 43/43 with 1 intentional skip; and disposable Flask
+  `/login` smoke HTTP 200 after `db.create_all()`. Python AST, release JSON, and `git diff --check`
+  checks passed. `venv\\Scripts\\python.exe -m unittest discover -s tests` ran once against a
+  unique disposable DB with 1,370 tests: 1,343 passes, 22 existing
+  Purchase Order rate-limit fixture failures (HTTP 429), and 5 skips; no focused Reimbursement
+  failure remained. An initial empty-database smoke attempt hit the existing fresh-DB `shift`
+  migration precondition and was rerun with normal isolated initialization.
+
+- Marked the approved plan `Executed — uncommitted`. No production/live database, protected
+  `scheduler.db`, Railway variable/storage/deployment state, restart, browser/Codex UI session,
+  commit, push, deployment, or protected owner artifact was touched.
+
+- Recorded the owner-approved `Restore Live Access by Releasing the Reimbursement Migration Lock`
+  emergency plan at the top of `plans.md` with status `Approved — awaiting go-ahead`. Read-only
+  Railway diagnosis found `/timeline`, `/login`, and `/` hanging until HTTP 499 while the app
+  repeatedly reported SQLite `database is locked` during the Reimbursement status backfill. The
+  plan limits the repair to completing that migration transaction, adding a one-time success guard
+  and disposable-database regression, and updating required release/control records. Under the
+  repository's two-step gate, no application source, test, database, service-worker marker,
+  production/Railway state, commit, push, deployment, browser/Codex UI session, or protected owner
+  artifact was changed in this approval-recording step.
+
 - Committed only the approved `Preserve Product Identity for Future TSR History` implementation,
   focused regression coverage, v210 cache assertion, release metadata, and required plan/change
   records as `cd1206b` on `main`. The owner separately authorized pushing this bounded package to

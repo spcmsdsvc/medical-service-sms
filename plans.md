@@ -1,3 +1,197 @@
+# Restore Live Access by Releasing the Reimbursement Migration Lock
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-28 — the owner replied “approved” after the live-outage diagnosis and
+repair plan were presented.
+**Detailed:** 2026-09-28.
+
+### Execution log
+
+- Fail-first regression run before any `app.py` edit: `venv\\Scripts\\python.exe -m unittest
+  tests.test_reimbursement_migration_lock` ran 3 tests with 2 failures and 1 error. The current
+  schema path failed its immediate independent write with `sqlite3.OperationalError: database is
+  locked`; the legacy and injected-failure controls failed because the readiness guard did not yet
+  exist. This is the expected baseline for the unchanged helper, using only the test's unique
+  disposable SQLite database.
+
+- Final focused regression `venv\\Scripts\\python.exe -m unittest
+  tests.test_reimbursement_migration_lock` ran 3 tests with 3 passed. The related Reimbursement
+  readiness/range/worksheet batch ran 24 tests with 24 passed. The changelog workflow/coverage
+  batch ran 44 tests with 43 passed and 1 intentional skip.
+
+- A Flask test-client `/login` smoke check on a unique disposable database returned HTTP 200 after
+  the test initialized its empty schema with `db.create_all()`. An initial empty-database attempt
+  exposed the existing startup precondition for a fresh database (the unrelated `shift` table
+  migration ran before base-table creation); it did not touch a protected database and was rerun
+  successfully with the normal isolated test initialization.
+
+- `venv\\Scripts\\python.exe -m unittest discover -s tests` used one unique disposable SQLite
+  database and ran 1,370 tests: 1,343
+  passed, 22 existing Purchase Order setup failures returned HTTP 429 from the suite's rate-limit
+  fixture, and 5 were skipped. No Reimbursement migration test failed; the focused fixture's three
+  shared-discovery skips protect the suite's shared database and its focused run passed separately.
+  Python AST parsing, release JSON validation, and `git diff --check` passed. The active service
+  worker marker remained v210; no cache bump was required because no client asset changed.
+
+- The implementation remains uncommitted and unpublished. No production database, `scheduler.db`,
+  Railway variable/storage/deployment state, restart, browser/Codex UI session, or protected owner
+  artifact was modified.
+
+### Context
+
+The production URL `https://web-production-e2085.up.railway.app/timeline` is unreachable even
+though Railway reports the `web` service as Online. Read-only production checks on 2026-09-28
+showed `/timeline`, `/login`, and `/` requests ending as HTTP 499 after waits of roughly 19 to
+300 seconds. Deployment logs repeatedly report `sqlite3.OperationalError: database is locked`
+for the Reimbursement status backfill.
+
+`ensure_runtime_sqlite_migrations_before_request()` in `app.py` invokes
+`ensure_reimbursement_approval_columns()` before every non-static request and then invokes the
+separate Reimbursement receipt schema ensure. On an already-current database, the approval helper
+still executes an `UPDATE reimbursement_header ...`, but commits only when it added a column.
+Because `changed` is false on the live schema, that write transaction remains open and the next
+database/schema operation blocks behind it. This explains why even the signed-out `/login` route
+hangs and why a restart alone would recreate the outage on the next request.
+
+The intended outcome is to make the existing additive migration finish its transaction on every
+successful first run, skip repeated work after success, preserve all Reimbursement data and schema,
+and restore normal request handling after the corrected code is separately published.
+
+### Decisions taken
+
+1. Fix the transaction lifecycle inside `ensure_reimbursement_approval_columns()` rather than
+   changing Railway, replacing the database, disabling workflows, or weakening migration checks.
+2. Add a module-level success guard following the repository's existing one-time schema-helper
+   pattern. Set it only after the helper has completed and committed successfully; an exception
+   must roll back and leave the helper retryable.
+3. Commit the existing conditional status backfill even when no column was added. Do not alter,
+   delete, rebuild, vacuum, copy, restore, or manually edit production data.
+4. Add a focused disposable-SQLite regression that proves the helper releases its write
+   transaction and that an immediately following independent schema/write operation can proceed.
+   Preserve a positive migration control for an older table with missing columns and blank status.
+5. Treat this as a server-side availability repair. Add a user-facing release item before any
+   publication, but do not bump the service-worker cache because no cached template, stylesheet,
+   script, or offline behavior changes.
+
+### Investigation
+
+- `app.py:61555-61594` defines `ensure_runtime_sqlite_migrations_before_request()`. It runs on
+  every non-static request and calls the approval helper immediately before the receipt helper.
+- `app.py:54104-54160` defines `ensure_reimbursement_approval_columns()`. Line 54154 performs the
+  conditional status `UPDATE`; lines 54156-54157 commit only when `changed` is true.
+- `app.py:3467-3478` contains the established module-level one-time readiness flags for adjacent
+  SQLite compatibility helpers; no equivalent approval-column flag currently exists.
+- Railway deployment `bd67c3e8-d0c9-494e-a88d-efa971b4d55a` started Gunicorn successfully with
+  one `gthread` worker and eight threads, but production HTTP logs showed 499 responses for all
+  tested entry routes. The application log repeatedly showed the approval backfill failing on a
+  locked database.
+- Local `main` and `origin/main` both resolve to `8c60fba` at diagnosis time. Protected owner work
+  already exists in `scheduler.db`, `Handoffs/08-11-26 handoff.md`, `.claude/`, `output/`, `tmp/`,
+  and an untracked handoff document; every one remains outside this package.
+
+### Numbered execution steps
+
+1. **Preflight and records — `AGENTS.md`, `plans.md`, `changes.md`, Git status, and affected
+   source/tests.** Re-read the complete approved plan and current control records, confirm the
+   production evidence and source locations still match, identify protected dirty paths, mark this
+   plan `In progress`, and append a factual implementation-start entry to `changes.md`. Stop before
+   source edits if another change has already corrected or materially altered the lock path. Done
+   when the bounded allowlist and protected exclusions are explicit.
+2. **Add fail-first lock regression — new focused test under `tests/` (prefer
+   `tests/test_reimbursement_migration_lock.py`).** Use only a unique disposable SQLite database.
+   Exercise the existing-schema path where no column is added, then attempt the next independent
+   write/schema operation with a short timeout; require it to complete. Add controls proving an
+   older table receives the missing approval columns/status backfill and a second successful call
+   performs no repeated migration work. Run the focused test against unchanged source and record
+   the expected lock/transaction failure before editing `app.py`. Done when the test fails for the
+   diagnosed uncommitted-transaction reason and never opens protected `scheduler.db`.
+3. **Repair the one-time migration — `app.py`, readiness globals and
+   `ensure_reimbursement_approval_columns()`.** Add the approval-columns readiness flag; return
+   early only after a prior successful completion. Preserve the current table check, additive
+   column list, conditional status backfill, logging, and rollback behavior. Commit the session
+   after the backfill regardless of whether a column was newly added, then mark the helper ready.
+   On any exception, roll back and keep the flag false so a later request can retry. Done when an
+   already-current schema cannot retain a write lock and legacy additive migration behavior is
+   unchanged.
+4. **Distribution and control records — `static/changelog/releases.json`, `changes.md`, and
+   `plans.md`.** Add one concise 2026-09-28 availability-fix item to the existing Manila-date
+   release for appropriate audiences. Record that no service-worker bump is required because no
+   cached client asset changed. Append exact fail-first/final results and any deviation to the
+   current change-log section; keep this plan current. Done when release and control records match
+   the implemented server behavior without claiming publication or recovery prematurely.
+5. **Focused and related verification.** Run the new regression, the existing Reimbursement
+   readiness/range/receipt or nearest migration coverage, and a Flask test-client smoke check for
+   `/login` using a unique disposable database. Run Python compilation/AST checks, release JSON
+   validation, and `git diff --check`. Do not use browser/Codex UI automation. Done when the
+   request path completes, a following independent write succeeds, and exact pass/fail/skip counts
+   are recorded.
+6. **Proportional full verification and self-review.** Run full unittest discovery once against a
+   unique disposable SQLite database, compare any failures with the recorded baseline, inspect the
+   final diff for scope creep and protected-file disturbance, and confirm the service-worker marker
+   is unchanged. Mark the plan `Executed — uncommitted` only after the bounded implementation is
+   complete. Done when no in-scope failure remains and all limitations are stated truthfully.
+7. **Post-implementation gates and production recovery.** Stop and report the local result. Do not
+   commit or push until the owner separately says `commit and push`; that instruction authorizes
+   staging only the intended application/test/release/plan/change files and publishing them to
+   `origin/main` under the repository rule. After an authorized push, verify
+   `git ls-remote origin refs/heads/main`, Railway deployment metadata/logs, and read-only HTTP
+   responses for `/login` and `/timeline`. Do not change Railway variables, manually redeploy,
+   restart the service, or modify production data/storage without separate explicit authorization.
+   Formal post-implementation review remains gated on `Review the implementation.`
+
+### Verification and acceptance
+
+- The focused test fails against the unchanged helper because the existing-schema path leaves a
+  transaction/write lock, then passes after the fix.
+- A current Reimbursement schema completes the helper, releases the transaction, and permits the
+  immediately following independent write/schema ensure.
+- A legacy schema still receives only the established additive columns and blank/null statuses are
+  backfilled to `Draft`; valid existing rows and all other tables remain unchanged.
+- A successful second call is a no-op, while a failed first attempt rolls back and remains
+  retryable.
+- `/login` completes through the full before-request chain with a disposable database. No browser
+  automation, protected database, or production data is used during local verification.
+- After separately authorized publication, the live entry routes return an HTTP response instead
+  of hanging/499, and Railway logs no longer repeat the Reimbursement lock failure.
+
+### Deliberately excluded
+
+- No production database repair, replacement, copy, restore, migration command, manual SQL,
+  volume operation, backup deletion, or Railway variable change.
+- No service restart, manual redeploy, commit, push, merge, rebase, or deployment in the
+  implementation authorization cycle; publication remains a separate owner instruction.
+- No redesign of the broader runtime-migration framework, conversion to another database,
+  multi-process architecture change, new dependency, or unrelated cleanup.
+- No Reimbursement workflow/UI/permission/status change beyond completing the existing blank-status
+  backfill transaction; no service-worker/cache bump and no browser/Codex UI automation.
+- No modification, staging, cleanup, or deletion of `scheduler.db`, handoffs, `.claude/`,
+  `output/`, `tmp/`, or unrelated owner work.
+
+### Risks and safety nets
+
+- **Data integrity:** an incorrect fix could change Reimbursement statuses. Keep the existing
+  `WHERE status IS NULL OR TRIM(status) = ''` predicate and test valid statuses remain unchanged.
+- **Retry safety:** marking readiness before commit could suppress recovery after an error. Set the
+  flag only after successful commit and test the failure/retry path.
+- **Concurrency:** repeated per-request writes can recreate lock pressure. The success guard removes
+  repeated work within the single configured Gunicorn process; the unconditional successful commit
+  bounds the first-run transaction.
+- **False recovery claim:** local tests do not restore production. Report recovery only after a
+  separately authorized push and read-only live HTTP/log verification.
+
+### After implementation and commit checklist
+
+- Self-review only the authorized diff and test evidence; do not begin formal review without the
+  owner's separate instruction.
+- If commit/push is later authorized, stage only `app.py`, the focused regression test,
+  `static/changelog/releases.json`, `plans.md`, and `changes.md` (adjust the allowlist only for a
+  documented in-scope necessity). Confirm protected paths remain unstaged.
+- Commit and publication are distinct from this approved plan and from implementation go-ahead.
+  Verify remote `main` and Railway's accepted deployment after publication; do not perform a manual
+  redeploy or production operation.
+
+##
+
 # Preserve Product Identity for Future TSR History
 
 **Status:** Executed — implementation commit `cd1206b`; publication authorized to `origin/main`.
