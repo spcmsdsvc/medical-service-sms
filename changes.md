@@ -40,6 +40,13 @@ codex changes - 2026-09-28
   push, deployment, Railway/production operation, browser/Codex UI automation, or protected-path
   cleanup was performed; `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/` remain owner-
   controlled dirty/protected paths.
+- Published only the authorized two-line Calibration Certificate client-name package. The nine
+  intended source, test, release, plan, and change-record files were committed as `cf67fa4` and
+  pushed to `origin/main`; `git ls-remote` confirmed full SHA
+  `cf67fa4237ee00963174874a82a8a087e508320f`. Railway accepted deployment
+  `260a5803-16f0-40a4-9b66-38f25308ab09`, which remained `BUILDING` at the bounded verification
+  check while the previous successful production deployment continued running. No manual
+  redeploy, Railway setting, database/storage operation, or protected owner file was changed.
 
 - Started the separately authorized Restore Manila Engineer Inventory Add/Edit Access package.
   The bounded change extends the existing active Engineer-profile inventory Add/Edit path from

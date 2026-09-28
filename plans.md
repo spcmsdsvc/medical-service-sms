@@ -1,11 +1,13 @@
 # Two-Line Client Names on Calibration Certificates
 
-**Status:** Executed — implementation and verification completed locally on 2026-09-28; no commit, push, deployment, or Railway action was authorized.
+**Status:** Executed — implementation commit `cf67fa4` published to `origin/main`; Railway
+deployment `260a5803-16f0-40a4-9b66-38f25308ab09` accepted and building.
 **Approved:** 2026-09-28 — the owner explicitly authorized implementation with
 “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-28 — this owner instruction authorizes the bounded
 implementation package; commit, push, deployment, Railway, production, and browser/Codex UI
 actions remain excluded.
+**Publication authorized:** 2026-09-28 — the owner instructed “commit and push this change only”.
 **Detailed:** 2026-09-28.
 
 ### Summary
@@ -110,6 +112,13 @@ wrapping is used by the server certificate builder and offline/browser sample ge
   timeline, offline-contract, and purchase-order rate-limit expectations); the focused certificate
   tests remained green. No source, template asset, production, Railway, or browser automation
   action was performed beyond this bounded package.
+- The owner subsequently authorized publication of this package only. The nine intended source,
+  test, release, plan, and change-record files were committed as `cf67fa4` and pushed to
+  `origin/main`; the remote branch resolved to full SHA
+  `cf67fa4237ee00963174874a82a8a087e508320f`. Railway accepted deployment
+  `260a5803-16f0-40a4-9b66-38f25308ab09`, which remained `BUILDING` at the bounded verification
+  check while the prior successful production deployment stayed running. No manual redeploy,
+  Railway setting, database, storage, or protected owner file was changed.
 
 ##
 
