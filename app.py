@@ -7902,7 +7902,7 @@ def can_administer_vieworks_inventory(user=None):
     )
 
 
-def can_manage_regional_inventory_as_engineer(user=None):
+def can_manage_supported_inventory_as_engineer(user=None):
     """Return whether an active non-approver Engineer may add or edit inventory."""
     target = user or current_user
     if not (
@@ -7916,7 +7916,7 @@ def can_manage_regional_inventory_as_engineer(user=None):
     profile = getattr(target, 'engineer_profile', None)
     return bool(
         profile and
-        resolve_engineer_profile_branch_code(profile) in {'BC02', 'BC03'}
+        resolve_engineer_profile_branch_code(profile) in {'BC01', 'BC02', 'BC03'}
     )
 
 
@@ -7924,7 +7924,7 @@ def can_edit_products_inventory(user=None):
     """Return whether an account may add or edit regular Product rows."""
     return bool(
         can_administer_products_inventory(user) or
-        can_manage_regional_inventory_as_engineer(user)
+        can_manage_supported_inventory_as_engineer(user)
     )
 
 
@@ -7932,7 +7932,7 @@ def can_edit_genoray_inventory(user=None):
     """Return whether an account may add or edit Genoray rows."""
     return bool(
         can_administer_genoray_inventory(user) or
-        can_manage_regional_inventory_as_engineer(user)
+        can_manage_supported_inventory_as_engineer(user)
     )
 
 
@@ -7940,7 +7940,7 @@ def can_edit_vieworks_inventory(user=None):
     """Return whether an account may add or edit Vieworks rows."""
     return bool(
         can_administer_vieworks_inventory(user) or
-        can_manage_regional_inventory_as_engineer(user)
+        can_manage_supported_inventory_as_engineer(user)
     )
 
 

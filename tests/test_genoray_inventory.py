@@ -195,22 +195,33 @@ class GenorayInventoryTests(unittest.TestCase):
             self.assertTrue(app_module.can_access_inventory_pm('genoray', users[0]))
             self.assertFalse(app_module.can_access_inventory_pm('genoray', users[3]))
 
-    def test_regional_engineer_can_add_and_edit_but_cannot_delete_import_or_pm(self):
-        client = self.client_for(self.engineer_id)
-        self.assertEqual(client.get("/genoray").status_code, 200)
-        self.assertEqual(client.get("/api/genoray/items").status_code, 200)
-        self.assertEqual(client.get("/api/genoray/summary").status_code, 200)
-        created = self.add_item(client, "ENGINEER-GENORAY")
-        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
-        self.assertEqual(client.put("/api/genoray/items/ENGINEER-GENORAY", json={"name": "Updated"}).status_code, 200)
-        self.assertEqual(client.get("/genoray/export").status_code, 200)
-        self.assertEqual(client.delete("/api/genoray/items/ENGINEER-GENORAY").status_code, 403)
-        self.assertEqual(self.import_csv(client, "Serial Number,Description\nENGINEER-IMPORT,Nope\n").status_code, 403)
-        self.assertEqual(client.get("/genoray/pm").status_code, 403)
-
-    def test_manila_missing_unsupported_and_inactive_engineers_cannot_edit(self):
-        users = [
+    def test_supported_engineers_can_add_and_edit_but_cannot_delete_import_or_pm(self):
+        user_ids = [
+            self.engineer_id,
+            self.create_linked_engineer_user("Davao"),
             self.create_linked_engineer_user("Manila"),
+            self.create_linked_engineer_user("Main"),
+            self.create_linked_engineer_user("BC01"),
+        ]
+        for index, user_id in enumerate(user_ids):
+            client = self.client_for(user_id)
+            with self.subTest(user_id=user_id):
+                page = client.get("/genoray")
+                self.assertEqual(page.status_code, 200)
+                self.assertIn("const productCanEdit = true;", page.get_data(as_text=True))
+                self.assertEqual(client.get("/api/genoray/items").status_code, 200)
+                self.assertEqual(client.get("/api/genoray/summary").status_code, 200)
+                serial = f"ENGINEER-GENORAY-{index}"
+                created = self.add_item(client, serial)
+                self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+                self.assertEqual(client.put(f"/api/genoray/items/{serial}", json={"name": "Updated"}).status_code, 200)
+                self.assertEqual(client.get("/genoray/export").status_code, 200)
+                self.assertEqual(client.delete(f"/api/genoray/items/{serial}").status_code, 403)
+                self.assertEqual(self.import_csv(client, "Serial Number,Description\nENGINEER-IMPORT,Nope\n").status_code, 403)
+                self.assertEqual(client.get("/genoray/pm").status_code, 403)
+
+    def test_missing_unsupported_and_inactive_engineers_cannot_edit(self):
+        users = [
             self.create_linked_engineer_user(None),
             self.create_linked_engineer_user("Unsupported Branch"),
             self.create_linked_engineer_user("Davao", active=False),

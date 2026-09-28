@@ -100,7 +100,13 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             admin_page = self.client_for(admin_id).get("/products_page")
             self.assertEqual(admin_page.status_code, 200)
             self.assertIn("const productCanEdit = true;", admin_page.get_data(as_text=True))
-        users = [self.engineer_user_id, self.create_linked_engineer_user("Davao")]
+        users = [
+            self.engineer_user_id,
+            self.create_linked_engineer_user("Davao"),
+            self.create_linked_engineer_user("Manila"),
+            self.create_linked_engineer_user("Main"),
+            self.create_linked_engineer_user("BC01"),
+        ]
         for index, user_id in enumerate(users):
             client = self.client_for(user_id)
             with self.subTest(user_id=user_id):
@@ -166,9 +172,8 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
                 self.assertEqual(client.get("/genoray/pm").status_code, 403)
                 self.assertEqual(client.get("/vieworks/pm").status_code, 403)
 
-    def test_manila_unresolved_unsupported_and_inactive_engineers_remain_read_only(self):
+    def test_missing_unsupported_and_inactive_engineers_remain_read_only(self):
         users = [
-            self.create_linked_engineer_user("Manila"),
             self.create_linked_engineer_user(None),
             self.create_linked_engineer_user("Unsupported Branch"),
             self.create_linked_engineer_user("Cebu", active=False),
@@ -188,7 +193,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             with self.subTest(user_id=user_id):
                 with self.app.app_context():
                     user = app_module.db.session.get(app_module.User, user_id)
-                    self.assertFalse(app_module.can_manage_regional_inventory_as_engineer(user))
+                    self.assertFalse(app_module.can_manage_supported_inventory_as_engineer(user))
                 for path in ("/products_page", "/genoray", "/vieworks"):
                     page = client.get(path)
                     self.assertEqual(page.status_code, 302 if inactive else 200)

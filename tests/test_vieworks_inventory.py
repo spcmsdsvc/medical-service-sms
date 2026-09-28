@@ -199,7 +199,7 @@ class VieworksInventoryTests(unittest.TestCase):
             self.__class__.user_ids.append(user.id)
             return user.id
 
-    def test_permission_helper_and_regional_engineer_admin_boundary(self):
+    def test_permission_helper_and_supported_engineer_admin_boundary(self):
         with self.app.app_context():
             users = [
                 app_module.db.session.get(app_module.User, user_id)
@@ -229,9 +229,33 @@ class VieworksInventoryTests(unittest.TestCase):
         self.assertEqual(self.import_csv(engineer_client, "Serial Number,Description\nENGINEER-IMPORT,Nope\n").status_code, 403)
         self.assertEqual(engineer_client.get("/vieworks/pm").status_code, 403)
 
-    def test_manila_missing_unsupported_and_inactive_engineers_cannot_edit(self):
-        users = [
+    def test_supported_engineers_can_add_and_edit_but_cannot_delete_import_or_pm(self):
+        user_ids = [
+            self.engineer_id,
+            self.create_linked_engineer_user("Davao"),
             self.create_linked_engineer_user("Manila"),
+            self.create_linked_engineer_user("Main"),
+            self.create_linked_engineer_user("BC01"),
+        ]
+        for index, user_id in enumerate(user_ids):
+            client = self.client_for(user_id)
+            with self.subTest(user_id=user_id):
+                page = client.get("/vieworks")
+                self.assertEqual(page.status_code, 200)
+                self.assertIn("const productCanEdit = true;", page.get_data(as_text=True))
+                self.assertEqual(client.get("/api/vieworks/items").status_code, 200)
+                self.assertEqual(client.get("/api/vieworks/summary").status_code, 200)
+                serial = f"ENGINEER-VIEWORKS-{index}"
+                created = self.add_item(client, serial)
+                self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+                self.assertEqual(client.put(f"/api/vieworks/items/{serial}", json={"name": "Updated"}).status_code, 200)
+                self.assertEqual(client.get("/vieworks/export").status_code, 200)
+                self.assertEqual(client.delete(f"/api/vieworks/items/{serial}").status_code, 403)
+                self.assertEqual(self.import_csv(client, "Serial Number,Description\nENGINEER-IMPORT,Nope\n").status_code, 403)
+                self.assertEqual(client.get("/vieworks/pm").status_code, 403)
+
+    def test_missing_unsupported_and_inactive_engineers_cannot_edit(self):
+        users = [
             self.create_linked_engineer_user(None),
             self.create_linked_engineer_user("Unsupported Branch"),
             self.create_linked_engineer_user("Davao", active=False),

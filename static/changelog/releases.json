@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-28-manila-engineer-inventory-edit",
+      "release_date": "2026-09-28",
+      "title": "Manila Engineer Inventory Editing",
+      "summary": "Manila engineers can add and edit equipment inventory again.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-28-manila-engineer-inventory-edit-users",
+          "category": "Inventory",
+          "description": "Active Manila/Main engineers can add and edit Products, Genoray, and Vieworks records; delete, import, and PM administration remain administrator-only.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-28-tsr-edit-signature-preservation",
       "release_date": "2026-09-28",
       "title": "Preserved TSR Details During Editing",
