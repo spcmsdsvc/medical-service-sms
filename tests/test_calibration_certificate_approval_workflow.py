@@ -862,6 +862,66 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Text6|Installed At"):
             app_module.build_calibration_certificate_pdf({**complete_payload(), "calibration_report": {**complete_payload()["calibration_report"], "facility": {"name": impossible["Text6"]}}})
 
+    def test_long_installed_at_names_use_two_lines_and_preserve_certificate_geometry(self):
+        import fitz
+
+        names = (
+            "Philippine General Hospital Radiology and Imaging Center Medical Services Department",
+            "X" * 100,
+        )
+        for installed_at in names:
+            with self.subTest(installed_at=installed_at):
+                expected_lines = app_module.calibration_certificate_installed_at_lines(installed_at)
+                self.assertEqual(len(expected_lines), 2)
+                self.assertEqual((' '.join(expected_lines) if ' ' in installed_at else ''.join(expected_lines)), installed_at)
+
+                payload = complete_payload()
+                payload['calibration_report']['facility']['name'] = installed_at
+                data, mapped, _ = app_module.build_calibration_certificate_pdf(payload)
+                signed_data, _, _ = app_module.build_calibration_certificate_pdf(
+                    payload,
+                    approver='Jane Approver',
+                    signature_data=SIGNATURE,
+                    approval_title='Calibration Manager',
+                )
+                no_signature_data, _, _ = app_module.build_calibration_certificate_no_signature_pdf(payload)
+                for variant_data in (data, signed_data, no_signature_data):
+                    variant_reader = PdfReader(io.BytesIO(variant_data))
+                    self.assertEqual(len(variant_reader.pages), 1)
+                    self.assertIsNone(variant_reader.get_fields())
+                    self.assertIsNone(variant_reader.pages[0].get('/Annots'))
+                document = fitz.open(stream=data, filetype='pdf')
+                self.assertEqual(document.page_count, 1)
+                self.assertEqual(document[0].rect.width, 612)
+                self.assertEqual(document[0].rect.height, 792)
+
+                spans = [
+                    span
+                    for block in document[0].get_text('dict')['blocks']
+                    if block['type'] == 0
+                    for line in block['lines']
+                    for span in line['spans']
+                ]
+                installed_spans = [span for span in spans if span['text'].strip() in expected_lines]
+                self.assertEqual([span['text'].strip() for span in installed_spans], expected_lines)
+                self.assertEqual({round(float(span['size']), 1) for span in installed_spans}, {6.5})
+                self.assertTrue(all(span['font'].lower().startswith('helvetica') for span in installed_spans))
+                self.assertTrue(all(span['bbox'][1] >= 792 - 511.148 - 0.5 for span in installed_spans))
+                self.assertTrue(all(span['bbox'][3] <= 792 - 495.087 + 0.5 for span in installed_spans))
+                other_spans = [
+                    span for name, value in mapped.items() if name != 'Text6'
+                    for span in spans if value and span['text'].strip() == value
+                ]
+                self.assertTrue(other_spans)
+                self.assertTrue(all(round(float(span['size']), 1) == 11.0 for span in other_spans))
+                self.assertIn(mapped['Textfield-0'], document[0].get_text())
+                self.assertIsNone(PdfReader(io.BytesIO(data)).get_fields())
+                self.assertIsNone(PdfReader(io.BytesIO(data)).pages[0].get('/Annots'))
+
+        impossible = 'X' * 5000
+        with self.assertRaisesRegex(ValueError, 'Installed At'):
+            app_module.calibration_certificate_installed_at_lines(impossible)
+
     def test_signed_pdf_uses_acting_approver_identity(self):
         data, _, _ = app_module.build_calibration_certificate_pdf(
             complete_payload(),

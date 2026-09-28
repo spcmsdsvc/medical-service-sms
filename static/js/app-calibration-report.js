@@ -843,14 +843,59 @@
   var CERTIFICATE_DATA_MIN_SIZE = 8.5;
   var CERTIFICATE_DATA_PADDING = 6;
   var CERTIFICATE_FIELD_LABELS = { Textfield:'Certificate No.', Text1:'Equipment Name', Text2:'Equipment Model', Text3:'System ID', Text4:'Calibration Date', Text5:'Next Calibration Date', Text6:'Installed At', 'Textfield-0':'TSR No.' };
-  function certificateDataFontSize(values, font){
-    var required = Object.keys(CERTIFICATE_FIELD_WIDTHS).map(function(name){ return { name:name, value:String(values?.[name] || ''), width:CERTIFICATE_FIELD_WIDTHS[name] - CERTIFICATE_DATA_PADDING }; });
+  var CERTIFICATE_TEXT6_WIDGET_RECT = { left:210.692, bottom:495.087, right:546.7, top:511.148 };
+  var CERTIFICATE_TEXT6_TWO_LINE_SIZE = 6.5;
+  var CERTIFICATE_TEXT6_TWO_LINE_LINE_HEIGHT = 6.5;
+  var CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET = 2.5;
+  function certificateDataFontSize(values, font, excludeNames){
+    var excluded = new Set(Array.isArray(excludeNames) ? excludeNames : []);
+    var required = Object.keys(CERTIFICATE_FIELD_WIDTHS).filter(function(name){ return !excluded.has(name); }).map(function(name){ return { name:name, value:String(values?.[name] || ''), width:CERTIFICATE_FIELD_WIDTHS[name] - CERTIFICATE_DATA_PADDING }; });
     var size = CERTIFICATE_DATA_MAX_SIZE;
     required.forEach(function(item){ if(!item.value) return; var measured = font.widthOfTextAtSize(item.value, CERTIFICATE_DATA_MAX_SIZE); if(measured > item.width) size = Math.min(size, CERTIFICATE_DATA_MAX_SIZE * item.width / measured); });
     size = Math.min(CERTIFICATE_DATA_MAX_SIZE, Math.floor(size * 10) / 10);
     while(size >= CERTIFICATE_DATA_MIN_SIZE){ if(required.every(function(item){ return !item.value || font.widthOfTextAtSize(item.value, size) <= item.width + 0.01; })) return Number(size.toFixed(1)); size = Number((size - 0.1).toFixed(1)); }
     var offenders = required.filter(function(item){ return item.value && font.widthOfTextAtSize(item.value, CERTIFICATE_DATA_MIN_SIZE) > item.width + 0.01; }).map(function(item){ return CERTIFICATE_FIELD_LABELS[item.name]; });
     throw certificateError('calibration_certificate_value_fit', 'Calibration Certificate value cannot fit at ' + CERTIFICATE_DATA_MIN_SIZE + ' points: ' + (offenders.join(', ') || 'a mapped field') + '.');
+  }
+  function certificateInstalledAtLines(value, font){
+    var text = String(value === undefined || value === null ? '' : value).trim();
+    if(!text) return [];
+    var maxWidth = CERTIFICATE_FIELD_WIDTHS.Text6 - CERTIFICATE_DATA_PADDING;
+    if(font.widthOfTextAtSize(text, CERTIFICATE_DATA_MIN_SIZE) <= maxWidth + 0.01) return [text];
+    var boundaryPattern = /\s+/g;
+    var boundary;
+    var boundaryLines = null;
+    while((boundary = boundaryPattern.exec(text))){
+      var first = text.slice(0, boundary.index).replace(/\s+$/, '');
+      var second = text.slice(boundary.index + boundary[0].length).replace(/^\s+/, '');
+      if(!first || !second) continue;
+      if(font.widthOfTextAtSize(first, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01 && font.widthOfTextAtSize(second, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01) boundaryLines = [first, second];
+    }
+    if(boundaryLines) return boundaryLines;
+    for(var cut = text.length - 1; cut > 0; cut -= 1){
+      var splitFirst = text.slice(0, cut).replace(/\s+$/, '');
+      var splitSecond = text.slice(cut).replace(/^\s+/, '');
+      if(!splitFirst || !splitSecond) continue;
+      if(font.widthOfTextAtSize(splitFirst, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01 && font.widthOfTextAtSize(splitSecond, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01) return [splitFirst, splitSecond];
+    }
+    throw certificateError('calibration_certificate_value_fit', 'Calibration Certificate value cannot fit in two lines at ' + CERTIFICATE_TEXT6_TWO_LINE_SIZE + ' points: Installed At.');
+  }
+  function certificateInstalledAtTwoLineLayout(value, font){
+    var text = String(value === undefined || value === null ? '' : value).trim();
+    if(!text) return null;
+    var maxWidth = CERTIFICATE_FIELD_WIDTHS.Text6 - CERTIFICATE_DATA_PADDING;
+    if(font.widthOfTextAtSize(text, CERTIFICATE_DATA_MIN_SIZE) <= maxWidth + 0.01) return null;
+    var lines = certificateInstalledAtLines(text, font);
+    if(lines.length !== 2) throw certificateError('calibration_certificate_value_fit', 'Calibration Certificate value cannot fit in two lines at ' + CERTIFICATE_TEXT6_TWO_LINE_SIZE + ' points: Installed At.');
+    return {
+      lines:lines,
+      size:CERTIFICATE_TEXT6_TWO_LINE_SIZE,
+      x:CERTIFICATE_TEXT6_WIDGET_RECT.left + CERTIFICATE_DATA_PADDING / 2,
+      baselines:[
+        CERTIFICATE_TEXT6_WIDGET_RECT.bottom + CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET + CERTIFICATE_TEXT6_TWO_LINE_LINE_HEIGHT,
+        CERTIFICATE_TEXT6_WIDGET_RECT.bottom + CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET
+      ]
+    };
   }
   function renderCertificateControls(){
     var input = q('#calibration-report-bsid');
@@ -1513,16 +1558,21 @@
     if(missing.length) throw certificateError('calibration_certificate_template_fields', 'The Calibration Certificate template is missing expected field(s): ' + missing.join(', ') + '.');
     var fieldData = certificateFieldValues(payload, report);
     var helvetica = await document.embedFont(window.PDFLib.StandardFonts.Helvetica);
-    var dataSize = certificateDataFontSize(fieldData.values, helvetica);
-    Object.keys(fieldData.values).forEach(function(name){ var field = form.getTextField(name); if(field.acroField && typeof field.acroField.setDefaultAppearance === 'function') field.acroField.setDefaultAppearance('/Helv 10 Tf 0 g'); field.setFontSize(dataSize); field.setText(fieldData.values[name]); });
+    var installedAtLayout = certificateInstalledAtTwoLineLayout(fieldData.values.Text6, helvetica);
+    var dataSize = certificateDataFontSize(fieldData.values, helvetica, installedAtLayout ? ['Text6'] : []);
+    Object.keys(fieldData.values).forEach(function(name){ var field = form.getTextField(name); if(field.acroField && typeof field.acroField.setDefaultAppearance === 'function') field.acroField.setDefaultAppearance('/Helv 10 Tf 0 g'); field.setFontSize(dataSize); field.setText(name === 'Text6' && installedAtLayout ? '' : fieldData.values[name]); });
     // Blank the legacy identity widget. Its fixed page text is absent from
     // the runtime-v2 asset, so no opaque rectangle is needed.
     form.getTextField('Rodito Aretano Jr').setText('');
     form.updateFieldAppearances(helvetica);
     form.flatten();
+    if(installedAtLayout){
+      var page = document.getPages()[0];
+      installedAtLayout.lines.forEach(function(line, index){ page.drawText(line, { x:installedAtLayout.x, y:installedAtLayout.baselines[index], size:installedAtLayout.size, font:helvetica }); });
+    }
     if(document.catalog && typeof document.catalog.delete === 'function' && window.PDFLib.PDFName?.of) document.catalog.delete(window.PDFLib.PDFName.of('AcroForm'));
     var bytes = await document.save();
-    return { blob:new Blob([bytes], { type:'application/pdf' }), filename:certificateFilename(fieldData.values.Textfield), missing:fieldData.missing, dataSize:dataSize };
+    return { blob:new Blob([bytes], { type:'application/pdf' }), filename:certificateFilename(fieldData.values.Textfield), missing:fieldData.missing, dataSize:dataSize, installedAtLines:installedAtLayout ? installedAtLayout.lines : null };
   }
   async function generateCertificateSample(){
     try{

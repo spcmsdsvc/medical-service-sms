@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-28-calibration-certificate-long-client-name",
+      "release_date": "2026-09-28",
+      "title": "Long Client Names on Calibration Certificates",
+      "summary": "Calibration Certificates now keep long client and facility names readable inside the existing Installed At field.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-28-calibration-certificate-long-client-name-engineers",
+          "category": "Calibration Certificates",
+          "description": "Long Installed At names render as two complete Helvetica lines on server-generated and offline sample certificates without changing the official certificate artwork or page geometry.",
+          "audiences": [
+            "engineers",
+            "approvers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-28-manila-engineer-inventory-edit",
       "release_date": "2026-09-28",
       "title": "Manila Engineer Inventory Editing",

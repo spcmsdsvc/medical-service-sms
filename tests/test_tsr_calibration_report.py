@@ -936,10 +936,10 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('?v=11', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
         self.assertIn('app-calibration-report.js', self.template_source)
-        self.assertIn('?v=36', self.template_source)
+        self.assertIn('?v=37', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
-        self.assertIn("app-calibration-report.js?v=36", self.app_source)
-        assert_cache_version_at_least(self, 200, self.app_source)
+        self.assertIn("app-calibration-report.js?v=37", self.app_source)
+        assert_cache_version_at_least(self, 208, self.app_source)
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
         paste_release = next(item for item in releases if item['release_key'] == '2026-09-26-calibration-report-paste-criteria')
         self.assertTrue(any(item['item_key'] == '2026-09-26-calibration-report-paste-criteria-users' for item in paste_release['items']))
@@ -1009,8 +1009,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=11", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=36", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=36'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=37", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=37'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1051,8 +1051,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=36", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=36'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=37", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=37'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
@@ -1090,8 +1090,13 @@ class CalibrationReportContractTests(unittest.TestCase):
             result = subprocess.run([str(NODE), '-e', NODE_CERTIFICATE_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False, env=env)
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
             payload = json.loads(result.stdout.strip().splitlines()[-1])
-            for key in ('legacyDefaults', 'mobileDartCatalog', 'mobileDartMatches', 'mobileDartCertificateMappings', 'normalizedBsid', 'mapping', 'embeddedDataAsset', 'embeddedTemplateExact', 'noRawPdfFetch', 'bsidPreservesFinal', 'completeSample', 'exactlyOneSampleBlobDownload', 'noRawTemplateDownload', 'incompleteSample', 'missingRuntimeNoDownload', 'missingEncodedNoDownload', 'corruptEncodedNoDownload', 'missingFieldsNoDownload'):
+            for key in ('legacyDefaults', 'mobileDartCatalog', 'mobileDartMatches', 'mobileDartCertificateMappings', 'normalizedBsid', 'mapping', 'embeddedDataAsset', 'embeddedTemplateExact', 'noRawPdfFetch', 'bsidPreservesFinal', 'completeSample', 'exactlyOneSampleBlobDownload', 'noRawTemplateDownload', 'incompleteSample', 'missingRuntimeNoDownload', 'missingEncodedNoDownload', 'corruptEncodedNoDownload', 'missingFieldsNoDownload', 'longNameTwoLines', 'worstNameTwoLines', 'longNamePreserved', 'impossibleNameRejected', 'longNameLines', 'worstNameLines'):
                 self.assertTrue(payload[key], key)
+            self.assertEqual(payload['longNameLines'], [
+                'Philippine General Hospital Radiology and Imaging Center Medical Services',
+                'Department',
+            ])
+            self.assertEqual(payload['worstNameLines'], ['X' * 76, 'X' * 24])
             self.assertEqual(payload['composed'], '2026-0820-B-42')
             self.assertTrue(proof.is_file())
             reader = PdfReader(str(proof))
@@ -1895,8 +1900,23 @@ function report(overrides = {}) {
   const missingFieldsNoDownload = downloads.length === 2 && statuses.at(-1)?.tone === 'danger';
   context.PDFLib.PDFDocument.load = originalLoad;
 
+  const longName = 'Philippine General Hospital Radiology and Imaging Center Medical Services Department';
+  const worstName = 'X'.repeat(100);
+  context.calibrationReport.apply(Object.assign({}, complete, { facility:Object.assign({}, complete.facility, { name:longName }) }));
+  currentTSR = { 'tsr-number':'TSR-77', calibration_report:context.calibrationReport.collect() };
+  const longBuilt = await context.calibrationReport.generateCertificateSample();
+  context.calibrationReport.apply(Object.assign({}, complete, { facility:Object.assign({}, complete.facility, { name:worstName }) }));
+  currentTSR = { 'tsr-number':'TSR-77', calibration_report:context.calibrationReport.collect() };
+  const worstBuilt = await context.calibrationReport.generateCertificateSample();
+  context.calibrationReport.apply(Object.assign({}, complete, { facility:Object.assign({}, complete.facility, { name:'X'.repeat(5000) }) }));
+  currentTSR = { 'tsr-number':'TSR-77', calibration_report:context.calibrationReport.collect() };
+  const impossibleBuilt = await context.calibrationReport.generateCertificateSample();
+  const longNameTwoLines = longBuilt?.installedAtLines?.length === 2;
+  const worstNameTwoLines = worstBuilt?.installedAtLines?.length === 2;
+  const longNamePreserved = longBuilt?.installedAtLines?.join(' ') === longName && worstBuilt?.installedAtLines?.join('') === worstName;
+  const impossibleNameRejected = !impossibleBuilt && statuses.at(-1)?.tone === 'danger' && statuses.at(-1)?.message.includes('Installed At');
   const noRawTemplateDownload = downloads.every(name => !String(name).includes('calibration-certificate-template') && /^SAMPLE_Calibration_Certificate(?:_.*)?\.pdf$/.test(name));
-  console.log(JSON.stringify({ legacyDefaults, mobileDartCatalog, mobileDartMatches, mobileDartCertificateMappings, normalizedBsid:normalized.certificate.bsid === 'B-42', composed, mapping, embeddedDataAsset, embeddedTemplateExact, noRawPdfFetch, bsidPreservesFinal, completeSample, exactlyOneSampleBlobDownload, noRawTemplateDownload, incompleteSample, missingRuntimeNoDownload, missingEncodedNoDownload, corruptEncodedNoDownload, missingFieldsNoDownload }));
+  console.log(JSON.stringify({ legacyDefaults, mobileDartCatalog, mobileDartMatches, mobileDartCertificateMappings, normalizedBsid:normalized.certificate.bsid === 'B-42', composed, mapping, embeddedDataAsset, embeddedTemplateExact, noRawPdfFetch, bsidPreservesFinal, completeSample, exactlyOneSampleBlobDownload, noRawTemplateDownload, incompleteSample, missingRuntimeNoDownload, missingEncodedNoDownload, corruptEncodedNoDownload, missingFieldsNoDownload, longNameTwoLines, worstNameTwoLines, longNamePreserved, impossibleNameRejected, longNameLines:longBuilt?.installedAtLines || null, worstNameLines:worstBuilt?.installedAtLines || null }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

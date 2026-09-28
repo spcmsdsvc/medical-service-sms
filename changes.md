@@ -2,6 +2,45 @@
 
 codex changes - 2026-09-28
 
+- Started the separately authorized Two-Line Client Names on Calibration Certificates package.
+  The bounded implementation preserves both canonical/runtime certificate PDFs and embedded
+  template data while adding deterministic two-line Installed At rendering for long client names
+  in server and offline/sample certificate paths. It includes focused fail-first/final tests and
+  v37/v208 cache-release records; commits, pushes, deployment, Railway/production/database
+  operations, browser/Codex UI automation, schema/API/approval/signature changes, and protected
+  owner artifacts remain excluded.
+- Implemented the server and offline/sample parity paths in `app.py` and
+  `static/js/app-calibration-report.js`. Installed At (`Text6`) now stays on the existing shared
+  11-to-8.5-point one-line path when it fits; only a sole 8.5-point overflow is rendered as two
+  complete regular-Helvetica 6.5-point lines inside the existing widget rectangle, with
+  whitespace-first wrapping, necessary unbroken-token splitting, and an Installed At-labelled
+  pre-approval fit error when two lines cannot contain the value. Signed, unsigned, no-signature,
+  pending/revised, and offline sample generation share the behavior without schema/API,
+  approval, mapping, signature, or production changes.
+- Updated `templates/offline_tsr.html` and the worker precache in `app.py` from Calibration Report
+  script query v36 to v37, advanced the marker to
+  `medical-service-pwa-offline-navigation-v208-calibration-certificate-name`, updated focused
+  cache assertions, and added the engineer-facing release entry
+  `2026-09-28-calibration-certificate-long-client-name` to
+  `static/changelog/releases.json`.
+- Fail-first coverage ran before source implementation: the new server case failed with the
+  missing wrapping helper and the Node sample contract failed its new long-name assertions. The
+  final focused long-name/fallback/Node batch passed 3/3; the certificate PDF suite passed 12/12;
+  the relevant certificate workflow batch passed 14/14; the full Calibration Report contract
+  suite passed 24/24; and machine-history/offline-status checks passed 21/21.
+- Reopened and rendered representative server PDFs (unsigned, signed, no-signature, and 100-
+  character names) with Poppler. All were one 612x792 Letter page with no AcroForm, widgets, or
+  annotations; Installed At remained complete and above TSR. Canonical/runtime certificate PDF
+  SHA-256 values remained `C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC`
+  and `20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8`. AST, JSON, Jinja,
+  Node syntax, and `git diff --check` passed.
+- Full discovery used a unique disposable test database and ran 1,355 tests: 27 failures, 1
+  error, and 2 skips, all outside this package's focused certificate behavior (existing stale
+  cache/archive/timeline/offline-contract and purchase-order rate-limit expectations). No commit,
+  push, deployment, Railway/production operation, browser/Codex UI automation, or protected-path
+  cleanup was performed; `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/` remain owner-
+  controlled dirty/protected paths.
+
 - Started the separately authorized Restore Manila Engineer Inventory Add/Edit Access package.
   The bounded change extends the existing active Engineer-profile inventory Add/Edit path from
   Cebu/Davao (BC02/BC03) to Manila/Main (BC01), updates only the three focused inventory test

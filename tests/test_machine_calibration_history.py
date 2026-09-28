@@ -275,7 +275,7 @@ class MachineCalibrationHistoryTests(unittest.TestCase):
             calibration_card.index('id="calibration-report-create-btn"'),
             calibration_card.index('id="tsr-calibration-history-panel"'),
         )
-        self.assertIn("medical-service-pwa-offline-navigation-v207-tsr-edit-signature-preservation", app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v208-calibration-certificate-name", app_source)
         release = next(item for item in releases["releases"] if item["release_key"] == "2026-09-27-machine-calibration-history")
         self.assertIn("report/certificate", release["summary"])
 

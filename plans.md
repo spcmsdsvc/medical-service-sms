@@ -1,3 +1,118 @@
+# Two-Line Client Names on Calibration Certificates
+
+**Status:** Executed — implementation and verification completed locally on 2026-09-28; no commit, push, deployment, or Railway action was authorized.
+**Approved:** 2026-09-28 — the owner explicitly authorized implementation with
+“PLEASE IMPLEMENT THIS PLAN”.
+**Execution authorized:** 2026-09-28 — this owner instruction authorizes the bounded
+implementation package; commit, push, deployment, Railway, production, and browser/Codex UI
+actions remain excluded.
+**Detailed:** 2026-09-28.
+
+### Summary
+
+Keep the canonical and runtime Calibration Certificate PDF assets byte-for-byte unchanged while
+allowing a long client/facility name in the existing Installed At (`Text6`) field to render as
+exactly two regular-Helvetica lines at a fixed 6.5-point size. Ordinary and moderate names keep
+the existing shared 11-to-8.5-point one-line behavior. The complete stored name remains visible,
+the two-line overlay stays inside the existing field above the TSR row, and the same deterministic
+wrapping is used by the server certificate builder and offline/browser sample generator.
+
+### Implementation decisions and boundaries
+
+- Add a shared-width, two-line Installed At layout only when `Text6` is the sole value that cannot
+  fit at 8.5 points. Compute the other seven fields’ shared one-line size without `Text6`, blank
+  the flattened `Text6` appearance, and draw its complete value at 6.5 points inside the existing
+  widget rectangle. If any other field cannot fit at 8.5 points, retain the existing all-fields
+  fallback/error behavior. Reject only when the Installed At value cannot fit in two lines.
+- Wrap first at whitespace boundaries and split an overlong unbroken token only when necessary.
+  Use the same width, line-break, size, and coordinates in Python and JavaScript so server PDFs and
+  offline samples have matching lines. Do not abbreviate, ellipsize, or silently truncate names up
+  to the existing 100-character Client limit.
+- Keep signed, unsigned, no-signature, pending/revised, and sample certificate paths covered by
+  the shared builder behavior. Preserve PDF checksums, field mappings, signatures, approvals,
+  one-page 612x792 Letter geometry, and all existing certificate assets/data.
+- Update only the relevant focused tests and delivery records, the Calibration Report script query
+  from v36 to v37, and the service-worker marker to v208 with a certificate-name label. No schema,
+  endpoint, approval, mapping, signature, deployment, Railway, production, or browser automation
+  work is included.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read the applicable `AGENTS.md`, this approved plan, full
+   `changes.md`, current Git state, certificate builder/client source, focused tests, cache
+   assertions, and release shape. Record this plan as `In progress` and append the factual start
+   to the current dated `changes.md` section. Preserve protected owner files and PDF assets.
+2. **Fail-first tests.** Extend the focused server certificate tests and Node/browser-sample
+   harness with a representative long hospital name and a 100-character name. Assert complete
+   text, exactly two lines, no TSR overlap, one-page output, matching server/client line breaks,
+   ordinary 11-point and moderate one-line behavior, impossible-fit rejection, and unchanged
+   asset checksums. Run these new tests against the unchanged implementation and record the
+   expected failures before source changes.
+3. **Server layout.** In `app.py`, add deterministic Installed At wrapping/fit helpers and use
+   them in `calibration_certificate_data_font_size()`/`build_calibration_certificate_pdf()`.
+   Keep the existing shared sizing for normal values; use the two-line overlay only for a sole
+   `Text6` overflow, clear its form appearance before the overlay is painted, and validate the
+   resulting flattened PDF remains a single Letter page with no fields or annotations.
+4. **Offline/sample parity.** In `static/js/app-calibration-report.js`, mirror the Python
+   wrapping, token split, fit checks, fixed 6.5-point size, widget-derived coordinates, and
+   actionable Installed At errors in the pdf-lib sample path. Update `templates/offline_tsr.html`
+   and the worker precache in `app.py` from v36 to v37, advance the cache marker to v208, and
+   update exact focused cache/version assertions. Do not change embedded template data or either
+   certificate PDF.
+5. **Delivery records and verification.** Add one engineer-facing `releases.json` entry; run
+   focused server/Node tests, offline/cache/changelog checks, AST/Jinja/JSON/diff checks, one full
+   discovery run using a disposable test database, and Poppler rendering/visual inspection of
+   representative output. Update this plan to `Executed` with truthful results and append the
+   exact results to `changes.md`. Leave all changes uncommitted, unpushed, undeployed, and
+   protected owner artifacts untouched.
+
+### Verification and acceptance
+
+- Short names still render as the existing 11-point shared one-line output; moderate names keep
+  the existing uniform one-line fallback.
+- Long names render in exactly two readable Helvetica lines, preserve every name character, remain
+  within the Text6 rectangle, and do not touch the TSR value/rule or create a second page.
+- Server signed, unsigned, and no-signature certificates and the offline sample use matching line
+  breaks; impossible-fit values fail before approval state or attachment mutation with an
+  Installed At-labelled error.
+- Canonical/runtime PDF bytes, template-data bytes/checksums, field mappings, signatures, and
+  one-page/no-form/no-annotation invariants remain unchanged.
+
+### Deliberately excluded
+
+- Regenerating or modifying `calibration-certificate-template.pdf`,
+  `calibration-certificate-runtime-v2.pdf`, or the embedded template-data asset.
+- Browser/Codex UI automation, database/schema/migration work, approval/API/signature workflow
+  changes, Railway/production state, commit, push, deployment, and protected owner artifacts.
+
+### Execution outcome — 2026-09-28
+
+- Added deterministic server and offline/sample Installed At wrapping. Names that fit retain the
+  existing shared 11-to-8.5-point one-line sizing; a sole Text6 overflow now blanks the form
+  appearance and paints two complete regular-Helvetica 6.5-point lines within the existing
+  widget rectangle. Whitespace boundaries are preferred and overlong tokens are split only when
+  necessary; impossible values retain the pre-approval ValueError with the Installed At label.
+- Updated the offline script query to v37, the service-worker certificate-name marker to v208,
+  its precache entry and assertions, and added one engineer-facing release entry. Canonical and
+  runtime certificate PDFs plus embedded template data remained byte-for-byte unchanged.
+- Fail-first coverage was run before source implementation: the new server test errored because
+  `calibration_certificate_installed_at_lines` was absent, and the Node sample contract failed
+  the new long-name assertions. After implementation, the focused long-name/fallback/Node batch
+  passed 3/3, the certificate PDF suite passed 12/12, the relevant certificate workflow batch
+  passed 14/14, the full Calibration Report contract suite passed 24/24, and machine-history plus
+  offline-status checks passed 21/21.
+- Server signed, unsigned, and no-signature samples for the representative hospital and 100-
+  character name were reopened and rendered with Poppler. Each was one 612x792 Letter page with
+  no AcroForm, widgets, or annotations; the Installed At lines were complete and visually clear
+  above the TSR row. AST, JSON, Jinja, Node syntax, and `git diff --check` validations passed.
+- Full discovery used a unique disposable test database and ran 1,355 tests: 27 failures, 1
+  error, and 2 skips. The failures/errors were outside this package (existing stale cache/archive,
+  timeline, offline-contract, and purchase-order rate-limit expectations); the focused certificate
+  tests remained green. No source, template asset, production, Railway, or browser automation
+  action was performed beyond this bounded package.
+
+##
+
 # Restore Manila Engineer Inventory Add/Edit Access
 
 **Status:** Executed — implementation commit `90e9e3d`; publication authorized to `origin/main`.
