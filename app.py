@@ -54146,17 +54146,10 @@ def ensure_reimbursement_approval_columns():
             ('payment_remarks', "ALTER TABLE reimbursement_header ADD COLUMN payment_remarks TEXT"),
             ('excluded_rows_json', "ALTER TABLE reimbursement_header ADD COLUMN excluded_rows_json TEXT"),
         ]
-        changed = False
         for column_name, sql in migrations:
             if column_name not in existing_columns:
                 db.session.execute(db.text(sql))
-                changed = True
                 print(f"[DB MIGRATION] Added reimbursement_header.{column_name}", flush=True)
-
-        # Backfill lightweight timestamps/status for older rows so ordering and
-        # manager filtering remain stable after migration.
-        if 'status' in existing_columns or any(col == 'status' and col not in existing_columns for col, _ in migrations):
-            db.session.execute(db.text("UPDATE reimbursement_header SET status = 'Draft' WHERE status IS NULL OR TRIM(status) = ''"))
 
         db.session.commit()
         _reimbursement_approval_columns_ready = True

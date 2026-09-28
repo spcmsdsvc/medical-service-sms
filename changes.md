@@ -2,6 +2,47 @@
 
 codex changes - 2026-09-28
 
+- Began the separately authorized zero-write correction for the Reimbursement migration lock
+  repair. The bounded allowlist is `app.py`,
+  `tests/test_reimbursement_migration_lock.py`, `plans.md`, and `changes.md`; the correction
+  removes the runtime status backfill while preserving additive schema DDL, transaction safety,
+  retry behavior, and the one-time success guard. Preflight confirmed `origin/main` remains
+  `8c60fba`; `scheduler.db`, all handoffs, `.claude/`, `output/`, `tmp/`, Railway state,
+  production data, browser/Codex UI, commit, and push remain untouched.
+
+- Ran the required fail-first zero-write regression against unchanged commit `014870a` after
+  amending the disposable fixture: 3 tests ran with 2 expected failures and 1 pass. The current
+  schema blank status and legacy blank status were both changed to `Draft` by the retained
+  runtime backfill, proving the test will catch the prohibited row update. The run used only a
+  unique disposable SQLite database; no protected or live database was opened.
+
+- Implemented the zero-write correction in `app.py` by removing the runtime Reimbursement status
+  `UPDATE` and its unused change flag. The approval-column helper still performs additive missing
+  column DDL, commits successful work, sets its one-time readiness guard only after commit, and
+  rolls back/retries after errors. Existing current-schema and legacy status values are no longer
+  normalized by this helper.
+
+- Strengthened `tests/test_reimbursement_migration_lock.py` to assert blank status preservation
+  and an unchanged SQLite `total_changes()` counter while retaining the independent-write,
+  additive-column, second-call no-op, and rollback/retry controls. Final checks passed: focused
+  migration `3/3`, related Reimbursement readiness/range/worksheet `21/21`, disposable Flask
+  `/login` HTTP `200`, Python AST, release JSON, and `git diff --check`. The existing release
+  item and service-worker v210 marker were left unchanged.
+
+- Marked the correction plan `Executed — uncommitted`. Only `app.py`,
+  `tests/test_reimbursement_migration_lock.py`, `plans.md`, and `changes.md` contain this cycle's
+  edits; `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, production data, Railway
+  state, commit, and push remain untouched.
+
+- Recorded the owner-approved `Zero-Write Publication Correction for the Reimbursement Lock Fix`
+  plan at the top of `plans.md` with status `Approved — awaiting go-ahead`. The earlier push was
+  blocked before any remote/deployment change because the local implementation could commit the
+  existing blank/null Reimbursement status backfill. The correction plan removes that row update,
+  retains the lock-release/readiness behavior, requires exact-path staging and commit inspection,
+  and explicitly prohibits staging or pushing `scheduler.db` or any dirty/protected artifact. No
+  application source, test, database, remote branch, Railway state, or deployment was changed in
+  this approval-recording step.
+
 - Committed only the approved Reimbursement migration lock repair, disposable-database regression,
   release metadata, and required plan/change records as `014870a` on `main`. The owner separately
   authorized pushing this bounded package to `origin/main`; protected `scheduler.db`, the handoff,

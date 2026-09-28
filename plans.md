@@ -1,3 +1,107 @@
+# Zero-Write Publication Correction for the Reimbursement Lock Fix
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-28 — the owner approved removing the current-schema status backfill and
+repeated that the database must never be pushed.
+**Detailed:** 2026-09-28.
+
+### Correction execution log
+
+- 2026-09-28: Owner separately authorized execution with “okay approved” and “continue your
+  work partner,” with the explicit constraint that the production database must never be pushed
+  or changed. Preflight confirmed local `main` is at `2d3d29e`, `origin/main` remains
+  `8c60fba`, and the protected dirty database, handoff, `.claude/`, `output/`, and `tmp/` paths
+  remain outside this correction. No database file or production state was opened or modified.
+- Fail-first zero-write regression against the unchanged `014870a` implementation: focused
+  `venv\\Scripts\\python.exe -m unittest tests.test_reimbursement_migration_lock` ran 3 tests
+  with 2 expected failures and 1 pass. The current-schema blank status changed to `Draft`, and
+  the legacy blank status was backfilled to `Draft`; the independent-write and retry controls
+  otherwise remained operational. The run used only its unique disposable SQLite database.
+- Implemented the minimal correction in `app.py`: removed the runtime `UPDATE` and its unused
+  change flag from `ensure_reimbursement_approval_columns()`. The additive missing-column DDL,
+  unconditional successful commit, readiness guard, and rollback/retry path remain unchanged.
+- Updated `tests/test_reimbursement_migration_lock.py` so current-schema and legacy controls
+  assert blank statuses and SQLite `total_changes()` remain unchanged while the independent
+  write still succeeds. No release or service-worker marker change was needed; the existing
+  `releases.json` entry and v210 marker remain unchanged.
+- Final correction verification: focused migration `3/3` passed; related Reimbursement
+  readiness/range/worksheet checks `21/21` passed; isolated Flask `/login` smoke returned HTTP
+  `200`; Python AST, release JSON, and `git diff --check` passed. Broad full discovery was not
+  repeated because the prior 1,370-test result remains applicable and the bounded correction
+  exposed no new material risk.
+- The correction remains uncommitted. Only the approved four paths have correction edits;
+  pre-existing handoff, `scheduler.db`, `.claude/`, `output/`, and `tmp/` changes remain
+  untouched and unstaged. No production database, Railway state, browser/Codex UI, commit, or
+  push was accessed or changed.
+
+### Context and decision
+
+The previously implemented lock fix is committed locally as `014870a` with records commit
+`2d3d29e`, but it was not pushed. Publication was blocked before any remote change because the
+helper still executed the existing conditional `UPDATE reimbursement_header SET status = 'Draft'`
+and committed it. Although narrowly scoped to blank/null statuses, that could change production
+rows and conflicts with the owner's stricter requirement that this recovery deployment must not
+intentionally change the live database.
+
+The correction will remove that current-schema data backfill from the runtime helper. On the live
+already-current schema, the helper will perform schema reads only, mark the process-local success
+guard, and return without starting or committing a data-writing transaction. Existing statuses
+will remain byte-for-byte unchanged. No production database, local `scheduler.db`, Railway
+storage, or Railway variable will be opened, staged, copied, modified, deleted, or pushed.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Re-read applicable instructions, this correction plan, current Git
+   status, the two local commits, and the affected helper/test. Mark this plan `In progress` and
+   log the authorized correction in `changes.md`. Confirm `origin/main` remains `8c60fba` and the
+   dirty `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/` remain excluded.
+2. **Fail-first zero-write regression.** Amend only
+   `tests/test_reimbursement_migration_lock.py` so the current-schema case records SQLite's data
+   change counter/status values and proves the helper performs no row update while still allowing
+   the following independent write. Adjust the legacy control to verify additive columns without
+   requiring mutation of pre-existing blank statuses. Run it against commit `014870a` and record
+   the expected failure caused by the retained status backfill.
+3. **Minimal helper correction.** In `app.py`, remove the runtime status `UPDATE` from
+   `ensure_reimbursement_approval_columns()`. Preserve the one-time success guard, additive
+   missing-column DDL, successful transaction completion, rollback/retry behavior, and every
+   unrelated migration. Do not add a replacement write or broader migration framework.
+4. **Records and verification.** Update `plans.md` and `changes.md`; the existing release item
+   remains accurate and no service-worker bump is required. Run the focused regression, related
+   Reimbursement tests, disposable `/login` smoke check, Python AST, release JSON, and
+   `git diff --check`. Do not repeat broad full discovery unless the focused correction exposes a
+   new material risk; the prior 1,370-test run remains applicable.
+5. **Commit and publication safety.** Commit only `app.py`,
+   `tests/test_reimbursement_migration_lock.py`, `plans.md`, and `changes.md` as a correction on
+   local `main`. Before push, require `git diff --cached --name-only`/commit inspection to show no
+   `scheduler.db`, handoff, `.claude/`, output, tmp, or unrelated path. Never use `git add -A`,
+   `git add .`, or a database glob. Push `main` only after the correction commit is verified.
+6. **Read-only post-push verification.** Verify `git ls-remote origin refs/heads/main`, Railway
+   deployment metadata/logs, and HTTP responses for `/login` and `/timeline`. Do not manually
+   redeploy/restart, change Railway settings, access production storage, or query/modify the live
+   database. Report recovery only from read-only HTTP/log evidence.
+
+### Acceptance and exclusions
+
+- The focused test proves the helper leaves existing Reimbursement row values unchanged and no
+  longer holds a write lock on the current schema.
+- The additive column path remains available for an actually older schema, but no existing row
+  status is backfilled or normalized by this helper.
+- `scheduler.db` and every other dirty/protected path are absent from all new commits and the push.
+- No database file, database contents, production storage, Railway setting, manual restart, manual
+  redeploy, browser/Codex UI automation, unrelated cleanup, or architecture redesign is allowed.
+- Formal post-implementation review remains separately gated by `Review the implementation.`
+
+### Risks and safety nets
+
+- Removing the backfill means legacy blank statuses remain blank; this is the deliberate tradeoff
+  required to guarantee no production-row mutation in this recovery deployment.
+- Accidentally staging the tracked dirty database is the highest publication risk. Exact-path
+  staging plus staged/commit file inspection is mandatory before push.
+- Read-only HTTP/log verification cannot prove arbitrary database contents; it is intentionally
+  limited to availability and absence of the prior lock error.
+
+##
+
 # Restore Live Access by Releasing the Reimbursement Migration Lock
 
 **Status:** Executed — implementation commit `014870a`; publication authorized to `origin/main`.

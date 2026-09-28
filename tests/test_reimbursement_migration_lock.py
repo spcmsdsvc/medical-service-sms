@@ -125,18 +125,29 @@ class ReimbursementMigrationLockTests(unittest.TestCase):
             connection.close()
 
     def test_current_schema_releases_write_transaction(self):
-        self._create_header_table(current_schema=True, statuses=((1, "Submitted"),))
+        self._create_header_table(current_schema=True, statuses=((1, ""),))
 
         with self.app.app_context():
-            app_module.ensure_reimbursement_approval_columns()
-            self._independent_write()
-            status = app_module.db.session.execute(
+            before_status = app_module.db.session.execute(
                 app_module.db.text("SELECT status FROM reimbursement_header WHERE id = 1")
             ).scalar_one()
-            self.assertEqual(status, "Submitted")
+            before_changes = app_module.db.session.execute(
+                app_module.db.text("SELECT total_changes()")
+            ).scalar_one()
+            app_module.ensure_reimbursement_approval_columns()
+            after_status = app_module.db.session.execute(
+                app_module.db.text("SELECT status FROM reimbursement_header WHERE id = 1")
+            ).scalar_one()
+            after_changes = app_module.db.session.execute(
+                app_module.db.text("SELECT total_changes()")
+            ).scalar_one()
+            self.assertEqual(before_status, "")
+            self.assertEqual(after_status, before_status)
+            self.assertEqual(after_changes, before_changes)
+            self._independent_write()
             self.assertTrue(getattr(app_module, "_reimbursement_approval_columns_ready", False))
 
-    def test_legacy_schema_backfills_and_second_call_is_noop(self):
+    def test_legacy_schema_adds_missing_columns_and_preserves_status(self):
         self._create_header_table(
             current_schema=False,
             statuses=((1, ""), (2, "Submitted")),
@@ -156,7 +167,7 @@ class ReimbursementMigrationLockTests(unittest.TestCase):
                     app_module.db.text("SELECT id, status FROM reimbursement_header ORDER BY id")
                 ).fetchall()
             )
-            self.assertEqual(statuses, {1: "Draft", 2: "Submitted"})
+            self.assertEqual(statuses, {1: "", 2: "Submitted"})
             self.assertTrue(getattr(app_module, "_reimbursement_approval_columns_ready", False))
 
             app_module.ensure_reimbursement_approval_columns()
