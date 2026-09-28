@@ -6,6 +6,10 @@ codex changes - 2026-09-28
   to `origin/main`. Publication is limited to its Calendar template, focused tests, service-worker
   marker, release metadata, plan, and change record; protected `scheduler.db`, handoffs,
   `.claude/`, `output/`, `tmp/`, and unrelated owner work remain excluded.
+- Committed the authorized Calendar TSR-First Action Buttons implementation, focused tests,
+  service-worker marker, release metadata, plan, and change record as `bbf6716` and pushed it to
+  `origin/main`. Protected and unrelated dirty paths remained unstaged; the final records-only
+  closeout commit and Railway verification follow this entry.
 - Started the separately authorized Calendar TSR-First Action Buttons package. The bounded
   implementation will update Calendar TSR/Calibration Report action predicates and renderers,
   focused regression contracts, the service-worker marker, release metadata, and these control

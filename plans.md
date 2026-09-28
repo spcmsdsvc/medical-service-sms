@@ -1,6 +1,6 @@
 # Calendar TSR-First Action Buttons
 
-**Status:** Executed — local implementation complete; uncommitted.
+**Status:** Executed — implementation commit `bbf6716` published to `origin/main`.
 **Approved:** 2026-09-28 — the owner approved the plan with “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-28 — the owner authorized implementation with “go ahead. do not over engineer and over check”.
 **Publication authorized:** 2026-09-28 — the owner instructed “now commit and push these changes only”.
@@ -126,6 +126,12 @@ returned 200 and seven inline scripts parsed successfully; Jinja compile, Python
 JSON, and `git diff --check` passed. The repository-wide suite was skipped per the owner’s
 “do not over engineer and over check” direction. Browser/Codex-app automation, commit, push,
 deployment, Railway, database, and protected-artifact operations were not performed.
+
+Publication was separately authorized on 2026-09-28. The seven intended application, template,
+focused-test, release, plan, and change-record files were committed as
+`bbf6716c2f9e964e1b2f4ce84e733c755a2f8fc9` and pushed to `origin/main`; protected and unrelated
+dirty files remained unstaged. The records-only closeout commit and final remote/Railway
+verification are recorded in `changes.md`.
 
 
 # Offline Calibration History in Calendar and Create TSR
