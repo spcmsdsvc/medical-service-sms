@@ -731,6 +731,7 @@ function getStandaloneTSRDraftFallbackKey(){
   return `${STANDALONE_TSR_KEY}:account:${accountId}`;
 }
 const OFFLINE_TSR_STORAGE_HEALTH_ADMIN = String("{{ 'true' if offline_storage_health_admin else 'false' }}").toLowerCase() === 'true';
+const CAN_CREATE_TSR_WITHOUT_EQUIPMENT = String("{{ 'true' if offline_tsr_can_create_tsr_without_equipment else 'false' }}").toLowerCase() === 'true';
 const SIGNATURE_STAMP_SCALE = Number({{ signature_stamp_scale|tojson }}) || 1.5;
 // The signature footer's height is reserved by renderTSRPrintSheetCanvases before the
 // Actions Taken box is sized, so the two must be derived from one place. Everything in
@@ -1426,7 +1427,7 @@ function getScheduleProductLabel(schedule){
   const name = schedule?.product_name || '';
   const source = String(schedule?.equipment_source || '').toLowerCase();
   const sourceLabel = source === 'genoray' ? 'Genoray' : (source === 'vieworks' ? 'Vieworks' : '');
-  const label = serial && name ? `${serial} — ${name}` : (serial || name || 'No equipment');
+  const label = serial && name ? `${serial} — ${name}` : (serial || name || 'No equipment assigned');
   return sourceLabel ? `${label} · ${sourceLabel}` : label;
 }
 function isScheduleEquipmentAssignable(schedule){
@@ -1438,6 +1439,19 @@ function isScheduleEquipmentAssignable(schedule){
     String(schedule?.product_name || '').trim()
   );
   return sourceAllowed && hasAssignment && schedule?.equipment_available !== false;
+}
+function isFrancisTSRWithoutEquipmentSchedule(schedule){
+  const source = String(schedule?.equipment_source || '').trim().toLowerCase();
+  return Boolean(
+    CAN_CREATE_TSR_WITHOUT_EQUIPMENT &&
+    String(schedule?.client_id || '').trim() &&
+    !String(schedule?.product_id || '').trim() &&
+    ['product', 'genoray', 'vieworks'].includes(source) &&
+    schedule?.tsr_without_equipment_allowed !== false
+  );
+}
+function isScheduleTSREligible(schedule){
+  return isScheduleEquipmentAssignable(schedule) || isFrancisTSRWithoutEquipmentSchedule(schedule);
 }
 function normalizeTSRScheduleCoverageRows(scheduleOrData){
   const source = Array.isArray(scheduleOrData?.schedule_coverage)
@@ -1612,7 +1626,7 @@ function getScheduleOptionLabel(schedule){
   const label = `${date} ${time} — ${client} — ${product}`.trim();
   // Say plainly that this schedule has not reached the server yet, so the engineer knows the
   // TSR will wait behind it rather than sending straight away.
-  const unavailable = isScheduleEquipmentAssignable(schedule) ? '' : ' — Equipment required';
+  const unavailable = isScheduleTSREligible(schedule) ? '' : ' — Equipment required';
   return schedule.pending_schedule_token ? `Waiting to sync — ${label}${unavailable}` : `${label}${unavailable}`;
 }
 
@@ -1872,7 +1886,10 @@ function applyCreateTSRHandoffToStandaloneTSR(){
     }
     return false;
   }
-  if(!isScheduleEquipmentAssignable(schedule)){
+  const scheduleEligible = openCalibrationReport
+    ? isScheduleEquipmentAssignable(schedule)
+    : isScheduleTSREligible(schedule);
+  if(!scheduleEligible){
     showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
     return openCalibrationReport;
   }
@@ -2219,10 +2236,10 @@ function renderStandaloneScheduleOptions(schedules, sourceLabel='cached'){
   const help = document.getElementById('tsr-schedule-picker-help');
   if(select){
     const currentValue = selectedStandaloneScheduleId || select.value || '';
-    select.innerHTML = '<option value="">No schedule selected</option>' + standaloneScheduleOptions.map(schedule => `<option value="${escapeAttr(getStandaloneScheduleRuntimeId(schedule))}"${isScheduleEquipmentAssignable(schedule) ? '' : ' disabled'}>${escapeHTML(getScheduleOptionLabel(schedule))}</option>`).join('');
+    select.innerHTML = '<option value="">No schedule selected</option>' + standaloneScheduleOptions.map(schedule => `<option value="${escapeAttr(getStandaloneScheduleRuntimeId(schedule))}"${isScheduleTSREligible(schedule) ? '' : ' disabled'}>${escapeHTML(getScheduleOptionLabel(schedule))}</option>`).join('');
     // currentValue may be a selection restored from a draft, so it can be in the old format.
     const matched = currentValue
-      ? standaloneScheduleOptions.find(s => isSameScheduleSelection(currentValue, s) && isScheduleEquipmentAssignable(s))
+      ? standaloneScheduleOptions.find(s => isSameScheduleSelection(currentValue, s) && isScheduleTSREligible(s))
       : null;
     if(matched){
       select.value = String(getStandaloneScheduleRuntimeId(matched));
@@ -2230,7 +2247,7 @@ function renderStandaloneScheduleOptions(schedules, sourceLabel='cached'){
   }
   if(help){
     if(standaloneScheduleOptions.length){
-      const unavailableCount = standaloneScheduleOptions.filter(schedule => !isScheduleEquipmentAssignable(schedule)).length;
+      const unavailableCount = standaloneScheduleOptions.filter(schedule => !isScheduleTSREligible(schedule)).length;
       help.textContent = `${standaloneScheduleOptions.length} schedule(s) available from ${sourceLabel}.${unavailableCount ? ` ${unavailableCount} require equipment assignment on Calendar.` : ''} Initial view shows this week; use search to find previous schedules.`;
     }else{
       help.textContent = 'No cached schedules found yet. Open/load schedules online first before creating a TSR offline.';
@@ -2262,7 +2279,7 @@ function renderStandaloneScheduleCards(){
   list.innerHTML = groups.map(group => {
     const schedule = group.primary;
     const items = group.items || [];
-    const groupAssignable = isScheduleEquipmentAssignable(schedule);
+    const groupAssignable = isScheduleTSREligible(schedule);
     const active = groupAssignable && items.some(item => isSameScheduleSelection(selectedStandaloneScheduleId, item));
     const engineers = (schedule.engineer_names || []).join(', ') || schedule.serviced_by || '';
     const dateRange = getStandaloneScheduleGroupDateRange(items);
@@ -2270,7 +2287,7 @@ function renderStandaloneScheduleCards(){
     const dateButtons = isMultiDay ? `<div class="standalone-schedule-date-row">${items.map(item => {
       const uid = getStandaloneScheduleRuntimeId(item);
       const chipActive = isSameScheduleSelection(selectedStandaloneScheduleId, item);
-      const itemAssignable = isScheduleEquipmentAssignable(item);
+      const itemAssignable = isScheduleTSREligible(item);
       return `<button type="button" class="standalone-schedule-date-chip ${chipActive ? 'active' : ''}"${itemAssignable ? ` onclick="event.stopPropagation(); selectStandaloneScheduleFromModal('${escapeAttr(uid)}')"` : ' disabled'}>${escapeHTML(getStandaloneScheduleDateText(item) || 'Select date')}</button>`;
     }).join('')}</div>` : '';
     const clickTarget = escapeAttr(getStandaloneScheduleRuntimeId(schedule));
@@ -2319,7 +2336,7 @@ function closeStandaloneSchedulePickerModal(){
 }
 
 async function assignPickedScheduleToQueuedTSR(itemId, schedule){
-  if(!isScheduleEquipmentAssignable(schedule)){
+  if(!isScheduleTSREligible(schedule)){
     showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
     return;
   }
@@ -2367,7 +2384,7 @@ async function assignPickedScheduleToQueuedTSR(itemId, schedule){
 function selectStandaloneScheduleFromModal(id){
   const schedule = standaloneScheduleOptions.find(item => isSameScheduleSelection(id, item));
   if(!schedule) return;
-  if(!isScheduleEquipmentAssignable(schedule)){
+  if(!isScheduleTSREligible(schedule)){
     showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
     return;
   }
@@ -2618,7 +2635,7 @@ function applyScheduleComplaintDefault(schedule, overwrite=true){
 
 function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
   if(!schedule) return;
-  if(!isScheduleEquipmentAssignable(schedule)){
+  if(!isScheduleTSREligible(schedule)){
     showTSRStatus('This schedule has no assigned equipment. Select equipment on Calendar first.', 'warning');
     return;
   }
@@ -2655,7 +2672,11 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
       setFieldValue('tsr-serviced-by', schedule.serviced_by || LOGGED_IN_ENGINEER_NAME, overwrite);
       setFieldValue('tsr-department', 'Radiology', false);
       setFieldValue('tsr-machine-type', 'Medical', true);
-      window.calibrationReport?.onScheduleApplied(schedule, overwrite);
+      if(isScheduleEquipmentAssignable(schedule)){
+        window.calibrationReport?.onScheduleApplied(schedule, overwrite);
+      }else{
+        window.calibrationReport?.reset({ removeAutoDocument:true });
+      }
     }
   }finally{
     standaloneTSRAutosavePaused = wasPaused;
@@ -2675,7 +2696,9 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
       </div>
       <div class="tsr-schedule-locked-note"><i class="fa-solid ${isOnlineTSRRevisionMode() ? 'fa-pen-to-square' : 'fa-lock'} me-1"></i>${isOnlineTSRRevisionMode()
         ? 'Correction mode: product and serial can be edited and will update the equipment database record.'
-        : 'Client/equipment fields are locked. Start and finish time may be adjusted before saving.'}</div>`;
+        : (isFrancisTSRWithoutEquipmentSchedule(schedule)
+          ? 'No equipment assigned on Calendar. Product and serial remain blank; start and finish time may be adjusted before saving.'
+          : 'Client/equipment fields are locked. Start and finish time may be adjusted before saving.')}</div>`;
   }
   renderTSRScheduleCoveragePanel(schedule);
   renderTSRClientContactSuggestions(schedule);
@@ -4083,7 +4106,9 @@ function parseOfflineTSRDate(value){
 function standaloneTSRDraftVersionReadiness(record){
   const payload = record?.payload || record || {};
   const schedule = payload.selectedSchedule || payload.selected_schedule || {};
-  const hasSchedule = Boolean(getStandaloneDraftScheduleId(payload)) && isScheduleEquipmentAssignable(schedule);
+  const scheduleEligible = isScheduleEquipmentAssignable(schedule) ||
+    (typeof isScheduleTSREligible === 'function' && isScheduleTSREligible(schedule));
+  const hasSchedule = Boolean(getStandaloneDraftScheduleId(payload)) && scheduleEligible;
   const hasServiceCategory = Boolean(String(getTSRServiceCategoryText(payload) || '').trim());
   const hasActionsTaken = Boolean(String(payload['tsr-actions-taken'] || '').trim());
   const signaturePayload = { signatures:payload.signatures && typeof payload.signatures === 'object' ? payload.signatures : {} };
@@ -5132,14 +5157,20 @@ function applyStandaloneTSRDraftData(data){
     // against canonical, and the next save quietly persists the new format. Drafts are never
     // rewritten in bulk -- matching is reversible, editing every draft on a device is not.
     const matchedOption = storedScheduleId
-      ? standaloneScheduleOptions.find(item => isSameScheduleSelection(storedScheduleId, item) && isScheduleEquipmentAssignable(item))
+      ? standaloneScheduleOptions.find(item => isSameScheduleSelection(storedScheduleId, item) && (
+        isScheduleEquipmentAssignable(item) ||
+        (typeof isScheduleTSREligible === 'function' && isScheduleTSREligible(item))
+      ))
       : null;
 
     if(matchedOption){
       selectedStandaloneScheduleId = String(getStandaloneScheduleRuntimeId(matchedOption));
       awaitingScheduleRepick = false;
       syncStandaloneTSRAddressFromSchedule(matchedOption);
-    }else if(storedScheduleId && selectedStandaloneScheduleSnapshot && isScheduleEquipmentAssignable(selectedStandaloneScheduleSnapshot)){
+    }else if(storedScheduleId && selectedStandaloneScheduleSnapshot && (
+      isScheduleEquipmentAssignable(selectedStandaloneScheduleSnapshot) ||
+      (typeof isScheduleTSREligible === 'function' && isScheduleTSREligible(selectedStandaloneScheduleSnapshot))
+    )){
       // Nothing in the current list matches. Keep every field the engineer typed, drop the
       // dead selection, and ask them to pick the schedule again rather than guessing.
       selectedStandaloneScheduleId = '';
@@ -9548,7 +9579,9 @@ function getMissingTSRCoreDetails(data){
   if(!String(data?.['tsr-actions-taken'] || '').trim()){
     missing.push({ label:'Actions Taken', selector:'#tsr-action-input' });
   }
-  if(hasStandaloneScheduleSelection() && !isScheduleEquipmentAssignable(selectedSchedule)){
+  const scheduleEligible = isScheduleEquipmentAssignable(selectedSchedule) ||
+    (typeof isScheduleTSREligible === 'function' && isScheduleTSREligible(selectedSchedule));
+  if(hasStandaloneScheduleSelection() && !scheduleEligible){
     missing.push({ label:'Assigned equipment', selector:'#tsr-schedule-select' });
   }
   return missing;
@@ -9566,7 +9599,8 @@ function renderStandaloneTSRCoreReadiness(data=null){
   const missingCore = new Set(getMissingTSRCoreDetails(snapshot).map(item => item.label));
   const selectedSchedule = snapshot?.selectedSchedule || getSelectedStandaloneSchedule() || {};
   const scheduleReady = hasStandaloneScheduleSelection() &&
-    isScheduleEquipmentAssignable(selectedSchedule) &&
+    (isScheduleEquipmentAssignable(selectedSchedule) ||
+      (typeof isScheduleTSREligible === 'function' && isScheduleTSREligible(selectedSchedule))) &&
     !missingCore.has('Assigned equipment');
   const readiness = {
     schedule:scheduleReady,
@@ -9935,8 +9969,9 @@ function buildTSRPDFFilename(data){
   const schedule = data.selectedSchedule || getSelectedStandaloneSchedule() || {};
   const billing = getTSRFilenameBillingContext(data);
   const client = sanitizeTSRFilenamePart(data['tsr-customer-name'] || schedule.client_name || 'Client', 'Client');
-  const product = sanitizeTSRFilenamePart(data['tsr-equipment-model'] || schedule.product_name || 'Product', 'Product');
-  const serial = sanitizeTSRFilenamePart(data['tsr-serial-no'] || schedule.product_id || 'Serial', 'Serial');
+  const noEquipment = isFrancisTSRWithoutEquipmentSchedule(schedule);
+  const product = noEquipment ? '' : sanitizeTSRFilenamePart(data['tsr-equipment-model'] || schedule.product_name || 'Product', 'Product');
+  const serial = noEquipment ? '' : sanitizeTSRFilenamePart(data['tsr-serial-no'] || schedule.product_id || 'Serial', 'Serial');
   const rawTask = schedule.task || data['tsr-service-category-other'] || data['tsr-service-category'] || 'Service';
   const task = compactTaskNameForFilename(rawTask);
   const serviceDate = String(data['tsr-service-date'] || schedule.date_iso || todayISO()).slice(0,10);

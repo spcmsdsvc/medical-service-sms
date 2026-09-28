@@ -1825,6 +1825,13 @@
             const scheduleAdminChecked = user.schedule_admin_access ? 'checked' : '';
             const poAdminChecked = user.po_admin_access ? 'checked' : '';
             const reimbursementTrackerChecked = user.reimbursement_tracker_access ? 'checked' : '';
+            const francisTSRWithoutEquipmentChecked = user.can_create_tsr_without_equipment ? 'checked' : '';
+            const francisTSRWithoutEquipmentControl = approvalUserIsFrancis(user) ? `
+                    <div class="form-check form-switch mt-3">
+                        <input class="form-check-input tsr-without-equipment-input" type="checkbox" ${francisTSRWithoutEquipmentChecked}>
+                        <label class="form-check-label small fw-bold">Allow TSR without assigned equipment</label>
+                        <div class="form-text small">Francis may create a TSR for a client-linked schedule when Calendar has no assigned equipment. The server still verifies the client schedule and keeps product/serial blank.</div>
+                    </div>` : '';
             const inventoryBranch = user.stock_inventory_branch_code || '';
             return `
                 <div class="approval-user-card" data-user-id="${user.id}">
@@ -1852,6 +1859,7 @@
                             </div>
                         </div>
                     </div>
+                    ${francisTSRWithoutEquipmentControl}
                     <div class="form-check form-switch mt-2">
                         <input class="form-check-input approval-approver-only-input" type="checkbox" ${approverOnlyChecked} onchange="toggleApprovalOnlyMode(this)">
                         <label class="form-check-label small fw-bold">Approver-only view</label>
@@ -2089,6 +2097,10 @@
             approval_scope: card.querySelector('.approval-scope-input')?.value || '',
             is_active: Boolean(card.querySelector('.approval-active-input')?.checked)
         };
+        const targetUser = approvalRoutingState.users.find(user => Number(user.id) === Number(userId));
+        if (approvalUserIsFrancis(targetUser)) {
+            payload.can_create_tsr_without_equipment = Boolean(card.querySelector('.tsr-without-equipment-input')?.checked);
+        }
 
         try {
             const res = await fetch('/settings/update-approval-user', {
@@ -2114,6 +2126,10 @@
     function approvalUserIsEngineer(user) {
         const roleLabel = String(user.display_role || user.role || '').toLowerCase();
         return roleLabel === 'engineer' || String(user.role || '').toLowerCase() === 'engineer' || Boolean(user.engineer_id);
+    }
+
+    function approvalUserIsFrancis(user) {
+        return String(user?.username || '').trim().toLowerCase() === 'francis';
     }
 
     function getApprovalBulkRequesterIds() {

@@ -2,6 +2,103 @@
 
 codex changes - 2026-09-28
 
+- Started the separately authorized Francis-only TSRs without assigned equipment package after
+  preflight confirmed the approved plan still matches the source, focused test/configuration
+  paths, and service-worker marker v208. Protected `scheduler.db`, handoff, `.claude/`,
+  `output/`, and `tmp/` owner changes are identified and excluded; no application source or
+  tests have been changed yet, and commit, push, deployment, Railway, production activation,
+  browser/Codex UI automation, and live permission activation remain excluded.
+
+- Added `tests/test_tsr_without_equipment.py` and ran its required fail-first check against the
+  unchanged implementation: `venv\\Scripts\\python.exe -m unittest
+  tests.test_tsr_without_equipment` ran 8 tests with 1 pass, 5 failures, and 2 errors. The
+  expected failures/errors confirmed the new permission predicate, Settings serialization,
+  Calendar/offline contracts, and blank-equipment route behavior were not yet implemented.
+
+- Implemented the bounded Francis-only TSR workflow in `app.py`, `templates/timeline.html`,
+  `templates/offline_tsr.html`, and `templates/settings.html`: added the default-off stored
+  grant with guarded additive SQLite migration, restricted effective authorization to the
+  active authenticated `francis` account with a linked assigned Engineer profile, preserved
+  Calendar equipment authority for assigned/cross-client/unknown equipment, allowed blank
+  product/serial TSR saves only for an authorized equipment-less client schedule, preserved
+  blank values through initial/revision payloads and PDFs, prevented inventory creation and
+  Calibration Report access, and added the Francis-only Settings switch/audit round-trip.
+  The service-worker marker moved to v209 and the engineer-facing release entry was added;
+  no live grant was activated and protected owner artifacts remain untouched.
+
+- Adjusted the focused route fixture to include the normal offline TSR form-version field used
+  by the production save payload, so the test exercises the authorized no-equipment path rather
+  than the unrelated legacy-payload parsing branch.
+
+- Focused verification now passes: `venv\\Scripts\\python.exe -m unittest
+  tests.test_tsr_without_equipment` ran 8 tests with 8 passed, 0 failures, and 0 errors.
+
+- Marked the approved `Francis-only TSRs without assigned equipment` plan Executed —
+  uncommitted after completing the bounded implementation and required verification. The final
+  package has no unresolved in-scope failure; the full discovery result remains recorded below
+  with its broad out-of-scope baseline failures. Commit, push, deployment, Railway changes,
+  production changes, browser/Codex UI automation, and live grant activation were not performed.
+
+- The directly affected existing-suite check ran 56 tests with 54 passed and 2 failures. The
+  failures were limited to the extracted Calendar predicate harness not defining the new page
+  flag, and a historical v208 marker assertion that required preserving the prior cache marker
+  as a comment; both compatibility points were corrected without changing the approved scope.
+
+- Re-ran the directly affected existing suites after those compatibility corrections:
+  `test_admin_capabilities`, `test_operational_equipment_workflows`, `test_tsr_filename_template`,
+  `test_tsr_offline_followup`, `test_machine_calibration_history`, and `test_staff_creation` ran
+  56 tests with 56 passed, 0 failures, and 0 errors.
+
+- The required isolated full discovery used disposable DB
+  `medical_service_full_discovery_02aa1c478d814c1cba2e60247c4161bc.db` and ran 1,363 tests
+  with 1,335 non-skipped passes, 26 failures, and 2 skips. The failures were 429 login
+  throttles in the broad suite plus two extracted-JavaScript compatibility contracts exposed
+  by this package's eligibility helper; the latter are corrected below. No protected database
+  or owner artifact was used.
+
+- Re-ran the focused package plus all directly affected existing modules after the extracted
+  JavaScript compatibility fixes: 64 tests ran with 64 passed, 0 failures, and 0 errors.
+
+- Ran the additional draft-recovery and TSR page-design contracts affected by the eligibility
+  helper: `test_tsr_draft_sync` and `test_tsr_page_design` ran 55 tests with 55 passed, 0
+  failures, and 0 errors.
+
+- Tightened the effective predicate and its focused contract so the grant requires the active
+  `francis` account to retain the `engineer` role as well as its linked Engineer profile; an
+  admin-role account cannot use the grant as a bypass.
+
+- Artifact check passed in a disposable app context: generated the equipment-less TSR PDF with
+  ReportLab, confirmed the output PDF exists and contains one readable page, and confirmed the
+  server filename contains neither the literal `Product` nor `Serial` placeholders.
+
+- Preserved the existing v204 activity-log and v195 pre-submission calibration service-worker
+  markers as historical comments alongside the required active v209 marker, maintaining source
+  contracts that verify cache history without restoring an older active cache.
+
+- Cache/release contract verification passed: `test_activity_log_hardening`,
+  `test_calibration_center`, and `test_changelog_workflow` ran 68 tests with 68 passed, 0
+  failures, and 0 errors.
+
+- Final focused Francis package check after the strict engineer-role predicate ran 8 tests with
+  8 passed, 0 failures, and 0 errors.
+
+- Final isolated full discovery used the unique disposable database
+  `medical_service_full_discovery_final_27824f7f01524dfe8161dd2816589266.db` and ran 1,363
+  tests with 1,337 passed, 24 failures, and 2 skips. Two failures were historical v204/v195
+  cache-marker contracts corrected afterward; the remaining 22 failures were broad existing
+  out-of-scope suite failures. The final targeted cache/release check passed 68/68, and no
+  package-specific failure remained.
+
+- Recorded the owner-approved Francis-only TSRs without assigned equipment plan at the top of
+  `plans.md` with status `Approved — awaiting go-ahead`. It specifies a default-off Settings
+  switch grantable only to the `francis` account, server-verified assigned client schedules
+  without equipment, initial/revision and offline sync behavior, blank product/serial fields,
+  calibration boundaries, fail-first tests, cache/release records, and verification. Under the
+  project's required two-step approval gate, no application source, tests, database schema,
+  service-worker marker, release metadata, production/Railway state, commit, push, deployment,
+  browser/Codex UI session, or protected owner artifact was changed in this approval-recording
+  step.
+
 - Started the separately authorized Two-Line Client Names on Calibration Certificates package.
   The bounded implementation preserves both canonical/runtime certificate PDFs and embedded
   template data while adding deterministic two-line Installed At rendering for long client names

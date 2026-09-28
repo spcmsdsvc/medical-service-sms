@@ -9332,6 +9332,8 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         "{{ 'true' if timeline_can_record_provisional_leave else 'false' }}" === "true";
     const canManageAnySchedule =
         "{{ 'true' if timeline_can_manage_schedules else 'false' }}" === "true";
+    const timelineCanCreateTSRWithoutEquipment =
+        "{{ 'true' if timeline_can_create_tsr_without_equipment else 'false' }}" === "true";
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
     const isEngineer = authRole === "engineer";
@@ -10635,6 +10637,7 @@ function shouldUseEngineerMobileView(){
                     ${buildMobileFullCalendarLiteDetailRow('Category', categoryLabel)}
                     ${productLabel ? buildMobileFullCalendarLiteDetailRow('Product', productLabel) : ''}
                     ${serialLabel ? buildMobileFullCalendarLiteDetailRow('Serial', serialLabel) : ''}
+                    ${!productLabel && isWork ? buildMobileFullCalendarLiteDetailRow('Equipment', 'No equipment assigned') : ''}
                     ${addressLabel ? buildMobileFullCalendarLiteDetailRow('Address', addressLabel) : ''}
                     ${buildMobileFullCalendarLiteDetailRow('Attachments', files.length ? `${files.length} file(s)` : 'None')}
                 </div>
@@ -16239,9 +16242,26 @@ if(shift.engineers){
         return Boolean(
             shift &&
             !isScheduleCompleted(shift) &&
-            hasScheduleTSREquipmentAssignment(shift) &&
+            (hasScheduleTSREquipmentAssignment(shift) || canCreateTSRWithoutEquipmentForSchedule(shift)) &&
             !getScheduleOnlineTSRSubmissionId(shift) &&
             !hasScheduleTSRAttachment(shift)
+        );
+    }
+
+    function canCreateTSRWithoutEquipmentForSchedule(shift){
+        const effectivePermission =
+            typeof timelineCanCreateTSRWithoutEquipment !== 'undefined' &&
+            timelineCanCreateTSRWithoutEquipment;
+        const serverAllowed = !Object.prototype.hasOwnProperty.call(shift || {}, 'tsr_without_equipment_allowed') ||
+            shift?.tsr_without_equipment_allowed === true;
+        const source = String(shift?.equipment_source || '').trim().toLowerCase();
+        return Boolean(
+            effectivePermission &&
+            serverAllowed &&
+            shift &&
+            shift.client_id &&
+            !String(shift.product_id || '').trim() &&
+            ['product', 'genoray', 'vieworks'].includes(source)
         );
     }
 
@@ -16252,7 +16272,8 @@ if(shift.engineers){
             !isScheduleCompleted(shift) &&
             !getScheduleOnlineTSRSubmissionId(shift) &&
             !hasScheduleTSRAttachment(shift) &&
-            !hasScheduleTSREquipmentAssignment(shift)
+            !hasScheduleTSREquipmentAssignment(shift) &&
+            !canCreateTSRWithoutEquipmentForSchedule(shift)
         );
     }
 

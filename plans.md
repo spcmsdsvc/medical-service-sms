@@ -1,3 +1,198 @@
+# Francis-only TSRs without assigned equipment
+
+**Status:** Executed — uncommitted; commit/push/deployment were not authorized.
+**Approved:** 2026-09-28 — the owner said “PLEASE IMPLEMENT THIS PLAN.” Under the project's
+two-step approval rule, this records approval of the plan only; execution still requires a
+separate instruction.
+**Execution authorized:** 2026-09-28 — the owner separately said “go ahead. do not overengineer
+and over check.” The implementation remained limited to this plan; no live permission grant was
+activated.
+**Detailed:** 2026-09-28.
+
+### Execution outcome
+
+Executed locally on 2026-09-28 without commit, push, deployment, Railway changes, production
+changes, browser/Codex UI automation, or live activation. The protected owner changes in
+`scheduler.db`, `Handoffs/08-11-26 handoff.md`, `.claude/`, `output/`, and `tmp/` were left
+untouched.
+
+- Changed `app.py`, `templates/timeline.html`, `templates/offline_tsr.html`,
+  `templates/settings.html`, `static/changelog/releases.json`, and added
+  `tests/test_tsr_without_equipment.py`. Updated this plan and `changes.md` as required.
+- The fail-first package ran 8 tests against the unchanged implementation: 1 passed, 5 failed,
+  and 2 errored. The final focused package ran 8 tests with 8 passed, 0 failed, and 0 errored.
+- Directly affected existing suites ran 56 tests with 56 passed; draft/page-design suites ran
+  55 tests with 55 passed; cache/release suites ran 68 tests with 68 passed.
+- One full discovery run used the isolated disposable database
+  `medical_service_full_discovery_final_27824f7f01524dfe8161dd2816589266.db`: 1,363 tests,
+  1,337 passed, 24 failed, and 2 skipped. Two failures were historical v204/v195
+  cache-marker contracts corrected afterward; the remaining 22 failures were broad existing
+  out-of-scope suite failures. The final targeted cache/release check was 68/68 passed, with no
+  package-specific failure.
+- Python syntax, Jinja parsing, extracted inline JavaScript compilation, release JSON loading,
+  active v209 cache marker, `git diff --check`, and a disposable one-page PDF filename/artifact
+  check passed. The generated productless PDF filename contained neither literal `Product` nor
+  `Serial`.
+
+### Context and decisions
+
+Francis needs to create a TSR for client visits that have no product assigned. Today, Calendar's
+Create TSR action, the TSR schedule picker, and both TSR save routes require equipment. Changing
+the form alone would leave his saves blocked.
+
+The owner chose a Settings switch that only the `francis` account can receive. It is off by
+default and must be deliberately enabled after deployment. Once enabled, Francis may create a
+TSR for any client-linked schedule assigned to him that has no equipment; the schedule does not
+need a special site-inspection category.
+
+This exception applies only when the schedule has no product ID. A schedule referencing missing
+equipment or equipment owned by another client remains an error. Francis's existing schedule
+assignment rules, required TSR details, and signatures still apply. Product and serial values
+remain blank in the saved submission and PDF; the process creates no inventory record.
+
+### Investigation
+
+- `templates/timeline.html:16238` requires a valid equipment assignment before enabling Create
+  TSR on Calendar.
+- `templates/offline_tsr.html:1432` and its picker/readiness callers reject schedules without
+  equipment, including cached schedules, queued schedules, draft restoration, and Timeline
+  handoff.
+- `app.py:18550` and `app.py:24097` are the initial and revision save routes. Both call the
+  authoritative equipment helper; both must enforce the Francis-only exception.
+- The Settings account editor already serializes, saves, and audits stored permissions. Calendar
+  and Create TSR are cached for offline use, so the server must recheck the account and schedule
+  when a queued TSR syncs.
+- The working tree has protected owner changes in `scheduler.db`, a handoff, `.claude/`,
+  `output/`, and `tmp/`. They are excluded from this package.
+
+### Implementation decisions and boundaries
+
+- Add a stored `User.can_create_tsr_without_equipment` boolean with an idempotent, default-false
+  SQLite migration. A single effective-permission predicate requires an active, authenticated
+  `francis` engineer account, its linked Engineer profile, and the stored grant. No admin bypass.
+- Settings displays the switch only for Francis. Its API rejects attempts to grant the switch
+  to other usernames, saves the stored value, and includes it in permission audit history.
+  Unrelated Settings saves must round-trip the value without silently changing it; account
+  creation cannot grant it.
+- A valid, client-linked, assigned schedule with an empty product ID may be used by Francis with
+  the switch on. An assigned product ID must still resolve to equipment belonging to the same
+  client. Backend authorization never trusts a client-supplied capability flag or schedule
+  snapshot.
+- For an authorized no-equipment TSR, equipment/model and serial are blank and read-only, and
+  no Product, Genoray, or Vieworks row is created or linked. The current TSR document layout and
+  required service category, actions, signatures, number reservation, retries, schedule
+  completion, and contact/attachment workflows remain intact.
+- Calibration Report and certificate creation remain equipment-dependent. Productless filenames
+  must not include literal `Product` or `Serial` placeholders. Existing equipment-linked TSRs
+  and other users retain their current behavior.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Recheck applicable `AGENTS.md`, this complete plan, the
+   full `changes.md`, Git status, affected source, and focused tests. Confirm the service-worker
+   marker is still v208. Mark this plan `In progress` and append a factual start entry to the
+   current dated `changes.md` section. Stop before editing if intervening changes invalidate
+   the plan. Done when protected dirty paths are identified and remain untouched.
+2. **Add fail-first behavior tests.** In focused account-permission and TSR test modules, add
+   direct API and client-flow tests proving only Francis can receive the switch; disabled
+   Francis and every other account remain blocked; enabled Francis can submit against his
+   assigned client schedule with no product; bad or cross-client product assignments remain
+   blocked; initial saves and revisions store blank equipment fields and create no Product
+   row. Run the new tests against unchanged source and record the expected failures before
+   implementation. Done when each new positive control fails for the intended missing behavior.
+3. **Add the restricted account switch.** In `app.py`, add the User column, guarded additive
+   migration before account queries, effective-permission predicate, Settings serialization,
+   permission validation, save, and audit logging. In `templates/settings.html`, show the switch
+   only on Francis's card and send its stored value with the other permission fields. Reject
+   direct API grant attempts for other usernames and prevent account creation from granting it.
+   Done when the default is false and only a superadmin's deliberate Francis-card update can
+   change the stored grant.
+4. **Enable eligible Calendar and TSR schedules.** Pass the effective permission from
+   `timeline_page()` and `offline_tsr_page()` in `app.py` to `templates/timeline.html` and
+   `templates/offline_tsr.html`. A valid equipment assignment keeps the current path; an empty
+   product ID is eligible only for Francis on a client-linked assigned schedule. Apply this to
+   desktop/mobile Create TSR actions, saved/queued handoff, picker, draft restoration, queued
+   relinking, and readiness messages. Label no-equipment visits clearly and keep model/serial
+   fields blank and read-only. Calibration Report actions remain unavailable. Done when Francis
+   can select and restore eligible schedules across online/offline flows without changing other
+   accounts' picker behavior.
+5. **Enforce the rule on save and revision.** In `app.py`, update
+   `validate_tsr_shift_equipment()`, `ensure_product_from_tsr_payload()`, and
+   `get_online_tsr_missing_core_details()` as used by `save_offline_tsr_online()` and
+   `revise_online_tsr_submission()`. For an empty product ID, verify the live client,
+   schedule assignment, active Francis account, and switch. Clear product/serial values in the
+   authoritative payload and submission; reject stale or forged nonblank equipment values with
+   an actionable message so the submitted PDF cannot contradict the saved record. Preserve the
+   current validation for missing or cross-client assigned equipment. Done when the direct API,
+   offline sync, and revision paths enforce identical authorization.
+6. **Keep artifacts coherent.** Update `build_tsr_filename_template_context()` in `app.py` and
+   `buildTSRPDFFilename()` in `templates/offline_tsr.html` so a productless TSR has no literal
+   Product/Serial placeholder in its filename. Keep blank equipment fields and the actual
+   schedule/task details in the generated TSR. Prevent productless Calibration Report or
+   certificate generation/submission while leaving equipment-linked calibration behavior
+   unchanged. Verify browser-generated and server-fallback PDF paths. Done when representative
+   artifacts contain no invented equipment identity.
+7. **Update delivery records.** Advance the embedded service-worker marker from the verified
+   current version to its next version and adjust only affected cache assertions. Add one
+   engineer-facing entry in `static/changelog/releases.json`. Append factual implementation
+   and verification bullets to `changes.md`; amend this plan if a material scope change is
+   needed. Done when release/cache metadata matches the bounded source change.
+8. **Self-review, verification, and handoff.** Run the new tests after implementation, then
+   focused permission, TSR save/revision, Calendar action, offline draft/queue, calibration
+   boundary, cache, and changelog tests. Run one full discovery with a unique disposable test
+   database. Check Python syntax, Jinja rendering, extracted JavaScript syntax, release JSON,
+   and `git diff --check`. Inspect representative productless and equipment-linked PDFs and
+   confirm the exact changed-file list. Record actual pass/fail/skip counts, known baseline
+   failures, and deviations in `plans.md` and `changes.md`. Mark `Executed` only when the
+   authorized local implementation is complete; leave commit, push, deployment, Railway, and
+   production activation for separate owner instructions.
+
+### Verification and acceptance
+
+- With the switch on, Francis can create, save offline, sync, and revise a TSR for his assigned
+  client schedule with no product. The saved record and PDF have blank model/serial fields.
+- With the switch off, Francis follows the existing equipment rule. Every other account follows
+  that rule even with a forged permission flag or direct save request.
+- A productless visit creates no Product, Genoray, or Vieworks record and cannot start an
+  equipment-specific Calibration Report or certificate.
+- Revoking the switch blocks later productless saves and revisions at the server. An offline
+  device may retain an older form until reconnecting; a queued request is rechecked on sync and
+  retained with a clear error if permission has been revoked.
+- After publication, an authorized administrator must enable Francis's Settings switch; this
+  implementation does not automatically change his live account.
+- Browser verification, if later authorized, should check desktop and 375px mobile Calendar and
+  Create TSR views, selection and signing, keyboard/tap controls, console errors, and offline
+  reconnect behavior. Project instructions prohibit in-app browser/Codex UI automation without
+  a separate owner instruction; local Flask, source, and PDF checks are the execution-stage bar.
+
+### Deliberately excluded
+
+- Unrelated user permissions, Product inventory, schedule creation requirements, official
+  calibration templates, and production data are out of scope because this exception only
+  addresses Francis's TSR reporting on existing client schedules.
+- No Railway variables, deployment, commit, push, browser/Codex UI automation, or protected
+  dirty-artifact changes are authorized by the implementation go-ahead.
+- Formal post-implementation review requires the owner's separate “Review the implementation.”
+  instruction. Commit and production publication require their own explicit authorization.
+
+### Risks and safety nets
+
+- Old offline drafts can carry equipment text after a schedule loses its product. Selection
+  clears stale fields; the server rejects conflicting values before persisting a TSR.
+- Cached pages can show a switch state that has since changed. The live server rechecks Francis,
+  his grant, the client, and the schedule on every initial save, sync, and revision. Existing
+  sign-out cache purging remains in place.
+- A broad permission or calendar-only check could open this workflow for other users. The
+  username-restricted server predicate, direct API tests, and focused client checks contain that
+  risk.
+
+### Approval gate
+
+This plan is approved and recorded. The owner must give a separate implementation go-ahead
+before source, tests, database schema, release metadata, or system behavior is changed.
+
+##
+
 # Two-Line Client Names on Calibration Certificates
 
 **Status:** Executed — implementation commit `cf67fa4` published to `origin/main`; Railway

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-28-francis-tsr-without-equipment",
+      "release_date": "2026-09-28",
+      "title": "Francis TSRs Without Assigned Equipment",
+      "summary": "Francis can create a TSR for an assigned client schedule even when Calendar has no equipment linked.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-28-francis-tsr-without-equipment-engineers",
+          "category": "TSR",
+          "description": "When the Settings grant is enabled for Francis, assigned client schedules without a product can open Create TSR. Product and serial stay blank, inventory is unchanged, and Calibration Report remains equipment-only.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-28-calibration-certificate-long-client-name",
       "release_date": "2026-09-28",
       "title": "Long Client Names on Calibration Certificates",

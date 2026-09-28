@@ -1573,6 +1573,7 @@ class User(UserMixin, db.Model):
     schedule_admin_access = db.Column(db.Boolean, default=False, nullable=False)
     po_admin_access = db.Column(db.Boolean, default=False, nullable=False)
     reimbursement_tracker_access = db.Column(db.Boolean, default=False, nullable=False)
+    can_create_tsr_without_equipment = db.Column(db.Boolean, default=False, nullable=False)
 
     # Last successful sign-in. Older accounts stay NULL until their next login.
     last_login_at = db.Column(db.DateTime, nullable=True)
@@ -5484,8 +5485,17 @@ def build_tsr_filename_template_context(submission=None, shift=None, tsr_number=
         return ''
 
     client_name = first_value('tsr-customer-name', 'client_name') or clean_str(getattr(submission, 'client_name', None)) or 'Client'
-    product_name = first_value('tsr-equipment-model', 'product_name') or clean_str(getattr(submission, 'product_name', None)) or 'Product'
-    serial_number = first_value('tsr-serial-no', 'product_id', 'serial_number') or clean_str(getattr(submission, 'serial_number', None)) or 'Serial'
+    productless_schedule = bool(
+        shift and
+        clean_int(getattr(shift, 'client_id', None)) and
+        not clean_str(getattr(shift, 'product_id', None))
+    )
+    if productless_schedule:
+        product_name = ''
+        serial_number = ''
+    else:
+        product_name = first_value('tsr-equipment-model', 'product_name') or clean_str(getattr(submission, 'product_name', None)) or 'Product'
+        serial_number = first_value('tsr-serial-no', 'product_id', 'serial_number') or clean_str(getattr(submission, 'serial_number', None)) or 'Serial'
     raw_task = first_value('task') or clean_str(getattr(shift, 'title', None)) or first_value('tsr-service-category-other', 'tsr-service-category') or 'Service'
     task = re.sub(r'\[(?:Warranty|FOC|With\s*P\.?O\.?|SC|SV)\]', ' ', raw_task, flags=re.I)
     task = re.sub(r'\s+', ' ', task).strip() or 'Service'
@@ -5572,6 +5582,7 @@ def ensure_user_approval_columns():
                 ('stock_inventory_permission_initialized', "ALTER TABLE user ADD COLUMN stock_inventory_permission_initialized BOOLEAN DEFAULT 0 NOT NULL"),
                 ('last_login_at', "ALTER TABLE user ADD COLUMN last_login_at DATETIME"),
                 ('ui_dashboard_layout_json', "ALTER TABLE user ADD COLUMN ui_dashboard_layout_json TEXT"),
+                ('can_create_tsr_without_equipment', "ALTER TABLE user ADD COLUMN can_create_tsr_without_equipment BOOLEAN DEFAULT 0 NOT NULL"),
             ]
 
             for column_name, ddl in migrations:
@@ -7500,6 +7511,7 @@ PROTECTED_PASSWORD_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME}
 REGIONAL_ADMIN_USERNAME = 'kevin'
 REGIONAL_ADMIN_EMPLOYEE_ID = '15-148'
 REGIONAL_ADMIN_BRANCHES = {'Cebu', 'Davao'}
+FRANCIS_USERNAME = 'francis'
 
 # --- APPROVAL CENTER ACCESS POLICY ---
 # Current reimbursement approval remains Rodito-only until the request modules
@@ -10827,6 +10839,7 @@ def approval_user_to_dict(user):
         # The tracker switch also reports the STORED grant. Effective admin access is
         # deliberately not reflected here so an unrelated Settings save cannot grant it.
         'reimbursement_tracker_access': bool(getattr(user, 'reimbursement_tracker_access', False)),
+        'can_create_tsr_without_equipment': bool(getattr(user, 'can_create_tsr_without_equipment', False)),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -11042,6 +11055,20 @@ def has_engineer_profile(user=None):
         return False
 
     return bool(getattr(target, 'engineer_profile', None))
+
+
+def can_create_tsr_without_equipment_for_user(user=None):
+    """Return the narrow effective grant for Francis's equipment-less TSR workflow."""
+    target = user or current_user
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True)) and
+        _username_of(target) == FRANCIS_USERNAME and
+        (getattr(target, 'role', '') or '').strip().lower() == 'engineer' and
+        has_engineer_profile(target) and
+        bool(getattr(target, 'can_create_tsr_without_equipment', False))
+    )
 
 
 def get_dashboard_capabilities(user=None):
@@ -13098,6 +13125,7 @@ def offline_tsr_page():
     return render_template(
         'offline_tsr.html',
         offline_storage_health_admin=is_admin_authorized(),
+        offline_tsr_can_create_tsr_without_equipment=can_create_tsr_without_equipment_for_user(),
         tsr_filename_template=filename_template,
         signature_stamp_scale=SIGNATURE_STAMP_SCALE,
         certificate_catalog=certificate_catalog,
@@ -13334,6 +13362,7 @@ def get_offline_tsr_schedule_options():
             'product_bsid': (getattr(product, 'bsid', None) or '') if product else '',
             'equipment_source': equipment_source,
             'equipment_available': equipment_available,
+            'tsr_without_equipment_allowed': can_create_tsr_without_equipment_for_shift(shift),
             'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(product, 'serial_number', None))),
             'linked_vieworks': product_vieworks_link_payload(getattr(product, 'serial_number', None)) if equipment_source == 'product' and product else [],
             'engineers': assigned_ids,
@@ -13360,7 +13389,8 @@ def get_offline_tsr_schedule_options():
             'id': getattr(getattr(current_user, 'engineer_profile', None), 'id', None),
             'name': getattr(getattr(current_user, 'engineer_profile', None), 'name', '') or getattr(current_user, 'username', ''),
             'initials': getattr(getattr(current_user, 'engineer_profile', None), 'initials', '') or ''
-        }
+        },
+        'tsr_without_equipment_allowed': can_create_tsr_without_equipment_for_user()
     })
 
 
@@ -13693,15 +13723,15 @@ def build_online_tsr_pdf_filename(submission, shift, tsr_number='', payload=None
         clean_str(payload.get('_download_filename'))
     )
 
-    if frontend_filename:
-        return sanitize_tsr_pdf_filename(frontend_filename)
-
     context = build_tsr_filename_template_context(
         submission=submission,
         shift=shift,
         tsr_number=tsr_number,
         payload=payload,
     )
+    if frontend_filename and (context.get('product_name') or context.get('serial_number')):
+        return sanitize_tsr_pdf_filename(frontend_filename)
+
     return render_tsr_pdf_filename(context)
 
 def generate_online_tsr_submission_pdf(submission, shift, payload):
@@ -15200,6 +15230,21 @@ def correct_product_from_tsr_revision(shift, payload):
     }
 
 
+def can_create_tsr_without_equipment_for_shift(shift, user=None):
+    """Return True only for an authorized Francis engineer on their client schedule."""
+    target = user or current_user
+    profile = getattr(target, 'engineer_profile', None) if target else None
+    assigned_ids = get_shift_assigned_engineer_ids(shift) if shift else []
+    return bool(
+        shift and
+        clean_int(getattr(shift, 'client_id', None)) and
+        not clean_str(getattr(shift, 'product_id', None)) and
+        can_create_tsr_without_equipment_for_user(target) and
+        profile and
+        clean_int(getattr(profile, 'id', None)) in {clean_int(eid) for eid in assigned_ids if eid}
+    )
+
+
 def validate_tsr_shift_equipment(shift):
     """Resolve the Shift's assigned equipment without accepting TSR free text."""
     if not shift:
@@ -15214,6 +15259,16 @@ def validate_tsr_shift_equipment(shift):
     if not source:
         return {'status': 'blocked', 'reason': 'invalid_equipment_source'}
     if not serial_number:
+        if can_create_tsr_without_equipment_for_shift(shift):
+            return {
+                'status': 'without_equipment',
+                'serial_number': '',
+                'product_name': '',
+                'client_id': client_id,
+                'equipment_source': source,
+                'bsid': '',
+                'record': None,
+            }
         return {'status': 'blocked', 'reason': 'missing_equipment_assignment'}
     if not client_id:
         return {'status': 'blocked', 'reason': 'missing_client'}
@@ -15256,6 +15311,8 @@ def tsr_equipment_rejection_details(result):
         return 'Selected equipment must belong to this Medical Center.', 409
     if reason == 'missing_client':
         return 'A Medical Center is required before creating or syncing a TSR.', 400
+    if reason == 'equipment_assignment_conflict':
+        return 'Selected equipment does not match the Calendar schedule.', 409
     return 'Select equipment in Calendar before creating or syncing a TSR.', 400
 
 
@@ -15275,6 +15332,17 @@ def ensure_product_from_tsr_payload(shift, payload):
         return result
 
     selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
+    if result.get('status') == 'without_equipment' and any(
+        clean_str(value)
+        for value in (
+            payload.get('tsr-equipment-model'),
+            payload.get('tsr-serial-no'),
+            selected_schedule.get('product_id'),
+            selected_schedule.get('product_name'),
+        )
+    ):
+        return {'status': 'blocked', 'reason': 'equipment_assignment_conflict'}
+
     selected_schedule['product_id'] = result['serial_number']
     selected_schedule['product_name'] = result['product_name']
     selected_schedule['equipment_source'] = result['equipment_source']
@@ -15303,7 +15371,7 @@ def get_online_tsr_missing_core_details(shift, payload):
         missing.append('Actions Taken')
 
     current_equipment = resolve_shift_equipment(shift) if shift else None
-    if not current_equipment:
+    if not current_equipment and not can_create_tsr_without_equipment_for_shift(shift):
         if not clean_str(payload.get('tsr-equipment-model')):
             missing.append('Equipment / Model')
         if not clean_str(payload.get('tsr-serial-no')):
@@ -24522,8 +24590,11 @@ def pwa_service_worker():
     # Navigation shell bump: v201 distributes source-aware Calendar calibration summaries/history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v201-machine-calibration-history.
     # Navigation shell bump: v203 distributes approved Calibration Report attachment locking.
-    # Navigation shell bump: v208 distributes long Installed At certificate-name rendering.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v208-calibration-certificate-name';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v208-calibration-certificate-name.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v204-activity-log.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report';
+    # Navigation shell bump: v209 distributes Francis-only equipment-less TSR workflow changes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v209-francis-tsr-no-equipment';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -26189,7 +26260,8 @@ def timeline_page():
         # superadmin -> capability -> regional-admin ladder, so passing the broad
         # predicate here would offer the regional admin buttons for Manila that the
         # server then refuses.
-        timeline_can_manage_schedules=has_schedule_admin_capability()
+        timeline_can_manage_schedules=has_schedule_admin_capability(),
+        timeline_can_create_tsr_without_equipment=can_create_tsr_without_equipment_for_user()
     )
 
 
@@ -26654,6 +26726,15 @@ def resolve_staff_permission_request(payload, target_user=None):
     payload = payload or {}
     target = target_user if target_user is not None else current_user
 
+    tsr_without_equipment_present = 'can_create_tsr_without_equipment' in payload
+    if tsr_without_equipment_present and _username_of(target) != FRANCIS_USERNAME:
+        return None, 'Only the Francis account may receive the TSR without assigned equipment grant.'
+    tsr_without_equipment_requested = (
+        bool(payload.get('can_create_tsr_without_equipment'))
+        if tsr_without_equipment_present
+        else bool(getattr(target, 'can_create_tsr_without_equipment', False))
+    )
+
     approver_only_requested = bool(payload.get('approver_only'))
     can_approve_requested = bool(payload.get('can_approve_requests'))
     hr_schedule_view_requested = bool(payload.get('hr_schedule_view'))
@@ -26760,6 +26841,7 @@ def resolve_staff_permission_request(payload, target_user=None):
         'schedule_admin_access': schedule_admin_requested,
         'po_admin_access': po_admin_requested,
         'reimbursement_tracker_access': reimbursement_tracker_requested,
+        'can_create_tsr_without_equipment': tsr_without_equipment_requested,
         'approver_only': approver_only_requested,
     }, None
 
@@ -26800,6 +26882,7 @@ def settings_update_approval_user():
         'schedule_admin_access',
         'po_admin_access',
         'reimbursement_tracker_access',
+        'can_create_tsr_without_equipment',
     )
     old_permission_values = {}
     for field in tracked_permission_fields:
@@ -26828,6 +26911,7 @@ def settings_update_approval_user():
     target_user.schedule_admin_access = permission_values['schedule_admin_access']
     target_user.po_admin_access = permission_values['po_admin_access']
     target_user.reimbursement_tracker_access = permission_values['reimbursement_tracker_access']
+    target_user.can_create_tsr_without_equipment = permission_values['can_create_tsr_without_equipment']
 
     if approver_only_requested:
         target_user.role = 'approver'
@@ -48587,6 +48671,7 @@ def get_timeline_data():
                 'product_id': shift.product_id,
                 'equipment_source': equipment_source,
                 'equipment_available': equipment_available,
+                'tsr_without_equipment_allowed': can_create_tsr_without_equipment_for_shift(shift),
                 'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
                 'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(equipment, 'serial_number', None))),
                 'linked_vieworks': product_vieworks_link_payload(getattr(equipment, 'serial_number', None)) if equipment_source == 'product' and equipment else [],
@@ -48788,6 +48873,7 @@ def get_shift_details(shift_id):
             'product_id': shift.product_id,
             'equipment_source': equipment_source,
             'equipment_available': equipment_available,
+            'tsr_without_equipment_allowed': can_create_tsr_without_equipment_for_shift(shift),
             'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
             'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(equipment, 'serial_number', None))),
             'linked_vieworks': product_vieworks_link_payload(getattr(equipment, 'serial_number', None)) if equipment_source == 'product' and equipment else [],
@@ -58957,6 +59043,7 @@ def add_engineer():
         'schedule_admin_access',
         'po_admin_access',
         'reimbursement_tracker_access',
+        'can_create_tsr_without_equipment',
         'is_active',
     }
     if not is_superadmin_user() and (
