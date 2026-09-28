@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-28
 
+- Committed only the Francis-only equipmentless TSR implementation, focused test, release
+  metadata, and required plan/change records as `7cd4388` on `main`. The owner separately
+  authorized commit and push to `origin/main`; the protected database, handoff, and unrelated
+  untracked files remained unstaged. A records-only closeout commit will carry this commit
+  reference before the two commits are pushed together.
+
 - Started the separately authorized Francis-only TSRs without assigned equipment package after
   preflight confirmed the approved plan still matches the source, focused test/configuration
   paths, and service-worker marker v208. Protected `scheduler.db`, handoff, `.claude/`,

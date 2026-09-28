@@ -1,6 +1,6 @@
 # Francis-only TSRs without assigned equipment
 
-**Status:** Executed — uncommitted; commit/push/deployment were not authorized.
+**Status:** Executed — implementation commit `7cd4388`; publication authorized to `origin/main`.
 **Approved:** 2026-09-28 — the owner said “PLEASE IMPLEMENT THIS PLAN.” Under the project's
 two-step approval rule, this records approval of the plan only; execution still requires a
 separate instruction.
@@ -11,8 +11,9 @@ activated.
 
 ### Execution outcome
 
-Executed locally on 2026-09-28 without commit, push, deployment, Railway changes, production
-changes, browser/Codex UI automation, or live activation. The protected owner changes in
+Executed locally on 2026-09-28 and committed as `7cd4388` after the owner's separate
+commit-and-push instruction. No Railway variable or production-data changes, browser/Codex UI
+automation, or live permission activation were performed. The protected owner changes in
 `scheduler.db`, `Handoffs/08-11-26 handoff.md`, `.claude/`, `output/`, and `tmp/` were left
 untouched.
 
