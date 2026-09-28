@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-28
 
+- Committed only the approved Reimbursement migration lock repair, disposable-database regression,
+  release metadata, and required plan/change records as `014870a` on `main`. The owner separately
+  authorized pushing this bounded package to `origin/main`; protected `scheduler.db`, the handoff,
+  `.claude/`, `output/`, `tmp/`, and unrelated untracked files remained unstaged. This records-only
+  closeout commit carries the implementation reference before both commits are pushed together.
+
 - Began the separately authorized implementation of `Restore Live Access by Releasing the
   Reimbursement Migration Lock`. The bounded work is limited to the approval-column migration
   transaction/one-time success guard, a disposable-SQLite regression, the server availability

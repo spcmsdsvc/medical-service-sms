@@ -1,6 +1,6 @@
 # Restore Live Access by Releasing the Reimbursement Migration Lock
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `014870a`; publication authorized to `origin/main`.
 **Approved:** 2026-09-28 — the owner replied “approved” after the live-outage diagnosis and
 repair plan were presented.
 **Detailed:** 2026-09-28.
@@ -33,9 +33,11 @@ repair plan were presented.
   Python AST parsing, release JSON validation, and `git diff --check` passed. The active service
   worker marker remained v210; no cache bump was required because no client asset changed.
 
-- The implementation remains uncommitted and unpublished. No production database, `scheduler.db`,
-  Railway variable/storage/deployment state, restart, browser/Codex UI session, or protected owner
-  artifact was modified.
+- The bounded implementation was committed as `014870a` after the owner separately authorized
+  commit and push. No production database, `scheduler.db`, Railway variable/storage state, manual
+  restart/redeploy, browser/Codex UI session, or protected owner artifact was modified or staged.
+  A records-only closeout commit carries this implementation reference before publication to
+  `origin/main`.
 
 ### Context
 
