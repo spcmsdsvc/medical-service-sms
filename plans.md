@@ -1,6 +1,6 @@
 # Zero-Write Publication Correction for the Reimbursement Lock Fix
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — correction commit `97237ac`; publication authorized to `origin/main`.
 **Approved:** 2026-09-28 — the owner approved removing the current-schema status backfill and
 repeated that the database must never be pushed.
 **Detailed:** 2026-09-28.
@@ -29,10 +29,10 @@ repeated that the database must never be pushed.
   `200`; Python AST, release JSON, and `git diff --check` passed. Broad full discovery was not
   repeated because the prior 1,370-test result remains applicable and the bounded correction
   exposed no new material risk.
-- The correction remains uncommitted. Only the approved four paths have correction edits;
-  pre-existing handoff, `scheduler.db`, `.claude/`, `output/`, and `tmp/` changes remain
-  untouched and unstaged. No production database, Railway state, browser/Codex UI, commit, or
-  push was accessed or changed.
+- The correction was committed as `97237ac` using only the approved four paths. Pre-existing
+  handoff, `scheduler.db`, `.claude/`, `output/`, and `tmp/` changes remained untouched and
+  unstaged. No production database, Railway state, or browser/Codex UI was accessed or changed.
+  A records-only closeout commit carries this correction reference before the authorized push.
 
 ### Context and decision
 

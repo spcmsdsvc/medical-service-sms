@@ -2,6 +2,13 @@
 
 codex changes - 2026-09-28
 
+- Committed the approved zero-write correction as `97237ac` using only `app.py`,
+  `tests/test_reimbursement_migration_lock.py`, `plans.md`, and `changes.md`. The commit removes
+  the runtime status backfill while preserving additive schema checks and lock release. Protected
+  `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated files remained unstaged
+  and are absent from the commit. A records-only closeout commit will carry this hash before the
+  authorized push to `origin/main`.
+
 - Began the separately authorized zero-write correction for the Reimbursement migration lock
   repair. The bounded allowlist is `app.py`,
   `tests/test_reimbursement_migration_lock.py`, `plans.md`, and `changes.md`; the correction
