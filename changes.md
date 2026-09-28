@@ -41,6 +41,13 @@ codex changes - 2026-09-28
 - Completed this package locally without commit, push, deployment, Railway, production, or
   database operations; protected scheduler database, handoff, `.claude/`, `output/`, `tmp/`,
   and unrelated owner files remain preserved.
+- The owner separately authorized committing and pushing this package. Exactly the ten intended
+  application, template, stylesheet, focused-test, release, plan, and change-record files were
+  committed as `170a094ec23b2c0d4ff25a152182d4465feaa153` and pushed to `origin/main`;
+  `git ls-remote origin refs/heads/main` verified the same commit. Railway deployment
+  `6699918545` for that exact commit completed successfully in `empowering-integrity / production`.
+  Protected and unrelated dirty files remained unstaged; no Railway variable, manual redeploy,
+  or production-data operation was performed.
 
 codex changes - 2026-09-27
 

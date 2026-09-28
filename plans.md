@@ -1,6 +1,6 @@
 # Offline Calibration History in Calendar and Create TSR
 
-**Status:** Executed — local implementation complete; commit not authorized.
+**Status:** Executed — implementation commit `170a094` published to `origin/main`; Railway deployment `6699918545` succeeded.
 **Approved:** 2026-09-28 — the owner approved the plan with “PLEASE IMPLEMENT THIS PLAN”.
 **Execution authorized:** 2026-09-28 — the owner authorized implementation with “go ahead. do not over engineer and over check”.
 **Detailed:** 2026-09-28.
@@ -118,6 +118,13 @@ run or performed.
 
 The follow-up placement adjustment passed its two focused history-position and Calibration
 Report card-contract checks, plus `git diff --check`.
+
+Publication was separately authorized on 2026-09-28. The ten intended application, template,
+stylesheet, focused-test, release, plan, and change-record files were committed as
+`170a094ec23b2c0d4ff25a152182d4465feaa153` and pushed to `origin/main`; `git ls-remote`
+verified the same commit. Railway accepted that exact commit as deployment `6699918545` in
+`empowering-integrity / production` and reported `success`. Protected and unrelated dirty files
+remained unstaged, and no Railway variable, manual redeploy, or production-data operation occurred.
 
 
 # Activity Log signal-quality, scalability, and reimbursement access hardening
