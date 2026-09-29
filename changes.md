@@ -2,6 +2,15 @@
 
 codex changes - 2026-09-29
 
+- Fixed generated Reimbursement Excel workbooks so each expense-column total and the grand total
+  are saved as numeric values from the shared server-side reimbursement total snapshot. Totals now
+  display in previewers and spreadsheet viewers that do not recalculate formulas when opening the
+  file, including workbooks containing rows created through Add Another Item.
+- Added focused workbook regression coverage for a manual Office/Field item. The test saves and
+  reopens the generated workbook without a calculation engine (`data_only=True`) and verifies
+  the detail amount, category total, and grand total remain numeric and equal. Reimbursement total
+  consistency and manual-category suites passed 14/14; no frontend, cache, release, schema,
+  deployment, or production change was required.
 - Committed only the Calendar attachment deletion fix, focused regression coverage, v211 cache
   marker, release manifest, and required change record as `22f0018` on `main`. The owner
   explicitly authorized pushing this bounded package to `origin/main`; protected `scheduler.db`,

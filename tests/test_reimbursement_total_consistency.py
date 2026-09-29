@@ -1,7 +1,11 @@
 import pathlib
 import unittest
 from datetime import date
+from io import BytesIO
 from types import SimpleNamespace
+from unittest.mock import patch
+
+from openpyxl import load_workbook
 
 try:
     import app as app_module
@@ -25,6 +29,12 @@ class ReimbursementTotalConsistencyTests(unittest.TestCase):
             'id': row_id,
             'row_date': row_date,
             'row_total': row_total,
+            'shift_id': None,
+            'client_name': '',
+            'task_name': 'Manual reimbursement item',
+            'product_name': '',
+            'serial_number': '',
+            'remarks': '',
             **{field: 0 for field in app_module.REIMBURSEMENT_EXPENSE_FIELDS},
         }
         values.update(amounts)
@@ -35,6 +45,8 @@ class ReimbursementTotalConsistencyTests(unittest.TestCase):
         return SimpleNamespace(
             start_date=date(2026, 7, 1),
             end_date=date(2026, 7, 31),
+            engineer_id=None,
+            user_id=None,
             rows=list(rows),
         )
 
@@ -91,6 +103,30 @@ class ReimbursementTotalConsistencyTests(unittest.TestCase):
         self.assertIn('Official saved total:', REIMBURSEMENT_TEMPLATE)
         self.assertIn("tone === 'warn' ? '#b45309'", REIMBURSEMENT_TEMPLATE)
         self.assertIn('loadedWarning', REIMBURSEMENT_TEMPLATE)
+
+    def test_excel_materializes_totals_for_manual_items_without_recalculation(self):
+        header = self.header(
+            self.row(
+                17,
+                row_total=125.50,
+                row_date=date(2026, 7, 6),
+                office_supplies=125.50,
+            )
+        )
+
+        with patch.object(app_module, 'current_user', SimpleNamespace(username='Engineer')):
+            workbook = app_module.build_reimbursement_excel_workbook(header)
+
+        output = BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        worksheet = load_workbook(output, data_only=True)['Format']
+
+        self.assertEqual(worksheet['G7'].value, 125.50)
+        self.assertEqual(worksheet['G8'].value, 125.50)
+        self.assertEqual(worksheet['K9'].value, 125.50)
+        self.assertIsInstance(worksheet['G8'].value, (int, float))
+        self.assertIsInstance(worksheet['K9'].value, (int, float))
 
 
 if __name__ == '__main__':

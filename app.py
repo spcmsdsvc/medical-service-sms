@@ -33138,6 +33138,11 @@ def build_reimbursement_excel_workbook(header):
     date_fmt = 'mm-dd-yyyy'
 
     rows = sorted(header.rows, key=lambda r: (r.row_date or header.start_date, r.id))
+    total_snapshot = reimbursement_total_snapshot(header)
+    category_totals = {
+        item['field']: reimbursement_money_value(item['amount'])
+        for item in total_snapshot['category_totals']
+    }
     start_data_row = header_row + 1
 
     if not rows:
@@ -33171,9 +33176,8 @@ def build_reimbursement_excel_workbook(header):
     ws.cell(total_row, 1).font = Font(bold=True)
     ws.cell(total_row, 1).fill = PatternFill('solid', fgColor='D9EAF7')
 
-    for col in range(2, 12):
-        col_letter = get_column_letter(col)
-        ws.cell(total_row, col).value = f"=SUM({col_letter}{start_data_row}:{col_letter}{last_data_row})"
+    for col, field in enumerate(expense_fields, start=2):
+        ws.cell(total_row, col).value = category_totals.get(field, 0.0)
         ws.cell(total_row, col).number_format = money_fmt
         ws.cell(total_row, col).font = Font(bold=True)
         ws.cell(total_row, col).fill = PatternFill('solid', fgColor='D9EAF7')
@@ -33185,7 +33189,7 @@ def build_reimbursement_excel_workbook(header):
     ws.cell(grand_row, 1).fill = PatternFill('solid', fgColor='FFF2CC')
     ws.cell(grand_row, 1).alignment = Alignment(horizontal='right')
 
-    ws.cell(grand_row, 11).value = f"=SUM(B{total_row}:K{total_row})"
+    ws.cell(grand_row, 11).value = reimbursement_money_value(total_snapshot['grand_total'])
     ws.cell(grand_row, 11).number_format = money_fmt
     ws.cell(grand_row, 11).font = Font(bold=True, size=12)
     ws.cell(grand_row, 11).fill = PatternFill('solid', fgColor='FFF2CC')
