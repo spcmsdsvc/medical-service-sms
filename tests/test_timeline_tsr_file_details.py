@@ -69,6 +69,15 @@ class TimelineTsrFileDetailsSourceTests(unittest.TestCase):
         self.assertIn('calibration_report_locked', picker)
         self.assertIn('Approved Calibration Report is read-only', redirect)
 
+    def test_calendar_attachment_delete_uses_the_stored_filename(self):
+        edit_modal = self.timeline_source.split('async function openEditModal', 1)[1].split(
+            'function showConflictWarning', 1
+        )[0]
+        self.assertIn(
+            'const filename = fileInfo.disk_filename || fileInfo.filename;',
+            edit_modal,
+        )
+
 
 class TimelineTsrFileDetailsApiTests(unittest.TestCase):
     @classmethod
@@ -297,6 +306,45 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
         self.assertTrue(details[self.calibration_report_file_id]['is_calibration_report'])
         self.assertTrue(details[self.calibration_report_file_id]['download_url'])
         self.assertTrue(details[self.calibration_report_file_id]['preview_url'])
+
+    def test_calendar_attachment_delete_accepts_disk_filename_from_details_payload(self):
+        stored_name = f'shift_{self.shift_id}_{uuid.uuid4().hex[:16]}_delete-test.png'
+        display_name = 'Calendar Delete Test.png'
+        with self.app.app_context():
+            file_record = app_module.ShiftFile(
+                shift_id=self.shift_id,
+                filename=stored_name,
+                original_filename=display_name,
+            )
+            app_module.db.session.add(file_record)
+            app_module.db.session.commit()
+            file_id = file_record.id
+
+        try:
+            client = self._client_for_user()
+            details_response = client.get(f'/get_shift_details/{self.shift_id}')
+            self.assertEqual(details_response.status_code, 200)
+            detail = next(
+                item for item in details_response.get_json()['shift']['file_details']
+                if item['id'] == file_id
+            )
+            self.assertEqual(detail['filename'], display_name)
+            self.assertEqual(detail['disk_filename'], stored_name)
+
+            with patch.object(app_module, 'managed_storage_delete') as storage_delete:
+                response = client.delete(f"/delete_file/{detail['disk_filename']}")
+
+            self.assertEqual(response.status_code, 200, response.get_json())
+            self.assertEqual(response.get_json()['filename'], stored_name)
+            storage_delete.assert_called_once()
+            with self.app.app_context():
+                self.assertIsNone(app_module.db.session.get(app_module.ShiftFile, file_id))
+        finally:
+            with self.app.app_context():
+                remaining = app_module.db.session.get(app_module.ShiftFile, file_id)
+                if remaining:
+                    app_module.db.session.delete(remaining)
+                    app_module.db.session.commit()
 
     def test_timeline_uses_bulk_report_context_without_email_storage_discovery(self):
         client = self._client_for_user()

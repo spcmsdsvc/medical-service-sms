@@ -1,5 +1,20 @@
 # Project Change Log
 
+codex changes - 2026-09-29
+
+- Fixed Calendar attachment deletion so the edit-modal X control sends the randomized stored
+  filename required by the existing delete endpoint instead of the human-readable display name.
+  Existing managed Calibration Report and Certificate deletion protections remain unchanged.
+- Added focused source and disposable-database regression coverage for the Calendar delete-button
+  identity contract and successful deletion through the stored filename returned by schedule
+  details. Added the engineer-facing release entry and advanced the navigation-shell cache marker
+  from v210 to v211 so clients receive the corrected Calendar template.
+- Verification passed without browser automation or protected-database access: the complete
+  Calendar attachment-detail module passed 14/14 tests; the focused delete, shared cache-version,
+  and changelog workflow batch passed 48/48; release JSON validation and `git diff --check`
+  passed. Direct bytecode compilation was unavailable because the existing `__pycache__` path
+  denied writes, so final source syntax was checked with non-writing AST/Jinja parsing instead.
+
 codex changes - 2026-09-28
 
 - Published the verified Reimbursement lock fix and zero-write correction commit range to

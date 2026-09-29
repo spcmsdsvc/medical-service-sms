@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-29-calendar-attachment-delete",
+      "release_date": "2026-09-29",
+      "title": "Calendar Attachment Deletion Restored",
+      "summary": "Engineers can remove eligible service-report and supporting-file attachments from Calendar again.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-29-calendar-attachment-delete-engineers",
+          "category": "Calendar",
+          "description": "The attachment X button now sends the stored file identity expected by Calendar, so eligible attachments can be removed while managed Calibration artifacts remain protected.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-28-reimbursement-migration-availability",
       "release_date": "2026-09-28",
       "title": "Reimbursement Access Reliability",
