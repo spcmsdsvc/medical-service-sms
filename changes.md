@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-29
 
+- Committed only the generated Reimbursement Excel numeric-total fix, its focused manual-item
+  regression, and the required change record as `b3fb874` on `main`. The owner explicitly
+  authorized pushing this bounded fix to `origin/main`; protected `scheduler.db`, handoffs,
+  `.claude/`, `output/`, `tmp/`, and unrelated untracked files remain unstaged and are absent from
+  the implementation commit. This records-only closeout accompanies the implementation in the
+  authorized publication.
 - Fixed generated Reimbursement Excel workbooks so each expense-column total and the grand total
   are saved as numeric values from the shared server-side reimbursement total snapshot. Totals now
   display in previewers and spreadsheet viewers that do not recalculate formulas when opening the
