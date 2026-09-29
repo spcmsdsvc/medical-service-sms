@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-29-genoray-pm-expiry",
+      "release_date": "2026-09-29",
+      "title": "Genoray PM Plans Follow Coverage Expiry",
+      "summary": "Genoray preventive-maintenance plans now continue through each machine's End Date.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-29-genoray-pm-expiry-admins",
+          "category": "Inventory",
+          "description": "Genoray quarterly and semiannual PM visits now continue through the machine's coverage expiry, while existing shortened plans are extended safely when coverage is updated.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-29-calendar-details-scroll",
       "release_date": "2026-09-29",
       "title": "Calendar Scrolling Restored After Details",

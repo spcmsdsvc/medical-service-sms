@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+from tests.sw_cache_version import assert_cache_version_at_least
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / f"medical_service_tsr_without_equipment_{uuid.uuid4().hex}.db"
 os.environ.setdefault("MEDICAL_SERVICE_TEST_DB", str(TEST_DB_PATH))
@@ -49,7 +51,7 @@ class TsrWithoutEquipmentSourceTests(unittest.TestCase):
         self.assertNotIn("Create Calibration Report", self.timeline_source.split("function canOpenCalibrationReportForSchedule", 1)[1].split("function getCalibrationReportTimelineLabel", 1)[0])
 
     def test_release_and_cache_are_advanced_for_this_package(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v213-calendar-details-scroll", self.app_source)
+        assert_cache_version_at_least(self, 213, self.app_source)
         self.assertIn("2026-09-28-francis-tsr-without-equipment", self.release_source)
 
 

@@ -4059,6 +4059,10 @@ def ensure_inventory_pm_visit_table():
                     "ON inventory_pm_visit (brand, equipment_serial, target_date)"
                 )
         _inventory_pm_visit_table_ready = True
+        # Repair only keyed Genoray recurring plans once the additive PM table is
+        # ready.  The helper is append-only and leaves legacy/manual/Vieworks rows
+        # untouched.
+        backfill_inventory_pm_genoray_plans()
         # Existing PM rows may point at schedules that were already completed before
         # immutable history existed.  Backfill once per additive ensure call; the
         # helper is deliberately best-effort per row so one stale schedule cannot
@@ -4093,17 +4097,139 @@ def add_inventory_pm_months(start_date, months):
     return date(target_year, target_month, min(start_date.day, last_day))
 
 
-def generate_inventory_pm_dates(start_date, cadence):
-    """Generate deterministic target dates for one supported recurring cadence."""
+def generate_inventory_pm_dates(start_date, cadence, cutoff=None):
+    """Generate deterministic target dates, optionally stopping at a coverage cutoff."""
     normalized_cadence = normalize_inventory_pm_cadence(cadence)
     if not normalized_cadence:
         raise ValueError('Cadence must be semi_annual or quarterly.')
     if not isinstance(start_date, date):
         raise ValueError('Start date must be a valid date.')
-    return [
-        add_inventory_pm_months(start_date, offset)
-        for offset in INVENTORY_PM_CADENCE_OFFSETS[normalized_cadence]
+    if cutoff is None:
+        return [
+            add_inventory_pm_months(start_date, offset)
+            for offset in INVENTORY_PM_CADENCE_OFFSETS[normalized_cadence]
+        ]
+    if not isinstance(cutoff, date):
+        raise ValueError('End Date must be a valid date.')
+    if start_date > cutoff:
+        raise ValueError('Initial target date cannot be later than the equipment End Date.')
+
+    interval = 6 if normalized_cadence == 'semi_annual' else 3
+    dates = []
+    offset = 0
+    while True:
+        target_date = add_inventory_pm_months(start_date, offset)
+        if target_date > cutoff:
+            break
+        dates.append(target_date)
+        offset += interval
+    return dates
+
+
+def _latest_genoray_recurring_plan(item):
+    """Return the newest valid keyed recurring plan for one Genoray item."""
+    rows = InventoryPmVisit.query.filter(
+        InventoryPmVisit.brand == 'genoray',
+        InventoryPmVisit.equipment_serial == item.serial_number,
+        InventoryPmVisit.plan_key.isnot(None),
+        InventoryPmVisit.cadence.in_(INVENTORY_PM_CADENCES),
+    ).all()
+    by_plan = {}
+    for row in rows:
+        plan_key = clean_str(getattr(row, 'plan_key', None))
+        cadence = normalize_inventory_pm_cadence(getattr(row, 'cadence', None))
+        if not plan_key or not cadence or not row.target_date:
+            continue
+        by_plan.setdefault(plan_key, []).append(row)
+
+    candidates = []
+    for plan_key, plan_rows in by_plan.items():
+        cadences = {normalize_inventory_pm_cadence(row.cadence) for row in plan_rows}
+        if len(cadences) != 1:
+            continue
+        ordered_rows = sorted(plan_rows, key=lambda row: (row.target_date, row.id or 0))
+        newest_row = max(
+            plan_rows,
+            key=lambda row: (getattr(row, 'created_at', None) or datetime.min, row.id or 0),
+        )
+        candidates.append({
+            'plan_key': plan_key,
+            'cadence': next(iter(cadences)),
+            'rows': ordered_rows,
+            'newest_row': newest_row,
+        })
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda candidate: (
+            getattr(candidate['newest_row'], 'created_at', None) or datetime.min,
+            candidate['newest_row'].id or 0,
+        ),
+    )
+
+
+def append_inventory_pm_genoray_plan_visits(item):
+    """Append missing canonical dates for one Genoray plan in the caller's transaction."""
+    end_date = getattr(item, 'end_warranty_date', None)
+    if not end_date:
+        return []
+    plan = _latest_genoray_recurring_plan(item)
+    if not plan or not plan['rows']:
+        return []
+
+    anchor = plan['rows'][0].target_date
+    latest_target = max(row.target_date for row in plan['rows'] if row.target_date)
+    try:
+        generated_dates = generate_inventory_pm_dates(anchor, plan['cadence'], end_date)
+    except ValueError:
+        # A legacy plan whose anchor is already beyond coverage is not a valid
+        # candidate for repair and must not be rewritten.
+        return []
+
+    existing_dates = {
+        row.target_date
+        for row in InventoryPmVisit.query.filter_by(
+            brand='genoray',
+            equipment_serial=item.serial_number,
+        ).all()
+        if row.target_date
+    }
+    missing_dates = [
+        target_date for target_date in generated_dates
+        if target_date > latest_target and target_date not in existing_dates
     ]
+    if not missing_dates:
+        return []
+
+    new_rows = [
+        InventoryPmVisit(
+            brand='genoray',
+            equipment_serial=item.serial_number,
+            target_date=target_date,
+            cadence=plan['cadence'],
+            plan_key=plan['plan_key'],
+            shift_id=None,
+        )
+        for target_date in missing_dates
+    ]
+    db.session.add_all(new_rows)
+    return new_rows
+
+
+def backfill_inventory_pm_genoray_plans():
+    """Repair keyed Genoray recurring plans once per PM-table initialization."""
+    ensure_genoray_item_table()
+    db.session.rollback()
+    db.session.connection().exec_driver_sql('BEGIN IMMEDIATE')
+    try:
+        items = GenorayItem.query.filter(GenorayItem.end_warranty_date.isnot(None)).all()
+        for item in items:
+            append_inventory_pm_genoray_plan_visits(item)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def normalize_inventory_pm_brand(brand):
@@ -24806,7 +24932,8 @@ def pwa_service_worker():
     # Navigation shell bump: v210 preserves deleted Product identity in TSR history.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v212-calendar-calibration-actions.
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v213-calendar-details-scroll';
+    # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v214-genoray-pm-expiry';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -60599,7 +60726,12 @@ def inventory_pm_rebuild_cadence(
             }, 409
 
         try:
-            generated_dates = generate_inventory_pm_dates(target_date, requested_cadence)
+            cutoff = item.end_warranty_date if normalized == 'genoray' else None
+            generated_dates = generate_inventory_pm_dates(
+                target_date,
+                requested_cadence,
+                cutoff,
+            )
         except ValueError as date_error:
             db.session.rollback()
             return {'message': str(date_error)}, 400
@@ -60756,7 +60888,8 @@ def inventory_pm_visits_api(brand, serial_number=None):
         return jsonify({'message': 'Schedule links are added to individual visits after plan creation.'}), 400
 
     try:
-        generated_dates = generate_inventory_pm_dates(start_date, cadence)
+        cutoff = item.end_warranty_date if normalized == 'genoray' else None
+        generated_dates = generate_inventory_pm_dates(start_date, cadence, cutoff)
     except ValueError as date_error:
         return jsonify({'message': str(date_error)}), 400
 
@@ -61501,6 +61634,11 @@ def update_genoray_item(serial_number):
         item.start_warranty_date = values['start_warranty_date']
         item.end_warranty_date = values['end_warranty_date']
         item.under_contract = values['under_contract']
+        # Extending coverage (including blank -> dated) repairs the current
+        # keyed recurring plan in this same transaction.  Shortening/removing
+        # coverage never deletes or rewrites existing visits.
+        if item.end_warranty_date:
+            append_inventory_pm_genoray_plan_visits(item)
         db.session.commit()
     except IntegrityError as item_error:
         db.session.rollback()

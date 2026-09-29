@@ -3,6 +3,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tests.sw_cache_version import assert_cache_version_at_least
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TIMELINE = ROOT / "templates" / "timeline.html"
@@ -76,10 +78,7 @@ class TimelineGridWidthTests(unittest.TestCase):
         )
 
     def test_details_popover_scroll_fix_is_distributed(self):
-        self.assertIn(
-            "medical-service-pwa-offline-navigation-v213-calendar-details-scroll",
-            self.app,
-        )
+        assert_cache_version_at_least(self, 213, self.app)
         release = next(
             (
                 item

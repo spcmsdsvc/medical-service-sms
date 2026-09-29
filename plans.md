@@ -1,3 +1,135 @@
+# Genoray PM Visits Through Coverage Expiry
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-29 — the owner submitted the proposed plan for implementation.
+**Execution authorized:** 2026-09-29 — the owner said “go ahead”.
+**Detailed:** 2026-09-29.
+
+### Summary
+
+Correct Genoray PM planning so quarterly or semiannual visits continue from the selected initial
+date through the machine's displayed End Date. Repair existing shortened Genoray plans
+automatically and extend them again when the End Date is later increased. Vieworks behavior
+remains unchanged.
+
+### Numbered execution steps
+
+1. **Preflight and records — `AGENTS.md`, `plans.md`, `changes.md`, Git state, affected source,
+   and focused tests.** After a separate owner go-ahead, reread the applicable instructions and
+   this approved plan, inspect current source and tests, and confirm no material state change has
+   invalidated the design. Preserve dirty `scheduler.db`, `Handoffs/08-11-26 handoff.md`,
+   `.claude/`, `output/`, `tmp/`, and unrelated owner work. Mark this plan `In progress` and add
+   an implementation-start entry to `changes.md`. Done when the bounded source/test/metadata
+   allowlist is confirmed and protected artifacts remain untouched.
+2. **Fail-first focused coverage — `tests/test_inventory_pm.py` and
+   `tests/test_genoray_inventory.py`.** Add disposable-database expectations for multi-year
+   quarterly and semiannual generation, exact-expiry inclusion, no off-cadence expiry visit,
+   month-end and leap-year clamping, start-after-expiry rejection, and the existing no-expiry
+   fallback. Cover Genoray plan creation, cadence rebuilding, automatic backfill, and later End
+   Date extensions. Prove Vieworks remains limited to its existing two/four-visit cycle. Run the
+   focused tests against unchanged product code and retain the expected failures.
+3. **Expiry-aware generation — `app.py`.** Extend `generate_inventory_pm_dates` with an optional
+   cutoff. With a cutoff, emit cadence occurrences from the anchor until the next occurrence
+   would exceed the cutoff; include an occurrence exactly on the cutoff and never add an
+   off-cadence expiry visit. Reject anchors later than the cutoff. Without a cutoff, preserve the
+   current fixed cycle. Pass `GenorayItem.end_warranty_date` into Genoray creation and cadence
+   rebuilding only; leave Vieworks calls without a cutoff. Preserve response keys, duplicate-date
+   behavior, protected linked/completed visits, collision checks, and transactional rollback.
+4. **Existing-plan automatic backfill — `app.py`.** Add an idempotent Genoray-only backfill to
+   PM table initialization. For each Genoray machine with an End Date and at least one valid
+   keyed recurring plan, select the newest plan by creation timestamp/ID, retain its earliest
+   row as the cadence anchor, and append only canonical dates after that plan's current latest
+   visit through expiry. Reuse its `plan_key` and cadence, create unlinked rows, and skip any
+   brand/serial/date already present. Do not recreate earlier gaps, infer null-key legacy plans,
+   rewrite/delete existing rows, alter linked/completed history, or touch Vieworks. Use an atomic
+   write transaction plus the existing uniqueness constraint so concurrent/repeated startup is
+   safe and produces no duplicates.
+5. **Later Genoray End Date extensions — `app.py`.** In `update_genoray_item`, after any serial
+   move and before the existing commit, invoke the same append-only reconciliation when End Date
+   moves later or changes from blank to a date. Save the inventory edit and appended visits in
+   one transaction. Shorter or removed End Dates preserve all current PM visits; no automatic
+   deletion or rewrite is permitted.
+6. **PM editor — `templates/inventory_pm.html`.** On Genoray detail pages, label cadences as every
+   three or six months rather than fixed visit counts. Use the serialized End Date to preview the
+   generated count, coverage expiry, and last scheduled occurrence for create and cadence-rebuild
+   modes. When Genoray has no End Date, retain the existing one-cycle preview. Keep Vieworks labels,
+   fixed-cycle preview, and behavior unchanged.
+7. **Delivery metadata and project records — `app.py`, `static/changelog/releases.json`,
+   `plans.md`, and `changes.md`.** Advance the embedded service-worker marker because the PM
+   template's inline behavior changes; add one focused administrator-facing release item; record
+   all implemented behavior and truthful verification. No production data operation, commit,
+   push, deployment, Railway change, or protected-artifact cleanup is included.
+8. **Verification and closeout.** Self-review the bounded diff and confirm protected artifacts
+   are unchanged. Run focused PM/Genoray/Vieworks, service-worker, changelog/release, and
+   template/inline-JavaScript tests, followed by isolated full test discovery. Validate Python
+   AST, Jinja rendering, inline JavaScript syntax, release JSON, and `git diff --check`. Use only
+   disposable test databases. Browser/Codex-app automation remains excluded unless separately
+   authorized. Record pass/fail/skip totals and mark the plan `Executed — uncommitted` only after
+   the authorized implementation is complete.
+
+### Interfaces and acceptance
+
+- No schema or breaking API change. Existing `created_dates`, `created_visits`,
+  `regenerated_dates`, and related arrays may contain more than two or four Genoray visits.
+- `GenorayItem.end_warranty_date` is the cutoff regardless of whether the item is currently
+  labelled Under Warranty or Under Contract. The `under_contract` flag does not gate generation.
+- An occurrence exactly on the End Date is included. If cadence does not land on the End Date,
+  the last cadence occurrence before expiry is the final visit; no artificial expiry-day visit
+  is added. Quarterly visits beginning 2023-04-19 with expiry 2028-04-18 therefore end on
+  2028-01-19.
+- Genoray without an End Date keeps today's one-cycle behavior. Vieworks behavior remains exactly
+  two semiannual or four quarterly visits.
+- Creation/rebuild with an initial Genoray target after expiry returns a clear validation error
+  without mutation.
+- Existing-plan and End-Date reconciliation is append-only and idempotent. Existing, moved,
+  deleted-gap, linked, and completed rows remain authoritative and are never recreated or removed.
+- Automatic production backfill occurs only after a later separately authorized deployment.
+  Implementation and local verification must not access or modify production or `scheduler.db`.
+
+### Deliberately excluded
+
+- No Vieworks expiry-aware generation or backfill.
+- No separate contract-expiry field, schema migration, cadence type, forced visit on the exact
+  expiry day, or deletion when an End Date is shortened/removed.
+- No inference or migration of legacy null-cadence/null-plan-key rows and no rebuilding of earlier
+  manually moved or deleted plan positions.
+- No browser/Codex-app automation, production/Railway/database operation, commit, push,
+  deployment, or cleanup of protected dirty artifacts.
+
+### Execution outcome
+
+1. `generate_inventory_pm_dates` now accepts an optional cutoff and emits Genoray cadence
+   occurrences through (and only through) `end_warranty_date`, including an exact cadence match
+   on expiry and rejecting an anchor after expiry. Genoray creation and cadence rebuilds pass the
+   cutoff; Vieworks retains its fixed two/four-visit behavior and no-expiry Genoray plans retain
+   the existing fixed cycle.
+2. PM table initialization now acquires an atomic writer transaction and append-only reconciles
+   the newest valid keyed Genoray recurring plan through expiry. It skips legacy/null-key plans,
+   earlier gaps, duplicate machine dates, linked/completed rows, and Vieworks rows. Genoray End
+   Date edits append missing future dates in the same item transaction and never delete visits
+   when coverage is shortened or removed.
+3. The Genoray PM editor now labels cadence intervals in months and previews expiry, count, and
+   last scheduled occurrence for creation and cadence rebuilds. The embedded service-worker
+   marker advanced to v214 and the administrator-facing release manifest includes the new PM
+   behavior.
+4. Focused coverage was added for expiry generation, exact/non-cadence expiry behavior, validation,
+   creation/rebuild, append-only/idempotent backfill, later End Date extension/shortening, and
+   Vieworks regression. The approved fail-first run was not separately captured before product
+   edits in this execution; all focused tests were run successfully after implementation.
+5. Focused verification passed: `test_inventory_pm` 43/43, `test_genoray_inventory` 16/16,
+   `test_vieworks_inventory` 13/13, cache helper 5/5, affected cache modules 33/33,
+   changelog workflow 41/41, changelog coverage 2 passed/1 expected skip, Python compile/AST,
+   Jinja/template checks, inline PM JavaScript syntax, release JSON, and `git diff --check`.
+   Isolated full discovery ran 1,396 tests and reported 26 pre-existing unrelated failures,
+   2 errors, and 5 skips (product-name/catalog, calibration/archive, LPR, offline source,
+   purchase-order rate-limit, and other cross-suite fixtures); no Genoray PM test failed.
+   Browser/Codex-app verification was not run per the approved exclusion.
+6. No commit, push, deployment, Railway, production, database, or protected-artifact operation
+   was performed. `scheduler.db`, the handoff, `.claude/`, `output/`, `tmp/`, and the detailed
+   handoff remain owner-controlled dirty/untracked state.
+
+##
+
 # Restore Calendar Calibration Report Actions
 
 **Status:** Executed — implementation commit `423bfbd`; publication authorized.

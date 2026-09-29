@@ -58,8 +58,13 @@
                 <div class="col-12 col-md-6">
                     <label for="pm-cadence" class="form-label small fw-bold text-uppercase">Cadence</label>
                     <select id="pm-cadence" class="form-select" required>
+                        {% if brand == 'genoray' %}
+                        <option value="quarterly">Quarterly (every 3 months)</option>
+                        <option value="semi_annual">Semi-Annual (every 6 months)</option>
+                        {% else %}
                         <option value="quarterly">Quarterly (4 visits)</option>
                         <option value="semi_annual">Semi-Annual (2 visits)</option>
+                        {% endif %}
                     </select>
                 </div>
                 <div class="col-12 col-md-6">
@@ -78,8 +83,13 @@
                     <label for="pm-edit-cadence" class="form-label small fw-bold text-uppercase">Cadence</label>
                     <select id="pm-edit-cadence" class="form-select">
                         <option value="">Legacy single visit</option>
+                        {% if brand == 'genoray' %}
+                        <option value="quarterly">Quarterly (every 3 months)</option>
+                        <option value="semi_annual">Semi-Annual (every 6 months)</option>
+                        {% else %}
                         <option value="quarterly">Quarterly (4 visits)</option>
                         <option value="semi_annual">Semi-Annual (2 visits)</option>
+                        {% endif %}
                     </select>
                     <div id="pm-cadence-rebuild" class="form-text" aria-live="polite">Changing cadence rebuilds this visit and its later plan siblings.</div>
                 </div>
@@ -201,6 +211,7 @@
     const BRAND = {{ brand|tojson }};
     const BRAND_LABEL = {{ brand_label|tojson }};
     const DETAIL_SERIAL = {{ detail_serial|default('')|tojson }};
+    let DETAIL_END_DATE = {{ (detail_item.get('end_warranty', '') if detail_item else '')|tojson }};
     const INITIAL_FISCAL_YEAR = {{ fiscal_year|int }};
     const PM_MIN_FISCAL_YEAR = 1900;
     const PM_MAX_FISCAL_YEAR = 2200;
@@ -379,6 +390,7 @@
     function renderDetailEquipment(item) {
         const box = document.getElementById('pm-equipment-summary');
         if (!box || !item) return;
+        DETAIL_END_DATE = item.end_warranty || '';
         box.innerHTML = `<div class="pm-detail-field"><span>Owner</span><strong>${escapeHtml(item.client_name || 'N/A')}</strong></div><div class="pm-detail-field"><span>BSID</span><strong>${escapeHtml(item.bsid || 'Not assigned')}</strong></div><div class="pm-detail-field"><span>Warranty</span><strong>${escapeHtml(item.start_warranty || 'N/A')} → ${escapeHtml(item.end_warranty || 'N/A')}</strong></div><div class="pm-detail-field"><span>Contract</span><strong>${item.under_contract ? 'Under Contract' : 'No Contract'}</strong></div>`;
     }
 
@@ -426,23 +438,48 @@
         return `${shifted.getUTCFullYear()}-${padded(shifted.getUTCMonth() + 1)}-${padded(Math.min(day, lastDay))}`;
     }
 
+    function recurringPreviewDates(anchor, cadence, cutoff = '') {
+        if (!anchor || !cadence) return [];
+        const offsets = cadence === 'semi_annual' ? [0, 6] : [0, 3, 6, 9];
+        if (!cutoff) return offsets.map(offset => addMonthsClamped(anchor, offset));
+        if (anchor > cutoff) return [];
+        const interval = cadence === 'semi_annual' ? 6 : 3;
+        const dates = [];
+        for (let offset = 0; ; offset += interval) {
+            const candidate = addMonthsClamped(anchor, offset);
+            if (!candidate || candidate > cutoff) break;
+            dates.push(candidate);
+        }
+        return dates;
+    }
+
+    function recurringPreviewText(anchor, cadence) {
+        const dates = recurringPreviewDates(anchor, cadence, BRAND === 'genoray' ? DETAIL_END_DATE : '');
+        if (!dates.length) {
+            return BRAND === 'genoray' && DETAIL_END_DATE
+                ? `Initial target date must be on or before coverage expiry ${DETAIL_END_DATE}.`
+                : 'Choose a date to preview the plan.';
+        }
+        if (BRAND === 'genoray' && DETAIL_END_DATE) {
+            return `Creates ${dates.length} visits through ${DETAIL_END_DATE}; last scheduled occurrence is ${dates[dates.length - 1]}.`;
+        }
+        return `Creates ${dates.length} visits: ${dates.join(', ')}`;
+    }
+
     function previewRecurringPlan() {
         const preview = document.getElementById('pm-date-preview');
         const startDate = document.getElementById('pm-start-date')?.value || '';
         const cadence = document.getElementById('pm-cadence')?.value || 'quarterly';
         if (!preview) return;
         if (!startDate) { preview.textContent = 'Choose a date to preview the plan.'; return; }
-        const offsets = cadence === 'semi_annual' ? [0, 6] : [0, 3, 6, 9];
-        const dates = offsets.map(offset => addMonthsClamped(startDate, offset));
-        preview.textContent = `Creates ${dates.length} visits: ${dates.join(', ')}`;
+        preview.textContent = recurringPreviewText(startDate, cadence);
     }
 
     function editCadencePreviewDates() {
         const targetDate = document.getElementById('pm-target-date')?.value || '';
         const cadence = document.getElementById('pm-edit-cadence')?.value || '';
         if (!targetDate || !cadence) return [];
-        const offsets = cadence === 'semi_annual' ? [0, 6] : [0, 3, 6, 9];
-        return offsets.map(offset => addMonthsClamped(targetDate, offset));
+        return recurringPreviewDates(targetDate, cadence, BRAND === 'genoray' ? DETAIL_END_DATE : '');
     }
 
     function updateEditCadenceState() {
@@ -464,7 +501,17 @@
         if (chosenCadence && chosenCadence !== storedCadence) {
             save.innerHTML = '<i class="fa-solid fa-arrows-rotate me-1" aria-hidden="true"></i>Update and Rebuild Plan';
             const dates = editCadencePreviewDates();
-            if (preview) preview.textContent = dates.length ? `Rebuilds from the edited date: ${dates.join(', ')}` : 'Choose a target date to preview the rebuilt plan.';
+            if (preview) {
+                if (!dates.length) {
+                    preview.textContent = BRAND === 'genoray' && DETAIL_END_DATE
+                        ? `Edited target date must be on or before coverage expiry ${DETAIL_END_DATE}.`
+                        : 'Choose a target date to preview the rebuilt plan.';
+                } else if (BRAND === 'genoray' && DETAIL_END_DATE) {
+                    preview.textContent = `Rebuilds ${dates.length} visits through ${DETAIL_END_DATE}; last scheduled occurrence is ${dates[dates.length - 1]}.`;
+                } else {
+                    preview.textContent = `Rebuilds from the edited date: ${dates.join(', ')}`;
+                }
+            }
         } else {
             save.innerHTML = '<i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Update Visit';
             if (preview) preview.textContent = chosenCadence ? 'Cadence is unchanged; this edit affects only the selected visit.' : 'Legacy visit: choose a cadence to rebuild a recurring plan.';

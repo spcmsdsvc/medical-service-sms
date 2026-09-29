@@ -10,6 +10,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
+from tests.sw_cache_version import assert_cache_version_at_least
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 NODE = pathlib.Path(r'C:\Users\Jonamar\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe')
@@ -530,10 +532,7 @@ console.log(JSON.stringify({ success, successEvents, missing, missingEvents, sta
             "medical-service-pwa-offline-navigation-v200-calibration-report-paste-criteria",
             self.app_source,
         )
-        self.assertIn(
-            "medical-service-pwa-offline-navigation-v213-calendar-details-scroll",
-            self.app_source,
-        )
+        assert_cache_version_at_least(self, 213, self.app_source)
         self.assertIn('2026-09-25-pre-submission-calibration-report', self.release_source)
         self.assertIn('2026-09-08-tsr-offline-draft-save-order', self.release_source)
         self.assertIn('2026-09-29-calendar-calibration-actions', self.release_source)

@@ -2,6 +2,38 @@
 
 codex changes - 2026-09-29
 
+- Began the separately authorized **Genoray PM Visits Through Coverage Expiry** package. The
+  implementation is limited to expiry-aware Genoray recurring plans, append-only repair and later
+  End Date extension, PM editor previews, focused tests, cache/release metadata, and required
+  records. Protected `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, production,
+  Railway, browser automation, commit, push, and deployment remain untouched.
+
+- Implemented expiry-aware Genoray PM recurrence in `app.py`: quarterly and semiannual plans now
+  generate cadence dates through `GenorayItem.end_warranty_date`, reject an initial date after
+  expiry, and retain the existing no-expiry and Vieworks fixed-cycle behavior. Existing PM plan
+  response fields and collision/rollback behavior remain unchanged.
+- Added append-only, idempotent keyed-Genoray reconciliation during PM table initialization and
+  Genoray End Date edits. Reconciliation selects the newest valid plan, preserves its anchor,
+  cadence, IDs, links, completion history, moved rows, and deleted gaps, skips existing machine
+  dates, and never deletes visits on shortened/removed coverage or changes Vieworks rows.
+- Updated `templates/inventory_pm.html` with Genoray interval labels and expiry/count/last-date
+  previews for creation and cadence rebuilds, advanced the embedded service-worker marker to
+  `medical-service-pwa-offline-navigation-v214-genoray-pm-expiry`, and added the administrator
+  release entry `2026-09-29-genoray-pm-expiry` in `static/changelog/releases.json`.
+- Added focused expiry/backfill/extension/Vieworks regression coverage and updated directly
+  affected cache-version expectations. Focused tests, source/template/inline-JavaScript checks,
+  release JSON, AST/compile, and diff checks passed; isolated full discovery remains red only in
+  unrelated pre-existing suites (26 failures, 2 errors, 5 skips). No production or protected
+  artifact operation was performed; implementation remains uncommitted.
+
+- Recorded the owner-submitted **Genoray PM Visits Through Coverage Expiry** plan at the top of
+  `plans.md` with status **Approved — awaiting go-ahead**. The approved package covers
+  Genoray-only expiry-aware recurring generation, append-only/idempotent repair of existing keyed
+  plans, later End Date extensions, PM editor previews, focused tests, cache/release metadata, and
+  required records. Vieworks, shortened-expiry deletion, legacy null-key inference, protected
+  `scheduler.db`, production/Railway work, browser automation, commit, push, and deployment remain
+  excluded. No application behavior or database data was changed in this approval-record step.
+
 - Committed only the Calendar Details scrolling fix, focused regression coverage, v213 cache
   marker, release manifest, and required change record as `aa1e69c` on `main`. The owner
   explicitly authorized pushing this bounded fix to `origin/main`; protected `scheduler.db`,

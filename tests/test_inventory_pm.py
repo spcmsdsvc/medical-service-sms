@@ -76,6 +76,13 @@ class InventoryPmSourceContractTests(unittest.TestCase):
         self.assertIn("completion_snapshot_json", source)
         self.assertIn("planned_visits", source)
         self.assertIn("history", source)
+        self.assertIn("medical-service-pwa-offline-navigation-v214-genoray-pm-expiry", source)
+        self.assertIn("every 3 months", template)
+        expiry_release = next(
+            release for release in releases.get("releases", [])
+            if release.get("release_key") == "2026-09-29-genoray-pm-expiry"
+        )
+        self.assertIn("End Date", expiry_release["summary"])
 
 
 class InventoryPmTests(unittest.TestCase):
@@ -188,6 +195,9 @@ class InventoryPmTests(unittest.TestCase):
             if gen_item:
                 gen_item.name = "Genoray PM Unit"
                 gen_item.client_id = self.gen_client_id
+                gen_item.start_warranty_date = None
+                gen_item.end_warranty_date = None
+                gen_item.under_contract = False
             if view_item:
                 view_item.name = "Vieworks PM Unit"
                 view_item.client_id = self.gen_client_id
@@ -256,6 +266,12 @@ class InventoryPmTests(unittest.TestCase):
                 equipment_serial=serial or (self.gen_serial if brand == "genoray" else self.view_serial),
             ).order_by(app_module.InventoryPmVisit.target_date.asc()).all()
             return [(row.target_date.isoformat(), row.cadence) for row in rows]
+
+    def set_genoray_end_date(self, value):
+        with self.app.app_context():
+            item = app_module.db.session.get(app_module.GenorayItem, self.gen_serial)
+            item.end_warranty_date = app_module.parse_date(value) if value else None
+            app_module.db.session.commit()
 
     def test_additive_migration_adds_cadence_to_legacy_table(self):
         with self.app.app_context():
@@ -691,6 +707,134 @@ class InventoryPmTests(unittest.TestCase):
             ["2024-02-29", "2024-05-29", "2024-08-29", "2024-11-29"],
         )
         self.assertTrue(all(row["shift_id"] is None for row in quarterly.get_json()["created_visits"]))
+
+    def test_expiry_aware_generation_repeats_until_cutoff_without_forcing_expiry_day(self):
+        quarterly = app_module.generate_inventory_pm_dates(
+            date(2023, 4, 19), "quarterly", date(2028, 4, 18)
+        )
+        self.assertEqual(len(quarterly), 20)
+        self.assertEqual(quarterly[0], date(2023, 4, 19))
+        self.assertEqual(quarterly[-1], date(2028, 1, 19))
+        self.assertNotIn(date(2028, 4, 18), quarterly)
+
+        exact = app_module.generate_inventory_pm_dates(
+            date(2023, 4, 18), "quarterly", date(2028, 4, 18)
+        )
+        self.assertEqual(exact[-1], date(2028, 4, 18))
+
+        semi_annual = app_module.generate_inventory_pm_dates(
+            date(2023, 8, 31), "semi_annual", date(2024, 2, 29)
+        )
+        self.assertEqual([value.isoformat() for value in semi_annual], ["2023-08-31", "2024-02-29"])
+        with self.assertRaisesRegex(ValueError, "later than the equipment End Date"):
+            app_module.generate_inventory_pm_dates(date(2028, 4, 19), "quarterly", date(2028, 4, 18))
+
+    def test_genoray_creation_and_rebuild_use_end_date_while_vieworks_keeps_fixed_cycle(self):
+        client = self.client_for(self.ids["admin"])
+        self.set_genoray_end_date("2027-04-18")
+        created = self.create_plan(client, cadence="quarterly", start_date="2026-01-31")
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        self.assertEqual(
+            created.get_json()["created_dates"],
+            ["2026-01-31", "2026-04-30", "2026-07-31", "2026-10-31", "2027-01-31"],
+        )
+        selected_id = created.get_json()["created_visits"][1]["id"]
+        rebuilt = client.put(
+            f"/api/genoray/pm/visits/{selected_id}",
+            json={"target_date": "2026-04-30", "cadence": "semi_annual"},
+        )
+        self.assertEqual(rebuilt.status_code, 200, rebuilt.get_data(as_text=True))
+        self.assertEqual(rebuilt.get_json()["regenerated_dates"], ["2026-04-30", "2026-10-30"])
+
+        view_created = self.create_plan(
+            client, brand="vieworks", cadence="quarterly", start_date="2026-01-31"
+        )
+        self.assertEqual(view_created.status_code, 200, view_created.get_data(as_text=True))
+        self.assertEqual(len(view_created.get_json()["created_dates"]), 4)
+
+    def test_genoray_start_after_expiry_rejects_without_mutation(self):
+        client = self.client_for(self.ids["admin"])
+        self.set_genoray_end_date("2026-01-30")
+        rejected = self.create_plan(client, cadence="quarterly", start_date="2026-01-31")
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn("later than the equipment End Date", rejected.get_json()["message"])
+        self.assertEqual(self.visit_dates(), [])
+
+    def test_existing_genoray_plan_backfill_is_append_only_and_idempotent(self):
+        client = self.client_for(self.ids["admin"])
+        created = self.create_plan(client, cadence="quarterly", start_date="2026-01-31")
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        original_ids = [row["id"] for row in created.get_json()["created_visits"]]
+        self.set_genoray_end_date("2027-12-31")
+        with self.app.app_context():
+            moved = app_module.db.session.get(app_module.InventoryPmVisit, original_ids[1])
+            moved.target_date = date(2026, 5, 15)
+            deleted = app_module.db.session.get(app_module.InventoryPmVisit, original_ids[2])
+            app_module.db.session.delete(deleted)
+            app_module.db.session.commit()
+            app_module._inventory_pm_visit_table_ready = False
+            app_module.ensure_inventory_pm_visit_table()
+            first_pass = app_module.InventoryPmVisit.query.filter_by(
+                brand="genoray", equipment_serial=self.gen_serial
+            ).order_by(app_module.InventoryPmVisit.target_date.asc()).all()
+            first_ids = {row.id for row in first_pass}
+            app_module._inventory_pm_visit_table_ready = False
+            app_module.ensure_inventory_pm_visit_table()
+            second_pass = app_module.InventoryPmVisit.query.filter_by(
+                brand="genoray", equipment_serial=self.gen_serial
+            ).order_by(app_module.InventoryPmVisit.target_date.asc()).all()
+        self.assertEqual(first_ids, {row.id for row in second_pass})
+        self.assertIn(original_ids[0], first_ids)
+        self.assertIn(original_ids[1], first_ids)
+        self.assertNotIn(original_ids[2], first_ids)
+        dates = [row.target_date.isoformat() for row in second_pass]
+        self.assertNotIn("2026-04-30", dates)
+        self.assertNotIn("2026-07-31", dates)
+        self.assertEqual(dates[-1], "2027-10-31")
+
+    def test_backfill_uses_only_the_newest_keyed_genoray_plan(self):
+        client = self.client_for(self.ids["admin"])
+        first = self.create_plan(client, cadence="quarterly", start_date="2026-01-31")
+        second = self.create_plan(client, cadence="semi_annual", start_date="2026-02-28")
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
+        first_ids = {row["id"] for row in first.get_json()["created_visits"]}
+        second_ids = {row["id"] for row in second.get_json()["created_visits"]}
+        self.set_genoray_end_date("2027-12-31")
+        with self.app.app_context():
+            app_module._inventory_pm_visit_table_ready = False
+            app_module.ensure_inventory_pm_visit_table()
+            rows = app_module.InventoryPmVisit.query.filter_by(
+                brand="genoray", equipment_serial=self.gen_serial
+            ).all()
+            first_rows = [row for row in rows if row.id in first_ids]
+            second_rows = [row for row in rows if row.plan_key == second.get_json()["created_visits"][0]["plan_key"]]
+        self.assertEqual({row.target_date.isoformat() for row in first_rows}, {
+            "2026-01-31", "2026-04-30", "2026-07-31", "2026-10-31",
+        })
+        self.assertEqual({row.id for row in second_rows} & second_ids, second_ids)
+        self.assertEqual({row.target_date.isoformat() for row in second_rows}, {
+            "2026-02-28", "2026-08-28", "2027-02-28", "2027-08-28",
+        })
+
+    def test_later_genoray_end_date_appends_and_shortening_keeps_existing_visits(self):
+        client = self.client_for(self.ids["admin"])
+        created = self.create_plan(client, cadence="semi_annual", start_date="2026-01-31")
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        self.assertEqual(len(self.visit_dates()), 2)
+        extended = client.put(
+            f"/api/genoray/items/{self.gen_serial}", json={"end_warranty": "2027-12-31"}
+        )
+        self.assertEqual(extended.status_code, 200, extended.get_data(as_text=True))
+        self.assertEqual(
+            [date_value for date_value, _cadence in self.visit_dates()],
+            ["2026-01-31", "2026-07-31", "2027-01-31", "2027-07-31"],
+        )
+        shortened = client.put(
+            f"/api/genoray/items/{self.gen_serial}", json={"end_warranty": "2026-02-01"}
+        )
+        self.assertEqual(shortened.status_code, 200, shortened.get_data(as_text=True))
+        self.assertEqual(len(self.visit_dates()), 4)
 
     def test_new_plan_requires_supported_cadence_and_start_date(self):
         client = self.client_for(self.ids["admin"])
