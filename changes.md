@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-29
 
+- Committed only the restored Calendar Calibration Report actions, focused regression coverage,
+  v212 cache marker, release manifest, and required plan/change records as `423bfbd` on `main`.
+  The owner explicitly authorized pushing this bounded fix to `origin/main`; protected
+  `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated untracked owner artifacts
+  remain unstaged and are absent from the implementation commit. This records-only closeout will
+  accompany the implementation commit in the authorized push.
 - Began the separately authorized Restore Calendar Calibration Report Actions package. The bounded
   implementation covers the shared Calendar predicate and route in `templates/timeline.html`,
   focused Calendar/offline-followup contracts, the v212 service-worker marker in `app.py`, the

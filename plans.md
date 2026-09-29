@@ -1,6 +1,6 @@
 # Restore Calendar Calibration Report Actions
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `423bfbd`; publication authorized.
 **Approved:** 2026-09-29 — the owner approved this plan in plan mode.
 **Execution authorized:** 2026-09-29 — the owner said “go ahead and implement the plan. do not overengineer and over check”.
 **Detailed:** 2026-09-29.
