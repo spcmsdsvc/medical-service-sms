@@ -2,6 +2,11 @@
 
 codex changes - 2026-09-29
 
+- Committed only the Calendar attachment deletion fix, focused regression coverage, v211 cache
+  marker, release manifest, and required change record as `22f0018` on `main`. The owner
+  explicitly authorized pushing this bounded package to `origin/main`; protected `scheduler.db`,
+  handoffs, `.claude/`, `output/`, `tmp/`, and unrelated untracked files remained unstaged. This
+  records-only closeout will accompany the implementation commit in the authorized push.
 - Fixed Calendar attachment deletion so the edit-modal X control sends the randomized stored
   filename required by the existing delete endpoint instead of the human-readable display name.
   Existing managed Calibration Report and Certificate deletion protections remain unchanged.
