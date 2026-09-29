@@ -1,6 +1,6 @@
 # Genoray PM Visits Through Coverage Expiry
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `76c36d5`; publication authorized.
 **Approved:** 2026-09-29 — the owner submitted the proposed plan for implementation.
 **Execution authorized:** 2026-09-29 — the owner said “go ahead”.
 **Detailed:** 2026-09-29.

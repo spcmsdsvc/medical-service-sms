@@ -2,6 +2,13 @@
 
 codex changes - 2026-09-29
 
+- Committed only the authorized Genoray PM expiry implementation, focused regression coverage,
+  v214 cache marker, release manifest, and required plan/change records as `76c36d5` on `main`.
+  The owner explicitly authorized pushing this bounded change to `origin/main`; protected
+  `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated untracked owner files
+  remain unstaged and absent from the implementation commit. This records-only closeout will
+  accompany the implementation commit in the authorized push.
+
 - Began the separately authorized **Genoray PM Visits Through Coverage Expiry** package. The
   implementation is limited to expiry-aware Genoray recurring plans, append-only repair and later
   End Date extension, PM editor previews, focused tests, cache/release metadata, and required
@@ -24,7 +31,7 @@ codex changes - 2026-09-29
   affected cache-version expectations. Focused tests, source/template/inline-JavaScript checks,
   release JSON, AST/compile, and diff checks passed; isolated full discovery remains red only in
   unrelated pre-existing suites (26 failures, 2 errors, 5 skips). No production or protected
-  artifact operation was performed; implementation remains uncommitted.
+  artifact operation was performed; the bounded implementation was committed as `76c36d5`.
 
 - Recorded the owner-submitted **Genoray PM Visits Through Coverage Expiry** plan at the top of
   `plans.md` with status **Approved — awaiting go-ahead**. The approved package covers
