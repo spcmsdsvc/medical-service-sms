@@ -61,13 +61,13 @@ class TimelineTsrFileDetailsSourceTests(unittest.TestCase):
         self.assertIn("'calibration_report_locked'", self.app_source)
         self.assertIn("Calibration Report · PDF unavailable", self.app_source)
         self.assertIn("calibration_report_state", self.timeline_source)
-        self.assertIn("calibration_report_locked", self.timeline_source)
 
-    def test_approved_report_actions_are_suppressed_and_direct_route_is_guarded(self):
+    def test_approved_report_view_uses_the_existing_read_only_route(self):
         picker = self.timeline_source.split('function canOpenCalibrationReportForSchedule', 1)[1].split('function getCalibrationReportTimelineLabel', 1)[0]
         redirect = self.timeline_source.split('function redirectToCalibrationReportFromSchedule', 1)[1].split('function openOfflineTSRDraftFromShiftModal', 1)[0]
-        self.assertIn('calibration_report_locked', picker)
-        self.assertIn('Approved Calibration Report is read-only', redirect)
+        self.assertNotIn('calibration_report_locked === true', picker)
+        self.assertNotIn('Approved Calibration Report is read-only', redirect)
+        self.assertIn("context.mode = 'calibration_report'", redirect)
 
     def test_calendar_attachment_delete_uses_the_stored_filename(self):
         edit_modal = self.timeline_source.split('async function openEditModal', 1)[1].split(

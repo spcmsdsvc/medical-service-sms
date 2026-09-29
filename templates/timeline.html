@@ -16281,16 +16281,13 @@ if(shift.engineers){
         if(!shift || !String(shift.id || '').trim() || shift.pending_sync || shift.queue_id || shift.creation_token || shift.is_pending_schedule){
             return false;
         }
-        if(shift.calibration_report_locked === true){
-            return false;
-        }
         if(!hasScheduleTSREquipmentAssignment(shift)) return false;
 
         const state = String(shift?.calibration_report_state || 'not_started').trim().toLowerCase();
-        if(!['draft', 'uploaded'].includes(state)) return false;
+        if(!['not_started', 'draft', 'uploaded'].includes(state)) return false;
 
         const submissionId = getScheduleOnlineTSRSubmissionId(shift);
-        if(!submissionId) return false;
+        if(!submissionId) return true;
         return hasScheduleTSRAttachment(shift);
     }
 
@@ -16298,7 +16295,7 @@ if(shift.engineers){
         const state = String(shift?.calibration_report_state || 'not_started').trim().toLowerCase();
         if(state === 'uploaded') return 'View Calibration Report';
         if(state === 'draft') return 'Finish Calibration Report';
-        return '';
+        return 'Create Calibration Report';
     }
 
     function hasScheduleTSREquipmentAssignment(shift){
@@ -20695,14 +20692,10 @@ function redirectToCalibrationReportFromSchedule(shiftPayload, engineerId, dayIs
         timelineAlert('Calibration Report is only available for a saved schedule.');
         return;
     }
-    if(shift.calibration_report_locked === true){
-        timelineAlert('Approved Calibration Report is read-only and available in TSR Attachments.');
-        return;
-    }
     if(!canOpenCalibrationReportForSchedule(shift)){
         timelineAlert(submissionId
-            ? 'Calibration Report is only available when a saved report is in Draft or Uploaded state.'
-            : 'Calibration Report is only available for an existing saved TSR report.');
+            ? 'Calibration Report is only available for a saved TSR with a recognized TSR attachment.'
+            : 'Calibration Report is only available for a saved schedule with assigned equipment.');
         return;
     }
 
@@ -20727,6 +20720,8 @@ function redirectToCalibrationReportFromSchedule(shiftPayload, engineerId, dayIs
     if(submissionId){
         context.submission_id = submissionId;
         context.mode = 'calibration_report';
+    }else{
+        context.open_calibration_report = true;
     }
     redirectToCreateTSRPage(context);
 }

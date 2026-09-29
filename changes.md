@@ -2,6 +2,41 @@
 
 codex changes - 2026-09-29
 
+- Began the separately authorized Restore Calendar Calibration Report Actions package. The bounded
+  implementation covers the shared Calendar predicate and route in `templates/timeline.html`,
+  focused Calendar/offline-followup contracts, the v212 service-worker marker in `app.py`, the
+  engineer-facing release record, `plans.md`, and this change log. Saved equipment-assigned work
+  schedules will regain Create/Finish/View Calibration Report actions across existing Calendar
+  surfaces; queued, malformed, internal/HR-redacted, and equipment-less schedules remain excluded.
+  Protected `scheduler.db`, `Handoffs/08-11-26 handoff.md`, `.claude/`, `output/`, `tmp/`, and the
+  untracked detailed handoff remain untouched. No database, Railway, production, browser,
+  commit, push, or deployment action is authorized by this package.
+
+- Added fail-first Calendar Calibration Report coverage for saved equipment-assigned schedules in
+  In Progress and Completed states, state-specific Create/Finish/View labels, no-submission
+  `open_calibration_report=1` routing, submitted TSR attachment gating, and locked uploaded-report
+  viewing. The unchanged source produced the expected 3 failures in the focused 19-test
+  offline-followup module before the implementation.
+- Restored the shared Calendar Calibration Report predicate and route in `templates/timeline.html`.
+  Saved equipment-assigned work schedules now expose Create for `not_started`, Finish for `draft`,
+  and View for `uploaded` across the existing desktop, summary, modal, mobile, workflow, and
+  sticky surfaces regardless of In Progress/Completed status. No-submission actions bind through
+  the existing Create TSR handoff; submitted actions still require a recognized TSR attachment;
+  uploaded locked/approved reports use the existing read-only report mode. Create TSR rules and
+  unrelated Calendar/TSR workflows remain unchanged.
+- Advanced the embedded service-worker shell marker to
+  `medical-service-pwa-offline-navigation-v212-calendar-calibration-actions` and added the
+  engineer-facing `2026-09-29-calendar-calibration-actions` release record. No backend/API,
+  schema, database, storage, production, or Railway behavior changed.
+- Final verification passed: the focused Calendar/offline-followup/file-detail/equipment-less
+  batch passed 41/41; related Calibration Report, HR viewer, offline API, service-worker,
+  changelog, and week-navigation checks passed 112/112; Flask Timeline rendering returned 200
+  with 7 inline scripts parsed by Node; Python AST, Jinja compile, release JSON, and `git
+  diff --check` passed. Full suite and browser/Codex-app automation were skipped per owner
+  direction. Protected `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and untracked
+  owner artifacts remained preserved; no commit, push, deploy, Railway, or production action was
+  performed.
+
 - Began the separately authorized Existing Product Name Standardization package. The bounded
   implementation covers Product edit enforcement, administrator review/apply, catalog lifecycle
   integrity, and Product CSV validation in `app.py`, `templates/products.html`,

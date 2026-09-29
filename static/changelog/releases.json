@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-29-calendar-calibration-actions",
+      "release_date": "2026-09-29",
+      "title": "Calendar Calibration Report Actions Restored",
+      "summary": "Calendar schedule cards again provide the correct Calibration Report action for saved equipment-assigned work schedules.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-29-calendar-calibration-actions-engineers",
+          "category": "Calendar",
+          "description": "Saved equipment-assigned work schedules now show Create, Finish, or View Calibration Report across Calendar action surfaces, including Completed schedules; approved uploaded reports remain read-only.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-29-product-name-standardization",
       "release_date": "2026-09-29",
       "title": "Product Name Standardization Review",

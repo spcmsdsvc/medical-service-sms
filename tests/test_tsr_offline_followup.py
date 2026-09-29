@@ -263,7 +263,7 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
             self.assertIn("'TSR Contact'", contact_name)
             self.assertNotIn("payload.get('tsr-requested-by')", contact_name)
 
-    def test_timeline_exposes_late_calibration_report_shortcuts(self):
+    def test_timeline_exposes_calendar_calibration_report_shortcuts(self):
         for marker in (
             "online_tsr_submission_id",
             "calibration_report_state",
@@ -281,12 +281,14 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
             'canOpenCalibrationReportForSchedule',
         ):
             self.assertIn(marker, self.timeline_source)
-        self.assertNotIn('Create Calibration Report', self.timeline_source)
+        self.assertIn('Create Calibration Report', self.timeline_source)
         self.assertNotIn('Add Calibration Report', self.timeline_source)
         calibration_gate = self.timeline_source.split('function canOpenCalibrationReportForSchedule', 1)[1].split('function getCalibrationReportTimelineLabel', 1)[0]
         self.assertIn('calibration_report_state', calibration_gate)
+        self.assertIn("'not_started'", calibration_gate)
         self.assertIn("'draft'", calibration_gate)
         self.assertIn("'uploaded'", calibration_gate)
+        self.assertNotIn('calibration_report_locked === true', calibration_gate)
 
     def test_timeline_exposes_calendar_tsr_first_action_contract(self):
         create_gate = self.timeline_source.split(
@@ -322,7 +324,7 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
         )[1].split('function openOfflineTSRDraftFromShiftModal', 1)[0]
         self.assertIn("context.mode = 'calibration_report'", route)
         self.assertIn('context.submission_id = submissionId', route)
-        self.assertNotIn('context.open_calibration_report = true', route)
+        self.assertIn('context.open_calibration_report = true', route)
 
     def test_create_tsr_preserves_pre_submission_calibration_handoff_and_order(self):
         context = self.tsr_source.split(
@@ -385,10 +387,16 @@ const cases = {
   create_queued: canCreateTSRForSchedule({...base, id:'', pending_sync:true, queue_id:'q-1'}),
   create_missing_equipment: canCreateTSRForSchedule({...base, product_id:'', product_name:''}),
   create_internal: canCreateTSRForSchedule({...base, client_id:null}),
+  calibration_create_in_progress: canOpenCalibrationReportForSchedule(base),
+  calibration_create_completed: canOpenCalibrationReportForSchedule({...base, status:'Completed'}),
   calibration_not_started: canOpenCalibrationReportForSchedule(submitted),
   calibration_draft: canOpenCalibrationReportForSchedule({...submitted, calibration_report_state:'draft'}),
   calibration_uploaded: canOpenCalibrationReportForSchedule({...submitted, calibration_report_state:'uploaded'}),
   calibration_locked: canOpenCalibrationReportForSchedule({...submitted, calibration_report_state:'uploaded', calibration_report_locked:true}),
+  calibration_no_attachment: canOpenCalibrationReportForSchedule({...submitted, file_details:[]}),
+  calibration_queued: canOpenCalibrationReportForSchedule({...base, pending_sync:true, queue_id:'q-1'}),
+  calibration_missing_equipment: canOpenCalibrationReportForSchedule({...base, product_id:'', product_name:''}),
+  calibration_internal: canOpenCalibrationReportForSchedule({...base, client_id:null}),
   label_not_started: getCalibrationReportTimelineLabel(submitted),
   label_draft: getCalibrationReportTimelineLabel({...submitted, calibration_report_state:'draft'}),
   label_uploaded: getCalibrationReportTimelineLabel({...submitted, calibration_report_state:'uploaded'})
@@ -403,11 +411,17 @@ console.log(JSON.stringify(cases));
         self.assertTrue(output['create_queued'])
         self.assertFalse(output['create_missing_equipment'])
         self.assertFalse(output['create_internal'])
-        self.assertFalse(output['calibration_not_started'])
+        self.assertTrue(output['calibration_create_in_progress'])
+        self.assertTrue(output['calibration_create_completed'])
+        self.assertTrue(output['calibration_not_started'])
         self.assertTrue(output['calibration_draft'])
         self.assertTrue(output['calibration_uploaded'])
-        self.assertFalse(output['calibration_locked'])
-        self.assertEqual(output['label_not_started'], '')
+        self.assertTrue(output['calibration_locked'])
+        self.assertFalse(output['calibration_no_attachment'])
+        self.assertFalse(output['calibration_queued'])
+        self.assertFalse(output['calibration_missing_equipment'])
+        self.assertFalse(output['calibration_internal'])
+        self.assertEqual(output['label_not_started'], 'Create Calibration Report')
         self.assertEqual(output['label_draft'], 'Finish Calibration Report')
         self.assertEqual(output['label_uploaded'], 'View Calibration Report')
 
@@ -516,8 +530,13 @@ console.log(JSON.stringify({ success, successEvents, missing, missingEvents, sta
             "medical-service-pwa-offline-navigation-v200-calibration-report-paste-criteria",
             self.app_source,
         )
+        self.assertIn(
+            "medical-service-pwa-offline-navigation-v212-calendar-calibration-actions",
+            self.app_source,
+        )
         self.assertIn('2026-09-25-pre-submission-calibration-report', self.release_source)
         self.assertIn('2026-09-08-tsr-offline-draft-save-order', self.release_source)
+        self.assertIn('2026-09-29-calendar-calibration-actions', self.release_source)
         self.assertIn('Service Requested By and Acknowledged By', self.release_source)
 
     def test_equipment_first_picker_and_server_contract(self):

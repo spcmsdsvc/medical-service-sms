@@ -1,3 +1,107 @@
+# Restore Calendar Calibration Report Actions
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-29 — the owner approved this plan in plan mode.
+**Execution authorized:** 2026-09-29 — the owner said “go ahead and implement the plan. do not overengineer and over check”.
+**Detailed:** 2026-09-29.
+
+### Summary
+
+Restore the Calendar Calibration Report action for every saved, equipment-assigned work
+schedule, including In Progress and Completed schedules. The shared Calendar action will be
+state-aware: **Create Calibration Report** for `not_started`, **Finish Calibration Report** for
+`draft`, and **View Calibration Report** for `uploaded`. Existing ordinary Create TSR and late
+Calibration Report handoffs remain the only routes; no new endpoint or report workflow is added.
+
+### Numbered execution steps
+
+1. **Preflight and records — `AGENTS.md`, `plans.md`, `changes.md`, Git state, source, and
+   focused tests.** Preserve dirty `scheduler.db`, `Handoffs/08-11-26 handoff.md`, `.claude/`,
+   `output/`, `tmp/`, and the untracked detailed handoff. Record this authorized package at the
+   top of `plans.md` and in the current `changes.md` section. Done when only the approved source,
+   focused-test, cache/release, and control-record paths are in scope.
+2. **Fail-first focused coverage — `tests/test_tsr_offline_followup.py` and directly affected
+   Calendar contracts.** Change the runtime and markup matrix to require Create for saved
+   equipment-assigned schedules with no report in both In Progress and Completed states, Finish
+   for drafts, View for uploaded/locked reports, ordinary Create TSR handoff with
+   `open_calibration_report=1` when no submission exists, and the existing submitted TSR route
+   with a recognized attachment. Keep queued/pending, malformed, internal/HR-redacted, and
+   equipment-less schedules ineligible. Run the focused tests against unchanged product code and
+   retain the expected failures before implementation.
+3. **Restore the shared Calendar predicate and route — `templates/timeline.html`.** Permit saved
+   equipment-assigned work schedules in `not_started`, `draft`, or `uploaded` state regardless of
+   work status; keep queued/pending-sync/malformed, internal/HR-redacted, and equipment-less
+   schedules excluded. Remove only the lock-based shortcut suppression. For no submission, route
+   through the existing ordinary Create TSR handoff with `open_calibration_report=1`; for a
+   submitted schedule, retain recognized TSR-attachment gating and `mode=calibration_report`
+   with the submission ID. Keep drafts editable and let uploaded locked/approved reports use the
+   existing read-only mode.
+4. **Use the shared behavior on existing surfaces — `templates/timeline.html`.** Preserve the
+   current shared predicate calls in desktop schedule cards, summaries, edit-modal controls,
+   mobile detail/cards, pure-engineer workflow actions, and sticky actions so they display the
+   state label consistently. Do not alter Create TSR eligibility or unrelated Calendar/TSR
+   routing.
+5. **Delivery metadata — `app.py`, `static/changelog/releases.json`, and directly affected cache
+   assertions.** Advance the embedded service-worker marker from v211 to
+   `medical-service-pwa-offline-navigation-v212-calendar-calibration-actions` and add one
+   engineer-facing release item keyed `2026-09-29-calendar-calibration-actions`.
+6. **Verification and closeout — focused tests and project records.** After code is written,
+   self-review only the bounded diff and confirm protected artifacts are unchanged; preserve the
+   fail-first evidence; run the focused Calendar/offline-followup tests plus directly related
+   calibration, equipment-less, file-detail, HR/cache, and changelog checks; validate
+   Jinja/Python/inline-JavaScript syntax, release JSON, and `git diff --check`. The full suite is
+   attempted only if practical and otherwise recorded as skipped under the owner’s direction;
+   browser/Codex-app verification is recorded as not run. Complete the service-worker bump,
+   `releases.json`, `changes.md`, and `plans.md` records, then perform the commit checklist as a
+   review-only confirmation that commit/push/deployment remain separately unauthorized. Mark the
+   plan `Executed — uncommitted`.
+
+### Interfaces and acceptance
+
+- No public API, schema, migration, dependency, report format, authorization, or database change.
+- Eligible saved work schedules with valid Product/Genoray/Vieworks equipment show the shared
+  state label on every current Calendar action surface regardless of In Progress/Completed status.
+- No-submission Create opens the existing Create TSR page and binds the schedule before opening
+  the report editor; submitted Create/Finish/View uses the existing submission-scoped route.
+- Queued/pending, malformed, internal/HR-redacted, equipment-less, and submitted-without-
+  recognized-TSR schedules remain unavailable; Create TSR rules remain unchanged.
+
+### Deliberately excluded
+
+- No new backend endpoint, report upload path, database/storage change, or authorization change.
+- No changes to Create TSR eligibility, offline draft persistence, generated documents, or unrelated
+  Calendar/TSR behavior.
+- No browser/Codex-app automation, production/Railway action, commit, push, deployment, or cleanup
+  of protected dirty artifacts.
+
+### Execution outcome
+
+1. The focused fail-first update changed the Calendar action matrix to require Create for saved
+   equipment-assigned schedules with no report in In Progress and Completed states, Finish for
+   drafts, View for uploaded/locked reports, the no-submission handoff flag, and the submitted
+   attachment gate. Against the unchanged product source, `tests.test_tsr_offline_followup` ran
+   19 tests with the expected 3 failures for the missing Create label/gate and handoff branch.
+2. `templates/timeline.html` now permits saved equipment-assigned schedules in `not_started`,
+   `draft`, or `uploaded` state regardless of work status, while preserving saved/pending,
+   internal/HR-redacted, malformed, equipment-less, and submitted-without-recognized-TSR
+   exclusions. The existing shared renderers now show Create/Finish/View labels; no separate
+   surface or workflow was added. The direct route now passes `open_calibration_report=1` for
+   no-submission schedules and keeps submission-scoped `mode=calibration_report` routing for
+   recognized TSR attachments, including locked uploaded reports.
+3. Advanced `app.py` to
+   `medical-service-pwa-offline-navigation-v212-calendar-calibration-actions` and added the
+   engineer-facing `2026-09-29-calendar-calibration-actions` release entry. Directly affected
+   cache/action contracts were updated only in the focused Calendar tests.
+4. Final verification passed: Calendar/offline-followup/file-detail/equipment-less suites 41/41;
+   related Calibration Report, HR viewer, offline API, service-worker, changelog, and week
+   navigation suites 112/112; Timeline rendered HTTP 200 and 7 inline scripts passed Node syntax
+   checks; Python AST, Jinja compile, release JSON, and `git diff --check` passed. Full suite and
+   browser/Codex-app automation were skipped under the owner’s “do not overengineer and over
+   check” direction. No database, Railway, production, commit, push, deployment, or protected
+   artifact operation was performed.
+
+##
+
 # Existing Product Name Standardization
 
 **Status:** Executed — uncommitted.
