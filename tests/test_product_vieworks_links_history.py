@@ -26,6 +26,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
         with cls.app.app_context():
             app_module.db.create_all()
             app_module.ensure_product_contract_column()
+            app_module.ensure_product_name_catalog()
             app_module.ensure_genoray_item_table()
             app_module.ensure_vieworks_item_table()
             app_module.ensure_product_vieworks_link_table()
@@ -38,6 +39,15 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             app_module.db.session.add_all([cls.admin, cls.superadmin, cls.engineer_user, cls.client_one, cls.client_two, cls.engineer])
             app_module.db.session.flush()
             cls.engineer.user_id = cls.engineer_user.id
+            cls.product_name_catalog = app_module.ProductNameCatalog.query.filter_by(
+                name='Linked Product'
+            ).first()
+            if cls.product_name_catalog is None:
+                cls.product_name_catalog = app_module.ProductNameCatalog(
+                    name='Linked Product'
+                )
+                app_module.db.session.add(cls.product_name_catalog)
+                app_module.db.session.flush()
             cls.product = app_module.Product(serial_number=f"PRODUCT-{suffix}", name="Linked Product", client_id=cls.client_one.id)
             cls.vieworks = app_module.VieworksItem(serial_number=f"VIEWORKS-{suffix}", name="Linked Vieworks", client_id=cls.client_one.id, bsid=f"V-{suffix}")
             cls.vieworks_collision = app_module.VieworksItem(serial_number=cls.product.serial_number, name="Vieworks Collision", client_id=cls.client_one.id, bsid=f"VC-{suffix}")
@@ -53,6 +63,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             cls.product_serial = cls.product.serial_number
             cls.vieworks_serial = cls.vieworks.serial_number
             cls.other_vieworks_serial = cls.other_vieworks.serial_number
+            cls.product_name_id = cls.product_name_catalog.id
             app_module.SUPERADMIN_USERNAMES.add(cls.superadmin.username.lower())
 
     @classmethod
@@ -118,12 +129,12 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
                 product_serial = f"REGIONAL-PRODUCT-{index}-{uuid.uuid4().hex[:8].upper()}"
                 added_product = client.post(
                     "/add_product",
-                    json={"serial_number": product_serial, "name": "Regional Product"},
+                    json={"serial_number": product_serial, "name": "Regional Product", "product_name_id": self.product_name_id},
                 )
                 self.assertEqual(added_product.status_code, 200, added_product.get_data(as_text=True))
                 updated_product = client.put(
                     f"/update_product/{product_serial}",
-                    json={"serial_number": product_serial, "name": "Regional Product Updated"},
+                    json={"serial_number": product_serial, "name": "Regional Product Updated", "product_name_id": self.product_name_id},
                 )
                 self.assertEqual(updated_product.status_code, 200, updated_product.get_data(as_text=True))
 
@@ -232,6 +243,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             json={
                 'serial_number': linked_serial,
                 'name': 'Linked Product',
+                'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
                 'with_vieworks_canon': True,
                 'linked_vieworks_serials': [self.vieworks_serial],
@@ -256,6 +268,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             json={
                 'serial_number': linked_serial.upper(),
                 'name': 'Linked Product',
+                'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
                 'with_vieworks_canon': True,
                 'linked_vieworks_serials': [self.vieworks_serial, self.product_serial],
@@ -273,6 +286,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             json={
                 'serial_number': f'CONFLICT-{self.product_serial}',
                 'name': 'Conflicting Product',
+                'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
                 'with_vieworks_canon': True,
                 'linked_vieworks_serials': [self.vieworks_serial],
@@ -282,9 +296,14 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
 
     def test_serial_rename_scopes_schedules_and_cleans_links(self):
         client = self.client_for(self.admin_id)
-        old_product_serial = f'LINKED-{self.product_serial}'
+        old_product_serial = f'RENAME-LINKED-{self.product_serial}'
         new_product_serial = f'RENAMED-{self.product_serial}'
         with self.app.app_context():
+            linked_product = app_module.Product(
+                serial_number=old_product_serial,
+                name='Linked Product',
+                client_id=self.client_one_id,
+            )
             colliding_vieworks = app_module.VieworksItem(
                 serial_number=old_product_serial,
                 name='Vieworks/Product Collision',
@@ -324,10 +343,21 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
                 product_id=self.product_serial, equipment_source='product', status='Completed',
             )
             app_module.db.session.add_all([
-                colliding_vieworks, colliding_genoray, product_shift, vieworks_shift,
+                linked_product, colliding_vieworks, colliding_genoray, product_shift, vieworks_shift,
                 product_collision_shift,
                 genoray_shift, genoray_collision_shift,
             ])
+            app_module.ProductVieworksLink.query.filter(
+                app_module.ProductVieworksLink.vieworks_serial.in_([
+                    self.vieworks_serial,
+                    self.product_serial,
+                ])
+            ).delete(synchronize_session=False)
+            app_module.db.session.flush()
+            app_module.replace_product_vieworks_links(
+                old_product_serial,
+                [self.vieworks_serial, self.product_serial],
+            )
             app_module.db.session.commit()
 
         renamed_product = client.put(
@@ -335,6 +365,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             json={
                 'serial_number': new_product_serial,
                 'name': 'Linked Product',
+                'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
                 'with_vieworks_canon': True,
                 'linked_vieworks_serials': [self.vieworks_serial, self.product_serial],
@@ -409,6 +440,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             json={
                 'serial_number': self.product_serial,
                 'name': 'Linked Product',
+                'product_name_id': self.product_name_id,
                 'client_id': self.client_two_id,
                 'with_vieworks_canon': True,
                 'linked_vieworks_serials': [self.vieworks_serial],
@@ -420,6 +452,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             json={
                 'serial_number': self.product_serial,
                 'name': 'Linked Product',
+                'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
                 'with_vieworks_canon': True,
                 'linked_vieworks_serials': [],
@@ -431,6 +464,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             json={
                 'serial_number': self.product_serial,
                 'name': 'Linked Product',
+                'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
                 'with_vieworks_canon': False,
                 'linked_vieworks_serials': [],

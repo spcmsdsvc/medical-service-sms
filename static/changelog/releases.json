@@ -1,6 +1,62 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-29-product-name-standardization",
+      "release_date": "2026-09-29",
+      "title": "Product Name Standardization Review",
+      "summary": "Administrators can safely bring existing Product names into the managed catalog.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-29-product-name-standardization-review",
+          "category": "Inventory",
+          "description": "Product edits and CSV updates now save only catalog names. Settings shows legacy Product name groups with exact-match suggestions, review details, and an atomic administrator mapping action; catalog renames update current Products while historical snapshots remain unchanged.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-29-inventory-table-column-resize",
+      "release_date": "2026-09-29",
+      "title": "Inventory Table Column Controls",
+      "summary": "Inventory table headers are aligned again, and desktop users can adjust and reset column widths.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-29-inventory-table-column-resize-all",
+          "category": "Inventory",
+          "description": "Product, Genoray, and Vieworks desktop tables now keep short headers readable and provide accessible per-column resizing with browser-local preferences and a reset control.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-29-inventory-room-product-names",
+      "release_date": "2026-09-29",
+      "title": "Inventory Rooms and Controlled Product Names",
+      "summary": "Inventory records now support Room details, and new Products use a managed Product Name list.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-29-inventory-room-product-names-all",
+          "category": "Inventory",
+          "description": "Product, Genoray, and Vieworks inventory support an optional Room field. Administrators can manage Product Names in Settings, and new Product records select from that catalog without changing existing names.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-29-calendar-attachment-delete",
       "release_date": "2026-09-29",
       "title": "Calendar Attachment Deletion Restored",

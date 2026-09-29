@@ -104,6 +104,7 @@
                             <option value="none">None</option>
                             <option value="serial">S/N</option>
                             <option value="name" selected>Product Name + Actions</option>
+                            <option value="room">Room</option>
                             <option value="bsid">BSID</option>
                             <option value="owner">Owner</option>
                             <option value="start">Start Date</option>
@@ -111,6 +112,9 @@
                             <option value="status">Status</option>
                         </select>
                     </div>
+                    <button type="button" id="product-reset-widths" class="btn btn-outline-secondary btn-sm product-reset-widths" title="Reset {{ inventory_label }} table column widths" aria-label="Reset {{ inventory_label }} table column widths" onclick="resetProductColumnWidths()">
+                        <i class="fa-solid fa-arrows-left-right-to-line me-1" aria-hidden="true"></i>Reset widths
+                    </button>
                     <div id="product-results-summary" class="product-results-summary" role="status" aria-live="polite">{% if is_vieworks_inventory %}Loading Vieworks items...{% elif is_genoray_inventory %}Loading Genoray items...{% else %}Loading products...{% endif %}</div>
                 </div>
                 <button type="button" id="product-clear-filters" class="btn btn-outline-secondary btn-sm" onclick="clearProductFilters()" disabled>
@@ -133,6 +137,7 @@
                 <colgroup>
                     <col class="product-col-serial">
                     <col class="product-col-name">
+                    <col class="product-col-room">
                     <col class="product-col-bsid">
                     <col class="product-col-owner">
                     <col class="product-col-date">
@@ -141,18 +146,19 @@
                 </colgroup>
                 <thead class="table-dark">
                     <tr>
-                        <th><button type="button" class="product-sort-btn" data-sort-key="serial" onclick="setProductSort('serial')">S/N <span class="product-sort-indicator" data-sort-indicator="serial">↕</span></button></th>
-                        <th><button type="button" class="product-sort-btn" data-sort-key="name" onclick="setProductSort('name')">Product Name <span class="product-sort-indicator" data-sort-indicator="name">↕</span></button></th>
-                        <th><button type="button" class="product-sort-btn" data-sort-key="bsid" onclick="setProductSort('bsid')">BSID <span class="product-sort-indicator" data-sort-indicator="bsid">↕</span></button></th>
-                        <th><button type="button" class="product-sort-btn" data-sort-key="owner" onclick="setProductSort('owner')">Owner (Medical Center) <span class="product-sort-indicator" data-sort-indicator="owner">↕</span></button></th>
-                        <th><button type="button" class="product-sort-btn" data-sort-key="start" onclick="setProductSort('start')">Start Date <span class="product-sort-indicator" data-sort-indicator="start">↕</span></button></th>
-                        <th><button type="button" class="product-sort-btn" data-sort-key="end" onclick="setProductSort('end')">End Date <span class="product-sort-indicator" data-sort-indicator="end">↕</span></button></th>
-                        <th><button type="button" class="product-sort-btn" data-sort-key="status" onclick="setProductSort('status')">Status <span class="product-sort-indicator" data-sort-indicator="status">↕</span></button></th>
+                        <th data-column-key="serial"><button type="button" class="product-sort-btn" data-sort-key="serial" onclick="setProductSort('serial')">S/N <span class="product-sort-indicator" data-sort-indicator="serial">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize S/N column" tabindex="0" data-column-key="serial"></span></th>
+                        <th data-column-key="name"><button type="button" class="product-sort-btn" data-sort-key="name" onclick="setProductSort('name')">Product Name <span class="product-sort-indicator" data-sort-indicator="name">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Product Name column" tabindex="0" data-column-key="name"></span></th>
+                        <th data-column-key="room"><button type="button" class="product-sort-btn" data-sort-key="room" onclick="setProductSort('room')">Room <span class="product-sort-indicator" data-sort-indicator="room">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Room column" tabindex="0" data-column-key="room"></span></th>
+                        <th data-column-key="bsid"><button type="button" class="product-sort-btn" data-sort-key="bsid" onclick="setProductSort('bsid')">BSID <span class="product-sort-indicator" data-sort-indicator="bsid">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize BSID column" tabindex="0" data-column-key="bsid"></span></th>
+                        <th data-column-key="owner"><button type="button" class="product-sort-btn" data-sort-key="owner" onclick="setProductSort('owner')">Owner (Medical Center) <span class="product-sort-indicator" data-sort-indicator="owner">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Owner column" tabindex="0" data-column-key="owner"></span></th>
+                        <th data-column-key="start"><button type="button" class="product-sort-btn" data-sort-key="start" onclick="setProductSort('start')">Start Date <span class="product-sort-indicator" data-sort-indicator="start">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Start Date column" tabindex="0" data-column-key="start"></span></th>
+                        <th data-column-key="end"><button type="button" class="product-sort-btn" data-sort-key="end" onclick="setProductSort('end')">End Date <span class="product-sort-indicator" data-sort-indicator="end">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize End Date column" tabindex="0" data-column-key="end"></span></th>
+                        <th data-column-key="status"><button type="button" class="product-sort-btn" data-sort-key="status" onclick="setProductSort('status')">Status <span class="product-sort-indicator" data-sort-indicator="status">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Status column" tabindex="0" data-column-key="status"></span></th>
                     </tr>
                 </thead>
                 <tbody id="prod-table-body">
                     <tr class="product-table-state-row">
-                        <td colspan="7">{% if is_vieworks_inventory %}Loading Vieworks items...{% elif is_genoray_inventory %}Loading Genoray items...{% else %}Loading products...{% endif %}</td>
+                        <td colspan="8">{% if is_vieworks_inventory %}Loading Vieworks items...{% elif is_genoray_inventory %}Loading Genoray items...{% else %}Loading products...{% endif %}</td>
                     </tr>
                 </tbody>
             </table>
@@ -216,7 +222,18 @@
                 
                 <div class="mb-3">
                     <label for="p-name" class="small fw-bold text-muted text-uppercase">{% if is_standalone_inventory %}{{ inventory_label }} Equipment Name{% else %}Equipment Name{% endif %}</label>
-                    <input type="text" id="p-name" class="form-control" placeholder="{% if is_standalone_inventory %}{{ inventory_label }} manufacturer or model{% else %}Manufacturer or Model{% endif %}">
+                    <input type="text" id="p-name" class="form-control" list="product-name-options" autocomplete="off" placeholder="{% if is_standalone_inventory %}{{ inventory_label }} manufacturer or model{% else %}Search product names...{% endif %}">
+                    <input type="hidden" id="p-name-id">
+                    <datalist id="product-name-options"></datalist>
+                    {% if not is_standalone_inventory %}
+                    <div class="xsmall text-muted mt-1">Select a Product Name from the list when adding or editing a product.</div>
+                    <div id="p-name-standardization-warning" class="alert alert-warning py-2 px-3 mt-2 mb-0 small d-none" role="alert">Legacy product name — select a standard Product Name before saving.</div>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3">
+                    <label for="p-room" class="small fw-bold text-muted text-uppercase">Room</label>
+                    <input type="text" id="p-room" class="form-control" maxlength="100" placeholder="Optional room or location">
                 </div>
 
                 <div class="mb-3">
@@ -440,7 +457,7 @@
     const PRODUCT_SORT_STORAGE_KEY = isVieworksInventory
         ? 'medicalServiceVieworksSortV1'
         : (isGenorayInventory ? 'medicalServiceGenoraySortV1' : 'medicalServiceProductSortV1');
-    const PRODUCT_SORT_KEYS = ['serial', 'name', 'bsid', 'owner', 'start', 'end', 'status'];
+    const PRODUCT_SORT_KEYS = ['serial', 'name', 'room', 'bsid', 'owner', 'start', 'end', 'status'];
     const PRODUCT_MOBILE_BREAKPOINT = 768;
     let productViewportIsMobile = window.innerWidth <= PRODUCT_MOBILE_BREAKPOINT;
     let productDataLoaded = false;
@@ -454,13 +471,32 @@
         none: 0,
         serial: 1,
         name: 2,
-        bsid: 3,
-        owner: 4,
-        start: 5,
-        end: 6,
-        status: 7
+        room: 3,
+        bsid: 4,
+        owner: 5,
+        start: 6,
+        end: 7,
+        status: 8
     });
     const PRODUCT_FREEZE_OPTIONS = Object.keys(PRODUCT_FREEZE_COLUMN_COUNTS);
+    const PRODUCT_COLUMN_KEYS = Object.freeze(['serial', 'name', 'room', 'bsid', 'owner', 'start', 'end', 'status']);
+    const PRODUCT_COLUMN_MAX_WIDTH = 640;
+    const PRODUCT_COLUMN_MIN_BASELINES = Object.freeze({
+        serial: 88,
+        name: 136,
+        room: 76,
+        bsid: 112,
+        owner: 168,
+        start: 112,
+        end: 112,
+        status: 96
+    });
+    const PRODUCT_COLUMN_WIDTH_STORAGE_KEY = isVieworksInventory
+        ? 'medicalServiceVieworksColumnWidthsV1'
+        : (isGenorayInventory ? 'medicalServiceGenorayColumnWidthsV1' : 'medicalServiceProductColumnWidthsV1');
+    let productColumnWidthMap = null;
+    let productColumnWidthsCaptured = false;
+    let productColumnResizeState = null;
 
     function freshUrl(url){
         const joiner = url.includes('?') ? '&' : '?';
@@ -470,6 +506,31 @@
     const productCanEdit = {{ product_can_edit|tojson }};
     const productCanDelete = {{ product_can_delete|tojson }};
     const productCanPM = {{ product_can_pm|tojson }};
+    let productNameCatalog = [];
+
+    async function loadProductNameCatalog(){
+        if(isStandaloneInventory) return;
+        try{
+            const response = await fetch(freshUrl('/api/product-name-catalog'), { cache: 'no-store' });
+            if(!response.ok) return;
+            productNameCatalog = await response.json();
+            const list = document.getElementById('product-name-options');
+            if(list) list.innerHTML = productNameCatalog.map(item => `<option value="${escapeHtml(item.name)}"></option>`).join('');
+        }catch(error){
+            console.warn('[Products] Product name catalog unavailable', error);
+        }
+    }
+
+    function syncProductNameCatalogSelection(){
+        const input = document.getElementById('p-name');
+        const hidden = document.getElementById('p-name-id');
+        if(!input || !hidden || isStandaloneInventory) return;
+        const value = String(input.value || '').trim().toLowerCase();
+        const match = productNameCatalog.find(item => String(item.name || '').trim().toLowerCase() === value);
+        hidden.value = match ? match.id : '';
+        const warning = document.getElementById('p-name-standardization-warning');
+        if(warning) warning.classList.toggle('d-none', Boolean(match) || !value);
+    }
 
 function isProductMobileViewport(){
     return window.innerWidth <= PRODUCT_MOBILE_BREAKPOINT;
@@ -567,6 +628,207 @@ function applyProductFreezeColumn(){
     table.dataset.freezeColumn = productFreezeColumn;
 }
 
+function productTableHeaderCells(){
+    const table = document.querySelector('#product-table-wrap table');
+    return table ? Array.from(table.querySelectorAll('thead tr:first-child > th')) : [];
+}
+
+function productTableColumns(){
+    const table = document.querySelector('#product-table-wrap table');
+    return table ? Array.from(table.querySelectorAll('colgroup > col')) : [];
+}
+
+function productColumnIndex(key){
+    return PRODUCT_COLUMN_KEYS.indexOf(key);
+}
+
+function getProductColumnMinWidth(key){
+    const index = productColumnIndex(key);
+    const header = productTableHeaderCells()[index];
+    const button = header?.querySelector('.product-sort-btn');
+    const indicator = button?.querySelector('.product-sort-indicator');
+    let labelWidth = 0;
+    const labelNode = button?.firstChild;
+    if(labelNode && typeof document.createRange === 'function'){
+        const range = document.createRange();
+        range.selectNodeContents(labelNode);
+        labelWidth = range.getBoundingClientRect().width;
+    }
+    if(!labelWidth){
+        const label = String(labelNode?.textContent || key);
+        labelWidth = label.length * 7.5;
+    }
+    const indicatorWidth = indicator?.getBoundingClientRect().width || 40;
+    const baseline = PRODUCT_COLUMN_MIN_BASELINES[key] || 64;
+    return Math.min(PRODUCT_COLUMN_MAX_WIDTH, Math.max(baseline, Math.ceil(labelWidth + indicatorWidth + 32)));
+}
+
+function updateProductColumnResizeHandle(key, width){
+    const handle = document.querySelector(`.product-column-resizer[data-column-key="${key}"]`);
+    if(!handle) return;
+    handle.setAttribute('aria-valuemin', String(getProductColumnMinWidth(key)));
+    handle.setAttribute('aria-valuemax', String(PRODUCT_COLUMN_MAX_WIDTH));
+    handle.setAttribute('aria-valuenow', String(Math.round(width)));
+}
+
+function applyProductColumnWidths(){
+    if(!productColumnWidthMap) return;
+    const table = document.querySelector('#product-table-wrap table');
+    const columns = productTableColumns();
+    if(!table || columns.length !== PRODUCT_COLUMN_KEYS.length) return;
+
+    table.style.tableLayout = 'fixed';
+    PRODUCT_COLUMN_KEYS.forEach((key, index) => {
+        const width = Number(productColumnWidthMap[key]);
+        if(!Number.isFinite(width)) return;
+        columns[index].style.width = `${Math.round(width)}px`;
+        updateProductColumnResizeHandle(key, width);
+    });
+}
+
+function captureProductColumnWidths(){
+    if(productColumnWidthsCaptured) return;
+    const headers = productTableHeaderCells();
+    if(headers.length !== PRODUCT_COLUMN_KEYS.length) return;
+
+    productColumnWidthMap = {};
+    PRODUCT_COLUMN_KEYS.forEach((key, index) => {
+        const measured = headers[index].getBoundingClientRect().width || headers[index].offsetWidth || PRODUCT_COLUMN_MIN_BASELINES[key];
+        const minWidth = getProductColumnMinWidth(key);
+        productColumnWidthMap[key] = Math.min(PRODUCT_COLUMN_MAX_WIDTH, Math.max(minWidth, Math.round(measured)));
+    });
+    productColumnWidthsCaptured = true;
+    applyProductColumnWidths();
+}
+
+function saveProductColumnWidths(){
+    if(!productColumnWidthMap || !PRODUCT_COLUMN_KEYS.every(key => Number.isFinite(Number(productColumnWidthMap[key])))) return;
+    try{
+        localStorage.setItem(PRODUCT_COLUMN_WIDTH_STORAGE_KEY, JSON.stringify(productColumnWidthMap));
+    }catch(err){
+        console.warn('[Products] Unable to save column-width preference', err);
+    }
+}
+
+function restoreProductColumnWidths(){
+    try{
+        const saved = JSON.parse(localStorage.getItem(PRODUCT_COLUMN_WIDTH_STORAGE_KEY) || 'null');
+        if(!saved || typeof saved !== 'object' || !PRODUCT_COLUMN_KEYS.every(key => {
+            const width = Number(saved[key]);
+            return Number.isFinite(width) && width >= getProductColumnMinWidth(key) && width <= PRODUCT_COLUMN_MAX_WIDTH;
+        })){
+            return;
+        }
+        productColumnWidthMap = Object.fromEntries(PRODUCT_COLUMN_KEYS.map(key => [key, Math.round(Number(saved[key]))]));
+        productColumnWidthsCaptured = true;
+        applyProductColumnWidths();
+    }catch(err){
+        productColumnWidthMap = null;
+        productColumnWidthsCaptured = false;
+    }
+}
+
+function setProductColumnWidth(key, width, persist = true){
+    if(!PRODUCT_COLUMN_KEYS.includes(key) || isProductMobileViewport()) return;
+    captureProductColumnWidths();
+    if(!productColumnWidthMap) return;
+
+    const minWidth = getProductColumnMinWidth(key);
+    const nextWidth = Math.min(PRODUCT_COLUMN_MAX_WIDTH, Math.max(minWidth, Math.round(Number(width) || minWidth)));
+    productColumnWidthMap[key] = nextWidth;
+    applyProductColumnWidths();
+    updateProductColumnResizeHandle(key, nextWidth);
+    if(persist) saveProductColumnWidths();
+    refreshProductTableLayout();
+}
+
+function beginProductColumnResize(event, key, handle){
+    if(isProductMobileViewport()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    captureProductColumnWidths();
+    if(!productColumnWidthMap) return;
+
+    const startWidth = Number(productColumnWidthMap[key]);
+    if(!Number.isFinite(startWidth)) return;
+    productColumnResizeState = { key, startX: event.clientX, startWidth };
+    document.body.classList.add('product-column-resizing');
+    handle?.setPointerCapture?.(event.pointerId);
+    window.addEventListener('pointermove', handleProductColumnResize);
+    window.addEventListener('pointerup', finishProductColumnResize, { once: true });
+    window.addEventListener('pointercancel', finishProductColumnResize, { once: true });
+}
+
+function handleProductColumnResize(event){
+    if(!productColumnResizeState) return;
+    event.preventDefault();
+    const { key, startX, startWidth } = productColumnResizeState;
+    setProductColumnWidth(key, startWidth + event.clientX - startX, false);
+}
+
+function finishProductColumnResize(){
+    if(!productColumnResizeState) return;
+    window.removeEventListener('pointermove', handleProductColumnResize);
+    window.removeEventListener('pointerup', finishProductColumnResize);
+    window.removeEventListener('pointercancel', finishProductColumnResize);
+    saveProductColumnWidths();
+    productColumnResizeState = null;
+    document.body.classList.remove('product-column-resizing');
+    refreshProductTableLayout();
+}
+
+function handleProductColumnResizeKeydown(event){
+    if(isProductMobileViewport() || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const key = event.currentTarget?.dataset.columnKey;
+    captureProductColumnWidths();
+    const current = Number(productColumnWidthMap?.[key]);
+    if(!key || !Number.isFinite(current)) return;
+    const delta = (event.shiftKey ? 32 : 8) * (event.key === 'ArrowLeft' ? -1 : 1);
+    setProductColumnWidth(key, current + delta);
+}
+
+function updateProductColumnResizeAvailability(){
+    const disabled = isProductMobileViewport();
+    document.querySelectorAll('.product-column-resizer').forEach(handle => {
+        handle.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+        handle.tabIndex = disabled ? -1 : 0;
+    });
+}
+
+function setupProductColumnResizers(){
+    document.querySelectorAll('.product-column-resizer').forEach(handle => {
+        if(handle.dataset.bound === 'true') return;
+        const key = handle.dataset.columnKey || '';
+        handle.addEventListener('pointerdown', event => beginProductColumnResize(event, key, handle));
+        handle.addEventListener('keydown', handleProductColumnResizeKeydown);
+        handle.dataset.bound = 'true';
+    });
+    PRODUCT_COLUMN_KEYS.forEach((key, index) => {
+        const header = productTableHeaderCells()[index];
+        const width = Number(productColumnWidthMap?.[key]) || Math.round(header?.getBoundingClientRect().width || PRODUCT_COLUMN_MIN_BASELINES[key]);
+        updateProductColumnResizeHandle(key, width);
+    });
+    updateProductColumnResizeAvailability();
+    if(productColumnWidthMap) applyProductColumnWidths();
+}
+
+function resetProductColumnWidths(){
+    try{
+        localStorage.removeItem(PRODUCT_COLUMN_WIDTH_STORAGE_KEY);
+    }catch(err){
+        console.warn('[Products] Unable to clear column-width preference', err);
+    }
+    productColumnWidthMap = null;
+    productColumnWidthsCaptured = false;
+    const table = document.querySelector('#product-table-wrap table');
+    if(table) table.style.tableLayout = 'auto';
+    productTableColumns().forEach(column => column.style.removeProperty('width'));
+    setupProductColumnResizers();
+    refreshProductTableLayout();
+}
+
 function refreshProductTableLayout(){
     if(isProductMobileViewport()){
         disconnectProductTableResizeObserver();
@@ -643,6 +905,7 @@ function setupProductTableHorizontalScroll(){
 
 function handleProductViewportChange(){
     const isMobile = isProductMobileViewport();
+    updateProductColumnResizeAvailability();
     if(isMobile !== productViewportIsMobile){
         productViewportIsMobile = isMobile;
         if(isMobile) disconnectProductTableResizeObserver();
@@ -667,9 +930,13 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         if(historyModal) window.productHistoryModal = new bootstrap.Modal(historyModal);
         restoreProductSortPreference();
         restoreProductFreezePreference();
+        restoreProductColumnWidths();
+        setupProductColumnResizers();
+        await loadProductNameCatalog();
         await loadData(); 
         setupAutocomplete();
         setupVieworksLinkControls();
+        document.getElementById('p-name')?.addEventListener('input', syncProductNameCatalogSelection);
 
         const editId = getEditParam();
         if(editId && !isGenorayInventory && !isVieworksInventory){
@@ -740,7 +1007,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
             if(body){
                 body.innerHTML = `
                     <tr class="product-table-state-row">
-                        <td colspan="7">
+                        <td colspan="8">
                             <div class="product-table-state product-table-state-${state}">
                                 <i class="fa-solid ${config.icon}" aria-hidden="true"></i>
                                 <span>${config.message}</span>
@@ -1125,6 +1392,7 @@ function renderProductMobileCards(data){
                         ${renderProductCalibrationDocumentLinks(p, true)}
                         ${renderProductCalibrationBadge(p)}
                         <div class="product-mobile-name">${escapeHtml(p.name || fallbackName)}</div>
+                        <div class="product-mobile-sn">Room: ${escapeHtml(p.room || '—')}</div>
                         ${renderProductLinkedVieworks(p, true)}
                         <div class="product-mobile-sn">BSID: ${escapeHtml(p.bsid || 'Not assigned')}</div>
                         <div class="product-mobile-owner">
@@ -1321,6 +1589,7 @@ function getProductSortValue(product, key){
     const values = {
         serial: product.serial_number || '',
         name: product.name || '',
+        room: product.room || '',
         bsid: product.bsid || '',
         owner: product.client_name || '',
         start: product.start_warranty || '',
@@ -1501,6 +1770,7 @@ function renderTable(data) {
                                 ${actionButtons}
                             </div>
                         </td>
+                        <td><span class="text-primary fw-bold">${escapeHtml(p.room || '—')}</span></td>
                         <td><span class="text-primary fw-bold">${escapeHtml(p.bsid || '-')}</span></td>
                         <td><span class="text-primary fw-bold">${ownerDisplay}</span></td>
                         <td><small>${escapeHtml(p.start_warranty || '-')}</small></td>
@@ -1522,7 +1792,7 @@ function renderTable(data) {
         const sFilt = document.getElementById('filter-status').value; 
         
         const filtered = productsData.filter(p => 
-            (p.name.toLowerCase().includes(sTxt) || p.serial_number.toLowerCase().includes(sTxt) || String(p.bsid || '').toLowerCase().includes(sTxt)) &&
+            (p.name.toLowerCase().includes(sTxt) || p.serial_number.toLowerCase().includes(sTxt) || String(p.room || '').toLowerCase().includes(sTxt) || String(p.bsid || '').toLowerCase().includes(sTxt)) &&
             p.client_name.toLowerCase().includes(cFilt) && 
             (sFilt === "" || (p.computed_status || getProductWarrantyStatus(p)) === sFilt)
         );
@@ -1551,6 +1821,7 @@ function renderTable(data) {
             ...previousProduct,
             serial_number: savedData.serial_number || previousProduct.serial_number,
             name: savedData.name || previousProduct.name,
+            room: Object.prototype.hasOwnProperty.call(savedData, 'room') ? (savedData.room || '') : (previousProduct.room || ''),
             bsid: savedBsid,
             client_id: selectedClient ? selectedClient.id : savedData.client_id,
             client_name: savedData.client_name || selectedClient?.name || previousProduct.client_name || 'N/A',
@@ -1586,6 +1857,8 @@ function openAddModal() {
         
         // Reset all input fields
         document.querySelectorAll('.modal-body input').forEach(i => i.value = ""); 
+        document.getElementById('p-name-id').value = '';
+        document.getElementById('p-name-standardization-warning')?.classList.add('d-none');
         const bsidField = document.getElementById('p-bsid');
         if (bsidField) {
             bsidField.disabled = isGenorayInventory;
@@ -1625,6 +1898,9 @@ function openAddModal() {
             ? "Serial number can be changed. This will create an activity log."
             : "Serial number can be changed. This will update linked schedules and create an activity log.";
         document.getElementById('p-name').value = p.name; 
+        document.getElementById('p-name-id').value = '';
+        syncProductNameCatalogSelection();
+        document.getElementById('p-room').value = p.room || '';
         document.getElementById('p-bsid').value = p.bsid || '';
         
         // Handle UI context for client search
@@ -1668,6 +1944,7 @@ function openAddModal() {
         const data = { 
             serial_number: document.getElementById('p-serial').value, 
             name: document.getElementById('p-name').value, 
+            room: document.getElementById('p-room').value,
             bsid: document.getElementById('p-bsid').value,
             client_id: document.getElementById('p-cli-id').value,
             start_warranty: document.getElementById('p-w-start').value, 
@@ -1686,7 +1963,14 @@ function openAddModal() {
         
         data.serial_number = (data.serial_number || '').trim().toUpperCase();
         data.name = (data.name || '').trim();
+        data.room = (data.room || '').trim();
         data.bsid = (data.bsid || '').trim();
+
+        if(!isStandaloneInventory){
+            syncProductNameCatalogSelection();
+            data.product_name_id = document.getElementById('p-name-id').value || '';
+            if(!data.product_name_id) return productAlert('Validation Error: Select a standard Product Name from the list before saving.');
+        }
 
         if (data.bsid.length > 40) {
             return productAlert("Validation Error: BSID must be 40 characters or fewer.");
@@ -1750,7 +2034,7 @@ function openAddModal() {
                 if (isStandaloneInventory) {
                     updateProductListAfterSave(responseData.item || responseData, editSN);
                 } else {
-                    updateProductListAfterSave(data, editSN);
+                    updateProductListAfterSave(responseData.item || responseData, editSN);
                 }
                 requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
                 productToast(
@@ -2001,7 +2285,7 @@ function openAddModal() {
     }
 
     .product-sort-btn {
-        width: 100%;
+        width: calc(100% - 0.55rem);
         border: 0;
         background: transparent;
         color: inherit;
@@ -2013,6 +2297,35 @@ function openAddModal() {
         align-items: center;
         gap: 0.4rem;
         cursor: pointer;
+    }
+
+    .product-table-wrap thead th {
+        position: relative;
+    }
+
+    .product-column-resizer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 7;
+        display: block;
+        width: 0.65rem;
+        border-right: 2px solid transparent;
+        cursor: col-resize;
+        touch-action: none;
+    }
+
+    .product-column-resizer:hover,
+    .product-column-resizer:focus-visible,
+    body.product-column-resizing .product-column-resizer {
+        border-right-color: #93c5fd;
+        background: rgba(147, 197, 253, 0.14);
+        outline: none;
+    }
+
+    .product-column-resizer:focus-visible {
+        box-shadow: inset 0 0 0 2px rgba(191, 219, 254, 0.85);
     }
 
     .product-sort-btn:hover,
@@ -2081,6 +2394,11 @@ function openAddModal() {
         max-width: 100%;
     }
 
+    .product-reset-widths {
+        white-space: nowrap;
+        font-weight: 800;
+    }
+
     .product-results-summary {
         color: #475569;
         font-size: 0.8rem;
@@ -2136,7 +2454,8 @@ function openAddModal() {
        longer identifier or label claim more room when the data needs it. */
     .product-col-serial { width: 8.25rem; }
     .product-col-name { width: 13rem; }
-    .product-col-bsid { width: 5rem; }
+    .product-col-room { width: 8rem; }
+    .product-col-bsid { width: 5rem; min-width: 7rem; }
     .product-col-owner { width: 12rem; }
     .product-col-date { width: 7rem; }
     .product-col-status { width: 9rem; }
@@ -2148,14 +2467,23 @@ function openAddModal() {
 
     .product-table-wrap :is(th, td):nth-child(1),
     .product-table-wrap :is(th, td):nth-child(3),
-    .product-table-wrap :is(th, td):nth-child(5),
-    .product-table-wrap :is(th, td):nth-child(6) {
+    .product-table-wrap :is(th, td):nth-child(4),
+    .product-table-wrap :is(th, td):nth-child(6),
+    .product-table-wrap :is(th, td):nth-child(7) {
         white-space: nowrap;
     }
 
-    .product-table-wrap :is(th, td):nth-child(4),
-    .product-table-wrap :is(th, td):nth-child(7) {
+    .product-table-wrap :is(th, td):nth-child(2),
+    .product-table-wrap :is(th, td):nth-child(5),
+    .product-table-wrap :is(th, td):nth-child(8) {
         white-space: normal;
+    }
+
+    .product-table-wrap :is(th, td):nth-child(2) .product-sort-btn,
+    .product-table-wrap :is(th, td):nth-child(5) .product-sort-btn,
+    .product-table-wrap :is(th, td):nth-child(8) .product-sort-btn {
+        white-space: normal;
+        align-items: flex-start;
     }
 
     .product-table-wrap :is(th, td).product-freeze-cell {
@@ -2406,6 +2734,13 @@ function openAddModal() {
         color: #e2e8f0;
     }
 
+    :root[data-app-theme="dark"] .product-column-resizer:hover,
+    :root[data-app-theme="dark"] .product-column-resizer:focus-visible,
+    :root[data-app-theme="dark"] body.product-column-resizing .product-column-resizer {
+        border-right-color: #bfdbfe;
+        background: rgba(96, 165, 250, 0.18);
+    }
+
     :root[data-app-theme="dark"] .product-row-edit {
         border-color: #854d0e;
         background: #422006;
@@ -2581,7 +2916,9 @@ function openAddModal() {
         .inventory-count-footer,
         .product-mobile-list,
         .product-table-scrollbar,
-        .product-table-scroll-hint {
+        .product-table-scroll-hint,
+        .product-column-resizer,
+        .product-reset-widths {
             display: none !important;
         }
 
@@ -2857,6 +3194,11 @@ function openAddModal() {
 
         .product-freeze-control {
             display: none;
+        }
+
+        .product-column-resizer,
+        .product-reset-widths {
+            display: none !important;
         }
 
         .product-filter-footer .btn {

@@ -375,7 +375,7 @@ class ProductCalibrationCertificateTests(unittest.TestCase):
         self.assertIn('<td class="product-identity-cell">', source)
         self.assertIn('${renderProductCalibrationDocumentLinks(p)}', source)
         self.assertIn('${renderProductCalibrationDocumentLinks(p, true)}', source)
-        self.assertIn('colspan="7"', source)
+        self.assertIn('colspan="8"', source)
 
         self.assertIn('position: sticky', source)
         self.assertIn('cell.style.left', source)
@@ -421,7 +421,7 @@ class ProductCalibrationCertificateTests(unittest.TestCase):
         self.assertIn('cell.style.left', source)
         self.assertIn('refreshProductTableLayout', source)
         self.assertIn('position: static !important', source)
-        self.assertIn('status: 7', source)
+        self.assertIn('status: 8', source)
         self.assertNotIn('certificate: 8', source)
         self.assertNotIn('left: 12rem', source)
 
@@ -434,7 +434,7 @@ class ProductCalibrationCertificateTests(unittest.TestCase):
         self.assertNotIn('table-layout: fixed', source)
         self.assertIn('product-col-serial { width: 8.25rem; }', source)
         self.assertIn('product-col-name { width: 13rem; }', source)
-        self.assertIn('product-col-bsid { width: 5rem; }', source)
+        self.assertIn('product-col-bsid { width: 5rem; min-width: 7rem; }', source)
         self.assertIn('product-col-date { width: 7rem; }', source)
         self.assertIn('product-col-status { width: 9rem; }', source)
         self.assertIn('justify-content: flex-start;', source)

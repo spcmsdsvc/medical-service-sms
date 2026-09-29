@@ -1,3 +1,252 @@
+# Existing Product Name Standardization
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-29 — the owner approved the plan in plan mode.
+**Execution authorized:** 2026-09-29 — the owner said “run now” after scheduling the work.
+**Detailed:** 2026-09-29.
+
+### Summary
+
+Standardize existing Product Inventory names through a controlled administrator review workflow
+and stricter Product edit/import validation. Existing Genoray/Vieworks records and historical
+schedule/TSR snapshots remain outside this package. The implementation reuses the existing
+ProductNameCatalog and Settings Product Names controls, with no foreign key or schema migration.
+
+### Numbered execution steps
+
+1. **Preflight and records — `AGENTS.md`, `plans.md`, `changes.md`, Git state, source, templates,
+   and focused tests.** Preserve the existing Room/catalog/column-resize work and protected
+   `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and untracked owner artifacts. Mark this
+   package In progress and record the authorized start in `changes.md`. Done when the bounded
+   source/test allowlist is explicit and no protected state is touched.
+2. **Fail-first focused coverage — new standardization tests.** Add disposable SQLite tests for
+   canonical Product edits, legacy edit blocking, review grouping/suggestions/conflicts, atomic
+   apply/audit, CSV canonical matching/skips, catalog rename cascade, catalog deletion blocking,
+   and unchanged historical snapshots. Run these against the current implementation and record
+   the expected failures before changing behavior.
+3. **Product edit enforcement — `app.py` and `templates/products.html`.** Require a valid
+   `product_name_id` on every Product edit, resolve and save its canonical catalog name server
+   side, and reject missing/deleted/unknown choices. Auto-select exact canonical names in the edit
+   modal; show a clear legacy warning and prevent saving until an administrator selects a current
+   catalog name. Keep Genoray/Vieworks names free text.
+4. **Administrator review API/UI — `app.py` and `templates/settings.html`.** Add admin-only
+   `GET /settings/product-name-standardization-data` and
+   `POST /settings/product-name-standardization-apply`. Group Products by exact stored legacy name,
+   include count plus serial/owner/Room details, provide only exact whitespace/case-normalized
+   catalog suggestions, and apply one group at a time after verifying the expected name and every
+   submitted serial. Apply Product master-name updates atomically and record one audit entry.
+5. **CSV and catalog lifecycle — `app.py`.** Require catalog-matching names for both Product CSV
+   creates and updates, save canonical display values, skip invalid rows completely with a concise
+   invalid-name summary, and never partially update invalid rows. Catalog renames cascade only to
+   exact-name Product master rows in the same transaction and return/audit the count. Catalog
+   deletion returns HTTP 409 with the affected count while any Product uses that exact name.
+6. **Verification and records — tests, `static/changelog/releases.json`, `changes.md`, and
+   `plans.md`.** Run focused standardization/catalog/Product tests and only directly related
+   inventory, serial-replacement, Vieworks-link, CSV, Settings, changelog, AST/Jinja/inline-JS,
+   release JSON, and diff checks. Mark this plan Executed — uncommitted with truthful evidence.
+   Do not run browser/Codex UI automation, touch production/Railway/scheduler.db, commit, push,
+   deploy, or perform formal review.
+
+### Interfaces and acceptance
+
+- `PUT /update_product/<serial>` requires `product_name_id` for every Product save and stores the
+  catalog item's canonical text; arbitrary free-text `name` is never authoritative.
+- Standardization review data returns legacy-name groups, affected counts, Product serial/owner/Room
+  details, and an optional exact-normalized catalog suggestion.
+- Apply accepts `expected_current_name`, `serial_numbers`, and `product_name_id`; stale or missing
+  serial/name mismatches return a conflict without partial updates.
+- Catalog rename returns `updated_product_count`; catalog deletion returns HTTP 409 and
+  `affected_product_count` while in use.
+- Only Product master names change. Historical schedule, TSR, deletion, report, and other stored
+  snapshots remain unchanged. No fuzzy matching, background migration, or Genoray/Vieworks
+  standardization is included.
+
+### Verification record
+
+- 2026-09-29: Fail-first `venv\Scripts\python.exe -m unittest tests.test_product_name_standardization`
+  against the unchanged implementation produced the expected 5 failures/errors: missing edit
+  enforcement, missing review API, missing cascade count, permissive CSV update, and missing UI
+  contract.
+- 2026-09-29: Implemented the bounded Product edit/catalog enforcement, administrator review and
+  atomic apply endpoints, exact normalized suggestions, catalog rename cascade/delete guard, CSV
+  canonical matching for creates and updates, legacy edit warning, and Settings review controls.
+  Historical snapshots and Genoray/Vieworks name workflows remain untouched.
+- 2026-09-29: Focused standardization tests passed 5/5; Room/catalog regression tests passed
+  11/11; directly related table/Genoray/Vieworks tests passed 34/34. The exact broader legacy
+  Product mutation/history batch was reproduced against a unique disposable SQLite database with
+  48 tests and 9 failures: eight stale authorized Product payloads omitted `product_name_id`, and
+  the serial-rename test depended on a Product created by another test.
+- 2026-09-29: Updated only `tests/test_product_inventory_mutations.py` and
+  `tests/test_product_vieworks_links_history.py` to ensure a valid catalog fixture, include
+  `product_name_id` on authorized Product add/update requests, preserve permission-denial payloads,
+  and create the serial-rename Product/link fixture in that test. No production source changed.
+  The same 48-test batch then passed 48/48, including standardization 5/5; the disposable database
+  was isolated and discarded by the test modules.
+- 2026-09-29: Settings render smoke returned HTTP 200; inline JavaScript syntax, Python AST,
+  release JSON, and `git diff --check` passed. No full suite, browser/Codex UI, scheduler.db,
+  production/Railway, commit, push, deploy, or formal review action was performed.
+
+##
+
+# Inventory Table Header Repair and Column Resizing
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-29 — the owner explicitly authorized implementation with “PLEASE IMPLEMENT THIS PLAN”.
+**Detailed:** 2026-09-29.
+
+### Summary
+
+Repair the shared Product/Genoray/Vieworks desktop inventory table header regression caused by
+the Room column insertion, then add page-local, browser-local column width adjustment for those
+three inventory tables. Preserve the existing sorting, freeze-column behavior, mirrored scrollbar,
+dark mode, mobile cards, and print layout. This package changes no database, backend/API, CSV, or
+inventory-record behavior.
+
+### Numbered execution steps
+
+1. **Preflight and records — `AGENTS.md`, `plans.md`, `changes.md`, Git state, source, and tests.**
+   Preserve the existing Room/catalog work and all protected dirty artifacts. Mark this plan In
+   progress and log the authorized package in `changes.md`. Done when the source/test allowlist is
+   explicit and no intervening change invalidates the package.
+2. **Fail-first focused coverage — `tests/test_product_table_column_resize.py` and directly
+   affected template assertions.** Add source/behavior contracts for the corrected nth-child
+   wrapping, non-collapsing BSID header, eight resize separators outside sort buttons, pointer and
+   keyboard bounds, the three exact localStorage keys, reset behavior, layout refresh calls, and
+   mobile/print hiding. Run the focused contracts against the unchanged template and record the
+   expected failures before implementation.
+3. **Header repair — `templates/products.html`.** Keep S/N, Room, BSID, Start Date, and End Date
+   cells on one line; allow Product Name, Owner, and Status to wrap. Give BSID a sufficient
+   minimum width while preserving the current auto content-aware sizing and Room column.
+4. **Page-local resize controls — `templates/products.html`.** Add an accessible vertical
+   separator outside each sort button in the shared eight-column header. Support pointer dragging,
+   ArrowLeft/ArrowRight adjustment, and larger Shift+Arrow steps. Calculate a minimum from the
+   header label/sort indicator with safe baselines, cap at 640px, capture measured widths before
+   switching to explicit/fixed sizing on first resize, and update separator ARIA values.
+5. **Persistence and layout integration — `templates/products.html`.** Restore/save complete
+   width maps under exactly `medicalServiceProductColumnWidthsV1`,
+   `medicalServiceGenorayColumnWidthsV1`, and `medicalServiceVieworksColumnWidthsV1`. Invalid
+   storage must fall back to automatic sizing. Add a Reset widths button beside Freeze Columns;
+   reset only the active inventory key and clears explicit widths. Recompute frozen offsets and
+   the mirrored scrollbar after width changes. Hide/disable resize handles and reset control on
+   mobile and in print; do not alter sort/freeze storage keys.
+6. **Release and verification records — `static/changelog/releases.json`, `changes.md`, and
+   `plans.md`.** Add the user-facing UI release item, document the exact files/behavior and
+   truthful results, and mark this plan Executed — uncommitted after verification. Do not bump the
+   service worker unless a precached asset changes.
+
+### Verification and acceptance
+
+- The shared desktop headers align with the eight table columns, and BSID no longer collapses
+  vertically.
+- Each desktop header exposes a separate accessible resize separator that does not trigger sort;
+  pointer and keyboard resizing obey dynamic minimums and the 640px maximum.
+- Width maps persist independently for Product, Genoray, and Vieworks, restore safely, and reset
+  only the active table to automatic layout.
+- Frozen-cell offsets and both horizontal scroll surfaces refresh after resizing.
+- Resize controls are hidden/disabled in mobile/card and print views; sorting, freezing, dark mode,
+  existing Room/catalog behavior, and other inventory data paths remain unchanged.
+- Run only focused table tests and directly related Product/Genoray/Vieworks template suites,
+  inline JavaScript syntax, Jinja render/smoke, release JSON, and `git diff --check`. Do not use
+  browser/Codex UI automation, full-suite testing, database/Railway/production actions, commit,
+  push, deploy, or formal review.
+
+### Deliberately excluded
+
+- No database, backend/API, CSV, service-worker, or inventory-record changes.
+- No application-wide table resizing; scope is only the shared Product/Genoray/Vieworks table.
+- No synchronization across browsers/accounts and no migration of existing width preferences.
+- No changes to `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, or unrelated dirty work.
+
+### Execution log
+
+- 2026-09-29: Implementation authorized; preflight confirmed the earlier Room/catalog package is
+  already dirty and protected. Header/resize work is limited to `templates/products.html`, focused
+  tests, release metadata, and required project records.
+- 2026-09-29: Implemented the header wrapping repair and page-local desktop resize separators with
+  pointer/keyboard adjustment, dynamic minimums, a 640px cap, independent Product/Genoray/Vieworks
+  width storage keys, reset behavior, freeze-offset/scrollbar refresh, and mobile/print hiding.
+  Focused UI contracts passed 5/5; Product/Room/catalog plus the directly related Product,
+  Genoray, and Vieworks suites passed 52/52. Inline JavaScript syntax, release JSON, and
+  `git diff --check` passed. No full suite, browser/Codex UI, database, production, commit, push,
+  deploy, or service-worker change was performed.
+
+##
+
+# Product Inventory Room Field and Controlled Product Names
+
+**Status:** Executed — uncommitted.
+**Approved:** 2026-09-29 — the owner approved the complete plan after plan-mode refinement.
+**Execution authorized:** 2026-09-29 — the owner said “go ahead and implement the plan. do not overengineer and over check things.”
+**Detailed:** 2026-09-29.
+
+### Summary and decisions
+
+Add an optional Room field (maximum 100 characters) immediately after Product Name on Product,
+Genoray, and Vieworks inventory pages. Persist it through add/edit/list/import/export; older rows
+and older CSV files remain valid with a blank Room. Add a Settings Product Names catalog managed by
+verified superadmins and the verified regional admin. Seed it once with the 49 normalized choices
+derived from `D:/Codex Plans and Ideas - Share to account/Calib report - cert/Models.txt`, splitting
+the four grouped MobileDart lines into individual choices and preserving insertion order.
+
+Only newly created Product Inventory records use the catalog: the add UI is a searchable,
+selection-only dropdown, the server requires a catalog ID and stores its canonical name, and new
+Product CSV rows must match a catalog value. Existing Product names, Product edit-name behavior,
+Genoray/Vieworks free-text names, and all historical records remain unchanged. Catalog renames and
+deletions affect future additions only and never cascade into existing Products.
+
+### Numbered execution steps
+
+1. **Preflight and records — `AGENTS.md`, `plans.md`, `changes.md`, Git state, source, tests.**
+   Preserve the dirty protected database and owner artifacts. Mark this plan In progress and add
+   a factual start entry to `changes.md`. Done when the allowlist is explicit and no intervening
+   source change invalidates the package.
+2. **Fail-first focused coverage — `tests/` and source contracts.** Add the smallest disposable-
+   SQLite tests for catalog seed/CRUD/authorization, Product add enforcement, Room persistence, and
+   CSV round-trip. Run them against the unchanged source and record the expected failures before
+   implementation. Do not open or use `scheduler.db`.
+3. **Schema and catalog — `app.py`.** Add nullable Room columns to `Product`, `GenorayItem`, and
+   `VieworksItem`; extend existing additive SQLite helpers idempotently. Add a dedicated catalog
+   model/helper, normalize names by trimming and collapsing whitespace, enforce case-insensitive
+   uniqueness and the 100-character limit, and seed exactly once with the normalized/split 49
+   values. Preserve a durable seed marker so deleting all entries does not reseed on restart.
+4. **Inventory APIs — `app.py`.** Include Room in all three serializers and add/edit routes with
+   max-length validation. Add Room to all three CSV imports/exports while accepting older files.
+   Require `product_name_id` for Product creation, resolve its canonical name server-side, reject
+   missing/deleted/unknown choices, enforce catalog matching for new Product CSV rows, and leave
+   existing Product updates/name behavior unchanged.
+5. **Settings catalog APIs/UI — `app.py`, `templates/settings.html`.** Add authenticated catalog
+   read access and admin-only create/rename/delete endpoints with CSRF, validation, and Activity
+   Log entries. Add a responsive Product Names Settings tab using existing dialogs/toasts and the
+   backend authorization result; edits/deletes never cascade.
+6. **Inventory UI — `templates/products.html`.** Add Room after Product Name in desktop tables and
+   mobile cards, modal inputs, sorting/search data, freeze/colspan/layout counts, and local save
+   refresh. In Product add mode use an accessible searchable selection-only catalog combobox; keep
+   Product edit names and Genoray/Vieworks names free text.
+7. **Verification and records.** Run focused catalog/inventory tests, relevant existing Product/
+   Genoray/Vieworks/Settings/changelog regressions, and proportionate AST/Jinja/inline-JS/release
+   JSON/diff checks. Add the user-facing release entry, update `changes.md`, and mark this plan
+   Executed — uncommitted with truthful results. Do not bump the service worker unless a precached
+   asset changes. Do not commit, push, deploy, use browser/Codex UI automation, or touch production.
+
+### Acceptance and exclusions
+
+- Room is optional, max 100 characters, displayed after Product Name, and round-trips for all three inventories.
+- Catalog contains the exact 49 cleaned/split choices, seeds once, supports admin CRUD, and is selection-only for new Products.
+- Existing Product names and all non-Product catalog workflows are unchanged; no backfill or cascade occurs.
+- Protected dirty artifacts remain untouched; commit, push, Railway, production, database replacement,
+  and formal post-implementation review remain separately authorized/excluded.
+
+### Execution log
+
+- 2026-09-29: The approved package was implemented with additive runtime migrations and seed code,
+  focused tests against a unique disposable SQLite database, and records/release updates. The
+  focused catalog test passed 6/6 and the combined Room/catalog plus existing
+  Product/Genoray/Vieworks inventory tests passed 37/37; AST, release JSON, and diff checks also
+  passed. Protected dirty artifacts remain untouched; no production/Railway/browser/commit/push
+  action was performed.
+
+##
+
 # Zero-Write Publication Correction for the Reimbursement Lock Fix
 
 **Status:** Executed and published — correction commit `97237ac`; first recovered deployment
@@ -26261,3 +26510,73 @@ dashboard redesign phases 1–4, the hybrid ratification, and the TSR files rena
 planned, approved and executed before this rule existed. Their detail lives in `changes.md`
 under their dates, and the hybrid ratification plan in particular is recorded there in full.
 Nothing is missing; it simply is not in this file.
+# Product Inventory Room Field and Controlled Product Names
+
+**Status:** Superseded — moved to the newest entry at the top after execution; retained here as historical record.
+**Approved:** 2026-09-29 — the owner approved the complete plan after plan-mode refinement.
+**Execution authorized:** 2026-09-29 — the owner said “go ahead and implement the plan. do not overengineer and over check things.”
+**Detailed:** 2026-09-29.
+
+### Summary and decisions
+
+Add an optional Room field (maximum 100 characters) immediately after Product Name on Product,
+Genoray, and Vieworks inventory pages. Persist it through add/edit/list/import/export; older rows
+and older CSV files remain valid with a blank Room. Add a Settings Product Names catalog managed by
+verified superadmins and the verified regional admin. Seed it once with the 49 normalized choices
+derived from `D:/Codex Plans and Ideas - Share to account/Calib report - cert/Models.txt`, splitting
+the four grouped MobileDart lines into individual choices and preserving insertion order.
+
+Only newly created Product Inventory records use the catalog: the add UI is a searchable,
+selection-only dropdown, the server requires a catalog ID and stores its canonical name, and new
+Product CSV rows must match a catalog value. Existing Product names, Product edit-name behavior,
+Genoray/Vieworks free-text names, and all historical records remain unchanged. Catalog renames and
+deletions affect future additions only and never cascade into existing Products.
+
+### Numbered execution steps
+
+1. **Preflight and records — `AGENTS.md`, `plans.md`, `changes.md`, Git state, source, tests.**
+   Preserve the dirty protected database and owner artifacts. Mark this plan In progress and add
+   a factual start entry to `changes.md`. Done when the allowlist is explicit and no intervening
+   source change invalidates the package.
+2. **Fail-first focused coverage — `tests/` and source contracts.** Add the smallest disposable-
+   SQLite tests for catalog seed/CRUD/authorization, Product add enforcement, Room persistence, and
+   CSV round-trip. Run them against the unchanged source and record the expected failures before
+   implementation. Do not open or use `scheduler.db`.
+3. **Schema and catalog — `app.py`.** Add nullable Room columns to `Product`, `GenorayItem`, and
+   `VieworksItem`; extend existing additive SQLite helpers idempotently. Add a dedicated catalog
+   model/helper, normalize names by trimming and collapsing whitespace, enforce case-insensitive
+   uniqueness and the 100-character limit, and seed exactly once with the normalized/split 49
+   values. Preserve a durable seed marker so deleting all entries does not reseed on restart.
+4. **Inventory APIs — `app.py`.** Include Room in all three serializers and add/edit routes with
+   max-length validation. Add Room to all three CSV imports/exports while accepting older files.
+   Require `product_name_id` for Product creation, resolve its canonical name server-side, reject
+   missing/deleted/unknown choices, enforce catalog matching for new Product CSV rows, and leave
+   existing Product updates/name behavior unchanged.
+5. **Settings catalog APIs/UI — `app.py`, `templates/settings.html`.** Add authenticated catalog
+   read access and admin-only create/rename/delete endpoints with CSRF, validation, and Activity
+   Log entries. Add a responsive Product Names Settings tab using existing dialogs/toasts and the
+   backend authorization result; edits/deletes never cascade.
+6. **Inventory UI — `templates/products.html`.** Add Room after Product Name in desktop tables and
+   mobile cards, modal inputs, sorting/search data, freeze/colspan/layout counts, and local save
+   refresh. In Product add mode use an accessible searchable selection-only catalog combobox; keep
+   Product edit names and Genoray/Vieworks names free text.
+7. **Verification and records.** Run focused catalog/inventory tests, relevant existing Product/
+   Genoray/Vieworks/Settings/changelog regressions, and proportionate AST/Jinja/inline-JS/release
+   JSON/diff checks. Add the user-facing release entry, update `changes.md`, and mark this plan
+   Executed — uncommitted with truthful results. Do not bump the service worker unless a precached
+   asset changes. Do not commit, push, deploy, use browser/Codex UI automation, or touch production.
+
+### Acceptance and exclusions
+
+- Room is optional, max 100 characters, displayed after Product Name, and round-trips for all three inventories.
+- Catalog contains the exact 49 cleaned/split choices, seeds once, supports admin CRUD, and is selection-only for new Products.
+- Existing Product names and all non-Product catalog workflows are unchanged; no backfill or cascade occurs.
+- Protected dirty artifacts remain untouched; commit, push, Railway, production, database replacement,
+  and formal post-implementation review remain separately authorized/excluded.
+
+### Execution log
+
+- 2026-09-29: Preflight read the applicable instructions, full control records, approved plan,
+  source, templates, tests, and attached Models.txt. Git status showed only pre-existing protected
+  changes in `scheduler.db`, handoffs, `.claude/`, `output/`, and `tmp/`; these remain outside the
+  implementation allowlist.

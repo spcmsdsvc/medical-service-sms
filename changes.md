@@ -2,6 +2,91 @@
 
 codex changes - 2026-09-29
 
+- Began the separately authorized Existing Product Name Standardization package. The bounded
+  implementation covers Product edit enforcement, administrator review/apply, catalog lifecycle
+  integrity, and Product CSV validation in `app.py`, `templates/products.html`,
+  `templates/settings.html`, focused tests, release metadata, and project records. Existing
+  Room/catalog/column-resize changes and protected `scheduler.db`, handoffs, `.claude/`, `output/`,
+  and `tmp/` remain untouched; no commit, push, deploy, Railway, production, or browser action is
+  authorized by this package.
+
+- Added administrator-only Product standardization review data and apply endpoints. Legacy Product
+  names are grouped by exact stored text with serial, owner, and Room details; suggestions are only
+  exact case/whitespace-normalized catalog matches; stale serial/name previews return a conflict;
+  successful groups update Product master names atomically and write Activity Log entries.
+- Product Inventory edits now require a valid `product_name_id` on every save and persist the
+  catalog's canonical display name. The edit modal auto-selects canonical names and warns when a
+  legacy name needs review; arbitrary typed Product names are rejected server-side. Genoray and
+  Vieworks remain free-text.
+- Product CSV creates and updates now require catalog-matching names, save canonical spelling, and
+  fully skip invalid-name rows with an invalid-name count/message before any row mutation. Existing
+  valid Room/owner/warranty/BSID behavior remains intact.
+- Catalog renames now cascade only exact-name Product master rows in the same transaction and return
+  the updated count; catalog deletion returns HTTP 409 with the affected Product count while in use.
+  Historical schedule/TSR/report snapshots are not changed.
+- Added focused disposable-DB coverage in `tests/test_product_name_standardization.py`, updated
+  the Room/catalog CSV expectation for canonical existing updates, and added the Product Name
+  Standardization release entry. Focused standardization 5/5, Room/catalog 11/11, and related
+  table/Genoray/Vieworks 34/34 tests passed. The exact broader legacy Product mutation/history
+  batch was reproduced as 48 tests with 9 failures caused by stale authorized Product payloads
+  and one order-dependent serial-rename fixture.
+- Updated only `tests/test_product_inventory_mutations.py` and
+  `tests/test_product_vieworks_links_history.py` so authorized Product add/update requests use a
+  valid `product_name_id`, permission-denial requests retain their pre-validation payloads, and
+  the serial-rename test creates its own Product and link rows. No production source changed.
+  Re-running the same unique-disposable-DB 48-test batch passed 48/48, including the focused
+  standardization 5/5; the prior nine fixture failures are resolved.
+- Refined the Product edit modal and Settings review selector so canonical values auto-select, legacy
+  whitespace/case variants remain visibly flagged until the user chooses a catalog value, and each
+  standardization group uses a searchable datalist with server-side selection validation.
+
+- Began the separately authorized Inventory Table Header Repair and Column Resizing package. The
+  bounded implementation is page-local to `templates/products.html`, focused table tests, the
+  release manifest, `plans.md`, and this change log; it repairs the Room-shifted header wrapping
+  and adds desktop-only Product/Genoray/Vieworks column resizing with browser-local persistence.
+  Existing Room/catalog changes and protected `scheduler.db`, handoffs, `.claude/`, `output/`, and
+  `tmp/` remain untouched. No database, backend/API, CSV, browser/Codex UI, commit, push, or
+  deployment action is authorized by this package.
+
+- Added fail-first source contracts in `tests/test_product_table_column_resize.py`; the unchanged
+  template correctly failed all five new header/resize checks before implementation.
+- Repaired the shared inventory table header CSS after the Room column shift: S/N, Room, BSID,
+  Start Date, and End Date remain on one line, while Product Name, Owner, and Status can wrap;
+  BSID now has a seven-rem minimum so its label and sort control stay horizontal.
+- Added eight page-local accessible resize separators to `templates/products.html`. Desktop users
+  can drag or use ArrowLeft/ArrowRight (Shift for larger steps), with header-derived minimums and
+  a 640px maximum; the first resize captures measured widths before fixed sizing and refreshes
+  frozen offsets plus the mirrored scrollbar.
+- Added independent browser-local width maps under the three approved inventory keys and a Reset
+  widths control. Invalid maps fall back to automatic sizing; reset clears only the active key;
+  mobile/card and print views hide/disable the controls. No service-worker marker changed because
+  this authenticated template is not precached.
+- Added the inventory table column-control release entry. Focused UI contracts now pass 5/5; the
+  directly affected compact-sizing assertion was updated for the BSID minimum. The related
+  Product/Room/catalog, Product certificate, Genoray, and Vieworks suites pass 52/52.
+
+- Implemented the owner-authorized Product Inventory Room and controlled Product Names package.
+  The bounded scope is `app.py`, `templates/products.html`, `templates/settings.html`, focused
+  inventory/catalog tests, the release manifest, `plans.md`, and this change log. It adds optional
+  Room support across Product/Genoray/Vieworks and a one-time seeded admin-managed catalog for new
+  Product additions only. Protected `scheduler.db`, handoffs, `.claude/`, `output/`, and `tmp/`
+  remain untouched; no commit, push, deployment, Railway, production, or browser/Codex UI action
+  is authorized by this implementation cycle.
+- Added additive optional Room fields to Product, Genoray, and Vieworks inventory models, runtime
+  SQLite compatibility helpers, serializers, add/edit routes, CSV imports, and CSV exports.
+- Added the once-seeded 49-choice Product Name catalog with durable seed-state tracking, normalized
+  administrator CRUD APIs, authorization, duplicate/length validation, and Activity Log entries.
+- New Product additions now require a catalog selection and resolve the canonical display name on the
+  server; new Product CSV rows require a catalog match while existing Product name behavior remains
+  unchanged. Catalog edits and deletions do not cascade to existing records.
+- Added the Product Names Settings tab, selection-only Product add combobox, Room inventory column,
+  Room mobile card display, search/sort/freeze support, and add/edit form wiring.
+- Added focused disposable-database Room/catalog regression coverage and a user-facing release entry.
+  The focused catalog test passed 6/6 and the combined Room/catalog plus existing
+  Product/Genoray/Vieworks inventory tests passed 37/37; AST, release JSON, and diff checks also
+  passed. No protected database, production, Railway, browser, commit, or push action was
+  performed.
+
 - Committed only the generated Reimbursement Excel numeric-total fix, its focused manual-item
   regression, and the required change record as `b3fb874` on `main`. The owner explicitly
   authorized pushing this bounded fix to `origin/main`; protected `scheduler.db`, handoffs,

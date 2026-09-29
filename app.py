@@ -2514,6 +2514,7 @@ class Product(db.Model):
     serial_number = db.Column(db.String(100), primary_key=True)
     
     name = db.Column(db.String(100), nullable=False)
+    room = db.Column(db.String(100), nullable=True)
     
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'))
     
@@ -2533,6 +2534,24 @@ class Product(db.Model):
     shifts = db.relationship('Shift', backref='product', lazy=True)
 
 
+class ProductNameCatalog(db.Model):
+    """Canonical Product Inventory names available for new records."""
+    __tablename__ = 'product_name_catalog'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
+
+
+class ProductNameCatalogState(db.Model):
+    """One-row marker preventing catalog reseeding after administrator deletions."""
+    __tablename__ = 'product_name_catalog_state'
+
+    id = db.Column(db.Integer, primary_key=True)
+    seeded_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+
+
 class GenorayItem(db.Model):
     """Standalone Genoray equipment inventory.
 
@@ -2544,6 +2563,7 @@ class GenorayItem(db.Model):
 
     serial_number = db.Column(db.String(100), primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    room = db.Column(db.String(100), nullable=True)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=True, index=True)
     start_warranty_date = db.Column(db.Date, nullable=True)
     end_warranty_date = db.Column(db.Date, nullable=True)
@@ -2572,6 +2592,7 @@ class VieworksItem(db.Model):
 
     serial_number = db.Column(db.String(100), primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    room = db.Column(db.String(100), nullable=True)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=True, index=True)
     start_warranty_date = db.Column(db.Date, nullable=True)
     end_warranty_date = db.Column(db.Date, nullable=True)
@@ -2660,11 +2681,155 @@ class InventoryPmVisit(db.Model):
 
 
 _product_contract_column_ready = False
+_inventory_room_columns_ready = False
+_product_name_catalog_ready = False
+
+PRODUCT_NAME_CATALOG_SEED_VALUES = (
+    'Trinias Unity Smart',
+    'Trinias Unity',
+    'Trinias Opera Smart',
+    'Trinias Opera Grand',
+    'Bransist Alexa',
+    'Flexavision F4',
+    'Flexavision F4 with CH-200M',
+    'Flexavision F3',
+    'Flexavision F3 with CH-200M',
+    'Sonialvision G4 with CH-200M',
+    'Flexavision HB',
+    'Flexavision HB with CH-200M',
+    'Flexavision HB (eXceed Edition)',
+    'Flexavision HB (eXceed Edition) with CH-200M',
+    'Flexavision SF',
+    'Flexavision SF with CH-200M',
+    'Radspeed Pro SR5 Version',
+    'Radspeed Pro MC',
+    'Radspeed Pro XF',
+    'Radspeed Pro MF',
+    'Radspeed Fit 32',
+    'Radspeed Fit 56',
+    'EZy-Rad Pro',
+    'Opescope Acteno 15',
+    'Opescope Acteno FD',
+    'Opescope Acteno',
+    'Opescope Activo',
+    'Opescope Pleno',
+    'MobileDart Evolution MX9 Premium',
+    'MobileDart Evolution MX9c Premium',
+    'MobileDart Evolution MX9v Premium',
+    'MobileDart Evolution MX9k Premium',
+    'MobileDart Evolution MX9',
+    'MobileDart Evolution MX9c',
+    'MobileDart Evolution MX9v',
+    'MobileDart Evolution MX9k',
+    'MobileDart Evolution MX8',
+    'MobileDart Evolution MX8c',
+    'MobileDart Evolution MX8v',
+    'MobileDart Evolution MX8k',
+    'MobileArt Evolution MX9',
+    'MobileArt Evolution MX8',
+    'MobileArt Eco MUX-10',
+    'MobileDart Evolution MX7',
+    'MobileDart Evolution MX7c',
+    'MobileArt Evolution MX7',
+    'MUX-100',
+    'UD150B-30',
+    'UD150L-30',
+)
+
+
+def normalize_product_name_catalog_value(value):
+    """Trim and collapse whitespace while preserving display casing/punctuation."""
+    return ' '.join(str(value or '').split())
+
+
+def normalize_inventory_room(value):
+    """Normalize the optional inventory Room field and enforce its size limit."""
+    normalized = clean_str(value) or ''
+    if len(normalized) > 100:
+        return None, 'Room must be 100 characters or fewer.'
+    return normalized, None
+
+
+def product_name_catalog_to_dict(item):
+    return {'id': item.id, 'name': item.name}
+
+
+def ensure_product_name_catalog():
+    """Create the Product name catalog and seed it once on first initialization."""
+    global _product_name_catalog_ready
+    if _product_name_catalog_ready:
+        return
+
+    try:
+        ProductNameCatalog.__table__.create(db.engine, checkfirst=True)
+        ProductNameCatalogState.__table__.create(db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_product_name_catalog_name "
+                "ON product_name_catalog (lower(trim(name)))"
+            )
+            seeded = connection.exec_driver_sql(
+                "SELECT id FROM product_name_catalog_state WHERE id = 1"
+            ).fetchone()
+            if not seeded:
+                existing = connection.exec_driver_sql(
+                    "SELECT COUNT(*) FROM product_name_catalog"
+                ).scalar() or 0
+                if not existing:
+                    now = get_manila_time()
+                    connection.exec_driver_sql(
+                        "INSERT INTO product_name_catalog (name, created_at, updated_at) VALUES (?, ?, ?)",
+                        [(name, now, now) for name in PRODUCT_NAME_CATALOG_SEED_VALUES],
+                    )
+                connection.exec_driver_sql(
+                    "INSERT INTO product_name_catalog_state (id, seeded_at) VALUES (1, ?)",
+                    (get_manila_time(),),
+                )
+        _product_name_catalog_ready = True
+    except Exception as catalog_error:
+        print(f"[ProductCatalog] Unable to ensure Product name catalog: {catalog_error}", flush=True)
+        raise
+
+
+def ensure_inventory_room_columns():
+    """Add nullable Room columns to legacy inventory tables without backfilling rows."""
+    global _inventory_room_columns_ready
+    if _inventory_room_columns_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            migrations = {
+                'product': 'ALTER TABLE product ADD COLUMN room VARCHAR(100)',
+                'genoray_item': 'ALTER TABLE genoray_item ADD COLUMN room VARCHAR(100)',
+                'vieworks_item': 'ALTER TABLE vieworks_item ADD COLUMN room VARCHAR(100)',
+            }
+            for table_name, ddl in migrations.items():
+                exists = connection.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+                    (table_name,),
+                ).fetchone()
+                if not exists:
+                    continue
+                columns = {
+                    row[1] for row in connection.exec_driver_sql(
+                        f"PRAGMA table_info({table_name})"
+                    ).fetchall()
+                }
+                if 'room' not in columns:
+                    connection.exec_driver_sql(ddl)
+                    print(f"[DB MIGRATION] Added {table_name}.room", flush=True)
+        _inventory_room_columns_ready = True
+    except Exception as room_error:
+        print(f"[Inventory] Room column migration failed: {room_error}", flush=True)
+        raise
 
 
 def ensure_product_contract_column():
     """Add product contract/BSID fields safely to existing SQLite databases."""
     global _product_contract_column_ready
+
+    ensure_inventory_room_columns()
 
     if _product_contract_column_ready:
         return
@@ -2929,6 +3094,7 @@ def operational_equipment_to_dict(record, source, certificate=None, calibration_
     return {
         'serial_number': clean_str(getattr(record, 'serial_number', None)) or '',
         'name': clean_str(getattr(record, 'name', None)) or '',
+        'room': clean_str(getattr(record, 'room', None)) or '',
         'bsid': normalize_product_bsid(getattr(record, 'bsid', None)) if record else '',
         'client_id': clean_int(getattr(record, 'client_id', None)) if record else None,
         'client_name': clean_str(getattr(owner, 'name', None)) or 'N/A',
@@ -3500,6 +3666,7 @@ def ensure_genoray_item_table():
     if _genoray_item_table_ready and _genoray_bsid_counter_ready:
         return
     try:
+        ensure_inventory_room_columns()
         GenorayItem.__table__.create(db.engine, checkfirst=True)
         GenorayBsidCounter.__table__.create(db.engine, checkfirst=True)
         # The ORM primary key prevents exact serial duplicates.  Route-level
@@ -3627,6 +3794,7 @@ def ensure_vieworks_item_table():
     if _vieworks_item_table_ready and _vieworks_bsid_counter_ready:
         return
     try:
+        ensure_inventory_room_columns()
         # Request migrations can leave this session holding SQLite's writer lock.
         # Finish those writes before opening the separate DDL connection below.
         db.session.commit()
@@ -26477,11 +26645,217 @@ def settings_page():
         'settings.html',
         users=all_accounts,
         backup_superadmin=backup_superadmin,
+        can_manage_product_names=bool(is_admin_authorized()),
         approval_routing_enabled=True,
         approval_request_scopes=available_approval_request_scopes()
     )
 
 
+@app.route('/api/product-name-catalog', methods=['GET'])
+@login_required
+def product_name_catalog_api():
+    """Return the canonical names available when creating Product records."""
+    if not can_edit_products_inventory():
+        return jsonify({'message': 'Denied'}), 403
+    ensure_product_name_catalog()
+    rows = ProductNameCatalog.query.order_by(ProductNameCatalog.id.asc()).all()
+    return no_store_jsonify([product_name_catalog_to_dict(row) for row in rows])
+
+
+@app.route('/settings/product-names', methods=['POST'])
+@login_required
+def create_product_name_catalog_item():
+    if not is_admin_authorized():
+        return denied()
+    ensure_product_name_catalog()
+    name = normalize_product_name_catalog_value((request.get_json(silent=True) or {}).get('name'))
+    if not name:
+        return jsonify({'success': False, 'error': 'Product name is required.'}), 400
+    if len(name) > 100:
+        return jsonify({'success': False, 'error': 'Product name must be 100 characters or fewer.'}), 400
+    if ProductNameCatalog.query.filter(func.lower(ProductNameCatalog.name) == name.casefold()).first():
+        return jsonify({'success': False, 'error': 'That product name already exists.'}), 409
+    item = ProductNameCatalog(name=name, created_at=get_manila_time(), updated_at=get_manila_time())
+    db.session.add(item)
+    add_activity_log_entry(f'Added Product name catalog entry: {name}')
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'That product name already exists.'}), 409
+    return jsonify({'success': True, 'message': 'Product name added.', 'item': product_name_catalog_to_dict(item)})
+
+
+@app.route('/settings/product-names/<int:item_id>', methods=['PUT'])
+@login_required
+def update_product_name_catalog_item(item_id):
+    if not is_admin_authorized():
+        return denied()
+    ensure_product_name_catalog()
+    item = db.session.get(ProductNameCatalog, item_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Product name not found.'}), 404
+    name = normalize_product_name_catalog_value((request.get_json(silent=True) or {}).get('name'))
+    if not name:
+        return jsonify({'success': False, 'error': 'Product name is required.'}), 400
+    if len(name) > 100:
+        return jsonify({'success': False, 'error': 'Product name must be 100 characters or fewer.'}), 400
+    duplicate = ProductNameCatalog.query.filter(
+        ProductNameCatalog.id != item_id,
+        func.lower(ProductNameCatalog.name) == name.casefold(),
+    ).first()
+    if duplicate:
+        return jsonify({'success': False, 'error': 'That product name already exists.'}), 409
+    old_name = item.name
+    item.name = name
+    item.updated_at = get_manila_time()
+    updated_product_count = Product.query.filter(Product.name == old_name).update(
+        {'name': name},
+        synchronize_session=False,
+    )
+    add_activity_log_entry(
+        f'Updated Product name catalog entry: {old_name} -> {name}; '
+        f'{updated_product_count} Product master(s) updated'
+    )
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'That product name already exists.'}), 409
+    return jsonify({
+        'success': True,
+        'message': 'Product name updated.',
+        'item': product_name_catalog_to_dict(item),
+        'updated_product_count': updated_product_count,
+    })
+
+
+@app.route('/settings/product-names/<int:item_id>', methods=['DELETE'])
+@login_required
+def delete_product_name_catalog_item(item_id):
+    if not is_admin_authorized():
+        return denied()
+    ensure_product_name_catalog()
+    item = db.session.get(ProductNameCatalog, item_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Product name not found.'}), 404
+    name = item.name
+    affected_product_count = Product.query.filter(Product.name == name).count()
+    if affected_product_count:
+        return jsonify({
+            'success': False,
+            'error': 'This Product Name is still used by existing Products.',
+            'affected_product_count': affected_product_count,
+        }), 409
+    db.session.delete(item)
+    add_activity_log_entry(f'Deleted Product name catalog entry: {name}')
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Product name deleted.'})
+
+
+@app.route('/settings/product-name-standardization-data', methods=['GET'])
+@login_required
+def product_name_standardization_data():
+    """Return legacy Product name groups for administrator review."""
+    if not is_admin_authorized():
+        return denied()
+
+    ensure_product_name_catalog()
+    catalog = ProductNameCatalog.query.order_by(ProductNameCatalog.id.asc()).all()
+    exact_names = {item.name for item in catalog}
+    normalized_catalog = {
+        normalize_product_name_catalog_value(item.name).casefold(): item
+        for item in catalog
+    }
+    grouped = {}
+    products = (
+        Product.query
+        .options(joinedload(Product.owner))
+        .order_by(Product.name.asc(), Product.serial_number.asc())
+        .all()
+    )
+    for product in products:
+        legacy_name = product.name or ''
+        if legacy_name in exact_names:
+            continue
+        group = grouped.setdefault(legacy_name, {
+            'legacy_name': legacy_name,
+            'count': 0,
+            'products': [],
+            'suggestion': None,
+        })
+        group['count'] += 1
+        group['products'].append({
+            'serial_number': product.serial_number,
+            'owner': product.owner.name if product.owner else 'N/A',
+            'room': getattr(product, 'room', None) or '',
+        })
+
+    for group in grouped.values():
+        suggestion = normalized_catalog.get(
+            normalize_product_name_catalog_value(group['legacy_name']).casefold()
+        )
+        if suggestion:
+            group['suggestion'] = product_name_catalog_to_dict(suggestion)
+
+    return no_store_jsonify({
+        'groups': list(grouped.values()),
+        'catalog': [product_name_catalog_to_dict(item) for item in catalog],
+    })
+
+
+@app.route('/settings/product-name-standardization-apply', methods=['POST'])
+@login_required
+def apply_product_name_standardization():
+    """Atomically map one reviewed legacy Product name group to a catalog item."""
+    if not is_admin_authorized():
+        return denied()
+
+    ensure_product_name_catalog()
+    payload = request.get_json(silent=True) or {}
+    expected_current_name = payload.get('expected_current_name')
+    if 'expected_current_name' not in payload or not isinstance(expected_current_name, str):
+        return jsonify({'success': False, 'error': 'Expected current Product name is required.'}), 400
+    serial_numbers = payload.get('serial_numbers')
+    if not isinstance(serial_numbers, list) or not serial_numbers:
+        return jsonify({'success': False, 'error': 'At least one Product serial number is required.'}), 400
+    serial_numbers = [clean_str(serial) for serial in serial_numbers if clean_str(serial)]
+    catalog_id = clean_int(payload.get('product_name_id'))
+    catalog_item = db.session.get(ProductNameCatalog, catalog_id) if catalog_id else None
+    if not catalog_item:
+        return jsonify({'success': False, 'error': 'Please select a valid Product Name.'}), 400
+
+    products = [db.session.get(Product, serial) for serial in serial_numbers]
+    stale_serials = [
+        serial
+        for serial, product in zip(serial_numbers, products)
+        if not product or product.name != expected_current_name
+    ]
+    if stale_serials:
+        return jsonify({
+            'success': False,
+            'error': 'The Product list changed. Reload the standardization review and try again.',
+            'stale_serial_numbers': stale_serials,
+        }), 409
+
+    try:
+        for product in products:
+            product.name = catalog_item.name
+        add_activity_log_entry(
+            f'Standardized {len(products)} Product master(s): '
+            f'{expected_current_name} -> {catalog_item.name}'
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'Product names could not be standardized. Please try again.'}), 409
+
+    return jsonify({
+        'success': True,
+        'message': f'{len(products)} Product master(s) standardized.',
+        'updated_product_count': len(products),
+        'product_name': catalog_item.name,
+    })
 
 
 @app.route('/settings/email-templates-data')
@@ -30455,6 +30829,7 @@ def get_products():
         results.append({
             'serial_number': p.serial_number,
             'name': p.name,
+            'room': getattr(p, 'room', None) or '',
             'bsid': getattr(p, 'bsid', None) or '',
             'client_id': p.client_id,
             'client_name': p.owner.name if p.owner else "N/A",
@@ -30526,6 +30901,7 @@ def genoray_item_to_dict(item):
     return {
         'serial_number': item.serial_number,
         'name': item.name,
+        'room': getattr(item, 'room', None) or '',
         'bsid': normalize_genoray_bsid(getattr(item, 'bsid', None)),
         'client_id': item.client_id,
         'client_name': owner.name if owner else 'N/A',
@@ -30597,6 +30973,7 @@ def vieworks_item_to_dict(item):
     return {
         'serial_number': item.serial_number,
         'name': item.name,
+        'room': getattr(item, 'room', None) or '',
         'bsid': normalize_vieworks_bsid(getattr(item, 'bsid', None)),
         'client_id': item.client_id,
         'client_name': owner.name if owner else 'N/A',
@@ -31024,6 +31401,9 @@ def genoray_payload_values(payload, existing=None):
     serial_value = payload.get('serial_number', existing.get('serial_number'))
     serial_number = (clean_str(serial_value) or '').upper()
     name = clean_str(payload.get('name', payload.get('product_name', existing.get('name'))))
+    room, room_error = normalize_inventory_room(payload.get('room', existing.get('room')))
+    if room_error:
+        return None, room_error
     existing_bsid = normalize_genoray_bsid(existing.get('bsid'))
     if existing_bsid:
         raw_bsid = clean_str(payload.get('bsid', existing_bsid)) or ''
@@ -31065,6 +31445,7 @@ def genoray_payload_values(payload, existing=None):
     return {
         'serial_number': serial_number,
         'name': name,
+        'room': room,
         'bsid': normalize_genoray_bsid(raw_bsid) or None,
         'client_id': client_id,
         'start_warranty_date': dates['start_warranty_date'],
@@ -31110,6 +31491,9 @@ def vieworks_payload_values(payload, existing=None):
     serial_value = payload.get('serial_number', existing.get('serial_number'))
     serial_number = (clean_str(serial_value) or '').upper()
     name = clean_str(payload.get('name', payload.get('product_name', existing.get('name'))))
+    room, room_error = normalize_inventory_room(payload.get('room', existing.get('room')))
+    if room_error:
+        return None, room_error
     existing_bsid = normalize_vieworks_bsid(existing.get('bsid'))
     if existing_bsid:
         raw_bsid = clean_str(payload.get('bsid', existing_bsid)) or ''
@@ -31151,6 +31535,7 @@ def vieworks_payload_values(payload, existing=None):
     return {
         'serial_number': serial_number,
         'name': name,
+        'room': room,
         'bsid': normalize_vieworks_bsid(raw_bsid) or None,
         'client_id': client_id,
         'start_warranty_date': dates['start_warranty_date'],
@@ -50788,7 +51173,7 @@ def export_products():
     ensure_product_contract_column()
     products = Product.query.all()
     output = io.StringIO(); writer = csv.writer(output)
-    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status'])
+    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status', 'Room'])
     for p in products:
         writer.writerow([
             p.serial_number,
@@ -50799,6 +51184,7 @@ def export_products():
             p.end_warranty_date,
             'Yes' if p.under_contract else 'No',
             product_contract_status(p),
+            getattr(p, 'room', None) or '',
         ])
     output.seek(0)
     log_activity("Exported the Product Inventory")
@@ -59402,13 +59788,21 @@ def add_product():
 
     ensure_product_contract_column()
     ensure_product_vieworks_link_table()
+    ensure_product_name_catalog()
     d = request.get_json() or {}
     link_fields_present, linked_vieworks_serials, link_error = product_link_state_from_payload(d)
     if link_fields_present and link_error:
         return jsonify({'message': link_error, 'field': 'linked_vieworks_serials'}), 400
 
     serial_number = clean_str(d.get('serial_number')).upper()
-    product_name = clean_str(d.get('name'))
+    catalog_id = clean_int(d.get('product_name_id'))
+    catalog_item = db.session.get(ProductNameCatalog, catalog_id) if catalog_id else None
+    if not catalog_item:
+        return jsonify({'message': 'Please select a valid Product Name.'}), 400
+    product_name = catalog_item.name
+    room, room_error = normalize_inventory_room(d.get('room'))
+    if room_error:
+        return jsonify({'message': room_error, 'field': 'room'}), 400
     bsid = normalize_product_bsid(d.get('bsid'))
 
     if len(clean_str(d.get('bsid')) or '') > 40:
@@ -59440,6 +59834,7 @@ def add_product():
     new_p = Product(
         serial_number=serial_number,
         name=product_name,
+        room=room,
         client_id=clean_int(d.get('client_id')),
         start_warranty_date=parse_date(d.get('start_warranty')),
         end_warranty_date=parse_date(d.get('end_warranty')),
@@ -59473,7 +59868,22 @@ def add_product():
 
     contract_label = 'Under Contract' if new_p.under_contract else 'No Contract'
     log_activity(f"Added equipment: {new_p.serial_number} ({contract_label})")
-    return jsonify({'status': 'success'})
+    linked_vieworks = product_vieworks_link_payload(new_p.serial_number)
+    return jsonify({
+        'status': 'success',
+        'serial_number': new_p.serial_number,
+        'name': new_p.name,
+        'room': new_p.room or '',
+        'bsid': new_p.bsid or '',
+        'client_id': new_p.client_id,
+        'client_name': new_p.owner.name if new_p.owner else 'N/A',
+        'start_warranty': new_p.start_warranty_date.isoformat() if new_p.start_warranty_date else '',
+        'end_warranty': new_p.end_warranty_date.isoformat() if new_p.end_warranty_date else '',
+        'under_contract': bool(new_p.under_contract),
+        'computed_status': product_contract_status(new_p),
+        'linked_vieworks': linked_vieworks,
+        'with_vieworks_canon': bool(linked_vieworks),
+    })
 
 
 def purchase_order_count_for_machine(serial_number):
@@ -59595,14 +60005,21 @@ def update_product(serial_number):
     ensure_purchase_order_schema()
     db.session.rollback()
     ensure_product_vieworks_link_table()
+    ensure_product_name_catalog()
     d = request.get_json() or {}
     old_serial = clean_str(serial_number)
     p = db.session.get(Product, old_serial)
     if not p:
         return jsonify({'message': 'Missing'}), 404
-
     new_serial = clean_str(d.get('serial_number'))
-    product_name = clean_str(d.get('name'))
+    catalog_id = clean_int(d.get('product_name_id'))
+    catalog_item = db.session.get(ProductNameCatalog, catalog_id) if catalog_id else None
+    if not catalog_item:
+        return jsonify({'message': 'Please select a valid Product Name.', 'field': 'product_name_id'}), 400
+    product_name = catalog_item.name
+    new_room, room_error = normalize_inventory_room(d.get('room', getattr(p, 'room', None)))
+    if room_error:
+        return jsonify({'message': room_error, 'field': 'room'}), 400
 
     if not new_serial:
         return jsonify({'message': 'Serial number is required.'}), 400
@@ -59618,6 +60035,7 @@ def update_product(serial_number):
     old_end = p.end_warranty_date
     old_contract = bool(p.under_contract)
     old_bsid = normalize_product_bsid(getattr(p, 'bsid', None))
+    old_room = getattr(p, 'room', None) or ''
 
     new_client_id = clean_int(d.get('client_id'))
     new_start = parse_date(d.get('start_warranty'))
@@ -59679,6 +60097,7 @@ def update_product(serial_number):
             replacement = Product(
                 serial_number=new_serial,
                 name=product_name,
+                room=new_room,
                 client_id=new_client_id,
                 start_warranty_date=new_start,
                 end_warranty_date=new_end,
@@ -59738,12 +60157,25 @@ def update_product(serial_number):
                 'serial_changed': True,
                 'old_serial': old_serial,
                 'new_serial': new_serial,
+                'serial_number': replacement.serial_number,
+                'name': replacement.name,
+                'room': replacement.room or '',
+                'bsid': replacement.bsid or '',
+                'client_id': replacement.client_id,
+                'client_name': replacement.owner.name if replacement.owner else 'N/A',
+                'start_warranty': replacement.start_warranty_date.isoformat() if replacement.start_warranty_date else '',
+                'end_warranty': replacement.end_warranty_date.isoformat() if replacement.end_warranty_date else '',
+                'under_contract': bool(replacement.under_contract),
+                'computed_status': product_contract_status(replacement),
+                'linked_vieworks': product_vieworks_link_payload(replacement.serial_number),
+                'with_vieworks_canon': bool(product_vieworks_link_payload(replacement.serial_number)),
                 'linked_schedule_count': linked_schedule_count,
                 'linked_purchase_order_count': linked_purchase_order_count,
             })
 
         linked_purchase_order_count = purchase_order_count_for_machine(p.serial_number)
         p.name = product_name
+        p.room = new_room
         p.client_id = new_client_id
         p.start_warranty_date = new_start
         p.end_warranty_date = new_end
@@ -59763,6 +60195,8 @@ def update_product(serial_number):
             changed_fields.append('contract status')
         if old_bsid != new_bsid:
             changed_fields.append('BSID')
+        if old_room != (new_room or ''):
+            changed_fields.append('room')
 
         field_note = f" ({', '.join(changed_fields)})" if changed_fields else ''
         reassignment_note = ''
@@ -59775,6 +60209,18 @@ def update_product(serial_number):
             'status': 'success',
             'serial_changed': False,
             'linked_purchase_order_count': linked_purchase_order_count,
+            'serial_number': p.serial_number,
+            'name': p.name,
+            'room': p.room or '',
+            'bsid': p.bsid or '',
+            'client_id': p.client_id,
+            'client_name': p.owner.name if p.owner else 'N/A',
+            'start_warranty': p.start_warranty_date.isoformat() if p.start_warranty_date else '',
+            'end_warranty': p.end_warranty_date.isoformat() if p.end_warranty_date else '',
+            'under_contract': bool(p.under_contract),
+            'computed_status': product_contract_status(p),
+            'linked_vieworks': product_vieworks_link_payload(p.serial_number),
+            'with_vieworks_canon': bool(product_vieworks_link_payload(p.serial_number)),
         })
 
     except Exception as product_error:
@@ -60610,6 +61056,7 @@ def update_vieworks_item(serial_number):
     existing = {
         'serial_number': item.serial_number,
         'name': item.name,
+        'room': getattr(item, 'room', None),
         'bsid': item.bsid,
         'client_id': item.client_id,
         'start_warranty_date': item.start_warranty_date,
@@ -60678,6 +61125,7 @@ def update_vieworks_item(serial_number):
             )
         item.serial_number = new_serial
         item.name = values['name']
+        item.room = values['room']
         item.bsid = values['bsid']
         item.client_id = values['client_id']
         item.start_warranty_date = values['start_warranty_date']
@@ -60786,6 +61234,7 @@ def import_vieworks_items():
             product_name = clean_str(csv_get(
                 row, 'Description', 'Product Name', 'Name', 'Equipment Name', 'Item'
             ))
+            room, room_error = normalize_inventory_room(csv_get(row, 'Room', 'Room Name'))
             if serial and serial in seen_serials:
                 db.session.rollback()
                 return jsonify({
@@ -60796,7 +61245,7 @@ def import_vieworks_items():
             if serial:
                 seen_serials.add(serial)
 
-            if not serial or not product_name:
+            if not serial or not product_name or room_error:
                 skipped_count += 1
                 continue
 
@@ -60826,6 +61275,7 @@ def import_vieworks_items():
 
             if existing:
                 existing.name = product_name
+                existing.room = room
                 existing.client_id = client_id
                 existing.start_warranty_date = start_date
                 existing.end_warranty_date = end_date
@@ -60838,6 +61288,7 @@ def import_vieworks_items():
                 db.session.add(VieworksItem(
                     serial_number=serial,
                     name=product_name,
+                    room=room,
                     client_id=client_id,
                     start_warranty_date=start_date,
                     end_warranty_date=end_date,
@@ -60885,7 +61336,7 @@ def export_vieworks_items():
     items = VieworksItem.query.order_by(VieworksItem.serial_number).all()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status'])
+    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status', 'Room'])
     for item in items:
         writer.writerow([
             item.serial_number,
@@ -60899,6 +61350,7 @@ def export_vieworks_items():
                 end_date=item.end_warranty_date,
                 under_contract=bool(item.under_contract),
             ),
+            getattr(item, 'room', None) or '',
         ])
     output.seek(0)
     log_activity('Exported the Vieworks Inventory')
@@ -60984,6 +61436,7 @@ def update_genoray_item(serial_number):
     existing = {
         'serial_number': item.serial_number,
         'name': item.name,
+        'room': getattr(item, 'room', None),
         'bsid': item.bsid,
         'client_id': item.client_id,
         'start_warranty_date': item.start_warranty_date,
@@ -61041,6 +61494,7 @@ def update_genoray_item(serial_number):
             )
         item.serial_number = new_serial
         item.name = values['name']
+        item.room = values['room']
         item.bsid = values['bsid']
         item.client_id = values['client_id']
         item.start_warranty_date = values['start_warranty_date']
@@ -61143,6 +61597,7 @@ def import_genoray_items():
             product_name = clean_str(csv_get(
                 row, 'Description', 'Product Name', 'Name', 'Equipment Name', 'Item'
             ))
+            room, room_error = normalize_inventory_room(csv_get(row, 'Room', 'Room Name'))
             if serial and serial in seen_serials:
                 db.session.rollback()
                 return jsonify({
@@ -61153,7 +61608,7 @@ def import_genoray_items():
             if serial:
                 seen_serials.add(serial)
 
-            if not serial or not product_name:
+            if not serial or not product_name or room_error:
                 skipped_count += 1
                 continue
 
@@ -61184,6 +61639,7 @@ def import_genoray_items():
 
             if existing:
                 existing.name = product_name
+                existing.room = room
                 existing.client_id = client_id
                 existing.start_warranty_date = start_date
                 existing.end_warranty_date = end_date
@@ -61194,6 +61650,7 @@ def import_genoray_items():
                 db.session.add(GenorayItem(
                     serial_number=serial,
                     name=product_name,
+                    room=room,
                     client_id=client_id,
                     start_warranty_date=start_date,
                     end_warranty_date=end_date,
@@ -61241,7 +61698,7 @@ def export_genoray_items():
     items = GenorayItem.query.order_by(GenorayItem.serial_number).all()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status'])
+    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status', 'Room'])
     for item in items:
         writer.writerow([
             item.serial_number,
@@ -61255,6 +61712,7 @@ def export_genoray_items():
                 end_date=item.end_warranty_date,
                 under_contract=bool(item.under_contract),
             ),
+            getattr(item, 'room', None) or '',
         ])
     output.seek(0)
     log_activity('Exported the Genoray Inventory')
@@ -61441,6 +61899,7 @@ def import_products():
         return jsonify({'message': 'Denied'}), 403
 
     ensure_product_contract_column()
+    ensure_product_name_catalog()
 
     file = request.files.get('file')
     if not file or not file.filename:
@@ -61463,16 +61922,36 @@ def import_products():
         created_count = 0
         updated_count = 0
         skipped_count = 0
+        invalid_product_name_count = 0
         unresolved_owner_count = 0
         seen_bsids = {}
+        catalog_by_normalized_name = {
+            normalize_product_name_catalog_value(item.name).casefold(): item
+            for item in ProductNameCatalog.query.order_by(ProductNameCatalog.id.asc()).all()
+        }
 
         for row in reader:
             serial = clean_str(csv_get(row, 'Serial Number', 'Serial', 'S/N', 'SN'))
             product_name = clean_str(csv_get(row, 'Description', 'Product Name', 'Name', 'Equipment Name', 'Item'))
+            room, room_error = normalize_inventory_room(csv_get(row, 'Room', 'Room Name'))
             owner_name = clean_str(csv_get(row, 'Current Owner', 'Owner', 'Client', 'Client Name', 'Medical Center'))
             start_date = parse_date(csv_get(row, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date'))
             end_date = parse_date(csv_get(row, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date'))
-            raw_bsid = clean_str(csv_get(row, 'BSID', 'Business Service ID', 'Machine BSID'))
+
+            if not serial or not product_name or room_error:
+                skipped_count += 1
+                continue
+
+            catalog_item = catalog_by_normalized_name.get(
+                normalize_product_name_catalog_value(product_name).casefold()
+            )
+            if not catalog_item:
+                skipped_count += 1
+                invalid_product_name_count += 1
+                continue
+            canonical_product_name = catalog_item.name
+
+            raw_bsid = clean_str(csv_get(row, 'BSID', 'Business Service ID', 'Machine BSID')) or ''
             if len(raw_bsid) > 40:
                 skipped_count += 1
                 continue
@@ -61491,10 +61970,6 @@ def import_products():
                 csv_get(row, 'Contract', 'Under Contract', 'Contract Status')
             ) if has_contract_column else None
 
-            if not serial or not product_name:
-                skipped_count += 1
-                continue
-
             client_id = csv_find_client_id(owner_name)
             if owner_name and not client_id:
                 unresolved_owner_count += 1
@@ -61509,7 +61984,8 @@ def import_products():
                     'message': f'BSID {bsid} already exists in inventory.'
                 }), 409
             if product:
-                product.name = product_name
+                product.name = canonical_product_name
+                product.room = room
                 product.client_id = client_id
                 product.start_warranty_date = start_date
                 product.end_warranty_date = end_date
@@ -61520,7 +61996,8 @@ def import_products():
             else:
                 db.session.add(Product(
                     serial_number=serial,
-                    name=product_name,
+                    name=catalog_item.name,
+                    room=room,
                     client_id=client_id,
                     start_warranty_date=start_date,
                     end_warranty_date=end_date,
@@ -61533,6 +62010,8 @@ def import_products():
 
         total = created_count + updated_count
         message = f'Product import complete: {created_count} created, {updated_count} updated, {skipped_count} skipped.'
+        if invalid_product_name_count:
+            message += f' {invalid_product_name_count} row(s) had a Product Name not found in the catalog.'
         if unresolved_owner_count:
             message += f' {unresolved_owner_count} owner name(s) were not matched and were left blank.'
 
@@ -61543,6 +62022,7 @@ def import_products():
             'created': created_count,
             'updated': updated_count,
             'skipped': skipped_count,
+            'invalid_product_names': invalid_product_name_count,
             'unresolved_owners': unresolved_owner_count,
             'total': total
         })
@@ -61582,6 +62062,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_emergency_superadmin_from_env()
 
     ensure_shift_file_original_filename_column()
+    ensure_product_name_catalog()
     ensure_product_contract_column()
     ensure_genoray_item_table()
     ensure_vieworks_item_table()
@@ -61811,6 +62292,7 @@ def initialize_database():
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
+        ensure_product_name_catalog()
         ensure_online_tsr_submission_table()
         ensure_tsr_number_reservation_schema()
         ensure_shift_file_last_emailed_at_column()

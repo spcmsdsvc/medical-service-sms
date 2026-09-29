@@ -28,6 +28,7 @@ class ProductInventoryMutationTests(unittest.TestCase):
             app_module.db.create_all()
             app_module.ensure_product_contract_column()
             app_module.ensure_purchase_order_schema()
+            app_module.ensure_product_name_catalog()
 
             cls.user = app_module.User(
                 username=cls.username,
@@ -39,6 +40,14 @@ class ProductInventoryMutationTests(unittest.TestCase):
                 name=f'Product Mutation Client {cls.suffix}',
                 address='Product mutation test address',
             )
+            cls.product_name_catalog = app_module.ProductNameCatalog.query.order_by(
+                app_module.ProductNameCatalog.id.asc()
+            ).first()
+            if cls.product_name_catalog is None:
+                cls.product_name_catalog = app_module.ProductNameCatalog(
+                    name=f'Product Mutation Catalog {cls.suffix}'
+                )
+                app_module.db.session.add(cls.product_name_catalog)
             app_module.db.session.add_all([cls.user, cls.client_record])
             app_module.db.session.flush()
             cls.product = app_module.Product(
@@ -50,6 +59,7 @@ class ProductInventoryMutationTests(unittest.TestCase):
             app_module.db.session.commit()
             cls.user_id = cls.user.id
             cls.client_id = cls.client_record.id
+            cls.product_name_id = cls.product_name_catalog.id
 
     @classmethod
     def tearDownClass(cls):
@@ -82,6 +92,7 @@ class ProductInventoryMutationTests(unittest.TestCase):
             json={
                 'serial_number': self.serial,
                 'name': 'Edited Slash Serial Machine',
+                'product_name_id': self.product_name_id,
                 'client_id': self.client_id,
                 'under_contract': False,
             },
