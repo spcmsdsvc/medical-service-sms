@@ -13102,7 +13102,7 @@ function collectMobileEngineerSchedules(){
     function hideTimelineScheduleHoverSummary(){
         window.clearTimeout(window.timelineScheduleHoverSummaryTimer);
         const tooltip = document.getElementById('timeline-schedule-hover-summary');
-        if(tooltip) tooltip.classList.remove('show');
+        if(tooltip) tooltip.classList.remove('show', 'summary-click-mode');
     }
 
     function showTimelineScheduleHoverSummary(card){

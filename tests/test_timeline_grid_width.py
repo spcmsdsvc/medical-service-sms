@@ -1,3 +1,4 @@
+import json
 import re
 import unittest
 from pathlib import Path
@@ -5,12 +6,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TIMELINE = ROOT / "templates" / "timeline.html"
+APP = ROOT / "app.py"
+RELEASES = ROOT / "static" / "changelog" / "releases.json"
 
 
 class TimelineGridWidthTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.timeline = TIMELINE.read_text(encoding="utf-8")
+        cls.app = APP.read_text(encoding="utf-8")
+        cls.releases = json.loads(RELEASES.read_text(encoding="utf-8"))
 
     def test_desktop_grid_fills_available_width_but_keeps_minimum_columns(self):
         grid_css = self.timeline[
@@ -59,6 +64,34 @@ class TimelineGridWidthTests(unittest.TestCase):
         self.assertIn("min-width: 1680px !important;", forced_mode)
         self.assertIn("width: 1680px !important;", forced_mode)
         self.assertIn("min-width: 214px !important;", forced_mode)
+
+    def test_closing_details_popover_restores_calendar_scroll_interaction(self):
+        hide_start = self.timeline.index("function hideTimelineScheduleHoverSummary")
+        hide_end = self.timeline.index("function showTimelineScheduleHoverSummary", hide_start)
+        hide_function = self.timeline[hide_start:hide_end]
+
+        self.assertIn(
+            "tooltip.classList.remove('show', 'summary-click-mode')",
+            hide_function,
+        )
+
+    def test_details_popover_scroll_fix_is_distributed(self):
+        self.assertIn(
+            "medical-service-pwa-offline-navigation-v213-calendar-details-scroll",
+            self.app,
+        )
+        release = next(
+            (
+                item
+                for item in self.releases["releases"]
+                if item.get("release_key") == "2026-09-29-calendar-details-scroll"
+            ),
+            None,
+        )
+        self.assertIsNotNone(release)
+        if release is not None:
+            self.assertTrue(release["is_published"])
+            self.assertTrue(any(item.get("category") == "Calendar" for item in release["items"]))
 
 
 if __name__ == "__main__":

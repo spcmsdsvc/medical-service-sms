@@ -24804,8 +24804,9 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v204-activity-log.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report';
     # Navigation shell bump: v210 preserves deleted Product identity in TSR history.
-    # Navigation shell bump: v212 distributes restored Calendar Calibration Report actions.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v212-calendar-calibration-actions';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v212-calendar-calibration-actions.
+    # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v213-calendar-details-scroll';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

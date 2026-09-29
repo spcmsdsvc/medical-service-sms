@@ -2,6 +2,19 @@
 
 codex changes - 2026-09-29
 
+- Fixed Calendar scrolling after closing a schedule's Details popover. The close path now removes
+  the click-mode interaction class together with the visible class, so the transparent fixed
+  popover cannot retain pointer events or intercept wheel/touch scrolling over the Calendar.
+- Added focused fail-first source coverage for the popover cleanup and delivery metadata. The
+  unchanged implementation produced the expected 2 failures before the fix. Advanced the
+  embedded service-worker shell marker to v213 and added the published Calendar release entry so
+  cached clients receive the corrected Timeline template. No backend, database, Railway,
+  production, browser/Codex UI, commit, push, or deployment action was performed.
+- Final verification passed: the focused Calendar/cache contract batch passed 33/33; week
+  navigation, shared cache-version, and changelog checks passed 60/61 with one intentional skip;
+  Python AST, release JSON, and `git diff --check` passed. Browser verification was not performed
+  because project instructions require separate owner permission for browser/Codex UI automation.
+
 - Committed only the restored Calendar Calibration Report actions, focused regression coverage,
   v212 cache marker, release manifest, and required plan/change records as `423bfbd` on `main`.
   The owner explicitly authorized pushing this bounded fix to `origin/main`; protected

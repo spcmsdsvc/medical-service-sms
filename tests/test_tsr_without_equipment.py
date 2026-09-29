@@ -49,7 +49,7 @@ class TsrWithoutEquipmentSourceTests(unittest.TestCase):
         self.assertNotIn("Create Calibration Report", self.timeline_source.split("function canOpenCalibrationReportForSchedule", 1)[1].split("function getCalibrationReportTimelineLabel", 1)[0])
 
     def test_release_and_cache_are_advanced_for_this_package(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v212-calendar-calibration-actions", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v213-calendar-details-scroll", self.app_source)
         self.assertIn("2026-09-28-francis-tsr-without-equipment", self.release_source)
 
 

@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-29-calendar-details-scroll",
+      "release_date": "2026-09-29",
+      "title": "Calendar Scrolling Restored After Details",
+      "summary": "Closing a schedule's Details popover no longer leaves an invisible layer over the Calendar.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-29-calendar-details-scroll-all",
+          "category": "Calendar",
+          "description": "Calendar scrolling now continues normally after opening and closing schedule Details.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-29-calendar-calibration-actions",
       "release_date": "2026-09-29",
       "title": "Calendar Calibration Report Actions Restored",

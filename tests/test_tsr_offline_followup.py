@@ -531,7 +531,7 @@ console.log(JSON.stringify({ success, successEvents, missing, missingEvents, sta
             self.app_source,
         )
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v212-calendar-calibration-actions",
+            "medical-service-pwa-offline-navigation-v213-calendar-details-scroll",
             self.app_source,
         )
         self.assertIn('2026-09-25-pre-submission-calibration-report', self.release_source)
