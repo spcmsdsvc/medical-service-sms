@@ -2,6 +2,13 @@
 
 codex changes - 2026-09-29
 
+- Committed only the Calendar Details scrolling fix, focused regression coverage, v213 cache
+  marker, release manifest, and required change record as `aa1e69c` on `main`. The owner
+  explicitly authorized pushing this bounded fix to `origin/main`; protected `scheduler.db`,
+  handoffs, `.claude/`, `output/`, `tmp/`, and unrelated untracked files remain unstaged and are
+  absent from the implementation commit. This records-only closeout accompanies the
+  implementation commit in the authorized push.
+
 - Fixed Calendar scrolling after closing a schedule's Details popover. The close path now removes
   the click-mode interaction class together with the visible class, so the transparent fixed
   popover cannot retain pointer events or intercept wheel/touch scrolling over the Calendar.
