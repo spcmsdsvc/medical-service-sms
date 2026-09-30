@@ -482,6 +482,32 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertEqual(recovered['machine.console_model'], 'Saved report equipment model')
         self.assertEqual(payload['calibration_report']['machine']['console_model'], truncated)
 
+    def test_console_model_recovery_accepts_saved_parenthesized_suffix(self):
+        truncated = 'MobileDart Evolution M'
+        complete = 'MobileDart Evolution (MX8)'
+        payload = {
+            'tsr-equipment-model': complete,
+            'calibration_report': {'machine': {'model': complete, 'console_model': truncated}},
+        }
+        resolved, recovered = app_module._calibration_report_resolved_repair_payload(payload)
+        self.assertEqual(resolved['calibration_report']['machine']['console_model'], complete)
+        self.assertIn('machine.console_model', recovered)
+        self.assertEqual(payload['calibration_report']['machine']['console_model'], truncated)
+        with patch.object(app_module, '_calibration_report_pdf_text', return_value=complete):
+            app_module._calibration_report_pdf_contains_saved_values(
+                b'pdf', resolved, [{'path': 'machine.console_model'}],
+            )
+        with patch.object(app_module, '_calibration_report_pdf_text', return_value=truncated):
+            with self.assertRaisesRegex(ValueError, 'machine.console_model'):
+                app_module._calibration_report_pdf_contains_saved_values(
+                    b'pdf', resolved, [{'path': 'machine.console_model'}],
+                )
+        payload['calibration_report']['machine']['model'] = 'MobileDart Evolution (VX8)'
+        payload['tsr-equipment-model'] = 'MobileDart Evolution (VX8)'
+        resolved, recovered = app_module._calibration_report_resolved_repair_payload(payload)
+        self.assertEqual(resolved['calibration_report']['machine']['console_model'], truncated)
+        self.assertNotIn('machine.console_model', recovered)
+
     def test_complete_fields_repair_checks_recovered_value_in_pdf(self):
         payload = {'calibration_report': {'facility': {'address': 'Complete saved address'}}}
         fields = [{'path': 'facility.address'}]
@@ -494,7 +520,7 @@ class CalibrationCenterContracts(unittest.TestCase):
     def test_calibration_center_row_shows_repair_history_status(self):
         self.assertEqual(
             app_module.CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
-            'calibration-report-complete-fields-v3',
+            'calibration-report-complete-fields-v4',
         )
         for marker in (
             'repair_status',

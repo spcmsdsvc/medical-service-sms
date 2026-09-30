@@ -19370,7 +19370,7 @@ CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
 CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
 CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v3'
 CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER = '_calibration_report_historical_repair'
-CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION = 'calibration-report-complete-fields-v3'
+CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION = 'calibration-report-complete-fields-v4'
 CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_MARKER = '_calibration_report_complete_fields_repair'
 CALIBRATION_REPAIR_LEGACY_LIMITS = (40, 22, 60, 30, 12, 36)
 CALIBRATION_REPORT_EXPOSURE_CURRENT_UNITS = ('mA', 'mAs')
@@ -20345,7 +20345,18 @@ def _calibration_report_resolved_repair_payload(payload):
                 if source_kind == 'report' else resolved.get(source_path)
             )
             complete = clean_str(source_value) or ''
-            if len(complete) <= len(truncated) or not complete.casefold().startswith(truncated.casefold()):
+            complete_match = complete.casefold()
+            truncated_match = truncated.casefold()
+            if target_path == 'machine.console_model':
+                # Saved equipment models can format the suffix as (MX8), while
+                # the old 22-character console entry ends at the bare M.
+                # Ignore only spacing/parentheses; retain every model identifier.
+                complete_match = re.sub(r'[\s()]', '', complete_match)
+                truncated_match = re.sub(r'[\s()]', '', truncated_match)
+            if (
+                len(complete_match) <= len(truncated_match)
+                or not complete_match.startswith(truncated_match)
+            ):
                 continue
             group, field = target_path.split('.', 1)
             group_value = report.get(group) if isinstance(report.get(group), dict) else {}
