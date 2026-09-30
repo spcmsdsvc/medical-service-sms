@@ -1,3 +1,84 @@
+# Deterministic No-Data-Change Calibration Artifact Repair
+
+**Status:** Executed — uncommitted.
+
+**Approved:** 2026-09-30 — after clarifying that repairs must correct generated artifacts automatically without administrator data entry or signature removal, the owner said “yes. now go ahead and proceed with that change”. Under the project’s mandatory two-message gate, this approves the focused correction but does not yet authorize implementation.
+
+**Execution authorized:** 2026-09-30 — the owner said “go ahead” to execute this focused correction.
+
+**Detailed:** 2026-09-30.
+
+## Correction goal
+
+Correct the deployed `calibration-complete-fields-v1` repair so it fixes artifact-generation failures from immutable saved data. Administrators must not edit report or certificate values, and repair must not remove or replace the saved service-engineer or certificate-approver signatures. The repair may update generated artifact bytes, conversion/fingerprint metadata, and a versioned repair marker only; it must not change business-field values in the TSR payload or certificate mapped snapshot.
+
+The existing Page 3 units repair remains unchanged. Records whose complete source value is genuinely unavailable must be reported as blocked rather than guessed, populated from mutable client/product master data, or presented for manual editing.
+
+## Numbered execution plan
+
+1. **Preflight and focused fail-first tests.**
+   - Re-read applicable instructions, this plan, `changes.md`, Git status, the deployed repair registry, report generator, certificate builder, and focused tests.
+   - Preserve the dirty scheduler database, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated owner files.
+   - Mark this plan `In progress` only after separate execution authorization.
+   - Add tests proving the current complete-fields repair incorrectly exposes editable values, requires `fields_json`, and mutates report/mapped business data. Add acceptance tests for automatic regeneration from the exact saved submission/approval snapshots with both signatures preserved.
+   - Done means the mismatch is reproduced without running a production repair.
+
+2. **Make complete-fields discovery artifact-based and deterministic.**
+   - Build candidates from the immutable saved online-TSR calibration report payload, stored generated DOCX/PDF, and approved certificate mapped snapshot—not from current Client/Product records.
+   - Compare normalized complete saved report values against the generated DOCX text/package and use the repair version/legacy artifact state to identify records that require regeneration. Detect certificate candidates using the stored mapped snapshot and the current fitting rules.
+   - Classify a record `repairable` and `bulk_safe` only when every required saved value, report signature image, approver identity/signature snapshot, report source, linked PDF, and signed/no-signature certificate ownership is available and internally consistent.
+   - Classify missing or inconsistent immutable source as `blocked` with a specific reason. Do not classify any complete-fields candidate as `manual_required`.
+   - Keep the per-row Repair action as an explicit rescan/apply entry point, but it must never expose editable data.
+   - Done means the inventory separates deterministic repairs from unrecoverable source gaps without asking the administrator to reconstruct content.
+
+3. **Replace the manual repair UI with review-and-regenerate behavior.**
+   - Remove complete-fields editable textareas, corrected-field selection, correction-value submission, and messages instructing administrators to enter replacement values.
+   - Show a read-only summary of the record, detected artifact mismatch, immutable source availability, affected report/certificate artifacts, and signature-preservation status.
+   - Require only an optional/standard repair reason and confirmation for a single repair; keep the existing typed confirmation for Repair All.
+   - Mark deterministic complete-fields candidates `bulk_safe` so Repair All can include them. Blocked records remain excluded and visible with their reason.
+   - Done means the administrator approves regeneration but never supplies or changes report/certificate data.
+
+4. **Regenerate artifacts without changing saved business data.**
+   - Reuse the existing browser DOCX builder with the server-supplied saved report payload; expose no field mutation interface. The generated DOCX must contain every expected saved report value and the original saved service-engineer signature before upload is accepted.
+   - Change the apply endpoint to accept the regenerated DOCX plus stale hashes and confirmation only. Reject `fields_json` or any altered payload/value input.
+   - On the server, verify the submitted DOCX against the complete saved report snapshot, convert it to PDF, and rebuild signed/no-signature certificates from the existing `mapped_data_json`, certificate number, approver name/title, and `approver_signature_snapshot` exactly as stored.
+   - Verify the signed output still contains the acting approver identity/signature overlay and that the report package still contains the service-engineer signature relationship/media. Preserve one-page Letter geometry and flattened/no-widget certificate output.
+   - Replace report DOCX/PDF and signed/no-signature certificate bytes transactionally while retaining file IDs, filenames, approval status/date, revision, delivery metadata, and email history. Update only artifact hashes/conversion state and the versioned repair marker; do not rewrite report field values or `mapped_data_json`.
+   - Restore every storage snapshot and roll back metadata if any validation, generation, conversion, storage, database, or audit step fails.
+   - Done means regeneration corrects rendering from existing saved truth and cannot change or erase data/signatures.
+
+5. **Preserve registry, audit, concurrency, and compatibility behavior.**
+   - Retain system-admin/CSRF enforcement, candidate/version and before-hash concurrency checks, idempotent markers, generic repair registry integration, and existing units-repair compatibility routes.
+   - Record repair key/version, actor, reason, artifact IDs, signature-presence checks, and before/after hashes without logging field values or signature data.
+   - Make repeat application return `already_repaired`; make changed artifacts return conflict and require inventory reload.
+   - Do not read from mutable Client/Product records as a fallback and do not create a new TSR revision or approval.
+   - Done means the correction remains safe, auditable, registry-driven, and compatible without new schema or dependencies.
+
+6. **Update versions, verify proportionately, and close.**
+   - Bump the calibration report JavaScript asset from `v39` to `v40`, advance the service-worker marker from `medical-service-pwa-offline-navigation-v216-calibration-repair-registry` to `medical-service-pwa-offline-navigation-v217-deterministic-calibration-repair`, and add one focused release entry.
+   - Update focused tests for inventory classification, automatic single/bulk repair, unchanged payload and mapped snapshot, service/approver signature preservation, file-ID/approval/delivery preservation, stale conflicts, blocked source data, idempotency, authorization, and rollback.
+   - Run focused Calibration Center, report PDF/generation, certificate approval, cache, and source-contract suites; one isolated full suite only if practical. Run Python/JavaScript/Jinja/JSON/template/package/diff checks relevant to edited files.
+   - Perform non-browser structural artifact verification and the approved local visual path if available. Browser/Codex UI automation and production repair execution remain prohibited.
+   - Update `changes.md` and this plan with exact results, self-review only against this correction, and stop uncommitted. Commit, push, deployment, Railway changes, and production repairs require separate authorization.
+
+## Acceptance criteria
+
+- Complete-fields repairs require no administrator-entered report or certificate values.
+- Repair uses only the immutable saved report payload and approved certificate mapped/signature snapshots.
+- TSR report fields and `mapped_data_json` remain byte-for-byte/value-for-value unchanged apart from an additive repair marker outside business data.
+- The original service-engineer and certificate-approver signatures remain present in regenerated artifacts.
+- Report/certificate file IDs, filenames, approval metadata, revision, delivery state, and email history remain unchanged.
+- Deterministic candidates can run individually or through Repair All; incomplete immutable source is blocked rather than guessed.
+- Existing units repair behavior remains unchanged, and no repair runs automatically on page load.
+
+## Execution outcome (2026-09-30)
+
+- Replaced complete-fields manual value entry with deterministic regeneration from the saved online-TSR report payload, stored report artifacts, approved certificate mapped snapshot, and saved approver identity/signature snapshots. The Calibration Center UI now shows read-only repair context, requires only optional audit reason plus typed confirmation, and includes complete-fields candidates in Repair All only when their immutable sources are complete.
+- The apply path rejects administrator-supplied report/certificate fields, validates stale hashes and source ownership, verifies the saved engineer signature relationship/media and complete saved values in the regenerated DOCX, rebuilds signed/no-signature certificate PDFs from the immutable mapped snapshot, checks the saved approver identity/title/signature overlay, replaces existing storage objects in place, and preserves database record/file/approval/delivery identity. Business payload values and `mapped_data_json` are not rewritten; only the additive repair marker and artifact/conversion fingerprints are updated.
+- Updated `app.py`, `templates/calibration_center.html`, `templates/offline_tsr.html`, `static/changelog/releases.json`, focused tests, `changes.md`, and this plan. Advanced the report asset query to `v40` and service-worker marker to `medical-service-pwa-offline-navigation-v217-deterministic-calibration-repair`. Protected owner files, databases, official templates, production data, and deployment state were not changed.
+- Verification passed: `tests.test_calibration_center tests.test_inventory_pm` (64/64), `tests.test_tsr_calibration_report` (25/25), `tests.test_calibration_report_pdf tests.test_calibration_certificate_title_repair` (27/27), and `tests.test_product_calibration_certificate` (12/12). AST, Node JavaScript syntax, Jinja parsing, release JSON parsing, and `git diff --check` passed. The combined certificate approval/report run retains three known fixture failures in `tests.test_calibration_certificate_approval_workflow` because the download fixture remains `Pending` while the production guard requires `Approved`; the isolated product/report suites pass.
+- Browser/Codex UI automation, visual rendering, full-suite execution, production repairs, commit, push, deployment, Railway changes, and database/storage control operations were not performed. The correction remains uncommitted for the parent workflow.
+
 # Extensible Calibration Report and Certificate Repair Center
 
 **Status:** Executed — implementation commit `7dd99e7`; published to `origin/main`.

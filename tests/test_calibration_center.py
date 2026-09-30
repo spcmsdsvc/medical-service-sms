@@ -382,41 +382,67 @@ class CalibrationCenterContracts(unittest.TestCase):
             'before_certificate_hash',
             'calibration_repair_applied',
             'rollback_warning',
+            'source_values_unchanged',
+            'mapped_snapshot_unchanged',
+            'service_engineer_signature_preserved',
+            'approver_signature_preserved',
         ):
             self.assertIn(marker, APP_SOURCE)
+        self.assertNotIn('CALIBRATION_REPORT_REPAIR_MANUAL_FIELDS', APP_SOURCE)
+        self.assertNotIn('_calibration_report_set_field_values', APP_SOURCE)
         for marker in (
             '/admin/calibration-center/repairs',
             'calibration-center-manual-repair-confirm-input',
             'buildRepairDocx',
-            'fields_json',
             'Repair Calibration Report &amp; Certificate',
-            'Manual',
+            'immutable saved report payload',
         ):
             self.assertIn(marker, TEMPLATE_SOURCE)
+        self.assertIn('mapped_data_json', APP_SOURCE)
+        self.assertIn("'bulk_safe': bool(definition.get('bulk_safe')) and item.get('status') == 'repairable'", APP_SOURCE)
+        self.assertNotIn('data-repair-field', TEMPLATE_SOURCE)
+        self.assertNotIn('fields_json', TEMPLATE_SOURCE)
         for repair_key, definition in app_module.CALIBRATION_REPAIR_REGISTRY.items():
             self.assertTrue(callable(definition['inventory']), repair_key)
             self.assertTrue(callable(definition['apply']), repair_key)
             self.assertTrue(definition['audit'], repair_key)
             self.assertTrue(definition['idempotency'], repair_key)
             self.assertIn(definition['bulk_safe'], (True, False), repair_key)
+        self.assertTrue(app_module.CALIBRATION_REPAIR_REGISTRY['calibration-complete-fields-v1']['bulk_safe'])
 
-    def test_repair_field_setter_preserves_nested_report_shape(self):
-        payload = {
-            'tsr-number': 'TSR-1',
-            'calibration_report': {
-                'facility': {'name': 'Old'},
-                'mechanical_checks': [{'result': 'Old result'}],
-            },
+    def test_complete_fields_repair_accepts_only_artifact_inputs(self):
+        self.assertIn("'fields_json'", APP_SOURCE)
+        apply_block = APP_SOURCE.split('def _calibration_report_apply_complete_fields_repair', 1)[1].split(
+            'def register_calibration_repair', 1
+        )[0]
+        self.assertIn("'fields', 'fields_json', 'field_values', 'corrected_values', 'report_payload'", apply_block)
+        self.assertIn('calibration_certificate_mapped_snapshot', apply_block)
+        self.assertNotIn('approval.mapped_data_json =', apply_block)
+        self.assertNotIn('_update_calibration_report_conversion_marker(source_file, pdf_job, pdf_file)', apply_block)
+
+    def test_complete_fields_apply_rejects_replacement_values(self):
+        source = SimpleNamespace(id=91, online_tsr_submission_id=92, shift_id=93)
+        candidate = {
+            'status': 'repairable',
+            'source_sha256': 'source-hash',
+            'pdf_sha256': '',
+            'certificate_sha256': '',
         }
-        updated = app_module._calibration_report_set_field_values(payload, {
-            'facility.name': 'Complete Facility Name',
-            'mechanical_checks.0.result': 'Complete result',
-            'tsr_number': 'TSR-COMPLETE',
-        })
-        self.assertEqual(updated['calibration_report']['facility']['name'], 'Complete Facility Name')
-        self.assertEqual(updated['calibration_report']['mechanical_checks'][0]['result'], 'Complete result')
-        self.assertEqual(updated['tsr_number'], 'TSR-COMPLETE')
-        self.assertEqual(payload['calibration_report']['facility']['name'], 'Old')
+        with patch.object(app_module.db.session, 'get', return_value=source), \
+                patch.object(app_module, 'calibration_report_source_file_is_private', return_value=True), \
+                patch.object(app_module, '_calibration_report_complete_fields_context', return_value=candidate):
+            result = app_module._calibration_report_apply_complete_fields_repair(
+                91,
+                {
+                    'before_hash': 'source-hash',
+                    'fields_json': '{"facility.address":"changed"}',
+                    'confirmation': 'REPAIR',
+                },
+                None,
+            )
+
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('does not accept replacement', result['message'])
 
 
 if __name__ == '__main__':

@@ -91,14 +91,14 @@
                 <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
                     <div>
                         <h2 id="calibration-center-repair-title" class="h5 fw-bold mb-1"><i class="fa-solid fa-wrench me-2 text-warning" aria-hidden="true"></i>Calibration Report &amp; Certificate Repair</h2>
-                        <p class="small text-muted mb-2">Every registered report or certificate repair appears here. Repairs never run on page load; complete-field candidates require replacement values and a correction reason.</p>
+                        <p class="small text-muted mb-2">Every registered report or certificate repair appears here. Repairs never run on page load; complete-field repairs regenerate artifacts from their saved values.</p>
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
                         <button id="calibration-center-repair-hide" type="button" class="btn btn-outline-secondary rounded-3 fw-bold" aria-expanded="true" aria-controls="calibration-center-repair-panel">Hide details</button>
                         <button id="calibration-center-repair-all" type="button" class="btn btn-warning rounded-3 fw-bold">Repair All</button>
                     </div>
                 </div>
-                <div id="calibration-center-repair-warning" class="alert alert-warning small mb-3">Approved or emailed artifacts may change. File IDs, filenames, approval metadata, delivery state, and email history are preserved; changed attachments require a fresh email preview.</div>
+                <div id="calibration-center-repair-warning" class="alert alert-warning small mb-3">Approved or emailed artifact bytes may be regenerated from saved values. Report data, certificate mappings, signatures, file IDs, filenames, approval metadata, delivery state, and email history are preserved.</div>
                 <div id="calibration-center-repair-loading" class="small text-muted" role="status"><i class="fa-solid fa-circle-notch fa-spin me-2" aria-hidden="true"></i>Loading repair inventory...</div>
                 <div id="calibration-center-repair-summary" class="calibration-center-repair-summary d-none mb-3" aria-label="Calibration repair totals"><span class="badge text-bg-primary">Total <strong id="repair-total">0</strong></span><span class="badge text-bg-warning">Repairable <strong id="repair-repairable">0</strong></span><span class="badge text-bg-info">Manual <strong id="repair-manual">0</strong></span><span class="badge text-bg-success">Already repaired <strong id="repair-already">0</strong></span><span class="badge text-bg-danger">Blocked <strong id="repair-blocked">0</strong></span></div>
                 <div id="calibration-center-repair-progress" class="small text-muted d-none mb-2" role="status"></div>
@@ -168,13 +168,13 @@
         <div class="calibration-center-modal-header"><div><h2 id="calibration-center-repair-modal-title" class="h5 mb-1">Repair Calibration Report &amp; Certificate</h2><div id="calibration-center-repair-modal-subtitle" class="small text-muted"></div></div><button type="button" id="calibration-center-repair-modal-close" class="btn btn-outline-secondary rounded-3" aria-label="Close repair dialog">Close</button></div>
         <div class="calibration-center-modal-body">
             <div id="calibration-center-repair-modal-error" class="alert alert-danger d-none" role="alert"></div>
-            <div id="calibration-center-repair-modal-message" class="alert alert-warning small">Enter complete replacement values when the original report was cut off. Existing approved artifacts remain unchanged until a complete corrected document is submitted.</div>
-            <div id="calibration-center-repair-fields" class="d-grid gap-3"></div>
-            <div class="mt-3"><div class="fw-bold mb-2">Derived certificate mapping</div><div id="calibration-center-repair-certificate-values" class="small text-muted">No certificate mapping available.</div><div class="form-text">Certificate No. is derived from the approved record; edit its source fields above when a source correction is needed.</div></div>
-            <div class="mb-3"><label for="calibration-center-repair-reason" class="form-label fw-bold">Correction reason</label><textarea id="calibration-center-repair-reason" class="form-control rounded-3" rows="3" placeholder="Describe why this approved artifact is being corrected."></textarea></div>
+            <div id="calibration-center-repair-modal-message" class="alert alert-warning small">This repair regenerates the report and certificates from the immutable saved report payload and approved certificate snapshot. No report or certificate values are editable, and both signatures remain attached.</div>
+            <div id="calibration-center-repair-fields" class="d-grid gap-2"></div>
+            <div class="mt-3"><div class="fw-bold mb-2">Approved certificate mapping</div><div id="calibration-center-repair-certificate-values" class="small text-muted">No certificate mapping available.</div><div class="form-text">The mapping is read-only and is used only to rebuild the existing certificate.</div></div>
+            <div class="mb-3"><label for="calibration-center-repair-reason" class="form-label fw-bold">Repair reason <span class="text-muted fw-normal">(optional)</span></label><textarea id="calibration-center-repair-reason" class="form-control rounded-3" rows="3" placeholder="Optional note for the repair audit."></textarea></div>
             <div class="mb-3"><label for="calibration-center-manual-repair-confirm-input" class="form-label fw-bold">Type <code>REPAIR</code> to confirm</label><input id="calibration-center-manual-repair-confirm-input" class="form-control rounded-3" type="text" autocomplete="off"></div>
         </div>
-        <div class="calibration-center-modal-footer"><span class="small text-muted me-auto align-self-center">A complete corrected DOCX is required before files can be replaced.</span><button type="button" id="calibration-center-repair-apply" class="btn btn-warning rounded-3 fw-bold">Submit Repair</button></div>
+        <div class="calibration-center-modal-footer"><span class="small text-muted me-auto align-self-center">The saved report is regenerated in the browser before the existing files are replaced.</span><button type="button" id="calibration-center-repair-apply" class="btn btn-warning rounded-3 fw-bold">Regenerate and Repair</button></div>
     </section>
 </div>
 {% endblock %}
@@ -245,7 +245,7 @@
     const statusHtml = (record) => `<span class="calibration-center-status ${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}">${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}</span>`;
     const artifactButton = (url, label) => url ? `<a class="btn btn-sm btn-outline-secondary rounded-3" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>` : `<span class="text-muted small">Unavailable</span>`;
     const sendButton = (record) => record.can_send ? `<button type="button" class="btn btn-sm btn-primary rounded-3 js-calibration-email" data-approval-id="${record.approval_id}">Email</button>` : `<span class="text-danger small" title="${escapeHtml(record.unavailable_reason)}">${escapeHtml(record.unavailable_reason || 'Not ready')}</span>`;
-    const repairButton = (record) => record.repair_source_file_id ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 js-calibration-manual-repair" data-repair-key="calibration-complete-fields-v1" data-candidate-id="${escapeHtml(record.repair_source_file_id)}">Repair</button>` : '';
+    const repairButton = (record) => record.repair_source_file_id ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 js-calibration-deterministic-repair" data-repair-key="calibration-complete-fields-v1" data-candidate-id="${escapeHtml(record.repair_source_file_id)}">Repair</button>` : '';
     function renderSummary(summary) { ['approved','ready','unavailable','unsent','partial','sent'].forEach((key) => { const el = byId(`summary-${key}`); if (el) el.textContent = summary?.[key] ?? 0; }); }
     function renderRows(records) {
         byId('calibration-center-table-body').innerHTML = records.map((record) => `<tr><td><strong>${escapeHtml(record.certificate_number)}</strong><div class="small text-muted">REV${escapeHtml(record.revision_no)} · ${escapeHtml(record.tsr_number || 'No TSR')}</div></td><td><strong>${escapeHtml(record.client_name || record.facility)}</strong><div class="small text-muted">${escapeHtml(record.equipment || record.model)} · ${escapeHtml(record.serial_number)}</div></td><td><div>${escapeHtml(record.approved_at || '')}</div><div class="small text-muted">${escapeHtml(record.requester || 'Requester')}</div></td><td>${statusHtml(record)}</td><td><div class="calibration-center-file">${artifactButton(record.report_preview_url, 'Report Preview')}${artifactButton(record.report_download_url, 'Report Download')}${artifactButton(record.certificate_preview_url, 'Certificate Preview')}${artifactButton(record.certificate_download_url, 'Certificate Download')}</div></td><td>${repairButton(record)} ${sendButton(record)}</td></tr>`).join('');
@@ -295,7 +295,7 @@
             return `<tr><td><strong>${escapeHtml(candidate.title || candidate.repair_key)}</strong><div class="small text-muted">${escapeHtml(candidate.repair_version || '')}</div></td><td><span class="small">${escapeHtml(candidate.filename || candidate.repair_id || '')}</span><div class="small text-muted">Source #${escapeHtml(candidateId)}</div></td><td><span class="small">${escapeHtml(artifactText)}</span><div class="small text-muted">${escapeHtml(sourceText)}</div></td><td><span class="small ${candidate.approved || candidate.emailed ? 'text-warning-emphasis' : 'text-muted'}">${escapeHtml(impact)}</span><div class="small text-muted">${escapeHtml(targetText)}</div></td><td><span class="badge ${statusClass}">${escapeHtml(candidate.status)}</span><div class="small text-muted">${escapeHtml(candidate.reason || '')}</div></td><td>${action}</td></tr>`;
         }).join('');
         body.querySelectorAll('.js-calibration-repair').forEach((button) => button.addEventListener('click', () => applyRepair(button.dataset.repairKey, Number(button.dataset.candidateId), button)));
-        body.querySelectorAll('.js-calibration-manual-repair').forEach((button) => button.addEventListener('click', () => openRepairContext(button.dataset.repairKey, Number(button.dataset.candidateId))));
+        body.querySelectorAll('.js-calibration-manual-repair, .js-calibration-deterministic-repair').forEach((button) => button.addEventListener('click', () => openRepairContext(button.dataset.repairKey, Number(button.dataset.candidateId))));
         const repairAll = byId('calibration-center-repair-all'); if (repairAll) repairAll.disabled = state.repairRunning || !state.repairCandidates.some((item) => item.status === 'repairable' && item.bulk_safe);
     }
     async function loadRepairInventory() {
@@ -305,6 +305,7 @@
     }
     async function applyRepair(repairKey, candidateId, button) {
         if (state.repairRunning) return;
+        if (repairKey === 'calibration-complete-fields-v1') { openRepairContext(repairKey, candidateId); return; }
         state.repairActionOccurred = true; state.repairDetailsOpen = true;
         if (button) { button.disabled = true; button.textContent = 'Applying...'; }
         try {
@@ -329,7 +330,17 @@
         const progress = byId('calibration-center-repair-progress'); if (progress) { progress.classList.remove('d-none'); progress.textContent = `Repairing 0 of ${candidates.length}...`; }
         let failures = 0;
         for (let index = 0; index < candidates.length; index += 1) {
-            try { const item = candidates[index]; const result = await request(item.repair_key === 'calibration-report-units-v3' ? `/admin/calibration-center/${item.source_file_id}/repair` : `/admin/calibration-center/repairs/${encodeURIComponent(item.repair_key)}/${item.candidate_id || item.source_file_id}/apply`, {method:'POST', body:JSON.stringify({})}); if (result.status === 'failed') failures += 1; }
+            try {
+                const item = candidates[index];
+                let result;
+                if (item.repair_key === 'calibration-report-units-v3') {
+                    result = await request(`/admin/calibration-center/${item.source_file_id}/repair`, {method:'POST', body:JSON.stringify({})});
+                } else {
+                    const context = await request(`/admin/calibration-center/repairs/${encodeURIComponent(item.repair_key)}/${item.candidate_id || item.source_file_id}`);
+                    result = await submitDeterministicRepair(context, 'Repair All — deterministic saved-artifact regeneration.');
+                }
+                if (result?.status !== 'repaired') failures += 1;
+            }
             catch (error) { failures += 1; }
             if (progress) progress.textContent = `Repairing ${index + 1} of ${candidates.length}${failures ? ` · ${failures} failed` : ''}...`;
             await loadRepairInventory();
@@ -340,18 +351,12 @@
     }
     function setRepairModalError(message) { const el = byId('calibration-center-repair-modal-error'); if (el) { el.textContent = message || ''; el.classList.toggle('d-none', !message); } }
     function closeRepairModal() { byId('calibration-center-repair-modal-backdrop')?.classList.remove('open'); state.repairContext = null; setRepairModalError(''); }
-    function setRepairFieldValue(target, path, value) {
-        const parts = String(path || '').split('.'); let cursor = target;
-        parts.slice(0, -1).forEach((part) => { if (!cursor[part] || typeof cursor[part] !== 'object') cursor[part] = {}; cursor = cursor[part]; });
-        cursor[parts[parts.length - 1]] = String(value == null ? '' : value);
-    }
     function renderRepairContext(data) {
         const candidate = data?.candidate || {}; state.repairContext = data;
-        const subtitle = byId('calibration-center-repair-modal-subtitle'); if (subtitle) subtitle.textContent = `${candidate.filename || candidate.repair_id || 'Calibration record'} · ${candidate.status || 'manual review'}`;
-        const fieldValues = candidate.field_values || {};
-        const fields = candidate.editable_fields || Object.keys(fieldValues);
+        const subtitle = byId('calibration-center-repair-modal-subtitle'); if (subtitle) subtitle.textContent = `${candidate.filename || candidate.repair_id || 'Calibration record'} · ${candidate.status || 'review'}`;
         const container = byId('calibration-center-repair-fields');
-        if (container) container.innerHTML = fields.map((path) => `<div><label class="form-label fw-bold" for="calibration-center-repair-field-${escapeHtml(path.replace(/[^A-Za-z0-9_-]/g, '-'))}">${escapeHtml(path)}</label><textarea class="form-control rounded-3" rows="2" id="calibration-center-repair-field-${escapeHtml(path.replace(/[^A-Za-z0-9_-]/g, '-'))}" data-repair-field="${escapeHtml(path)}">${escapeHtml(fieldValues[path] ?? '')}</textarea></div>`).join('') || '<div class="small text-muted">No editable source fields were detected. Use the approved report payload to enter the corrected value.</div>';
+        const detected = candidate.detected_fields || [];
+        if (container) container.innerHTML = detected.map((item) => `<div class="small"><strong>${escapeHtml(item.path || 'saved field')}</strong> <span class="text-muted">(${escapeHtml(item.length || '')} characters${item.artifact_missing ? '; missing from stored artifact' : '; eligible for deterministic regeneration'})</span></div>`).join('') || '<div class="small text-muted">No individual replacement values are requested. The saved report and certificate snapshots will be reused exactly.</div>';
         const mapping = byId('calibration-center-repair-certificate-values'); const certificateValues = candidate.certificate_values || {};
         if (mapping) mapping.innerHTML = Object.entries(certificateValues).map(([key, value]) => `<div><strong>${escapeHtml(key)}</strong>: ${escapeHtml(value)}</div>`).join('') || 'No certificate mapping available.';
         const reason = byId('calibration-center-repair-reason'); if (reason) reason.value = '';
@@ -364,29 +369,31 @@
         try { renderRepairContext(await request(`/admin/calibration-center/repairs/${encodeURIComponent(repairKey)}/${candidateId}`)); }
         catch (error) { setRepairModalError(error.message); }
     }
-    async function submitRepairContext() {
-        const context = state.repairContext; if (!context?.candidate) return;
-        const candidate = context.candidate; const fields = {};
-        byId('calibration-center-repair-fields')?.querySelectorAll('[data-repair-field]').forEach((element) => { fields[element.dataset.repairField] = element.value; });
-        const reason = byId('calibration-center-repair-reason')?.value.trim() || '';
-        const confirmation = byId('calibration-center-manual-repair-confirm-input')?.value.trim().toUpperCase() || '';
-        if (!reason) { setRepairModalError('A correction reason is required.'); return; }
-        if (confirmation !== 'REPAIR') { setRepairModalError('Type REPAIR to confirm the in-place correction.'); return; }
+    async function submitDeterministicRepair(context, reason, confirmation = 'REPAIR') {
+        const candidate = context?.candidate;
+        if (!candidate) throw new Error('The repair context is unavailable.');
+        if (candidate.status !== 'repairable') throw new Error(candidate.reason || 'This repair is blocked because immutable source data is unavailable.');
         if (!window.calibrationReport?.buildRepairDocx) { setRepairModalError('The existing Calibration Report builder is unavailable. Reload Calibration Center and try again.'); return; }
-        const payload = JSON.parse(JSON.stringify(candidate.report_payload || {calibration_report:{}}));
+        const payload = candidate.report_payload || {calibration_report:{}};
         const report = payload.calibration_report && typeof payload.calibration_report === 'object' ? payload.calibration_report : {};
         payload.calibration_report = report;
-        Object.entries(fields).forEach(([path, value]) => setRepairFieldValue(path === 'tsr_number' || path === 'tsr-number' ? payload : report, path, value));
+        const built = await window.calibrationReport.buildRepairDocx(payload, report, candidate.filename || 'Calibration_Report.docx');
+        const formData = new FormData(); formData.append('docx', built.blob, candidate.filename || built.filename || 'Calibration_Report.docx');
+        formData.append('reason', reason || 'Deterministic Calibration Report and Certificate artifact regeneration.'); formData.append('confirmation', confirmation); formData.append('before_hash', candidate.source_sha256 || ''); formData.append('before_pdf_hash', candidate.pdf_sha256 || ''); formData.append('before_certificate_hash', candidate.certificate_sha256 || '');
+        return multipartRequest(`/admin/calibration-center/repairs/${encodeURIComponent(candidate.repair_key)}/${candidate.candidate_id || candidate.source_file_id}/apply`, formData);
+    }
+    async function submitRepairContext() {
+        const context = state.repairContext; if (!context?.candidate) return;
+        const reason = byId('calibration-center-repair-reason')?.value.trim() || '';
+        const confirmation = byId('calibration-center-manual-repair-confirm-input')?.value.trim().toUpperCase() || '';
+        if (confirmation !== 'REPAIR') { setRepairModalError('Type REPAIR to confirm deterministic artifact regeneration.'); return; }
         const submitButton = byId('calibration-center-repair-apply'); if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'Generating...'; }
         try {
-            const built = await window.calibrationReport.buildRepairDocx(payload, report, candidate.filename || 'Calibration_Report.docx');
-            const formData = new FormData(); formData.append('docx', built.blob, candidate.filename || built.filename || 'Calibration_Report.docx');
-            formData.append('fields_json', JSON.stringify(fields)); formData.append('reason', reason); formData.append('confirmation', confirmation); formData.append('before_hash', candidate.source_sha256 || ''); formData.append('before_pdf_hash', candidate.pdf_sha256 || ''); formData.append('before_certificate_hash', candidate.certificate_sha256 || '');
-            const result = await multipartRequest(`/admin/calibration-center/repairs/${encodeURIComponent(candidate.repair_key)}/${candidate.candidate_id || candidate.source_file_id}/apply`, formData);
+            const result = await submitDeterministicRepair(context, reason, confirmation);
             closeRepairModal(); state.repairActionOccurred = true; await loadRepairInventory(); await loadRecords();
             if (result.status !== 'repaired') throw new Error(result.message || 'Repair did not complete.');
         } catch (error) { setRepairModalError(error.message || 'Repair failed.'); }
-        finally { if (submitButton) { submitButton.disabled = false; submitButton.textContent = 'Submit Repair'; } }
+        finally { if (submitButton) { submitButton.disabled = false; submitButton.textContent = 'Regenerate and Repair'; } }
     }
     function setModalError(message) { const el = byId('calibration-center-modal-error'); if (el) { el.textContent = message || ''; el.classList.toggle('d-none', !message); } }
     function closeModal() { byId('calibration-center-modal-backdrop')?.classList.remove('open'); state.email = null; state.manifest = ''; state.message = null; state.confirmKey = ''; }
@@ -433,5 +440,5 @@ window.CalibrationReportConfig = {
 };
 </script>
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=39"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=40"></script>
 {% endblock %}

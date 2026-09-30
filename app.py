@@ -116,6 +116,7 @@ import json
 import threading
 import requests
 import base64
+import binascii
 import zipfile
 import zlib
 import tempfile
@@ -20234,38 +20235,6 @@ def _calibration_report_historical_repair_candidates():
     return candidates
 
 
-CALIBRATION_REPORT_REPAIR_EDITABLE_PREFIXES = (
-    'facility.', 'machine.', 'technical.', 'calibration.', 'certificate.',
-    'mechanical_checks.', 'generator_checks.', 'performance_results.',
-    'exposure.', 'tube2_output.', 'focal_spots.', 'focal_sizes.', 'tsr_number', 'tsr-number',
-    'exposure_current_units.', 'tube2_output.exposure.',
-    'tube2_output.performance_results.', 'tube2_output.focal_spots.',
-    'tube2_output.focal_sizes.', 'tube2_output.exposure_current_units.',
-)
-CALIBRATION_REPORT_REPAIR_MANUAL_FIELDS = (
-    'facility.name', 'facility.address', 'facility.telephone', 'facility.email', 'facility.location',
-    'machine.manufacturer', 'machine.modality', 'machine.model', 'machine.serial_number',
-    'machine.console_model', 'machine.console_serial', 'machine.tube1_model', 'machine.tube1_serial',
-    'machine.tube2_model', 'machine.tube2_serial', 'machine.installation_date',
-    'technical.max_tube_current_ma', 'technical.max_tube_voltage_kv', 'technical.tube_current_mas_range',
-    'technical.tube_voltage_kvp_range', 'technical.exposure_time_range', 'technical.max_rated_power_kw',
-    'technical.power_supply', 'technical.total_inherent_filtration',
-    'calibration.machine_calibration_date', 'calibration.next_calibration_date',
-    'calibration.test_tool_manufacturer', 'calibration.test_tool_model', 'calibration.test_tool_serial',
-    'calibration.test_tool_calibration_date', 'calibration.engineer_name', 'certificate.bsid',
-    'mechanical_checks.0.result', 'generator_checks.0.result', 'generator_checks.1.result',
-    'generator_checks.2.result', 'generator_checks.3.result', 'performance_results.0',
-    'performance_results.1', 'tsr_number',
-)
-CALIBRATION_REPORT_REPAIR_DERIVED_FIELDS = {'certificate.number'}
-
-
-def _calibration_report_repair_field_is_allowed(path):
-    """Return whether a repair field is part of the saved report allowlist."""
-    path = clean_str(path) or ''
-    return bool(path) and any(path.startswith(prefix) for prefix in CALIBRATION_REPORT_REPAIR_EDITABLE_PREFIXES)
-
-
 def _calibration_report_repair_walk_values(value, path='', output=None):
     """Collect scalar report values without exposing them in inventory responses."""
     output = output if isinstance(output, list) else []
@@ -20280,13 +20249,67 @@ def _calibration_report_repair_walk_values(value, path='', output=None):
     elif isinstance(value, list):
         for index, child in enumerate(value):
             _calibration_report_repair_walk_values(child, f'{path}.{index}', output)
-    elif isinstance(value, str) and len(value) in CALIBRATION_REPAIR_LEGACY_LIMITS:
+    elif isinstance(value, str) and (len(value) in CALIBRATION_REPAIR_LEGACY_LIMITS or len(value) > 40):
         output.append({'path': path, 'length': len(value)})
     return output
 
 
-def _calibration_report_complete_fields_candidate_for_file(source_file):
-    """Return a manual-value candidate for values affected by the old fit caps."""
+def _calibration_report_repair_path_value(value, path):
+    """Read one saved scalar without consulting mutable master records."""
+    target = value
+    for part in str(path or '').split('.'):
+        if isinstance(target, list):
+            try:
+                target = target[int(part)]
+            except (TypeError, ValueError, IndexError):
+                return ''
+        elif isinstance(target, dict):
+            target = target.get(part, '')
+        else:
+            return ''
+    return target if isinstance(target, (str, int, float, bool)) else ''
+
+
+def _calibration_report_signature_bytes(report):
+    """Decode the immutable service-engineer signature stored in the report."""
+    signature = report.get('signature') if isinstance(report, dict) else None
+    raw = clean_str(signature.get('image')) if isinstance(signature, dict) else ''
+    if not raw:
+        return b''
+    encoded = raw.split(',', 1)[1] if ',' in raw else raw
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError, binascii.Error):
+        return b''
+
+
+def _calibration_report_docx_contains_saved_signature(docx_bytes, report):
+    """Verify that the regenerated report retains the saved engineer signature part."""
+    expected = _calibration_report_signature_bytes(report)
+    if not expected:
+        return False
+    _validate_calibration_report_docx_bytes(docx_bytes)
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), 'r') as package:
+        names = set(package.namelist())
+        if 'word/media/calibration-signature.png' not in names:
+            return False
+        rels = package.read('word/_rels/document.xml.rels').decode('utf-8')
+        document = package.read('word/document.xml').decode('utf-8')
+        if 'media/calibration-signature.png' not in rels or '<a:blip ' not in document:
+            return False
+        if package.read('word/media/calibration-signature.png') != expected:
+            return False
+    engineer_name = re.sub(
+        r'\s+', ' ',
+        clean_str(_calibration_report_repair_path_value(report, 'calibration.engineer_name')) or '',
+    ).strip()
+    if engineer_name and engineer_name not in _calibration_report_docx_text(docx_bytes):
+        return False
+    return True
+
+
+def _calibration_report_complete_fields_candidate_for_file(source_file, force=False):
+    """Return a deterministic artifact-repair candidate from immutable saved state."""
     if not source_file or not calibration_report_source_file_is_private(source_file):
         return None
     submission_id = clean_int(getattr(source_file, 'online_tsr_submission_id', None))
@@ -20315,12 +20338,19 @@ def _calibration_report_complete_fields_candidate_for_file(source_file):
         }
     report = payload.get('calibration_report') if isinstance(payload.get('calibration_report'), dict) else {}
     detected = _calibration_report_repair_walk_values(report, output=[])
-    # The certificate repair is relevant when a mapped identity value was at least
-    # long enough to have been affected by the former one-line presentation fit.
     try:
-        values, _missing, _report = calibration_certificate_values(payload)
+        ensure_calibration_certificate_approval_table()
+        approval = CalibrationCertificateApproval.query.filter_by(
+            online_tsr_submission_id=submission_id,
+            status='Approved',
+            is_latest=True,
+        ).first() if submission_id else None
     except Exception:
-        values = {}
+        approval = None
+    mapped_values = calibration_certificate_mapped_snapshot(
+        getattr(approval, 'mapped_data_json', '') if approval else ''
+    )
+    values = mapped_values or {}
     certificate_fields = {
         'Textfield': 'certificate.number',
         'Text1': 'machine.modality',
@@ -20333,7 +20363,7 @@ def _calibration_report_complete_fields_candidate_for_file(source_file):
         value = clean_str(values.get(name)) or ''
         if len(value) in CALIBRATION_REPAIR_LEGACY_LIMITS or len(value) > 40:
             detected.append({'path': path, 'length': len(value), 'certificate_field': name})
-    if not detected:
+    if not detected and not force:
         return None
     try:
         source_bytes = _calibration_report_source_bytes(source_file)
@@ -20341,7 +20371,80 @@ def _calibration_report_complete_fields_candidate_for_file(source_file):
     except Exception:
         source_sha256 = ''
     approval_context = _calibration_report_repair_approval_context(source_file)
-    candidate_status = 'manual_required' if source_sha256 else 'blocked'
+    blocked_reasons = []
+    if not source_sha256:
+        blocked_reasons.append('The generated Calibration Report source is unavailable from managed storage.')
+    if not isinstance(report, dict) or not report:
+        blocked_reasons.append('The immutable saved Calibration Report payload is unavailable.')
+    if not _calibration_report_signature_bytes(report):
+        blocked_reasons.append('The saved service-engineer signature is unavailable or invalid.')
+    if not clean_str(_calibration_report_repair_path_value(report, 'calibration.engineer_name')):
+        blocked_reasons.append('The saved service-engineer identity is unavailable.')
+    pdf_file = None
+    pdf_state = 'missing'
+    pdf_reason = ''
+    if source_file and source_sha256:
+        job = calibration_report_conversion_for_source(source_file.id)
+        pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, job)
+        if pdf_state != 'ready':
+            blocked_reasons.append(pdf_reason or 'The linked Calibration Report PDF is unavailable.')
+    if not approval:
+        blocked_reasons.append('The current approved Calibration Report & Certificate record is unavailable.')
+    else:
+        if not mapped_values:
+            blocked_reasons.append('The approved certificate mapped snapshot is incomplete.')
+        elif clean_str(mapped_values.get('Textfield')) != clean_str(getattr(approval, 'certificate_number', None)):
+            blocked_reasons.append('The approved certificate number does not match its immutable mapped snapshot.')
+        for label, attr in (
+            ('approver name', 'approver_name_snapshot'),
+            ('approver title', 'approver_title_snapshot'),
+            ('approver signature', 'approver_signature_snapshot'),
+        ):
+            if not clean_str(getattr(approval, attr, None)):
+                blocked_reasons.append(f'The approved {label} snapshot is unavailable.')
+        for label, file_id in (
+            ('signed certificate', getattr(approval, 'signed_shift_file_id', None)),
+            ('no-signature certificate', getattr(approval, 'no_signature_shift_file_id', None)),
+        ):
+            artifact = db.session.get(ShiftFile, clean_int(file_id)) if file_id else None
+            if not artifact or clean_int(getattr(artifact, 'shift_id', None)) != clean_int(getattr(source_file, 'shift_id', None)) or clean_int(getattr(artifact, 'online_tsr_submission_id', None)) != submission_id:
+                blocked_reasons.append(f'The approved {label} file is missing or belongs to another record.')
+            else:
+                try:
+                    if not _calibration_report_pdf_bytes_are_valid(_calibration_report_file_bytes(artifact)):
+                        blocked_reasons.append(f'The approved {label} file is not a readable PDF.')
+                except Exception:
+                    blocked_reasons.append(f'The approved {label} file is unavailable from managed storage.')
+        if clean_str(getattr(approval, 'unsigned_artifact_path', None)):
+            try:
+                _calibration_repair_private_storage_snapshot(approval.unsigned_artifact_path)
+            except Exception:
+                blocked_reasons.append('The stored unsigned certificate review artifact is unavailable.')
+    source_text = ''
+    if source_sha256:
+        try:
+            source_text = _calibration_report_docx_text(source_bytes)
+        except Exception:
+            blocked_reasons.append('The generated Calibration Report DOCX is not a readable package.')
+    missing_saved_values = []
+    for item in detected:
+        path = item.get('path') or ''
+        if path.startswith('certificate.'):
+            value = values.get(item.get('certificate_field'))
+        elif path in {'tsr_number', 'tsr-number'}:
+            value = payload.get('tsr_number') or payload.get('tsr-number')
+        else:
+            value = _calibration_report_repair_path_value(report, path)
+        expected = re.sub(r'\s+', ' ', clean_str(value) or '').strip()
+        if expected and source_text and expected not in source_text:
+            missing_saved_values.append(path)
+            item['artifact_missing'] = True
+    if missing_saved_values:
+        reason = 'The saved report values are complete but the generated artifact does not contain them.'
+    elif blocked_reasons:
+        reason = blocked_reasons[0]
+    else:
+        reason = 'The saved report and approved certificate snapshots are complete; artifacts can be regenerated deterministically.'
     return {
         'repair_id': f'calibration-report-complete-fields-{clean_int(source_file.id) or 0}',
         'candidate_id': clean_int(source_file.id),
@@ -20352,98 +20455,32 @@ def _calibration_report_complete_fields_candidate_for_file(source_file):
         'repair_version': CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
         'title': 'Complete report and certificate fields',
         'artifact_scope': 'Calibration Report DOCX/PDF and linked certificates',
-        'bulk_safe': False,
-        'status': candidate_status,
-        'reason': (
-            'Complete replacement values are required; values previously cut off cannot be reconstructed automatically.'
-            if source_sha256 else
-            'The generated Calibration Report source is unavailable from managed storage.'
-        ),
+        'bulk_safe': not blocked_reasons,
+        'status': 'blocked' if blocked_reasons else 'repairable',
+        'reason': reason,
         'detected_fields': detected,
-        'editable_fields': [
-            item['path'] for item in detected
-            if _calibration_report_repair_field_is_allowed(item['path']) and
-            item['path'] not in CALIBRATION_REPORT_REPAIR_DERIVED_FIELDS
-        ],
-        'certificate_values': values,
+        'certificate_values': mapped_values or {},
         'source_sha256': source_sha256,
+        'pdf_file_id': clean_int(getattr(pdf_file, 'id', None)) if pdf_file else None,
+        'pdf_filename': get_shift_file_display_name(pdf_file) if pdf_file else '',
+        'pdf_sha256': hashlib.sha256(_calibration_report_file_bytes(pdf_file)).hexdigest() if pdf_file and pdf_state == 'ready' else '',
+        'approval_id': clean_int(getattr(approval, 'id', None)) if approval else None,
+        'certificate_sha256': clean_str(getattr(approval, 'certificate_fingerprint', None)) if approval else '',
         **approval_context,
     }
 
 
 def _calibration_report_complete_fields_context(source_file):
-    """Return the focused, administrator-only edit context for a manual repair."""
-    candidate = _calibration_report_complete_fields_candidate_for_file(source_file)
+    """Return a read-only deterministic regeneration context."""
+    candidate = _calibration_report_complete_fields_candidate_for_file(source_file, force=True)
     submission_id = clean_int(getattr(source_file, 'online_tsr_submission_id', None)) if source_file else None
     submission = db.session.get(OnlineTsrSubmission, submission_id) if submission_id else None
     payload = parse_online_tsr_payload_json(submission)
     report = payload.get('calibration_report') if isinstance(payload, dict) and isinstance(payload.get('calibration_report'), dict) else {}
-    if not candidate and source_file and calibration_report_source_file_is_private(source_file) and isinstance(report, dict):
-        approval_context = _calibration_report_repair_approval_context(source_file)
-        candidate = {
-            'repair_id': f'calibration-report-complete-fields-{clean_int(source_file.id) or 0}',
-            'candidate_id': clean_int(source_file.id),
-            'source_file_id': clean_int(source_file.id),
-            'submission_id': submission_id,
-            'shift_id': clean_int(getattr(source_file, 'shift_id', None)),
-            'repair_key': 'calibration-complete-fields-v1',
-            'repair_version': CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
-            'title': 'Complete report and certificate fields',
-            'artifact_scope': 'Calibration Report DOCX/PDF and linked certificates',
-            'bulk_safe': False,
-            'status': 'manual_required',
-            'reason': 'Review and enter complete replacement values for this approved record.',
-            'detected_fields': [],
-            'editable_fields': list(CALIBRATION_REPORT_REPAIR_MANUAL_FIELDS),
-            'source_sha256': '',
-            **approval_context,
-        }
-        try:
-            candidate['source_sha256'] = hashlib.sha256(_calibration_report_source_bytes(source_file)).hexdigest()
-        except Exception:
-            candidate['source_sha256'] = ''
-    field_values = {}
-    for item in (candidate or {}).get('editable_fields', []):
-        target = payload if item in {'tsr_number', 'tsr-number'} else report
-        for key in str(item).split('.'):
-            if isinstance(target, list):
-                try:
-                    target = target[int(key)]
-                except (TypeError, ValueError, IndexError):
-                    target = ''
-                    break
-            elif isinstance(target, dict):
-                target = target.get(key, '')
-            else:
-                target = ''
-                break
-        field_values[item] = target if isinstance(target, (str, int, float, bool)) else ''
     if candidate:
         candidate = dict(candidate)
-        candidate['field_values'] = field_values
-        try:
-            certificate_values, _missing, _report = calibration_certificate_values(payload)
-        except Exception:
-            certificate_values = {}
-        candidate['certificate_values'] = certificate_values
-        job = calibration_report_conversion_for_source(source_file.id) if source_file else None
-        pdf_file, pdf_state, _pdf_reason = _calibration_report_repair_pdf_state(source_file, job) if source_file else (None, 'missing', '')
-        if pdf_file and pdf_state == 'ready':
-            try:
-                candidate['pdf_sha256'] = hashlib.sha256(_calibration_report_file_bytes(pdf_file)).hexdigest()
-            except Exception:
-                candidate['pdf_sha256'] = ''
-        approval = CalibrationCertificateApproval.query.filter_by(
-            online_tsr_submission_id=submission_id,
-            status='Approved',
-            is_latest=True,
-        ).first() if submission_id else None
-        if approval:
-            candidate['certificate_sha256'] = clean_str(getattr(approval, 'certificate_fingerprint', None)) or ''
-            candidate['approval_id'] = clean_int(getattr(approval, 'id', None))
-        # The Calibration Center uses the same browser-side DOCX builder as
-        # the report editor.  Return only the report payload needed by that
-        # builder; the full TSR payload is not needed by a repair.
+        # The browser reuses the existing report builder against this exact
+        # immutable snapshot.  It receives no editable fields or replacement data.
         report_payload = {'calibration_report': report}
         if isinstance(payload, dict):
             for key in ('tsr-number', 'tsr_number'):
@@ -20451,49 +20488,6 @@ def _calibration_report_complete_fields_context(source_file):
                     report_payload[key] = payload.get(key)
         candidate['report_payload'] = report_payload
     return candidate
-
-
-def _calibration_report_set_field_values(payload, fields):
-    """Apply allowlisted scalar repair fields to a copied submission payload."""
-    updated = json.loads(json.dumps(payload if isinstance(payload, dict) else {}, ensure_ascii=False))
-    report = updated.get('calibration_report')
-    if not isinstance(report, dict):
-        report = {}
-        updated['calibration_report'] = report
-    for raw_path, raw_value in (fields or {}).items():
-        path = clean_str(raw_path) or ''
-        value = raw_value if isinstance(raw_value, (str, int, float, bool)) else None
-        if not path or value is None:
-            raise ValueError('Repair values must be scalar fields.')
-        target = updated if path in {'tsr_number', 'tsr-number'} else report
-        parts = path.split('-') if path == 'tsr-number' else path.split('.')
-        if path == 'tsr-number':
-            target['tsr-number'] = str(value)
-            continue
-        for part in parts[:-1]:
-            if isinstance(target, list):
-                try:
-                    target = target[int(part)]
-                except (TypeError, ValueError, IndexError):
-                    raise ValueError(f'Repair field path is not present: {path}.')
-            elif isinstance(target, dict):
-                child = target.get(part)
-                if not isinstance(child, (dict, list)):
-                    raise ValueError(f'Repair field path is not present: {path}.')
-                target = child
-            else:
-                raise ValueError(f'Repair field path is not present: {path}.')
-        last = parts[-1]
-        if isinstance(target, list):
-            try:
-                target[int(last)] = str(value)
-            except (TypeError, ValueError, IndexError):
-                raise ValueError(f'Repair field path is not present: {path}.')
-        elif isinstance(target, dict):
-            target[last] = str(value)
-        else:
-            raise ValueError(f'Repair field path is not present: {path}.')
-    return updated
 
 
 def _calibration_report_docx_text(docx_bytes):
@@ -20505,27 +20499,43 @@ def _calibration_report_docx_text(docx_bytes):
     return re.sub(r'\s+', ' ', plain).strip()
 
 
-def _calibration_report_repair_docx_contains_fields(docx_bytes, fields):
-    """Require each report-rendered submitted value to survive DOCX generation."""
+def _calibration_report_repair_docx_contains_saved_values(docx_bytes, payload, detected_fields):
+    """Require saved report values used by the candidate to survive regeneration."""
     text = _calibration_report_docx_text(docx_bytes)
-    for path, value in (fields or {}).items():
-        # These are mapped outside the report DOCX and are verified again in
-        # the regenerated certificates below.
+    report = payload.get('calibration_report') if isinstance(payload, dict) else {}
+    report = report if isinstance(report, dict) else {}
+    for item in detected_fields or []:
+        path = clean_str(item.get('path')) or ''
         if path in {'tsr_number', 'tsr-number'} or path.startswith('certificate.'):
             continue
+        value = _calibration_report_repair_path_value(report, path)
         expected = re.sub(r'\s+', ' ', clean_str(value) or '').strip()
         if expected and expected not in text:
-            raise ValueError(f'The corrected DOCX is missing the complete value for {path}.')
+            raise ValueError(f'The regenerated DOCX is missing the complete saved value for {path}.')
+
+
+def _calibration_report_pdf_text(pdf_bytes):
+    """Extract visible PDF text for signature/identity verification."""
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        from PyPDF2 import PdfReader
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    return '\n'.join(page.extract_text() or '' for page in reader.pages)
 
 
 def _calibration_report_apply_complete_fields_repair(source_file_id, payload, uploaded_docx):
-    """Replace one approved report/certificate pair while retaining all IDs."""
+    """Regenerate one approved report/certificate pair without changing saved data."""
     source_file = db.session.get(ShiftFile, clean_int(source_file_id))
     if not source_file or not calibration_report_source_file_is_private(source_file):
         return {'status': 'failed', 'message': 'Generated Calibration Report source not found.'}
     if not isinstance(payload, dict):
         return {'status': 'failed', 'message': 'The repair request is invalid.'}
     candidate = _calibration_report_complete_fields_context(source_file) or {}
+    if candidate.get('status') == 'already_repaired':
+        return candidate
+    if candidate.get('status') != 'repairable':
+        return {'status': 'blocked', 'message': candidate.get('reason') or 'This repair cannot be completed from immutable saved data.'}
     expected_hash = clean_str(candidate.get('source_sha256')) or ''
     supplied_hash = clean_str(payload.get('before_hash') or payload.get('source_sha256')) or ''
     expected_pdf_hash = clean_str(candidate.get('pdf_sha256')) or ''
@@ -20538,31 +20548,33 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
         (expected_certificate_hash and supplied_certificate_hash != expected_certificate_hash)
     ):
         return {'status': 'conflict', 'message': 'This repair candidate changed after it was opened. Reload the repair context.'}
-    fields = payload.get('fields') if isinstance(payload.get('fields'), dict) else {}
-    allowed = set(candidate.get('editable_fields') or CALIBRATION_REPORT_REPAIR_MANUAL_FIELDS)
-    unknown = sorted(
-        path for path in fields
-        if path not in allowed or not _calibration_report_repair_field_is_allowed(path)
-    )
-    if unknown:
-        return {'status': 'failed', 'message': 'One or more repair fields are not allowed.', 'unknown_fields': unknown}
-    if not fields:
-        return {'status': 'failed', 'message': 'Enter at least one corrected field value.'}
-    reason = clean_str(payload.get('reason')) or ''
-    if not reason:
-        return {'status': 'failed', 'message': 'A correction reason is required.'}
+    if any(key in payload for key in ('fields', 'fields_json', 'field_values', 'corrected_values', 'report_payload')):
+        return {'status': 'failed', 'message': 'Complete-fields repair does not accept replacement report or certificate values.'}
+    reason = clean_str(payload.get('reason')) or 'Deterministic Calibration Report and Certificate artifact regeneration.'
     if (clean_str(payload.get('confirmation')) or '').upper() != 'REPAIR':
-        return {'status': 'failed', 'message': 'Type REPAIR to confirm the in-place correction.'}
+        return {'status': 'failed', 'message': 'Type REPAIR to confirm deterministic artifact regeneration.'}
     if not uploaded_docx or not getattr(uploaded_docx, 'filename', None):
-        return {'status': 'failed', 'message': 'Submit the complete corrected Calibration Report DOCX.'}
+        return {'status': 'failed', 'message': 'The regenerated Calibration Report DOCX is required.'}
     uploaded_docx.stream.seek(0)
     corrected_docx = uploaded_docx.read(CALIBRATION_REPORT_MAX_BYTES + 1)
     if not corrected_docx or len(corrected_docx) > CALIBRATION_REPORT_MAX_BYTES:
         return {'status': 'failed', 'message': 'The corrected Calibration Report DOCX is empty or too large.'}
     try:
-        _calibration_report_repair_docx_contains_fields(corrected_docx, fields)
+        submission_id = clean_int(getattr(source_file, 'online_tsr_submission_id', None))
+        submission = db.session.get(OnlineTsrSubmission, submission_id) if submission_id else None
+        payload_before = parse_online_tsr_payload_json(submission)
+        _calibration_report_repair_docx_contains_saved_values(
+            corrected_docx,
+            payload_before,
+            candidate.get('detected_fields') or [],
+        )
+        if not _calibration_report_docx_contains_saved_signature(
+            corrected_docx,
+            payload_before.get('calibration_report') if isinstance(payload_before, dict) else {},
+        ):
+            raise ValueError('The regenerated DOCX does not contain the saved service-engineer signature.')
     except Exception as docx_error:
-        return {'status': 'failed', 'message': clean_str(str(docx_error))[:500] or 'The corrected DOCX could not be verified.'}
+        return {'status': 'failed', 'message': clean_str(str(docx_error))[:500] or 'The regenerated DOCX could not be verified.'}
 
     submission_id = clean_int(getattr(source_file, 'online_tsr_submission_id', None))
     submission = db.session.get(OnlineTsrSubmission, submission_id) if submission_id else None
@@ -20577,50 +20589,61 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
     if not approval:
         return {'status': 'failed', 'message': 'Only a current approved Calibration Report can be repaired here.'}
 
-    payload_before = parse_online_tsr_payload_json(submission)
     try:
-        updated_payload = _calibration_report_set_field_values(payload_before, fields)
-        catalog = calibration_certificate_effective_catalog()
-        mapped_before = json.loads(approval.mapped_data_json or '{}')
-        if not isinstance(mapped_before, dict):
-            mapped_before = {}
-        values, missing, _report = calibration_certificate_values(
-            updated_payload,
-            shift=None,
-            certificate_number_override=approval.certificate_number,
-            catalog=catalog,
-        )
-        if missing:
-            raise ValueError(f'Complete the Calibration Certificate values before repair: {", ".join(missing)}.')
-        values['Textfield'] = clean_str(approval.certificate_number) or values.get('Textfield', '')
-        values['bsid'] = normalize_product_bsid(
-            (updated_payload.get('calibration_report') or {}).get('certificate', {}).get('bsid')
-        ) or normalize_product_bsid(mapped_before.get('bsid'))
+        mapped_before = calibration_certificate_mapped_snapshot(approval.mapped_data_json)
+        if not mapped_before:
+            raise ValueError('The approved certificate mapped snapshot is incomplete.')
+        if clean_str(mapped_before.get('Textfield')) != clean_str(approval.certificate_number):
+            raise ValueError('The approved certificate number does not match its immutable mapped snapshot.')
+        if not _calibration_report_signature_bytes(payload_before.get('calibration_report') or {}):
+            raise ValueError('The saved service-engineer signature is unavailable.')
+        signed_file = db.session.get(ShiftFile, clean_int(approval.signed_shift_file_id))
+        no_signature_file = db.session.get(ShiftFile, clean_int(approval.no_signature_shift_file_id))
+        if not signed_file or not no_signature_file:
+            raise ValueError('The approved signed and no-signature certificate files are unavailable.')
+        if any(
+            clean_int(getattr(artifact, 'shift_id', None)) != clean_int(getattr(source_file, 'shift_id', None)) or
+            clean_int(getattr(artifact, 'online_tsr_submission_id', None)) != submission_id
+            for artifact in (signed_file, no_signature_file)
+        ):
+            raise ValueError('The approved certificate files do not belong to this report revision.')
+        values = dict(mapped_before)
         signed_bytes, _signed_values, signed_fingerprint = build_calibration_certificate_pdf(
-            updated_payload,
+            payload_before,
             shift=None,
             approver=approval.approver_name_snapshot or '',
             signature_data=approval.approver_signature_snapshot or '',
             approval_title=approval.approver_title_snapshot or '',
             certificate_number_override=approval.certificate_number,
             mapped_values_override=values,
-            catalog=catalog,
         )
+        signed_text = re.sub(r'\s+', ' ', _calibration_report_pdf_text(signed_bytes)).strip()
+        approver_name = re.sub(r'\s+', ' ', clean_str(approval.approver_name_snapshot) or '').strip()
+        approver_title = re.sub(
+            r'(?i)[\s,;:\-–—]*Medical\s+Systems\s+Division\s*$',
+            '',
+            clean_str(approval.approver_title_snapshot) or '',
+        ).strip()
+        approver_title = re.sub(r'\s+', ' ', approver_title).strip()
+        if approver_name and approver_name not in signed_text:
+            raise ValueError('The regenerated signed certificate is missing the saved approver identity.')
+        if approver_title and approver_title not in signed_text:
+            raise ValueError('The regenerated signed certificate is missing the saved approver title.')
+        if approval.approver_signature_snapshot and b'/Subtype /Image' not in signed_bytes:
+            raise ValueError('The regenerated signed certificate is missing the saved approver signature overlay.')
         no_signature_bytes, _no_signature_values, _no_signature_fingerprint = build_calibration_certificate_no_signature_pdf(
-            updated_payload,
+            payload_before,
             shift=None,
             certificate_number_override=approval.certificate_number,
             mapped_values_override=values,
-            catalog=catalog,
         )
         unsigned_bytes = None
         if clean_str(getattr(approval, 'unsigned_artifact_path', None)):
             unsigned_bytes, _unsigned_values, _unsigned_fingerprint = build_calibration_certificate_pdf(
-                updated_payload,
+                payload_before,
                 shift=None,
                 certificate_number_override=approval.certificate_number,
                 mapped_values_override=values,
-                catalog=catalog,
             )
         pdf_job = calibration_report_conversion_for_source(source_file.id)
         pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, pdf_job)
@@ -20636,10 +20659,6 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
         pdf_after_sha256 = hashlib.sha256(report_pdf).hexdigest()
         source_snapshot = _calibration_report_storage_snapshot(source_file)
         pdf_snapshot = _calibration_report_storage_snapshot(pdf_file)
-        signed_file = db.session.get(ShiftFile, clean_int(approval.signed_shift_file_id))
-        no_signature_file = db.session.get(ShiftFile, clean_int(approval.no_signature_shift_file_id))
-        if not signed_file or not no_signature_file:
-            raise ValueError('The approved signed and no-signature certificate files are unavailable.')
         signed_snapshot = _calibration_report_storage_snapshot(signed_file)
         no_signature_snapshot = _calibration_report_storage_snapshot(no_signature_file)
         unsigned_snapshot = (
@@ -20659,7 +20678,10 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
         'pdf_file_id': clean_int(pdf_file.id),
         'signed_certificate_file_id': clean_int(signed_file.id),
         'no_signature_certificate_file_id': clean_int(no_signature_file.id),
-        'field_paths': sorted(fields),
+        'source_values_unchanged': True,
+        'mapped_snapshot_unchanged': True,
+        'service_engineer_signature_preserved': True,
+        'approver_signature_preserved': True,
         'reason': reason[:1000],
         'before_source_sha256': expected_hash,
         'before_pdf_sha256': expected_pdf_hash,
@@ -20687,12 +20709,7 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
             _calibration_report_replace_storage_snapshot(
                 unsigned_snapshot, unsigned_bytes, approval.unsigned_artifact_path, 'application/pdf',
             )
-        report = updated_payload.get('calibration_report')
-        generated = report.get('generated') if isinstance(report, dict) else None
-        if isinstance(generated, dict):
-            generated = dict(generated)
-            generated.update({'size': len(corrected_docx), 'pdf_file_id': clean_int(pdf_file.id), 'pdf_filename': get_shift_file_display_name(pdf_file), 'pdf_state': 'ready', 'pdf_error': '', 'pdf_attempts': 0})
-            report['generated'] = generated
+        updated_payload = json.loads(json.dumps(payload_before, ensure_ascii=False))
         marker = dict(updated_payload.get(CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_MARKER) or {})
         marker.update({
             'version': CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
@@ -20700,7 +20717,9 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
             'repaired_at': now.isoformat(),
             'source_file_id': clean_int(source_file.id),
             'pdf_file_id': clean_int(pdf_file.id),
-            'field_paths': sorted(fields),
+            'repair_mode': 'deterministic_no_data_change',
+            'source_values_unchanged': True,
+            'mapped_snapshot_unchanged': True,
             'before_source_sha256': expected_hash,
             'after_source_sha256': source_after_sha256,
         })
@@ -20717,11 +20736,8 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
         pdf_job.last_error = None
         pdf_job.converted_at = now
         pdf_job.updated_at = now
-        _update_calibration_report_conversion_marker(source_file, pdf_job, pdf_file)
-        approval.mapped_data_json = json.dumps(values, ensure_ascii=False)
         approval.report_fingerprint = source_after_sha256
         approval.certificate_fingerprint = signed_fingerprint
-        approval.updated_at = now
         record_universal_approval_audit(
             'calibration_certificate', approval.id, 'calibration_repair_applied',
             actor_user=current_user, metadata=metadata,
@@ -20811,7 +20827,7 @@ def _calibration_repair_complete_fields_inventory():
 
 
 def _calibration_repair_complete_fields_apply(candidate_id, **kwargs):
-    """Registry callback for one administrator-supplied complete-fields repair."""
+    """Registry callback for one deterministic no-data-change repair."""
     return _calibration_report_apply_complete_fields_repair(
         candidate_id,
         kwargs.get('payload') or {},
@@ -20835,9 +20851,9 @@ register_calibration_repair({
     'key': 'calibration-complete-fields-v1',
     'version': CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
     'title': 'Complete report and certificate fields',
-    'description': 'Identify records affected by the former report and certificate fit limits.',
+    'description': 'Regenerate affected report and certificate artifacts from immutable saved snapshots.',
     'artifact_scope': 'Calibration Report DOCX/PDF and linked certificates',
-    'bulk_safe': False,
+    'bulk_safe': True,
     'inventory': _calibration_repair_complete_fields_inventory,
     'apply': _calibration_repair_complete_fields_apply,
     'audit': 'universal-approval-and-activity-log',
@@ -20866,7 +20882,7 @@ def _calibration_repair_registry_inventory():
                 'repair_version': definition.get('version'),
                 'title': definition.get('title'),
                 'artifact_scope': definition.get('artifact_scope'),
-                'bulk_safe': bool(definition.get('bulk_safe')),
+                'bulk_safe': bool(definition.get('bulk_safe')) and item.get('status') == 'repairable',
             })
             candidates.append(item)
     summary = {
@@ -23746,28 +23762,23 @@ def _calibration_repair_registry_candidate(repair_key, candidate_id):
                 'bulk_safe': bool(definition.get('bulk_safe')),
             })
             return definition, item
-    # A manual Repair button is intentionally available for every approved
-    # row, including records whose old value no longer matches a detectable
-    # legacy cap.  Let the context/apply routes open that source explicitly.
+    # A Repair button is available for every approved row, including records
+    # whose old value no longer matches a detectable legacy cap.  Re-scan the
+    # immutable source, never create a manual-value candidate.
     if clean_str(repair_key) == 'calibration-complete-fields-v1':
         source_file = db.session.get(ShiftFile, wanted)
         if source_file and calibration_report_source_file_is_private(source_file):
-            return definition, {
-                'repair_id': f'calibration-report-complete-fields-{wanted or 0}',
-                'candidate_id': wanted,
-                'source_file_id': wanted,
-                'repair_key': clean_str(repair_key),
-                'repair_version': definition.get('version'),
-                'title': definition.get('title'),
-                'artifact_scope': definition.get('artifact_scope'),
-                'bulk_safe': False,
-                'status': 'manual_required',
-                'reason': 'Review and enter complete replacement values for this approved record.',
-                'detected_fields': [],
-                'editable_fields': list(CALIBRATION_REPORT_REPAIR_MANUAL_FIELDS),
-                'approved': False,
-                'emailed': False,
-            }
+            candidate = _calibration_report_complete_fields_candidate_for_file(source_file, force=True)
+            if candidate:
+                item = dict(candidate)
+                item.update({
+                    'repair_key': clean_str(repair_key),
+                    'repair_version': definition.get('version'),
+                    'title': definition.get('title'),
+                    'artifact_scope': definition.get('artifact_scope'),
+                    'bulk_safe': bool(definition.get('bulk_safe')) and candidate.get('status') == 'repairable',
+                })
+                return definition, item
     return definition, None
 
 
@@ -23804,7 +23815,7 @@ def calibration_center_repairs():
         'repairs': repairs,
         'candidates': candidates,
         'summary': summary,
-        'warning': 'Repairs never run automatically. Manual-value candidates require a correction reason and complete replacement values.',
+        'warning': 'Repairs never run automatically. Complete-field repairs regenerate artifacts from immutable saved report and approved certificate snapshots without changing business data.',
     })
 
 
@@ -23821,30 +23832,15 @@ def calibration_center_repair_context(repair_key, candidate_id):
         if clean_str(repair_key) == 'calibration-complete-fields-v1':
             source_file = db.session.get(ShiftFile, clean_int(candidate_id))
             if source_file and calibration_report_source_file_is_private(source_file):
-                candidate = {
-                    'repair_id': f'calibration-report-complete-fields-{clean_int(candidate_id) or 0}',
-                    'candidate_id': clean_int(candidate_id),
-                    'source_file_id': clean_int(candidate_id),
-                    'repair_key': repair_key,
-                    'repair_version': definition.get('version'),
-                    'title': definition.get('title'),
-                    'artifact_scope': definition.get('artifact_scope'),
-                    'bulk_safe': False,
-                    'status': 'manual_required',
-                    'reason': 'Review and enter complete replacement values for this approved record.',
-                    'detected_fields': [],
-                    'editable_fields': list(CALIBRATION_REPORT_REPAIR_MANUAL_FIELDS),
-                    'approved': True,
-                    'emailed': False,
-                }
-            else:
+                candidate = _calibration_report_complete_fields_candidate_for_file(source_file, force=True)
+            if not candidate:
                 return no_store_jsonify({'status': 'failed', 'message': 'Calibration repair candidate not found.'}), 404
         else:
             return no_store_jsonify({'status': 'failed', 'message': 'Calibration repair candidate not found.'}), 404
     if clean_str(repair_key) == 'calibration-complete-fields-v1':
         source_file = db.session.get(ShiftFile, clean_int(candidate_id))
         candidate = _calibration_report_complete_fields_context(source_file) or candidate
-        candidate.update({'repair_key': repair_key, 'repair_version': definition.get('version'), 'title': definition.get('title'), 'artifact_scope': definition.get('artifact_scope'), 'bulk_safe': False})
+    candidate.update({'repair_key': repair_key, 'repair_version': definition.get('version'), 'title': definition.get('title'), 'artifact_scope': definition.get('artifact_scope'), 'bulk_safe': bool(definition.get('bulk_safe')) and candidate.get('status') == 'repairable'})
     return no_store_jsonify({'status': 'success', 'definition': {
         'repair_key': repair_key,
         'repair_version': definition.get('version'),
@@ -23858,7 +23854,7 @@ def calibration_center_repair_context(repair_key, candidate_id):
 @app.route('/admin/calibration-center/repairs/<repair_key>/<int:candidate_id>/apply', methods=['POST'])
 @login_required
 def calibration_center_repair_apply_registered(repair_key, candidate_id):
-    """Apply one registered repair, enforcing candidate and manual-value safeguards."""
+    """Apply one registered repair, enforcing immutable-source safeguards."""
     if not can_access_calibration_center():
         return denied('Only authorized system administrators can access Calibration Center.')
     definition, candidate = _calibration_repair_registry_candidate(repair_key, candidate_id)
@@ -23872,10 +23868,6 @@ def calibration_center_repair_apply_registered(repair_key, candidate_id):
         return no_store_jsonify(definition['apply'](candidate_id))
 
     if request.files:
-        try:
-            fields = json.loads(request.form.get('fields_json') or '{}')
-        except (TypeError, ValueError, json.JSONDecodeError):
-            fields = {}
         payload = {
             'before_hash': request.form.get('before_hash'),
             'source_sha256': request.form.get('source_sha256'),
@@ -23883,10 +23875,11 @@ def calibration_center_repair_apply_registered(repair_key, candidate_id):
             'pdf_sha256': request.form.get('pdf_sha256'),
             'before_certificate_hash': request.form.get('before_certificate_hash'),
             'certificate_sha256': request.form.get('certificate_sha256'),
-            'fields': fields,
             'reason': request.form.get('reason'),
             'confirmation': request.form.get('confirmation'),
         }
+        if 'fields_json' in request.form:
+            payload['fields_json'] = request.form.get('fields_json')
         uploaded_docx = request.files.get('docx') or request.files.get('calibration_report') or request.files.get('file')
     else:
         payload = request.get_json(silent=True) or {}
@@ -25878,7 +25871,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v212-calendar-calibration-actions.
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v216-calibration-repair-registry';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v217-deterministic-calibration-repair';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -25903,7 +25896,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=39',
+  '/static/js/app-calibration-report.js?v=40',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

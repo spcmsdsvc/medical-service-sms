@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-30-calibration-repair-deterministic",
+      "release_date": "2026-09-30",
+      "title": "Calibration Artifact Repair Uses Saved Data",
+      "summary": "Legacy calibration artifacts can be regenerated without re-entering report values or replacing signatures.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-30-calibration-repair-deterministic-admins",
+          "category": "Calibration",
+          "description": "Complete-field repairs now rebuild the report and certificates from the saved report payload and approved certificate snapshot. Repair does not change stored values, mappings, approvals, or signatures; records with incomplete source data are blocked.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-30-calibration-repair-registry",
       "release_date": "2026-09-30",
       "title": "Calibration Report Repair Center Expanded",
