@@ -446,6 +446,49 @@ class CalibrationCenterContracts(unittest.TestCase):
         )[0]
         self.assertNotIn("item.path || 'saved field'", render_context)
 
+    def test_complete_fields_repair_recovers_legacy_address_from_saved_tsr(self):
+        truncated = 'M.L. Quezon Avenue Extension Dalig, Anti'
+        complete = 'M.L. Quezon Avenue Extension Dalig, Antipolo City'
+        payload = {
+            'tsr-address': complete,
+            'calibration_report': {'facility': {'address': truncated}},
+        }
+        resolved, recovered = app_module._calibration_report_resolved_repair_payload(payload)
+        self.assertEqual(resolved['calibration_report']['facility']['address'], complete)
+        self.assertEqual(recovered, {'facility.address': 'Saved TSR address'})
+        self.assertEqual(payload['calibration_report']['facility']['address'], truncated)
+
+        unrelated, recovered = app_module._calibration_report_resolved_repair_payload({
+            'tsr-address': 'A different address that must not be substituted automatically',
+            'calibration_report': {'facility': {'address': truncated}},
+        })
+        self.assertEqual(unrelated['calibration_report']['facility']['address'], truncated)
+        self.assertEqual(recovered, {})
+
+    def test_complete_fields_repair_checks_recovered_value_in_pdf(self):
+        payload = {'calibration_report': {'facility': {'address': 'Complete saved address'}}}
+        fields = [{'path': 'facility.address'}]
+        with patch.object(app_module, '_calibration_report_pdf_text', return_value='Complete\nsaved address'):
+            app_module._calibration_report_pdf_contains_saved_values(b'pdf', payload, fields)
+        with patch.object(app_module, '_calibration_report_pdf_text', return_value='Incomplete address'):
+            with self.assertRaisesRegex(ValueError, 'facility.address'):
+                app_module._calibration_report_pdf_contains_saved_values(b'pdf', payload, fields)
+
+    def test_calibration_center_row_shows_repair_history_status(self):
+        self.assertEqual(
+            app_module.CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
+            'calibration-report-complete-fields-v2',
+        )
+        for marker in (
+            'repair_status',
+            'repair_history_count',
+            'repair_last_at',
+            'Previously repaired',
+            'update available',
+            'No repair history',
+        ):
+            self.assertIn(marker, APP_SOURCE + TEMPLATE_SOURCE)
+
     def test_complete_fields_repair_accepts_only_artifact_inputs(self):
         self.assertIn("'fields_json'", APP_SOURCE)
         apply_block = APP_SOURCE.split('def _calibration_report_apply_complete_fields_repair', 1)[1].split(

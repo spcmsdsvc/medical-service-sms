@@ -252,7 +252,19 @@
     const statusHtml = (record) => `<span class="calibration-center-status ${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}">${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}</span>`;
     const artifactButton = (url, label) => url ? `<a class="btn btn-sm btn-outline-secondary rounded-3" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>` : `<span class="text-muted small">Unavailable</span>`;
     const sendButton = (record) => record.can_send ? `<button type="button" class="btn btn-sm btn-primary rounded-3 js-calibration-email" data-approval-id="${record.approval_id}">Email</button>` : `<span class="text-danger small" title="${escapeHtml(record.unavailable_reason)}">${escapeHtml(record.unavailable_reason || 'Not ready')}</span>`;
-    const repairButton = (record) => record.repair_source_file_id ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 js-calibration-deterministic-repair" data-repair-key="calibration-complete-fields-v1" data-candidate-id="${escapeHtml(record.repair_source_file_id)}">Repair</button>` : '';
+    const repairDate = (value) => { if (!value) return ''; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, {year:'numeric', month:'short', day:'numeric'}); };
+    const repairButton = (record) => {
+        const count = Number(record.repair_history_count || 0); const lastDate = repairDate(record.repair_last_at);
+        const status = record.repair_status === 'repaired'
+            ? `<div class="small text-success fw-bold mt-1">Repaired${lastDate ? ` ${escapeHtml(lastDate)}` : ''}${count > 1 ? ` · ${count} repairs` : ''}</div>`
+            : record.repair_status === 'update_available'
+                ? `<div class="small text-warning-emphasis fw-bold mt-1">Previously repaired${lastDate ? ` ${escapeHtml(lastDate)}` : ''} · update available</div>`
+                : `<div class="small text-muted mt-1">No repair history</div>`;
+        if (!record.repair_source_file_id) return status;
+        if (record.repair_status === 'repaired') return status;
+        const label = record.repair_status === 'update_available' ? 'Update Repair' : 'Repair';
+        return `<div><button type="button" class="btn btn-sm btn-outline-warning rounded-3 js-calibration-deterministic-repair" data-repair-key="calibration-complete-fields-v1" data-candidate-id="${escapeHtml(record.repair_source_file_id)}">${label}</button>${status}</div>`;
+    };
     function renderSummary(summary) { ['approved','ready','unavailable','unsent','partial','sent'].forEach((key) => { const el = byId(`summary-${key}`); if (el) el.textContent = summary?.[key] ?? 0; }); }
     function renderRows(records) {
         byId('calibration-center-table-body').innerHTML = records.map((record) => `<tr><td><strong>${escapeHtml(record.certificate_number)}</strong><div class="small text-muted">REV${escapeHtml(record.revision_no)} · ${escapeHtml(record.tsr_number || 'No TSR')}</div></td><td><strong>${escapeHtml(record.client_name || record.facility)}</strong><div class="small text-muted">${escapeHtml(record.equipment || record.model)} · ${escapeHtml(record.serial_number)}</div></td><td><div>${escapeHtml(record.approved_at || '')}</div><div class="small text-muted">${escapeHtml(record.requester || 'Requester')}</div></td><td>${statusHtml(record)}</td><td><div class="calibration-center-file">${artifactButton(record.report_preview_url, 'Report Preview')}${artifactButton(record.report_download_url, 'Report Download')}${artifactButton(record.certificate_preview_url, 'Certificate Preview')}${artifactButton(record.certificate_download_url, 'Certificate Download')}</div></td><td>${repairButton(record)} ${sendButton(record)}</td></tr>`).join('');
