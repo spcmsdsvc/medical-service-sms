@@ -113,6 +113,12 @@ class CalibrationCertificateCatalogTests(unittest.TestCase):
             self.assertEqual(values['Text2'], model)
             self.assertNotIn('Equipment Model', missing)
 
+    def test_certificate_bsid_overflow_is_rejected_without_truncation(self):
+        payload = complete_payload()
+        payload['calibration_report']['certificate']['bsid'] = 'B' * 41
+        with self.assertRaisesRegex(ValueError, '40 characters or fewer'):
+            app_module.calibration_certificate_values(payload)
+
     def test_catalog_loader_rejects_non_string_raw_entry(self):
         self._assert_catalog_loader_rejects(
             lambda catalog: catalog['models'].__setitem__(0, 123),
@@ -921,6 +927,46 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
         impossible = 'X' * 5000
         with self.assertRaisesRegex(ValueError, 'Installed At'):
             app_module.calibration_certificate_installed_at_lines(impossible)
+
+    def test_long_mapped_identity_fields_use_two_lines_without_truncation(self):
+        import fitz
+
+        long_values = {
+            'Textfield': 'Certificate Number ' + ('B' * 80),
+            'Text1': 'Digital Angiography Equipment Name ' + ('A' * 80),
+            'Text2': 'Temporary Equipment Model ' + ('M' * 80),
+            'Text3': 'SYSTEM-' + ('S' * 100),
+            'Text4': '2026/08/20',
+            'Text5': '2027/08/20',
+            'Text6': 'Facility ' + ('F' * 80),
+            'Textfield-0': 'TSR-' + ('T' * 80),
+        }
+        data, mapped, _ = app_module.build_calibration_certificate_pdf(
+            complete_payload(), mapped_values_override=long_values,
+        )
+        reader = PdfReader(io.BytesIO(data))
+        self.assertEqual(len(reader.pages), 1)
+        self.assertIsNone(reader.get_fields())
+        self.assertIsNone(reader.pages[0].get('/Annots'))
+        document = fitz.open(stream=data, filetype='pdf')
+        self.assertEqual(document.page_count, 1)
+        self.assertEqual(document[0].rect.width, 612)
+        self.assertEqual(document[0].rect.height, 792)
+        extracted = document[0].get_text()
+        for name in ('Textfield', 'Text1', 'Text2', 'Text3', 'Text6', 'Textfield-0'):
+            lines = app_module.calibration_certificate_field_lines(mapped[name], name)
+            self.assertEqual(len(lines), 2, name)
+            for line in lines:
+                self.assertIn(line, extracted, name)
+        self.assertEqual(mapped, long_values)
+
+    def test_impossible_long_identity_field_is_rejected_without_shortening(self):
+        impossible = dict(app_module.calibration_certificate_values(complete_payload())[0])
+        impossible['Text3'] = 'X' * 5000
+        with self.assertRaisesRegex(ValueError, 'System ID'):
+            app_module.build_calibration_certificate_pdf(
+                complete_payload(), mapped_values_override=impossible,
+            )
 
     def test_signed_pdf_uses_acting_approver_identity(self):
         data, _, _ = app_module.build_calibration_certificate_pdf(

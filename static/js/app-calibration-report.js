@@ -29,40 +29,12 @@
   var CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH = 40;
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   var PDF_MIME = 'application/pdf';
-  var EXACT_FIT_CAPACITIES = {
-    page1_value: { name:'page1_value', maxLength:40, label:'Page 1 identity/value' },
-    page1_narrow: { name:'page1_narrow', maxLength:22, label:'Page 1 narrow value' },
-    page2_result: { name:'page2_result', maxLength:60, label:'Page 2 check result' },
-    page2_detail: { name:'page2_detail', maxLength:30, label:'Page 2 calibration detail' },
-    page3_exposure: { name:'page3_exposure', maxLength:12, label:'Page 3 exposure value' },
-    page3_performance: { name:'page3_performance', maxLength:36, label:'Page 3 performance result' }
-  };
-  var PAGE1_NARROW_FIELDS = ['machine.console_model','machine.console_serial','machine.tube1_model','machine.tube1_serial','machine.tube2_model','machine.tube2_serial'];
   var CERTIFICATE_CATALOG = CONFIG.certificateCatalog && typeof CONFIG.certificateCatalog === 'object' ? CONFIG.certificateCatalog : {};
   var CERTIFICATE_EQUIPMENT_NAMES = Array.isArray(CERTIFICATE_CATALOG.equipment_names) ? CERTIFICATE_CATALOG.equipment_names.map(String) : [];
   var CERTIFICATE_MODELS = Array.isArray(CERTIFICATE_CATALOG.models) ? CERTIFICATE_CATALOG.models.map(String) : [];
   var CERTIFICATE_APPROVED_MODELS = Array.isArray(CERTIFICATE_CATALOG.approved_models) ? CERTIFICATE_CATALOG.approved_models : [];
   var CERTIFICATE_CATALOG_ERROR = '';
   var CERTIFICATE_CATALOG_AVAILABLE = false;
-  var EXACT_FIT_FIELD_PATHS = [
-    'facility.name','facility.address','facility.telephone','facility.email','facility.location',
-    'machine.manufacturer','machine.modality','machine.model','machine.serial_number','machine.console_model','machine.console_serial','machine.tube1_model','machine.tube1_serial','machine.tube2_model','machine.tube2_serial','machine.installation_date',
-    'technical.max_tube_current_ma','technical.max_tube_voltage_kv','technical.tube_current_mas_range','technical.tube_voltage_kvp_range','technical.exposure_time_range','technical.max_rated_power_kw','technical.power_supply','technical.total_inherent_filtration',
-    'calibration.machine_calibration_date','calibration.next_calibration_date','calibration.test_tool_manufacturer','calibration.test_tool_model','calibration.test_tool_serial','calibration.test_tool_calibration_date','calibration.engineer_name'
-  ];
-
-  function fitRuleForPath(path){
-    path = String(path || '');
-    if(PAGE1_NARROW_FIELDS.indexOf(path) >= 0) return EXACT_FIT_CAPACITIES.page1_narrow;
-    if(/^(facility|machine|technical)\./.test(path)) return EXACT_FIT_CAPACITIES.page1_value;
-    if(/^(mechanical_checks|generator_checks)\.\d+\.result$/.test(path)) return EXACT_FIT_CAPACITIES.page2_result;
-    if(/^calibration\./.test(path)) return EXACT_FIT_CAPACITIES.page2_detail;
-    if(/^(?:tube2_output\.)?focal_sizes\.(small|large)$/.test(path)) return EXACT_FIT_CAPACITIES.page3_exposure;
-    if(/^(?:tube2_output\.)?exposure\.(small|large)\.\d+\./.test(path)) return EXACT_FIT_CAPACITIES.page3_exposure;
-    if(/^(?:tube2_output\.)?performance_results\.\d+$/.test(path)) return EXACT_FIT_CAPACITIES.page3_performance;
-    return null;
-  }
-
   var state = blankState();
   var editorBuilt = false;
   var activePage = 1;
@@ -167,7 +139,10 @@
     }else if(temporary){
       report.certificate.model_source = 'temporary';
       report.certificate.model_catalog_id = '';
-      report.certificate.equipment_model = temporaryModelValidation(raw) ? '' : raw.trim();
+      // Keep the entered value intact. The explicit temporary-model validator
+      // reports the 40-character/domain error at final save instead of silently
+      // shortening or dropping the value during state normalization.
+      report.certificate.equipment_model = raw.trim();
     }else{
       report.certificate.equipment_model = '';
       report.certificate.model_source = 'catalog';
@@ -260,8 +235,8 @@
     var rawCertificate = raw.certificate && typeof raw.certificate === 'object' ? raw.certificate : {};
     var rawModelSource = String(rawCertificate.model_source || '').toLowerCase() === 'temporary' ? 'temporary' : 'catalog';
     base.certificate = {
-      bsid:String(rawCertificate.bsid || '').replace(/[\r\n]/g,'').trim().slice(0,40),
-      equipment_model:rawModelSource === 'temporary' ? String(rawCertificate.equipment_model || raw.machine?.model || '').trim().slice(0,40) : '',
+      bsid:String(rawCertificate.bsid || '').replace(/[\r\n]/g,'').trim(),
+      equipment_model:rawModelSource === 'temporary' ? String(rawCertificate.equipment_model || raw.machine?.model || '').trim() : '',
       model_source:rawModelSource,
       model_catalog_id:rawModelSource === 'catalog' ? String(rawCertificate.model_catalog_id || '') : ''
     };
@@ -333,50 +308,6 @@
     var target = object;
     keys.slice(0,-1).forEach(function(key){ if(!target[key] || typeof target[key] !== 'object') target[key] = {}; target = target[key]; });
     target[keys[keys.length - 1]] = value;
-  }
-  function normalizeFitValue(value){ return String(value === undefined || value === null ? '' : value).trim(); }
-  function exactFitLabel(path){
-    var labels = {
-      'facility.name':'Facility Name', 'facility.address':'Address', 'facility.telephone':'Telephone/Mobile No.', 'facility.email':'Email Address', 'facility.location':'Location within the Facility',
-      'machine.manufacturer':'Manufacturer', 'machine.modality':'Equipment Name', 'machine.model':'Model', 'machine.serial_number':'Serial Number', 'machine.console_model':'Control Console Model', 'machine.console_serial':'Control Console Serial Number', 'machine.tube1_model':'X-ray Tube Model (1)', 'machine.tube1_serial':'X-ray Tube Serial Number (1)', 'machine.tube2_model':'X-ray Tube Model (2)', 'machine.tube2_serial':'X-ray Tube Serial Number (2)', 'machine.installation_date':'Date of Installation',
-      'technical.max_tube_current_ma':'Maximum Tube Current mA', 'technical.max_tube_voltage_kv':'Maximum Tube Voltage kV', 'technical.tube_current_mas_range':'Tube Current X time mAs range', 'technical.tube_voltage_kvp_range':'Tube Voltage kVp range', 'technical.exposure_time_range':'Exposure Time Setting range', 'technical.max_rated_power_kw':'Maximum Rated Power kW', 'technical.power_supply':'Power Supply', 'technical.total_inherent_filtration':'Total Inherent Filtration',
-      'calibration.machine_calibration_date':'Date of Machine Calibration', 'calibration.next_calibration_date':'Next Calibration Date', 'calibration.test_tool_manufacturer':'Test Tool Manufacturer', 'calibration.test_tool_model':'Test Tool Model', 'calibration.test_tool_serial':'Test Tool Serial Number', 'calibration.test_tool_calibration_date':'Test Tool Calibration Date', 'calibration.engineer_name':'Service Engineer Name'
-    };
-    return labels[path] || String(path).replace(/\./g,' ');
-  }
-  function exactFitEntries(report){
-    var entries = [];
-    function add(path, label){ var rule = fitRuleForPath(path); if(rule) entries.push({ path:path, label:label || exactFitLabel(path), rule:rule, value:getPath(report, path) }); }
-    EXACT_FIT_FIELD_PATHS.forEach(function(path){ add(path); });
-    [['mechanical_checks',report.mechanical_checks],['generator_checks',report.generator_checks]].forEach(function(group){
-      (group[1] || []).forEach(function(item,index){ add(group[0] + '.' + index + '.result', (item.label || group[0]) + ' result'); });
-    });
-    function addOutputFitEntries(prefix, output, tubeLabel){
-      ['small','large'].filter(function(key){ return output.focal_spots?.[key] !== false; }).forEach(function(key){
-        add(prefix + 'focal_sizes.' + key, tubeLabel + ' ' + (key === 'small' ? 'Small' : 'Large') + ' focal size');
-        (output.exposure?.[key] || []).forEach(function(row,rowIndex){ EXPOSURE_KEYS.forEach(function(field){ add(prefix + 'exposure.' + key + '.' + rowIndex + '.' + field, tubeLabel + ' ' + (key === 'small' ? 'Small' : 'Large') + ' focal spot row ' + (rowIndex + 1) + ' ' + field); }); });
-      });
-      (output.performance_results || []).forEach(function(_,index){ add(prefix + 'performance_results.' + index, tubeLabel + ' performance criterion ' + (index + 1) + ' result'); });
-    }
-    addOutputFitEntries('', report, 'X-ray Tube 1');
-    if(hasTube2Identity(report)) addOutputFitEntries('tube2_output.', report.tube2_output || blankTube2Output(), 'X-ray Tube 2');
-    return entries;
-  }
-  function exactFitViolations(report){
-    return exactFitEntries(report).reduce(function(violations, entry){
-      var raw = String(entry.value === undefined || entry.value === null ? '' : entry.value);
-      if(/[\r\n\t]/.test(raw)){
-        violations.push({ path:entry.path, label:entry.label, maxLength:entry.rule.maxLength, reason:'single_line', message:entry.label + ' must be a single-line value for the supplied form.' });
-      }else if(normalizeFitValue(raw).length > entry.rule.maxLength){
-        violations.push({ path:entry.path, label:entry.label, maxLength:entry.rule.maxLength, reason:'too_long', message:entry.label + ' is too long for the supplied form (maximum ' + entry.rule.maxLength + ' characters).' });
-      }
-      return violations;
-    }, []);
-  }
-  function normalizeReportFitValues(report){
-    var next = clone(report);
-    exactFitEntries(next).forEach(function(entry){ setPath(next, entry.path, normalizeFitValue(entry.value)); });
-    return next;
   }
   function currentTSRData(){ try{ return typeof window.collectTSRData === 'function' ? window.collectTSRData() : {}; }catch(err){ return {}; } }
   function payloadForReportDocument(actionLabel){
@@ -507,8 +438,7 @@
   }
 
   function fieldMarkup(path, label, type, placeholder){
-    var rule = fitRuleForPath(path); var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : '';
-    return '<div class="calibration-report-field"><label>' + escapeHtml(label) + '</label><input data-cr-field="' + escapeHtml(path) + '" type="' + escapeHtml(type || 'text') + '" placeholder="' + escapeHtml(placeholder || '') + '"' + limit + '></div>';
+    return '<div class="calibration-report-field"><label>' + escapeHtml(label) + '</label><input data-cr-field="' + escapeHtml(path) + '" type="' + escapeHtml(type || 'text') + '" placeholder="' + escapeHtml(placeholder || '') + '"></div>';
   }
   function equipmentNameMarkup(){
     var options = '<option value="">Select Equipment Name</option>' + CERTIFICATE_EQUIPMENT_NAMES.map(function(name){ return '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>'; }).join('');
@@ -518,33 +448,31 @@
   }
   function modelMarkup(){
     var options = CERTIFICATE_MODELS.map(function(model){ return '<option value="' + escapeHtml(model) + '"></option>'; }).join('');
-    return '<div class="calibration-report-field calibration-report-catalog-field"><label for="calibration-report-model">2.3 Model</label><input id="calibration-report-model" data-cr-field="machine.model" list="calibration-report-model-catalog" autocomplete="off" maxlength="40" aria-describedby="calibration-report-model-match"><datalist id="calibration-report-model-catalog">' + options + '</datalist><div id="calibration-report-model-match" class="calibration-report-model-match" role="status" aria-live="polite"></div></div>';
+    return '<div class="calibration-report-field calibration-report-catalog-field"><label for="calibration-report-model">2.3 Model</label><input id="calibration-report-model" data-cr-field="machine.model" list="calibration-report-model-catalog" autocomplete="off" aria-describedby="calibration-report-model-match"><datalist id="calibration-report-model-catalog">' + options + '</datalist><div id="calibration-report-model-match" class="calibration-report-model-match" role="status" aria-live="polite"></div></div>';
   }
 
   function checkRows(kind, source){
     return source.map(function(item, index){
-      var rule = fitRuleForPath(kind + '_checks.' + index + '.result');
-      var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : '';
-      return '<tr><td><div class="calibration-report-check-label">' + escapeHtml(item.label) + '</div></td><td><div class="calibration-report-check-criteria">' + escapeHtml(item.criteria) + '</div></td><td><textarea class="calibration-report-check-result" data-cr-check="' + kind + ':' + index + '" placeholder="Enter result"' + limit + '></textarea></td></tr>';
+      return '<tr><td><div class="calibration-report-check-label">' + escapeHtml(item.label) + '</div></td><td><div class="calibration-report-check-criteria">' + escapeHtml(item.criteria) + '</div></td><td><textarea class="calibration-report-check-result" data-cr-check="' + kind + ':' + index + '" placeholder="Enter result"></textarea></td></tr>';
     }).join('');
   }
 
   function exposureTable(key, title, headers, tube){
     var groupKey = outputDomKey(tube,key); var pathPrefix = tube === 'tube2' ? 'tube2_output.' : '';
     var body = Array.from({ length: CALIBRATION_REPORT_EXPOSURE_ROW_COUNT }, function(_, row){
-      return '<tr>' + headers.map(function(header, column){ var rule = fitRuleForPath(pathPrefix + 'exposure.' + key + '.' + row + '.' + EXPOSURE_KEYS[column]); var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : ''; var label = title + ' row ' + (row + 1) + ' ' + header; var unitAttrs = column === 2 ? ' data-cr-exposure-unit-input="' + escapeHtml(groupKey) + '" data-cr-exposure-label-base="' + escapeHtml(title + ' row ' + (row + 1)) + '"' : ''; return '<td><input class="calibration-report-exposure-input" data-cr-exposure="' + escapeHtml(groupKey + ':' + row + ':' + column) + '" aria-label="' + escapeHtml(label) + '"' + unitAttrs + limit + '></td>'; }).join('') + '</tr>';
+      return '<tr>' + headers.map(function(header, column){ var label = title + ' row ' + (row + 1) + ' ' + header; var unitAttrs = column === 2 ? ' data-cr-exposure-unit-input="' + escapeHtml(groupKey) + '" data-cr-exposure-label-base="' + escapeHtml(title + ' row ' + (row + 1)) + '"' : ''; return '<td><input class="calibration-report-exposure-input" data-cr-exposure="' + escapeHtml(groupKey + ':' + row + ':' + column) + '" aria-label="' + escapeHtml(label) + '"' + unitAttrs + '></td>'; }).join('') + '</tr>';
     }).join('');
     var label = key === 'small' ? 'SMALL' : 'LARGE';
     var unitName = 'calibration-report-exposure-unit-' + groupKey;
     var unitOptions = EXPOSURE_CURRENT_UNITS.map(function(unit){ return '<label class="calibration-report-exposure-unit-option"><input type="radio" name="' + unitName + '" value="' + unit + '" data-cr-exposure-unit="' + groupKey + '" aria-label="' + escapeHtml(label + ' exposure current unit ' + unit) + '"> <span>' + unit + '</span></label>'; }).join('');
     var tableHeaders = headers.map(function(header, column){ return '<th' + (column === 2 ? ' data-cr-exposure-unit-heading="' + groupKey + '"' : '') + '>' + escapeHtml(header) + '</th>'; }).join('');
-    return '<div class="calibration-report-section calibration-report-focal-group" data-cr-focal-group="' + groupKey + '"><div class="calibration-report-section-title">' + escapeHtml(title) + '</div><div class="calibration-report-reference-bar"><label class="calibration-report-focal-toggle"><input type="checkbox" data-cr-focal-spot="' + groupKey + '" aria-label="Include ' + label + ' focal spot"> <span>Include ' + label + '</span></label><fieldset class="calibration-report-exposure-unit" data-cr-exposure-unit-group="' + groupKey + '"><legend>Current unit</legend>' + unitOptions + '</fieldset><label class="calibration-report-focal-size">FOCAL SIZE: <input type="text" inputmode="decimal" maxlength="12" data-cr-focal-size="' + groupKey + '" aria-label="' + label + ' focal size"></label><span>SID: 100cm</span></div><div class="calibration-report-exposure-scroll"><table class="calibration-report-exposure-table"><thead><tr>' + tableHeaders + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+    return '<div class="calibration-report-section calibration-report-focal-group" data-cr-focal-group="' + groupKey + '"><div class="calibration-report-section-title">' + escapeHtml(title) + '</div><div class="calibration-report-reference-bar"><label class="calibration-report-focal-toggle"><input type="checkbox" data-cr-focal-spot="' + groupKey + '" aria-label="Include ' + label + ' focal spot"> <span>Include ' + label + '</span></label><fieldset class="calibration-report-exposure-unit" data-cr-exposure-unit-group="' + groupKey + '"><legend>Current unit</legend>' + unitOptions + '</fieldset><label class="calibration-report-focal-size">FOCAL SIZE: <input type="text" inputmode="decimal" data-cr-focal-size="' + groupKey + '" aria-label="' + label + ' focal size"></label><span>SID: 100cm</span></div><div class="calibration-report-exposure-scroll"><table class="calibration-report-exposure-table"><thead><tr>' + tableHeaders + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
   }
 
   function buildEditor(){
     function outputPageMarkup(page,tube,tubeLabel){
       var prefix = tube === 'tube2' ? 'tube2_output.' : '';
-      var performanceRows = SOURCE.performance.map(function(criteria,index){ var rule = fitRuleForPath(prefix + 'performance_results.' + index); var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : ''; var outputKey = tube === 'tube2' ? 'tube2:' : ''; return '<tr><td><div class="calibration-report-check-criteria">' + escapeHtml(criteria) + '</div></td><td><textarea class="calibration-report-performance-result" data-cr-performance="' + outputKey + index + '" placeholder="Enter result"' + limit + '></textarea></td></tr>'; }).join('');
+      var performanceRows = SOURCE.performance.map(function(criteria,index){ var outputKey = tube === 'tube2' ? 'tube2:' : ''; return '<tr><td><div class="calibration-report-check-criteria">' + escapeHtml(criteria) + '</div></td><td><textarea class="calibration-report-performance-result" data-cr-performance="' + outputKey + index + '" placeholder="Enter result"></textarea></td></tr>'; }).join('');
       var hidden = tube === 'tube2' && !hasTube2Identity(state) ? ' hidden' : '';
       return '<section class="calibration-report-page" data-cr-page-panel="' + page + '"' + hidden + '><div class="calibration-report-paper-title">AVERAGE EXPOSURE OUTPUT · ' + tubeLabel + '</div>'
         + exposureTable('small','FOCAL SPOT: SMALL',SOURCE.exposureHeadersSmall,tube) + exposureTable('large','FOCAL SPOT: LARGE',SOURCE.exposureHeadersLarge,tube)
@@ -781,10 +709,6 @@
     for(var rowIndex = 0; rowIndex < matrix.length; rowIndex += 1){
       for(var columnIndex = 0; columnIndex < matrix[rowIndex].length; columnIndex += 1){
         var value = String(matrix[rowIndex][columnIndex] || '');
-        if(value.length > EXACT_FIT_CAPACITIES.page3_exposure.maxLength){
-          showStatus('Excel paste could not be applied: each measurement cell must be 12 characters or fewer.', 'danger');
-          return;
-        }
         var targetRow = startRow + rowIndex;
         var targetColumn = startColumn + columnIndex;
         var target = qa('[data-cr-exposure]').find(function(candidate){
@@ -806,7 +730,11 @@
     renderModelMatch();
   }
 
-  function normalizeCertificateBsid(value){ return String(value === undefined || value === null ? '' : value).replace(/[\r\n]/g,'').trim().slice(0,40); }
+  function normalizeCertificateBsid(value){ return String(value === undefined || value === null ? '' : value).replace(/[\r\n]/g,'').trim(); }
+  function certificateBsidValidation(value){
+    var text = normalizeCertificateBsid(value);
+    return text.length > 40 ? 'BSID values must be 40 characters or fewer.' : '';
+  }
   function formatCertificateDate(value){
     var match = String(value || '').trim().match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
     return match ? match[1] + '/' + match[2] + '/' + match[3] : '';
@@ -843,7 +771,17 @@
   var CERTIFICATE_DATA_MIN_SIZE = 8.5;
   var CERTIFICATE_DATA_PADDING = 6;
   var CERTIFICATE_FIELD_LABELS = { Textfield:'Certificate No.', Text1:'Equipment Name', Text2:'Equipment Model', Text3:'System ID', Text4:'Calibration Date', Text5:'Next Calibration Date', Text6:'Installed At', 'Textfield-0':'TSR No.' };
-  var CERTIFICATE_TEXT6_WIDGET_RECT = { left:210.692, bottom:495.087, right:546.7, top:511.148 };
+  var CERTIFICATE_TWO_LINE_FIELDS = ['Textfield','Text1','Text2','Text3','Text6','Textfield-0'];
+  var CERTIFICATE_FIELD_WIDGET_RECTS = {
+    Textfield:{ left:210.269, bottom:597.369, right:543.742, top:611.316 },
+    Text1:{ left:210.692, bottom:580.885, right:544.164, top:595.255 },
+    Text2:{ left:210.269, bottom:564.402, right:545.01, top:578.772 },
+    Text3:{ left:211.537, bottom:547.496, right:545.432, top:561.866 },
+    Text4:{ left:211.115, bottom:531.435, right:545.855, top:545.383 },
+    Text5:{ left:211.537, bottom:513.684, right:544.164, top:527.631 },
+    Text6:{ left:210.692, bottom:495.087, right:546.7, top:511.148 },
+    'Textfield-0':{ left:209.424, bottom:479.872, right:544.587, top:494.664 }
+  };
   var CERTIFICATE_TEXT6_TWO_LINE_SIZE = 6.5;
   var CERTIFICATE_TEXT6_TWO_LINE_LINE_HEIGHT = 6.5;
   var CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET = 2.5;
@@ -857,10 +795,12 @@
     var offenders = required.filter(function(item){ return item.value && font.widthOfTextAtSize(item.value, CERTIFICATE_DATA_MIN_SIZE) > item.width + 0.01; }).map(function(item){ return CERTIFICATE_FIELD_LABELS[item.name]; });
     throw certificateError('calibration_certificate_value_fit', 'Calibration Certificate value cannot fit at ' + CERTIFICATE_DATA_MIN_SIZE + ' points: ' + (offenders.join(', ') || 'a mapped field') + '.');
   }
-  function certificateInstalledAtLines(value, font){
+  function certificateFieldLines(value, fieldName, font){
     var text = String(value === undefined || value === null ? '' : value).trim();
     if(!text) return [];
-    var maxWidth = CERTIFICATE_FIELD_WIDTHS.Text6 - CERTIFICATE_DATA_PADDING;
+    var name = String(fieldName || '');
+    var maxWidth = CERTIFICATE_FIELD_WIDTHS[name] - CERTIFICATE_DATA_PADDING;
+    var label = CERTIFICATE_FIELD_LABELS[name] || name || 'a mapped field';
     if(font.widthOfTextAtSize(text, CERTIFICATE_DATA_MIN_SIZE) <= maxWidth + 0.01) return [text];
     var boundaryPattern = /\s+/g;
     var boundary;
@@ -869,7 +809,7 @@
       var first = text.slice(0, boundary.index).replace(/\s+$/, '');
       var second = text.slice(boundary.index + boundary[0].length).replace(/^\s+/, '');
       if(!first || !second) continue;
-      if(font.widthOfTextAtSize(first, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01 && font.widthOfTextAtSize(second, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01) boundaryLines = [first, second];
+       if(font.widthOfTextAtSize(first, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01 && font.widthOfTextAtSize(second, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01) boundaryLines = [first, second];
     }
     if(boundaryLines) return boundaryLines;
     for(var cut = text.length - 1; cut > 0; cut -= 1){
@@ -878,25 +818,38 @@
       if(!splitFirst || !splitSecond) continue;
       if(font.widthOfTextAtSize(splitFirst, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01 && font.widthOfTextAtSize(splitSecond, CERTIFICATE_TEXT6_TWO_LINE_SIZE) <= maxWidth + 0.01) return [splitFirst, splitSecond];
     }
-    throw certificateError('calibration_certificate_value_fit', 'Calibration Certificate value cannot fit in two lines at ' + CERTIFICATE_TEXT6_TWO_LINE_SIZE + ' points: Installed At.');
+    throw certificateError('calibration_certificate_value_fit', 'Calibration Certificate value cannot fit in two lines at ' + CERTIFICATE_TEXT6_TWO_LINE_SIZE + ' points: ' + label + '.');
   }
-  function certificateInstalledAtTwoLineLayout(value, font){
+  function certificateTwoLineLayout(value, fieldName, font){
     var text = String(value === undefined || value === null ? '' : value).trim();
     if(!text) return null;
-    var maxWidth = CERTIFICATE_FIELD_WIDTHS.Text6 - CERTIFICATE_DATA_PADDING;
+    var name = String(fieldName || '');
+    var rect = CERTIFICATE_FIELD_WIDGET_RECTS[name];
+    var maxWidth = CERTIFICATE_FIELD_WIDTHS[name] - CERTIFICATE_DATA_PADDING;
     if(font.widthOfTextAtSize(text, CERTIFICATE_DATA_MIN_SIZE) <= maxWidth + 0.01) return null;
-    var lines = certificateInstalledAtLines(text, font);
-    if(lines.length !== 2) throw certificateError('calibration_certificate_value_fit', 'Calibration Certificate value cannot fit in two lines at ' + CERTIFICATE_TEXT6_TWO_LINE_SIZE + ' points: Installed At.');
+    var lines = certificateFieldLines(text, name, font);
+    if(lines.length !== 2) throw certificateError('calibration_certificate_value_fit', 'Calibration Certificate value cannot fit in two lines at ' + CERTIFICATE_TEXT6_TWO_LINE_SIZE + ' points: ' + (CERTIFICATE_FIELD_LABELS[name] || name) + '.');
+    var bottomOffset = name === 'Text6' ? CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET : Math.max(1.5, ((rect.top - rect.bottom) - (CERTIFICATE_TEXT6_TWO_LINE_SIZE * 2)) / 2);
     return {
       lines:lines,
       size:CERTIFICATE_TEXT6_TWO_LINE_SIZE,
-      x:CERTIFICATE_TEXT6_WIDGET_RECT.left + CERTIFICATE_DATA_PADDING / 2,
+      x:rect.left + CERTIFICATE_DATA_PADDING / 2,
       baselines:[
-        CERTIFICATE_TEXT6_WIDGET_RECT.bottom + CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET + CERTIFICATE_TEXT6_TWO_LINE_LINE_HEIGHT,
-        CERTIFICATE_TEXT6_WIDGET_RECT.bottom + CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET
+        rect.bottom + bottomOffset + CERTIFICATE_TEXT6_TWO_LINE_LINE_HEIGHT,
+        rect.bottom + bottomOffset
       ]
     };
   }
+  function certificateTwoLineLayouts(values, font){
+    var layouts = {};
+    CERTIFICATE_TWO_LINE_FIELDS.forEach(function(name){
+      var layout = certificateTwoLineLayout(values?.[name], name, font);
+      if(layout) layouts[name] = layout;
+    });
+    return layouts;
+  }
+  function certificateInstalledAtLines(value, font){ return certificateFieldLines(value, 'Text6', font); }
+  function certificateInstalledAtTwoLineLayout(value, font){ return certificateTwoLineLayout(value, 'Text6', font); }
   function renderCertificateControls(){
     var input = q('#calibration-report-bsid');
     var preview = q('#calibration-report-certificate-number');
@@ -1088,9 +1041,9 @@
   }
   function validateForFinalSave(payload){
     var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : state; if(!isActive(report)) return { ok:true, missing:[] };
-    var fit = exactFitViolations(report);
-    if(fit.length){ return { ok:false, missing:fit.map(function(item){ return { path:item.path, label:item.label }; }), fit:fit, message:fit[0].message + (fit.length > 1 ? ' Fix the marked fields before generating the PDF.' : '') }; }
     var missing = missingFields(report); if(missing.length) return { ok:false, missing:missing, message:'Complete the Calibration Report or remove it before saving: ' + missing.slice(0,4).map(function(item){ return item.label; }).join(', ') + (missing.length > 4 ? ', and more.' : '.') };
+    var bsidError = certificateBsidValidation(report.certificate?.bsid);
+    if(bsidError) return { ok:false, missing:[{ path:'certificate.bsid', label:'Valid BSID' }], message:bsidError };
     if(!CERTIFICATE_CATALOG_AVAILABLE){
       return { ok:false, missing:[{ path:'machine.modality', label:'Calibration Certificate catalog' }], message:'The Calibration Certificate catalog is unavailable or invalid. Reload Create TSR before saving the final report.' };
     }
@@ -1347,8 +1300,8 @@
     var nodes = textBlocks(cellXml); var resultIndex = -1; var resultText = '';
     nodes.some(function(node, index){ var text = xmlUnescape(node.xml.replace(/^<w:t\b[^>]*>/,'').replace(/<\/w:t>$/,'')); if(text.indexOf('RESULT:') >= 0){ resultIndex = index; resultText = text; return true; } return false; });
     if(resultIndex < 0) throw templateSlotError('result line');
-    var node = nodes[resultIndex]; var openEnd = node.xml.indexOf('>'); var labelIndex = resultText.indexOf('RESULT:'); var replacementText = resultText.slice(0, labelIndex) + 'RESULT: ' + singleLineDocxText(value);
-    var replacementNode = node.xml.slice(0, openEnd + 1) + xmlEscape(replacementText) + '</w:t>';
+    var node = nodes[resultIndex]; var openEnd = node.xml.indexOf('>'); var labelIndex = resultText.indexOf('RESULT:'); var prefix = resultText.slice(0, labelIndex) + 'RESULT: '; var lines = normalizedDocxText(value).replace(/\r\n?/g,'\n').split('\n');
+    var replacementNode = node.xml.slice(0, openEnd + 1) + xmlEscape(prefix + (lines.shift() || '')) + '</w:t>' + lines.map(function(line){ return '<w:br/>' + node.xml.slice(0, openEnd + 1) + xmlEscape(line) + '</w:t>'; }).join('');
     cellXml = cellXml.slice(0, node.start) + replacementNode + cellXml.slice(node.end);
     var updatedNodes = textBlocks(cellXml); var removed = [];
     updatedNodes.forEach(function(updated, index){
@@ -1475,8 +1428,7 @@
 
   async function preparePayload(payload, ownerId, options){
     var next = Object.assign({}, payload || {}); var report = next.calibration_report ? normalizeState(next.calibration_report) : (isActive(state) ? normalizeState(state) : blankState()); if(!isActive(report)) return next;
-    report = normalizeReportFitValues(report);
-    var validation = validateForFinalSave({ calibration_report:report }); if(!validation.ok){ var validationError = new Error(validation.message); validationError.code = validation.fit?.length ? 'calibration_report_exact_fit' : 'calibration_report_incomplete'; validationError.missing = validation.missing; validationError.fit = validation.fit || []; throw validationError; }
+    var validation = validateForFinalSave({ calibration_report:report }); if(!validation.ok){ var validationError = new Error(validation.message); validationError.code = 'calibration_report_incomplete'; validationError.missing = validation.missing; throw validationError; }
     var opts = options || {}; var fp = fingerprint(report); var filename = filenameFor(next, report); var blobId = 'calibration-report-' + fp; var existingId = String(report.generated?.blob_id || '').trim(); var existingFingerprint = String(report.generated?.fingerprint || '').trim(); var existingMatches = !!existingId && existingFingerprint === fp; var supersededBlobIds = reportBlobIdsForCleanup(report).filter(function(id){ return id !== blobId; }); var record = null;
     if(!existingMatches && !opts.regenerate && !opts.finalize) throw notFinalizedError();
     if(existingMatches && typeof window.loadOfflineTSRBlobRecord === 'function') record = await window.loadOfflineTSRBlobRecord(existingId);
@@ -1557,22 +1509,29 @@
     var missing = expected.filter(function(name){ return available.indexOf(name) < 0; });
     if(missing.length) throw certificateError('calibration_certificate_template_fields', 'The Calibration Certificate template is missing expected field(s): ' + missing.join(', ') + '.');
     var fieldData = certificateFieldValues(payload, report);
+    var bsidError = certificateBsidValidation(report?.certificate?.bsid);
+    if(bsidError) throw certificateError('calibration_certificate_domain', bsidError);
+    if(String(report?.certificate?.model_source || '').toLowerCase() === 'temporary'){
+      var temporaryError = temporaryModelValidation(String(report?.machine?.model || ''));
+      if(temporaryError) throw certificateError('calibration_certificate_domain', temporaryError);
+    }
     var helvetica = await document.embedFont(window.PDFLib.StandardFonts.Helvetica);
-    var installedAtLayout = certificateInstalledAtTwoLineLayout(fieldData.values.Text6, helvetica);
-    var dataSize = certificateDataFontSize(fieldData.values, helvetica, installedAtLayout ? ['Text6'] : []);
-    Object.keys(fieldData.values).forEach(function(name){ var field = form.getTextField(name); if(field.acroField && typeof field.acroField.setDefaultAppearance === 'function') field.acroField.setDefaultAppearance('/Helv 10 Tf 0 g'); field.setFontSize(dataSize); field.setText(name === 'Text6' && installedAtLayout ? '' : fieldData.values[name]); });
+    var twoLineLayouts = certificateTwoLineLayouts(fieldData.values, helvetica);
+    var twoLineNames = Object.keys(twoLineLayouts);
+    var dataSize = certificateDataFontSize(fieldData.values, helvetica, twoLineNames);
+    Object.keys(fieldData.values).forEach(function(name){ var field = form.getTextField(name); if(field.acroField && typeof field.acroField.setDefaultAppearance === 'function') field.acroField.setDefaultAppearance('/Helv 10 Tf 0 g'); field.setFontSize(dataSize); field.setText(twoLineLayouts[name] ? '' : fieldData.values[name]); });
     // Blank the legacy identity widget. Its fixed page text is absent from
     // the runtime-v2 asset, so no opaque rectangle is needed.
     form.getTextField('Rodito Aretano Jr').setText('');
     form.updateFieldAppearances(helvetica);
     form.flatten();
-    if(installedAtLayout){
+    if(twoLineNames.length){
       var page = document.getPages()[0];
-      installedAtLayout.lines.forEach(function(line, index){ page.drawText(line, { x:installedAtLayout.x, y:installedAtLayout.baselines[index], size:installedAtLayout.size, font:helvetica }); });
+      twoLineNames.forEach(function(name){ var layout = twoLineLayouts[name]; layout.lines.forEach(function(line, index){ page.drawText(line, { x:layout.x, y:layout.baselines[index], size:layout.size, font:helvetica }); }); });
     }
     if(document.catalog && typeof document.catalog.delete === 'function' && window.PDFLib.PDFName?.of) document.catalog.delete(window.PDFLib.PDFName.of('AcroForm'));
     var bytes = await document.save();
-    return { blob:new Blob([bytes], { type:'application/pdf' }), filename:certificateFilename(fieldData.values.Textfield), missing:fieldData.missing, dataSize:dataSize, installedAtLines:installedAtLayout ? installedAtLayout.lines : null };
+    return { blob:new Blob([bytes], { type:'application/pdf' }), filename:certificateFilename(fieldData.values.Textfield), missing:fieldData.missing, dataSize:dataSize, installedAtLines:twoLineLayouts.Text6 ? twoLineLayouts.Text6.lines : null, twoLineFields:twoLineNames };
   }
   async function generateCertificateSample(){
     try{
@@ -1586,13 +1545,11 @@
 
   async function generateSample(){
     try{
-      var payload = await payloadForReportDocument('Calibration Report sample'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); report = normalizeReportFitValues(report);
-      var fit = exactFitViolations(report);
-      if(fit.length){ var fitError = new Error(fit[0].message + (fit.length > 1 ? ' Fix the marked fields before generating the PDF.' : '')); fitError.code = 'calibration_report_exact_fit'; fitError.missing = fit.map(function(item){ return { path:item.path, label:item.label }; }); throw fitError; }
+      var payload = await payloadForReportDocument('Calibration Report sample'); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state);
       var missing = missingFields(report);
       var filename = 'SAMPLE_' + filenameFor(payload, report); var built = await buildDocx(payload, report, filename); var pdf = await convertDocxToPdf(built.blob, filename); downloadBlob(pdf.blob, pdf.filename); showStatus('Sample Calibration Report PDF downloaded. It is not attached to the TSR.', 'success');
       if(missing.length){ showStatus('Sample Calibration Report PDF downloaded. It is not attached. Some required fields are still missing: ' + missing.slice(0,4).map(function(item){ return item.label; }).join(', ') + (missing.length > 4 ? ', and more.' : '.'), 'warning'); }
-    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Sample PDF generation failed',err); showStatus(err?.message || 'Calibration Report sample PDF could not be generated.','danger'); } }
+    }catch(err){ if(err?.code === 'calibration_report_incomplete'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Sample PDF generation failed',err); showStatus(err?.message || 'Calibration Report sample PDF could not be generated.','danger'); } }
   }
   async function saveFinalReport(){
     try{
@@ -1620,7 +1577,7 @@
       var durableIndexedDB = persistenceSource === 'offline_tsr_page' || persistenceSource === 'indexeddb';
       if(!durableIndexedDB || persisted.attachments_not_durable){ var storageError = new Error('Calibration Report final attachment was created, but it was not saved durably in IndexedDB. Keep this editor open and try Save Final Report again when durable browser storage is available.'); storageError.code = 'calibration_report_attachment_not_durable'; throw storageError; }
       showStatus('Final Calibration Report saved and attached to the TSR draft. The certificate will queue after TSR sync.', 'success'); renderCard(); close();
-    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Final save failed',err); showStatus(err?.message || 'Final Calibration Report could not be saved. Try again.','danger'); } }
+    }catch(err){ if(err?.code === 'calibration_report_incomplete'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Final save failed',err); showStatus(err?.message || 'Final Calibration Report could not be saved. Try again.','danger'); } }
   }
   async function download(){
     try{
@@ -1628,7 +1585,7 @@
       if(!attachment || !hasGeneratedMetadata(report)){ throw notFinalizedError(); }
       var blob = await resolveAttachmentBlob(attachment); if(!blob){ generatedBlobState = 'missing'; renderCard(); syncAutoDocument(); throw missingGeneratedBlobError(); }
       var pdf = await convertDocxToPdf(blob, attachment.filename || report.generated.filename || 'Calibration_Report.docx'); downloadBlob(pdf.blob, pdf.filename); showStatus('Final Calibration Report PDF downloaded.', 'success');
-    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else showStatus(err?.message || 'Save Final Report before downloading the final PDF.','danger'); }
+    }catch(err){ if(err?.code === 'calibration_report_incomplete'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else showStatus(err?.message || 'Save Final Report before downloading the final PDF.','danger'); }
   }
 
   function renderCard(){
@@ -1753,6 +1710,6 @@
   }
   function ensureEditor(){ if(!editorBuilt) buildEditor(); }
 
-  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, setSaveStatusFromTSR:setCalibrationSaveStatus, markUploaded:markUploaded, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
+  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, setSaveStatusFromTSR:setCalibrationSaveStatus, markUploaded:markUploaded, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); } };
   document.addEventListener('DOMContentLoaded', function(){ ensureEditor(); renderCard(); q('#calibration-report-close')?.addEventListener('click', close); q('#calibration-report-save')?.addEventListener('click', saveReportDraft); q('#calibration-report-generate')?.addEventListener('click', generateSample); q('#calibration-report-certificate-generate')?.addEventListener('click', generateCertificateSample); q('#calibration-report-final-save')?.addEventListener('click', saveFinalReport); q('#calibration-report-download')?.addEventListener('click', download); q('#calibration-report-clear')?.addEventListener('click', clearForm); q('#calibration-report-create-btn')?.addEventListener('click', createReport); q('#calibration-report-toolbar-remove')?.addEventListener('click', removeReport); document.addEventListener('keydown', handleDialogKeydown); });
 })();

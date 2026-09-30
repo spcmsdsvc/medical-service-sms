@@ -1,9 +1,11 @@
 import base64
 import hashlib
 import json
+import os
 import pathlib
 import re
 import subprocess
+import tempfile
 import unittest
 import zipfile
 import xml.etree.ElementTree as ET
@@ -253,48 +255,29 @@ if (partialTube2Validation.ok || !partialTube2Validation.missing.some(item => it
 const missingTube2Output = JSON.parse(JSON.stringify(complete)); missingTube2Output.tube2_output.performance_results[0] = '';
 const missingTube2Validation = api.validateForFinalSave({ calibration_report:missingTube2Output });
 if (missingTube2Validation.ok || !missingTube2Validation.missing.some(item => item.path === 'tube2_output.performance_results.0')) throw new Error('incomplete Tube 2 output did not block final save independently');
-const tube2Overflow = JSON.parse(JSON.stringify(complete)); tube2Overflow.tube2_output.exposure.small[0].nominal_kvp = 'x'.repeat(13);
-const tube2OverflowValidation = api.validateForFinalSave({ calibration_report:tube2Overflow });
-if (tube2OverflowValidation.ok || tube2OverflowValidation.fit[0].path !== 'tube2_output.exposure.small.0.nominal_kvp') throw new Error('Tube 2 exact-fit limit was not applied');
+const tube2Long = JSON.parse(JSON.stringify(complete)); tube2Long.tube2_output.exposure.small[0].nominal_kvp = 'x'.repeat(80);
+const tube2LongValidation = api.validateForFinalSave({ calibration_report:tube2Long });
+if (!tube2LongValidation.ok) throw new Error('Tube 2 long measurement was rejected by a presentation limit');
 const singleTube = JSON.parse(JSON.stringify(complete)); singleTube.machine.tube2_model = ''; singleTube.machine.tube2_serial = '';
 if (!api.validateForFinalSave({ calibration_report:singleTube }).ok) throw new Error('single-tube validation incorrectly required Tube 2 output');
 api.apply(singleTube);
 if (!editor.elements.find(element => element.getAttribute('data-cr-page') === '4').hidden || !editor.elements.find(element => element.getAttribute('data-cr-page-panel') === '4').hidden) throw new Error('Tube 2 tab and panel did not hide when its identity pair was removed');
 api.apply(complete);
 if (api.collect().tube2_output.exposure.small[0].nominal_kvp !== '22.2') throw new Error('Tube 2 draft entries did not restore with its identity pair');
-const fitRules = api.getExactFitRules();
-const boundaryCases = [
-  ['facility.name', 'page1_value'],
-  ['machine.console_model', 'page1_narrow'],
-  ['mechanical_checks.0.result', 'page2_result'],
-  ['calibration.test_tool_model', 'page2_detail'],
-  ['exposure.small.0.nominal_kvp', 'page3_exposure'],
-  ['performance_results.0', 'page3_performance']
-];
 function setNested(root, path, value) {
   const parts = path.split('.');
   let target = root;
   for (const part of parts.slice(0, -1)) target = target[part];
   target[parts[parts.length - 1]] = value;
 }
-for (const [fieldPath, ruleName] of boundaryCases) {
-  const accepted = JSON.parse(JSON.stringify(complete));
-  setNested(accepted, fieldPath, 'x'.repeat(fitRules[ruleName].maxLength));
-  if (!api.validateForFinalSave({ calibration_report:accepted }).ok) throw new Error(`accepted exact-fit boundary rejected for ${fieldPath}`);
-  const rejected = JSON.parse(JSON.stringify(complete));
-  setNested(rejected, fieldPath, 'x'.repeat(fitRules[ruleName].maxLength + 1));
-  const rejectedValidation = api.validateForFinalSave({ calibration_report:rejected });
-  if (rejectedValidation.ok || rejectedValidation.fit[0].path !== fieldPath) throw new Error(`first rejected exact-fit boundary accepted for ${fieldPath}`);
-  const newline = JSON.parse(JSON.stringify(complete));
-  setNested(newline, fieldPath, 'x\ny');
-  if (api.validateForFinalSave({ calibration_report:newline }).ok) throw new Error(`embedded line break accepted for ${fieldPath}`);
-}
-const overflow = JSON.parse(JSON.stringify(complete));
-setNested(overflow, 'facility.name', 'x'.repeat(fitRules.page1_value.maxLength + 1));
-let overflowCode = '';
-try { await api.preparePayload({ calibration_report:overflow, attachments:[] }, 'node-overflow', { regenerate:true }); }
-catch (error) { overflowCode = error.code || ''; }
-if (overflowCode !== 'calibration_report_exact_fit' || records.size) throw new Error('exact-fit overflow was not blocked before Blob creation');
+const longReport = JSON.parse(JSON.stringify(complete));
+setNested(longReport, 'facility.name', 'Clinic & Sons <Radiology> — ' + 'x'.repeat(80) + '\nSecond line');
+setNested(longReport, 'machine.console_model', 'Console model ' + 'y'.repeat(50));
+setNested(longReport, 'mechanical_checks.0.result', 'Pass & verified\nUnicode ✓');
+setNested(longReport, 'calibration.test_tool_model', 'Tool model ' + 'z'.repeat(50));
+setNested(longReport, 'exposure.small.0.nominal_kvp', '80-' + '1'.repeat(40));
+setNested(longReport, 'performance_results.0', 'Measured within tolerance\nUnicode ✓');
+if (!api.validateForFinalSave({ calibration_report:longReport }).ok) throw new Error('long report fields were rejected by a presentation limit');
 if (addedDocuments !== 0) throw new Error('complete report without a generated Blob added the document chip');
 const prepared = await api.preparePayload({ calibration_report: complete, attachments: [] }, 'node-test', { regenerate:true });
 const generated = prepared.calibration_report.generated;
@@ -407,12 +390,13 @@ indexedModalClosed = !finalModalOpen;
 if (process.env.CALIBRATION_REPORT_BOUNDARY_DIR) {
   api.apply(complete);
   documents.value = 'Calibration Report';
-  for (const [fieldPath, ruleName] of boundaryCases) {
-    const boundary = JSON.parse(JSON.stringify(complete));
-    setNested(boundary, fieldPath, 'x'.repeat(fitRules[ruleName].maxLength));
-    const boundaryPayload = await api.preparePayload({ calibration_report:boundary, attachments:[] }, 'node-boundary', { regenerate:true });
-    const boundaryRecord = records.get(boundaryPayload.calibration_report.generated.blob_id);
-    fs.writeFileSync(path.join(process.env.CALIBRATION_REPORT_BOUNDARY_DIR, ruleName + '.docx'), Buffer.from(await boundaryRecord.blob.arrayBuffer()));
+  const boundaryPayload = await api.preparePayload({ calibration_report:longReport, attachments:[] }, 'node-boundary', { regenerate:true });
+  const boundaryRecord = records.get(boundaryPayload.calibration_report.generated.blob_id);
+  fs.writeFileSync(path.join(process.env.CALIBRATION_REPORT_BOUNDARY_DIR, 'long-fields.docx'), Buffer.from(await boundaryRecord.blob.arrayBuffer()));
+  const boundaryZip = await context.JSZip.loadAsync(await boundaryRecord.blob.arrayBuffer());
+  const boundaryDocument = await boundaryZip.file('word/document.xml').async('string');
+  for (const marker of ['Clinic &amp; Sons &lt;Radiology&gt;', 'Second line', 'Console model', 'Pass &amp; verified', 'Unicode ✓', 'Tool model', '80-1111111111111111111111111111111111111111', 'Measured within tolerance']) {
+    if (!boundaryDocument.includes(marker)) throw new Error(`long report DOCX is missing ${marker}`);
   }
 }
 
@@ -760,9 +744,9 @@ if (!tube2 || !paste(tube2, 'TUBE2\t')) throw new Error('Tube 2 rectangular grid
 report = api.collect();
 if (report.tube2_output.exposure.small[0].nominal_kvp !== 'TUBE2' || report.exposure.small[1].nominal_kvp !== '80') throw new Error('Tube 1 and Tube 2 paste state is not independent');
 
-const beforeLong = JSON.stringify(report);
-if (!paste(first, '1234567890123\tok')) throw new Error('overlong paste was not intercepted');
-if (JSON.stringify(api.collect()) !== beforeLong || !statuses.at(-1)?.message.includes('could not be applied')) throw new Error('overlong paste was not atomic or actionable');
+if (!paste(first, '1234567890123\tok')) throw new Error('long paste was not intercepted');
+report = api.collect();
+if (report.exposure.small[1].nominal_kvp !== '1234567890123' || report.exposure.small[1].measured_kvp !== 'ok') throw new Error('long paste was shortened or not applied');
 
 const edge = cell('small:7:6');
 const beforeBounds = JSON.stringify(api.collect());
@@ -907,7 +891,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('overflow-x:auto', self.css_source)
 
     def test_result_capacity_excel_paste_and_eight_percent_contract(self):
-        self.assertIn("page2_result: { name:'page2_result', maxLength:60", self.script_source)
+        self.assertNotIn('page2_result', self.script_source)
+        self.assertNotIn('data-cr-fit-class', self.script_source)
+        self.assertNotIn('calibration_report_exact_fit', self.script_source)
         self.assertIn('function onEditorPaste', self.script_source)
         self.assertIn("editor.addEventListener('paste', onEditorPaste)", self.script_source)
         self.assertIn('±8% for voltages less than or equal to 100kVp', self.script_source)
@@ -936,9 +922,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('?v=11', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
         self.assertIn('app-calibration-report.js', self.template_source)
-        self.assertIn('?v=37', self.template_source)
+        self.assertIn('?v=38', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
-        self.assertIn("app-calibration-report.js?v=37", self.app_source)
+        self.assertIn("app-calibration-report.js?v=38", self.app_source)
         assert_cache_version_at_least(self, 208, self.app_source)
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
         paste_release = next(item for item in releases if item['release_key'] == '2026-09-26-calibration-report-paste-criteria')
@@ -1009,8 +995,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=11", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=37", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=37'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=38", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=38'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1051,8 +1037,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=37", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=37'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=38", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=38'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
@@ -1090,7 +1076,7 @@ class CalibrationReportContractTests(unittest.TestCase):
             result = subprocess.run([str(NODE), '-e', NODE_CERTIFICATE_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False, env=env)
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
             payload = json.loads(result.stdout.strip().splitlines()[-1])
-            for key in ('legacyDefaults', 'mobileDartCatalog', 'mobileDartMatches', 'mobileDartCertificateMappings', 'normalizedBsid', 'mapping', 'embeddedDataAsset', 'embeddedTemplateExact', 'noRawPdfFetch', 'bsidPreservesFinal', 'completeSample', 'exactlyOneSampleBlobDownload', 'noRawTemplateDownload', 'incompleteSample', 'missingRuntimeNoDownload', 'missingEncodedNoDownload', 'corruptEncodedNoDownload', 'missingFieldsNoDownload', 'longNameTwoLines', 'worstNameTwoLines', 'longNamePreserved', 'impossibleNameRejected', 'longNameLines', 'worstNameLines'):
+            for key in ('legacyDefaults', 'mobileDartCatalog', 'mobileDartMatches', 'mobileDartCertificateMappings', 'normalizedBsid', 'overflowBsidPreserved', 'mapping', 'embeddedDataAsset', 'embeddedTemplateExact', 'noRawPdfFetch', 'bsidPreservesFinal', 'completeSample', 'exactlyOneSampleBlobDownload', 'noRawTemplateDownload', 'incompleteSample', 'missingRuntimeNoDownload', 'missingEncodedNoDownload', 'corruptEncodedNoDownload', 'missingFieldsNoDownload', 'longNameTwoLines', 'worstNameTwoLines', 'longNamePreserved', 'impossibleNameRejected', 'longNameLines', 'worstNameLines', 'longIdentityTwoLines', 'longIdentityPreserved'):
                 self.assertTrue(payload[key], key)
             self.assertEqual(payload['longNameLines'], [
                 'Philippine General Hospital Radiology and Imaging Center Medical Services',
@@ -1138,6 +1124,30 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertTrue(payload['finalStorageFallbackOpen'])
         self.assertTrue(payload['finalIndexedDBClosed'])
         self.assertTrue(payload['finalBlobRetained'])
+
+    def test_node_long_report_docx_preserves_complete_values_and_line_breaks(self):
+        self.assertTrue(NODE.is_file(), f'Bundled Node runtime missing: {NODE}')
+        with tempfile.TemporaryDirectory(prefix='calibration_report_long_docx_') as temp_dir:
+            result = subprocess.run(
+                [str(NODE), '-e', NODE_BEHAVIOR_SCRIPT],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=dict(os.environ, CALIBRATION_REPORT_BOUNDARY_DIR=temp_dir),
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            proof = pathlib.Path(temp_dir) / 'long-fields.docx'
+            self.assertTrue(proof.is_file())
+            with zipfile.ZipFile(proof) as package:
+                document = package.read('word/document.xml').decode('utf-8')
+            for marker in (
+                'Clinic &amp; Sons &lt;Radiology&gt;', 'Second line',
+                'Console model', 'Pass &amp; verified', 'Unicode ✓',
+                'Tool model', '80-1111111111111111111111111111111111111111',
+                'Measured within tolerance',
+            ):
+                self.assertIn(marker, document, marker)
 
     def test_report_only_draft_persistence_and_truthful_status(self):
         self.assertTrue(NODE.is_file(), f'Bundled Node runtime missing: {NODE}')
@@ -1856,6 +1866,9 @@ function report(overrides = {}) {
   bsidInput.dispatch('input');
   const normalized = context.calibrationReport.collect();
   const composed = context.calibrationReport.getCertificateNumber(normalized);
+  context.calibrationReport.apply(report({ certificate:{ bsid:'B'.repeat(41) } }));
+  const overflowBsidPreserved = context.calibrationReport.collect().certificate.bsid === 'B'.repeat(41);
+  context.calibrationReport.apply(complete);
   const fields = context.calibrationReport.getCertificateFields({ 'tsr-number':'TSR-77' }, normalized);
   const mapping = JSON.stringify(fields.values) === JSON.stringify({ Textfield:'2026-0820-B-42', Text1:'Digital Angiography System', Text2:'MobileDart Evolution MX9', Text3:'SN-42', Text4:'2026/08/20', Text5:'2027/08/20', Text6:"St. Mary's & Niño Clinic", 'Textfield-0':'TSR-77' });
   const mobileDartCertificateMappings = mobileDartModels.every(model => {
@@ -1915,8 +1928,19 @@ function report(overrides = {}) {
   const worstNameTwoLines = worstBuilt?.installedAtLines?.length === 2;
   const longNamePreserved = longBuilt?.installedAtLines?.join(' ') === longName && worstBuilt?.installedAtLines?.join('') === worstName;
   const impossibleNameRejected = !impossibleBuilt && statuses.at(-1)?.tone === 'danger' && statuses.at(-1)?.message.includes('Installed At');
+  const longIdentityReport = report({
+    facility:Object.assign({}, complete.facility, { name:'Facility ' + 'F'.repeat(80) }),
+    machine:Object.assign({}, complete.machine, { serial_number:'SYSTEM-' + 'S'.repeat(100) }),
+  });
+  context.calibrationReport.apply(longIdentityReport);
+  currentTSR = { 'tsr-number':'TSR-' + 'T'.repeat(80), calibration_report:context.calibrationReport.collect() };
+  const longIdentityBuilt = await context.calibrationReport.generateCertificateSample();
+  const longIdentityFields = longIdentityBuilt?.twoLineFields || [];
+  const longIdentityMapped = context.calibrationReport.getCertificateFields(currentTSR, context.calibrationReport.collect()).values;
+  const longIdentityTwoLines = ['Text3','Text6','Textfield-0'].every(name => longIdentityFields.includes(name));
+  const longIdentityPreserved = longIdentityMapped.Text3 === longIdentityReport.machine.serial_number && longIdentityMapped.Text6 === longIdentityReport.facility.name && longIdentityMapped['Textfield-0'] === currentTSR['tsr-number'];
   const noRawTemplateDownload = downloads.every(name => !String(name).includes('calibration-certificate-template') && /^SAMPLE_Calibration_Certificate(?:_.*)?\.pdf$/.test(name));
-  console.log(JSON.stringify({ legacyDefaults, mobileDartCatalog, mobileDartMatches, mobileDartCertificateMappings, normalizedBsid:normalized.certificate.bsid === 'B-42', composed, mapping, embeddedDataAsset, embeddedTemplateExact, noRawPdfFetch, bsidPreservesFinal, completeSample, exactlyOneSampleBlobDownload, noRawTemplateDownload, incompleteSample, missingRuntimeNoDownload, missingEncodedNoDownload, corruptEncodedNoDownload, missingFieldsNoDownload, longNameTwoLines, worstNameTwoLines, longNamePreserved, impossibleNameRejected, longNameLines:longBuilt?.installedAtLines || null, worstNameLines:worstBuilt?.installedAtLines || null }));
+  console.log(JSON.stringify({ legacyDefaults, mobileDartCatalog, mobileDartMatches, mobileDartCertificateMappings, normalizedBsid:normalized.certificate.bsid === 'B-42', overflowBsidPreserved, composed, mapping, embeddedDataAsset, embeddedTemplateExact, noRawPdfFetch, bsidPreservesFinal, completeSample, exactlyOneSampleBlobDownload, noRawTemplateDownload, incompleteSample, missingRuntimeNoDownload, missingEncodedNoDownload, corruptEncodedNoDownload, missingFieldsNoDownload, longNameTwoLines, worstNameTwoLines, longNamePreserved, impossibleNameRejected, longNameLines:longBuilt?.installedAtLines || null, worstNameLines:worstBuilt?.installedAtLines || null, longIdentityTwoLines, longIdentityPreserved }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

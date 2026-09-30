@@ -20982,6 +20982,7 @@ CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING = 6.0
 CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE = 6.5
 CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_LINE_HEIGHT = 6.5
 CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET = 2.5
+CALIBRATION_CERTIFICATE_TWO_LINE_FIELDS = ('Textfield', 'Text1', 'Text2', 'Text3', 'Text6', 'Textfield-0')
 CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME = 'CalibrationCertificateHumanist777Light'
 CALIBRATION_CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH = 40
 CALIBRATION_CERTIFICATE_MODEL_SOURCES = {'catalog', 'temporary'}
@@ -21371,8 +21372,8 @@ def calibration_certificate_data_font_size(values, exclude_fields=None):
     raise ValueError(f'Calibration Certificate value cannot fit at {CALIBRATION_CERTIFICATE_DATA_MIN_SIZE:g} points: {offenders or "a mapped field"}.')
 
 
-def calibration_certificate_installed_at_lines(value):
-    """Return the deterministic one- or two-line Installed At rendering."""
+def calibration_certificate_field_lines(value, field_name):
+    """Return complete one- or two-line text for a mapped identity field."""
     try:
         from reportlab.pdfbase.pdfmetrics import stringWidth
     except Exception as dependency_error:
@@ -21381,7 +21382,15 @@ def calibration_certificate_installed_at_lines(value):
     text = clean_str(value) or ''
     if not text:
         return []
-    max_width = CALIBRATION_CERTIFICATE_DATA_FIELD_WIDTHS['Text6'] - CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING
+    field_name = str(field_name or '')
+    max_width = CALIBRATION_CERTIFICATE_DATA_FIELD_WIDTHS[field_name] - CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING
+    labels = {
+        'Textfield': 'Certificate No.', 'Text1': 'Equipment Name',
+        'Text2': 'Equipment Model', 'Text3': 'System ID',
+        'Text4': 'Calibration Date', 'Text5': 'Next Calibration Date',
+        'Text6': 'Installed At', 'Textfield-0': 'TSR No.',
+    }
+    label = labels.get(field_name, field_name or 'a mapped field')
     if stringWidth(text, 'Helvetica', CALIBRATION_CERTIFICATE_DATA_MIN_SIZE) <= max_width + 0.01:
         return [text]
 
@@ -21414,8 +21423,13 @@ def calibration_certificate_installed_at_lines(value):
             return [first, second]
     raise ValueError(
         f'Calibration Certificate value cannot fit in two lines at '
-        f'{CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE:g} points: Installed At.'
+        f'{CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE:g} points: {label}.'
     )
+
+
+def calibration_certificate_installed_at_lines(value):
+    """Return the deterministic one- or two-line Installed At rendering."""
+    return calibration_certificate_field_lines(value, 'Text6')
 
 
 def _calibration_certificate_installed_at_two_line_layout(values):
@@ -21438,6 +21452,48 @@ def _calibration_certificate_installed_at_two_line_layout(values):
             f'{CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE:g} points: Installed At.'
         )
     return lines
+
+
+def _calibration_certificate_two_line_layouts(values, page):
+    """Return complete two-line layouts for mapped identity fields that need them."""
+    try:
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+    except Exception as dependency_error:
+        raise RuntimeError(f'Certificate PDF dependencies are unavailable: {dependency_error}')
+    values = values if isinstance(values, dict) else {}
+    labels = {
+        'Textfield': 'Certificate No.', 'Text1': 'Equipment Name',
+        'Text2': 'Equipment Model', 'Text3': 'System ID',
+        'Text6': 'Installed At', 'Textfield-0': 'TSR No.',
+    }
+    layouts = {}
+    for name in CALIBRATION_CERTIFICATE_TWO_LINE_FIELDS:
+        text = clean_str(values.get(name)) or ''
+        if not text:
+            continue
+        width = CALIBRATION_CERTIFICATE_DATA_FIELD_WIDTHS[name] - CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING
+        if stringWidth(text, 'Helvetica', CALIBRATION_CERTIFICATE_DATA_MIN_SIZE) <= width + 0.01:
+            continue
+        lines = calibration_certificate_field_lines(text, name)
+        if len(lines) != 2:
+            raise ValueError(
+                f'Calibration Certificate value cannot fit in two lines at '
+                f'{CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE:g} points: {labels.get(name, name)}.'
+            )
+        left, bottom, right, top = _calibration_certificate_widget_rect(page, name)
+        height = top - bottom
+        bottom_offset = CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET if name == 'Text6' else max(1.5, (height - (CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE * 2)) / 2)
+        layouts[name] = {
+            'lines': lines,
+            'size': CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE,
+            'x': left + CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING / 2,
+            'baselines': [
+                bottom + bottom_offset + CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_LINE_HEIGHT,
+                bottom + bottom_offset,
+            ],
+            'rect': (left, bottom, right, top),
+        }
+    return layouts
 
 
 def _calibration_certificate_humanist_metrics(template_bytes):
@@ -21578,6 +21634,9 @@ def calibration_certificate_values(payload, shift=None, certificate_number_overr
     # The report carries the offline/finalized BSID snapshot. Prefer it when
     # present so a later inventory edit cannot rewrite an already-saved TSR's
     # certificate number; use the selected product only as the live fallback.
+    raw_bsid = clean_str(certificate.get('bsid')) or ''
+    if len(raw_bsid) > 40:
+        raise ValueError('BSID values must be 40 characters or fewer.')
     bsid = normalize_product_bsid(certificate.get('bsid')) or normalize_product_bsid(getattr(product, 'bsid', None))
     date = calibration_certificate_date(calibration.get('machine_calibration_date'))
     number_date = calibration_certificate_number_date(calibration.get('machine_calibration_date'))
@@ -21833,34 +21892,41 @@ def _calibration_certificate_widget_rect(page, field_name):
     raise ValueError(f'The official Calibration Certificate is missing the {field_name} widget rectangle.')
 
 
-def _calibration_certificate_installed_at_overlay_bytes(lines, widget_rect):
-    """Draw the fixed two-line Installed At overlay inside Text6's widget."""
+def _calibration_certificate_two_line_overlay_bytes(lines, widget_rect, field_name):
+    """Draw complete two-line mapped text inside one certificate widget."""
     try:
         from reportlab.pdfgen import canvas
     except Exception as dependency_error:
         raise RuntimeError(f'Certificate PDF dependencies are unavailable: {dependency_error}')
     if len(lines or ()) != 2:
-        raise ValueError('Installed At must contain exactly two overlay lines.')
+        raise ValueError(f'{field_name or "Mapped field"} must contain exactly two overlay lines.')
     left, bottom, right, top = widget_rect
     available_width = right - left - CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING
     from reportlab.pdfbase.pdfmetrics import stringWidth
     if any(stringWidth(line, 'Helvetica', CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE) > available_width + 0.01 for line in lines):
         raise ValueError(
             f'Calibration Certificate value cannot fit in two lines at '
-            f'{CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE:g} points: Installed At.'
+            f'{CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE:g} points: {field_name or "a mapped field"}.'
         )
     buffer = io.BytesIO()
     canvas_obj = canvas.Canvas(buffer, pagesize=(612, 792))
     canvas_obj.setFillColorRGB(0, 0, 0)
     canvas_obj.setFont('Helvetica', CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE)
     x = left + CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING / 2.0
-    second_baseline = bottom + CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET
+    height = top - bottom
+    bottom_offset = CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_BOTTOM_OFFSET if field_name == 'Text6' else max(1.5, (height - (CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_SIZE * 2)) / 2)
+    second_baseline = bottom + bottom_offset
     for index, line in enumerate(lines):
         baseline = second_baseline + CALIBRATION_CERTIFICATE_TEXT6_TWO_LINE_LINE_HEIGHT * (1 - index)
         canvas_obj.drawString(x, baseline, line)
     canvas_obj.showPage()
     canvas_obj.save()
     return buffer.getvalue()
+
+
+def _calibration_certificate_installed_at_overlay_bytes(lines, widget_rect):
+    """Backward-compatible wrapper for the Installed At overlay."""
+    return _calibration_certificate_two_line_overlay_bytes(lines, widget_rect, 'Installed At')
 
 
 def build_calibration_certificate_pdf(payload, shift=None, approver=None, signature_data='', approval_title='', certificate_number_override=None, mapped_values_override=None, catalog=None, canonical=False):
@@ -21886,11 +21952,6 @@ def build_calibration_certificate_pdf(payload, shift=None, approver=None, signat
     )
     if missing:
         raise ValueError(f"Complete the Calibration Certificate values before submission: {', '.join(missing)}.")
-    installed_at_lines = _calibration_certificate_installed_at_two_line_layout(values)
-    data_font_size = calibration_certificate_data_font_size(
-        values,
-        exclude_fields={'Text6'} if installed_at_lines else None,
-    )
 
     try:
         from pypdf import PdfReader, PdfWriter
@@ -21909,7 +21970,11 @@ def build_calibration_certificate_pdf(payload, shift=None, approver=None, signat
     template_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
     if not canonical and 'Rodito' in template_text:
         raise ValueError('The runtime Calibration Certificate template contains the fixed Rodito Aretano identity.')
-    installed_at_widget_rect = _calibration_certificate_widget_rect(reader.pages[0], 'Text6') if installed_at_lines else None
+    two_line_layouts = _calibration_certificate_two_line_layouts(values, reader.pages[0])
+    data_font_size = calibration_certificate_data_font_size(
+        values,
+        exclude_fields=set(two_line_layouts),
+    )
 
     writer = PdfWriter()
     writer.clone_document_from_reader(reader)
@@ -21919,8 +21984,8 @@ def build_calibration_certificate_pdf(payload, shift=None, approver=None, signat
     # field. The ninth legacy widget is blanked while flattening; its fixed
     # page text was removed only in the derived runtime-v2 asset.
     flatten_values = {name: (value, '/Helv', data_font_size) for name, value in values.items()}
-    if installed_at_lines:
-        flatten_values['Text6'] = ('', '/Helv', data_font_size)
+    for name in two_line_layouts:
+        flatten_values[name] = ('', '/Helv', data_font_size)
     flatten_values['Rodito Aretano Jr'] = ('', '/Helv', 0)
     writer.update_page_form_field_values(None, flatten_values, auto_regenerate=False, flatten=True)
     try:
@@ -21934,11 +21999,11 @@ def build_calibration_certificate_pdf(payload, shift=None, approver=None, signat
     for output_page in writer.pages:
         output_page.pop(NameObject('/Annots'), None)
     writer.root_object.pop(NameObject('/AcroForm'), None)
-    if installed_at_lines:
-        installed_at_overlay = PdfReader(io.BytesIO(
-            _calibration_certificate_installed_at_overlay_bytes(installed_at_lines, installed_at_widget_rect)
+    for name, layout in two_line_layouts.items():
+        two_line_overlay = PdfReader(io.BytesIO(
+            _calibration_certificate_two_line_overlay_bytes(layout['lines'], layout['rect'], name)
         ))
-        writer.pages[0].merge_page(installed_at_overlay.pages[0])
+        writer.pages[0].merge_page(two_line_overlay.pages[0])
     output = io.BytesIO()
     writer.write(output)
     data = output.getvalue()
@@ -21949,8 +22014,9 @@ def build_calibration_certificate_pdf(payload, shift=None, approver=None, signat
     if reopened.get_fields() or reopened.pages[0].get('/Annots'):
         raise ValueError('Generated Calibration Certificate still contains form fields or annotations.')
     rendered_text = '\n'.join(page.extract_text() or '' for page in reopened.pages)
-    if installed_at_lines and any(line not in rendered_text for line in installed_at_lines):
-        raise ValueError('Generated Calibration Certificate is missing the complete Installed At value.')
+    for name, layout in two_line_layouts.items():
+        if any(line not in rendered_text for line in layout['lines']):
+            raise ValueError(f"Generated Calibration Certificate is missing the complete {name} value.")
     if signature_data and approver and approver not in rendered_text:
         raise ValueError('Generated Calibration Certificate is missing the acting approver name.')
     return data, values, hashlib.sha256(data).hexdigest()
@@ -24933,7 +24999,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v212-calendar-calibration-actions.
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v214-genoray-pm-expiry';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v215-calibration-report-complete-fields';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -24958,7 +25024,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=37',
+  '/static/js/app-calibration-report.js?v=38',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

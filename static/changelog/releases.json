@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-30-calibration-report-complete-fields",
+      "release_date": "2026-09-30",
+      "title": "Calibration Report Data Capture Improved",
+      "summary": "Calibration Reports now preserve complete entered values, including long and multiline entries.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-30-calibration-report-complete-fields-users",
+          "category": "Calibration",
+          "description": "Long Calibration Report entries now wrap and continue onto additional report pages when needed. Calibration Certificate identity values no longer shorten silently and use predictable two-line fitting when the one-page Letter form allows it.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-29-genoray-pm-expiry",
       "release_date": "2026-09-29",
       "title": "Genoray PM Plans Follow Coverage Expiry",

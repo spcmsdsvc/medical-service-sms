@@ -1,3 +1,149 @@
+# Preserve Complete Calibration Report and Certificate Data
+
+**Status:** Executed — uncommitted.
+
+**Approved:** 2026-09-30 — the owner approved this plan with “implement the plan. do not overengineer and over check”.
+
+**Execution authorized:** 2026-09-30 — the owner said “go ahead”.
+
+**Detailed:** 2026-09-30.
+
+## Goal and verified current behavior
+
+Ensure every legitimate value entered for a calibration report is preserved in the generated report rather than being cut off by arbitrary browser limits, while retaining clear validation for true business constraints. Apply the same no-silent-truncation rule to calibration certificates without changing their required one-page Letter layout.
+
+The investigation established that report data is currently limited in `static/js/app-calibration-report.js` by exact-fit character caps (including Page 1 normal/narrow fields, Page 2 result/detail fields, and Page 3/4 exposure/performance fields). The browser limits typing and paste, and final validation rejects values over those caps. The server-side DOCX/PDF conversion does not independently truncate those report strings. The report template rows can expand and wrap, so the simplest safe correction is to remove the arbitrary exact-fit limits and let long report content wrap and, when necessary, create additional report pages.
+
+Certificates already use deterministic fitting for shared text and a two-line treatment for Installed At, but some client state values are silently sliced and several mapped identity fields remain one-line only. Certificates must remain one-page Letter artifacts, so their long mapped identity values will use the existing bounded two-line fitting pattern. Values that genuinely cannot fit even at the established minimum size will fail with a clear validation error rather than being shortened.
+
+## Files in scope
+
+- `static/js/app-calibration-report.js`: report input constraints, paste/final validation, multiline preservation, certificate state handling, and client certificate fitting.
+- `app.py`: server certificate fitting parity, report JavaScript cache version, and service-worker cache marker.
+- `templates/offline_tsr.html`: report JavaScript asset version where the offline page references it.
+- `tests/test_tsr_calibration_report.py`: report field-capture and generated-DOCX regression coverage.
+- `tests/test_calibration_certificate_approval_workflow.py`: certificate no-truncation, fitting, and client/server parity coverage.
+- Directly affected report/certificate artifact or cache tests only where existing test organization requires it, including `tests/test_calibration_report_pdf.py` and `tests/test_product_calibration_certificate.py` if necessary.
+- `static/changelog/releases.json`: one focused release entry for the user-visible correction.
+- `plans.md` and `changes.md`: required project control records.
+
+The canonical report DOCX template and certificate PDF templates are not expected to change. If artifact verification demonstrates that source changes alone cannot prevent clipping, execution must stop and this plan must be amended before editing an official template.
+
+## Numbered execution plan
+
+1. **Perform implementation preflight and protect owner work.**
+   - Re-read all applicable `AGENTS.md` instructions, this approved plan, `changes.md`, current Git status, and the affected current source/tests.
+   - Confirm that the verified implementation assumptions still match the code and that no newer work has invalidated the plan.
+   - Preserve the existing protected dirty artifacts, including `scheduler.db`, handoff files, `output/`, `tmp/`, and unrelated untracked files; do not stage, reset, clean, rewrite, or otherwise alter them.
+   - After a separate owner go-ahead, change this plan status to `In progress` and begin a dated `changes.md` implementation entry.
+   - Done means the authorized scope is still valid and implementation can proceed without touching protected or unrelated work.
+
+2. **Add focused fail-first regression coverage for complete report capture.**
+   - In `tests/test_tsr_calibration_report.py`, cover representative values longer than every current limit family: Page 1 normal and narrow fields, Page 2 result and detail fields, and Page 3/4 exposure, performance, focal-spot, and second-tube content.
+   - Include multiline textarea content, Unicode, and XML-significant characters, and assert that the exact complete values reach the generated DOCX package rather than merely appearing in browser state.
+   - Preserve existing required-field, catalog/date, signature, approval, and workflow assertions.
+   - Run the new focused tests against the unchanged implementation and record the expected failures caused by the old caps. Do not manufacture failures by weakening the test harness.
+   - Done means the tests reproduce the material truncation/rejection problem and prove the expected full-value behavior.
+
+3. **Remove arbitrary report exact-fit limits and preserve complete text.**
+   - In `static/js/app-calibration-report.js`, remove the report-specific `maxlength` behavior, paste rejection, and final `calibration_report_exact_fit` character-count rejection for free-text report content.
+   - Keep real validation rules unchanged: required inputs, catalog selection, dates, focal-spot rules, signatures, approvals, and other domain constraints remain enforced.
+   - Ensure Mechanical, Generator, Performance, and other multiline entries retain their line breaks through state collection and DOCX generation.
+   - Rely on the existing expandable/wrapping Word table cells so complete content is emitted; allow extra report pages when long data requires them. Do not add a new pagination engine or redesign the report.
+   - Done means long legitimate entries remain intact from input through generated DOCX, while short reports and unrelated validation continue to behave as before.
+
+4. **Prevent certificate truncation while retaining the one-page contract.**
+   - In `static/js/app-calibration-report.js`, remove silent slicing that changes supplied certificate values. Retain explicit 40-character constraints where they are actual BSID or temporary-equipment-model domain/storage rules, and surface a clear validation error instead of altering data.
+   - Generalize the certificate's existing deterministic two-line fitting logic to the mapped identity fields that can legitimately be long: Certificate No., Equipment Name/Model, System ID, Installed At, and TSR No.
+   - Use word-boundary wrapping first and character-boundary fallback when necessary, down to the existing 6.5-point minimum. If an exceptional value still cannot fit within two lines, reject generation clearly and preserve the original value.
+   - Mirror the same field set, wrapping decisions, minimum sizes, and failure behavior in `app.py` so preview/sample and official server-generated certificates agree.
+   - Add focused tests in `tests/test_calibration_certificate_approval_workflow.py` and directly related certificate tests for full extracted text, long unbroken values, client/server parity, one-page 612-by-792-point output, and flattened/no-widget output.
+   - Done means certificates never silently shorten mapped data, normal certificates remain visually unchanged, and long valid values fit predictably without violating the one-page requirement.
+
+5. **Update only the required cache and release metadata.**
+   - Bump the calibration-report JavaScript asset query from `v37` to `v38` in `app.py` and `templates/offline_tsr.html` wherever that asset is referenced.
+   - Bump the service-worker marker from `medical-service-pwa-offline-navigation-v214-genoray-pm-expiry` to `medical-service-pwa-offline-navigation-v215-calibration-report-complete-fields` so deployed clients receive the correction.
+   - Add a concise `2026-09-30-calibration-report-complete-fields` entry to `static/changelog/releases.json` describing complete report capture and certificate no-truncation behavior without claiming unrelated changes.
+   - Done means client cache invalidation and release communication exactly match the implemented scope.
+
+6. **Perform proportional artifact verification without browser automation.**
+   - Generate one normal report and one deliberately long report. Inspect their DOCX XML/text to confirm exact values and preserved line breaks.
+   - Export verification copies with the installed Microsoft Word 16 renderer and render PDFs with the available Poppler tools in an isolated temporary QA directory outside tracked/protected artifacts.
+   - Inspect every generated page for clipped text, overlapping tables, broken signatures, displaced footers, and unintended blank pages. Confirm the normal report retains its established appearance/page count and that only long reports gain pages as needed.
+   - Generate normal and long certificates and verify full extracted values, readable two-line fitting, one-page Letter dimensions, and flattened/no-widget output.
+   - Do not use browser or Codex UI automation. If Word-based rendering is unavailable, report the skipped visual check truthfully rather than substituting an unapproved template edit.
+   - Done means material artifact behavior is visually and structurally established with the smallest practical set of samples.
+
+7. **Run focused and bounded regression verification.**
+   - Run the new fail-first tests after implementation, then the directly affected report and certificate test modules.
+   - Run JavaScript syntax validation, Python compile/AST checks for edited Python, Jinja/template validation for edited templates, JSON parsing for `releases.json`, and existing template/package checksum checks that apply.
+   - Run one isolated full test suite with the project-required disposable test database if the environment permits it. Record exact pass/fail/skip results and distinguish pre-existing environmental failures from product failures; do not modify or reset any real database.
+   - Review the final diff for accidental template, database, protected-artifact, or unrelated changes.
+   - Done means the focused product requirements pass and verification remains proportional to the actual report-generation risk.
+
+8. **Close the authorized implementation package and stop.**
+   - Self-review the result against each approved requirement and record actual implementation and verification facts in `changes.md`.
+   - Update this plan to `Executed` with the actual outcome and any justified deviation. If no commit was authorized, record the execution as uncommitted rather than inventing a hash.
+   - Confirm the intended-file checklist before any later commit: only scoped source, tests, release metadata, `plans.md`, and `changes.md`; explicitly exclude `scheduler.db`, handoffs, `output/`, `tmp/`, and unrelated files.
+   - Do not commit, push, deploy, modify Railway, alter production data/storage, or start post-implementation review without the owner's separate explicit authorization.
+   - Done means the implementation report truthfully states files changed, behavior changed, tests and artifact checks run, results, skips, deviations, and material limitations, then stops.
+
+## Acceptance criteria
+
+- Legitimate calibration report entries are not cut off or rejected solely because they exceed the old presentation-oriented character caps.
+- The exact complete strings, including multiline, Unicode, and XML-significant content, are present in generated report artifacts.
+- Long report content wraps and may expand rows or add pages; short report layout remains materially unchanged.
+- Calibration certificates never silently slice mapped values. Supported long values fit with deterministic client/server-matched two-line behavior, and impossible values fail clearly.
+- Certificates remain one-page Letter PDFs with complete readable values and no interactive form widgets.
+- Existing workflow, approval, signature, catalog/date, security, payload, attachment, and business validation behavior remains unchanged except for removal of the identified arbitrary fit caps.
+- No database/schema migration, API contract change, dependency addition, official-template replacement, production action, or unrelated redesign is introduced.
+
+## Deliberately excluded
+
+- Redesigning the calibration report or certificate templates.
+- Creating a new pagination/layout engine or generalized document framework.
+- Changing database schemas, API payloads, authorization, approval workflow, email/attachment routing, or previously finalized artifacts.
+- Automatically rewriting existing finalized or approved reports; existing drafts may use the corrected generator when regenerated.
+- Browser/Codex UI automation, commit, push, deployment, Railway changes, or production/database/storage operations.
+- Broad cleanup, refactoring, new dependencies, exhaustive edge-case infrastructure, or unrelated fixes.
+
+## Known baseline evidence
+
+- The focused calibration-report suite previously completed 23 tests successfully with one environment-related error caused by sandboxed Node temporary-PDF output, not a failed product assertion.
+- The existing targeted server certificate fitting tests completed 2 of 2 successfully.
+- The installed Word 16 and Poppler tools provide the planned non-browser artifact path; visual verification remains an execution-stage check, not an assumption.
+
+## Execution outcome (2026-09-30)
+
+1. `static/js/app-calibration-report.js` no longer applies presentation-oriented exact-fit caps,
+   paste rejection, or final exact-fit errors to legitimate report text. Long, multiline,
+   Unicode, and XML-significant values are preserved through DOCX generation; the existing
+   expandable table behavior may add report pages. True BSID and temporary-equipment-model
+   constraints remain explicit validations.
+2. Client and server certificate generation now preserve mapped identity values, use matched
+   deterministic two-line fitting for the supported long fields, and reject values that cannot
+   fit rather than shortening them. Certificate output remains one-page Letter and flattened.
+3. Calibration-report asset references advanced to `v38`, the service-worker marker advanced to
+   `medical-service-pwa-offline-navigation-v215-calibration-report-complete-fields`, and the
+   focused `2026-09-30-calibration-report-complete-fields` release entry was added.
+4. Fail-first evidence was captured before the source fix: the unchanged report client rejected
+   an 80-character measurement with the old presentation limit. After implementation,
+   `tests.test_tsr_calibration_report` passed 25/25, targeted certificate builder/fitting checks
+   passed 17/17, the client certificate Node checks passed, the inventory cache contract passed
+   1/1, JavaScript syntax, Python AST, release JSON, and `git diff --check` passed, and DOCX XML
+   checks confirmed exact long values and line breaks. Certificate artifact checks confirmed full
+   extracted values, one-page 612-by-792-point output, and no widgets.
+5. The full discovery run completed 1,401 tests with 26 failures, 2 errors, and 5 skips. The
+   failures included the three known certificate approval-download authorization 403s and
+   unrelated cross-suite product/catalog, changelog, LPR/offline, and purchase-order fixture or
+   rate-limit failures; no new report data-capture assertion failed. The focused report and
+   certificate requirements remain the acceptance evidence for this bounded change.
+6. Microsoft Word 16 COM export could not start (`CO_E_SERVER_EXEC_FAILURE`), so the planned
+   visual PDF inspection of normal and long DOCX reports was skipped and no official template was
+   changed. Structural DOCX verification and certificate PDF checks completed successfully.
+7. No commit, push, deployment, Railway, production, or intentional protected-artifact operation
+   was performed. The package remains uncommitted; `scheduler.db`, handoff files, `.claude/`,
+   `output/`, `tmp/`, and unrelated owner work remain outside the implementation allowlist.
 # Genoray PM Visits Through Coverage Expiry
 
 **Status:** Executed — implementation commit `76c36d5`; publication authorized.
