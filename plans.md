@@ -1,10 +1,12 @@
 # Extensible Calibration Report and Certificate Repair Center
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `7dd99e7`; published to `origin/main`.
 
 **Approved:** 2026-09-30 — the owner said “go ahead and implement the plan. do not overengineer and over verify”. Under the project’s mandatory two-message gate, this approves the plan but does not yet authorize implementation.
 
 **Execution authorized:** 2026-09-30 — the owner said “go ahead”.
+
+**Publication authorized:** 2026-09-30 — the owner said “commit and push only this addition”.
 
 **Detailed:** 2026-09-30.
 
