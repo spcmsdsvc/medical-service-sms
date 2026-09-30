@@ -19370,7 +19370,13 @@ CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
 CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
 CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v3'
 CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER = '_calibration_report_historical_repair'
-CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION = 'calibration-report-complete-fields-v4'
+CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION = 'calibration-report-footer-layout-v1'
+CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_MARKER = '_calibration_report_footer_layout_repair'
+# The retained footer measures 2,360 twips of artwork plus 708 twips of footer
+# distance.  Add the required 120-twip (6pt) clearance and round up for a stable
+# 3,600-twip body reserve on generated and repaired reports.
+CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS = 3600
+CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION = 'calibration-report-complete-fields-v5'
 CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_MARKER = '_calibration_report_complete_fields_repair'
 CALIBRATION_REPAIR_LEGACY_LIMITS = (40, 22, 60, 30, 12, 36)
 CALIBRATION_REPORT_EXPOSURE_CURRENT_UNITS = ('mA', 'mAs')
@@ -19644,6 +19650,110 @@ def _validate_calibration_report_docx_bytes(docx_bytes):
                 raise ValueError('The Calibration Report source is missing required DOCX parts.')
     except zipfile.BadZipFile as package_error:
         raise ValueError('The Calibration Report source is not a readable DOCX package.') from package_error
+
+
+def _calibration_report_footer_layout_inspection(docx_bytes):
+    """Recognize generated report layout and report whether its body clears the footer."""
+    try:
+        _validate_calibration_report_docx_bytes(docx_bytes)
+        with zipfile.ZipFile(io.BytesIO(docx_bytes), 'r') as package:
+            document_xml = package.read('word/document.xml').decode('utf-8')
+    except (UnicodeDecodeError, ValueError, zipfile.BadZipFile, OSError) as inspection_error:
+        return {
+            'status': 'blocked',
+            'reason': 'Calibration Report DOCX validation failed closed: ' + clean_str(str(inspection_error))[:300],
+        }
+
+    sections = re.findall(r'<w:sectPr\b[^>]*>.*?</w:sectPr>', document_xml, re.S)
+    margins = []
+    for section in sections:
+        margin = re.search(r'<w:pgMar\b[^>]*>', section)
+        if not margin:
+            return {'status': 'blocked', 'reason': 'Calibration Report section margins are not recognized.'}
+        bottom = re.search(r'\bw:bottom="(\d+)"', margin.group(0))
+        if not bottom:
+            return {'status': 'blocked', 'reason': 'Calibration Report bottom margin is not recognized.'}
+        margins.append(int(bottom.group(1)))
+    if not margins:
+        return {'status': 'blocked', 'reason': 'Calibration Report section properties are missing.'}
+    if not re.search(r'<w:footerReference\b', document_xml):
+        return {'status': 'blocked', 'reason': 'Calibration Report footer references are missing.'}
+    if 'AVERAGE EXPOSURE OUTPUT' not in html.unescape(document_xml) or 'PERFORMANCE CRITERIA' not in html.unescape(document_xml):
+        return {'status': 'blocked', 'reason': 'Calibration Report output region is not recognized.'}
+    safe = all(bottom >= CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS for bottom in margins)
+    return {
+        'status': 'already_repaired' if safe else 'repairable',
+        'reason': '' if safe else 'Calibration Report body margin does not reserve the footer area.',
+        'bottom_margins': margins,
+        'footer_reserve_twips': CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS,
+        'document_xml': document_xml,
+    }
+
+
+def _calibration_report_footer_layout_repair_document_xml(document_xml):
+    """Raise the body bottom margin without changing report values or footer parts."""
+    if not isinstance(document_xml, str) or not document_xml:
+        raise ValueError('Calibration Report document XML is empty.')
+
+    changed = False
+
+    def patch_section(match):
+        nonlocal changed
+        section_xml = match.group(0)
+        margin = re.search(r'<w:pgMar\b[^>]*>', section_xml)
+        if not margin:
+            raise ValueError('Calibration Report section margins are not recognized.')
+        bottom = re.search(r'\bw:bottom="(\d+)"', margin.group(0))
+        if not bottom:
+            raise ValueError('Calibration Report bottom margin is not recognized.')
+        if int(bottom.group(1)) >= CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS:
+            return section_xml
+        changed = True
+        replacement = margin.group(0).replace(
+            f'w:bottom="{bottom.group(1)}"',
+            f'w:bottom="{CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS}"',
+            1,
+        )
+        return section_xml[:margin.start()] + replacement + section_xml[margin.end():]
+
+    repaired = re.sub(
+        r'<w:sectPr\b[^>]*>.*?</w:sectPr>',
+        patch_section,
+        document_xml,
+        flags=re.S,
+    )
+    if not changed:
+        raise ValueError('Calibration Report already has the protected footer reserve.')
+    return repaired
+
+
+def _calibration_report_footer_layout_repair_docx_bytes(docx_bytes):
+    """Repair every section margin while preserving every other DOCX package part."""
+    inspection = _calibration_report_footer_layout_inspection(docx_bytes)
+    if inspection.get('status') == 'blocked':
+        raise ValueError(inspection.get('reason') or 'Calibration Report DOCX is not repairable.')
+    if inspection.get('status') == 'already_repaired':
+        return docx_bytes, inspection
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), 'r') as package:
+        entries = [(info, package.read(info.filename)) for info in package.infolist()]
+    document_index = next(
+        (index for index, (info, _data) in enumerate(entries) if info.filename == 'word/document.xml'),
+        None,
+    )
+    if document_index is None:
+        raise ValueError('Calibration Report source is missing word/document.xml.')
+    document_xml = entries[document_index][1].decode('utf-8')
+    repaired_xml = _calibration_report_footer_layout_repair_document_xml(document_xml)
+    entries[document_index] = (entries[document_index][0], repaired_xml.encode('utf-8'))
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, 'w') as target:
+        for info, data in entries:
+            target.writestr(info, data)
+    repaired_bytes = output.getvalue()
+    repaired_inspection = _calibration_report_footer_layout_inspection(repaired_bytes)
+    if repaired_inspection.get('status') != 'already_repaired':
+        raise ValueError('Repaired Calibration Report DOCX did not validate as protected.')
+    return repaired_bytes, repaired_inspection
 
 
 _CALIBRATION_REPORT_DOCX_NS = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
@@ -20260,6 +20370,80 @@ def _calibration_report_historical_repair_candidates():
     return candidates
 
 
+def _calibration_report_footer_layout_candidate_for_file(source_file):
+    """Build one layout-only footer repair candidate from the retained DOCX/PDF pair."""
+    if not source_file or not calibration_report_source_file_is_private(source_file):
+        return None
+    base = {
+        'repair_id': f'calibration-report-footer-layout-{clean_int(source_file.id) or 0}',
+        'candidate_id': clean_int(source_file.id),
+        'source_file_id': clean_int(source_file.id),
+        'submission_id': clean_int(getattr(source_file, 'online_tsr_submission_id', None)),
+        'shift_id': clean_int(getattr(source_file, 'shift_id', None)),
+        'filename': get_shift_file_display_name(source_file) or get_shift_file_disk_name(source_file),
+        'uploaded_at': source_file.uploaded_at.isoformat() if getattr(source_file, 'uploaded_at', None) else '',
+        'pdf_file_id': None,
+        'pdf_filename': '',
+        'source_sha256': '',
+        'pdf_sha256': '',
+        'footer_reserve_twips': CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS,
+        'status': 'blocked',
+        'reason': '',
+    }
+    try:
+        source_bytes = _calibration_report_source_bytes(source_file)
+        base['source_sha256'] = hashlib.sha256(source_bytes).hexdigest()
+        inspection = _calibration_report_footer_layout_inspection(source_bytes)
+    except Exception as source_error:
+        inspection = {
+            'status': 'blocked',
+            'reason': 'The generated Calibration Report DOCX is unavailable from managed storage.',
+        }
+        base['reason'] = clean_str(str(source_error))[:300]
+    if inspection.get('status') == 'blocked':
+        base['reason'] = base['reason'] or inspection.get('reason') or 'The generated Calibration Report DOCX is not safely recognized.'
+        base.update(_calibration_report_repair_approval_context(source_file))
+        return base
+
+    job = calibration_report_conversion_for_source(source_file.id)
+    pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, job)
+    if pdf_file:
+        base['pdf_file_id'] = clean_int(pdf_file.id)
+        base['pdf_filename'] = get_shift_file_display_name(pdf_file) or get_shift_file_disk_name(pdf_file)
+        if pdf_state == 'ready':
+            try:
+                base['pdf_sha256'] = hashlib.sha256(_calibration_report_file_bytes(pdf_file)).hexdigest()
+            except Exception:
+                base['pdf_sha256'] = ''
+    if inspection.get('status') == 'already_repaired' and pdf_state == 'ready':
+        base['status'] = 'already_repaired'
+        base['reason'] = 'This report already reserves the protected footer area.'
+    elif pdf_state == 'blocked':
+        base['status'] = 'blocked'
+        base['reason'] = pdf_reason or 'The linked PDF cannot be safely replaced.'
+    else:
+        base['status'] = 'repairable'
+        base['reason'] = inspection.get('reason') or 'Calibration Report footer layout can be repaired safely.'
+    base.update(_calibration_report_repair_approval_context(source_file, pdf_file))
+    return base
+
+
+def _calibration_report_footer_layout_repair_candidates():
+    """Inventory every generated DOCX revision that lacks the footer reserve."""
+    candidates = []
+    files = ShiftFile.query.filter(
+        or_(
+            ShiftFile.original_filename.ilike('%.docx'),
+            ShiftFile.filename.ilike('%.docx'),
+        )
+    ).order_by(ShiftFile.id.asc()).all()
+    for source_file in files:
+        candidate = _calibration_report_footer_layout_candidate_for_file(source_file)
+        if candidate:
+            candidates.append(candidate)
+    return candidates
+
+
 def _calibration_report_repair_walk_values(value, path='', output=None):
     """Collect likely legacy-cutoff values that are rendered into the report."""
     output = output if isinstance(output, list) else []
@@ -20312,6 +20496,21 @@ def _calibration_report_repair_path_value(value, path):
     return target if isinstance(target, (str, int, float, bool)) else ''
 
 
+def _calibration_report_matches_legacy_cut(complete, stored):
+    """Return whether a stored value is one of the known presentation cuts."""
+    complete = clean_str(complete) or ''
+    stored = clean_str(stored) or ''
+    if not complete or not stored or len(complete) <= len(stored):
+        return False
+    if len(stored) not in CALIBRATION_REPAIR_LEGACY_LIMITS:
+        return False
+    return any(
+        complete[:limit].rstrip().casefold() == stored.casefold()
+        for limit in CALIBRATION_REPAIR_LEGACY_LIMITS
+        if len(stored) == limit
+    )
+
+
 def _calibration_report_resolved_repair_payload(payload):
     """Recover known legacy-cutoff values from the same immutable TSR snapshot."""
     resolved = json.loads(json.dumps(payload if isinstance(payload, dict) else {}, ensure_ascii=False))
@@ -20353,10 +20552,14 @@ def _calibration_report_resolved_repair_payload(payload):
                 # Ignore only spacing/parentheses; retain every model identifier.
                 complete_match = re.sub(r'[\s()]', '', complete_match)
                 truncated_match = re.sub(r'[\s()]', '', truncated_match)
-            if (
-                len(complete_match) <= len(truncated_match)
-                or not complete_match.startswith(truncated_match)
-            ):
+            legacy_match = _calibration_report_matches_legacy_cut(complete_match, truncated_match)
+            if target_path == 'machine.console_model':
+                legacy_match = (
+                    len(truncated) in CALIBRATION_REPAIR_LEGACY_LIMITS
+                    and len(complete_match) > len(truncated_match)
+                    and complete_match.startswith(truncated_match)
+                )
+            if not legacy_match:
                 continue
             group, field = target_path.split('.', 1)
             group_value = report.get(group) if isinstance(report.get(group), dict) else {}
@@ -20368,6 +20571,61 @@ def _calibration_report_resolved_repair_payload(payload):
             recovered[target_path] = source_label
             break
     return resolved, recovered
+
+
+def _calibration_report_resolved_certificate_mapping(payload, mapped_values):
+    """Overlay only verified complete report values onto an old cert snapshot."""
+    values = dict(mapped_values) if isinstance(mapped_values, dict) else {}
+    resolved = payload if isinstance(payload, dict) else {}
+    report = resolved.get('calibration_report') if isinstance(resolved.get('calibration_report'), dict) else {}
+    source_paths = {
+        'Text1': (('machine.modality',), 'Saved report equipment name'),
+        'Text2': (('certificate.equipment_model', 'machine.model'), 'Saved report equipment model'),
+        'Text3': (('machine.serial_number', 'payload.tsr-serial-no'), 'Saved report equipment serial number'),
+        'Text6': (('facility.name',), 'Saved report client name'),
+        'Textfield-0': (('payload.tsr-number', 'payload.tsr_number'), 'Saved TSR number'),
+    }
+    recovered = {}
+    blocked = []
+    for field, (source_paths_for_field, source_label) in source_paths.items():
+        current = clean_str(values.get(field)) or ''
+        if not current or len(current) not in CALIBRATION_REPAIR_LEGACY_LIMITS:
+            continue
+        sources = []
+        for source_path in source_paths_for_field:
+            if source_path.startswith('payload.'):
+                source = resolved.get(source_path.split('.', 1)[1])
+                if not source and source_path == 'payload.tsr_number':
+                    source = resolved.get('tsr_number')
+            else:
+                source = _calibration_report_repair_path_value(report, source_path)
+            source = clean_str(source) or ''
+            if source and source.casefold() != current.casefold():
+                sources.append(source)
+        if not sources:
+            available = any(
+                (
+                    _calibration_report_repair_path_value(report, source_path)
+                    if not source_path.startswith('payload.')
+                    else resolved.get(source_path.split('.', 1)[1]) or (
+                        resolved.get('tsr_number') if source_path == 'payload.tsr_number' else ''
+                    )
+                )
+                for source_path in source_paths_for_field
+            )
+            if not available:
+                blocked.append(f'{field}: {source_label} is unavailable.')
+            continue
+        complete = next(
+            (source for source in sources if _calibration_report_matches_legacy_cut(source, current)),
+            '',
+        )
+        if complete:
+            values[field] = complete
+            recovered[field] = source_label
+        else:
+            blocked.append(f'{field}: saved certificate value conflicts with the immutable report snapshot.')
+    return values, recovered, blocked
 
 
 def _calibration_report_complete_fields_history(payload):
@@ -20485,7 +20743,12 @@ def _calibration_report_complete_fields_candidate_for_file(source_file, force=Fa
     mapped_values = calibration_certificate_mapped_snapshot(
         getattr(approval, 'mapped_data_json', '') if approval else ''
     )
-    values = mapped_values or {}
+    stored_values = mapped_values or {}
+    certificate_values, certificate_recovered, certificate_blocked = (
+        _calibration_report_resolved_certificate_mapping(resolved_payload, stored_values)
+        if mapped_values else ({}, {}, [])
+    )
+    values = certificate_values or stored_values
     certificate_fields = {
         'Textfield': 'certificate.number',
         'Text1': 'machine.modality',
@@ -20495,18 +20758,21 @@ def _calibration_report_complete_fields_candidate_for_file(source_file, force=Fa
         'Textfield-0': 'tsr_number',
     }
     for name, path in certificate_fields.items():
-        value = clean_str(values.get(name)) or ''
-        if len(value) in CALIBRATION_REPAIR_LEGACY_LIMITS or len(value) > 40:
+        stored_value = clean_str(stored_values.get(name)) or ''
+        if name in certificate_recovered or len(stored_value) in CALIBRATION_REPAIR_LEGACY_LIMITS or len(stored_value) > 40:
             existing = next((item for item in detected if item.get('path') == path), None)
             if existing:
                 existing['artifact'] = 'report_and_certificate'
                 existing['certificate_field'] = name
+                if name in certificate_recovered:
+                    existing['recovery_source'] = certificate_recovered[name]
             else:
                 detected.append({
                     'path': path,
-                    'length': len(value),
+                    'length': len(stored_value),
                     'certificate_field': name,
                     'artifact': 'certificate',
+                    **({'recovery_source': certificate_recovered[name]} if name in certificate_recovered else {}),
                 })
     if not detected and not force:
         return None
@@ -20516,7 +20782,7 @@ def _calibration_report_complete_fields_candidate_for_file(source_file, force=Fa
     except Exception:
         source_sha256 = ''
     approval_context = _calibration_report_repair_approval_context(source_file)
-    blocked_reasons = []
+    blocked_reasons = list(certificate_blocked)
     if not source_sha256:
         blocked_reasons.append('The generated Calibration Report source is unavailable from managed storage.')
     if not isinstance(report, dict) or not report:
@@ -20579,7 +20845,10 @@ def _calibration_report_complete_fields_candidate_for_file(source_file, force=Fa
         elif path in {'tsr_number', 'tsr-number'}:
             value = payload.get('tsr_number') or payload.get('tsr-number')
         else:
-            value = _calibration_report_repair_path_value(report, path)
+            value = _calibration_report_repair_path_value(
+                resolved_payload.get('calibration_report') if isinstance(resolved_payload.get('calibration_report'), dict) else report,
+                path,
+            )
         expected = re.sub(r'\s+', ' ', clean_str(value) or '').strip()
         if expected and source_text and expected not in source_text:
             missing_saved_values.append(path)
@@ -20616,8 +20885,8 @@ def _calibration_report_complete_fields_candidate_for_file(source_file, force=Fa
         'status': 'blocked' if blocked_reasons else 'repairable',
         'reason': reason,
         'detected_fields': detected,
-        'recovered_fields': sorted(recovered_fields),
-        'certificate_values': mapped_values or {},
+        'recovered_fields': sorted(set(recovered_fields) | {f'certificate.{name}' for name in certificate_recovered}),
+        'certificate_values': values,
         'record_label': clean_str(values.get('Textfield')) or f'Source #{clean_int(source_file.id) or 0}',
         'record_detail': ' · '.join(filter(None, (
             clean_str(values.get('Text6')),
@@ -20706,6 +20975,24 @@ def _calibration_report_pdf_contains_saved_values(pdf_bytes, payload, detected_f
             raise ValueError(f'The regenerated PDF is missing the complete saved value for {path}.')
 
 
+def _calibration_report_certificate_pdf_contains_saved_values(pdf_bytes, values):
+    """Require every mapped certificate value to survive artifact regeneration."""
+    text = re.sub(r'\s+', ' ', _calibration_report_pdf_text(pdf_bytes)).strip()
+    labels = {
+        'Textfield': 'Certificate No.', 'Text1': 'Equipment Name',
+        'Text2': 'Equipment Model', 'Text3': 'System ID',
+        'Text4': 'Calibration Date', 'Text5': 'Next Calibration Date',
+        'Text6': 'Installed At', 'Textfield-0': 'TSR No.',
+    }
+    for name in CALIBRATION_CERTIFICATE_FIELDS:
+        expected = re.sub(r'\s+', ' ', clean_str((values or {}).get(name)) or '').strip()
+        if expected and expected not in text:
+            raise ValueError(
+                f'The regenerated certificate is missing the complete saved value for '
+                f'{labels.get(name, name)}.'
+            )
+
+
 def _calibration_report_apply_complete_fields_repair(source_file_id, payload, uploaded_docx):
     """Regenerate one approved report/certificate pair without changing saved data."""
     source_file = db.session.get(ShiftFile, clean_int(source_file_id))
@@ -20790,7 +21077,12 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
             for artifact in (signed_file, no_signature_file)
         ):
             raise ValueError('The approved certificate files do not belong to this report revision.')
-        values = dict(mapped_before)
+        values, certificate_recovered, certificate_blocked = _calibration_report_resolved_certificate_mapping(
+            repair_payload,
+            mapped_before,
+        )
+        if certificate_blocked:
+            raise ValueError(certificate_blocked[0])
         signed_bytes, _signed_values, signed_fingerprint = build_calibration_certificate_pdf(
             payload_before,
             shift=None,
@@ -20820,6 +21112,8 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
             certificate_number_override=approval.certificate_number,
             mapped_values_override=values,
         )
+        _calibration_report_certificate_pdf_contains_saved_values(signed_bytes, values)
+        _calibration_report_certificate_pdf_contains_saved_values(no_signature_bytes, values)
         unsigned_bytes = None
         if clean_str(getattr(approval, 'unsigned_artifact_path', None)):
             unsigned_bytes, _unsigned_values, _unsigned_fingerprint = build_calibration_certificate_pdf(
@@ -20828,6 +21122,7 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
                 certificate_number_override=approval.certificate_number,
                 mapped_values_override=values,
             )
+            _calibration_report_certificate_pdf_contains_saved_values(unsigned_bytes, values)
         pdf_job = calibration_report_conversion_for_source(source_file.id)
         pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, pdf_job)
         if not pdf_file or pdf_state != 'ready':
@@ -20868,7 +21163,9 @@ def _calibration_report_apply_complete_fields_repair(source_file_id, payload, up
         'no_signature_certificate_file_id': clean_int(no_signature_file.id),
         'source_values_unchanged': True,
         'mapped_snapshot_unchanged': True,
-        'recovered_fields': sorted(recovered_fields),
+        'recovered_fields': sorted(
+            set(recovered_fields) | {f'certificate.{name}' for name in certificate_recovered}
+        ),
         'service_engineer_signature_preserved': True,
         'approver_signature_preserved': True,
         'reason': reason[:1000],
@@ -21008,6 +21305,26 @@ def _calibration_repair_units_inventory():
     return candidates
 
 
+def _calibration_repair_footer_layout_inventory():
+    candidates = []
+    for candidate in _calibration_report_footer_layout_repair_candidates():
+        item = dict(candidate)
+        item.update({
+            'repair_key': 'calibration-report-footer-layout-v1',
+            'repair_version': CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION,
+            'candidate_id': clean_int(candidate.get('source_file_id')),
+            'title': 'Protect Calibration Report footer layout',
+            'artifact_scope': 'Calibration Report DOCX/PDF',
+            # Individual application is exposed in the existing center. Keep
+            # this out of Repair All because it rewrites retained files.
+            'bulk_safe': False,
+            'editable_fields': [],
+            'detected_fields': [],
+        })
+        candidates.append(item)
+    return candidates
+
+
 def _calibration_repair_complete_fields_inventory():
     candidates = []
     files = ShiftFile.query.filter(
@@ -21043,6 +21360,18 @@ register_calibration_repair({
     'apply': lambda candidate_id, **kwargs: _calibration_report_apply_historical_repair(candidate_id),
     'audit': 'existing-universal-approval-and-activity-log',
     'idempotency': 'existing-repair-marker',
+})
+register_calibration_repair({
+    'key': 'calibration-report-footer-layout-v1',
+    'version': CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION,
+    'title': 'Protect Calibration Report footer layout',
+    'description': 'Reserve the retained footer area before regenerating the linked report PDF.',
+    'artifact_scope': 'Calibration Report DOCX/PDF',
+    'bulk_safe': False,
+    'inventory': _calibration_repair_footer_layout_inventory,
+    'apply': lambda candidate_id, **kwargs: _calibration_report_apply_footer_layout_repair(candidate_id, **kwargs),
+    'audit': 'universal-approval-and-activity-log',
+    'idempotency': 'versioned-layout-and-conversion-state',
 })
 register_calibration_repair({
     'key': 'calibration-complete-fields-v1',
@@ -21303,6 +21632,221 @@ def _calibration_report_apply_historical_repair(source_file_id):
         })
         _calibration_report_record_repair_failure(source_file, metadata)
         return dict(candidate, status='failed', reason=reason, rollback_warning=metadata.get('rollback_warning', ''))
+
+
+def _calibration_report_write_footer_layout_repair_marker(source_file, job, pdf_file, metadata):
+    """Add layout repair provenance without replacing saved report data."""
+    submission = db.session.get(
+        OnlineTsrSubmission,
+        clean_int(getattr(source_file, 'online_tsr_submission_id', None)),
+    )
+    if not submission:
+        raise ValueError('The generated Calibration Report submission record is missing.')
+    payload = parse_online_tsr_payload_json(submission)
+    if not isinstance(payload, dict):
+        raise ValueError('The generated Calibration Report submission payload is not readable.')
+    marker = dict(payload.get(CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_MARKER) or {})
+    marker.update({
+        'version': CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION,
+        'status': 'repaired',
+        'repaired_at': _calibration_report_now().isoformat(),
+        'source_file_id': clean_int(source_file.id),
+        'pdf_file_id': clean_int(getattr(pdf_file, 'id', None)) if pdf_file else None,
+        'footer_reserve_twips': CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS,
+    })
+    marker.update(dict(metadata or {}))
+    payload[CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_MARKER] = marker
+    submission.payload_json = json.dumps(payload, ensure_ascii=False)
+    _update_calibration_report_conversion_marker(source_file, job, pdf_file)
+
+
+def _calibration_report_apply_footer_layout_repair(source_file_id, **kwargs):
+    """Replace one generated report pair with the protected footer layout."""
+    source_file = db.session.get(ShiftFile, clean_int(source_file_id))
+    repair_id = f'calibration-report-footer-layout-{clean_int(source_file_id) or 0}'
+    if not source_file or not calibration_report_source_file_is_private(source_file):
+        return {
+            'status': 'failed',
+            'repair_key': 'calibration-report-footer-layout-v1',
+            'repair_id': repair_id,
+            'source_file_id': clean_int(source_file_id),
+            'reason': 'Generated Calibration Report source not found.',
+        }
+    ensure_universal_approval_audit_table()
+    candidate = _calibration_report_footer_layout_candidate_for_file(source_file)
+    if not candidate:
+        return {'status': 'failed', 'repair_key': 'calibration-report-footer-layout-v1', 'repair_id': repair_id, 'source_file_id': clean_int(source_file.id), 'reason': 'Generated Calibration Report source not found.'}
+    payload = kwargs.get('payload') if isinstance(kwargs.get('payload'), dict) else {}
+    supplied_hash = clean_str(payload.get('before_hash') or payload.get('source_sha256'))
+    if supplied_hash and supplied_hash != clean_str(candidate.get('source_sha256')):
+        return dict(candidate, status='conflict', repair_key='calibration-report-footer-layout-v1', repair_id=repair_id, reason='This repair candidate changed after it was opened. Reload the repair inventory.')
+    if candidate['status'] == 'already_repaired':
+        return dict(candidate, repair_key='calibration-report-footer-layout-v1', repair_id=repair_id, status='already_repaired')
+    if candidate['status'] == 'blocked':
+        metadata = {
+            'repair_key': 'calibration-report-footer-layout-v1',
+            'repair_version': CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION,
+            'source_file_id': clean_int(source_file.id),
+            'outcome': 'failed',
+            'reason': candidate.get('reason') or 'The report is blocked from repair.',
+            **_calibration_report_repair_actor_metadata(),
+        }
+        _calibration_report_record_repair_failure(source_file, metadata)
+        return dict(candidate, status='failed', repair_key='calibration-report-footer-layout-v1', repair_id=repair_id, reason=metadata['reason'])
+
+    source_snapshot = None
+    pdf_snapshot = None
+    created_pdf_file = None
+    created_pdf_storage_path = None
+    source_before_sha256 = candidate.get('source_sha256') or ''
+    pdf_before_sha256 = candidate.get('pdf_sha256') or ''
+    metadata = {
+        'repair_key': 'calibration-report-footer-layout-v1',
+        'repair_version': CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION,
+        'source_file_id': clean_int(source_file.id),
+        'pdf_file_id': candidate.get('pdf_file_id'),
+        'footer_reserve_twips': CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS,
+        'source_values_unchanged': True,
+        'report_package_parts_preserved': True,
+        'file_identity_unchanged': True,
+        'approval_state_unchanged': True,
+        'service_engineer_signature_preserved': True,
+        'approver_signature_preserved': True,
+        'certificates_unchanged': True,
+        'before_source_sha256': source_before_sha256,
+        'before_pdf_sha256': pdf_before_sha256,
+        **_calibration_report_repair_actor_metadata(),
+    }
+    try:
+        source_bytes = _calibration_report_source_bytes(source_file)
+        current_source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+        if current_source_sha256 != source_before_sha256:
+            return dict(candidate, status='conflict', repair_key='calibration-report-footer-layout-v1', repair_id=repair_id, reason='This repair candidate changed after it was opened. Reload the repair inventory.')
+        repaired_docx, inspection = _calibration_report_footer_layout_repair_docx_bytes(source_bytes)
+        source_after_sha256 = hashlib.sha256(repaired_docx).hexdigest()
+        job = calibration_report_conversion_for_source(source_file.id)
+        pdf_file, pdf_state, pdf_reason = _calibration_report_repair_pdf_state(source_file, job)
+        if pdf_state == 'blocked':
+            raise ValueError(pdf_reason or 'The linked PDF cannot be safely replaced.')
+        pdf_bytes = convert_calibration_report_docx_bytes(
+            repaired_docx,
+            get_shift_file_display_name(source_file) or 'Calibration_Report.docx',
+        )
+        if not _calibration_report_pdf_bytes_are_valid(pdf_bytes):
+            raise ValueError('The repaired Calibration Report conversion produced an unreadable PDF.')
+        pdf_after_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+        if source_after_sha256 != source_before_sha256:
+            source_snapshot = _calibration_report_storage_snapshot(source_file)
+            _calibration_report_replace_storage_snapshot(
+                source_snapshot,
+                repaired_docx,
+                get_shift_file_display_name(source_file),
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            )
+        if not job:
+            job = _calibration_report_conversion_job_for_source(source_file.id, create=True)
+        if pdf_file:
+            pdf_snapshot = _calibration_report_storage_snapshot(pdf_file)
+            _calibration_report_replace_storage_snapshot(
+                pdf_snapshot,
+                pdf_bytes,
+                get_shift_file_display_name(pdf_file) or _calibration_report_pdf_filename(source_file),
+                'application/pdf',
+            )
+        else:
+            pdf_name = _calibration_report_pdf_filename(source_file)
+            pdf_token = f'calibration-report-pdf-{source_file.id}-{source_after_sha256}'[:100]
+            existing_by_token = ShiftFile.query.filter_by(upload_token=pdf_token).first()
+            if existing_by_token:
+                raise ValueError('A linked PDF token already belongs to another object.')
+            disk_name = get_unique_upload_filename(pdf_name)
+            disk_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+            created_pdf_storage_path = disk_path
+            managed_storage_write_bytes(
+                STORAGE_PREFIX_REPORTS,
+                disk_path,
+                pdf_bytes,
+                original_filename=pdf_name,
+                content_type='application/pdf',
+            )
+            created_pdf_file = ShiftFile(
+                shift_id=source_file.shift_id,
+                filename=disk_name,
+                original_filename=pdf_name,
+                upload_token=pdf_token,
+                online_tsr_submission_id=source_file.online_tsr_submission_id,
+                uploaded_at=get_manila_time(),
+            )
+            db.session.add(created_pdf_file)
+            db.session.flush()
+            pdf_file = created_pdf_file
+
+        now = _calibration_report_now()
+        job.source_sha256 = source_after_sha256
+        job.pdf_sha256 = pdf_after_sha256
+        job.pdf_shift_file_id = clean_int(pdf_file.id)
+        job.converter_version = CALIBRATION_REPORT_CONVERTER_VERSION
+        job.state = 'ready'
+        job.claim_token = None
+        job.claimed_at = None
+        job.next_retry_at = None
+        job.last_error = None
+        job.converted_at = now
+        job.updated_at = now
+        metadata.update({
+            'after_source_sha256': source_after_sha256,
+            'after_pdf_sha256': pdf_after_sha256,
+            'outcome': 'repaired',
+            'pdf_file_id': clean_int(pdf_file.id),
+            'repaired_at': now.isoformat(),
+        })
+        _calibration_report_write_footer_layout_repair_marker(source_file, job, pdf_file, metadata)
+        record_universal_approval_audit(
+            'calibration_report',
+            clean_int(source_file.id),
+            'calibration_report_footer_layout_repaired',
+            actor_user=current_user,
+            metadata=metadata,
+        )
+        db.session.add(ActivityLog(
+            user=universal_approval_actor_name(current_user)[:100] or 'System',
+            action=f'Calibration Report footer layout repair completed | source #{source_file.id} | PDF #{pdf_file.id}',
+        ))
+        db.session.commit()
+        return dict(
+            candidate,
+            status='repaired',
+            repair_key='calibration-report-footer-layout-v1',
+            repair_id=repair_id,
+            reason='Calibration Report footer layout and linked PDF were repaired.',
+            pdf_file_id=clean_int(pdf_file.id),
+            pdf_filename=get_shift_file_display_name(pdf_file) or get_shift_file_disk_name(pdf_file),
+            source_sha256=source_after_sha256,
+            pdf_sha256=pdf_after_sha256,
+        )
+    except Exception as repair_error:
+        db.session.rollback()
+        rollback_error = None
+        for snapshot in (pdf_snapshot, source_snapshot):
+            if not snapshot:
+                continue
+            try:
+                _calibration_report_restore_storage_snapshot(snapshot)
+            except Exception as restore_error:
+                rollback_error = rollback_error or restore_error
+        if created_pdf_storage_path:
+            try:
+                managed_storage_delete(STORAGE_PREFIX_REPORTS, created_pdf_storage_path)
+            except Exception as created_storage_error:
+                rollback_error = rollback_error or created_storage_error
+        reason = clean_str(str(repair_error))[:500] or 'Calibration Report footer layout repair failed.'
+        metadata.update({
+            'outcome': 'failed',
+            'reason': reason,
+            'rollback_warning': clean_str(str(rollback_error))[:300] if rollback_error else '',
+        })
+        _calibration_report_record_repair_failure(source_file, metadata)
+        return dict(candidate, status='failed', repair_key='calibration-report-footer-layout-v1', repair_id=repair_id, reason=reason, rollback_warning=metadata.get('rollback_warning', ''))
 
 
 def convert_calibration_report_docx_bytes(docx_bytes, original_filename='Calibration_Report.docx'):
@@ -26134,7 +26678,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v212-calendar-calibration-actions.
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v218-approval-center-report-review';
+    # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v220-calibration-complete-values';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -26159,7 +26704,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=40',
+  '/static/js/app-calibration-report.js?v=41',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

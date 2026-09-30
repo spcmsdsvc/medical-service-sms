@@ -25,6 +25,9 @@
   var EXPOSURE_KEYS = ['nominal_kvp','measured_kvp','ma_mas','dose_ugy','dose_rate','time_msec','measured_time'];
   var EXPOSURE_CURRENT_UNITS = ['mA','mAs'];
   var CALIBRATION_REPORT_EXPOSURE_ROW_COUNT = 8;
+  // The retained template measures 2,360 twips of footer artwork plus 708 twips
+  // of footer distance.  The 120-twip (6pt) clearance is rounded up to 3,600.
+  var CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS = 3600;
   var DEFAULT_MANUFACTURER = 'Shimadzu';
   var CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH = 40;
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -1265,6 +1268,53 @@
     if(!heading || !performance || performance.start <= heading.start) throw templateSlotError('page 3 output region');
     return { start:heading.start, end:performance.end, xml:documentXml.slice(heading.start,performance.end) };
   }
+  function addRowProperty(rowXml, propertyXml){
+    var rowProperties = directXmlBlocks(rowXml, 'trPr');
+    if(rowProperties.length){
+      if(rowProperties[0].xml.indexOf(propertyXml.replace(/\/>$/, '')) >= 0) return rowXml;
+      var properties = rowProperties[0]; var close = '</w:trPr>';
+      if(properties.xml.slice(-close.length) !== close) throw templateSlotError('table row properties end');
+      var updated = properties.xml.slice(0, -close.length) + propertyXml + close;
+      return rowXml.slice(0, properties.start) + updated + rowXml.slice(properties.end);
+    }
+    var openingEnd = rowXml.indexOf('>'); if(openingEnd < 0) throw templateSlotError('table row start');
+    return rowXml.slice(0, openingEnd + 1) + '<w:trPr>' + propertyXml + '</w:trPr>' + rowXml.slice(openingEnd + 1);
+  }
+  function addParagraphProperty(paragraphXml, propertyXml){
+    var paragraphProperties = directXmlBlocks(paragraphXml, 'pPr');
+    if(paragraphProperties.length){
+      if(paragraphProperties[0].xml.indexOf(propertyXml.replace(/\/>$/, '')) >= 0) return paragraphXml;
+      var properties = paragraphProperties[0]; var close = '</w:pPr>';
+      if(properties.xml.slice(-close.length) !== close) throw templateSlotError('paragraph properties end');
+      var updated = properties.xml.slice(0, -close.length) + propertyXml + close;
+      return paragraphXml.slice(0, properties.start) + updated + paragraphXml.slice(properties.end);
+    }
+    var openingEnd = paragraphXml.indexOf('>'); if(openingEnd < 0) throw templateSlotError('paragraph start');
+    return paragraphXml.slice(0, openingEnd + 1) + '<w:pPr>' + propertyXml + '</w:pPr>' + paragraphXml.slice(openingEnd + 1);
+  }
+  function markTableHeaderRows(documentXml, tableIndex, count){
+    var tables = directXmlBlocks(documentXml, 'tbl'); if(!tables[tableIndex]) throw templateSlotError('table ' + tableIndex);
+    var table = tables[tableIndex]; var rows = directXmlBlocks(table.xml, 'tr');
+    if(rows.length < count) throw templateSlotError('table ' + tableIndex + ' header rows');
+    rows.slice(0, count).slice().reverse().forEach(function(row, reverseIndex){
+      var rowIndex = count - reverseIndex - 1; var updated = addRowProperty(row.xml, '<w:tblHeader/><w:cantSplit/>');
+      if(rowIndex < count - 1){
+        directXmlBlocks(updated, 'p').slice().reverse().forEach(function(paragraph){
+          updated = updated.slice(0, paragraph.start) + addParagraphProperty(paragraph.xml, '<w:keepNext/>') + updated.slice(paragraph.end);
+        });
+      }
+      var currentRows = directXmlBlocks(table.xml, 'tr'); var currentRow = currentRows[rowIndex];
+      table.xml = table.xml.slice(0, currentRow.start) + updated + table.xml.slice(currentRow.end);
+    });
+    return documentXml.slice(0, table.start) + table.xml + documentXml.slice(table.end);
+  }
+  function applyFooterReserve(documentXml){
+    return documentXml.replace(/<w:pgMar\b[^>]*>/g, function(tag){
+      var match = tag.match(/\bw:bottom="(\d+)"/); if(!match) return tag;
+      var current = Number(match[1]); if(!Number.isFinite(current) || current >= CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS) return tag;
+      return tag.replace(/\bw:bottom="\d+"/, 'w:bottom="' + CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS + '"');
+    });
+  }
   function setOutputRegionHeading(regionXml,tubeNumber){
     var heading = textBlocks(regionXml).find(function(node){ return xmlUnescape(node.xml.replace(/^<w:t\b[^>]*>/,'').replace(/<\/w:t>$/,'')).indexOf('AVERAGE EXPOSURE OUTPUT') >= 0; });
     if(!heading) throw templateSlotError('page 3 output heading');
@@ -1276,6 +1326,9 @@
   function fillOutputRegion(regionXml,output,tubeNumber){
     var tables = directXmlBlocks(regionXml,'tbl'); if(tables.length !== 3) throw templateSlotError('three page 3 output tables');
     regionXml = setOutputRegionHeading(regionXml,tubeNumber);
+    regionXml = markTableHeaderRows(regionXml, 0, 4);
+    regionXml = markTableHeaderRows(regionXml, 1, 4);
+    regionXml = markTableHeaderRows(regionXml, 2, 1);
     [['small',0],['large',1]].forEach(function(table){
       var key = table[0]; var index = table[1]; var selected = output.focal_spots?.[key] !== false; var rows = output.exposure?.[key] || [];
       if(!selected) return;
@@ -1368,6 +1421,7 @@
     var tube2Output = hasTube2Identity(report) ? fillOutputRegion(sourceOutput.xml,report.tube2_output || blankTube2Output(),2) : '';
     documentXml = documentXml.slice(0,sourceOutput.start) + tube1Output + documentXml.slice(sourceOutput.end);
     if(tube2Output) documentXml = insertTube2OutputPage(documentXml,tube2Output);
+    documentXml = applyFooterReserve(documentXml);
     var relationshipInfo = addImageRelationship(documentRels); documentXml = patchTableCell(documentXml, 1, 14, 1, function(cell){ return fillSignatureCell(cell, relationshipInfo.id, getPath(report, 'calibration.engineer_name')); });
     zip.file('word/document.xml', documentXml); zip.file('word/_rels/document.xml.rels', relationshipInfo.xml); zip.file('[Content_Types].xml', addImageContentType(await contentTypesFile.async('string'))); zip.file('word/media/calibration-signature.png', dataUrlBytes(report.signature.image), { binary:true });
     var bytes = await zip.generateAsync({ type:'blob', compression:'STORE' }); return { blob:new Blob([bytes], { type:DOCX_MIME }), filename:filename };

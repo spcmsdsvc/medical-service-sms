@@ -372,6 +372,7 @@ class CalibrationCenterContracts(unittest.TestCase):
             'CALIBRATION_REPAIR_REGISTRY',
             'register_calibration_repair',
             "'calibration-report-units-v3'",
+            "'calibration-report-footer-layout-v1'",
             "'calibration-complete-fields-v1'",
             "@app.route('/admin/calibration-center/repairs')",
             "@app.route('/admin/calibration-center/repairs/<repair_key>/<int:candidate_id>')",
@@ -396,6 +397,10 @@ class CalibrationCenterContracts(unittest.TestCase):
             'buildRepairDocx',
             'Repair Calibration Report &amp; Certificate',
             'immutable saved report payload',
+            'Footer reserve',
+            'Layout-only DOCX/PDF repair',
+            'Protect footer layout',
+            "app-calibration-report.js') }}?v=41",
         ):
             self.assertIn(marker, TEMPLATE_SOURCE)
         self.assertIn('mapped_data_json', APP_SOURCE)
@@ -409,6 +414,21 @@ class CalibrationCenterContracts(unittest.TestCase):
             self.assertTrue(definition['idempotency'], repair_key)
             self.assertIn(definition['bulk_safe'], (True, False), repair_key)
         self.assertTrue(app_module.CALIBRATION_REPAIR_REGISTRY['calibration-complete-fields-v1']['bulk_safe'])
+        footer_definition = app_module.CALIBRATION_REPAIR_REGISTRY['calibration-report-footer-layout-v1']
+        self.assertEqual(footer_definition['version'], app_module.CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION)
+        self.assertFalse(footer_definition['bulk_safe'])
+        self.assertEqual(app_module.CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS, 3600)
+
+    def test_registered_footer_repair_denies_without_center_authority(self):
+        with app_module.app.test_request_context(
+            '/admin/calibration-center/repairs/calibration-report-footer-layout-v1/1/apply',
+            method='POST',
+            json={},
+        ), patch.object(app_module, 'can_access_calibration_center', return_value=False):
+            response = app_module.calibration_center_repair_apply_registered.__wrapped__(
+                'calibration-report-footer-layout-v1', 1
+            )
+        self.assertEqual(response[1], 403)
 
     def test_approved_record_repair_button_opens_deterministic_context(self):
         render_rows = TEMPLATE_SOURCE.split('function renderRows(records)', 1)[1].split(
@@ -465,6 +485,58 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertEqual(unrelated['calibration_report']['facility']['address'], truncated)
         self.assertEqual(recovered, {})
 
+    def test_complete_fields_repair_recovers_legacy_certificate_mapping_from_report_snapshot(self):
+        complete = 'Allied Care Experts (ACE) Medical Center - Cagayan De Oro'
+        truncated = complete[:40].rstrip()
+        payload = {
+            'tsr-customer-name': complete,
+            'tsr-number': 'TSR-20260923-01-KM',
+            'calibration_report': {
+                'facility': {'name': truncated},
+                'machine': {
+                    'modality': 'Digital Radiography System',
+                    'model': 'MobileDart Evolution MX8',
+                    'serial_number': 'MQ6B6FBAA001',
+                },
+            },
+        }
+        resolved, recovered = app_module._calibration_report_resolved_repair_payload(payload)
+        mapped = {
+            'Textfield': '2026-0923-B-42',
+            'Text1': 'Digital Radiography System',
+            'Text2': 'MobileDart Evolution MX8',
+            'Text3': 'MQ6B6FBAA001',
+            'Text4': '2026/09/23',
+            'Text5': '2027/09/23',
+            'Text6': truncated,
+            'Textfield-0': 'TSR-20260923-01-KM',
+        }
+        values, certificate_recovered, blocked = app_module._calibration_report_resolved_certificate_mapping(
+            resolved,
+            mapped,
+        )
+        self.assertEqual(values['Text6'], complete)
+        self.assertEqual(certificate_recovered, {'Text6': 'Saved report client name'})
+        self.assertEqual(blocked, [])
+        self.assertIn('facility.name', recovered)
+        self.assertEqual(mapped['Text6'], truncated)
+
+    def test_complete_fields_repair_blocks_conflicting_certificate_mapping(self):
+        payload = {
+            'calibration_report': {'facility': {'name': 'A' * 57}},
+        }
+        values, recovered, blocked = app_module._calibration_report_resolved_certificate_mapping(
+            payload,
+            {
+                'Textfield': 'CERT-1', 'Text1': 'Equipment', 'Text2': 'Model',
+                'Text3': 'Serial', 'Text4': '2026/09/23', 'Text5': '2027/09/23',
+                'Text6': 'B' * 40, 'Textfield-0': 'TSR-1',
+            },
+        )
+        self.assertEqual(values['Text6'], 'B' * 40)
+        self.assertEqual(recovered, {})
+        self.assertIn('Text6', blocked[0])
+
     def test_complete_fields_repair_recovers_legacy_console_model_from_saved_model(self):
         truncated = 'MobileDart Evolution M'
         complete = 'MobileDart Evolution MX8 Version'
@@ -520,7 +592,7 @@ class CalibrationCenterContracts(unittest.TestCase):
     def test_calibration_center_row_shows_repair_history_status(self):
         self.assertEqual(
             app_module.CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
-            'calibration-report-complete-fields-v4',
+            'calibration-report-complete-fields-v5',
         )
         for marker in (
             'repair_status',

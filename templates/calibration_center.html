@@ -353,22 +353,25 @@
         body.innerHTML = page.items.map((candidate) => {
             const candidateId = candidate.candidate_id || candidate.source_file_id;
             const units = candidate.repair_key === 'calibration-report-units-v3';
-            const action = candidate.status === 'repairable' && candidate.bulk_safe
-                ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 fw-bold js-calibration-repair" data-repair-key="${escapeHtml(candidate.repair_key)}" data-candidate-id="${escapeHtml(candidateId)}">${units ? 'Repair' : 'Review repair'}</button>`
+            const footerLayout = candidate.repair_key === 'calibration-report-footer-layout-v1';
+            const direct = units || footerLayout;
+            const repairTitle = units ? 'Correct headings and units' : footerLayout ? 'Protect footer layout' : 'Restore complete fields';
+            const action = candidate.status === 'repairable' && (candidate.bulk_safe || footerLayout)
+                ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 fw-bold js-calibration-repair" data-repair-key="${escapeHtml(candidate.repair_key)}" data-candidate-id="${escapeHtml(candidateId)}">${direct ? 'Repair' : 'Review repair'}</button>`
                 : candidate.status === 'manual_required'
                     ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 fw-bold js-calibration-manual-repair" data-repair-key="${escapeHtml(candidate.repair_key)}" data-candidate-id="${escapeHtml(candidateId)}">Review</button>`
                     : '<span class="text-muted small">No action</span>';
             const targets = candidate.target_units || candidate.exposure_current_units || {};
             const sources = candidate.unit_sources || candidate.unit_resolution_source || {};
-            const targetText = units ? `Small ${targets.small || 'blank'} · Large ${targets.large || 'blank'}` : (candidate.detected_fields || []).map((item) => item.label || 'Saved field').join(', ') || 'Rebuild saved artifacts';
-            const sourceText = units ? `Small ${sources.small || 'unknown'} · Large ${sources.large || 'unknown'}` : candidate.artifact_scope || '';
-            const artifactText = units ? 'Calibration Report (Word and PDF)' : 'Calibration Report and linked certificates';
+            const targetText = units ? `Small ${targets.small || 'blank'} · Large ${targets.large || 'blank'}` : footerLayout ? `Footer reserve ${candidate.footer_reserve_twips || 3600} twips` : (candidate.detected_fields || []).map((item) => item.label || 'Saved field').join(', ') || 'Rebuild saved artifacts';
+            const sourceText = units ? `Small ${sources.small || 'unknown'} · Large ${sources.large || 'unknown'}` : footerLayout ? 'Layout-only DOCX/PDF repair' : candidate.artifact_scope || '';
+            const artifactText = units || footerLayout ? 'Calibration Report (Word and PDF)' : 'Calibration Report and linked certificates';
             const statusClass = candidate.status === 'repairable' ? 'text-bg-warning' : candidate.status === 'already_repaired' ? 'text-bg-success' : candidate.status === 'manual_required' ? 'text-bg-info' : 'text-bg-danger';
             const statusLabel = {repairable:'Ready to repair', already_repaired:'Completed', manual_required:'Needs review', blocked:'Blocked'}[candidate.status] || 'Needs review';
             const fields = candidate.detected_fields || [];
-            const fieldSummary = units ? `Exposure headings and current units: ${targetText}` : fields.slice(0,3).map((item) => item.label || 'Saved field').join(', ') + (fields.length > 3 ? ` and ${fields.length - 3} more` : '') || 'Regenerate files using saved values';
+            const fieldSummary = units ? `Exposure headings and current units: ${targetText}` : footerLayout ? 'Reserve footer area and regenerate linked PDF' : fields.slice(0,3).map((item) => item.label || 'Saved field').join(', ') + (fields.length > 3 ? ` and ${fields.length - 3} more` : '') || 'Regenerate files using saved values';
             const details = `<details><summary>View details</summary><div class="mt-2">${escapeHtml(candidate.reason || '')}</div><div class="mt-2">${escapeHtml(targetText)}</div><div class="mt-2 text-muted">${escapeHtml(sourceText)}</div><div class="mt-2 text-muted">${escapeHtml(candidate.filename || '')}<br>Repair version: ${escapeHtml(candidate.repair_version || '')}<br>Record reference: ${escapeHtml(candidateId)}</div></details>`;
-            return `<tr><td><strong>${escapeHtml(repairRecordName(candidate))}</strong><div class="small text-muted mt-1">${candidate.emailed ? 'Previously emailed' : candidate.approved ? 'Approved' : 'Historical report'}</div></td><td><strong>${units ? 'Correct headings and units' : 'Restore complete fields'}</strong><div class="small mt-1">${escapeHtml(fieldSummary)}</div><div class="small text-muted mt-1">${escapeHtml(artifactText)}</div>${details}</td><td><span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span><div class="small mt-2">${candidate.status === 'blocked' ? escapeHtml(candidate.reason || 'Required saved information or files are unavailable.') : candidate.status === 'already_repaired' ? 'This repair version has been applied.' : 'Review the details before continuing.'}</div></td><td>${action}</td></tr>`;
+            return `<tr><td><strong>${escapeHtml(repairRecordName(candidate))}</strong><div class="small text-muted mt-1">${candidate.emailed ? 'Previously emailed' : candidate.approved ? 'Approved' : 'Historical report'}</div></td><td><strong>${repairTitle}</strong><div class="small mt-1">${escapeHtml(fieldSummary)}</div><div class="small text-muted mt-1">${escapeHtml(artifactText)}</div>${details}</td><td><span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span><div class="small mt-2">${candidate.status === 'blocked' ? escapeHtml(candidate.reason || 'Required saved information or files are unavailable.') : candidate.status === 'already_repaired' ? 'This repair version has been applied.' : 'Review the details before continuing.'}</div></td><td>${action}</td></tr>`;
         }).join('');
         body.querySelectorAll('.js-calibration-repair').forEach((button) => button.addEventListener('click', () => applyRepair(button.dataset.repairKey, Number(button.dataset.candidateId), button)));
         body.querySelectorAll('.js-calibration-manual-repair, .js-calibration-deterministic-repair').forEach((button) => button.addEventListener('click', () => openRepairContext(button.dataset.repairKey, Number(button.dataset.candidateId))));
@@ -521,5 +524,5 @@ window.CalibrationReportConfig = {
 };
 </script>
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=40"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=41"></script>
 {% endblock %}

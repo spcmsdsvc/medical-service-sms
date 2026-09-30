@@ -1,3 +1,152 @@
+# Preserve Complete Report and Certificate Values
+
+**Status:** Executed — uncommitted; commit/push/deployment remain separately unauthorized.
+**Publication authorized:** 2026-09-30 — the owner said “now commit and push only these changes. never the db and dirty files”. Authorization covers this complete-value package and the preceding footer package; protected and unrelated dirty work remains excluded.
+**Approved:** 2026-09-30 — the owner supplied the complete plan with “PLEASE IMPLEMENT THIS PLAN”. This records approval under the repository's separate approval/execution rule.
+**Detailed:** 2026-09-30.
+**Execution authorized:** 2026-09-30 — the owner said “go ahead. do not overengineer and over verify things”.
+
+## Summary and findings
+
+The screenshot’s shortened client name is exactly 40 characters, matching the former limit. A read-only probe confirms that the current report recovery restores the full name when it exists in the saved TSR.
+
+The certificate repair has a separate gap: it reuses the original certificate mapping, so a shortened value can survive repair even after the report value is recovered. The pictured record is not in the local database; its production snapshots have not been inspected.
+
+The current generator already retains full report text and supports certificate fitting. Extend that behavior and the existing repair instead of adding another repair framework.
+
+## Numbered implementation steps
+
+1. **Establish focused regressions.** In the existing report, certificate, and Calibration Center tests, reproduce the supplied 57-character client name with a 40-character report/certificate snapshot. Cover legacy limits followed by whitespace trimming, long values in every populated report field—including both tubes—and all certificate mappings. Done: tests expose certificate repair retaining the short value and any remaining data-loss path.
+
+2. **Preserve complete values during generation.** Audit capture, normalization, autofill, draft restoration, DOCX filling, and certificate mapping in `static/js/app-calibration-report.js` and the corresponding server builders. Remove any remaining presentation-based truncation of field data. Recover recognizable legacy-cut values only from a trustworthy corresponding value in the same TSR/report snapshot. Feed the same resolved values into both artifacts and invalidate generated metadata when those values change. Preserve domain validation for dates, identifiers, and catalog selection.
+
+3. **Fit the complete text safely.** Keep expandable report rows, wrapping, continuation pages, and the existing footer protection. Keep certificates one-page using the existing measured single/two-line fitting in matched client/server code. If complete text cannot fit within the established font sizes and field geometry, report the affected field clearly and fail before replacing artifacts or advancing workflow state. Done: no successful generation silently omits supplied text.
+
+4. **Correct historical repair mappings.** In `app.py`, extend the existing complete-fields resolver to recognize known legacy cuts after trimming. Build an in-memory certificate mapping from its saved mapping plus verified complete values from the same revision’s immutable snapshots. Substitute only when the shortened value matches the recognized legacy cut; conflicting values are blocked. Preserve certificate number, dates, saved business snapshots, signatures, approval/delivery state, filenames, and file links. Fields without a trustworthy complete source must not be guessed or fetched from current master records.
+
+5. **Update repair discovery and verification.** Advance the complete-fields repair version so previously repaired records can receive the correction. Detect recoverable short values and artifact omissions using the resolved expected values, rather than character counts alone. Update the existing repair summary to identify affected report/certificate fields and their saved recovery source. Verify full values in the generated DOCX, report PDF, and signed/no-signature certificate PDFs before storage replacement. Retain existing authorization, stale-hash checks, rollback, audit, and idempotency behavior.
+
+6. **Verify and record the package.** Run the focused regressions and relevant syntax checks, then one isolated full-suite pass. Render representative certificate PDFs and inspect complete text, field boundaries, signatures, and one-page geometry. Report DOCX visual verification as blocked if the renderer remains unavailable. Update asset/cache versions, service worker, release entry, `changes.md`, and the approved plan’s execution record. Self-check the scoped diff and prepare an explicit-file commit checklist.
+
+## Acceptance tests
+
+- The complete client name appears in both report and certificate after generation and historical repair.
+- Long text survives every report field, both tube sections, and every certificate mapping without silent slicing.
+- Recognized legacy cuts recover correctly; differing values and unavailable complete sources are not substituted.
+- Certificate fitting either preserves complete text within one page or returns a clear error.
+- All repaired certificate variants contain the expected complete values.
+- Repeated repair is a no-op; stale/unauthorized requests are rejected; failures restore the existing artifacts.
+- The uncommitted footer implementation and unrelated owner work remain intact.
+
+## Boundaries and workflow
+
+No new routes, schema, dependencies, editable repair fields, or certificate continuation pages. Existing domain limits remain validation rules, never silent truncation.
+
+Historical repairs change generated artifacts and repair metadata only. Production repair execution, browser automation, formal review, commit, push, and deployment remain separately authorized.
+
+After approval, record this complete plan and wait for the repository’s separate execution go-ahead.
+
+## Investigation and execution handoff
+
+- `app.py:20499`, `_calibration_report_resolved_repair_payload()`, recovers a longer facility name from `tsr-customer-name` when the short value matches the legacy limit and saved prefix. The read-only synthetic probe restored the screenshot's 57-character name from its 40-character value without mutating the input. Extend recognition to the result of a known legacy slice followed by trimming; do not treat every arbitrary prefix as a cutoff.
+- `app.py:20621`, `_calibration_report_complete_fields_candidate_for_file()`, currently uses length-based discovery and trusts the current version marker early. Re-evaluate candidates against resolved expected values and advance `CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION` from v4 so older successful repairs can receive the correction.
+- `app.py:20893`, `_calibration_report_apply_complete_fields_repair()`, currently assigns `values = dict(mapped_before)` and supplies that unchanged override to certificate builders. Replace this with the verified in-memory mapping, retaining immutable stored snapshots and existing transaction/storage rollback safeguards. `calibration_certificate_values()`, `calibration_certificate_field_lines()`, and `build_calibration_certificate_pdf()` are the existing mapping, fitting, and generation integration points.
+- `static/js/app-calibration-report.js` uses `normalizeState()`, `autofill()`, `buildDocx()`, `certificateFieldValues()`, and the existing fitting helpers. Preserve the footer reserve/repeating headers already implemented in this working tree. New/finalized outputs must use consistent complete resolved values; changed values must invalidate stale generated metadata.
+- Focused coverage belongs in `tests/test_tsr_calibration_report.py`, `tests/test_calibration_center.py`, `tests/test_calibration_report_pdf.py`, and the existing certificate builder/workflow suites where relevant. Use disposable databases and storage with isolation configured before application import. The prior footer package's full-suite baseline was 1,416 tests with 1,386 passed, 23 failures, 2 errors, and 5 skips; these are historical results, not this package's results.
+- Existing repair summaries/actions are in `templates/calibration_center.html`. Use their read-only source labels and blocked reasons rather than adding data-entry controls. Asset/cache references are in `templates/offline_tsr.html` and `app.py`; advance from their current values and update `static/changelog/releases.json` under the current daily release.
+
+## Verification, risks, and after implementation
+
+- Establish the certificate-short-name regression against the pre-change implementation and use the existing long-value generation tests as the positive controls. Verify the complete expected text in every repaired PDF variant, not merely the recovered report payload or successful endpoint response.
+- The main risk is replacing a legitimately different saved value. Require the corresponding immutable source and recognized legacy-cut relationship; block conflicts or genuinely unavailable complete data rather than consulting mutable client/equipment records.
+- Verify certificate raster output using available bundled PDF tools. The certificate stays one-page with original template/signature geometry. The unavailable DOCX renderer remains an explicit limitation; do not claim visual DOCX clearance or introduce desktop Word/LibreOffice or browser automation as a workaround.
+- Run focused suites, syntax/configuration/diff checks, and one isolated full-suite pass; record exact pass/fail/skip results and do not correct unrelated baseline failures. Preserve official template bytes and all pre-existing footer work.
+- Browser checks remain unperformed unless separately authorized. If later authorized, verify readable repair context, full-value labels, blocked/conflict/success messages, and existing actions at desktop and 375-pixel widths with usable tap targets and no console errors, without navigating or terminating the Codex session.
+- Update `changes.md` and this plan's execution outcome truthfully. Self-review is limited to the Builder's scoped completion check; formal post-implementation review needs a separate owner instruction. No new journal is required solely for this package.
+- The future explicit-file commit checklist may include the affected application/generator/template/test files, cache/release metadata, `plans.md`, and `changes.md`; it must distinguish this work from the prior uncommitted footer package and exclude protected `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, loose handoff files, and unrelated owner changes. Commit, push, deployment, and production repair remain separately unauthorized.
+
+## Recording outcome
+
+- 2026-09-30: Recorded the complete owner-approved plan with status **Approved — awaiting go-ahead**. Only `plans.md` and this task's `changes.md` entry were added. Existing uncommitted footer implementation and owner work were preserved. This package has not changed application behavior, tests, templates, artifacts, database/storage, cache/release versions, production state, Git publication, or Railway settings. Await the separate execution go-ahead.
+- 2026-09-30: Execution authorized by the owner with “go ahead. do not overengineer and over verify things”. Implementation is in progress; commit, push, deployment, production repair, and formal review remain separately unauthorized.
+- 2026-09-30: Execution completed. `app.py` now advances complete-fields repair to v5, recognizes legacy slice-and-trim cuts, overlays only verified complete report/TSR values onto historical certificate mappings, blocks conflicts or missing sources, and verifies every regenerated signed/no-signature/unsigned certificate PDF before replacement. Stored report payloads, approval mappings, signatures, business snapshots, filenames, approval/delivery state, and file identity remain unchanged.
+- 2026-09-30: Added focused resolver/conflict regressions in `tests/test_calibration_center.py`; existing certificate/report suites verified complete long values and one-page certificate geometry. Focused calibration suites passed 104/104. The isolated full suite ran 1,419 tests with 1,389 passed, 23 failures, 2 errors, and 5 skips; failures/errors match the pre-existing unrelated baseline. Python compile, release JSON, Node checks, certificate PDF text/one-page geometry checks, and `git diff --check` passed. DOCX visual inspection remains blocked by unavailable bundled LibreOffice-compatible renderers.
+- 2026-09-30: Advanced the embedded service-worker cache marker to v220 and added `2026-09-30-calibration-complete-values` to `static/changelog/releases.json`. No production repair, database/storage operation, browser/Codex automation, commit, push, deployment, or formal review was performed. Intended commit files are `app.py`, `tests/test_calibration_center.py`, `static/changelog/releases.json`, `plans.md`, and `changes.md`; pre-existing footer work and protected artifacts remain excluded from this package.
+
+---
+
+# Protect Calibration Report Footers
+
+**Status:** Executed — uncommitted; commit/push/deployment remain separately unauthorized.
+**Publication authorized:** 2026-09-30 — the owner said “now commit and push only these changes. never the db and dirty files”. Authorization covers this footer package and the subsequent complete-value package; protected and unrelated dirty work remains excluded.
+**Approved:** 2026-09-30 — the owner supplied the complete plan with “PLEASE IMPLEMENT THIS PLAN”. This records approval under the repository's separate approval/execution rule.
+**Detailed:** 2026-09-30.
+**Execution authorized:** 2026-09-30 — the owner said “go ahead. do not overengineer or over check”.
+
+## Summary and confirmed cause
+
+The template has a one-inch bottom margin, but its footer logo floats upward with wrapping disabled (`wp:wrapNone`). Added measurement rows can occupy the same space. `buildDocx()` preserves the footer files but does not reserve their full visible area.
+
+Chosen behavior: preserve all values and readable text, allow continuation pages, and include a repair option for existing reports.
+
+## Numbered implementation steps
+
+1. **Establish the safe footer boundary.** Render the unchanged template and a synthetic report matching the screenshot’s six-row focal tables. Measure the highest footer artwork or text on each applicable page. Define one fixed bottom reserve covering that footprint plus six points of clearance. Done: the overlap is reproduced and the required reserve is documented. If a suitable renderer is unavailable, report visual verification as blocked.
+
+2. **Protect newly generated reports.** In `static/js/app-calibration-report.js`, apply the reserve to generated document section properties in `buildDocx()`, after assembling both tube regions. Preserve a larger existing margin. Keep the canonical template, footer parts, artwork positions, fonts, values, and signatures unchanged. Done: body content paginates above the footer on every generated page.
+
+3. **Make continuation tables readable.** In `fillOutputRegion()`, mark the four introductory/header rows of each focal table as repeating headers and keep that header group together. Repeat the Performance Criteria heading when its table continues. Preserve expandable rows and the explicit start of Tube 2. Done: overflow retains its context without clipping or losing measurements.
+
+4. **Add the historical repair option.** In `app.py`, register `calibration-report-footer-layout-v1` through the existing Calibration Center registry. Patch only layout properties in the retained DOCX, then regenerate its linked PDF. Identify candidates by missing safe layout properties; this indicates susceptibility, not proof of visible overlap. Support both tube sections without relying on the older repair’s four/five-table restriction. Reuse existing administrator access, ownership checks, stale-artifact protection, storage rollback, audit, and idempotency conventions. Preserve saved values, signature bytes, certificates, approval state, filenames, and record links. Missing or unrecognized sources are blocked.
+
+5. **Verify the behavior.** Extend the existing report-generation, PDF-repair, and Calibration Center tests. Establish failing controls before the fix; test six and eight measurement rows, either focal spot, both focal spots, two tubes, and multiline overflow. Verify unchanged values and footer/signature package parts, repeated repair as a no-op, denied unauthorized repair, and rollback on conversion/storage failure. Render and inspect every page; require at least six points between body content and the footer. Run focused tests, then one isolated full-suite pass and syntax/diff checks.
+
+6. **Record and prepare the release.** Update report asset/cache versions, service-worker version, the daily release entry, `changes.md`, and the approved plan’s execution record. Record exact results and any rendering limitation. Self-check the intended diff and prepare an explicit-file commit checklist excluding protected owner work.
+
+## Interfaces and boundaries
+
+- No new routes or database schema: the repair uses the existing registry endpoints and Calibration Center controls.
+- Extra report pages are acceptable; fixed physical page numbers are not guaranteed.
+- Historical repair changes artifact layout only and uses the retained signed DOCX without re-entering business data.
+- Browser automation, production repair execution, commit, push, and deployment require their separate authorization. Local rendered-page inspection provides the layout verification.
+- After plan approval, record the complete plan when writing is permitted and stop for the repository’s separate execution go-ahead. Formal review remains a separate stage.
+
+## Risks and acceptance
+
+A larger footer reserve may increase page count, including before the exposure section. Preserve explicit section starts and verify the entire report.
+
+Acceptance requires readable continuation pages, every supplied value and signature preserved, and no table text or borders entering the footer area. Structural tests alone cannot establish that visual result.
+
+## Investigation and execution handoff
+
+- `static/js/app-calibration-report.js:1151` (`validateTemplateFurniture`) checks footer/header references and package parts, but does not enforce layout clearance.
+- `static/js/app-calibration-report.js:1277` (`fillOutputRegion`) expands measurement rows, populates criteria, and compacts the final gap; `:1293` (`insertTube2OutputPage`) appends a second tube region with an explicit page break. `:1355` (`buildDocx`) assembles the generated document without a safe footer reserve.
+- `static/templates/calibration-report/calibration-report-template.docx` contains Letter section geometry with `w:bottom="1440"` and `w:footer="708"`; the default footer's floating logo uses `behindDoc="1"`, a negative paragraph-relative vertical offset, and `wp:wrapNone`. Preserve the template and footer package parts.
+- `app.py:20975` (`register_calibration_repair`) and the existing generic registry inventory/application routes provide the repair extension point. Reuse storage snapshot/rollback and artifact ownership helpers rather than building a new repair framework.
+- Focused tests belong in `tests/test_tsr_calibration_report.py`, `tests/test_calibration_report_pdf.py`, and `tests/test_calibration_center.py`. Use disposable databases and storage; never use the owner database for tests.
+- Release work includes the report asset references in `templates/offline_tsr.html` and `app.py`, the embedded service-worker marker and its affected assertions, and `static/changelog/releases.json`. Advance versions from their values at execution time.
+
+## Verification, exclusions, and after implementation
+
+- Positive controls must expose the insufficient reserve/missing repeated headers before implementation, and reject a defective or incomplete repair. Include source/PDF ownership, stale hashes, package preservation, repair idempotency, and conversion/storage rollback in the focused verification.
+- Render the synthetic six-row example, eight-row examples, one/two-tube reports, each focal selection, and multiline overflow. Inspect all pages and document the fixed reserve and six-point minimum clearance. Renderer absence is a reported visual-verification limitation, not a visual pass.
+- Self-review is the Builder's scoped implementation check; formal post-implementation review requires the owner's separate instruction. Run the isolated full suite once and report exact pass/fail/skip counts without correcting unrelated failures.
+- Browser verification is unperformed unless separately authorized. If later authorized, verify Calibration Center inventory and repair controls at desktop and 375-pixel widths, readable actions/tap targets, and console errors without navigating or terminating the Codex session.
+- Preserve pre-existing `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, loose handoff files, and unrelated changes. Do not modify the canonical template, business fields, certificate artifacts, signatures, approval/delivery state, schema, Railway settings, or production records. The new repair option does not authorize running production repairs.
+- Update this plan's execution record and `changes.md` during authorized implementation; preserve historical records. No additional journal is required solely for this package. Commit preparation must enumerate intended files and exclude protected artifacts; creating a commit, publishing, and deploying remain separate owner-authorized actions.
+
+## Recording outcome
+
+- 2026-09-30: Recorded the complete owner-approved plan and execution handoff. Only `plans.md` and the current-date `changes.md` record were updated. Implementation, tests, generated artifacts, database/storage operations, cache/release changes, production repair, formal review, commit, push, and deployment had not begun at that point; the owner later authorized execution separately.
+- 2026-09-30: Began the separately authorized implementation. The bounded work remains limited to generated Calibration Report footer clearance and continuation headers, the layout-only historical repair registered through Calibration Center, focused verification, cache/release metadata, and these records. Protected owner artifacts, production repair, browser/Codex automation, commit, push, and deployment remain excluded.
+- 2026-09-30: Execution outcome: `static/js/app-calibration-report.js` now reserves 3,600 twips in every generated section and marks focal-table header groups plus Performance Criteria for repeat/keep-together pagination; the canonical DOCX template and footer parts remain unchanged. The reserve is based on the retained footer artwork height of 1,498,600 EMU (2,360 twips), the 708-twip footer distance, and 120 twips (6 points) of clearance, rounded up to 3,600 twips.
+- 2026-09-30: `app.py` now registers `calibration-report-footer-layout-v1` through the existing Calibration Center registry. The individual repair patches only `word/document.xml` bottom margins, regenerates the linked PDF, preserves package parts, values, signatures, certificates, approval state, filenames, and record links, and rolls back storage/database state on failure. Unrecognized or missing private sources are blocked; the repair is intentionally `bulk_safe: false`, so Repair All does not rewrite retained files, while the existing individual Repair action remains available.
+- 2026-09-30: Focused verification passed: `tests.test_tsr_calibration_report tests.test_calibration_report_pdf tests.test_calibration_center` ran 68/68; added footer package-preservation, idempotency, approval/signature metadata, linked-PDF, rollback, and denied-unauthorized-repair coverage. AST, Node syntax, Jinja, release JSON, and `git diff --check` checks passed. One isolated full-suite pass ran 1,416 tests: 1,386 passed, 23 failures, 2 errors, and 5 skips; the non-passing cases were existing changelog/LPR/offline/product/purchase-order areas, and no footer-package test failed.
+- 2026-09-30: Visual DOCX/PDF page inspection is blocked because the bundled runtime provides Poppler but no `soffice`, `libreoffice`, or `lowriter`; browser/Codex automation was separately unauthorized. The render-dependent six-point visual acceptance is therefore not claimed. The pre-fix visual control was not rerun by reverting source because protected dirty work had to remain intact.
+- 2026-09-30: Intended commit checklist is limited to `app.py`, `static/js/app-calibration-report.js`, `templates/calibration_center.html`, `templates/offline_tsr.html`, `tests/test_tsr_calibration_report.py`, `tests/test_calibration_report_pdf.py`, `tests/test_calibration_center.py`, `static/changelog/releases.json`, `plans.md`, and `changes.md`; exclude the pre-existing `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, loose handoff, and unrelated owner changes. No commit, push, deployment, production repair, database migration, or storage operation was performed.
+
+---
+
 # Approval Center Report Access and Action Fixes
 
 **Status:** Executed — implementation commit `8852793`; publication authorized to `origin/main`.

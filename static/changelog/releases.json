@@ -1,6 +1,44 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-30-calibration-complete-values",
+      "release_date": "2026-09-30",
+      "title": "Complete Calibration Report Values",
+      "summary": "Historical Calibration Report repairs now carry verified complete values into linked certificates.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-30-calibration-complete-values-admins-engineers",
+          "category": "Calibration",
+          "description": "Long report fields and legacy-cut client names are preserved in regenerated reports and certificate variants; conflicting or unavailable historical sources remain blocked.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-30-calibration-report-footer-layout",
+      "release_date": "2026-09-30",
+      "title": "Calibration Report Footers Protected",
+      "summary": "Filled Calibration Report tables now leave room for the retained footer artwork and text.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-30-calibration-report-footer-layout-admins-engineers",
+          "category": "Calibration",
+          "description": "Calibration Report generation reserves the footer area, repeats table headings on continuation pages, and provides administrators with an individual layout repair for retained DOCX/PDF reports.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-30-approval-center-report-review",
       "release_date": "2026-09-30",
       "title": "Approval Center Report Review",

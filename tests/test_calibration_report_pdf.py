@@ -636,6 +636,113 @@ class CalibrationReportPdfTests(unittest.TestCase):
                 1,
             )
 
+    def test_footer_layout_repair_preserves_package_parts_and_is_idempotent(self):
+        inspection = app_module._calibration_report_footer_layout_inspection(self.docx_bytes)
+        self.assertEqual(inspection['status'], 'repairable')
+        self.assertEqual(inspection['bottom_margins'], [1440])
+        repaired_bytes, repaired_inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(
+            self.docx_bytes
+        )
+        self.assertEqual(repaired_inspection['status'], 'already_repaired')
+        self.assertTrue(all(
+            margin >= app_module.CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS
+            for margin in repaired_inspection['bottom_margins']
+        ))
+        with zipfile.ZipFile(io.BytesIO(self.docx_bytes), 'r') as before_package, \
+                zipfile.ZipFile(io.BytesIO(repaired_bytes), 'r') as after_package:
+            before_names = set(before_package.namelist())
+            self.assertEqual(before_names, set(after_package.namelist()))
+            for name in before_names - {'word/document.xml'}:
+                self.assertEqual(before_package.read(name), after_package.read(name), name)
+            before_document = before_package.read('word/document.xml').decode('utf-8')
+            after_document = after_package.read('word/document.xml').decode('utf-8')
+            self.assertEqual(
+                re.sub(r'w:bottom="\d+"', 'w:bottom="BOTTOM"', before_document),
+                re.sub(r'w:bottom="\d+"', 'w:bottom="BOTTOM"', after_document),
+            )
+            for footer_name in ('word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml'):
+                self.assertEqual(before_package.read(footer_name), after_package.read(footer_name))
+        self.assertEqual(self._document_texts(self.docx_bytes), self._document_texts(repaired_bytes))
+        second_bytes, second_inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(
+            repaired_bytes
+        )
+        self.assertEqual(second_inspection['status'], 'already_repaired')
+        self.assertEqual(second_bytes, repaired_bytes)
+
+    def test_footer_layout_repair_rebuilds_pdf_preserves_approval_and_rolls_back(self):
+        source_id, submission_id, disk_name = self._create_source_fixture()
+        source_path = pathlib.Path(self.storage.name, disk_name)
+        original_source = source_path.read_bytes()
+        with self.app.app_context():
+            source_file = self.db.session.get(app_module.ShiftFile, source_id)
+            pdf_disk_name = f'footer-linked-{source_id}.pdf'
+            pdf_file = app_module.ShiftFile(
+                shift_id=source_file.shift_id,
+                filename=pdf_disk_name,
+                original_filename='Footer Linked Report.pdf',
+                upload_token=f'calibration-report-pdf-footer-{source_id}',
+                online_tsr_submission_id=submission_id,
+            )
+            approval = app_module.CalibrationCertificateApproval(
+                shift_id=source_file.shift_id,
+                online_tsr_submission_id=submission_id,
+                revision_no=1,
+                is_latest=True,
+                status='Approved',
+                certificate_number=f'FOOTER-{source_id}',
+                mapped_data_json='{}',
+                template_sha256=app_module.CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
+                unsigned_artifact_path=f'calibration-certificates/footer-{source_id}.pdf',
+                approved_at=datetime(2025, 12, 1),
+            )
+            self.db.session.add_all([pdf_file, approval])
+            self.db.session.flush()
+            pathlib.Path(self.storage.name, pdf_disk_name).write_bytes(self.pdf_bytes)
+            job = app_module.CalibrationReportConversion(
+                source_shift_file_id=source_id,
+                pdf_shift_file_id=pdf_file.id,
+                source_sha256='before-source',
+                pdf_sha256='before-pdf',
+                converter_version='legacy-converter',
+                state='ready',
+                attempts=1,
+                converted_at=datetime(2025, 12, 1),
+                updated_at=datetime(2025, 12, 1),
+            )
+            self.db.session.add(job)
+            self.db.session.commit()
+            with patch.object(app_module, 'convert_calibration_report_docx_bytes', return_value=self.pdf_bytes) as converter:
+                first = app_module._calibration_report_apply_footer_layout_repair(source_id)
+                second = app_module._calibration_report_apply_footer_layout_repair(source_id)
+            self.assertEqual(first['status'], 'repaired')
+            self.assertEqual(second['status'], 'already_repaired')
+            self.assertEqual(converter.call_count, 1)
+            self.assertEqual(first['pdf_file_id'], pdf_file.id)
+            self.assertEqual(pathlib.Path(self.storage.name, pdf_disk_name).read_bytes(), self.pdf_bytes)
+            self.assertEqual(self._document_texts(source_path.read_bytes()), self._document_texts(original_source))
+            refreshed_approval = self.db.session.get(app_module.CalibrationCertificateApproval, approval.id)
+            refreshed_job = self.db.session.get(app_module.CalibrationReportConversion, job.id)
+            self.assertEqual(refreshed_approval.status, 'Approved')
+            self.assertEqual(refreshed_approval.certificate_number, f'FOOTER-{source_id}')
+            self.assertEqual(refreshed_job.state, 'ready')
+            payload = json.loads(self.db.session.get(app_module.OnlineTsrSubmission, submission_id).payload_json)
+            marker = payload[app_module.CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_MARKER]
+            self.assertEqual(marker['version'], app_module.CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION)
+            self.assertTrue(marker['source_values_unchanged'])
+            self.assertTrue(marker['service_engineer_signature_preserved'])
+            self.assertTrue(marker['approver_signature_preserved'])
+            self.assertTrue(marker['certificates_unchanged'])
+
+        source_id, _submission_id, disk_name = self._create_source_fixture()
+        source_path = pathlib.Path(self.storage.name, disk_name)
+        rollback_source = source_path.read_bytes()
+        with self.app.app_context():
+            with patch.object(app_module, 'convert_calibration_report_docx_bytes', return_value=self.pdf_bytes), \
+                    patch.object(app_module, '_calibration_report_replace_storage_snapshot', side_effect=OSError('simulated storage failure')):
+                failed = app_module._calibration_report_apply_footer_layout_repair(source_id)
+            self.assertEqual(failed['status'], 'failed')
+            self.assertEqual(source_path.read_bytes(), rollback_source)
+
     def test_docx_and_pdf_validation_happens_before_conversion(self):
         self.assertTrue(app_module._calibration_report_pdf_bytes_are_valid(self.pdf_bytes))
         self.assertFalse(app_module._calibration_report_pdf_bytes_are_valid(b"not a pdf"))
