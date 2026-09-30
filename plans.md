@@ -1,10 +1,12 @@
 # Preserve Complete Calibration Report and Certificate Data
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `56796b1`; publication authorized.
 
 **Approved:** 2026-09-30 — the owner approved this plan with “implement the plan. do not overengineer and over check”.
 
 **Execution authorized:** 2026-09-30 — the owner said “go ahead”.
+
+**Publication authorized:** 2026-09-30 — the owner said “commit and push this change only”.
 
 **Detailed:** 2026-09-30.
 
