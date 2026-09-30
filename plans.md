@@ -1,6 +1,6 @@
 # Preserve Complete Report and Certificate Values
 
-**Status:** Executed — uncommitted; commit/push/deployment remain separately unauthorized.
+**Status:** Executed — implementation commit `0c1b7e5`; publication to `origin/main` authorized.
 **Publication authorized:** 2026-09-30 — the owner said “now commit and push only these changes. never the db and dirty files”. Authorization covers this complete-value package and the preceding footer package; protected and unrelated dirty work remains excluded.
 **Approved:** 2026-09-30 — the owner supplied the complete plan with “PLEASE IMPLEMENT THIS PLAN”. This records approval under the repository's separate approval/execution rule.
 **Detailed:** 2026-09-30.
@@ -77,7 +77,7 @@ After approval, record this complete plan and wait for the repository’s separa
 
 # Protect Calibration Report Footers
 
-**Status:** Executed — uncommitted; commit/push/deployment remain separately unauthorized.
+**Status:** Executed — implementation commit `0c1b7e5`; publication to `origin/main` authorized.
 **Publication authorized:** 2026-09-30 — the owner said “now commit and push only these changes. never the db and dirty files”. Authorization covers this footer package and the subsequent complete-value package; protected and unrelated dirty work remains excluded.
 **Approved:** 2026-09-30 — the owner supplied the complete plan with “PLEASE IMPLEMENT THIS PLAN”. This records approval under the repository's separate approval/execution rule.
 **Detailed:** 2026-09-30.

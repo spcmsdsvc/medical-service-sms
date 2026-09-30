@@ -2,6 +2,8 @@
 
 codex changes - 2026-09-30
 
+- Committed only the intended footer-protection and complete-value repair implementation, three focused test files, generator/template integration, cache/release metadata, and scoped plan/change records as `0c1b7e5464b6edb9c24b590168545f5eceaae0b7` on `main`. The database, handoffs, `.claude/`, generated directories, loose handoff, and unrelated handoff entries in this change log remained unstaged. This follow-up documentation record updates both plan statuses with the implementation hash; only these two scoped commits are prepared for the owner-authorized push to `origin/main`. Remote and Railway acceptance/status will be verified after publishing; no production repair, variable change, or manual redeploy was performed.
+
 - Owner authorized committing and pushing only the footer-protection and complete report/certificate-value packages. Publication preparation is limited to the ten intended application/generator/template/test/release/plan/change-record files. The database, handoffs, `.claude/`, `output/`, `tmp/`, loose handoff files, and unrelated pre-existing handoff entries in this change log remain excluded; the latter entries are preserved in the working file and will not be staged. Remote `origin/main` was verified to match the starting local commit before publication. No production repair, Railway variable change, or manual redeploy is authorized or performed.
 
 - Implemented the complete Calibration Report and certificate repair update in `app.py`: advanced the versioned repair marker to v5, recognized legacy slice-and-trim values, and rebuilt historical certificate mappings from verified same-revision report/TSR snapshots without changing saved approval mappings or business data.
