@@ -410,6 +410,14 @@ class CalibrationCenterContracts(unittest.TestCase):
             self.assertIn(definition['bulk_safe'], (True, False), repair_key)
         self.assertTrue(app_module.CALIBRATION_REPAIR_REGISTRY['calibration-complete-fields-v1']['bulk_safe'])
 
+    def test_approved_record_repair_button_opens_deterministic_context(self):
+        render_rows = TEMPLATE_SOURCE.split('function renderRows(records)', 1)[1].split(
+            'function renderPagination', 1
+        )[0]
+        self.assertIn('js-calibration-deterministic-repair', render_rows)
+        self.assertIn("document.querySelectorAll('.js-calibration-manual-repair, .js-calibration-deterministic-repair')", render_rows)
+        self.assertIn('openRepairContext(button.dataset.repairKey, Number(button.dataset.candidateId))', render_rows)
+
     def test_complete_fields_repair_accepts_only_artifact_inputs(self):
         self.assertIn("'fields_json'", APP_SOURCE)
         apply_block = APP_SOURCE.split('def _calibration_report_apply_complete_fields_repair', 1)[1].split(
