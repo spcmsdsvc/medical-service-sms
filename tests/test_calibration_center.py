@@ -10,6 +10,7 @@ import json
 import pathlib
 import re
 import subprocess
+import tempfile
 import textwrap
 import unittest
 from types import SimpleNamespace
@@ -334,7 +335,13 @@ class CalibrationCenterContracts(unittest.TestCase):
             assert.strictEqual(visible('calibration-center-repair-panel'), false);
             console.log('repair surface states: PASS');
         ''')
-        result = subprocess.run(['node', '-e', node_script], cwd=ROOT, capture_output=True, text=True, check=False)
+        with tempfile.NamedTemporaryFile('w', suffix='.js', encoding='utf-8', delete=False) as script_file:
+            script_file.write(node_script)
+            script_path = script_file.name
+        try:
+            result = subprocess.run(['node', script_path], cwd=ROOT, capture_output=True, text=True, check=False)
+        finally:
+            pathlib.Path(script_path).unlink(missing_ok=True)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         self.assertIn('repair surface states: PASS', result.stdout)
 
@@ -359,6 +366,57 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertTrue(matching)
         self.assertTrue(any('admins' in item.get('audiences', []) for item in matching))
         self.assertTrue(any(item.get('item_key') == '2026-09-25-calibration-center-repair-notice-admins' for item in matching))
+
+    def test_registry_contract_and_complete_field_apply_guards_are_present(self):
+        for marker in (
+            'CALIBRATION_REPAIR_REGISTRY',
+            'register_calibration_repair',
+            "'calibration-report-units-v3'",
+            "'calibration-complete-fields-v1'",
+            "@app.route('/admin/calibration-center/repairs')",
+            "@app.route('/admin/calibration-center/repairs/<repair_key>/<int:candidate_id>')",
+            "@app.route('/admin/calibration-center/repairs/<repair_key>/<int:candidate_id>/apply'",
+            'bulk_safe',
+            'manual_required',
+            'before_pdf_hash',
+            'before_certificate_hash',
+            'calibration_repair_applied',
+            'rollback_warning',
+        ):
+            self.assertIn(marker, APP_SOURCE)
+        for marker in (
+            '/admin/calibration-center/repairs',
+            'calibration-center-manual-repair-confirm-input',
+            'buildRepairDocx',
+            'fields_json',
+            'Repair Calibration Report &amp; Certificate',
+            'Manual',
+        ):
+            self.assertIn(marker, TEMPLATE_SOURCE)
+        for repair_key, definition in app_module.CALIBRATION_REPAIR_REGISTRY.items():
+            self.assertTrue(callable(definition['inventory']), repair_key)
+            self.assertTrue(callable(definition['apply']), repair_key)
+            self.assertTrue(definition['audit'], repair_key)
+            self.assertTrue(definition['idempotency'], repair_key)
+            self.assertIn(definition['bulk_safe'], (True, False), repair_key)
+
+    def test_repair_field_setter_preserves_nested_report_shape(self):
+        payload = {
+            'tsr-number': 'TSR-1',
+            'calibration_report': {
+                'facility': {'name': 'Old'},
+                'mechanical_checks': [{'result': 'Old result'}],
+            },
+        }
+        updated = app_module._calibration_report_set_field_values(payload, {
+            'facility.name': 'Complete Facility Name',
+            'mechanical_checks.0.result': 'Complete result',
+            'tsr_number': 'TSR-COMPLETE',
+        })
+        self.assertEqual(updated['calibration_report']['facility']['name'], 'Complete Facility Name')
+        self.assertEqual(updated['calibration_report']['mechanical_checks'][0]['result'], 'Complete result')
+        self.assertEqual(updated['tsr_number'], 'TSR-COMPLETE')
+        self.assertEqual(payload['calibration_report']['facility']['name'], 'Old')
 
 
 if __name__ == '__main__':

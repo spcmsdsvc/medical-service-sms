@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-30-calibration-repair-registry",
+      "release_date": "2026-09-30",
+      "title": "Calibration Report Repair Center Expanded",
+      "summary": "Calibration Center now lists registered report and certificate repairs in one place.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-30-calibration-repair-registry-admins",
+          "category": "Calibration",
+          "description": "Administrators can review legacy heading/unit repairs and manually correct complete report and certificate fields. Repairs never run automatically; Repair All includes only deterministic bulk-safe candidates.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-30-calibration-report-complete-fields",
       "release_date": "2026-09-30",
       "title": "Calibration Report Data Capture Improved",

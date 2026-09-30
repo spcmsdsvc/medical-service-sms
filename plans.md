@@ -1,3 +1,108 @@
+# Extensible Calibration Report and Certificate Repair Center
+
+**Status:** Executed — uncommitted.
+
+**Approved:** 2026-09-30 — the owner said “go ahead and implement the plan. do not overengineer and over verify”. Under the project’s mandatory two-message gate, this approves the plan but does not yet authorize implementation.
+
+**Execution authorized:** 2026-09-30 — the owner said “go ahead”.
+
+**Detailed:** 2026-09-30.
+
+## Goal and decisions
+
+Turn the Calibration Center’s hard-coded Page 3 units repair into one simple shared repair registry. Registered calibration report or certificate repairs must automatically appear in the existing repair section without adding another custom repair table or workflow. Add the recently identified complete-field/certificate-fitting repair as the second repair type.
+
+The owner selected these behaviors:
+
+- Repair approved artifacts in place while preserving file IDs, filenames, approval identity/status/date, revision number, delivery state, and email history.
+- Enter missing or truncated text directly in a focused Calibration Center repair panel.
+- Automatically flag likely affected records and also expose a manual Repair action on each approved Calibration Center row.
+- Keep Repair All, but allow it to run only deterministic candidates explicitly marked bulk-safe. Manual-value repairs remain individual actions.
+- Register repairs automatically in the shared repair surface, but never execute them merely because the page was opened.
+
+## Expected files and boundaries
+
+Primary implementation is expected in `app.py`, `templates/calibration_center.html`, `static/js/app-calibration-report.js`, and focused Calibration Center/report/certificate tests. Cache/version references, `static/changelog/releases.json`, `plans.md`, and `changes.md` are included as required. Existing official DOCX and PDF templates must remain unchanged unless artifact verification proves that the approved approach is impossible; in that case execution must stop and this plan must be amended.
+
+No new dependency, database migration, approval redesign, background repair job, automatic production mutation, browser automation, commit, push, deployment, Railway change, or unrelated refactor is authorized.
+
+## Numbered execution plan
+
+1. **Preflight and fail-first coverage.**
+   - Re-read applicable instructions, this plan, `changes.md`, current Git status, affected repair/report/certificate code, and current tests before editing.
+   - Preserve the existing dirty scheduler database, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated owner files.
+   - Mark this plan `In progress` only after separate execution authorization.
+   - Add focused failing tests that prove the current UI/API is hard-coded to the units repair, does not expose the complete-fields repair, cannot manually correct a truncated approved record, and does not enforce candidate-level bulk safety.
+   - Done means the existing limitation is reproduced without changing production data or weakening the test harness.
+
+2. **Introduce a minimal shared repair registry.**
+   - Define a server-side repair contract with a stable key/version, title, description, artifact scope, discovery callback, apply callback, candidate status, editable-field metadata, and `bulk_safe` flag.
+   - Register the existing `calibration-report-units-v3` implementation through this contract without changing its transactional behavior.
+   - Register `calibration-complete-fields-v1` for report text limits and certificate fitting.
+   - Add canonical generic endpoints for aggregated inventory, one candidate’s edit context, and candidate application. Preserve the current units preview/apply routes as compatibility adapters.
+   - Use `repairable`, `manual_required`, `already_repaired`, and `blocked` candidate states. Add no schema solely to support registry display; use existing payload repair markers and universal audit facilities.
+   - Done means adding a conforming repair definition makes it appear in the generic inventory without repair-specific route or template code.
+
+3. **Generalize the Calibration Center repair section.**
+   - Replace the units-specific columns and JavaScript with registry-driven repair types, summaries, and generic columns for Repair, Record, Artifacts, Impact, Status, and Action.
+   - Preserve the current accessible collapsed notice, progress, error, success, individual Apply, and typed Repair All confirmation behavior.
+   - Automatically flag pre-fix report records whose stored values exactly meet the former 40/22/60/30/12/36-character caps, and certificate records whose complete mapped values exceed the former one-line fit.
+   - Add a Repair action to every approved record row so an administrator can start a correction when detection misses it.
+   - Repair All must select only candidates marked `bulk_safe`; `manual_required`, blocked, stale, and input-requiring candidates must never enter the batch.
+   - Done means both existing units repair and complete-fields repair share one coherent desktop/mobile surface without duplicate workflows.
+
+4. **Implement focused in-place complete-field repair.**
+   - Provide a modal showing detected fields, current stored values, and derived certificate mapping. Permit replacements only for an explicit allowlist of calibration-report source fields, with an option to select an additional allowed field for manually started repairs.
+   - Require a correction reason and typed confirmation for approved or emailed artifacts.
+   - Expose a repair-only pure DOCX build method from the current calibration report generator so Calibration Center can generate the corrected DOCX with existing template geometry, signature, multiline, Unicode, XML escaping, tube-two, and measurement behavior. Do not duplicate the generator in Python or create a new document framework.
+   - Submit the corrected report state and generated DOCX to the protected generic apply endpoint. Server validation must reject unknown fields, stale before-hashes, mismatched submission/file ownership, invalid DOCX packages, incomplete required values, or generated DOCX text that does not contain the submitted corrected values.
+   - Regenerate the linked report PDF and both signed/no-signature certificates with the current server builders and stored approver identity/signature. Replace managed-storage bytes transactionally while retaining their existing database IDs and filenames.
+   - Update only the affected submission report payload, certificate mapped snapshot, conversion hashes/fingerprints, and versioned repair marker. Preserve approval status, approver, approval time, revision number, delivery timestamps, and email history. Changed attachment fingerprints must make old email previews stale.
+   - If generation, storage, database, or audit work fails, restore every storage snapshot and roll back all record changes.
+   - Done means a confirmed administrator correction produces complete current report/certificate artifacts in place without disturbing audit or delivery identity.
+
+5. **Add audit, idempotency, concurrency, and authorization safeguards.**
+   - Record repair key/version, actor, reason, affected field paths, timestamp, and before/after hashes in the existing universal approval audit and Activity Log. Do not log the field values themselves.
+   - Require candidate version plus current source/PDF/certificate hashes on apply. Return a conflict and require inventory reload when any artifact changed after preview.
+   - Store versioned idempotency markers so successful repairs become `already_repaired` and repeat requests do not rewrite storage.
+   - Restrict inventory, edit context, and apply operations to the existing Calibration Center system-admin authority with CSRF protection.
+   - Add a contract test requiring every registered repair to declare discovery, application, audit, idempotency, and bulk-safety behavior.
+   - Done means repair attempts are authorized, retry-safe, conflict-aware, auditable, and recoverable without additional architecture.
+
+6. **Update cache and release records.**
+   - Bump the calibration report JavaScript query from `v38` to `v39` wherever referenced.
+   - Advance the service-worker marker from `medical-service-pwa-offline-navigation-v215-calibration-report-complete-fields` to `medical-service-pwa-offline-navigation-v216-calibration-repair-registry`.
+   - Add one focused `2026-09-30-calibration-repair-registry` release entry describing the shared repair center and in-place complete-field repair.
+   - Update `changes.md` factually during implementation; do not claim repairs were run against production.
+   - Done means deployed clients receive the new UI/runtime and release communication matches the actual scope.
+
+7. **Verify proportionately and close the package.**
+   - Run focused registry, Calibration Center, report-PDF, report-generation, certificate-approval, cache, and source-contract tests, then one isolated full suite if the environment permits.
+   - Cover automatic detection, manual start, allowlisted editing, multiline/Unicode/XML/tube-two values, full report/certificate text, signed and no-signature certificate geometry, file-ID and metadata preservation, stale-hash conflicts, CSRF/authority, malformed uploads, transactional rollback, idempotency, and Repair All exclusion of manual candidates.
+   - Perform structural DOCX/PDF checks and non-browser visual rendering with the approved local artifact path. Browser/Codex UI automation remains prohibited; report any unavailable visual renderer truthfully.
+   - Run JavaScript syntax, Python compile/AST, Jinja, release JSON, template checksum/package, and `git diff --check` validation relevant to edited files. Do not create test-of-the-test or exhaustive artificial verification.
+   - Self-review only against this approved requirement, update this plan to `Executed` with actual results, complete `changes.md`, and confirm only scoped files are eligible for any later commit.
+   - Do not commit, push, deploy, run production repairs, or begin formal post-implementation review without separate authorization.
+
+## Acceptance criteria
+
+- Both the legacy units repair and the new complete-fields repair appear through one registry-driven Calibration Center repair section.
+- A future conforming repair definition appears automatically without adding repair-specific UI or routes.
+- Likely old truncation/layout cases are flagged, and any approved row can start a manual repair.
+- Complete corrected text reaches the report DOCX/PDF and signed/no-signature certificates without silent truncation.
+- In-place repair preserves record/file identity, approval and delivery metadata, and email history while invalidating stale previews.
+- Manual candidates never run through Repair All; only explicit bulk-safe deterministic repairs do.
+- Failed or stale repairs leave database and storage artifacts unchanged and produce useful audit/failure information.
+- No repair runs automatically on page load or against production during implementation/testing.
+
+## Execution outcome (2026-09-30)
+
+- Implemented the shared registry-driven Calibration Center repair surface in `app.py` and `templates/calibration_center.html`, registering the existing units repair and the new `calibration-complete-fields-v1` manual report/certificate repair without a schema change.
+- Complete-field repair uses the current browser DOCX builder and server report/certificate builders, validates allowlisted fields, hashes, approval ownership, CSRF/administrator access, typed confirmation, and generated DOCX contents, then replaces existing managed artifacts in place with rollback snapshots and audit metadata. Repair All is restricted to registry candidates marked `bulk_safe`; the complete-fields repair remains manual.
+- Added focused registry/nested-field tests, cache/release records, and the required JavaScript/service-worker version bumps. Official templates, protected owner files, databases, production data, and deployment state were not modified.
+- Verification: `tests.test_calibration_center`, `tests.test_calibration_report_pdf`, `tests.test_tsr_calibration_report`, and `tests.test_calibration_certificate_title_repair` passed (`72` tests). Python compile, Node syntax, release JSON parsing, and `git diff --check` passed. The certificate approval workflow module still has three pre-existing fixture failures because its download fixture leaves approval status `Pending` while the production authorization helper requires `Approved`; no repair-center code was changed to mask those failures.
+- The registry contract additionally declares each repair's application, audit, idempotency, and bulk-safety behavior; the manual context displays derived certificate mapping and treats unavailable source bytes as blocked. Top-level TSR-number corrections are applied outside the nested report object.
+- Browser/Codex UI automation, production repairs, and full-suite execution were not performed. The implementation remains uncommitted and unpublished pending separate authorization.
 # Preserve Complete Calibration Report and Certificate Data
 
 **Status:** Executed — implementation commit `56796b1`; publication authorized.
