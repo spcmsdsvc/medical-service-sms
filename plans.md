@@ -1,10 +1,12 @@
 # Deterministic No-Data-Change Calibration Artifact Repair
 
-**Status:** Executed — uncommitted.
+**Status:** Executed — implementation commit `3ee7d23`; published to `origin/main`.
 
 **Approved:** 2026-09-30 — after clarifying that repairs must correct generated artifacts automatically without administrator data entry or signature removal, the owner said “yes. now go ahead and proceed with that change”. Under the project’s mandatory two-message gate, this approves the focused correction but does not yet authorize implementation.
 
 **Execution authorized:** 2026-09-30 — the owner said “go ahead” to execute this focused correction.
+
+**Publication authorized:** 2026-09-30 — the owner said “commit and push this change only”.
 
 **Detailed:** 2026-09-30.
 
