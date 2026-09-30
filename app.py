@@ -19376,6 +19376,31 @@ CALIBRATION_REPAIR_LEGACY_LIMITS = (40, 22, 60, 30, 12, 36)
 CALIBRATION_REPORT_EXPOSURE_CURRENT_UNITS = ('mA', 'mAs')
 CALIBRATION_REPAIR_REGISTRY = {}
 
+CALIBRATION_REPAIR_FIELD_LABELS = {
+    'facility.name': 'Client / facility name',
+    'facility.address': 'Client / facility address',
+    'facility.telephone': 'Client telephone number',
+    'facility.email': 'Client email address',
+    'facility.location': 'Equipment location',
+    'machine.manufacturer': 'Equipment manufacturer',
+    'machine.modality': 'Equipment name',
+    'machine.model': 'Equipment model',
+    'machine.serial_number': 'Equipment serial number',
+    'machine.console_model': 'Control console model',
+    'machine.console_serial': 'Control console serial number',
+    'machine.tube1_model': 'X-ray tube 1 model',
+    'machine.tube1_serial': 'X-ray tube 1 serial number',
+    'machine.tube2_model': 'X-ray tube 2 model',
+    'machine.tube2_serial': 'X-ray tube 2 serial number',
+    'machine.installation_date': 'Installation date',
+    'certificate.number': 'Certificate number',
+    'certificate.equipment_model': 'Certificate equipment model',
+    'tsr_number': 'TSR number',
+}
+CALIBRATION_REPAIR_METADATA_KEYS = {
+    'criteria', 'label', 'unit', 'type', 'source', 'status',
+}
+
 
 def _calibration_report_normalize_exposure_current_unit(value):
     """Normalize one persisted current-unit value without inventing a default."""
@@ -20236,22 +20261,39 @@ def _calibration_report_historical_repair_candidates():
 
 
 def _calibration_report_repair_walk_values(value, path='', output=None):
-    """Collect scalar report values without exposing them in inventory responses."""
+    """Collect likely legacy-cutoff values that are rendered into the report."""
     output = output if isinstance(output, list) else []
     if isinstance(value, dict):
         for key, child in value.items():
             child_path = f'{path}.{key}' if path else str(key)
             if child_path.endswith('.image') or child_path.endswith('.signature'):
                 continue
-            if key in {'generated', 'conversion', 'certificate_approval'}:
+            if key in {'generated', 'conversion', 'certificate_approval', 'auto_fill'}:
                 continue
             _calibration_report_repair_walk_values(child, child_path, output)
     elif isinstance(value, list):
         for index, child in enumerate(value):
             _calibration_report_repair_walk_values(child, f'{path}.{index}', output)
-    elif isinstance(value, str) and (len(value) in CALIBRATION_REPAIR_LEGACY_LIMITS or len(value) > 40):
-        output.append({'path': path, 'length': len(value)})
+    elif (
+        isinstance(value, str)
+        and path.rsplit('.', 1)[-1] not in CALIBRATION_REPAIR_METADATA_KEYS
+        and (len(value) in CALIBRATION_REPAIR_LEGACY_LIMITS or len(value) > 40)
+    ):
+        output.append({'path': path, 'length': len(value), 'artifact': 'report'})
     return output
+
+
+def _calibration_report_repair_field_label(path):
+    """Return a readable admin label while keeping internal paths in technical details."""
+    path = clean_str(path) or ''
+    if path in CALIBRATION_REPAIR_FIELD_LABELS:
+        return CALIBRATION_REPAIR_FIELD_LABELS[path]
+    indexed = re.match(r'^(mechanical_checks|generator_checks)\.(\d+)\.result$', path)
+    if indexed:
+        group = 'Mechanical check' if indexed.group(1) == 'mechanical_checks' else 'Generator check'
+        return f'{group} result {int(indexed.group(2)) + 1}'
+    leaf = path.rsplit('.', 1)[-1].replace('_', ' ').strip()
+    return leaf.title() if leaf else 'Saved report field'
 
 
 def _calibration_report_repair_path_value(value, path):
@@ -20362,7 +20404,17 @@ def _calibration_report_complete_fields_candidate_for_file(source_file, force=Fa
     for name, path in certificate_fields.items():
         value = clean_str(values.get(name)) or ''
         if len(value) in CALIBRATION_REPAIR_LEGACY_LIMITS or len(value) > 40:
-            detected.append({'path': path, 'length': len(value), 'certificate_field': name})
+            existing = next((item for item in detected if item.get('path') == path), None)
+            if existing:
+                existing['artifact'] = 'report_and_certificate'
+                existing['certificate_field'] = name
+            else:
+                detected.append({
+                    'path': path,
+                    'length': len(value),
+                    'certificate_field': name,
+                    'artifact': 'certificate',
+                })
     if not detected and not force:
         return None
     try:
@@ -20439,6 +20491,16 @@ def _calibration_report_complete_fields_candidate_for_file(source_file, force=Fa
         if expected and source_text and expected not in source_text:
             missing_saved_values.append(path)
             item['artifact_missing'] = True
+        item['label'] = _calibration_report_repair_field_label(path)
+        item['artifact_label'] = {
+            'report_and_certificate': 'Report and certificate',
+            'certificate': 'Certificate',
+        }.get(item.get('artifact'), 'Calibration Report')
+        item['issue_label'] = (
+            'Missing from the current generated file'
+            if item.get('artifact_missing')
+            else 'May be cut off in the current generated file'
+        )
     if missing_saved_values:
         reason = 'The saved report values are complete but the generated artifact does not contain them.'
     elif blocked_reasons:
@@ -20460,6 +20522,12 @@ def _calibration_report_complete_fields_candidate_for_file(source_file, force=Fa
         'reason': reason,
         'detected_fields': detected,
         'certificate_values': mapped_values or {},
+        'record_label': clean_str(values.get('Textfield')) or f'Source #{clean_int(source_file.id) or 0}',
+        'record_detail': ' · '.join(filter(None, (
+            clean_str(values.get('Text6')),
+            clean_str(values.get('Text2')),
+            clean_str(values.get('Text3')),
+        ))),
         'source_sha256': source_sha256,
         'pdf_file_id': clean_int(getattr(pdf_file, 'id', None)) if pdf_file else None,
         'pdf_filename': get_shift_file_display_name(pdf_file) if pdf_file else '',

@@ -418,6 +418,34 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertIn("document.querySelectorAll('.js-calibration-manual-repair, .js-calibration-deterministic-repair')", render_rows)
         self.assertIn('openRepairContext(button.dataset.repairKey, Number(button.dataset.candidateId))', render_rows)
 
+    def test_complete_fields_repair_uses_readable_relevant_targets(self):
+        detected = app_module._calibration_report_repair_walk_values({
+            'facility': {'address': 'A' * 40},
+            'mechanical_checks': [{'criteria': 'C' * 231, 'result': 'R' * 60}],
+            'auto_fill': {'fields': ['M' * 36]},
+        }, output=[])
+        self.assertEqual(
+            [item['path'] for item in detected],
+            ['facility.address', 'mechanical_checks.0.result'],
+        )
+        self.assertEqual(
+            app_module._calibration_report_repair_field_label('facility.address'),
+            'Client / facility address',
+        )
+        for marker in (
+            'Fields that will be repaired',
+            'What will stay unchanged',
+            'Technical details',
+            'item.label',
+            'item.artifact_label',
+            'item.issue_label',
+        ):
+            self.assertIn(marker, TEMPLATE_SOURCE)
+        render_context = TEMPLATE_SOURCE.split('function renderRepairContext(data)', 1)[1].split(
+            'async function openRepairContext', 1
+        )[0]
+        self.assertNotIn("item.path || 'saved field'", render_context)
+
     def test_complete_fields_repair_accepts_only_artifact_inputs(self):
         self.assertIn("'fields_json'", APP_SOURCE)
         apply_block = APP_SOURCE.split('def _calibration_report_apply_complete_fields_repair', 1)[1].split(
