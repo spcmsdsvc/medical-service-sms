@@ -1,3 +1,96 @@
+# Approval Center Report Access and Action Fixes
+
+**Status:** Executed — uncommitted
+**Approved:** 2026-09-30 — the owner supplied the complete proposed plan with “PLEASE IMPLEMENT THIS PLAN”. Under the repository's two-message approval/execution rule, this records approval.
+**Execution authorized:** 2026-09-30 — the owner said “go ahead. do not overengineer and over check”.
+**Detailed:** 2026-09-30
+
+## Goal and confirmed findings
+
+Let Robert and other authorized reviewers open calibration reports before approving them, preserve calibration and leave actions when LPR is disabled, and make preview status messages accurate.
+
+Investigation confirmed:
+
+- `app.py:23408` requires an approved/latest calibration record and signed certificate before serving its report. Pending reports return **403**, although Approval Center exposes their links.
+- `templates/approvals.html:6141` places calibration and leave handlers inside the LPR feature gate. Disabling LPR removes handlers while leaving their buttons available.
+- `templates/approvals.html:5417` reports the preview as ready without confirming successful rendering.
+
+## Decisions and boundaries
+
+- Allow the **current revision** in Pending, Returned, or Approved status to be reviewed by its requester, assigned approver, or authorized administrator.
+- Keep superseded revisions unavailable through these report links.
+- Preserve existing engineer access rules for published reports.
+- Keep the in-page preview, add **Open in New Tab**, and retain **Download PDF** as a file download.
+- Use existing routes, storage, and server-rendered PDF viewer. No database migration, dependency, artifact regeneration, or approval-workflow redesign.
+
+## Numbered execution steps
+
+1. **Preflight and regression baseline.**
+   - Read applicable instructions, `changes.md` in full, current plans/control records, affected source, and Git status.
+   - Preserve the dirty database, handoff, `.claude/`, `output/`, `tmp/`, and other owner work.
+   - Extend existing calibration access and Approval Center tests to reproduce pending-report denial, missing handlers with LPR disabled, and premature preview success.
+   - Done: the focused regressions fail against the unchanged implementation using disposable databases and storage.
+
+2. **Separate review access from published-report access.**
+   - In `app.py`, update `calibration_certificate_report_approval_for_file_download()` to accept either existing published-report authorization or narrowly scoped approval-review authorization.
+   - Review authorization must validate the current revision, allowed status, actor authority, exact generated PDF, ready conversion, and matching source/shift/submission ownership. It must not require an already-signed certificate.
+   - Keep `calibration_report_approval_can_view()` unchanged for published engineer access.
+   - Ensure preview, metadata, page rendering, raw content, and download use the same approval-scoped check.
+   - Done: Robert, the requester, and assigned approver can review current pending/returned reports; unrelated users and mismatched files remain denied.
+
+3. **Make calibration and leave independent of LPR.**
+   - Render the shared extension in `templates/approvals.html` unconditionally.
+   - Use the rendered LPR-enabled flag to guard only LPR card construction, dispatch, notifications, resend capability, and module fetches.
+   - Preserve calibration/leave detail openers, record selection, approve/return routing, notifications, and deep links in both flag states.
+   - Done: disabling LPR leaves calibration and leave functional; LPR stays unavailable and cannot fall through to another module's action.
+
+4. **Correct report preview and link behavior.**
+   - Add explicit **Open in New Tab** links pointing to the authenticated preview route. Keep downloads pointed to the download route, without opening an unnecessary empty tab.
+   - In `openCalibrationReportPreview()`, remove immediate “ready to review” messages. Show loading until the iframe loads; inspect the same-origin document for the expected viewer before reporting “Report viewer loaded.”
+   - Display a clear error for an unexpected document, including a login or permission response. Let the existing viewer report PDF metadata/page-render failures.
+   - Preserve close/focus behavior and stale-load protection.
+   - Suppress report links for superseded revisions and show an explicit explanation instead of “still being prepared.”
+   - Done: preview messages describe what is actually known, and preview/new-tab/download controls have distinct behavior.
+
+5. **Verify, document, and prepare the release.**
+   - Run the focused tests and one isolated full-suite pass. Record exact pass/fail/skip counts and compare failures with the baseline; do not fix unrelated failures.
+   - Perform Python, JavaScript, Jinja, release-JSON, and diff checks. Self-check the implementation against this scope.
+   - Advance the service-worker version from the current value and add a focused release entry.
+   - Update `changes.md` and the approved plan's execution record with truthful results and limitations.
+   - Done: the intended diff is reviewable, protected work remains untouched, and verification is documented.
+
+## Acceptance tests
+
+- Current Pending, Returned, and Approved reports: authorized review succeeds; superseded revisions remain denied.
+- Anonymous users, unrelated engineers, unassigned approvers, private DOCX sources, and mismatched approval/file IDs remain denied.
+- Existing published-report engineer access remains unchanged.
+- Preview shell, metadata, rendered page, and download succeed for a real fixture PDF; missing files and failed conversions show errors.
+- With LPR enabled and disabled, calibration/leave card clicks, deep links, notifications, and approve/return dispatch resolve correctly.
+- LPR disabled: no LPR requests or actions are dispatched. LPR enabled: existing behavior remains intact.
+- Preview status never promises successful PDF rendering merely because an iframe was created.
+
+Browser automation remains separately restricted. A manual browser check should cover preview/new-tab/download, failed previews, modal close/focus, and 375-pixel layout; report it as unperformed unless authorized.
+
+## Exclusions, risks, and workflow
+
+The Total Records KPI discrepancy, unrelated LPR creation-test failure, live email delivery, production data, and historical artifact repairs are excluded.
+
+The main risk is widening report access accidentally; exact artifact ownership and negative authorization tests are the safety net.
+
+After approval, record this complete plan when file-writing is permitted and stop for the project's separate execution authorization. Formal review, commit, push, and deployment remain separately authorized. Any later commit must explicitly stage only intended files and exclude protected artifacts.
+
+## Recording outcome
+
+- Execution was authorized by the separate owner go-ahead. The implementation scope remained limited to calibration report review access, the Approval Center module extension gate, preview/new-tab/download behavior, focused tests, cache/release metadata, and required records; commit, push, deployment, browser automation, production data, and protected owner files remained excluded.
+- Execution outcome (2026-09-30): `app.py` now permits the requester, assigned approver, or authorized administrator to open the exact ready PDF for a current Pending, Returned, or Approved calibration revision while preserving the existing published engineer helper and denying superseded revisions. `templates/approvals.html` now keeps calibration and leave handlers available when LPR is disabled, guards only LPR requests/actions, offers separate in-page preview, Open in New Tab, and download controls, and reports viewer-load success only after finding the expected server viewer shell. Added focused regressions, advanced the service-worker marker to v218, and added the `2026-09-30-approval-center-report-review` release entry.
+- Focused verification passed: the calibration approval, Approval Center pagination/wording/notification, and service-worker suites ran 64/64; AST, Jinja, JSON, inline JavaScript syntax, and `git diff --check` checks passed. The one isolated full-suite pass ran 1,414 tests with 1,385 passed, 23 unrelated failures, 2 unrelated errors, and 4 skips; the known unrelated LPR creation failure remained among those baseline failures.
+- Browser/Codex UI automation, visual rendering, production data, database/storage operations, commit, push, deployment, Railway changes, and formal post-implementation review were not performed. Protected owner files remain present and untouched by this package.
+- Initial recording (before the separate go-ahead) captured the complete owner-approved plan and its approval status; no implementation, tests, application behavior, cache/release version, database, artifact, production, commit, or deployment changes were performed at that earlier stage.
+- The earlier diagnostic baseline ran 80 focused tests: 78 passed and two test methods failed (the calibration access method failed for three authorized-role subcases; the other failure was unrelated LPR creation). This is historical diagnostic evidence, not an implementation result. Re-establish the baseline during execution preflight.
+- The initial approval did not authorize browser automation, formal review, commit, push, or deployment; the later owner go-ahead authorized this implementation package only, and those actions remain excluded.
+
+---
+
 # Deterministic No-Data-Change Calibration Artifact Repair
 
 **Status:** Executed — implementation commit `3ee7d23`; published to `origin/main`.

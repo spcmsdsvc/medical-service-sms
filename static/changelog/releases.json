@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-30-approval-center-report-review",
+      "release_date": "2026-09-30",
+      "title": "Approval Center Report Review",
+      "summary": "Approval reviewers can open current Calibration Reports before deciding, while Calibration and Leave actions remain available when LPR is disabled.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-30-approval-center-report-review-admins",
+          "category": "Approvals",
+          "description": "Pending, Returned, and Approved current Calibration Reports now offer in-page preview, Open in New Tab, and PDF download for authorized reviewers. Superseded revisions stay unavailable, and LPR remains the only behavior controlled by the LPR feature switch.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-30-calibration-repair-deterministic",
       "release_date": "2026-09-30",
       "title": "Calibration Artifact Repair Uses Saved Data",

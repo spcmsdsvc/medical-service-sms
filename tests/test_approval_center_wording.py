@@ -104,9 +104,12 @@ class ApprovalCenterWordingTests(unittest.TestCase):
         self.assertIn("data.calibration_report_filename", self.source)
         self.assertIn("Download Calibration Report (PDF)", self.source)
         self.assertIn('href="${approvalEscape(data.calibration_report_download_url)}"', self.source)
-        self.assertIn('target="_blank" rel="noopener"', self.source)
+        self.assertIn("Open in New Tab", self.source)
+        self.assertIn('href="${approvalEscape(calibrationReportPreviewUrl)}" target="_blank" rel="noopener"', self.source)
+        self.assertNotIn('href="${approvalEscape(data.calibration_report_download_url)}" target="_blank"', self.source)
         self.assertIn("The Calibration Report PDF is still being prepared after TSR synchronization.", self.source)
         self.assertIn("PDF conversion failed. Retry the report conversion before reviewing this Calibration Report & Certificate.", self.source)
+        self.assertIn("This Calibration Report revision is superseded and its report links are unavailable.", self.source)
 
     def test_calibration_decision_handlers_report_failures_and_signature_requirements(self):
         handlers = {
@@ -152,7 +155,8 @@ class ApprovalCenterWordingTests(unittest.TestCase):
             "const reportUrl = new URL(String(url), window.location.origin).href",
             "frame.src = reportUrl",
             "preview_tsr_archive_file",
-            "setCalibrationReportPreviewState('ready'",
+            "frame.contentDocument",
+            "viewer loaded. PDF pages may still be rendering.",
             "closeCalibrationReportPreview",
         ):
             with self.subTest(expected=expected):
@@ -160,6 +164,12 @@ class ApprovalCenterWordingTests(unittest.TestCase):
         self.assertIn("calibrationReportPreviewSequence", self.source)
         self.assertNotIn("docx-preview.min.js", self.source)
         self.assertNotIn("docx.renderAsync", self.source)
+
+    def test_calibration_and_leave_extension_is_not_lpr_gated(self):
+        self.assertNotIn("{% if lpr_enabled %}<script>", self.source)
+        self.assertIn("const approvalExtensionLprEnabled =", self.source)
+        self.assertIn("if (!approvalExtensionLprEnabled || !lprId) return;", self.source)
+        self.assertIn("...(approvalExtensionLprEnabled ? ['lpr'] : [])", self.source)
 
 
 if __name__ == "__main__":

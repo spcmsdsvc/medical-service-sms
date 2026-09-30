@@ -76,7 +76,7 @@ class InventoryPmSourceContractTests(unittest.TestCase):
         self.assertIn("completion_snapshot_json", source)
         self.assertIn("planned_visits", source)
         self.assertIn("history", source)
-        self.assertIn("medical-service-pwa-offline-navigation-v217-deterministic-calibration-repair", source)
+        assert_cache_version_at_least(self, 217, source)
         self.assertIn("every 3 months", template)
         expiry_release = next(
             release for release in releases.get("releases", [])

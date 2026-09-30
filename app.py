@@ -23442,6 +23442,37 @@ def calibration_report_approval_can_view(approval, file_record=None):
     )
 
 
+def calibration_report_approval_review_can_view(approval, file_record=None):
+    """Authorize the current generated report for its approval reviewers."""
+    if not approval or clean_str(getattr(approval, 'status', None)) not in {'Pending', 'Returned', 'Approved'}:
+        return False
+    if not bool(getattr(approval, 'is_latest', False)):
+        return False
+    if not (
+        calibration_certificate_requester_can_view(approval) or
+        calibration_certificate_approver_can_act(approval) or
+        is_admin_authorized()
+    ):
+        return False
+
+    source_file = calibration_certificate_generated_report_source_file(approval)
+    generated_report_file = (
+        calibration_report_pdf_file_for_source(source_file.id)
+        if source_file else None
+    )
+    if not generated_report_file or not is_system_generated_calibration_report_pdf_file(generated_report_file):
+        return False
+    if (
+        clean_int(getattr(generated_report_file, 'shift_id', None)) != clean_int(getattr(approval, 'shift_id', None)) or
+        clean_int(getattr(generated_report_file, 'online_tsr_submission_id', None)) != clean_int(getattr(approval, 'online_tsr_submission_id', None))
+    ):
+        return False
+    return bool(
+        file_record is None or
+        clean_int(getattr(file_record, 'id', None)) == clean_int(getattr(generated_report_file, 'id', None))
+    )
+
+
 def calibration_certificate_approval_to_dict(approval, include_urls=True):
     payload = {}
     try:
@@ -23474,6 +23505,16 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         (payload.get('Text2', '') if model_source == 'temporary' else '')
     )
     temporary_model_status = model_record.status if model_record else ('Pending' if model_source == 'temporary' else '')
+    report_authorized = bool(
+        generated_report_file and
+        bool(getattr(approval, 'is_latest', False)) and
+        clean_str(getattr(approval, 'status', None)) in {'Pending', 'Returned', 'Approved'}
+    )
+    report_state = report_conversion_state.get('state', 'none')
+    report_error = report_conversion_state.get('last_error', '')
+    if not bool(getattr(approval, 'is_latest', False)) or clean_str(getattr(approval, 'status', None)) == 'Superseded':
+        report_state = 'superseded'
+        report_error = 'This Calibration Report revision is superseded and is unavailable for review.'
     item = {
         'id': approval.id,
         'module': 'calibration_certificate',
@@ -23521,8 +23562,8 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         ),
         'calibration_report_download_url': '',
         'calibration_report_preview_url': '',
-        'calibration_report_state': report_conversion_state.get('state', 'none'),
-        'calibration_report_error': report_conversion_state.get('last_error', ''),
+        'calibration_report_state': report_state,
+        'calibration_report_error': report_error,
         'calibration_report_pdf_file_id': report_conversion_state.get('pdf_file_id'),
     }
     if include_urls:
@@ -23534,7 +23575,7 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         if approval.no_signature_shift_file_id and calibration_certificate_no_signature_admin_can_view(approval):
             item['no_signature_url'] = url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='no_signature')
             item['no_signature_preview_url'] = url_for('calibration_certificate_preview', approval_id=approval.id, artifact='no_signature')
-        if generated_report_file:
+        if report_authorized:
             item['calibration_report_download_url'] = url_for(
                 'download_tsr_archive_file',
                 file_id=generated_report_file.id,
@@ -24857,7 +24898,9 @@ def calibration_certificate_report_approval_for_file_download(file_record, appro
         return None
 
     approval = db.session.get(CalibrationCertificateApproval, approval_id)
-    return approval if calibration_report_approval_can_view(approval, file_record) else None
+    if calibration_report_approval_can_view(approval, file_record):
+        return approval
+    return approval if calibration_report_approval_review_can_view(approval, file_record) else None
 
 
 @app.route('/submit_calibration_certificate/<int:submission_id>', methods=['POST'])
@@ -26091,7 +26134,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v212-calendar-calibration-actions.
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v217-deterministic-calibration-repair';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v218-approval-center-report-review';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

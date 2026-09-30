@@ -340,7 +340,7 @@ class CalibrationCertificateServerTests(unittest.TestCase):
 
 
 class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
-    def _create_fixture(self):
+    def _create_fixture(self, *, approval_status='Pending', is_latest=True):
         app = app_module.app
         db = app_module.db
         with app.app_context():
@@ -453,8 +453,8 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
                 online_tsr_submission_id=submission.id,
                 requester_user_id=requester.id,
                 revision_no=1,
-                is_latest=True,
-                status='Pending',
+                is_latest=is_latest,
+                status=approval_status,
                 certificate_number=f'2026/{suffix}-B-43',
                 mapped_data_json=json.dumps({'Textfield': f'2026/{suffix}-B-43'}),
                 template_sha256=app_module.CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
@@ -617,6 +617,49 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
                         fixture['approval_id'],
                     )
                 self.assertEqual(mismatched_response.status_code, 403)
+            finally:
+                app.config['UPLOAD_FOLDER'] = original_upload_folder
+
+    def test_current_returned_report_is_available_to_approval_reviewer(self):
+        fixture = self._create_fixture(approval_status='Returned')
+        app = app_module.app
+        original_upload_folder = app.config.get('UPLOAD_FOLDER')
+        with tempfile.TemporaryDirectory(prefix='calibration_report_returned_review_') as storage_root:
+            app.config['UPLOAD_FOLDER'] = storage_root
+            try:
+                pathlib.Path(storage_root, fixture['disk_name']).write_bytes(
+                    b'%PDF-1.4 finalized returned calibration report bytes'
+                )
+                with patch.object(app_module, 'calibration_certificate_approver_can_act', return_value=True):
+                    response = self._invoke_download(
+                        fixture['approver_id'], fixture['file_id'], fixture['approval_id']
+                    )
+                self.assertEqual(response.status_code, 200)
+            finally:
+                app.config['UPLOAD_FOLDER'] = original_upload_folder
+
+    def test_superseded_report_links_are_hidden_and_file_is_denied(self):
+        fixture = self._create_fixture(approval_status='Superseded', is_latest=False)
+        app = app_module.app
+        original_upload_folder = app.config.get('UPLOAD_FOLDER')
+        with app.app_context(), app.test_request_context('/'):
+            approval = app_module.db.session.get(
+                app_module.CalibrationCertificateApproval, fixture['approval_id']
+            )
+            item = app_module.calibration_certificate_approval_to_dict(approval)
+            app_module.db.session.remove()
+        self.assertEqual(item['calibration_report_state'], 'superseded')
+        self.assertEqual(item['calibration_report_preview_url'], '')
+        self.assertEqual(item['calibration_report_download_url'], '')
+        with tempfile.TemporaryDirectory(prefix='calibration_report_superseded_') as storage_root:
+            app.config['UPLOAD_FOLDER'] = storage_root
+            try:
+                pathlib.Path(storage_root, fixture['disk_name']).write_bytes(b'%PDF-1.4 superseded')
+                with patch.object(app_module, 'is_admin_authorized', return_value=True):
+                    response = self._invoke_download(
+                        fixture['administrator_id'], fixture['file_id'], fixture['approval_id']
+                    )
+                self.assertEqual(response.status_code, 403)
             finally:
                 app.config['UPLOAD_FOLDER'] = original_upload_folder
 
