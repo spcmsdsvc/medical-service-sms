@@ -465,6 +465,23 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertEqual(unrelated['calibration_report']['facility']['address'], truncated)
         self.assertEqual(recovered, {})
 
+    def test_complete_fields_repair_recovers_legacy_console_model_from_saved_model(self):
+        truncated = 'MobileDart Evolution M'
+        complete = 'MobileDart Evolution MX8 Version'
+        payload = {
+            'tsr-equipment-model': complete,
+            'calibration_report': {
+                'machine': {
+                    'model': complete,
+                    'console_model': truncated,
+                },
+            },
+        }
+        resolved, recovered = app_module._calibration_report_resolved_repair_payload(payload)
+        self.assertEqual(resolved['calibration_report']['machine']['console_model'], complete)
+        self.assertEqual(recovered['machine.console_model'], 'Saved report equipment model')
+        self.assertEqual(payload['calibration_report']['machine']['console_model'], truncated)
+
     def test_complete_fields_repair_checks_recovered_value_in_pdf(self):
         payload = {'calibration_report': {'facility': {'address': 'Complete saved address'}}}
         fields = [{'path': 'facility.address'}]
@@ -477,7 +494,7 @@ class CalibrationCenterContracts(unittest.TestCase):
     def test_calibration_center_row_shows_repair_history_status(self):
         self.assertEqual(
             app_module.CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
-            'calibration-report-complete-fields-v2',
+            'calibration-report-complete-fields-v3',
         )
         for marker in (
             'repair_status',

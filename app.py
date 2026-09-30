@@ -19370,7 +19370,7 @@ CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
 CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
 CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v3'
 CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER = '_calibration_report_historical_repair'
-CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION = 'calibration-report-complete-fields-v2'
+CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION = 'calibration-report-complete-fields-v3'
 CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_MARKER = '_calibration_report_complete_fields_repair'
 CALIBRATION_REPAIR_LEGACY_LIMITS = (40, 22, 60, 30, 12, 36)
 CALIBRATION_REPORT_EXPOSURE_CURRENT_UNITS = ('mA', 'mAs')
@@ -20316,21 +20316,46 @@ def _calibration_report_resolved_repair_payload(payload):
     """Recover known legacy-cutoff values from the same immutable TSR snapshot."""
     resolved = json.loads(json.dumps(payload if isinstance(payload, dict) else {}, ensure_ascii=False))
     report = resolved.get('calibration_report') if isinstance(resolved.get('calibration_report'), dict) else {}
-    facility = report.get('facility') if isinstance(report.get('facility'), dict) else {}
-    truncated_address = clean_str(facility.get('address')) or ''
-    saved_tsr_address = clean_str(resolved.get('tsr-address')) or ''
     recovered = {}
-    if (
-        len(truncated_address) == 40
-        and len(saved_tsr_address) > len(truncated_address)
-        and saved_tsr_address.casefold().startswith(truncated_address.casefold())
-    ):
-        facility = dict(facility)
-        facility['address'] = saved_tsr_address
-        report = dict(report)
-        report['facility'] = facility
-        resolved['calibration_report'] = report
-        recovered['facility.address'] = 'Saved TSR address'
+    recovery_sources = {
+        'facility.name': [('payload', 'tsr-customer-name', 'Saved TSR client name')],
+        'facility.address': [('payload', 'tsr-address', 'Saved TSR address')],
+        'facility.telephone': [('payload', 'tsr-contact-no', 'Saved TSR contact number')],
+        'facility.email': [('payload', 'tsr-email-add', 'Saved TSR email address')],
+        'facility.location': [('payload', 'tsr-department', 'Saved TSR department')],
+        'machine.model': [('payload', 'tsr-equipment-model', 'Saved TSR equipment model')],
+        'machine.serial_number': [('payload', 'tsr-serial-no', 'Saved TSR serial number')],
+        'machine.console_model': [
+            ('report', 'machine.model', 'Saved report equipment model'),
+            ('payload', 'tsr-equipment-model', 'Saved TSR equipment model'),
+        ],
+        'machine.console_serial': [
+            ('report', 'machine.serial_number', 'Saved report equipment serial number'),
+            ('payload', 'tsr-serial-no', 'Saved TSR serial number'),
+        ],
+        'calibration.engineer_name': [('payload', 'tsr-serviced-by', 'Saved TSR service engineer')],
+    }
+    for target_path, sources in recovery_sources.items():
+        truncated = clean_str(_calibration_report_repair_path_value(report, target_path)) or ''
+        if len(truncated) not in CALIBRATION_REPAIR_LEGACY_LIMITS:
+            continue
+        for source_kind, source_path, source_label in sources:
+            source_value = (
+                _calibration_report_repair_path_value(report, source_path)
+                if source_kind == 'report' else resolved.get(source_path)
+            )
+            complete = clean_str(source_value) or ''
+            if len(complete) <= len(truncated) or not complete.casefold().startswith(truncated.casefold()):
+                continue
+            group, field = target_path.split('.', 1)
+            group_value = report.get(group) if isinstance(report.get(group), dict) else {}
+            group_value = dict(group_value)
+            group_value[field] = complete
+            report = dict(report)
+            report[group] = group_value
+            resolved['calibration_report'] = report
+            recovered[target_path] = source_label
+            break
     return resolved, recovered
 
 
