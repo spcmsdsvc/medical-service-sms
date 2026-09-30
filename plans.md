@@ -1,8 +1,9 @@
 # Approval Center Report Access and Action Fixes
 
-**Status:** Executed — uncommitted
+**Status:** Executed — implementation commit `8852793`; publication authorized to `origin/main`.
 **Approved:** 2026-09-30 — the owner supplied the complete proposed plan with “PLEASE IMPLEMENT THIS PLAN”. Under the repository's two-message approval/execution rule, this records approval.
 **Execution authorized:** 2026-09-30 — the owner said “go ahead. do not overengineer and over check”.
+**Publication authorized:** 2026-09-30 — the owner said “commit and push this fix only”.
 **Detailed:** 2026-09-30
 
 ## Goal and confirmed findings
@@ -81,6 +82,7 @@ After approval, record this complete plan when file-writing is permitted and sto
 
 ## Recording outcome
 
+- Publication preparation (2026-09-30): committed only the Approval Center application/template fixes, three affected test files, cache/release metadata, and required plan/change records as `88527934f4f1d687ba3c1a8c4d8b50ae75a3f6d1`. The protected scheduler database, handoff, `.claude/`, loose handoff, `output/`, `tmp/`, and unrelated owner files were excluded. The following documentation-only commit records this implementation hash and the owner's publication authorization; both commits are the intended publication package. Remote and Railway verification will be reported after pushing; no variable change or manual redeploy is authorized or performed.
 - Execution was authorized by the separate owner go-ahead. The implementation scope remained limited to calibration report review access, the Approval Center module extension gate, preview/new-tab/download behavior, focused tests, cache/release metadata, and required records; commit, push, deployment, browser automation, production data, and protected owner files remained excluded.
 - Execution outcome (2026-09-30): `app.py` now permits the requester, assigned approver, or authorized administrator to open the exact ready PDF for a current Pending, Returned, or Approved calibration revision while preserving the existing published engineer helper and denying superseded revisions. `templates/approvals.html` now keeps calibration and leave handlers available when LPR is disabled, guards only LPR requests/actions, offers separate in-page preview, Open in New Tab, and download controls, and reports viewer-load success only after finding the expected server viewer shell. Added focused regressions, advanced the service-worker marker to v218, and added the `2026-09-30-approval-center-report-review` release entry.
 - Focused verification passed: the calibration approval, Approval Center pagination/wording/notification, and service-worker suites ran 64/64; AST, Jinja, JSON, inline JavaScript syntax, and `git diff --check` checks passed. The one isolated full-suite pass ran 1,414 tests with 1,385 passed, 23 unrelated failures, 2 unrelated errors, and 4 skips; the known unrelated LPR creation failure remained among those baseline failures.
