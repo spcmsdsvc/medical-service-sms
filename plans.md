@@ -1,6 +1,7 @@
 # Create TSR PDF: Print Everything the Engineer Entered
 
-**Status:** Executed — not yet committed; awaiting the owner's "commit and push"
+**Status:** Executed — implementation commit `a9fb22a`; publication to `origin/main` authorized.
+**Publication authorized:** 2026-10-01 — the owner said "commit and push partner, never the db and dirty files".
 **Execution authorized:** 2026-10-01 — the owner said "go ahead partner".
 **Approved:** 2026-10-01 — the owner said "plan approved partner, go with your recommendations, write the plan. you may use browser checking."
 **Detailed:** 2026-10-01.

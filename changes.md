@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-01
 
+- Committed only the Create TSR PDF package (`templates/offline_tsr.html`, `app.py` cache marker, `static/changelog/releases.json`, `tests/test_tsr_pdf_layout.py`, `tests/test_signature_stamp_sizes.py`, `plans.md`, and this package's `changes.md` entries) as `a9fb22a` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this change log remained unstaged. No Railway variable change or manual redeploy was performed.
+
 - Executed the **Create TSR PDF: Print Everything the Engineer Entered** plan on the owner's go-ahead; not committed, pushed, or deployed. All changes are in the client-side PDF renderer in `templates/offline_tsr.html`; no server, database, or saved-payload change.
 - Create TSR generated PDF, Parts Supplied/Recommended: removed the five-row cap. `planTSRMainPageLayout()` now sizes Complaint, Actions Taken, Remarks, and the parts rows from what was entered, and `drawTSRPartsTable()` draws the table. Parts that do not fit on page 1 continue as a table on a continuation page (30 rows per page) with an "N more parts on the next page" note on page 1. Part rows are now 34 units apart (was 38), removing the gaps between rows.
 - Create TSR generated PDF, Remarks/Recommendations: the box grows to hold up to 10 lines on page 1 (was 3, or 2 once it overflowed); longer remarks still continue on the next page. Complaint prints up to 3 lines (was 1).
