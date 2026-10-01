@@ -119,6 +119,7 @@ import base64
 import binascii
 import zipfile
 import zlib
+import gzip
 import tempfile
 import time
 import traceback
@@ -1414,6 +1415,43 @@ def prevent_login_redirect_cache(response):
             response.headers['Expires'] = '0'
     except Exception:
         pass
+    return response
+
+
+COMPRESSIBLE_MIMETYPES = {
+    'text/html', 'application/json', 'text/css', 'text/javascript', 'application/javascript',
+}
+COMPRESS_MIN_BYTES = 1024
+
+
+@app.after_request
+def compress_text_response(response):
+    """Gzip large rendered HTML/JSON bodies to cut Railway network egress.
+
+    Deliberately narrow: file, static, download and streamed responses are
+    direct_passthrough and are never touched, so PDFs, backups, range and
+    conditional requests behave exactly as before. Any failure returns the
+    original response.
+    """
+    try:
+        if (
+            response.status_code != 200
+            or request.method == 'HEAD'
+            or response.direct_passthrough
+            or response.is_streamed
+            or response.headers.get('Content-Encoding')
+            or response.mimetype not in COMPRESSIBLE_MIMETYPES
+            or 'gzip' not in request.headers.get('Accept-Encoding', '').lower()
+        ):
+            return response
+        body = response.get_data()
+        if len(body) < COMPRESS_MIN_BYTES:
+            return response
+        response.set_data(gzip.compress(body, compresslevel=6))
+        response.headers['Content-Encoding'] = 'gzip'
+        response.vary.add('Accept-Encoding')
+    except Exception as compression_error:
+        print(f"[COMPRESSION] Skipped: {compression_error}", flush=True)
     return response
 
 

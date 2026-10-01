@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    LIBREOFFICE_BIN=/usr/bin/soffice
+    LIBREOFFICE_BIN=/usr/bin/soffice \
+    MALLOC_ARENA_MAX=2
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

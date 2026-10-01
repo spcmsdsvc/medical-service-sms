@@ -1,3 +1,120 @@
+# Reduce Railway Memory and Egress Cost
+
+**Status:** Executed — uncommitted; awaiting the owner's "commit and push". Post-deploy measurement (step 6) pending.
+**Execution authorized:** 2026-10-01 — the owner said "go ahead partner".
+**Approved:** 2026-10-01 — the owner said "yes partner, write the plan. just make sure it won't affect the database and also won't break the system".
+**Detailed:** 2026-10-01.
+
+## Context
+
+The Railway bill rose from $5.00 (July) to $9.65 (August) to $11.42 (September) and is on pace for about $14 this cycle. Storage is about 1% of it. In the cycle that started 2026-09-18, after 13 days: memory $4.33 (71%), egress $1.68 (27%), volume $0.07, CPU $0.06. The goal is to lower the two real cost drivers with the smallest possible changes. Expected combined saving is roughly $5–7 a month; neither part is guaranteed, so each is measured after deploy and removed if it does nothing.
+
+## Decisions taken
+
+- Stay on the Hobby plan. Pro would cost $20 for the same usage.
+- No volume cleanup and no bucket change. The volume copies of older uploads stay as a second copy.
+- Two changes only: one allocator setting for memory, one response-compression hook for egress.
+- Owner constraint: **no database effect and nothing that can break the system.** Both changes are therefore limited to how the process allocates memory and how a finished response body is encoded on the wire. Neither reads, writes or migrates `scheduler.db`, the bucket, the volume or any Railway variable.
+- Worker recycling (`max_requests`) is not used: `gunicorn.conf.py` enforces `max_requests = 0` so a backup build is never killed.
+
+## Investigation
+
+Measured on production on 2026-10-01 (read-only):
+
+- **Memory is the gunicorn worker itself.** `/proc` shows the single worker at 884 MB RSS, the master at 29 MB, and no LibreOffice process left running. cgroup `memory.stat`: `anon` 884 MB, `file` 161 MB; `/tmp` empty. So it is process heap, not file cache or leaked temp files.
+- **Pattern:** about 0.65 GB right after a restart, 1.2 GB within 40 minutes, 1.7–1.95 GB at the Philippine working-hours peak, 0.95–1.0 GB overnight. It falls without a restart, which fits allocator fragmentation more than a leak. Not profiled; this is the working theory.
+- **Why fragmentation is plausible:** one worker with 8 threads (`gunicorn.conf.py:65-67`); bucket reads load whole objects into memory (`storage_backend.py:305` `download_bytes`, used by `managed_storage_read_path` at `app.py:995`); PyMuPDF opens PDFs from bytes throughout `app.py`. glibc gives threads separate arenas and rarely returns freed arena memory to the OS. The image is `python:3.11-slim` (Debian, glibc), so `MALLOC_ARENA_MAX` applies.
+- **Egress is ordinary page traffic sent uncompressed.** 7.46 GB left the service in 3 days (about 2.5 GB/day), 0.1–0.28 GB per working hour. In an 18-minute HTTP-log sample (215 requests, 26.9 MB): `/timeline` 1,009 KB per load, `/offline-tsr` 670 KB, `/approvals` 355 KB, `/get_products` 599 KB. `app.py` has no gzip or `Content-Encoding` handling. Railway's edge does gzip to the browser, but the HTTP log `txBytes` equal the uncompressed sizes, so the bytes leaving the service are uncompressed.
+- **Gzip sizes measured locally:** `templates/timeline.html` 994,529 → 230,978 bytes; `templates/approvals.html` 322,720 → 50,561; `templates/offline_tsr.html` 639,987 → 184,087.
+- **Not confirmed:** whether Railway bills egress on the bytes leaving the service (before the edge compresses). If it bills after the edge, part B saves nothing. Step 6 measures this.
+- **Other egress sources, left alone:** one 1.54 GB spike on 2026-09-29 13:00 PHT (fits a system backup ZIP download); every deploy bumps the service-worker `CACHE_VERSION` (`app.py:26706`, now v221) and makes every device re-download the precache list (about 2.5 MB plus the large pages); 16 deploys happened on 2026-09-30.
+- **Unexplained, not in scope:** about 11 GB of ingress from the bucket in three separate hours on 2026-09-30. Ingress is free. Noted as a lead for the RAM spikes to 3–6 GB.
+- Existing `after_request` hooks: `log_performance_timer` (`app.py:1367`) and `prevent_login_redirect_cache` (`app.py:1386`); both only set headers.
+- File and static responses come from `send_file`/`send_from_directory` and are `direct_passthrough`; the backup download handles `Range` itself (`app.py:31781`).
+- `tests/test_backup_permanent_fix.py:135` only asserts the Dockerfile mentions `gunicorn.conf.py`; adding an `ENV` line does not affect it.
+- `tests/test_changelog_coverage.py` fails when the newest commit touches a non-exempt path (`app.py`, `Dockerfile`) without a `static/changelog/releases.json` entry.
+- `changes.md` was read at its current top section and searched for prior gzip, compression, allocator, Dockerfile and gunicorn entries; none conflict. It was not read end to end (9,708 lines).
+
+## Execution steps
+
+1. **Part A — allocator setting.** In `Dockerfile`, add `MALLOC_ARENA_MAX=2` to the existing `ENV` block (lines 3–5). Nothing else in the Dockerfile changes. Done: `docker`-independent check that the line is present; the `CMD` and the gunicorn settings are untouched.
+
+2. **Part B — compression hook.** In `app.py`, directly after `prevent_login_redirect_cache` (`app.py:1386-1417`), add one `@app.after_request` function `compress_text_response(response)` using the standard library `gzip` module (no new dependency). It compresses only when **all** of these hold, and otherwise returns the response untouched:
+   - the request's `Accept-Encoding` includes `gzip`;
+   - request method is not `HEAD`;
+   - `response.status_code == 200`;
+   - `response.direct_passthrough` is false and `response.is_streamed` is false (so every `send_file`/static/download/backup/PDF response is skipped);
+   - no `Content-Encoding` header is already set;
+   - `response.mimetype` is one of `text/html`, `application/json`, `text/css`, `text/javascript`, `application/javascript`;
+   - the body is at least 1,024 bytes.
+   When it compresses it sets the body to the gzip bytes (level 6), sets `Content-Encoding: gzip`, updates `Content-Length`, and adds `Accept-Encoding` to `Vary`. The whole function body is wrapped in `try/except` that returns the original, unmodified response on any error. Done: `/timeline`, `/approvals`, `/offline-tsr` and JSON endpoints return `Content-Encoding: gzip` to a gzip-capable client and byte-identical content after decompression.
+
+3. **Tests.** Add `tests/test_response_compression.py`, pinning an isolated database with `MEDICAL_SERVICE_TEST_DB` before importing `app` (same pattern as `tests/test_login_page.py:9-14`). Using the Flask test client:
+   - `GET /login` with `Accept-Encoding: gzip` returns `Content-Encoding: gzip`, and the decompressed body equals the body returned without that header;
+   - the same request without `Accept-Encoding` is not encoded;
+   - a `/static/...` file request with `Accept-Encoding: gzip` is not encoded by the hook;
+   - a response under 1,024 bytes is not encoded;
+   - `Vary` contains `Accept-Encoding` on an encoded response.
+   Also assert `MALLOC_ARENA_MAX=2` is present in the `Dockerfile`. Done: the tests fail against the pre-change code and pass after.
+
+4. **Release records.** Add one `static/changelog/releases.json` entry (required by `tests/test_changelog_coverage.py`), worded as a behind-the-scenes performance change. **Do not bump the service-worker `CACHE_VERSION`:** the service worker and its cached assets are unchanged, and a bump would itself force every device to re-download the precache. If a test turns out to require the bump together with the release entry, stop and report rather than bumping silently. Update `changes.md` and this plan's status.
+
+5. **Publish** only on the owner's separate "commit and push" instruction, as a single deploy.
+
+6. **Measure after deploy** (read-only, 24–48 hours of normal use):
+   - Memory: `railway metrics --memory --raw` working-hours peak and overnight level against the baseline above (peak 1.7–1.95 GB, overnight 0.95–1.0 GB).
+   - Egress: HTTP log `txBytes` for `/timeline` and `/approvals` (expected to drop to roughly a quarter), and the hourly `NETWORK_TX_GB` against 0.1–0.28 GB per working hour.
+   - Record the result here. If part A shows no drop, remove the `ENV` line in a later commit. If billed egress does not drop although `txBytes` did, record that Railway bills after the edge and remove the hook.
+
+## Deliberately excluded
+
+- **Any database, bucket, volume or Railway-variable change.** Not needed, and excluded by the owner's constraint.
+- **Compressing static files and file downloads.** They are `direct_passthrough`; leaving them alone guarantees PDFs, DOCX, images, backup ZIPs, range requests and conditional (`304`) responses behave exactly as today. Static assets are also cached by the service worker.
+- **Flask-Compress or any new dependency.** The hook is about 25 lines of standard library code.
+- **Worker recycling, thread-count changes, streaming bucket reads, and profiling with tracemalloc.** Larger changes with more risk than the saving justifies; recycling conflicts with the backup-safe gunicorn settings.
+- **Long-lived caching of static assets and reducing service-worker bumps.** Real egress sources, but they change offline/PWA behaviour and need their own plan.
+- **The 11 GB bucket-ingress bursts.** Free, and not yet understood.
+- **Volume cleanup and plan upgrade.** Decided against above.
+
+## Verification
+
+- New tests in step 3, each seen failing before the change.
+- `tests/test_backup_permanent_fix.py`, `tests/test_login_page.py`, `tests/test_service_file_delivery.py`, `tests/test_system_backup.py` and `tests/test_changelog_coverage.py`, then one full-suite pass quoted against the last baseline (1,419 tests: 1,389 passed, 23 failures, 2 errors, 5 skips); unrelated baseline failures are not fixed here.
+- Local HTTP check with the Flask test client or `curl` against a local server: a large page decompresses to the same bytes; a PDF/static response is unchanged.
+- No browser automation (project rule). After deploy, one `curl -I` against the production `/login` page and the step 6 measurements.
+
+## After implementation
+
+1. Self-review the diff: it must contain only the `Dockerfile` `ENV` line, the one hook in `app.py`, the new test file, the release entry, and the plan/change records.
+2. Prove the new tests fail without the change.
+3. Full suite, quoting counts against the baseline.
+4. Local HTTP verification as above.
+5. `releases.json` entry; no service-worker bump (see step 4).
+6. `changes.md` and this plan's status, with the commit hash and any difference between plan and outcome.
+7. Commit checklist with explicit staging: `Dockerfile`, `app.py`, `tests/test_response_compression.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and unrelated dirty entries. Commit and push only on the owner's instruction.
+8. Step 6 measurements, recorded under "Recording outcome".
+
+## Risks
+
+- **Database:** none. Neither change executes SQL, opens `scheduler.db`, or alters startup migrations. `MALLOC_ARENA_MAX` only changes how glibc pools freed memory; the hook only re-encodes a finished response body.
+- **A page arrives broken because of compression.** Blast radius: HTML/JSON responses to gzip-capable clients. Safety nets: the hook skips anything that is not a plain 200 text response, returns the original response on any exception, the tests compare decompressed bytes to the original, and rollback is a one-commit revert.
+- **Double compression at the edge.** The hook sets `Content-Encoding: gzip`, which a proxy must pass through rather than re-encode. Checked after deploy with `curl`.
+- **Service worker caching.** The browser decodes the body before the service worker stores it, so cached offline pages are unchanged.
+- **Slight CPU increase** from gzip (about 15–25 ms per 1 MB page). CPU is $0.06 of the bill.
+- **`MALLOC_ARENA_MAX=2` can add allocator contention** between the 8 threads. The workload is I/O-bound and nearly idle on CPU, so this is expected to be unnoticeable; the `[PERF]` log lines (`app.py:1367`) would show it.
+- **No saving.** Part A may not reduce RAM, and part B saves nothing if Railway bills egress after the edge. Step 6 decides whether each stays.
+
+## Recording outcome
+
+- 2026-10-01: Recorded the owner-approved plan with status **Approved — awaiting go-ahead**. Only `plans.md` and `changes.md` were changed. No application code, Dockerfile, tests, cache/release metadata, database, Railway variable, commit, push or deployment was touched.
+- 2026-10-01: Executed steps 1–4; not committed, pushed or deployed. Differences from the plan:
+  - Step 3: the `/login` test compares the decompressed length and closing tag rather than exact bytes, because the CSRF token differs between two renders. Exact round-trip equality is asserted on the JSON case.
+  - Step 4: **no `releases.json` entry was added.** `tests/test_changelog_coverage.py` only requires a release dated the commit date, and a 2026-10-01 release already exists; the change is invisible to users. If this is committed on a later date, add an entry dated that day or the coverage test will fail.
+  - No service-worker bump, as planned (still v221).
+  - Verification: the 5 new tests failed before the change and pass after. Full suite: 1,429 tests, 23 failures, 2 errors, 5 skips — the same non-passing counts as the baseline. Steps 5–6 (publish, measure) are pending.
+
+---
+
 # Travel Request "Site Visit" Purpose Tag and Others-Line Remarks
 
 **Status:** Executed — implementation commit `65e03d8`; publication to `origin/main` authorized.
