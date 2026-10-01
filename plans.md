@@ -1,3 +1,111 @@
+# Travel Request "Site Visit" Purpose Tag and Others-Line Remarks
+
+**Status:** Executed — not yet committed; awaiting the owner's commit instruction.
+**Execution authorized:** 2026-10-01 — the owner said "go ahead. do not overengineer and over verify things".
+**Approved:** 2026-10-01 — the owner said "plan approved, both assumptions confirmed", and added the Others-line remarks change and "fix any awkward behavior you can find".
+**Detailed:** 2026-10-01.
+
+## Context
+
+The Travel Request page (`templates/travel_request.html`) offers five purpose tags per client visit: Warranty, Repair, PM, Installation, Others. The owner wants a sixth, **Site Visit**, for trips with no equipment involved. On the generated official form it takes the place of the printed "Others" label, and the Equipment control is greyed out.
+
+Separately, the line beside "Others" on the generated form currently prints the start of the saved purpose text, which reads `Route 1: Manila → Tacloban ...`. The owner wants that line to show the visit remarks instead.
+
+## Decisions taken
+
+- Site Visit is **exclusive**: checking it unticks and disables the other five tags on that visit card.
+- The printed "Others" label is overprinted with "Site Visit" **only** on Site Visit requests; every other request keeps the original label.
+- The Others line shows the **Visit Remarks** field (`.visit-notes`, saved as `visit.notes`), not the route. The same applies to Site Visit requests.
+- "Remarks field" is taken to mean Visit Remarks, the only field labelled remarks on the page. If the owner meant Special Notes (`travel-special-notes`), amend step 5 before executing.
+- When no visit has remarks, the Others line is left blank; it does not fall back to the route.
+
+## Investigation
+
+- Tag list: `buildPurposeChecks()` at `templates/travel_request.html:2517`. Tags are restored and wired to `updateVisitPurposeAuto()` at `:2821-2824`. Saved as comma-joined text in `purpose_tags` (`app.py:2370`, `String(255)`), so no schema change is needed.
+- Equipment control: markup at `templates/travel_request.html:2787-2801`; `resetVisitProductSelect()` at `:2944` and `populateVisitProducts()` at `:2970` set the disabled/enabled state. `populateVisitProducts()` runs on load (`:2828`) and re-enables the control, so the Site Visit state must be applied after it.
+- **Equipment is not validated as required anywhere today** (client messages at `:2740`, `:2841`, `:3501`, `:3505` cover routes, visits and purpose only; no server check). "Not required" therefore needs no validation removed.
+- Auto purpose text: `buildVisitPurposeFromInputs()` at `templates/travel_request.html:3078` and the server twin `build_travel_visit_purpose()` at `app.py:40774`. Both produce `"<tag> of selected equipment"` when no equipment is chosen.
+- Saved purpose text: `collectTravelPayload()` at `templates/travel_request.html:3157-3165` builds `Route N: from → to`, route summary and visit lines, then appends a `Notes:` block (`:3204-3227`).
+- Official form overlay, client-service branch: `app.py:9978-9999`.
+  - Checkboxes are chosen by **keyword search over the whole purpose text** (`:9985-9996`), which includes client names, remarks and the notes block. A remark mentioning "repair" ticks Repair; `\bPM\b` matches a time such as "3:00 PM".
+  - Others is ticked only when none of the four keywords match, so Repair + Others never ticks Others.
+  - The Others line prints `purpose_text` at (130, 714), two lines, 176pt wide (`:9998`). This is where `Route 1: ...` comes from.
+  - `equipment_text` is printed at (331, 714) (`:9999`) although the same equipment is already printed on the rows above (`:9983`), so it appears twice.
+- The route also prints on the destination line at `app.py:10019` for every request. That is correct and stays.
+- Training/Meeting branch (`app.py:10000-10017`) ticks Others and writes details on the upper rows. Unchanged.
+- Existing travel tests: `tests/test_travel_request_access.py`, `tests/test_travel_request_draft_instructions.py`.
+
+## Execution steps
+
+1. **Add the tag.** In `buildPurposeChecks()` (`templates/travel_request.html:2517`) append `Site Visit` to the tag array. Done: the checkbox renders on every visit card and saves/restores through the existing `purpose_tags` path.
+
+2. **Site Visit state on the visit card.** Add one function `applyVisitSiteVisitState(visitCard)` in `templates/travel_request.html` and call it from the tag `change` listener (`:2824`), after `populateVisitProducts()` on load (`:2828`), and after a customer is selected. When Site Visit is checked it:
+   - clears the selected equipment (select options deselected, checklist unchecked, `.visit-product-id` emptied);
+   - disables the toggle and adds the existing `disabled` class to the box;
+   - sets the toggle text and hint to "Not required for Site Visit";
+   - unchecks and disables the other five tag checkboxes.
+   When unchecked it re-enables the tags and restores the equipment control to its normal state for the current customer (`populateVisitProducts()` if a customer is set, otherwise `resetVisitProductSelect()`). Done: toggling works both ways, and a saved Site Visit request reopens with equipment greyed out.
+
+3. **Auto purpose text.** In `buildVisitPurposeFromInputs()` (`templates/travel_request.html:3078`) and `build_travel_visit_purpose()` (`app.py:40774`), kept identical:
+   - Site Visit returns `Site Visit`;
+   - when no equipment is selected, return the action/tags alone instead of `"... of selected equipment"`.
+   Done: no saved purpose contains the literal "selected equipment".
+
+4. **Choose form checkboxes from saved tags.** In the client-service branch (`app.py:9978-9999`), collect the tags from all visits' `purpose_tags` while looping visits (`:9891`). When any tags exist, tick Warranty/Repair/PM/Installation/Others from those tags. Keep the current keyword logic only as the fallback for older requests that saved no tags. Done: a remark containing "repair" no longer ticks Repair; Repair + Others ticks both.
+
+5. **Others line shows remarks.** Collect non-empty `visit.notes` in visit order, de-duplicated, joined with `; `. In the Others/Site Visit case print that at (130, 714) in place of `purpose_text`, same width and two-line limit; print nothing when there are no remarks. Remove the duplicate `equipment_text` draw at (331, 714). Done: the Others line never starts with `Route 1:`.
+
+6. **Site Visit on the form.** When any visit carries the Site Visit tag: tick the box at (37, 730), cover the printed "Others" label with a white rectangle and draw "Site Visit" in its place, and print nothing in the equipment column instead of "N/A". The label's exact rectangle is measured from the template PDF during this step. Done: a Site Visit request shows "Site Visit" ticked with remarks beside it; a non-Site-Visit request still shows "Others".
+
+7. **Tests.** Add `tests/test_travel_request_site_visit.py` covering: `build_travel_visit_purpose()` outputs for Site Visit and for no equipment; form generation for Site Visit, Others with remarks, Others without remarks, Repair with a remark containing "warranty", and a legacy request with no tags. Assert on extracted PDF text and on which checks are drawn. Done: each test fails against the pre-change code and passes after.
+
+8. **Release records.** Bump the service-worker cache marker in `app.py`, add a `static/changelog/releases.json` entry, update `changes.md`, and set this plan's status.
+
+## Deliberately excluded
+
+- No database or schema change: tags are already stored as text.
+- No new routes or dependencies.
+- Training/Meeting form layout and the detailed summary PDF (`app.py:9425-9484`) are unchanged.
+- The route on the destination line stays.
+- Existing saved requests are not rewritten; they regenerate with the new logic, using the keyword fallback where they have no tags.
+- No equipment validation is added for the other tags; none exists today and none was requested.
+
+## Verification
+
+- New tests in step 7, each shown to fail before the fix.
+- `tests/test_travel_request_access.py` and `tests/test_travel_request_draft_instructions.py`, then one full-suite pass. Baseline at the last package: 1,419 tests, 1,389 passed, 23 failures, 2 errors, 5 skips; unrelated baseline failures are not to be fixed here.
+- Generate one Site Visit and one Others form locally and inspect the rendered page for label cover, tick position and remarks placement.
+- Browser checks of the page (toggle behaviour, 375 px width, console) need the owner's separate permission under the project rule on browser use; otherwise report them as not performed.
+
+## After implementation
+
+1. Self-review the diff.
+2. Prove the new tests fail without the fix.
+3. Full suite, quoting counts against the baseline.
+4. Rendered-form inspection; browser sequence only if permitted.
+5. Service worker bump and `releases.json` entry.
+6. `changes.md` and this plan's status with the commit hash and any difference between plan and outcome.
+7. Commit checklist with explicit staging: `templates/travel_request.html`, `app.py`, `tests/test_travel_request_site_visit.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and unrelated dirty entries. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **Label cover misaligned** on the official template: the white rectangle could clip neighbouring print. Safety net: measured from the template and checked on a rendered page.
+- **Tag-based ticks change older forms on regeneration**: a request that ticked a box only through a keyword in its remarks will now tick by its tags. This is the intended correction; requests with no saved tags keep the old behaviour.
+- **Remarks longer than two lines** are cut at the existing limit; the full text remains in the summary PDF.
+- **Clearing equipment when Site Visit is checked** discards a selection made by mistake; unchecking restores the list but not the previous selection.
+
+## Recording outcome
+
+- 2026-10-01: Recorded the owner-approved plan with status **Approved — awaiting go-ahead**. Only `plans.md` and `changes.md` were changed. No application code, tests, templates, cache/release metadata, database, commit, push or deployment was touched.
+- 2026-10-01: Executed steps 1–8. Differences from the plan:
+  - Step 2 was done by teaching `resetVisitProductSelect()` and `populateVisitProducts()` about Site Visit rather than calling the new function from three places.
+  - Step 3 also removed a repeated suffix found by the new test ("Others of X - Others", "Warranty of X - Warranty").
+  - Step 6: when a Site Visit request also has equipment on another visit, that equipment is still printed.
+  - Verification was reduced on the owner's "do not over verify": the 13 travel request tests pass and rendered Site Visit/Others forms were inspected, but only the purpose-text test was seen failing before its fix, and the full suite and browser checks were not run.
+  - Service worker is v221; release entry `2026-10-01-travel-request-site-visit`.
+
+---
+
 # Preserve Complete Report and Certificate Values
 
 **Status:** Executed — implementation commit `0c1b7e5`; publication to `origin/main` authorized.

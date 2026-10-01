@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-01-travel-request-site-visit",
+      "release_date": "2026-10-01",
+      "title": "Travel Request Site Visit",
+      "summary": "Travel Requests now have a Site Visit purpose, and the Others line on the generated form shows the visit remarks.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-01-travel-request-site-visit-admins-engineers",
+          "category": "Travel Request",
+          "description": "Site Visit needs no equipment and prints in place of Others on the generated form. The form's checkboxes now follow the selected purpose tags, and the Others line shows Visit Remarks instead of the route.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-30-calibration-complete-values",
       "release_date": "2026-09-30",
       "title": "Complete Calibration Report Values",

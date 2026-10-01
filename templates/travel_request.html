@@ -2514,7 +2514,7 @@ function travelProductsForClient(clientId){
 function buildPurposeChecks(name){
     return `
         <div class="travel-check-grid compact">
-            ${['Warranty','Repair','PM','Installation','Others'].map(tag => `
+            ${['Warranty','Repair','PM','Installation','Others','Site Visit'].map(tag => `
                 <label class="travel-check"><input type="checkbox" class="visit-purpose-check" name="${travelEscape(name)}" value="${travelEscape(tag)}"> ${travelEscape(tag)}</label>
             `).join('')}
         </div>
@@ -2821,8 +2821,12 @@ function addTravelVisit(routeCard, data = {}){
     const tags = String(data.purpose_tags || '').split(',').map(v => v.trim()).filter(Boolean);
     visit.querySelectorAll('.visit-purpose-check').forEach(chk => {
         chk.checked = tags.includes(chk.value);
-        chk.addEventListener('change', () => updateVisitPurposeAuto(visit));
+        chk.addEventListener('change', () => {
+            if(chk.value === 'Site Visit') applyVisitSiteVisitState(visit);
+            else updateVisitPurposeAuto(visit);
+        });
     });
+    if(isVisitSiteVisit(visit)) applyVisitSiteVisitState(visit);
 
     if(data.client_id){
         populateVisitProducts(visit, data.client_id, data.product_ids || data.product_id || '');
@@ -2941,7 +2945,25 @@ function closeEquipmentDropdowns(exceptDropdown=null){
     });
 }
 
+function isVisitSiteVisit(visitCard){
+    return !!visitCard.querySelector('.visit-purpose-check[value="Site Visit"]:checked');
+}
+
+// Site Visit is exclusive and has no equipment: clear and lock the other tags and the equipment list.
+function applyVisitSiteVisitState(visitCard){
+    const siteVisit = isVisitSiteVisit(visitCard);
+    visitCard.querySelectorAll('.visit-purpose-check').forEach(chk => {
+        if(chk.value === 'Site Visit') return;
+        if(siteVisit) chk.checked = false;
+        chk.disabled = siteVisit;
+    });
+    const clientId = visitCard.querySelector('.visit-client-id')?.value || '';
+    if(!siteVisit && clientId) populateVisitProducts(visitCard, clientId);
+    else resetVisitProductSelect(visitCard);
+}
+
 function resetVisitProductSelect(visitCard){
+    const lockedText = isVisitSiteVisit(visitCard) ? 'Not required for Site Visit' : 'Select customer first';
     const select = visitCard.querySelector('.visit-product-select');
     const box = visitCard.querySelector('.visit-product-box');
     const dropdown = visitCard.querySelector('.visit-product-dropdown');
@@ -2957,13 +2979,13 @@ function resetVisitProductSelect(visitCard){
     }
     if(dropdown) dropdown.classList.remove('open');
     if(toggle) toggle.disabled = true;
-    if(toggleText) toggleText.textContent = 'Select customer first';
+    if(toggleText) toggleText.textContent = lockedText;
     if(search) search.value = '';
     if(box){
         box.classList.add('disabled');
-        box.innerHTML = '<div class="travel-hint">Select customer first</div>';
+        box.innerHTML = `<div class="travel-hint">${lockedText}</div>`;
     }
-    if(hint) hint.textContent = 'Product list is locked until a customer is selected.';
+    if(hint) hint.textContent = isVisitSiteVisit(visitCard) ? 'Equipment is not required for a Site Visit.' : 'Product list is locked until a customer is selected.';
     updateVisitPurposeAuto(visitCard);
 }
 
@@ -2976,6 +2998,10 @@ function populateVisitProducts(visitCard, clientId, selectedProductId = ''){
     const search = visitCard.querySelector('.visit-product-search');
     const hint = visitCard.querySelector('.visit-product-hint');
     if(!select || !box) return;
+    if(isVisitSiteVisit(visitCard)){
+        resetVisitProductSelect(visitCard);
+        return;
+    }
 
     const products = travelProductsForClient(clientId);
     select.disabled = false;
@@ -3079,13 +3105,14 @@ function buildVisitPurposeFromInputs(visitCard){
     const productNames = getVisitSelectedProductNames(visitCard);
     const tags = Array.from(visitCard.querySelectorAll('.visit-purpose-check:checked')).map(chk => chk.value);
     if(!tags.length) return '';
+    if(tags.includes('Site Visit')) return 'Site Visit';
 
     const primaryActions = tags.filter(tag => ['PM', 'Repair', 'Installation'].includes(tag));
-    const suffixTags = tags.filter(tag => !['PM', 'Repair', 'Installation'].includes(tag));
+    let suffixTags = tags.filter(tag => !['PM', 'Repair', 'Installation'].includes(tag));
     const action = primaryActions.length ? primaryActions.join(' / ') : tags[0];
-    const equipmentLabel = productNames.length ? productNames.join(', ') : 'selected equipment';
+    if(!primaryActions.length) suffixTags = suffixTags.slice(1);
 
-    let purpose = `${action} of ${equipmentLabel}`;
+    let purpose = productNames.length ? `${action} of ${productNames.join(', ')}` : action;
     if(suffixTags.length) purpose += ` - ${suffixTags.join(', ')}`;
     return purpose;
 }

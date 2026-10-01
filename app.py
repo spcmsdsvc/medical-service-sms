@@ -9874,6 +9874,8 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         equipment = []
         activity_details = []
         route_labels = []
+        visit_tags = set()
+        visit_remarks = []
         routes = sorted(
             list(getattr(request_rec, 'routes', None) or []),
             key=lambda route: (clean_int(getattr(route, 'sequence_no', None)) or 0, clean_int(getattr(route, 'id', None)) or 0)
@@ -9910,6 +9912,10 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
                 visit_purpose = safe_text(getattr(visit, 'visit_purpose', None)) or safe_text(getattr(visit, 'purpose_tags', None)) or safe_text(getattr(visit, 'notes', None))
                 if visit_purpose and visit_purpose not in activity_details:
                     activity_details.append(visit_purpose)
+                visit_tags.update(tag.strip().lower() for tag in safe_text(getattr(visit, 'purpose_tags', None)).split(',') if tag.strip())
+                visit_remark = safe_text(getattr(visit, 'notes', None))
+                if visit_remark and visit_remark not in visit_remarks:
+                    visit_remarks.append(visit_remark)
 
         if not customers and safe_text(getattr(request_rec, 'client_name', None)):
             customers.append(safe_text(getattr(request_rec, 'client_name', None)))
@@ -9980,23 +9986,41 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
             service_row_y_positions = [798, 781, 764, 747, 730]
             for idx, customer_line in enumerate((customer_lines or [customer_text])[:len(service_row_y_positions)]):
                 draw_wrapped_text(130, service_row_y_positions[idx], customer_line, max_width=176, max_lines=1, size=6.6)
-            for idx, equipment_line in enumerate((equipment_lines or [equipment_text])[:len(service_row_y_positions)]):
-                draw_wrapped_text(331, service_row_y_positions[idx], equipment_line, max_width=168, max_lines=1, size=6.6)
-            purpose_lower = purpose_text.lower()
-            purpose_raw = safe_text(purpose_text)
-            is_pm_purpose = bool(re.search(r'\bPM\b|preventive\s+maintenance|preventive', purpose_raw, flags=re.I))
-            if 'warranty' in purpose_lower:
+            is_site_visit = 'site visit' in visit_tags
+            if equipment_lines or not is_site_visit:
+                for idx, equipment_line in enumerate((equipment_lines or [equipment_text])[:len(service_row_y_positions)]):
+                    draw_wrapped_text(331, service_row_y_positions[idx], equipment_line, max_width=168, max_lines=1, size=6.6)
+            if visit_tags:
+                # Saved purpose tags decide the checkboxes.
+                check_warranty = 'warranty' in visit_tags
+                check_repair = 'repair' in visit_tags
+                check_pm = 'pm' in visit_tags
+                check_install = 'installation' in visit_tags
+                check_others = is_site_visit or 'others' in visit_tags
+            else:
+                # Older requests saved no tags: fall back to keywords in the purpose text.
+                purpose_lower = purpose_text.lower()
+                check_warranty = 'warranty' in purpose_lower
+                check_repair = 'repair' in purpose_lower
+                check_pm = bool(re.search(r'\bPM\b|preventive', safe_text(purpose_text), flags=re.I))
+                check_install = 'install' in purpose_lower
+                check_others = not (check_warranty or check_repair or check_pm or check_install)
+            if check_warranty:
                 draw_check(37, 798)
-            if 'repair' in purpose_lower:
+            if check_repair:
                 draw_check(37, 781)
-            if is_pm_purpose:
+            if check_pm:
                 draw_check(37, 764)
-            if 'install' in purpose_lower:
+            if check_install:
                 draw_check(37, 747)
-            if not any(key in purpose_lower for key in ['warranty', 'repair', 'preventive', 'install']) and not is_pm_purpose:
+            if check_others:
                 draw_check(37, 730)
-                draw_wrapped_text(130, 714, purpose_text, max_width=176, max_lines=2, size=6.6, line_height=7.8)
-                draw_wrapped_text(331, 714, equipment_text, max_width=168, max_lines=2, size=6.6, line_height=7.8)
+                if is_site_visit:
+                    # Cover only the printed "Others" label and stamp "Site Visit" in its place.
+                    c.setFillColorRGB(1, 1, 1)
+                    c.rect(52, 726.5, 30, 9.5, stroke=0, fill=1)
+                    draw_text(53.2, 729, 'Site Visit', size=8.16, bold=True)
+                draw_wrapped_text(130, 714, '; '.join(visit_remarks), max_width=176, max_lines=2, size=6.6, line_height=7.8)
         else:
             # Training, seminar, meeting, and similar Medical Service travel
             # should stay under the Service Dept/CSC purpose area, not Sales/Others.
@@ -26679,7 +26703,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v220-calibration-complete-values';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v221-travel-request-site-visit';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -40781,14 +40805,18 @@ def build_travel_visit_purpose(product_names, purpose_tags):
     tags = [clean_str(tag) for tag in (purpose_tags or []) if clean_str(tag)]
     if not tags:
         return ''
+    if 'Site Visit' in tags:
+        return 'Site Visit'
 
     primary_actions = [tag for tag in tags if tag in {'PM', 'Repair', 'Installation'}]
     suffix_tags = [tag for tag in tags if tag not in {'PM', 'Repair', 'Installation'}]
 
     action = ' / '.join(primary_actions) if primary_actions else tags[0]
-    equipment_label = ', '.join([clean_str(name) for name in product_names if clean_str(name)]) or 'selected equipment'
+    if not primary_actions:
+        suffix_tags = suffix_tags[1:]
+    equipment_label = ', '.join([clean_str(name) for name in (product_names or []) if clean_str(name)])
 
-    purpose = f"{action} of {equipment_label}"
+    purpose = f"{action} of {equipment_label}" if equipment_label else action
     if suffix_tags:
         purpose += f" - {', '.join(suffix_tags)}"
     elif primary_actions and len(tags) > len(primary_actions):
