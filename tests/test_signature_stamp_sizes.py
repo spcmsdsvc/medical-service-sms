@@ -86,7 +86,7 @@ class SignatureStampSizeTests(unittest.TestCase):
         """
         self.assertIn('const TSR_SIGNATURE_FOOTER_HEIGHT = TSR_SIGNATURE_FOOTER_FIXED_HEIGHT + TSR_SIGNATURE_ROW_HEIGHT;',
                       self.tsr_source)
-        self.assertIn('+ 80 + TSR_SIGNATURE_FOOTER_HEIGHT;', self.tsr_source)
+        self.assertIn('- 80 - TSR_SIGNATURE_FOOTER_HEIGHT - 40;', self.tsr_source)
         self.assertNotIn('+ 80 + 247;', self.tsr_source)
         self.assertIn('const sigH = TSR_SIGNATURE_ROW_HEIGHT;', self.tsr_source)
         self.assertIn('const SIGNATURE_STAMP_SCALE = Number({{ signature_stamp_scale|tojson }}) || 1.5;', self.tsr_source)

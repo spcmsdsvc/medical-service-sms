@@ -2895,8 +2895,7 @@ function renderDocs(){
   const box=document.getElementById('tsr-documents-chips'); document.getElementById('tsr-doc-count').textContent=`${standaloneDocuments.length} selected`; document.getElementById('tsr-documents').value=standaloneDocuments.join(', ');
   box.innerHTML=standaloneDocuments.length ? standaloneDocuments.map(d=>`<span class="tsr-chip">${escapeHTML(d)} <button type="button" onclick="removeTSRDocument('${escapeAttr(d)}')">×</button></span>`).join('') : '<span class="text-muted small">No documents selected.</span>';
 }
-let partRowCount=0;
-function addTSRPartRow(data={}){ partRowCount++; const row=document.createElement('div'); row.className='tsr-parts-grid tsr-part-row'; row.innerHTML=`<input class="form-control form-control-sm part-item" placeholder="${partRowCount}" value="${escapeAttr(data.item||'')}"><input class="form-control form-control-sm part-number" placeholder="Part no." value="${escapeAttr(data.number||'')}"><input class="form-control form-control-sm part-description" placeholder="Description" value="${escapeAttr(data.description||'')}"><input type="number" min="0" class="form-control form-control-sm part-qty" placeholder="Qty" value="${escapeAttr(data.qty||'')}"><input class="form-control form-control-sm part-dr" placeholder="DR no." value="${escapeAttr(data.dr||'')}">`; document.getElementById('tsr-parts-rows').appendChild(row); row.querySelectorAll('input').forEach(i=>i.addEventListener('input',()=>{syncPartsText(); saveStandaloneTSRDraft(true);})); syncPartsText(); }
+function addTSRPartRow(data={}){ const partRowPosition=document.querySelectorAll('#tsr-parts-rows .tsr-part-row').length+1; const row=document.createElement('div'); row.className='tsr-parts-grid tsr-part-row'; row.innerHTML=`<input class="form-control form-control-sm part-item" placeholder="${partRowPosition}" value="${escapeAttr(data.item||'')}"><input class="form-control form-control-sm part-number" placeholder="Part no." value="${escapeAttr(data.number||'')}"><input class="form-control form-control-sm part-description" placeholder="Description" value="${escapeAttr(data.description||'')}"><input type="number" min="0" class="form-control form-control-sm part-qty" placeholder="Qty" value="${escapeAttr(data.qty||'')}"><input class="form-control form-control-sm part-dr" placeholder="DR no." value="${escapeAttr(data.dr||'')}">`; document.getElementById('tsr-parts-rows').appendChild(row); row.querySelectorAll('input').forEach(i=>i.addEventListener('input',()=>{syncPartsText(); saveStandaloneTSRDraft(true);})); syncPartsText(); }
 function getParts(){ return [...document.querySelectorAll('.tsr-part-row')].map(r=>({item:r.querySelector('.part-item').value,number:r.querySelector('.part-number').value,description:r.querySelector('.part-description').value,qty:r.querySelector('.part-qty').value,dr:r.querySelector('.part-dr').value})); }
 function syncPartsText(){ document.getElementById('tsr-parts-table').value=getParts().filter(p=>Object.values(p).some(Boolean)).map(p=>[p.item,p.number,p.description,p.qty,p.dr].join(' | ')).join('\n'); }
 
@@ -9806,7 +9805,9 @@ function getTSRServiceCategoryText(data){
   return raw;
 }
 function isTSRCategorySelected(data, label){
-  const raw = getTSRServiceCategoryText(data).toLowerCase();
+  // Match the ticked selections, not getTSRServiceCategoryText(): that swaps "Others" for the
+  // typed text, which unticked OTHERS and let the typed words tick unrelated boxes.
+  const raw = String(data['tsr-service-category'] || '').toLowerCase();
   return raw && raw.includes(label.toLowerCase());
 }
 function isTSRDocSelected(data, label){
@@ -10191,6 +10192,85 @@ function drawMultilineBox(ctx, title, value, x, y, w, h, fontSize=16){
   ctx.strokeRect(x, y + 32, w, h - 27);
   ctx.font = `bold ${fontSize}px Arial`;
   canvasText(ctx, value, x + 11, y + 51, w - 22, fontSize + 7, {maxLines: Math.max(1, Math.floor((h - 42)/(fontSize + 7)))});
+}
+// Steps the font down until the text fits one line; below the floor it truncates as before.
+function fitTSRSingleLineFont(ctx, text, maxWidth, preferredFontSize, minimumFontSize=11){
+  let fontSize = preferredFontSize;
+  ctx.font = `bold ${fontSize}px Arial`;
+  while(fontSize > minimumFontSize && ctx.measureText(String(text || '')).width > maxWidth){
+    fontSize -= 1;
+    ctx.font = `bold ${fontSize}px Arial`;
+  }
+  return fontSize;
+}
+const TSR_PART_ROW_HEIGHT = 34;
+const TSR_PARTS_HEADER_HEIGHT = 32;
+// A blank Item No. prints the part's position, which is what the form shows as its placeholder.
+function drawTSRPartsTable(ctx, parts, x, y, pageW, startIndex=0, rowCount=parts.length){
+  const cols = [90, 230, 455, 85, pageW - 90 - 230 - 455 - 85];
+  const headers = ['ITEM NO.', 'PART NUMBER', 'DESCRIPTION', 'QTY', 'DELIVERY RECEIPT'];
+  let cellX = x;
+  ctx.font = 'bold 15px Arial';
+  headers.forEach((h, i) => { ctx.strokeRect(cellX, y, cols[i], TSR_PARTS_HEADER_HEIGHT); ctx.fillText(h, cellX + 9, y + 22); cellX += cols[i]; });
+  y += TSR_PARTS_HEADER_HEIGHT;
+  for(let r = 0; r < rowCount; r++){
+    const p = parts[r];
+    const vals = p ? [p.item || String(startIndex + r + 1), p.number || '', p.description || '', p.qty || '', p.dr || ''] : ['', '', '', '', ''];
+    cellX = x;
+    vals.forEach((v, i) => {
+      ctx.strokeRect(cellX, y, cols[i], TSR_PART_ROW_HEIGHT);
+      fitTSRSingleLineFont(ctx, v, cols[i] - 18, 15);
+      if(ctx.measureText(String(v)).width > cols[i] - 18){
+        canvasText(ctx, v, cellX + 9, y + 15, cols[i] - 18, 13, {maxLines:2});
+      }else{
+        canvasText(ctx, v, cellX + 9, y + 23, cols[i] - 18, 16, {maxLines:1});
+      }
+      cellX += cols[i];
+    });
+    y += TSR_PART_ROW_HEIGHT;
+  }
+  return y;
+}
+// Page 1 has a fixed budget below the Complaint box. Split it by what was actually entered
+// instead of fixed heights, which capped parts at five rows and Remarks at three lines.
+function planTSRMainPageLayout(ctx, data, { startY, pageHeight, pageW }){
+  const parts = (Array.isArray(data.parts) ? data.parts : []).filter(p => p && Object.values(p).some(Boolean));
+
+  ctx.font = 'bold 19px Arial';
+  const complaintLines = Math.max(1, Math.min(3, wrapCanvasTextLines(ctx, data['tsr-complaint'], pageW - 22).length));
+  const complaintHeight = 88 + ((complaintLines - 1) * 26);
+
+  ctx.font = 'bold 17px Arial';
+  let remarksLines = Math.max(3, Math.min(10, wrapCanvasTextLines(ctx, data['tsr-remarks'], pageW - 24).length));
+
+  ctx.font = 'bold 18px Arial';
+  const actionsColW = Math.floor((pageW - 24 - 24) / 2);
+  const actionsLines = wrapCanvasTextLines(ctx, data['tsr-actions-taken'], actionsColW).length;
+  const actionsFloor = 150;
+  const actionsNeed = Math.max(actionsFloor, 54 + (Math.ceil(actionsLines / 2) * 24));
+
+  // Documents 140, parts title + header 64, service row 80, signature footer, bottom margin 40.
+  const available = pageHeight - (startY + complaintHeight) - 140 - 64 - 80 - TSR_SIGNATURE_FOOTER_HEIGHT - 40;
+  const reservedRows = Math.max(2, Math.min(5, parts.length || 2));
+  const remarksHeightFor = lines => 78 + (lines * 24);
+  let rest = available - remarksHeightFor(remarksLines) - (reservedRows * TSR_PART_ROW_HEIGHT);
+  while(rest < actionsFloor && remarksLines > 3){
+    remarksLines -= 1;
+    rest += 24;
+  }
+  let actionsHeight = Math.max(actionsFloor, Math.min(actionsNeed, rest));
+  let spare = Math.max(0, rest - actionsHeight);
+  const extraRows = Math.max(0, Math.min(parts.length - reservedRows, Math.floor(spare / TSR_PART_ROW_HEIGHT)));
+  spare -= extraRows * TSR_PART_ROW_HEIGHT;
+  actionsHeight += spare;
+
+  return {
+    parts,
+    complaintHeight,
+    remarksHeight: remarksHeightFor(remarksLines),
+    actionsHeight,
+    partRowsOnPage: reservedRows + extraRows
+  };
 }
 function drawMultilineBoxWithOverflow(ctx, title, value, x, y, w, h, fontSize=17, noteLabel='Continued on next page'){
   drawSectionTitle(ctx, title, x, y, w, 27);
@@ -10594,12 +10674,17 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   drawTableCell(ctx, margin, y, leftW, customerAddressRowH, 'CUSTOMER NAME:', data['tsr-customer-name'], 135, {layout:customerLayout});
   drawTableCell(ctx, margin + leftW, y, rightW, customerAddressRowH, 'ADDRESS:', data['tsr-address'], 85, {layout:addressLayout});
   y += customerAddressRowH;
-  drawTableCell(ctx, margin, y, leftW, rowH, 'SERVICE REQUESTED BY:', data['tsr-requested-by'], 190);
-  drawTableCell(ctx, margin + leftW, y, rightW, rowH, 'DEPARTMENT:', data['tsr-department'], 118);
-  y += rowH;
-  drawTableCell(ctx, margin, y, leftW, rowH, 'EQUIPMENT/MODEL:', data['tsr-equipment-model'], 162);
-  drawTableCell(ctx, margin + leftW, y, rightW, rowH, 'SERIAL NO.:', data['tsr-serial-no'], 102);
-  y += rowH;
+  [
+    ['SERVICE REQUESTED BY:', 'tsr-requested-by', 190, 'DEPARTMENT:', 'tsr-department', 118],
+    ['EQUIPMENT/MODEL:', 'tsr-equipment-model', 162, 'SERIAL NO.:', 'tsr-serial-no', 102]
+  ].forEach(([leftLabel, leftKey, leftLabelW, rightLabel, rightKey, rightLabelW]) => {
+    const leftLayout = getAdaptiveTSRTableCellLayout(ctx, data[leftKey], leftW, {preferredFontSize:22, minimumFontSize:16, targetLines:1});
+    const rightLayout = getAdaptiveTSRTableCellLayout(ctx, data[rightKey], rightW, {preferredFontSize:22, minimumFontSize:16, targetLines:1});
+    const pairRowH = Math.max(rowH, leftLayout.requiredHeight, rightLayout.requiredHeight);
+    drawTableCell(ctx, margin, y, leftW, pairRowH, leftLabel, data[leftKey], leftLabelW, {layout:leftLayout});
+    drawTableCell(ctx, margin + leftW, y, rightW, pairRowH, rightLabel, data[rightKey], rightLabelW, {layout:rightLayout});
+    y += pairRowH;
+  });
 
   drawSectionTitle(ctx, 'SERVICE CATEGORY', margin, y, pageW, 32);
   y += 32;
@@ -10610,18 +10695,24 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   canvasCheckbox(ctx, margin + categoryCols[2], y + 36, 'PREVENTIVE MAINTENANCE', isTSRCategorySelected(data,'Preventive') || isTSRCategorySelected(data,'Maintenance'), {fontSize:15, box:16});
   canvasCheckbox(ctx, margin + categoryCols[3], y + 36, 'INSTALLATION', isTSRCategorySelected(data,'Installation'), {fontSize:15, box:16});
   canvasCheckbox(ctx, margin + categoryCols[4], y + 36, 'OTHERS', isTSRCategorySelected(data,'Others'), {fontSize:15, box:16});
+  const otherCategoryText = isTSRCategorySelected(data,'Others') ? String(data['tsr-service-category-other'] || '') : '';
+  const otherCategoryW = pageW - 1060 - 10;
   ctx.font = 'bold 15px Arial';
-  ctx.fillText(isTSRCategorySelected(data,'Others') ? (data['tsr-service-category-other'] || '') : '', margin + 1060, y + 36);
+  if(wrapCanvasTextLines(ctx, otherCategoryText, otherCategoryW).length > 1){
+    ctx.font = 'bold 13px Arial';
+    canvasText(ctx, otherCategoryText, margin + 1060, y + 27, otherCategoryW, 16, {maxLines:2});
+  }else{
+    ctx.fillText(otherCategoryText, margin + 1060, y + 36);
+  }
   y += 56;
 
-  drawMultilineBox(ctx, 'COMPLAINT', data['tsr-complaint'], margin, y, pageW, 88, 19);
-  y += 88;
+  const layout = planTSRMainPageLayout(ctx, data, { startY:y, pageHeight:canvas.height, pageW });
+  drawMultilineBox(ctx, 'COMPLAINT', data['tsr-complaint'], margin, y, pageW, layout.complaintHeight, 19);
+  y += layout.complaintHeight;
 
-  const parts = (Array.isArray(data.parts) ? data.parts : []).filter(p => p && Object.values(p).some(Boolean));
-  const visiblePartRows = Math.max(2, Math.min(5, parts.length || 2));
-  const remarksHeight = 150;
-  const reserveAfterActions = remarksHeight + 140 + (64 + visiblePartRows * 38) + 80 + TSR_SIGNATURE_FOOTER_HEIGHT;
-  const actionsHeight = Math.max(420, Math.min(700, canvas.height - y - reserveAfterActions - 40));
+  const parts = layout.parts;
+  const remarksHeight = layout.remarksHeight;
+  const actionsHeight = layout.actionsHeight;
   const actionsResult = drawActionsTakenBox(ctx, data['tsr-actions-taken'], margin, y, pageW, actionsHeight, 18);
   y += actionsHeight;
 
@@ -10642,20 +10733,19 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
 
   drawSectionTitle(ctx, 'PARTS SUPPLIED/RECOMMENDED', margin, y, pageW, 32);
   y += 32;
-  const cols = [90, 230, 455, 85, pageW - 90 - 230 - 455 - 85];
-  const headers = ['ITEM NO.', 'PART NUMBER', 'DESCRIPTION', 'QTY', 'DELIVERY RECEIPT'];
-  let x = margin;
-  ctx.font = 'bold 15px Arial';
-  headers.forEach((h, i) => { ctx.strokeRect(x, y, cols[i], 32); ctx.fillText(h, x + 9, y + 22); x += cols[i]; });
-  y += 32;
-  for(let r=0; r<visiblePartRows; r++){
-    const p = parts[r] || {};
-    const vals = [p.item || '', p.number || '', p.description || '', p.qty || '', p.dr || ''];
-    x = margin;
-    ctx.font = 'bold 15px Arial';
-    vals.forEach((v, i) => { ctx.strokeRect(x, y, cols[i], 34); canvasText(ctx, v, x + 9, y + 23, cols[i]-18, 16, {maxLines:1}); x += cols[i]; });
-    y += 38;
+  // When parts do not all fit, the last row's space carries the note and the rest continue
+  // as a table on the next page.
+  const partsOverflow = parts.length > layout.partRowsOnPage;
+  const partRowsDrawn = partsOverflow ? layout.partRowsOnPage - 1 : layout.partRowsOnPage;
+  const overflowParts = partsOverflow ? parts.slice(partRowsDrawn) : [];
+  y = drawTSRPartsTable(ctx, parts, margin, y, pageW, 0, partRowsDrawn);
+  if(partsOverflow){
+    ctx.strokeRect(margin, y, pageW, TSR_PART_ROW_HEIGHT);
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(`${overflowParts.length} more part${overflowParts.length === 1 ? '' : 's'} on the next page`, margin + 9, y + 23);
+    y += TSR_PART_ROW_HEIGHT;
   }
+  let x = margin;
 
   const serviceCols = [220, 190, 190, 390, pageW - 220 - 190 - 190 - 390];
   const serviceHeaders = ['DATE OF SERVICE','TIME STARTED','TIME FINISHED','BILLING STATEMENT / SALES INVOICE','PURCHASE ORDER (P.O.)'];
@@ -10670,9 +10760,9 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   });
   y += 34;
   x = margin;
-  ctx.font = 'bold 22px Arial';
   serviceVals.forEach((v, i) => {
     ctx.strokeRect(x, y, serviceCols[i], 46);
+    fitTSRSingleLineFont(ctx, v, serviceCols[i] - 20, 22, 13);
     canvasText(ctx, v, x + 10, y + 31, serviceCols[i] - 20, 23, {maxLines:1});
     x += serviceCols[i];
   });
@@ -10681,7 +10771,8 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   await drawTSRSignatureFooter(ctx, data, margin, pageW, y);
   const continuationCanvases = await renderTSRContinuationCanvases(data, [
     { title:'ACTIONS TAKEN - CONTINUED', note:'Continuation page automatically added because Actions Taken exceeded the main TSR page.', lines:actionsResult.overflowLines || [] },
-    { title:'REMARKS/RECOMMENDATIONS - CONTINUED', note:'Continuation page automatically added because Remarks/Recommendations exceeded the main TSR page.', lines:remarksResult.overflowLines || [] }
+    { title:'REMARKS/RECOMMENDATIONS - CONTINUED', note:'Continuation page automatically added because Remarks/Recommendations exceeded the main TSR page.', lines:remarksResult.overflowLines || [] },
+    { type:'parts', title:'PARTS SUPPLIED/RECOMMENDED - CONTINUED', note:'Continuation page automatically added because Parts Supplied/Recommended exceeded the main TSR page.', rows:overflowParts, startIndex:partRowsDrawn }
   ]);
   return [canvas, ...continuationCanvases];
 }
@@ -10696,9 +10787,10 @@ async function renderTSRContinuationCanvases(data, sections){
       title: section?.title || 'TSR DETAILS - CONTINUED',
       note: section?.note || 'Continuation page automatically added because details exceeded the main TSR page.',
       lines: Array.isArray(section?.lines) ? section.lines.slice() : [],
-      rows: Array.isArray(section?.rows) ? section.rows.slice() : []
+      rows: Array.isArray(section?.rows) ? section.rows.slice() : [],
+      startIndex: Number(section?.startIndex || 0)
     }))
-    .filter(section => section.type === 'coverage' ? section.rows.length : section.lines.length);
+    .filter(section => section.type === 'text' ? section.lines.length : section.rows.length);
   const pages = [];
   let pageNo = 2;
   while(pendingSections.length){
@@ -10750,6 +10842,18 @@ async function renderTSRContinuationCanvases(data, sections){
       ctx.fillText(currentSection.note, margin + 12, y);
       ctx.fillStyle = '#111111';
       await drawTSRSignatureFooter(ctx, data, margin, pageW, 1740);
+    }else if(currentSection.type === 'parts'){
+      drawSectionTitle(ctx, currentSection.title, margin, y, pageW, 32);
+      const pageRows = currentSection.rows.splice(0, 30);
+      drawTSRPartsTable(ctx, pageRows, margin, y + 32, pageW, currentSection.startIndex);
+      currentSection.startIndex += pageRows.length;
+      y += 32 + 1180 + 28;
+      if(!currentSection.rows.length) pendingSections.shift();
+      ctx.font = 'bold 16px Arial';
+      ctx.fillStyle = '#334155';
+      ctx.fillText(currentSection.note, margin + 12, y);
+      ctx.fillStyle = '#111111';
+      await drawTSRSignatureFooter(ctx, data, margin, pageW, y + 8);
     }else{
       drawSectionTitle(ctx, currentSection.title, margin, y, pageW, 32);
       y += 32;

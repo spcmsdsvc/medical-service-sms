@@ -1,3 +1,115 @@
+# Create TSR PDF: Print Everything the Engineer Entered
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push"
+**Execution authorized:** 2026-10-01 — the owner said "go ahead partner".
+**Approved:** 2026-10-01 — the owner said "plan approved partner, go with your recommendations, write the plan. you may use browser checking."
+**Detailed:** 2026-10-01.
+
+## Context
+
+Engineers reported two problems on the Create TSR page (`/offline-tsr`), with screenshots of a JBLMGH TSR dated 2026-09-30: eleven Parts Supplied rows were entered but the generated PDF showed five, and Remarks/Recommendations moves to a second page after two lines. The owner also asked for a scan of the page for similar defects. The saved TSR data is complete in every case; the defects are all in the client-side PDF renderer, which silently drops or misprints what was typed. The intended outcome is that the generated PDF shows everything entered, on page 1 where it fits and on a continuation page where it does not.
+
+## Decisions taken
+
+- **Blank Item No. prints the row position.** The form already shows that number as a placeholder, so engineers believe it is filled in.
+- **When page 1 cannot hold everything, the parts table overflows first**, as a table on the continuation page. Actions Taken and Remarks keep their page-1 space.
+- **Browser checking is permitted for this plan's verification** (owner, 2026-10-01). This permission is for this plan only.
+- One content-driven layout function replaces the hardcoded heights; no redesign of the form's look. A short TSR must look the same as today.
+
+## Investigation
+
+All line numbers are `templates/offline_tsr.html` as of commit `4ee5786`.
+
+- The PDF is built only in the browser: `buildVectorTSRPDFBlob` (10466) runs `renderTSRPrintSheetCanvases` (10573) against a jsPDF-backed context from `createTSRCanvas` (10438); the page is 1488 x 2105 units. `app.py` does not render the TSR PDF. `buildTSRPrintHTML` (9837) is a legacy HTML sheet that is overwritten by the PDF iframe and is not what users see.
+- **Finding 1 — parts capped at five.** `visiblePartRows = Math.max(2, Math.min(5, parts.length || 2))` (10621); the loop at 10651 draws only those rows. No continuation section and no note.
+- **Finding 2 — remarks hold three lines, two on overflow.** `remarksHeight = 150` (10622). In `drawMultilineBoxWithOverflow` (10195) that gives `maxLines = floor((138 - 52) / 24) = 3`; when the text is longer, `visibleCount = maxLines - 1 = 2` because the last line is given to the "continued" note (10208).
+- **Finding 3 — Item No. prints blank and the form numbering drifts.** `addTSRPartRow` (2899) shows `partRowCount` as a placeholder only; the value stays empty and the PDF prints the value. `partRowCount` is a module counter that is never reset when rows are cleared (1383, 2601, 5192), so a fresh form starts at "2" or higher, as in the screenshot.
+- **Finding 4 — Complaint prints one line.** `drawMultilineBox(ctx, 'COMPLAINT', ..., 88, 19)` (10617): `maxLines = floor((88 - 42) / 26) = 1`. The form textarea is three rows. Extra lines are dropped with no continuation.
+- **Finding 5 — "Others" category.** `getTSRServiceCategoryText` (9800) replaces the `Others` selection with the typed text; `isTSRCategorySelected` (9808) then substring-matches the label against that substituted text. With Others plus typed text the OTHERS box is not ticked and the text is not printed (10612, 10614) unless the typed text itself contains "others"; typed text containing "repair", "installation", etc. ticks those boxes wrongly. The Others text at 10614 is drawn with no width limit (about 300 units remain before the border).
+- **Finding 6 — single-line cells.** `drawTableCell` (10118) without a `layout` option allows `floor((72 - 30) / 24) = 1` line; Requested By, Department, Equipment/Model and Serial No. (10597–10601) use it. Part cells (10656) and the billing/PO row (10676) use `maxLines:1`. Customer and Address already use `getAdaptiveTSRTableCellLayout` (10096).
+- **Space budget.** With one-line header cells, `y` is 686 after the Complaint box. Below it are fixed: documents 140, parts title+header 64, service row 80, signature footer `TSR_SIGNATURE_FOOTER_HEIGHT` (179 + 68 x `SIGNATURE_STAMP_SCALE`, 281 at the default 1.5), bottom margin 40. That leaves about 814 units shared by Actions Taken, Remarks and the part rows; today it is split 474 / 150 / 190 (five rows at a 38 pitch). Part rows are drawn as 34-high boxes on a 38 pitch, leaving 4-unit gaps.
+- `renderTSRContinuationCanvases` (10692) already pages `text` and `coverage` sections with the header, a summary block and the signature footer.
+- Existing tests are source-assertion tests (`tests/test_tsr_address_layout.py`, `tests/test_tsr_checkbox_rendering.py`, `tests/test_tsr_assigned_engineers_layout.py`); they pin these strings and must still pass or be updated deliberately: the `customerLayout`/`addressLayout` lines, `canvasText(ctx, value, x + 10, y + 53, w - 20, layout.lineHeight, {maxLines:layout.lineCount});`, and `isTSRCategorySelected(data,'<key>')` for each category. `tests/test_tsr_calibration_report.py` shows the pattern for running page JavaScript under Node.
+- Service worker marker is `medical-service-pwa-offline-navigation-v221-travel-request-site-visit` (`app.py`, `CACHE_VERSION`); `/offline-tsr` is precached, so this change needs a bump.
+- `changes.md` was read at its current top section and searched for prior entries on these functions; none conflict. It was not read end to end.
+
+## Execution steps
+
+1. **Layout function.** Add `planTSRMainPageLayout(ctx, data, { startY, pageHeight, pageW })` directly above `renderTSRPrintSheetCanvases`. It is pure (measures with `ctx`, draws nothing) and returns `{ complaintHeight, actionsHeight, remarksHeight, partRowsOnPage, partRowPitch }`. Allocation order within the available space (`pageHeight - y - 140 - 64 - 80 - TSR_SIGNATURE_FOOTER_HEIGHT - 40`):
+   - Complaint: the wrapped lines it needs, 1 to 3 (taken before the shared budget, since it sits above it).
+   - Remarks: lines needed, minimum 3, maximum 10.
+   - Parts: reserve five rows (today's guarantee) or fewer if fewer exist, minimum 2 drawn.
+   - Actions Taken: the height its wrapped lines need in two columns, floor 150.
+   - Remaining space: more part rows, up to the number entered.
+   - Any space still spare goes to Actions Taken, so a short TSR keeps today's proportions.
+   - If Actions Taken needs more than is left after the reservations, it keeps what is left and overflows to its continuation page as today.
+   Done: the function returns today's 474 / 150 / five-row split for a short TSR, and for the screenshot case (2-line remarks, 11 parts, short actions) returns 11 rows on page 1.
+
+2. **Use the layout in `renderTSRPrintSheetCanvases`.** Replace the constants at 10620–10624 and the fixed `88` at 10617 with the function's result. Draw Complaint with the computed height. Set the part row pitch to 34 so rows touch (removes the 4-unit gaps and fits more rows). Done: no hardcoded `Math.min(5, ...)` or `remarksHeight = 150` remains.
+
+3. **Parts continuation.** When `parts.length > partRowsOnPage`, reserve the last page-1 row space for a note "N more part(s) on the next page" and pass a `{ type:'parts', title:'PARTS SUPPLIED/RECOMMENDED - CONTINUED', rows }` section to `renderTSRContinuationCanvases`. Add the `parts` branch there: same five columns and header as page 1, about 30 rows per page, then the note line and signature footer as the other branches do. Extract the row drawing into one `drawTSRPartRows(ctx, rows, x, y, pageW, startIndex)` used by both pages. Order of continuation sections: Actions, Remarks, Parts. Done: 40 parts produce page 1 plus continuation pages containing all 40 exactly once.
+
+4. **Remarks overflow.** Keep `drawMultilineBoxWithOverflow` and the existing continuation for remarks beyond 10 lines. Done: remarks of up to 10 wrapped lines print whole on page 1.
+
+5. **Item No.** In `addTSRPartRow`, set the placeholder from the row's position in `#tsr-parts-rows` instead of `partRowCount`, and remove `partRowCount`. In `drawTSRPartRows`, print `p.item` or, when blank, the row's position among the non-empty parts. Saved data is not changed. Done: a fresh form starts at 1; a blank Item No. prints its position.
+
+6. **Others category.** Change `isTSRCategorySelected` to match against the raw `data['tsr-service-category']` selection string, not `getTSRServiceCategoryText`. `getTSRServiceCategoryText` itself is unchanged (it feeds validation, filenames and Copy Draft Text). Draw the Others text through `canvasText` with the width remaining to the border and `maxLines:2` at a smaller line height. Apply the same predicate to `buildTSRPrintHTML` automatically, since it calls the same function. Done: Others + "Site inspection" ticks OTHERS and prints the text; typed text "repair" does not tick CHECKUP/REPAIR.
+
+7. **Long values.** Use `getAdaptiveTSRTableCellLayout` for the Requested By / Department row and the Equipment/Model / Serial No. row, each row taking the taller of its two cells, exactly as the Customer / Address row does. For part cells and the billing/PO row, step the font down from 15 (22 for the service row) to a floor of 11 until the text fits on one line; below the floor, keep the existing truncation. Done: a 70-character equipment model prints whole.
+
+8. **Tests.** Add `tests/test_tsr_pdf_layout.py`. Source assertions for the removed constants and the new function names, plus a Node runtime test (pattern from `tests/test_tsr_calibration_report.py`, skipped when Node is absent) that extracts the layout and draw functions from the template and runs them against a recording stub context whose `measureText` returns a fixed width per character. Cases: 11 parts all drawn; 40 parts all drawn once across pages; 8-line remarks on page 1 with no continuation; 3-line complaint drawn whole; Others ticked with its text; "repair" in Others text does not tick Checkup/Repair; blank Item No. drawn as its position; short TSR returns the original split. Update any pinned string in the three existing tests only where this plan changes it on purpose.
+
+9. **Release records.** Bump the service-worker `CACHE_VERSION` (read live from `app.py` at that time), add a `static/changelog/releases.json` entry dated the commit date, update `changes.md` and this plan's status.
+
+10. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Already-saved TSR PDFs.** TSRs saved with more than five parts keep their truncated PDF. The parts are in the saved payload; revising the TSR regenerates the PDF. No bulk regeneration.
+- **Drafts, offline queue, sync, signature recovery** (roughly lines 3460–9200). Skimmed, not audited line by line; they have their own tests and no reports against them.
+- **A remove button for part rows.** Blank rows are already ignored.
+- **Copy Draft Text** reporting "copied" when the clipboard API is unavailable, and omitting parts. Minor, unreported.
+- **The legacy `buildTSRPrintHTML` sheet**, beyond what step 6 fixes through the shared function.
+- **Schedule coverage on page 1.** Deliberately off (`buildTSRScheduleCoverageHTML` returns `''`).
+- **Any server, database or payload change.** The fix is rendering only.
+
+## Verification
+
+- New tests in step 8, each seen failing against the pre-change template.
+- `tests/test_tsr_address_layout.py`, `tests/test_tsr_checkbox_rendering.py`, `tests/test_tsr_checkbox_repair.py`, `tests/test_tsr_assigned_engineers_layout.py`, `tests/test_tsr_page_design.py`, `tests/test_tsr_calibration_report.py`, `tests/test_changelog_coverage.py`, then one full-suite pass quoted against the baseline (1,429 tests: 23 failures, 2 errors, 5 skips).
+- Browser check against a local server with an isolated test database (never production, never `scheduler.db`): on Create TSR, Preview TSR for (a) the screenshot case — 2-line remarks, 11 parts; (b) 8-line remarks; (c) 40 parts with long actions; (d) Others with typed text; (e) a short TSR compared with a pre-change PDF of the same data. Confirm nothing overlaps the signature footer or runs past the bottom margin. The local test server is stopped afterwards by verified PID only.
+
+## After implementation
+
+1. Self-review the diff: `templates/offline_tsr.html`, `tests/test_tsr_pdf_layout.py`, any deliberately updated existing test, `app.py` (cache marker only), `static/changelog/releases.json`, `plans.md`, `changes.md`.
+2. Prove the new tests fail without the fix.
+3. Full suite, quoting counts against the baseline.
+4. Browser verification as above.
+5. Service worker bump and `releases.json` entry.
+6. `changes.md` and this plan's status, with the commit hash and any difference between plan and outcome.
+7. Commit checklist with explicit staging of the files in item 1. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and unrelated dirty entries. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **A layout regression on ordinary TSRs.** Every TSR's page 1 passes through the new function. Safety nets: spare space returns to Actions Taken so the short case reproduces today's split (tested), and the before/after PDF comparison in the browser check.
+- **Content pushed past the bottom margin.** The header rows can now grow (step 7), which reduces the shared budget. The layout function computes from the actual `y`, so growth above is paid for by Actions Taken or by part rows moving to the continuation page; the 40-part and long-header cases check this.
+- **Stub-context tests differ from real font metrics.** The Node tests prove allocation and completeness, not pixel fit; the browser check covers real metrics.
+- **Queued offline TSRs.** PDFs already generated and queued are uploaded as they are; only PDFs generated after the update use the new layout.
+- **Database:** none. No SQL, schema, payload or server change.
+
+## Recording outcome
+
+- 2026-10-01: Recorded the owner-approved plan with status **Approved — awaiting go-ahead**. Only `plans.md` and `changes.md` were changed.
+- 2026-10-01: Executed steps 1–9 on the owner's go-ahead; not committed, pushed or deployed. Differences from the plan:
+  - Step 1: a short TSR does not reproduce the old 474 / 150 / 190 split exactly. Part rows are now 34 apart instead of 38, so five rows take 170 and Actions Taken gains the 20. The old 700 cap on Actions Taken was dropped; the box now always takes the spare space.
+  - Step 3: the note takes the place of the last page-1 part row, so with 40 parts page 1 shows 4 rows plus "36 more parts on the next page", then 30 and 6 on two continuation pages.
+  - Step 7: a part value still too wide at the 11 floor prints on two small lines inside its cell instead of being cut; only text beyond two lines is truncated.
+  - Verification: real PDFs were produced by running the page's own drawing code with the vendored jsPDF and the Liberation Sans fonts under Node, then rasterised and inspected for the five planned cases (old template: 8-line remarks took 2 pages and 11 parts printed 5; new: 1 page with all 11). **No in-browser check was run**, so the Preview TSR button in the live page and the part-row placeholder numbering were not seen in a browser; the page's three inline scripts pass `node --check`.
+  - `tests/test_signature_stamp_sizes.py` pinned the old reserve expression `+ 80 + TSR_SIGNATURE_FOOTER_HEIGHT;`; it now asserts the new one, `- 80 - TSR_SIGNATURE_FOOTER_HEIGHT - 40;` (the footer reserve is still derived from the constant).
+  - Full suite: 1,438 tests, 23 failures, 2 errors, 5 skips — the baseline's non-passing counts. The new tests failed against the previous template and pass now.
+
+---
+
 # Reduce Railway Memory and Egress Cost
 
 **Status:** Executed — implementation commit `b2fb633`; publication to `origin/main` authorized. Post-deploy measurement (step 6) pending.

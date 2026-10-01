@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-01-tsr-pdf-complete-content",
+      "release_date": "2026-10-01",
+      "title": "TSR PDF Shows Everything Entered",
+      "summary": "The generated TSR now prints every part, longer remarks and complaints, and the Others service category.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-01-tsr-pdf-complete-content-admins-engineers",
+          "category": "Create TSR",
+          "description": "All Parts Supplied rows now print, continuing as a table on the next page when needed, and a blank Item No. prints its row number. Remarks stay on the first page for up to 10 lines and Complaint prints up to 3 lines. The Others service category is ticked and its text printed, and long equipment, part and billing values shrink to fit instead of being cut off.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-01-travel-request-site-visit",
       "release_date": "2026-10-01",
       "title": "Travel Request Site Visit",
