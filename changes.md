@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-01
 
+- Committed only the Reduce Railway Memory and Egress Cost package (`Dockerfile`, `app.py`, `tests/test_response_compression.py`, `plans.md`, and this package's `changes.md` entries) as `b2fb633` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this change log remained unstaged. No Railway variable change or manual redeploy was performed.
+
 - Executed the **Reduce Railway Memory and Egress Cost** plan on the owner's go-ahead; not committed, pushed, or deployed.
 - `Dockerfile`: added `MALLOC_ARENA_MAX=2` to the existing `ENV` block to limit glibc allocator arenas in the single 8-thread gunicorn worker. The `CMD`, gunicorn settings, and installed packages are unchanged.
 - `app.py`: added the `compress_text_response` `after_request` hook (standard-library `gzip`, level 6). It compresses only 200 responses of at least 1,024 bytes with an HTML, JSON, CSS, or JavaScript mimetype when the client accepts gzip, and sets `Content-Encoding: gzip` and `Vary: Accept-Encoding`. File, static, download, backup, streamed, `HEAD`, non-200, and already-encoded responses are skipped, and any error returns the original response.

@@ -1,6 +1,7 @@
 # Reduce Railway Memory and Egress Cost
 
-**Status:** Executed — uncommitted; awaiting the owner's "commit and push". Post-deploy measurement (step 6) pending.
+**Status:** Executed — implementation commit `b2fb633`; publication to `origin/main` authorized. Post-deploy measurement (step 6) pending.
+**Publication authorized:** 2026-10-01 — the owner said "commit and push partner, never the db and dirty files".
 **Execution authorized:** 2026-10-01 — the owner said "go ahead partner".
 **Approved:** 2026-10-01 — the owner said "yes partner, write the plan. just make sure it won't affect the database and also won't break the system".
 **Detailed:** 2026-10-01.
