@@ -1,6 +1,7 @@
 # Calibration Report: CH-200M Second Tube and Console, Complete PDF
 
-**Status:** Executed — uncommitted (no commit, push, or deployment).
+**Status:** Executed — implementation commit `d07f77e`; publication to `origin/main` authorized.
+**Publication authorized:** 2026-10-01 — the owner said "commit and push partner, never the db and dirty files".
 **Execution authorized:** 2026-10-01 — the owner said "go ahead partner".
 **Approved:** 2026-10-01 — the owner said "plan approved partner, go with your recommendations, write the plan. decision 3 is right." The owner also authorized downloading and installing LibreOffice on this machine for the render check.
 **Detailed:** 2026-10-01.

@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-01
 
+- Committed only the Calibration Report CH-200M package (`static/js/app-calibration-report.js`, `app.py`, `templates/offline_tsr.html`, `templates/calibration_center.html`, `tests/test_tsr_calibration_report.py`, `tests/test_calibration_center.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `d07f77e` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this change log remained unstaged. No Railway variable change or manual redeploy was performed.
+
 - Recorded the owner-approved plan **Calibration Report: CH-200M Second Tube and Console, Complete PDF** at the top of `plans.md` with status `Approved — awaiting go-ahead`. No application code, test, template, cache version, or database change was made. With the owner's authorization, LibreOffice 26.8.0.3 was installed on the development machine (outside the repository, via winget from The Document Foundation) for the plan's PDF render check.
 - Executed that plan on the owner's go-ahead; not committed, pushed, or deployed. No database, schema, route, or official-template change.
 - Calibration Report editor (`static/js/app-calibration-report.js`): the selected model now decides whether a report has a second X-ray tube. `hasSecondTube()` replaces `hasTube2Identity()`; a model containing "with CH-200M" (typed or matched catalog model) shows X-ray Tube 2 model/serial and a new second Control Console model/serial on Page 1 and always shows Page 4. For every other model those four fields and Page 4 are hidden; values already typed stay in the draft.
