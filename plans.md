@@ -1,3 +1,106 @@
+# Calibration Report: CH-200M Second Tube and Console, Complete PDF
+
+**Status:** Executed — uncommitted (no commit, push, or deployment).
+**Execution authorized:** 2026-10-01 — the owner said "go ahead partner".
+**Approved:** 2026-10-01 — the owner said "plan approved partner, go with your recommendations, write the plan. decision 3 is right." The owner also authorized downloading and installing LibreOffice on this machine for the render check.
+**Detailed:** 2026-10-01.
+
+## Context
+
+Today the Calibration Report gets its X-ray Tube 2 page (editor Page 4 and the matching PDF page) only when both Tube 2 model and Tube 2 serial are typed on Page 1. The owner wants the selected model to decide instead: a model whose name contains "with CH-200M" always has a second tube and a second control console; every other model has neither. The owner also asked for a scan of the report that becomes a PDF after saving, to make sure everything entered is captured and that long values survive, as was done for the Create TSR PDF.
+
+## Decisions taken
+
+1. **The model decides, not the tube fields.** A report has a second tube when 2.3 Model contains "with CH-200M" (case-insensitive, checked on the typed `machine.model` and on the matched catalog model `certificate.equipment_model`). Six catalog models qualify today: Flexavision F4, F3, HB, HB (eXceed Edition) and SF, and Sonialvision G4, each "with CH-200M".
+2. **CH-200M model:** Page 1 shows Tube 2 model and serial plus a second Control Console model and serial; Page 4 is always shown.
+3. **Any other model:** Tube 2 and Console 2 fields are hidden on Page 1, there is no Page 4, and nothing for Tube 2 or Console 2 prints. Values already typed stay in the draft and reappear if the model is changed back. The owner confirmed this rule explicitly.
+4. **Required at final save for CH-200M:** Tube 2 model, Tube 2 serial and the Page 4 output. Console 2 is optional, the same as Console 1.
+5. **PDF Page 1:** for CH-200M, a "Model (2): / Serial Number (2):" label row and a value row are added under 2.5 Control Console at generation time. For other models the supplied form's blank "Model (2)" tube rows stay as they are.
+6. **Already-saved reports are not regenerated.** An old two-tube report on a non-CH-200M model loses its Tube 2 page only if someone revises it.
+7. **Render check uses a local LibreOffice**, installed with the owner's authorization, through the existing `LIBREOFFICE_BIN` setting. Fix only what the render shows clipped or overlapping.
+
+## Investigation
+
+Line numbers are `static/js/app-calibration-report.js` as of commit `e0cd4a6` unless stated.
+
+- `hasTube2Identity` (201) is the single gate today. It is used by `buildEditor` (479, 484), `setEditorPage` (517), `syncTube2PageVisibility` (541), `handleTabKeydown` (550) and `buildDocx` (1421). `missingFields` (1026–1042) applies the same both-or-none rule inline. `focusMissing` (1077) sends `tube2_output.*` paths to Page 4.
+- Page 1 fields are built in `buildEditor` (492) with `fieldMarkup`; `machine` state keys are in `blankState` (210). `normalizeState` (234) merges `machine` over the blank defaults, so new keys need no migration and `schema_version` stays 7.
+- `fingerprint` (1094) hashes `stableText(report)` (1092), which includes every `machine` key. Adding keys would change the hash of every existing ready report and make `hasGeneratedMetadata` (886) false, so empty new keys must be left out of `stableText`.
+- `buildDocx` (1408) fills Page 1 by fixed row index in template table 0 through `pageOneFields` (1415): console values at row 12, tube 1 at row 14, tube 2 at row 16, installation date at row 17, technical rows 19–26. Template table 0 has 27 rows; rows 11–12 are the console label and value rows with a vertically merged first cell (widths 3691 / 2758 / 2901). The template has no fixed table layout and no exact row heights, so cells wrap and rows grow.
+- The Tube 2 PDF page is a copy of the Page 3 output region appended after a page break (`insertTube2OutputPage`, 1346).
+- **Capture scan — nothing is dropped.** Every editor field has a document slot: 24 Page 1 fields, 1 mechanical and 4 generator results (1417), 6 calibration fields (1418), engineer name and signature (1425), and per tube the focal sizes, current units, up to 8 x 7 measurements and 2 performance results (`fillOutputRegion`, 1326). `SOURCE` has exactly 1 mechanical, 4 generator and 2 performance items, matching what is written.
+- **Length scan — no limits remain.** There is no `maxlength` and no slicing of report text; the only `.slice` calls are on filenames and message lists. `normalizedDocxText` (1110) removes control characters only. The 40-character BSID and temporary-model rules are real domain rules and stay.
+- **What has never been proven is the rendered PDF.** The server converts the DOCX with LibreOffice (`convert_calibration_report_docx_bytes`, `app.py:21914`; `Dockerfile` installs `libreoffice-writer`). The two earlier complete-value plans recorded the visual check as blocked because this machine had no LibreOffice and Word COM failed. Points to look at in the render: the seven measurement columns (1164–1843 twips at 11 pt), the 2127-twip Test Result column, the signature row, and whether Page 1 still fits one page with two more console rows and the 3,600-twip footer reserve.
+- Server: `CALIBRATION_REPAIR_FIELD_LABELS` (`app.py:19447`) lists the machine field labels. The complete-fields repair receives a DOCX rebuilt by the browser, so no Python code fills Page 1 by row index. `_calibration_report_docx_focal_table_states` (`app.py:19833`) counts whole tables, which this plan does not change.
+- Tests: the two-tube fixtures in `tests/test_tsr_calibration_report.py` (229, 592) use "Mobile Dart Evolution MX9" with Tube 2 identity; under the new rule they must use a CH-200M model.
+- Versions at planning time: report script `?v=41` (`app.py:26769` and `templates/offline_tsr.html`), service worker `medical-service-pwa-offline-navigation-v222-tsr-pdf-complete-content`.
+- `changes.md` was read at its current top section, not end to end.
+
+## Execution steps
+
+1. **Rule function.** Add `hasSecondTube(report)` next to `hasTube2Identity` and replace every `hasTube2Identity` use with it; remove `hasTube2Identity`. Done: no caller depends on the Tube 2 identity fields to decide whether a second tube exists.
+2. **State.** Add `console2_model` and `console2_serial` to `machine` in `blankState`. In `stableText`, omit those two keys when empty. Done: the fingerprint of a report saved before this change is unchanged.
+3. **Editor Page 1.** In `buildEditor`, add "2.5 Control Console: Model (2)" and "Serial Number (2)" after the first console pair, and mark those two and the two Tube 2 fields so `syncTube2PageVisibility` hides or shows all four with the Page 4 tab and panel. Keep the two-column grid borders correct when they are hidden. Done: changing the model to or from a CH-200M model shows or hides the four fields and Page 4 immediately, and typed values survive the round trip.
+4. **Validation.** In `missingFields`, for a second-tube report require `machine.tube2_model`, `machine.tube2_serial` and the Tube 2 output via `checkOutput`; otherwise skip all Tube 2 checks. Done: a CH-200M report cannot be finalized without Tube 2 identity and output; a non-CH-200M report with leftover Tube 2 values is not blocked by them.
+5. **Document.** In `buildDocx`: for a second-tube report, after the Page 1 fields are filled, clone the pristine template rows 11–12 of table 0, relabel the clone "Model (2):" and "Serial Number (2):", insert it after row 12 and fill the Console 2 values; the first cell stays in the vertical merge. For other reports, skip the two Tube 2 entries of `pageOneFields` and do not build the Tube 2 output page. Done: the generated DOCX holds Console 2 for CH-200M, and holds no Tube 2 or Console 2 value otherwise.
+6. **Server label.** Add `machine.console2_model` and `machine.console2_serial` to `CALIBRATION_REPAIR_FIELD_LABELS` in `app.py`. No schema, route or payload change.
+7. **Tests** in `tests/test_tsr_calibration_report.py`: a CH-200M model shows Page 4 and the four fields with empty Tube 2 identity; a non-CH-200M model with Tube 2 values shows no Page 4, passes validation and prints no Tube 2; partial Tube 2 identity blocks a CH-200M final save; Console 2 lands in the DOCX in the inserted row and the later rows keep their values; the fingerprint of a pre-change report is unchanged; long values in the new fields reach the DOCX whole. Move the existing two-tube fixtures to a CH-200M model.
+8. **Long-value render.** Build one stress report (CH-200M, long values in every field, 8 rows per focal spot, both tubes) and one ordinary report, convert both with the local LibreOffice through `convert_calibration_report_docx_bytes`, rasterise and inspect every page. Fix only what is clipped, overlapping or pushed into the footer, and record what was seen.
+9. **Release records.** Advance the report script version from `v=41` in `app.py` and `templates/offline_tsr.html`, bump the service-worker `CACHE_VERSION` (read live at that time), add a `static/changelog/releases.json` entry, and update `changes.md` and this plan's status.
+10. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **The official DOCX template file.** The console rows are added at generation time; the template bytes stay as supplied.
+- **Removing the form's blank "Model (2)" tube rows for single-tube models.** It is the supplied form.
+- **The calibration certificate.** It does not use tube or console fields.
+- **Regenerating or repairing saved reports,** and any new Calibration Center repair.
+- **Any database, schema, route or payload-shape change.** The two new keys are optional strings inside the existing report object.
+- **Browser automation.** Not authorized for this plan.
+
+## Verification
+
+- New tests in step 7, each seen failing against the pre-change script.
+- `tests/test_tsr_calibration_report.py`, `tests/test_calibration_report_pdf.py`, `tests/test_calibration_center.py`, `tests/test_calibration_certificate_approval_workflow.py`, `tests/test_changelog_coverage.py`, then one full-suite pass quoted against the baseline (1,438 tests: 23 failures, 2 errors, 5 skips).
+- `node --check` on the report script.
+- The step 8 render: every page of both PDFs inspected; all long values present in the PDF text.
+
+## After implementation
+
+1. Self-review the diff: `static/js/app-calibration-report.js`, `static/css/app-calibration-report.css` if touched, `app.py`, `templates/offline_tsr.html` (asset version only), `tests/test_tsr_calibration_report.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`.
+2. Prove the new tests fail without the change.
+3. Full suite, quoting counts against the baseline.
+4. Render check as in step 8.
+5. Asset version, service worker bump and `releases.json` entry.
+6. `changes.md` and this plan's status, with the commit hash and any difference between plan and outcome.
+7. Commit checklist with explicit staging of the files in item 1. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and unrelated dirty entries. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **A two-tube system whose model name lacks "with CH-200M"** loses Page 4. The owner confirmed the rule; the typed Tube 2 values stay in the draft.
+- **Existing ready reports marked stale.** Guarded by leaving empty new keys out of the fingerprint, with a test.
+- **Row insertion shifting later Page 1 cells.** The insertion happens after the fixed-index fills, and the test checks the installation date and technical rows still hold their values.
+- **Page 1 running onto a second page for CH-200M.** Seen only in the render; extra pages are acceptable, clipped or footer-overlapping content is not.
+- **Local LibreOffice differs from the server's version.** The render proves layout behaviour, not pixel identity with production.
+- **Database:** none.
+
+## Recording outcome
+
+- 2026-10-01: Recorded the owner-approved plan with status **Approved — awaiting go-ahead**. Only `plans.md` and `changes.md` were changed.
+- 2026-10-01: Executed steps 1–9 on the owner's go-ahead; not committed, pushed or deployed. Differences from the plan and what was verified:
+  - Step 5: no relabelling was needed. The template's own "Model (2): / Serial Number (2):" label row and blank value row (table 0 rows 15–16) are cloned and inserted after the console value row, so the second console uses the supplied form's wording and borders.
+  - Step 8 found one defect, outside the plan's "clipped or overlapping" wording, and fixed it: every label cell in the two form tables uses Heading 2, whose keep-with-next chained the whole table together, so once long values outgrew page 1 the entire first table moved to page 2 and left the title alone on page 1. `releaseFormTableKeepNext()` now switches keep-with-next off for those rows in the generated document; the template file is unchanged. This also applies to single-tube reports.
+  - Step 8 render: LibreOffice 26.8.0.3 was installed locally with the owner's authorization (winget, The Document Foundation). An ordinary CH-200M report and a stress report (long values in every field, 8 rows per focal spot, both tubes) were built with the page's own code under Node, converted with LibreOffice and rasterised. Ordinary report: Page 1 holds both consoles and both tubes on one page. Stress report: 12 pages, all 43 end-markers present in the PDF text, lowest body text at y=610 of 792 with the footer artwork starting near y=625, nothing clipped or overlapping. Long unbroken values wrap inside their cells; rows may split across pages.
+  - Seen and left alone: wrapped measurement cells in the exposure tables are not vertically aligned with their neighbours (some sit lower in the row). This is the supplied template's cell alignment and predates this plan.
+  - Step 7: no new test methods; the assertions were added to the existing Node behaviour tests in `tests/test_tsr_calibration_report.py`, and the two-tube fixtures now use "Flexavision F4 with CH-200M". Against the previous script three tests failed ("CH-200M model did not show Tube 2 and Console 2 fields on Page 1", "Tube 2 tab and labeled editor page did not activate for a CH-200M model"); they pass now. The entry-page test computes the fingerprint itself and now mirrors the empty-Console-2 rule.
+  - Step 9: script version `v=42` in `app.py`, `templates/offline_tsr.html` and `templates/calibration_center.html` (the plan had missed that the Calibration Center also loads the script); service worker `medical-service-pwa-offline-navigation-v223-calibration-ch200m-second-tube`; release entry `2026-10-01-calibration-ch200m-second-tube`.
+  - Suites: focused calibration and changelog-coverage suites 107 tests OK (1 skip). Full suite 1,438 tests, 23 failures, 2 errors, 5 skips — the baseline counts. `scheduler.db` was unchanged by the run.
+  - Not done: no in-browser check (not authorized). The show/hide of the four Page 1 fields was exercised only through the Node fake DOM.
+  - Open point for the owner: Calibration Center repairs rebuild the DOCX with this same script, so repairing an old two-tube report whose model lacks "with CH-200M" would rebuild it without its Tube 2 page, the same as revising it.
+  - Intended commit files: `static/js/app-calibration-report.js`, `app.py`, `templates/offline_tsr.html`, `templates/calibration_center.html`, `tests/test_tsr_calibration_report.py`, `tests/test_calibration_center.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and the loose handoff file.
+
+---
+
 # Create TSR PDF: Print Everything the Engineer Entered
 
 **Status:** Executed — implementation commit `a9fb22a`; publication to `origin/main` authorized.

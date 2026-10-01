@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-01-calibration-ch200m-second-tube",
+      "release_date": "2026-10-01",
+      "title": "Calibration Report Follows the CH-200M Model",
+      "summary": "Models with CH-200M now always get the X-ray Tube 2 page and a second Control Console; other models no longer show them.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-01-calibration-ch200m-second-tube-admins-engineers",
+          "category": "Calibration Report",
+          "description": "When the selected model contains \"with CH-200M\", Page 1 shows X-ray Tube 2 and a second Control Console (model and serial number) and Page 4 is always included; Tube 2 model and serial number are required before final save. For every other model these fields and Page 4 are hidden and not printed. Long values no longer push the whole first table onto a second page.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-01-tsr-pdf-complete-content",
       "release_date": "2026-10-01",
       "title": "TSR PDF Shows Everything Entered",

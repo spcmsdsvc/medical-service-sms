@@ -19456,6 +19456,8 @@ CALIBRATION_REPAIR_FIELD_LABELS = {
     'machine.serial_number': 'Equipment serial number',
     'machine.console_model': 'Control console model',
     'machine.console_serial': 'Control console serial number',
+    'machine.console2_model': 'Control console 2 model',
+    'machine.console2_serial': 'Control console 2 serial number',
     'machine.tube1_model': 'X-ray tube 1 model',
     'machine.tube1_serial': 'X-ray tube 1 serial number',
     'machine.tube2_model': 'X-ray tube 2 model',
@@ -26741,7 +26743,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v222-tsr-pdf-complete-content';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v223-calibration-ch200m-second-tube';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -26766,7 +26768,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=41',
+  '/static/js/app-calibration-report.js?v=42',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

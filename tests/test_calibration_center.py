@@ -400,7 +400,7 @@ class CalibrationCenterContracts(unittest.TestCase):
             'Footer reserve',
             'Layout-only DOCX/PDF repair',
             'Protect footer layout',
-            "app-calibration-report.js') }}?v=41",
+            "app-calibration-report.js') }}?v=42",
         ):
             self.assertIn(marker, TEMPLATE_SOURCE)
         self.assertIn('mapped_data_json', APP_SOURCE)

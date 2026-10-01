@@ -198,7 +198,8 @@
     return parts[0] === 'tube2' ? { tube:'tube2', key:parts[1] || '', rest:parts.slice(2) } : { tube:'tube1', key:parts[0] || '', rest:parts.slice(1) };
   }
   function outputDomKey(tube,key){ return tube === 'tube2' ? 'tube2:' + key : key; }
-  function hasTube2Identity(report){ return !!(String(report?.machine?.tube2_model || '').trim() && String(report?.machine?.tube2_serial || '').trim()); }
+  // The selected model decides: a "with CH-200M" system has a second X-ray tube and control console.
+  function hasSecondTube(report){ return [report?.machine?.model, report?.certificate?.equipment_model].some(function(value){ return /with\s+CH-200M/i.test(String(value || '')); }); }
 
   function blankState(){
     return {
@@ -207,7 +208,7 @@
       status: 'not_started',
       updated_at: '',
       facility: { name:'', address:'', telephone:'', email:'', location:'' },
-      machine: { manufacturer:DEFAULT_MANUFACTURER, modality:'', model:'', serial_number:'', console_model:'', console_serial:'', tube1_model:'', tube1_serial:'', tube2_model:'', tube2_serial:'', installation_date:'' },
+      machine: { manufacturer:DEFAULT_MANUFACTURER, modality:'', model:'', serial_number:'', console_model:'', console_serial:'', console2_model:'', console2_serial:'', tube1_model:'', tube1_serial:'', tube2_model:'', tube2_serial:'', installation_date:'' },
       technical: { max_tube_current_ma:'', max_tube_voltage_kv:'', tube_current_mas_range:'', tube_voltage_kvp_range:'', exposure_time_range:'', max_rated_power_kw:'', power_supply:'', total_inherent_filtration:'' },
       mechanical_checks: SOURCE.mechanical.map(function(item){ return { label:item.label, criteria:item.criteria, result:'' }; }),
       generator_checks: SOURCE.generator.map(function(item){ return { label:item.label, criteria:item.criteria, result:'' }; }),
@@ -443,6 +444,9 @@
   function fieldMarkup(path, label, type, placeholder){
     return '<div class="calibration-report-field"><label>' + escapeHtml(label) + '</label><input data-cr-field="' + escapeHtml(path) + '" type="' + escapeHtml(type || 'text') + '" placeholder="' + escapeHtml(placeholder || '') + '"></div>';
   }
+  function secondTubeFieldMarkup(path, label){
+    return fieldMarkup(path, label).replace('<div class="calibration-report-field">', '<div class="calibration-report-field" data-cr-second-tube="true"' + (hasSecondTube(state) ? '' : ' hidden') + '>');
+  }
   function equipmentNameMarkup(){
     var options = '<option value="">Select Equipment Name</option>' + CERTIFICATE_EQUIPMENT_NAMES.map(function(name){ return '<option value="' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>'; }).join('');
     var unavailable = !CERTIFICATE_CATALOG_AVAILABLE;
@@ -476,12 +480,12 @@
     function outputPageMarkup(page,tube,tubeLabel){
       var prefix = tube === 'tube2' ? 'tube2_output.' : '';
       var performanceRows = SOURCE.performance.map(function(criteria,index){ var outputKey = tube === 'tube2' ? 'tube2:' : ''; return '<tr><td><div class="calibration-report-check-criteria">' + escapeHtml(criteria) + '</div></td><td><textarea class="calibration-report-performance-result" data-cr-performance="' + outputKey + index + '" placeholder="Enter result"></textarea></td></tr>'; }).join('');
-      var hidden = tube === 'tube2' && !hasTube2Identity(state) ? ' hidden' : '';
+      var hidden = tube === 'tube2' && !hasSecondTube(state) ? ' hidden' : '';
       return '<section class="calibration-report-page" data-cr-page-panel="' + page + '"' + hidden + '><div class="calibration-report-paper-title">AVERAGE EXPOSURE OUTPUT · ' + tubeLabel + '</div>'
         + exposureTable('small','FOCAL SPOT: SMALL',SOURCE.exposureHeadersSmall,tube) + exposureTable('large','FOCAL SPOT: LARGE',SOURCE.exposureHeadersLarge,tube)
         + '<div class="calibration-report-section"><div class="calibration-report-section-title">PERFORMANCE CRITERIA</div><div class="calibration-report-exposure-scroll"><table class="calibration-report-criteria-table"><thead><tr><th>Criteria</th><th>Test Result</th></tr></thead><tbody>' + performanceRows + '</tbody></table></div></div></section>';
     }
-    var tube2Hidden = hasTube2Identity(state) ? '' : ' hidden';
+    var tube2Hidden = hasSecondTube(state) ? '' : ' hidden';
     var html = '<div class="calibration-report-tabs" role="tablist" aria-label="Calibration report pages"><button type="button" class="calibration-report-tab is-active" data-cr-page="1" id="calibration-report-tab-1" role="tab" aria-controls="calibration-report-page-1" aria-selected="true" tabindex="0">Page 1 · Identity</button><button type="button" class="calibration-report-tab" data-cr-page="2" id="calibration-report-tab-2" role="tab" aria-controls="calibration-report-page-2" aria-selected="false" tabindex="-1">Page 2 · Checks</button><button type="button" class="calibration-report-tab" data-cr-page="3" id="calibration-report-tab-3" role="tab" aria-controls="calibration-report-page-3" aria-selected="false" tabindex="-1">Page 3 · X-ray Tube 1</button><button type="button" class="calibration-report-tab" data-cr-page="4" id="calibration-report-tab-4" role="tab" aria-controls="calibration-report-page-4" aria-selected="false" tabindex="-1"' + tube2Hidden + '>Page 4 · X-ray Tube 2</button></div>'
       + '<div class="calibration-report-template-note"><i class="fa-solid fa-lock me-1" aria-hidden="true"></i>The PDF uses the supplied form. Only its existing blank fields and signature area receive data.</div>'
       + '<section class="calibration-report-page is-active" data-cr-page-panel="1"><div class="calibration-report-paper-title">CALIBRATION REPORT</div>'
@@ -489,7 +493,7 @@
       + fieldMarkup('facility.name','1.1 Facility Name') + fieldMarkup('facility.address','1.2 Address') + fieldMarkup('facility.telephone','1.3 Telephone/Mobile No.') + fieldMarkup('facility.email','1.4 Email Address','email') + fieldMarkup('facility.location','1.5 Location within the Facility') + '</div></div>'
        + '<div class="calibration-report-section"><div class="calibration-report-section-title">2. MACHINE DETAILS</div><div class="calibration-report-grid">'
        + fieldMarkup('machine.manufacturer','2.1 Manufacturer') + equipmentNameMarkup() + modelMarkup() + fieldMarkup('machine.serial_number','2.4 Serial Number')
-      + fieldMarkup('machine.console_model','2.5 Control Console: Model') + fieldMarkup('machine.console_serial','2.5 Control Console: Serial Number') + fieldMarkup('machine.tube1_model','2.6 X-ray Tube/s Assembly: Model (1)') + fieldMarkup('machine.tube1_serial','2.6 X-ray Tube/s Assembly: Serial Number (1)') + fieldMarkup('machine.tube2_model','2.6 X-ray Tube/s Assembly: Model (2)') + fieldMarkup('machine.tube2_serial','2.6 X-ray Tube/s Assembly: Serial Number (2)') + fieldMarkup('machine.installation_date','2.7 Date of Installation','date') + '</div></div>'
+      + fieldMarkup('machine.console_model','2.5 Control Console: Model') + fieldMarkup('machine.console_serial','2.5 Control Console: Serial Number') + secondTubeFieldMarkup('machine.console2_model','2.5 Control Console: Model (2)') + secondTubeFieldMarkup('machine.console2_serial','2.5 Control Console: Serial Number (2)') + fieldMarkup('machine.tube1_model','2.6 X-ray Tube/s Assembly: Model (1)') + fieldMarkup('machine.tube1_serial','2.6 X-ray Tube/s Assembly: Serial Number (1)') + secondTubeFieldMarkup('machine.tube2_model','2.6 X-ray Tube/s Assembly: Model (2)') + secondTubeFieldMarkup('machine.tube2_serial','2.6 X-ray Tube/s Assembly: Serial Number (2)') + fieldMarkup('machine.installation_date','2.7 Date of Installation','date') + '</div></div>'
       + '<div class="calibration-report-section"><div class="calibration-report-section-title">3. TECHNICAL SPECIFICATIONS</div><div class="calibration-report-grid">'
       + fieldMarkup('technical.max_tube_current_ma','3.1 Maximum Tube Current mA') + fieldMarkup('technical.max_tube_voltage_kv','3.2 Maximum Tube Voltage kV') + fieldMarkup('technical.tube_current_mas_range','3.3 Tube Current X time mAs range') + fieldMarkup('technical.tube_voltage_kvp_range','3.4 Tube Voltage kVp range') + fieldMarkup('technical.exposure_time_range','3.5 Exposure Time Setting range') + fieldMarkup('technical.max_rated_power_kw','3.6 Maximum Rated Power kW') + fieldMarkup('technical.power_supply','3.7 Power Supply') + fieldMarkup('technical.total_inherent_filtration','3.8 Total Inherent Filtration') + '</div></div></section>'
       + '<section class="calibration-report-page" data-cr-page-panel="2"><div class="calibration-report-paper-title">CALIBRATION TEST DETAILS</div>'
@@ -514,7 +518,7 @@
     setEditorPage(activePage);
   }
   function setEditorPage(page){
-    activePage = Math.max(1, Math.min(hasTube2Identity(state) ? 4 : 3, Number(page) || 1));
+    activePage = Math.max(1, Math.min(hasSecondTube(state) ? 4 : 3, Number(page) || 1));
     qa('[data-cr-page-panel]').forEach(function(panel){
       var pageNumber = Number(panel.getAttribute('data-cr-page-panel')) || 1;
       var selected = pageNumber === activePage;
@@ -538,16 +542,17 @@
   }
   function syncTube2PageVisibility(){
     if(!editorBuilt) return;
-    var enabled = hasTube2Identity(state);
+    var enabled = hasSecondTube(state);
     qa('[data-cr-page]').forEach(function(tab){ if(String(tab.getAttribute('data-cr-page')) === '4') tab.hidden = !enabled; });
     qa('[data-cr-page-panel]').forEach(function(panel){ if(String(panel.getAttribute('data-cr-page-panel')) === '4') panel.hidden = !enabled; });
+    qa('[data-cr-second-tube]').forEach(function(field){ field.hidden = !enabled; });
     if(!enabled && activePage === 4) activePage = 3;
     setEditorPage(activePage);
   }
   function handleTabKeydown(event){
     var tab = event.currentTarget || event.target;
     var current = Number(tab && tab.getAttribute('data-cr-page')) || activePage;
-    var lastPage = hasTube2Identity(state) ? 4 : 3;
+    var lastPage = hasSecondTube(state) ? 4 : 3;
     var next = 0;
     if(event.key === 'ArrowRight' || event.key === 'ArrowDown') next = current === lastPage ? 1 : current + 1;
     if(event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = current === 1 ? lastPage : current - 1;
@@ -1024,8 +1029,9 @@
     report.mechanical_checks.forEach(function(item,index){ if(!String(item.result || '').trim()) missing.push({ path:'mechanical_checks.' + index + '.result', label:item.label + ' result' }); });
     report.generator_checks.forEach(function(item,index){ if(!String(item.result || '').trim()) missing.push({ path:'generator_checks.' + index + '.result', label:item.label + ' result' }); });
     var tube2Model = String(report.machine?.tube2_model || '').trim(); var tube2Serial = String(report.machine?.tube2_serial || '').trim();
-    if(tube2Model && !tube2Serial) missing.push({ path:'machine.tube2_serial', label:'X-ray Tube 2 serial number' });
-    if(tube2Serial && !tube2Model) missing.push({ path:'machine.tube2_model', label:'X-ray Tube 2 model' });
+    var secondTube = hasSecondTube(report);
+    if(secondTube && !tube2Model) missing.push({ path:'machine.tube2_model', label:'X-ray Tube 2 model' });
+    if(secondTube && !tube2Serial) missing.push({ path:'machine.tube2_serial', label:'X-ray Tube 2 serial number' });
     function checkOutput(output,prefix,tubeLabel){
       var selectedSpots = ['small','large'].filter(function(key){ return output.focal_spots?.[key] !== false; });
       if(!selectedSpots.length) missing.push({ path:prefix + 'focal_spots.small', label:tubeLabel + ' must include at least one focal spot' });
@@ -1039,7 +1045,7 @@
       (output.performance_results || []).forEach(function(result,index){ if(!String(result || '').trim()) missing.push({ path:prefix + 'performance_results.' + index, label:tubeLabel + ' performance criterion ' + (index + 1) + ' result' }); });
     }
     checkOutput(report,'','X-ray Tube 1');
-    if(tube2Model && tube2Serial) checkOutput(report.tube2_output || blankTube2Output(),'tube2_output.','X-ray Tube 2');
+    if(secondTube) checkOutput(report.tube2_output || blankTube2Output(),'tube2_output.','X-ray Tube 2');
     return missing;
   }
   function validateForFinalSave(payload){
@@ -1089,7 +1095,7 @@
     return true;
   }
 
-  function stableText(value){ return JSON.stringify(value, function(key, current){ if(['status','updated_at','auto_fill','generated','generated_cleanup','auto_document','certificate','certificate_approval'].includes(key)) return undefined; return current; }); }
+  function stableText(value){ return JSON.stringify(value, function(key, current){ if(['status','updated_at','auto_fill','generated','generated_cleanup','auto_document','certificate','certificate_approval'].includes(key)) return undefined; if((key === 'console2_model' || key === 'console2_serial') && !String(current || '').trim()) return undefined; return current; }); }
   function hashText(value){ var hash = 2166136261; for(var index = 0; index < value.length; index += 1){ hash ^= value.charCodeAt(index); hash = Math.imul(hash, 16777619); } return ('00000000' + (hash >>> 0).toString(16)).slice(-8); }
   function fingerprint(report){ return hashText(stableText(report)); }
   function filenameFor(payload, report){
@@ -1349,6 +1355,22 @@
     var pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
     return documentXml.slice(0,sectionStart) + pageBreak + tube2Region + documentXml.slice(sectionStart);
   }
+  function releaseFormTableKeepNext(documentXml){
+    // The form tables label every row with Heading 2, whose keep-with-next chains the whole
+    // table together: once long values outgrow the page, it jumps to the next page and leaves
+    // the title alone on the first one. Let the rows before the output region break normally.
+    var region = outputRegion(documentXml);
+    return documentXml.slice(0, region.start).replace(/<w:pStyle w:val="Heading2"\/>/g, '<w:pStyle w:val="Heading2"/><w:keepNext w:val="0"/>') + documentXml.slice(region.start);
+  }
+  function insertSecondConsoleRows(documentXml, sourceRows){
+    // The supplied "Model (2): / Serial Number (2):" label row and its blank value row are
+    // reused under 2.5 Control Console; their first cell continues the vertical merge.
+    var tables = directXmlBlocks(documentXml, 'tbl'); if(!tables[0]) throw templateSlotError('table 0');
+    var table = tables[0]; var rows = directXmlBlocks(table.xml, 'tr');
+    if(!rows[12] || sourceRows.length !== 2 || cellText(sourceRows[0]) !== 'Model (2):Serial Number (2):' || cellText(sourceRows[1])) throw templateSlotError('second control console rows');
+    var tableXml = table.xml.slice(0, rows[12].end) + sourceRows[0] + sourceRows[1] + table.xml.slice(rows[12].end);
+    return documentXml.slice(0, table.start) + tableXml + documentXml.slice(table.end);
+  }
   function replaceResultLine(cellXml, value){
     var nodes = textBlocks(cellXml); var resultIndex = -1; var resultText = '';
     nodes.some(function(node, index){ var text = xmlUnescape(node.xml.replace(/^<w:t\b[^>]*>/,'').replace(/<\/w:t>$/,'')); if(text.indexOf('RESULT:') >= 0){ resultIndex = index; resultText = text; return true; } return false; });
@@ -1413,12 +1435,20 @@
     var zip = await JSZip.loadAsync(await response.arrayBuffer()); var documentFile = zip.file('word/document.xml'); if(!documentFile) throw templateSlotError('word/document.xml');
     var documentXml = await documentFile.async('string'); var relsFile = zip.file('word/_rels/document.xml.rels'); var contentTypesFile = zip.file('[Content_Types].xml'); if(!relsFile || !contentTypesFile) throw templateSlotError('signature package relationships'); var documentRels = await relsFile.async('string'); validateTemplateFurniture(zip, documentXml, documentRels); if(directXmlBlocks(documentXml, 'tbl').length !== 5) throw templateSlotError('five source tables');
     var pageOneFields = [['facility.name',0,1,1],['facility.address',0,2,1],['facility.telephone',0,3,1],['facility.email',0,4,1],['facility.location',0,5,1],['machine.manufacturer',0,7,1],['machine.modality',0,8,1],['machine.model',0,9,1],['machine.serial_number',0,10,1],['machine.console_model',0,12,1],['machine.console_serial',0,12,2],['machine.tube1_model',0,14,1],['machine.tube1_serial',0,14,2],['machine.tube2_model',0,16,1],['machine.tube2_serial',0,16,2],['machine.installation_date',0,17,1],['technical.max_tube_current_ma',0,19,1],['technical.max_tube_voltage_kv',0,20,1],['technical.tube_current_mas_range',0,21,1],['technical.tube_voltage_kvp_range',0,22,1],['technical.exposure_time_range',0,23,1],['technical.max_rated_power_kw',0,24,1],['technical.power_supply',0,25,1],['technical.total_inherent_filtration',0,26,1]];
+    var secondTube = hasSecondTube(report);
+    var secondConsoleSourceRows = directXmlBlocks(directXmlBlocks(documentXml, 'tbl')[0].xml, 'tr').slice(15, 17).map(function(row){ return row.xml; });
+    if(!secondTube) pageOneFields = pageOneFields.filter(function(field){ return field[0] !== 'machine.tube2_model' && field[0] !== 'machine.tube2_serial'; });
     pageOneFields.forEach(function(field){ var value = getPath(report, field[0]); if(!String(value || '').trim()) return; documentXml = patchTableCell(documentXml, field[1], field[2], field[3], function(cell){ return appendTextToCell(cell, value); }); });
+    if(secondTube){
+      documentXml = insertSecondConsoleRows(documentXml, secondConsoleSourceRows);
+      [['machine.console2_model',1],['machine.console2_serial',2]].forEach(function(field){ var value = getPath(report, field[0]); if(!String(value || '').trim()) return; documentXml = patchTableCell(documentXml, 0, 14, field[1], function(cell){ return appendTextToCell(cell, value); }); });
+    }
     [[0,1,1,report.mechanical_checks[0]?.result],[0,3,1,report.generator_checks[0]?.result],[0,4,1,report.generator_checks[1]?.result],[0,5,1,report.generator_checks[2]?.result],[0,6,1,report.generator_checks[3]?.result]].forEach(function(item){ documentXml = patchTableCell(documentXml, 1, item[1], item[2], function(cell){ return replaceResultLine(cell, item[3]); }); });
     [['calibration.machine_calibration_date',8],['calibration.next_calibration_date',9],['calibration.test_tool_manufacturer',10],['calibration.test_tool_model',11],['calibration.test_tool_serial',12],['calibration.test_tool_calibration_date',13]].forEach(function(field){ var value = getPath(report, field[0]); if(!String(value || '').trim()) return; documentXml = patchTableCell(documentXml, 1, field[1], 1, function(cell){ return appendTextToCell(cell, value); }); });
+    documentXml = releaseFormTableKeepNext(documentXml);
     var sourceOutput = outputRegion(documentXml);
     var tube1Output = fillOutputRegion(sourceOutput.xml,report,1);
-    var tube2Output = hasTube2Identity(report) ? fillOutputRegion(sourceOutput.xml,report.tube2_output || blankTube2Output(),2) : '';
+    var tube2Output = hasSecondTube(report) ? fillOutputRegion(sourceOutput.xml,report.tube2_output || blankTube2Output(),2) : '';
     documentXml = documentXml.slice(0,sourceOutput.start) + tube1Output + documentXml.slice(sourceOutput.end);
     if(tube2Output) documentXml = insertTube2OutputPage(documentXml,tube2Output);
     documentXml = applyFooterReserve(documentXml);

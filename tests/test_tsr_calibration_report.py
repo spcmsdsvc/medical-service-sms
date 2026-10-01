@@ -226,7 +226,7 @@ if (filled.machine.manufacturer !== 'Shimadzu') throw new Error('blank report di
 const complete = {
   status: 'draft',
   facility: { name:'Client & Sons', address:'123 Main <Street>', telephone:'Phone', email:'client@example.test', location:'Radiology' },
-  machine: { manufacturer:'Shimadzu', modality:'Digital Angiography System', model:'Mobile Dart Evolution MX9', serial_number:'SN-1', console_model:'Console 1', console_serial:'CON-1', tube1_model:'Tube 1', tube1_serial:'TUBE-1', tube2_model:'Tube 2', tube2_serial:'TUBE-2', installation_date:'2024-01-02' },
+  machine: { manufacturer:'Shimadzu', modality:'Digital Angiography System', model:'Flexavision F4 with CH-200M', serial_number:'SN-1', console_model:'Console 1', console_serial:'CON-1', console2_model:'Console 2', console2_serial:'CON-2', tube1_model:'Tube 1', tube1_serial:'TUBE-1', tube2_model:'Tube 2', tube2_serial:'TUBE-2', installation_date:'2024-01-02' },
   technical: { max_tube_current_ma:'500', max_tube_voltage_kv:'150', tube_current_mas_range:'10-500', tube_voltage_kvp_range:'40-150', exposure_time_range:'1-500', max_rated_power_kw:'50', power_supply:'220V', total_inherent_filtration:'2.5mm Al' },
   calibration: { machine_calibration_date:'2026-08-19', next_calibration_date:'2027-08-19', test_tool_manufacturer:'Tool Co', test_tool_model:'Tool 1', test_tool_serial:'TOOL-1', test_tool_calibration_date:'2026-08-01', engineer_name:'Engineer' },
   mechanical_checks: [{ result:'Pass' }],
@@ -244,7 +244,7 @@ const complete = {
 };
 api.apply(complete);
 const normalizedTwoTube = api.collect();
-if (normalizedTwoTube.schema_version !== 7 || !normalizedTwoTube.tube2_output || !editor.elements.find(element => element.getAttribute('data-cr-page') === '4') || editor.elements.find(element => element.getAttribute('data-cr-page') === '4').hidden) throw new Error('Tube 2 editor page was not activated for the complete identity pair');
+if (normalizedTwoTube.schema_version !== 7 || !normalizedTwoTube.tube2_output || !editor.elements.find(element => element.getAttribute('data-cr-page') === '4') || editor.elements.find(element => element.getAttribute('data-cr-page') === '4').hidden) throw new Error('Tube 2 editor page was not activated for a CH-200M model');
 const tube2NominalInput = editor.elements.find(element => element.getAttribute('data-cr-exposure') === 'tube2:small:0:0');
 if (!tube2NominalInput) throw new Error('independent Tube 2 measurements were not rendered');
 tube2NominalInput.value = '23.4'; editor.dispatch('input', { target:tube2NominalInput });
@@ -258,12 +258,36 @@ if (missingTube2Validation.ok || !missingTube2Validation.missing.some(item => it
 const tube2Long = JSON.parse(JSON.stringify(complete)); tube2Long.tube2_output.exposure.small[0].nominal_kvp = 'x'.repeat(80);
 const tube2LongValidation = api.validateForFinalSave({ calibration_report:tube2Long });
 if (!tube2LongValidation.ok) throw new Error('Tube 2 long measurement was rejected by a presentation limit');
-const singleTube = JSON.parse(JSON.stringify(complete)); singleTube.machine.tube2_model = ''; singleTube.machine.tube2_serial = '';
+const secondTubeFields = () => editor.elements.filter(element => element.getAttribute('data-cr-second-tube') === 'true');
+if (secondTubeFields().length !== 4 || secondTubeFields().some(element => element.hidden)) throw new Error('CH-200M model did not show Tube 2 and Console 2 fields on Page 1');
+const noTube2Identity = JSON.parse(JSON.stringify(complete)); noTube2Identity.machine.tube2_model = ''; noTube2Identity.machine.tube2_serial = '';
+const noTube2IdentityValidation = api.validateForFinalSave({ calibration_report:noTube2Identity });
+if (noTube2IdentityValidation.ok || !noTube2IdentityValidation.missing.some(item => item.path === 'machine.tube2_model') || !noTube2IdentityValidation.missing.some(item => item.path === 'machine.tube2_serial')) throw new Error('CH-200M model did not require the Tube 2 identity');
+api.apply(noTube2Identity);
+if (editor.elements.find(element => element.getAttribute('data-cr-page') === '4').hidden) throw new Error('CH-200M model without Tube 2 identity did not show Page 4');
+// A model without "with CH-200M" is single-tube even when Tube 2 values are left in the draft.
+const singleTube = JSON.parse(JSON.stringify(complete)); singleTube.machine.model = 'MobileDart Evolution MX9'; singleTube.tube2_output.performance_results[0] = '';
 if (!api.validateForFinalSave({ calibration_report:singleTube }).ok) throw new Error('single-tube validation incorrectly required Tube 2 output');
 api.apply(singleTube);
-if (!editor.elements.find(element => element.getAttribute('data-cr-page') === '4').hidden || !editor.elements.find(element => element.getAttribute('data-cr-page-panel') === '4').hidden) throw new Error('Tube 2 tab and panel did not hide when its identity pair was removed');
+if (!editor.elements.find(element => element.getAttribute('data-cr-page') === '4').hidden || !editor.elements.find(element => element.getAttribute('data-cr-page-panel') === '4').hidden) throw new Error('Tube 2 tab and panel did not hide for a model without CH-200M');
+if (secondTubeFields().some(element => !element.hidden)) throw new Error('Tube 2 and Console 2 fields did not hide for a model without CH-200M');
+const singleTubePrepared = await api.preparePayload({ calibration_report:singleTube, attachments:[] }, 'node-single-tube', { regenerate:true });
+const singleTubeRecord = records.get(singleTubePrepared.calibration_report.generated.blob_id);
+const singleTubeDocument = await (await context.JSZip.loadAsync(await singleTubeRecord.blob.arrayBuffer())).file('word/document.xml').async('string');
+if ((singleTubeDocument.match(/<w:tbl\b/g) || []).length !== 5 || singleTubeDocument.includes('X-RAY TUBE 2')) throw new Error('model without CH-200M still generated a Tube 2 page');
+for (const marker of ['Tube 2', 'TUBE-2', 'Console 2', 'CON-2', '22.3']) { if (singleTubeDocument.includes('>' + marker + '<')) throw new Error(`model without CH-200M printed ${marker}`); }
+if ((singleTubeDocument.match(/Model \(2\):/g) || []).length !== 1) throw new Error('single-tube DOCX changed the supplied Model (2) rows');
+await api.remove(); addedDocuments = 0; removedDocuments = 0; deletedBlobIds.length = 0; documents.value = '';
+// Reports saved before Console 2 existed keep their fingerprint, so ready reports are not marked stale.
+const blankConsole2 = JSON.parse(JSON.stringify(complete)); blankConsole2.machine.console2_model = ''; blankConsole2.machine.console2_serial = '';
+const blankConsole2Prepared = await api.preparePayload({ calibration_report:blankConsole2, attachments:[] }, 'node-fingerprint', { regenerate:true });
+const blankConsole2Stable = JSON.parse(JSON.stringify(blankConsole2Prepared.calibration_report)); delete blankConsole2Stable.machine.console2_model; delete blankConsole2Stable.machine.console2_serial;
+api.apply(blankConsole2Stable);
+if (!api.collect().generated.blob_id || api.collect().generated.fingerprint !== blankConsole2Prepared.calibration_report.generated.fingerprint) throw new Error('report saved before Console 2 existed lost its generated document');
+await api.preparePayload({ calibration_report:blankConsole2Stable, attachments:[] }, 'node-fingerprint');
+await api.remove(); addedDocuments = 0; removedDocuments = 0; deletedBlobIds.length = 0; documents.value = '';
 api.apply(complete);
-if (api.collect().tube2_output.exposure.small[0].nominal_kvp !== '22.2') throw new Error('Tube 2 draft entries did not restore with its identity pair');
+if (api.collect().tube2_output.exposure.small[0].nominal_kvp !== '22.2') throw new Error('Tube 2 draft entries did not restore with a CH-200M model');
 function setNested(root, path, value) {
   const parts = path.split('.');
   let target = root;
@@ -273,6 +297,8 @@ function setNested(root, path, value) {
 const longReport = JSON.parse(JSON.stringify(complete));
 setNested(longReport, 'facility.name', 'Clinic & Sons <Radiology> — ' + 'x'.repeat(80) + '\nSecond line');
 setNested(longReport, 'machine.console_model', 'Console model ' + 'y'.repeat(50));
+setNested(longReport, 'machine.console2_serial', 'Console two serial ' + 'q'.repeat(50));
+setNested(longReport, 'machine.tube2_model', 'Tube two model ' + 'w'.repeat(50));
 setNested(longReport, 'mechanical_checks.0.result', 'Pass & verified\nUnicode ✓');
 setNested(longReport, 'calibration.test_tool_model', 'Tool model ' + 'z'.repeat(50));
 setNested(longReport, 'exposure.small.0.nominal_kvp', '80-' + '1'.repeat(40));
@@ -300,12 +326,16 @@ for (const part of ['word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml', 
 if ((generatedDocument.match(/<w:footerReference\b/g) || []).length !== 3) throw new Error('generated DOCX lost source footer references');
 if (!generatedRels.includes('Target="footer1.xml"') || !generatedRels.includes('Target="footer2.xml"') || !generatedRels.includes('Target="footer3.xml"')) throw new Error('generated DOCX lost source footer relationships');
 if (!generatedDocument.includes('Client &amp; Sons') || !generatedDocument.includes('123 Main &lt;Street&gt;')) throw new Error('page one data was not XML escaped into the DOCX');
-for (const marker of ['Shimadzu', 'Mobile Dart Evolution MX9', 'SN-1', '2026-08-19', 'Tool Co', '80.2', 'Pass &amp; verified']) {
+for (const marker of ['Shimadzu', 'Flexavision F4 with CH-200M', 'SN-1', '2026-08-19', 'Tool Co', '80.2', 'Pass &amp; verified']) {
   if (!generatedDocument.includes(marker)) throw new Error(`generated DOCX is missing ${marker}`);
 }
 if ((generatedDocument.match(/<w:tbl\b/g) || []).length !== 8) throw new Error('two-tube DOCX did not append one output page with its three source tables');
 if (!generatedDocument.includes('AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 1') || !generatedDocument.includes('AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 2')) throw new Error('generated output pages are not labeled by tube');
 if (!/<w:br\b[^>]*w:type="page"/.test(generatedDocument)) throw new Error('Tube 2 output page has no explicit page break');
+const pageOneRows = Array.from(generatedDocument.slice(0, generatedDocument.indexOf('</w:tbl>')).matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g), match => match[0].replace(/<\/w:tc>/g, '|').replace(/<[^>]+>/g, ''));
+if (pageOneRows.length !== 29 || pageOneRows[12] !== '|Console 1|CON-1|' || pageOneRows[13] !== '|Model (2):|Serial Number (2):|' || pageOneRows[14] !== '|Console 2|CON-2|' || pageOneRows[16] !== '|Tube 1|TUBE-1|' || pageOneRows[18] !== '|Tube 2|TUBE-2|' || pageOneRows[19] !== '2.7 Date of Installation:|2024-01-02|' || !pageOneRows[28].includes('2.5mm Al')) throw new Error('Console 2 rows were not inserted under Control Console or shifted later Page 1 values: ' + JSON.stringify(pageOneRows.slice(11, 20)));
+const formTablesXml = generatedDocument.slice(0, generatedDocument.indexOf('AVERAGE EXPOSURE OUTPUT'));
+if (!formTablesXml.includes('<w:pStyle w:val="Heading2"/><w:keepNext w:val="0"/>') || /<w:pStyle w:val="Heading2"\/>(?!<w:keepNext w:val="0"\/>)/.test(formTablesXml)) throw new Error('form table rows are still chained together by Heading 2 keep-with-next');
 const generatedTables = Array.from(generatedDocument.matchAll(/<w:tbl\b[\s\S]*?<\/w:tbl>/g), match => match[0]);
 const tube1SmallTable = generatedTables[2].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
 const tube2SmallTable = generatedTables[5].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&');
@@ -395,7 +425,7 @@ if (process.env.CALIBRATION_REPORT_BOUNDARY_DIR) {
   fs.writeFileSync(path.join(process.env.CALIBRATION_REPORT_BOUNDARY_DIR, 'long-fields.docx'), Buffer.from(await boundaryRecord.blob.arrayBuffer()));
   const boundaryZip = await context.JSZip.loadAsync(await boundaryRecord.blob.arrayBuffer());
   const boundaryDocument = await boundaryZip.file('word/document.xml').async('string');
-  for (const marker of ['Clinic &amp; Sons &lt;Radiology&gt;', 'Second line', 'Console model', 'Pass &amp; verified', 'Unicode ✓', 'Tool model', '80-1111111111111111111111111111111111111111', 'Measured within tolerance']) {
+  for (const marker of ['Clinic &amp; Sons &lt;Radiology&gt;', 'Second line', 'Console model', 'Console two serial ' + 'q'.repeat(50), 'Tube two model ' + 'w'.repeat(50), 'Pass &amp; verified', 'Unicode ✓', 'Tool model', '80-1111111111111111111111111111111111111111', 'Measured within tolerance']) {
     if (!boundaryDocument.includes(marker)) throw new Error(`long report DOCX is missing ${marker}`);
   }
 }
@@ -588,16 +618,16 @@ function setReadyFields(report) {
   const tube2ExposureControls = exposureControls.filter(element => String(element.getAttribute("data-cr-exposure")).startsWith("tube2:"));
   if(exposureControls.length !== 224 || tube1ExposureControls.length !== 112 || tube2ExposureControls.length !== 112 || Math.max(...tube2ExposureControls.map(element => Number(String(element.getAttribute("data-cr-exposure")).split(":")[2]))) !== 7) fail("editor did not build separate eight-row output controls for both tubes");
   const tab4 = doc.querySelector("#calibration-report-tab-4"); const panel4 = pagePanel(4);
-  if(!tab4?.hidden || !panel4?.hidden) fail("Tube 2 editor page should start hidden without both identity fields");
-  const tube2Identity = api.collect(); tube2Identity.machine.tube2_model = "Tube 2 Model"; tube2Identity.machine.tube2_serial = "Tube 2 Serial"; api.apply(tube2Identity);
-  if(tab4.hidden || panel4.hidden || !editor.html.includes("X-RAY TUBE 1") || !editor.html.includes("X-RAY TUBE 2")) fail("Tube 2 tab and labeled editor page did not activate for its identity pair");
+  if(!tab4?.hidden || !panel4?.hidden) fail("Tube 2 editor page should start hidden for a model without CH-200M");
+  const oneTubeDraft = api.collect(); const tube2Identity = api.collect(); tube2Identity.machine.model = "Flexavision F4 with CH-200M"; api.apply(tube2Identity);
+  if(tab4.hidden || panel4.hidden || !editor.html.includes("X-RAY TUBE 1") || !editor.html.includes("X-RAY TUBE 2")) fail("Tube 2 tab and labeled editor page did not activate for a CH-200M model");
   const page3Tab = doc.querySelector("#calibration-report-tab-3"); page3Tab.dispatch("keydown", keyboardEvent("ArrowRight", false));
   if(tab4.getAttribute("aria-selected") !== "true" || doc.activeElement !== tab4) fail("keyboard navigation did not include the conditional Tube 2 page");
   const tube2Performance = editor.elements.find(element => element.getAttribute("data-cr-performance") === "tube2:0");
   if(!tube2Performance || !api.focusMissing([{ path:"tube2_output.performance_results.0" }], { explicit:true })) fail("Tube 2 missing-field review did not open its editor page");
   await new Promise(resolve => setTimeout(resolve, 70));
   if(doc.activeElement !== tube2Performance || tab4.getAttribute("aria-selected") !== "true") fail("Tube 2 missing-field review did not focus its own result input");
-  const oneTubeDraft = api.collect(); oneTubeDraft.machine.tube2_model = ""; oneTubeDraft.machine.tube2_serial = ""; api.apply(oneTubeDraft);
+  api.apply(oneTubeDraft);
   const draft = api.collect(); if(draft.facility.name !== "Scheduled Client" || draft.machine.model !== "Scheduled Model") fail("create did not autofill the schedule");
 if(draft.machine.manufacturer !== "Shimadzu") fail("blank report did not default the manufacturer");
 const manufacturerInput = editorControl("machine.manufacturer");
@@ -636,7 +666,7 @@ const backInput = editorControl("facility.name"); if(!backInput) fail("Back pers
   if(wrapErrors.length) fail(wrapErrors.join(" | "));
   const finalEscapeEvent = keyboardEvent("Escape", false); doc.dispatch("keydown", finalEscapeEvent);
   if(!finalEscapeEvent.defaultPrevented || overlay.classList.contains("is-open") || doc.activeElement !== entryButton) fail("final Escape did not close and restore focus");
-  api.open(); const ready = setReadyFields(api.collect()); api.apply(ready); const clean = api.collect(); const stable = JSON.stringify(clean, (key, value) => ["status","updated_at","auto_fill","generated","generated_cleanup","auto_document","certificate","certificate_approval"].includes(key) ? undefined : value); const fingerprint = fnv(stable); const blobId = "calibration-report-" + fingerprint;
+  api.open(); const ready = setReadyFields(api.collect()); api.apply(ready); const clean = api.collect(); const stable = JSON.stringify(clean, (key, value) => ["status","updated_at","auto_fill","generated","generated_cleanup","auto_document","certificate","certificate_approval"].includes(key) || ((key === "console2_model" || key === "console2_serial") && !String(value || "").trim()) ? undefined : value); const fingerprint = fnv(stable); const blobId = "calibration-report-" + fingerprint;
   clean.generated = { fingerprint, attachment_id:blobId, blob_id:blobId, filename:"ready.docx", size:4 }; records.set(blobId, { blob:new Blob(["ready"]) }); api.apply(clean); await new Promise(resolve => setTimeout(resolve, 0));
    if(entryLabel.textContent !== "Open Calibration Report" || status.textContent !== "Final Saved" || downloadButton.classList.contains("d-none") || removeButton.classList.contains("d-none")) fail("ready card or toolbar state is wrong");
    if(!context.document.querySelector("#calibration-report-generate-label") || context.document.querySelector("#calibration-report-generate-label").textContent !== "Generate Sample PDF") fail("ready toolbar did not expose sample PDF generation");
@@ -922,9 +952,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('?v=11', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
         self.assertIn('app-calibration-report.js', self.template_source)
-        self.assertIn('?v=41', self.template_source)
+        self.assertIn('?v=42', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
-        self.assertIn("app-calibration-report.js?v=41", self.app_source)
+        self.assertIn("app-calibration-report.js?v=42", self.app_source)
         assert_cache_version_at_least(self, 208, self.app_source)
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
         paste_release = next(item for item in releases if item['release_key'] == '2026-09-26-calibration-report-paste-criteria')
@@ -995,8 +1025,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=11", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=41", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=41'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=42", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=42'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1037,8 +1067,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=41", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=41'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=42", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=42'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
