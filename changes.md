@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-01
 
+- Committed only the Travel Request Site Visit package (`app.py`, `templates/travel_request.html`, `tests/test_travel_request_site_visit.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `65e03d8` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this change log remained unstaged. No Railway variable change or manual redeploy was performed.
+
 - Executed the **Travel Request "Site Visit" Purpose Tag and Others-Line Remarks** plan on the owner's go-ahead; not committed or pushed.
 - Travel Request page (`templates/travel_request.html`): added the **Site Visit** purpose tag to each client visit. Checking it unticks and disables the other tags, clears the selected equipment, and greys out the Equipment control with "Not required for Site Visit"; unchecking restores the tags and the customer's equipment list. The state is re-applied when a saved request or draft is reopened and when a customer is selected.
 - Auto-filled Visit Purpose (page and `build_travel_visit_purpose()` in `app.py`): Site Visit yields `Site Visit`; with no equipment selected the text is the tag alone instead of "... of selected equipment"; a lone Warranty or Others tag is no longer repeated as its own suffix ("Others of X - Others").

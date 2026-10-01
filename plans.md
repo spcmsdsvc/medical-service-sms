@@ -1,6 +1,7 @@
 # Travel Request "Site Visit" Purpose Tag and Others-Line Remarks
 
-**Status:** Executed — not yet committed; awaiting the owner's commit instruction.
+**Status:** Executed — implementation commit `65e03d8`; publication to `origin/main` authorized.
+**Publication authorized:** 2026-10-01 — the owner said "commit and push only these changes. never the db and dirty files".
 **Execution authorized:** 2026-10-01 — the owner said "go ahead. do not overengineer and over verify things".
 **Approved:** 2026-10-01 — the owner said "plan approved, both assumptions confirmed", and added the Others-line remarks change and "fix any awkward behavior you can find".
 **Detailed:** 2026-10-01.
