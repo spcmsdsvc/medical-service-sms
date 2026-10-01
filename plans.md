@@ -1,3 +1,143 @@
+# Settings: Approval Routing Tab — UI and Function Improvements
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Finished:** 2026-10-01.
+**Execution authorized:** 2026-10-01 — the owner said "go ahead partner".
+
+**Where the plan and the outcome differed:**
+
+- **Step 9, after a save.** The plan said to patch one card from the save response. Instead `saveApprovalUser` clears that card's unsaved mark and reloads, and `renderApprovalUsers` skips every card still marked unsaved. One code path serves user saves and route changes; other people's edits survive either way.
+- **Step 8, approver list.** The approver dropdown also lists active non-approvers in a separate "Not approvers yet (will be given approval rights)" group, so decision 3 is reachable and visible. Inactive accounts are not offered.
+- **Step 7, coverage.** A liquidation type counts as covered by its parent type's route (Travel Request, Cash Advance), matching `can_user_approve_travel_liquidation` and `can_user_approve_cash_advance_liquidation`.
+- **Step 11, dark stylesheet version.** `app-dark-pages.css` went from `?v=29` to `?v=30` in `templates/layout.html`; three test files that pin that literal were updated. Not in the plan's file list.
+- **Existing test updated.** `tests/test_hr_schedule_viewer.py` asserted a removed local variable name (`hrScheduleViewChecked`); it now asserts the switch class and the state key.
+- **Step 12, page contract.** Checked against the template source and a rendered GET `/settings` (200, panels present) plus `node --check` and a Node stub-DOM run of the render functions; the test file itself asserts on the source.
+- **Not verified:** no browser check, so the 375px layout, tap targets and dark mode were not seen rendered.
+- **Suite:** 1,452 tests (1,438 + 14 new); 23 failures, 2 errors, 5 skips, the same 25 as the baseline. The one full run showed 24 failures; the extra one was the `test_hr_schedule_viewer` marker above, fixed and rerun on its own.
+**Approved:** 2026-10-01 — the owner said "plan approved partner, go with your recommendations, write the plan".
+**Detailed:** 2026-10-01.
+
+## Context
+
+The owner asked for the Approval Routing tab on System Settings to be improved in both UI and function, after a deep scan of the page. The tab is superadmin-only and does three jobs in one long card: it edits every account's permissions, adds approval routes (single and bulk), and lists active routes. The scan found real defects (unsaved edits lost, dead routes shown as healthy, no way to see who has no approver) alongside layout problems (nested scroll boxes, no search, everything expanded). The intended outcome is a tab where a superadmin can see at a glance who approves whom, spot gaps and stale routes, and edit people and routes without losing work. Routing behaviour itself does not change.
+
+## Decisions taken
+
+1. **Layout:** three sub-tabs inside the existing card — **Routes** (default), **Add Routes**, **People & Permissions**. Page scroll replaces the nested 420px scroll boxes.
+2. **The unused per-user "Scope" text field is removed from the page.** The stored `User.approval_scope` value is left untouched: the client stops sending it and the server keeps the stored value when the key is absent.
+3. **Saving a route still turns on "Can Approve" for the chosen approver,** but the confirmation and the success message now say so.
+4. **The permissions editor stays in this tab** as the third sub-tab. It does not move to the Users tab.
+5. **Single and bulk route creation merge into one form** that posts to the existing bulk endpoint.
+6. **Routing resolution is not changed.** A request-type route adds to the "All Requests" route; the page explains this instead of altering it.
+
+## Investigation
+
+Line numbers are as of commit `d812a42`.
+
+- **Markup:** `templates/settings.html:575-696`, inside `{% if current_user.role == 'superadmin' %}{% if new_workflows_enabled %}`. Nav button at line 62. Section load hook at line 1050 calls `loadApprovalRouting()`.
+- **Script:** `templates/settings.html:1776-2169` and `2346-2612` (state, `approvalScopeLabel`, `populateApprovalSelects`, `renderApprovalUsers`, `renderApprovalRoutes`, `loadApprovalRouting`, `saveApprovalUser`, bulk helpers, `saveApprovalRoutesBulk`, `saveApprovalRoute`, `deleteApprovalRoute`, `deleteAllApprovalRoutes`); permission toggles at `2727-2771`. Dialog helpers `settingsAlert` (874), `settingsConfirmDialog` (878), `settingsPromptDialog` (951).
+- **Styles:** inline in `templates/settings.html:3612-3807`, mobile overrides at `4442-4476`; dark-mode selectors in `static/css/app-dark-pages.css:926-946, 1024-1034`.
+- **Server:** `settings_approval_routing_data` (`app.py:29054`), `resolve_staff_permission_request` (29075), `settings_update_approval_user` (29204), `settings_save_approval_route` (29307), `settings_save_approval_routes_bulk` (29370), `settings_delete_all_approval_routes` (29541), `settings_delete_approval_route` (29585); serializers `approval_route_to_dict` (11189) and `approval_user_to_dict` (11204); scopes `APPROVAL_REQUEST_SCOPES` (7896).
+- **Resolver (read only, not changed):** `get_approval_routes_for_requester` (`app.py:10968`) takes the union of the specific scope and `all`, and drops routes whose approver is inactive (10999). `get_requester_user_ids_for_approver` (11045) returns nothing when the approver fails `is_configured_approver_user` (7916).
+- **Findings:**
+  1. `saveApprovalUser` calls `loadApprovalRouting()` (2159), which re-renders every user card and both route forms, discarding unsaved edits on other cards and resetting dropdowns and scroll.
+  2. `approvalScopeLabel` (1795) has no entry for `travel_liquidation` or `cash_advance_liquidation`, both valid scopes; they display as raw keys. The dropdown is sorted by key, so "All Requests" is first only by accident of spelling.
+  3. A route whose approver is inactive, or has `can_approve_requests` off, is listed as a normal active chip although no one can act on it.
+  4. `settings_save_approval_route` does not reject an inactive approver or requester; the bulk route does (29420, 29464). Both silently set `can_approve_requests` and `approval_scope='approver'` on the approver (29333, 29426).
+  5. No view shows active users without a working approver.
+  6. Inactive routes are only counted in the summary; reactivation is possible only by re-adding. Re-saving an existing pair already reactivates it (29351), so no new endpoint is needed.
+  7. The delete audit line is `Deactivated approval route #id` with no names (29605).
+  8. `approval_scope` on a user is written at 29187/29256 and at staff creation (61421, 61510) and read by no workflow. Not true that it drives routing.
+  9. `overwriteExisting` in `saveApprovalRoutesBulk` (2428) is a constant `false`; the confirm-text branches for it are dead.
+  10. Switch labels in `renderApprovalUsers` have no `for`/`id`; the chip remove button is 1.35rem; "Deactivate All Routes" sits beside the section title and its first dialog is titled "Delete All Approval Routes?".
+  11. Copy hard-codes people: "Rodito to Anthony" (588), "adding Robert will not remove Rodito" (672).
+  12. `ensure_default_approval_routes` (56399) runs on every data load and adds an `all` route to Rodito for any user with no such row. A deactivated row is left alone, so deactivation sticks. Left as is.
+  13. The five routes are `@csrf.exempt` and covered by the prefix list at `app.py:315-319`. Left as is.
+  14. Tests: `update-approval-user` and `approval-routing-data` are exercised in `tests/test_admin_capabilities.py`, `test_staff_creation.py`, `test_reimbursement_tracker.py`, `test_stock_inventory.py`, `test_purchase_orders.py`, `test_tsr_without_equipment.py`. No test posts to `save-approval-route`, `save-approval-routes-bulk`, `delete-approval-route` or `delete-all-approval-routes`.
+- Service worker at planning time: `medical-service-pwa-offline-navigation-v223-calibration-ch200m-second-tube` (`app.py:26746`).
+- `changes.md` was read at its current top section, not end to end.
+
+## Execution steps
+
+1. **Server: route serializer.** In `approval_route_to_dict` add `approver_active`, `approver_can_approve` and `requester_active` (booleans from the linked users). Done: `/settings/approval-routing-data` returns the three keys for every route.
+2. **Server: single-route validation.** In `settings_save_approval_route`, return 400 when the approver or the requester is inactive, with the same wording as the bulk route. Add `approver_granted: true` to the response when the save turned on `can_approve_requests`; add the same key to the bulk response. Done: an inactive account cannot be routed; the response says when approval rights were granted.
+3. **Server: audit line.** In `settings_delete_approval_route`, log `Deactivated approval route: <requester> -> <approver> (<scope>)`. Done: the activity log names both accounts.
+4. **Server: keep stored scope.** In `resolve_staff_permission_request`, when `approval_scope` is absent from the payload keep the target's stored value; when present, behave as today (Add Personnel still sends it). Done: a Settings save without the key leaves `User.approval_scope` unchanged.
+5. **Markup: sub-tabs.** In `templates/settings.html:599-692` replace the four stacked panels with a three-button sub-tab bar and three panels (`routes`, `add`, `people`), Routes active by default; remember the last sub-tab in `sessionStorage` guarded by try/catch. Replace the purpose alert copy with neutral wording (no personal names). Done: only one panel is visible at a time and the tab bar wraps at 375px.
+6. **Routes tab.** Rewrite `renderApprovalRoutes`:
+   - controls: search input (requester or approver name/username), request-type select, "Show inactive" switch;
+   - grouping by requester, one card each, chips labelled `Approver · Request Type`; route IDs removed from the visible text;
+   - amber chip with a reason tooltip/text when `approver_active` or `approver_can_approve` is false;
+   - inactive routes (when shown) rendered muted with a **Reactivate** button that posts the pair to `/settings/save-approval-route`;
+   - a one-line note: a request-type route adds to the "All Requests" route, it does not replace it;
+   - remove the `max-height` scroll box; chip remove button at least 32px with an `aria-label`;
+   - "Deactivate All Routes" moved to a danger-zone block at the bottom of the tab; first dialog retitled "Deactivate All Approval Routes?".
+   Done: filtering is client-side over `approvalRoutingState.routes`, and the summary line reflects the filtered count.
+7. **Coverage strip.** New `approvalCoverageGaps()` in the script: active users with no active route whose approver is active and can approve, for the selected request type (the specific scope or `all`). Render above the list as "N active users have no working approver", expandable to names, each with an **Add route** button that switches to the Add Routes tab with that requester ticked. Done: the count is zero when every active user has a working route and matches the resolver's union rule.
+8. **Add Routes tab.** Replace the single and bulk panels with one form: approver select, request-type select, requester group preset (All Engineers, All Active Users, All Non-Approvers, Manual), and a searchable requester checklist that the preset pre-ticks. Preview lists names tagged New / Already active / Will reactivate, computed from state. Submit posts to `/settings/save-approval-routes-bulk`; the confirmation states when the approver will be granted approval rights; the result message lists created, reactivated and skipped with reasons. Remove `saveApprovalRoute`'s form use, the `overwriteExisting` dead branches and the hard-coded "Robert/Rodito" note. Done: one requester or many go through the same form and endpoint.
+9. **People & Permissions tab.** Rewrite `renderApprovalUsers`:
+   - search input (name, username, role) and an "Approvers only" filter;
+   - each user is a collapsed row (name, username, role badge, badges for Approver / Approver-only / Inactive / granted capabilities) that expands to the existing switches;
+   - every switch gets a unique `id` and matching label `for`;
+   - the Scope text input is removed; `saveApprovalUser` stops sending `approval_scope`;
+   - a card marked "Unsaved changes" on any input change;
+   - after a successful save, replace that user in `approvalRoutingState.users` from `data.user`, re-render only that card, and refresh the approver select and coverage strip without touching other cards;
+   - remove the `max-height` scroll box.
+   The permission toggles (`toggleApprovalOnlyMode`, `toggleStockInventoryOnlyMode`, `toggleAdminCapability`, `toggleStockInventoryAccess`) and the payload keys other than `approval_scope` are unchanged. Done: editing two cards and saving one leaves the other's edits intact.
+10. **Labels.** Add `travel_liquidation: 'Travel Liquidation'` and `cash_advance_liquidation: 'Cash Advance Liquidation'` to `approvalScopeLabel`; build scope options with `all` first, then by label. Done: no raw key appears in any dropdown, chip or message.
+11. **Styles.** Update the inline `.approval-*` rules and the 768px block in `templates/settings.html` for the sub-tabs, collapsed rows, amber/inactive chips, coverage strip and danger zone; add matching selectors to `static/css/app-dark-pages.css`. Remove rules left unused. Done: light and dark both readable, no horizontal scroll at 375px, tap targets at least 32px.
+12. **Tests.** Add `tests/test_approval_routing_settings.py`:
+    - non-superadmin is denied on all six endpoints;
+    - single save creates a route, re-save reactivates a deactivated one;
+    - single save rejects an inactive approver and an inactive requester;
+    - saving a route for a non-approver grants `can_approve_requests` and reports `approver_granted`;
+    - bulk creates, skips exact duplicates and self-approval, and preserves other approvers' routes;
+    - deactivate one and deactivate all (wrong confirm text refused);
+    - route dicts carry `approver_active` / `approver_can_approve`, false after the approver is deactivated or loses approval rights;
+    - the deactivation audit line names requester and approver;
+    - a Settings save without `approval_scope` keeps the stored value;
+    - rendered Settings page contains the three sub-tab panels, both new scope labels, and no "Scope e.g. executive" input.
+    Done: each test fails against the pre-change code where it covers a change.
+13. **Release records.** Bump the service-worker `CACHE_VERSION` (read live at that time), add a `static/changelog/releases.json` entry, update `changes.md` and this plan's status.
+14. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **The routing resolver and every approval workflow** (`app.py:10968-11094` and the module approval routes). This plan changes how routes are managed and shown, not who can approve.
+- **Database schema.** No new table or column; `User.approval_scope` stays.
+- **Moving the permissions editor to the Users tab.** Owner decision 4.
+- **The legacy Rodito approval bypass and `ensure_default_approval_routes`.** Business policy, out of scope.
+- **CSRF exemptions on the settings routes.** Existing arrangement, unrelated to this request.
+- **Add Personnel's permission form.** It shares `resolve_staff_permission_request`; step 4 is written so its behaviour is unchanged.
+- **Browser automation.** Not authorized for this plan (`AGENTS.md`); ask the owner first if it becomes essential.
+
+## Verification
+
+- New tests in step 12, each seen failing without its change.
+- Existing suites that touch these endpoints: `tests/test_admin_capabilities.py`, `test_staff_creation.py`, `test_reimbursement_tracker.py`, `test_stock_inventory.py`, `test_purchase_orders.py`, `test_tsr_without_equipment.py`, `test_changelog_coverage.py`; then one full-suite pass quoted against a baseline taken before the first edit.
+- Script syntax: extract the Settings inline script and run `node --check` on it.
+- Flask test client: GET `/settings` as superadmin and confirm the panel markup; GET `/settings/approval-routing-data` and confirm the new keys.
+- 375px, tap targets and dark mode are checked at source level only unless the owner authorizes a browser check; say so in the report.
+
+## After implementation
+
+1. Self-review the diff: `templates/settings.html`, `app.py`, `static/css/app-dark-pages.css`, `tests/test_approval_routing_settings.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`.
+2. Prove the new tests fail without the change.
+3. Full suite, quoting counts against the baseline.
+4. Service worker bump and `releases.json` entry.
+5. `changes.md` and this plan's status, with the commit hash and any difference between plan and outcome.
+6. Commit checklist with explicit staging of the files in item 1. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and unrelated dirty entries. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **Permission payload regressions.** `saveApprovalUser` round-trips 13 switches; a renamed class or missing input would post `false` and silently revoke a grant. Safety net: class names and payload keys are kept, and the existing capability tests in five files post through the same endpoint.
+- **Stored scope wiped.** If step 4 is missed, removing the input would blank `User.approval_scope` on every save. Safety net: the dedicated test in step 12.
+- **Coverage strip disagreeing with the resolver.** The client rule must mirror the union-with-`all` rule and the two approver checks. Safety net: the rule is stated in step 7 and the flags come from the server.
+- **Stricter single save.** An inactive account can no longer be routed; this matches bulk and the resolver already ignored such routes, so no working route is lost.
+- **No rendered check.** Without a browser pass, layout faults at 375px or in dark mode could ship. Blast radius is one superadmin-only tab.
+
+---
+
 # Calibration Report: CH-200M Second Tube and Console, Complete PDF
 
 **Status:** Executed — implementation commit `d07f77e`; publication to `origin/main` authorized.

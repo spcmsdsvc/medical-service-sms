@@ -1045,6 +1045,46 @@
     color: var(--dark-muted) !important;
 }
 
+/* Settings > Approval Routing sub-tabs, chips and notices. */
+:root[data-app-theme="dark"] :is(
+    .approval-routing-subtab, .approval-bulk-manual-item, .approval-bulk-preview,
+    .approval-approver-chip, .approval-info-note, .approval-coverage, .approval-danger-zone
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .approval-routing-subtab.active {
+    background: #4f46e5 !important;
+    border-color: #4f46e5 !important;
+    color: #fff !important;
+}
+:root[data-app-theme="dark"] :is(.approval-approver-chip.is-stale, .approval-coverage:not(.is-clear)) {
+    border-color: #b45309 !important;
+    color: #fcd34d !important;
+}
+:root[data-app-theme="dark"] .approval-danger-zone {
+    border-color: #7f1d1d !important;
+}
+:root[data-app-theme="dark"] :is(
+    .approval-section-title:not(.text-danger), .approval-user-name, .approval-route-line,
+    .approval-bulk-manual-item strong
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .approval-panel-note, .approval-user-meta, .approval-bulk-manual-item small,
+    .approval-approver-chip.is-inactive
+) {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] .approval-chip-action {
+    background: rgba(255, 255, 255, 0.12);
+}
+:root[data-app-theme="dark"] :is(.approval-user-body, .approval-coverage-row) {
+    border-color: var(--dark-border) !important;
+}
+
 /* Record administration and Settings custom cards/dialogs. */
 :root[data-app-theme="dark"] :is(
     .product-confirm-box, .client-confirm-box, .engineer-confirm-box,

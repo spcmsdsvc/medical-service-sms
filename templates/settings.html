@@ -584,8 +584,7 @@
 
                 <div class="card-body p-4 bg-white">
                     <div class="alert alert-light border small mb-4">
-                        <strong>Purpose:</strong> Assign who approves each employee's Field Operations requests.
-                        Use this for routes such as Rodito to Anthony when approval responsibilities change.
+                        <strong>Purpose:</strong> Assign who approves each employee's requests, and manage what each account is allowed to do.
                     </div>
 
                     <div id="approval-routing-loading" class="text-muted small fw-bold mb-3">
@@ -597,97 +596,125 @@
                     </div>
 
                     <div id="approval-routing-content" class="d-none approval-workspace">
-                        <div class="approval-work-panel approval-eligibility-panel">
-                            <div class="approval-section-title">
-                                <i class="fa-solid fa-user-check me-2 text-success"></i>Approver Eligibility
-                            </div>
-                            <div class="approval-panel-note">Choose who can approve requests and which accounts should use the simplified approver-only view.</div>
-                            <div id="approval-users-list" class="approval-users-list"></div>
-                        </div>
-
-                        <div class="approval-work-panel approval-single-route-panel">
-                            <div class="approval-section-title">
-                                <i class="fa-solid fa-route me-2 text-indigo"></i>Add Single Route
-                            </div>
-                            <div class="approval-panel-note">Use this for one requester and one approver.</div>
-                            <div class="row g-3 mb-3">
-                                <div class="col-lg-4">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Requester</label>
-                                    <select id="approval-route-requester" class="form-select form-select-sm rounded-3"></select>
-                                </div>
-                                <div class="col-lg-4">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Approver</label>
-                                    <select id="approval-route-approver" class="form-select form-select-sm rounded-3"></select>
-                                </div>
-                                <div class="col-lg-4">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Request Type</label>
-                                    <select id="approval-route-scope" class="form-select form-select-sm rounded-3"></select>
-                                </div>
-                            </div>
-
-                            <button type="button" class="btn btn-indigo fw-bold rounded-3 shadow-sm" onclick="saveApprovalRoute()">
-                                <i class="fa-solid fa-floppy-disk me-2"></i>Save Approval Route
+                        <div class="approval-routing-subtabs" role="tablist" aria-label="Approval routing sections">
+                            <button type="button" class="approval-routing-subtab active" role="tab" aria-selected="true" data-approval-subtab="routes" onclick="switchApprovalSubtab('routes')">
+                                <i class="fa-solid fa-diagram-project me-1"></i>Routes
+                            </button>
+                            <button type="button" class="approval-routing-subtab" role="tab" aria-selected="false" data-approval-subtab="add" onclick="switchApprovalSubtab('add')">
+                                <i class="fa-solid fa-user-plus me-1"></i>Add Routes
+                            </button>
+                            <button type="button" class="approval-routing-subtab" role="tab" aria-selected="false" data-approval-subtab="people" onclick="switchApprovalSubtab('people')">
+                                <i class="fa-solid fa-user-shield me-1"></i>People &amp; Permissions
                             </button>
                         </div>
 
-                        <div class="approval-bulk-panel approval-work-panel">
-                            <div class="approval-section-title mb-2">
-                                <i class="fa-solid fa-layer-group me-2 text-indigo"></i>Bulk Route Creation
-                            </div>
-                            <div class="approval-bulk-note mb-3">
-                                Add one approver to many requesters in one action. Existing approver routes stay active; exact duplicate routes are skipped only.
-                            </div>
+                        <div class="approval-routing-pane active" role="tabpanel" data-approval-pane="routes">
+                            <div id="approval-coverage" class="approval-coverage d-none"></div>
 
-                            <div class="row g-3">
-                                <div class="col-lg-3">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Requester Group</label>
-                                    <select id="approval-bulk-group" class="form-select form-select-sm rounded-3" onchange="updateApprovalBulkPreview()">
-                                        <option value="engineers">All Engineers</option>
-                                        <option value="active">All Active Users</option>
-                                        <option value="non_approvers">All Non-Approvers</option>
-                                        <option value="manual">Manual Selection</option>
-                                    </select>
+                            <div class="approval-work-panel">
+                                <div class="approval-section-title">
+                                    <i class="fa-solid fa-diagram-project me-2 text-primary"></i>Who Approves Whom
                                 </div>
-                                <div class="col-lg-3">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Approver</label>
-                                    <select id="approval-bulk-approver" class="form-select form-select-sm rounded-3" onchange="updateApprovalBulkPreview()"></select>
+                                <div class="row g-2 align-items-end mb-3">
+                                    <div class="col-md-5">
+                                        <label class="small fw-bold text-muted text-uppercase mb-1" for="approval-routes-search">Search</label>
+                                        <input type="search" id="approval-routes-search" class="form-control form-control-sm rounded-3" placeholder="Requester or approver name" oninput="renderApprovalRoutes()">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="small fw-bold text-muted text-uppercase mb-1" for="approval-routes-scope-filter">Request Type</label>
+                                        <select id="approval-routes-scope-filter" class="form-select form-select-sm rounded-3" onchange="renderApprovalRoutes()"></select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch mb-1">
+                                            <input class="form-check-input" type="checkbox" id="approval-routes-show-inactive" onchange="renderApprovalRoutes()">
+                                            <label class="form-check-label small fw-bold" for="approval-routes-show-inactive">Show inactive routes</label>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="col-lg-3">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Request Type</label>
-                                    <select id="approval-bulk-scope" class="form-select form-select-sm rounded-3" onchange="updateApprovalBulkPreview()"></select>
+                                <div class="approval-info-note mb-3">
+                                    <i class="fa-solid fa-circle-info me-2"></i>An <strong>All Requests</strong> route covers every request type. A route for one request type adds another approver for that type; it does not replace the All Requests approver.
                                 </div>
-                                <div class="col-lg-3">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Preview</label>
-                                    <div id="approval-bulk-preview" class="approval-bulk-preview">0 selected</div>
-                                </div>
+                                <div id="approval-routes-summary" class="approval-route-summary small fw-bold text-muted mb-2"></div>
+                                <div id="approval-routes-list" class="approval-routes-list"></div>
                             </div>
 
-                            <div id="approval-bulk-manual-wrap" class="approval-bulk-manual-wrap mt-3 d-none">
-                                <label class="small fw-bold text-muted text-uppercase mb-1">Manual Requesters</label>
-                                <div id="approval-bulk-manual-list" class="approval-bulk-manual-list"></div>
-                            </div>
-
-                            <div class="approval-multi-note mt-3">
-                                <i class="fa-solid fa-circle-info me-2 text-primary"></i>
-                                Multi-approver mode: adding Robert will not remove Rodito. A requester can have multiple active approvers for the same request type.
-                            </div>
-
-                            <button type="button" class="btn btn-outline-indigo fw-bold rounded-3 mt-3" onclick="saveApprovalRoutesBulk()">
-                                <i class="fa-solid fa-user-plus me-2"></i>Add Bulk Approver Routes
-                            </button>
-                        </div>
-
-                        <div class="approval-work-panel approval-current-routes-panel">
-                            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
-                                <div class="approval-section-title mb-0">
-                                    <i class="fa-solid fa-diagram-project me-2 text-primary"></i>Current Active Routes
+                            <div class="approval-danger-zone">
+                                <div>
+                                    <div class="approval-section-title mb-1 text-danger">Danger Zone</div>
+                                    <div class="approval-panel-note mb-0">Stops every active route at once. Past approvals are kept, and routes can be reactivated one by one.</div>
                                 </div>
                                 <button type="button" class="btn btn-outline-danger btn-sm fw-bold rounded-3" onclick="deleteAllApprovalRoutes()">
-                                    <i class="fa-solid fa-trash-can me-1"></i>Deactivate All Routes
+                                    <i class="fa-solid fa-ban me-1"></i>Deactivate All Routes
                                 </button>
                             </div>
-                            <div id="approval-routes-summary" class="approval-route-summary small fw-bold text-muted mb-2"></div>
-                            <div id="approval-routes-list" class="approval-routes-list"></div>
+                        </div>
+
+                        <div class="approval-routing-pane" role="tabpanel" data-approval-pane="add">
+                            <div class="approval-work-panel">
+                                <div class="approval-section-title">
+                                    <i class="fa-solid fa-user-plus me-2 text-indigo"></i>Add Approver Routes
+                                </div>
+                                <div class="approval-panel-note">Pick an approver and a request type, then tick one or many requesters. Existing routes to other approvers stay active.</div>
+
+                                <div class="row g-3">
+                                    <div class="col-lg-4">
+                                        <label class="small fw-bold text-muted text-uppercase mb-1" for="approval-add-approver">Approver</label>
+                                        <select id="approval-add-approver" class="form-select form-select-sm rounded-3" onchange="updateApprovalAddPreview()"></select>
+                                    </div>
+                                    <div class="col-lg-4">
+                                        <label class="small fw-bold text-muted text-uppercase mb-1" for="approval-add-scope">Request Type</label>
+                                        <select id="approval-add-scope" class="form-select form-select-sm rounded-3" onchange="updateApprovalAddPreview()"></select>
+                                    </div>
+                                    <div class="col-lg-4">
+                                        <label class="small fw-bold text-muted text-uppercase mb-1" for="approval-add-group">Quick Select</label>
+                                        <select id="approval-add-group" class="form-select form-select-sm rounded-3" onchange="applyApprovalAddGroup()">
+                                            <option value="manual">Pick manually</option>
+                                            <option value="engineers">All Engineers</option>
+                                            <option value="active">All Active Users</option>
+                                            <option value="non_approvers">All Non-Approvers</option>
+                                            <option value="none">Clear selection</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="mt-3">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1" for="approval-add-search">Requesters</label>
+                                    <input type="search" id="approval-add-search" class="form-control form-control-sm rounded-3 mb-2" placeholder="Search requesters by name or role" oninput="filterApprovalAddRequesters()">
+                                    <div id="approval-add-requesters" class="approval-bulk-manual-list"></div>
+                                </div>
+
+                                <div class="mt-3">
+                                    <div class="small fw-bold text-muted text-uppercase mb-1">Preview</div>
+                                    <div id="approval-add-preview" class="approval-bulk-preview">No requesters selected.</div>
+                                </div>
+
+                                <button type="button" class="btn btn-indigo fw-bold rounded-3 shadow-sm mt-3" onclick="saveApprovalRoutesBulk()">
+                                    <i class="fa-solid fa-floppy-disk me-2"></i>Save Routes
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="approval-routing-pane" role="tabpanel" data-approval-pane="people">
+                            <div class="approval-work-panel">
+                                <div class="approval-section-title">
+                                    <i class="fa-solid fa-user-shield me-2 text-success"></i>People &amp; Permissions
+                                </div>
+                                <div class="approval-panel-note">Open a person to change whether they can approve and what else their account may do. Each person is saved separately.</div>
+                                <div class="row g-2 align-items-end mb-3">
+                                    <div class="col-md-8">
+                                        <label class="small fw-bold text-muted text-uppercase mb-1" for="approval-users-search">Search</label>
+                                        <input type="search" id="approval-users-search" class="form-control form-control-sm rounded-3" placeholder="Name, username or role" oninput="filterApprovalUsers()">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="form-check form-switch mb-1">
+                                            <input class="form-check-input" type="checkbox" id="approval-users-approvers-only" onchange="filterApprovalUsers()">
+                                            <label class="form-check-label small fw-bold" for="approval-users-approvers-only">Approvers only</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="approval-users-count" class="small fw-bold text-muted mb-2"></div>
+                                <div id="approval-users-list" class="approval-users-list"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1800,10 +1827,35 @@
             leave_request: 'Leave Request',
             calibration_certificate: 'Calibration Certificate',
             travel_request: 'Travel Request',
+            travel_liquidation: 'Travel Liquidation',
             cash_advance: 'Cash Advance',
+            cash_advance_liquidation: 'Cash Advance Liquidation',
             request_for_payment: 'Request for Payment'
         };
         return map[scope] || scope;
+    }
+
+    // Liquidations are also approved through their parent request type's routes
+    // (can_user_approve_travel_liquidation / can_user_approve_cash_advance_liquidation).
+    const approvalScopeParents = {
+        travel_liquidation: 'travel_request',
+        cash_advance_liquidation: 'cash_advance'
+    };
+
+    function approvalSortedScopes() {
+        return [...(approvalRoutingState.scopes || [])].sort((a, b) => {
+            if (a === 'all') return -1;
+            if (b === 'all') return 1;
+            return approvalScopeLabel(a).localeCompare(approvalScopeLabel(b));
+        });
+    }
+
+    function approvalUserById(userId) {
+        return approvalRoutingState.users.find(user => Number(user.id) === Number(userId));
+    }
+
+    function approvalUserLabel(user) {
+        return user ? (user.display_name || user.username || 'User') : 'User';
     }
 
     function approvalRoleBadge(user) {
@@ -1818,32 +1870,460 @@
         return `<span class="badge ${cls}">${approvalEscape(label)}</span>`;
     }
 
-    function populateApprovalSelects() {
-        const requesterSelect = document.getElementById('approval-route-requester');
-        const approverSelect = document.getElementById('approval-route-approver');
-        const scopeSelect = document.getElementById('approval-route-scope');
-        if (!requesterSelect || !approverSelect || !scopeSelect) return;
-
-        requesterSelect.innerHTML = approvalRoutingState.users.map(user => {
-            return `<option value="${user.id}">${approvalEscape(user.display_name || user.username)} (${approvalEscape(user.username)})</option>`;
-        }).join('');
-
-        const approverPool = approvalRoutingState.approvers.length ? approvalRoutingState.approvers : approvalRoutingState.users;
-        approverSelect.innerHTML = approverPool.map(user => {
-            return `<option value="${user.id}">${approvalEscape(user.display_name || user.username)} (${approvalEscape(user.username)})</option>`;
-        }).join('');
-
-        scopeSelect.innerHTML = approvalRoutingState.scopes.map(scope => {
-            return `<option value="${approvalEscape(scope)}">${approvalEscape(approvalScopeLabel(scope))}</option>`;
-        }).join('');
-
-        if ([...scopeSelect.options].some(opt => opt.value === 'all')) {
-            scopeSelect.value = 'all';
-        }
-
-        populateApprovalBulkControls();
+    // An active route routes nothing when its approver is inactive or has lost approval
+    // rights. Read the approver from the loaded users so the answer stays current.
+    function approvalRouteProblem(route) {
+        const approver = approvalUserById(route.approver_user_id);
+        const isActive = approver ? Boolean(approver.is_active) : route.approver_active !== false;
+        const canApprove = approver ? Boolean(approver.can_approve_requests) : route.approver_can_approve !== false;
+        if (!isActive) return 'approver is inactive';
+        if (!canApprove) return 'approver cannot approve';
+        return '';
     }
 
+    function switchApprovalSubtab(name) {
+        const target = ['routes', 'add', 'people'].includes(name) ? name : 'routes';
+        document.querySelectorAll('.approval-routing-subtab').forEach(tab => {
+            const isActive = tab.getAttribute('data-approval-subtab') === target;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        document.querySelectorAll('.approval-routing-pane').forEach(pane => {
+            pane.classList.toggle('active', pane.getAttribute('data-approval-pane') === target);
+        });
+        try {
+            sessionStorage.setItem('medical_settings_approval_subtab', target);
+        } catch (err) {}
+    }
+
+    function setApprovalSelectOptions(select, optionsHtml, fallbackValue) {
+        const previous = select.value;
+        select.innerHTML = optionsHtml;
+        const values = [...select.options].map(option => option.value);
+        if (values.includes(previous)) {
+            select.value = previous;
+        } else if (fallbackValue !== undefined && values.includes(fallbackValue)) {
+            select.value = fallbackValue;
+        }
+    }
+
+    function populateApprovalSelects() {
+        const scopeFilter = document.getElementById('approval-routes-scope-filter');
+        const approverSelect = document.getElementById('approval-add-approver');
+        const scopeSelect = document.getElementById('approval-add-scope');
+        if (!scopeFilter || !approverSelect || !scopeSelect) return;
+
+        const scopeOptions = approvalSortedScopes().map(scope => {
+            return `<option value="${approvalEscape(scope)}">${approvalEscape(approvalScopeLabel(scope))}</option>`;
+        }).join('');
+        setApprovalSelectOptions(scopeFilter, `<option value="">Every request type</option>${scopeOptions}`, '');
+        setApprovalSelectOptions(scopeSelect, scopeOptions, 'all');
+
+        const userOption = user => {
+            return `<option value="${user.id}">${approvalEscape(approvalUserLabel(user))} (${approvalEscape(user.username)})</option>`;
+        };
+        const activeUsers = approvalRoutingState.users.filter(user => user.is_active);
+        const approvers = activeUsers.filter(user => user.can_approve_requests);
+        const others = activeUsers.filter(user => !user.can_approve_requests);
+        setApprovalSelectOptions(
+            approverSelect,
+            (approvers.length ? `<optgroup label="Approvers">${approvers.map(userOption).join('')}</optgroup>` : '') +
+            (others.length ? `<optgroup label="Not approvers yet (will be given approval rights)">${others.map(userOption).join('')}</optgroup>` : '')
+        );
+
+        renderApprovalAddRequesters();
+    }
+
+    function renderApprovalAddRequesters() {
+        const list = document.getElementById('approval-add-requesters');
+        if (!list) return;
+
+        const ticked = new Set(
+            Array.from(list.querySelectorAll('.approval-add-check:checked')).map(input => String(input.value))
+        );
+        const activeUsers = approvalRoutingState.users.filter(user => user.is_active);
+        list.innerHTML = activeUsers.length ? activeUsers.map(user => {
+            const role = user.display_role || user.role || 'User';
+            const search = `${approvalUserLabel(user)} ${user.username} ${role}`.toLowerCase();
+            return `
+                <label class="approval-bulk-manual-item" data-user-id="${user.id}" data-search="${approvalEscape(search)}">
+                    <input type="checkbox" class="form-check-input approval-add-check" value="${user.id}" ${ticked.has(String(user.id)) ? 'checked' : ''} onchange="onApprovalAddRequesterToggle()">
+                    <span>
+                        <strong>${approvalEscape(approvalUserLabel(user))}</strong>
+                        <small>@${approvalEscape(user.username)} - ${approvalEscape(role)}</small>
+                    </span>
+                </label>
+            `;
+        }).join('') : `<div class="text-muted small border rounded-3 p-3">No active users found.</div>`;
+
+        filterApprovalAddRequesters();
+        updateApprovalAddPreview();
+    }
+
+    function onApprovalAddRequesterToggle() {
+        const group = document.getElementById('approval-add-group');
+        if (group) group.value = 'manual';
+        updateApprovalAddPreview();
+    }
+
+    function applyApprovalAddGroup() {
+        const groupSelect = document.getElementById('approval-add-group');
+        const group = groupSelect?.value || 'manual';
+        if (group === 'manual') return;
+
+        document.querySelectorAll('.approval-add-check').forEach(input => {
+            const user = approvalUserById(input.value);
+            if (!user) return;
+            if (group === 'engineers') input.checked = approvalUserIsEngineer(user);
+            else if (group === 'active') input.checked = true;
+            else if (group === 'non_approvers') input.checked = !user.can_approve_requests;
+            else input.checked = false;
+        });
+        if (group === 'none' && groupSelect) groupSelect.value = 'manual';
+        updateApprovalAddPreview();
+    }
+
+    function filterApprovalAddRequesters() {
+        const query = String(document.getElementById('approval-add-search')?.value || '').trim().toLowerCase();
+        document.querySelectorAll('#approval-add-requesters .approval-bulk-manual-item').forEach(item => {
+            item.classList.toggle('d-none', Boolean(query) && !String(item.dataset.search || '').includes(query));
+        });
+    }
+
+    function getApprovalAddRequesterIds() {
+        const approverId = String(document.getElementById('approval-add-approver')?.value || '');
+        return Array.from(document.querySelectorAll('.approval-add-check:checked'))
+            .map(input => String(input.value))
+            .filter(userId => userId !== approverId)
+            .map(Number);
+    }
+
+    function updateApprovalAddPreview() {
+        const approverId = String(document.getElementById('approval-add-approver')?.value || '');
+        const scope = document.getElementById('approval-add-scope')?.value || 'all';
+        const preview = document.getElementById('approval-add-preview');
+        const plan = { fresh: [], reactivate: [], existing: [] };
+
+        // A user cannot approve their own requests, so the approver's own row is locked.
+        document.querySelectorAll('#approval-add-requesters .approval-bulk-manual-item').forEach(item => {
+            const isApprover = String(item.dataset.userId) === approverId;
+            const input = item.querySelector('.approval-add-check');
+            if (input) input.disabled = isApprover;
+            item.classList.toggle('is-disabled', isApprover);
+        });
+
+        getApprovalAddRequesterIds().forEach(requesterId => {
+            const name = approvalUserLabel(approvalUserById(requesterId));
+            const route = approvalRoutingState.routes.find(item => {
+                return Number(item.requester_user_id) === requesterId &&
+                    String(item.approver_user_id) === approverId &&
+                    (item.request_scope || 'all') === scope;
+            });
+            if (!route) plan.fresh.push(name);
+            else if (route.active) plan.existing.push(name);
+            else plan.reactivate.push(name);
+        });
+
+        if (preview) {
+            const line = (names, badgeClass, label) => names.length
+                ? `<div><span class="badge ${badgeClass} me-2">${label}: ${names.length}</span>${approvalEscape(names.join(', '))}</div>`
+                : '';
+            preview.innerHTML = (
+                line(plan.fresh, 'bg-success', 'New') +
+                line(plan.reactivate, 'bg-primary', 'Will reactivate') +
+                line(plan.existing, 'bg-secondary', 'Already active, skipped')
+            ) || 'No requesters selected.';
+        }
+        return plan;
+    }
+
+    function startApprovalRouteFor(userId) {
+        const scopeFilter = document.getElementById('approval-routes-scope-filter')?.value || '';
+        const scopeSelect = document.getElementById('approval-add-scope');
+        if (scopeSelect && scopeFilter) scopeSelect.value = scopeFilter;
+
+        document.querySelectorAll('.approval-add-check').forEach(input => {
+            input.checked = String(input.value) === String(userId);
+        });
+        const group = document.getElementById('approval-add-group');
+        if (group) group.value = 'manual';
+        updateApprovalAddPreview();
+        switchApprovalSubtab('add');
+        document.getElementById('approval-add-approver')?.focus();
+    }
+
+    function approvalCoverageGaps() {
+        const scopeFilter = document.getElementById('approval-routes-scope-filter')?.value || '';
+        const requestTypes = approvalRoutingState.scopes.filter(scope => scope !== 'all');
+        const wanted = scopeFilter && scopeFilter !== 'all' ? [scopeFilter] : requestTypes;
+
+        const workingScopes = {};
+        approvalRoutingState.routes.forEach(route => {
+            if (!route.active || approvalRouteProblem(route)) return;
+            const key = String(route.requester_user_id);
+            if (!workingScopes[key]) workingScopes[key] = new Set();
+            workingScopes[key].add(route.request_scope || 'all');
+        });
+
+        const gaps = [];
+        approvalRoutingState.users.filter(user => user.is_active).forEach(user => {
+            const scopes = workingScopes[String(user.id)] || new Set();
+            if (scopes.has('all')) return;
+            const missing = wanted.filter(scope => !scopes.has(scope) && !scopes.has(approvalScopeParents[scope]));
+            if (missing.length) {
+                gaps.push({ user, missing, missingAll: missing.length === wanted.length && wanted.length > 1 });
+            }
+        });
+        return gaps;
+    }
+
+    function renderApprovalCoverage() {
+        const container = document.getElementById('approval-coverage');
+        if (!container) return;
+
+        const wasOpen = Boolean(container.querySelector('details')?.open);
+        const gaps = approvalCoverageGaps();
+        container.classList.remove('d-none');
+        container.classList.toggle('is-clear', !gaps.length);
+
+        if (!gaps.length) {
+            container.innerHTML = `<i class="fa-solid fa-circle-check me-2"></i>Every active account has a working approver.`;
+            return;
+        }
+
+        const rows = gaps.map(gap => {
+            const detail = gap.missingAll
+                ? 'No approver for any request type'
+                : `No approver for: ${gap.missing.map(approvalScopeLabel).join(', ')}`;
+            return `
+                <div class="approval-coverage-row">
+                    <div>
+                        ${approvalEscape(approvalUserLabel(gap.user))}
+                        <small>@${approvalEscape(gap.user.username)} - ${approvalEscape(detail)}</small>
+                    </div>
+                    <button type="button" class="btn btn-outline-dark btn-sm fw-bold rounded-3 flex-shrink-0" onclick="startApprovalRouteFor(${gap.user.id})">Add route</button>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <details ${wasOpen ? 'open' : ''}>
+                <summary><span><i class="fa-solid fa-triangle-exclamation me-2"></i>${gaps.length} active account${gaps.length === 1 ? ' has' : 's have'} no working approver for at least one request type. Show names</span></summary>
+                ${rows}
+            </details>
+        `;
+    }
+
+    function renderApprovalRoutes() {
+        const container = document.getElementById('approval-routes-list');
+        const summary = document.getElementById('approval-routes-summary');
+        if (!container) return;
+
+        const query = String(document.getElementById('approval-routes-search')?.value || '').trim().toLowerCase();
+        const scopeFilter = document.getElementById('approval-routes-scope-filter')?.value || '';
+        const showInactive = Boolean(document.getElementById('approval-routes-show-inactive')?.checked);
+
+        const allRoutes = approvalRoutingState.routes || [];
+        const inactiveCount = allRoutes.filter(route => !route.active).length;
+
+        const groups = {};
+        allRoutes.forEach(route => {
+            if (!route.active && !showInactive) return;
+            if (scopeFilter && (route.request_scope || 'all') !== scopeFilter) return;
+            const key = String(route.requester_user_id || '');
+            if (!groups[key]) {
+                groups[key] = {
+                    requesterName: route.requester_name || route.requester_username || 'Requester',
+                    requesterUsername: route.requester_username || '',
+                    requesterActive: route.requester_active !== false,
+                    routes: []
+                };
+            }
+            groups[key].routes.push(route);
+        });
+
+        const visibleGroups = Object.values(groups)
+            .filter(group => {
+                if (!query) return true;
+                const haystack = [group.requesterName, group.requesterUsername]
+                    .concat(group.routes.map(route => `${route.approver_name || ''} ${route.approver_username || ''}`))
+                    .join(' ')
+                    .toLowerCase();
+                return haystack.includes(query);
+            })
+            .sort((a, b) => String(a.requesterName).localeCompare(String(b.requesterName)));
+
+        const shownRoutes = visibleGroups.reduce((total, group) => total + group.routes.length, 0);
+        if (summary) {
+            summary.textContent =
+                `Showing ${shownRoutes} route${shownRoutes === 1 ? '' : 's'} for ${visibleGroups.length} requester${visibleGroups.length === 1 ? '' : 's'}.` +
+                (!showInactive && inactiveCount ? ` ${inactiveCount} inactive route${inactiveCount === 1 ? '' : 's'} hidden.` : '');
+        }
+
+        if (!visibleGroups.length) {
+            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">${
+                allRoutes.some(route => route.active)
+                    ? 'No routes match this search or filter.'
+                    : 'No active approval routes yet. Use Add Routes to create them.'
+            }</div>`;
+            renderApprovalCoverage();
+            return;
+        }
+
+        const scopeOrder = approvalSortedScopes();
+        container.innerHTML = visibleGroups.map(group => {
+            const chips = group.routes
+                .sort((a, b) => {
+                    const scopeCompare = scopeOrder.indexOf(a.request_scope || 'all') - scopeOrder.indexOf(b.request_scope || 'all');
+                    if (scopeCompare !== 0) return scopeCompare;
+                    return String(a.approver_name || '').localeCompare(String(b.approver_name || ''));
+                })
+                .map(route => {
+                    const approverLabel = route.approver_name || route.approver_username || 'Approver';
+                    const problem = route.active ? approvalRouteProblem(route) : '';
+                    const chipClass = !route.active ? 'is-inactive' : (problem ? 'is-stale' : '');
+                    const icon = !route.active ? 'fa-circle-pause' : (problem ? 'fa-triangle-exclamation' : 'fa-user-check');
+                    const note = !route.active ? ' (inactive route)' : (problem ? ` (${problem})` : '');
+                    const action = route.active
+                        ? `<button type="button" class="approval-chip-action is-remove" title="Deactivate this route" aria-label="Deactivate route to ${approvalEscape(approverLabel)}" onclick="deleteApprovalRoute(${route.id})"><i class="fa-solid fa-xmark"></i></button>`
+                        : `<button type="button" class="approval-chip-action is-restore" onclick="reactivateApprovalRoute(${route.id})">Reactivate</button>`;
+                    return `
+                        <div class="approval-approver-chip ${chipClass}">
+                            <span><i class="fa-solid ${icon} me-1"></i>${approvalEscape(approverLabel)} <span class="approval-chip-scope">· ${approvalEscape(approvalScopeLabel(route.request_scope || 'all'))}${approvalEscape(note)}</span></span>
+                            ${action}
+                        </div>
+                    `;
+                }).join('');
+
+            return `
+                <div class="approval-route-card">
+                    <div>
+                        <div class="approval-route-line">${approvalEscape(group.requesterName)}</div>
+                        <div class="approval-user-meta">
+                            @${approvalEscape(group.requesterUsername)}${group.requesterActive ? '' : ' <span class="badge bg-secondary">Inactive account</span>'}
+                        </div>
+                    </div>
+                    <div class="approval-approver-chip-list">${chips}</div>
+                </div>
+            `;
+        }).join('');
+
+        renderApprovalCoverage();
+    }
+
+    function approvalSwitchHtml(user, key, inputClass, isChecked, label, help, handler) {
+        const inputId = `approval-u${user.id}-${key}`;
+        return `
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input ${inputClass}" type="checkbox" id="${inputId}" ${isChecked ? 'checked' : ''}${handler ? ` onchange="${handler}(this)"` : ''}>
+                <label class="form-check-label small fw-bold" for="${inputId}">${label}</label>
+            </div>
+            ${help ? `<div class="form-text small">${help}</div>` : ''}
+        `;
+    }
+
+    function approvalUserCardHtml(user, isOpen) {
+        const inventoryBranch = user.stock_inventory_branch_code || '';
+        const role = user.display_role || user.role || 'User';
+        const search = `${approvalUserLabel(user)} ${user.username} ${role}`.toLowerCase();
+        const grantCount = [
+            user.can_manage_stock_inventory, user.hr_schedule_view, user.personnel_admin_access,
+            user.reports_admin_access, user.schedule_admin_access, user.po_admin_access,
+            user.reimbursement_tracker_access
+        ].filter(Boolean).length;
+        const badges = [
+            user.approver_only ? '<span class="badge bg-info text-dark">Approver-only</span>'
+                : (user.can_approve_requests ? '<span class="badge bg-success">Approver</span>' : ''),
+            grantCount ? `<span class="badge bg-light text-dark border">${grantCount} permission${grantCount === 1 ? '' : 's'}</span>` : '',
+            user.is_active ? '' : '<span class="badge bg-secondary">Inactive</span>'
+        ].join('');
+        const titleId = `approval-u${user.id}-title`;
+        const branchId = `approval-u${user.id}-branch`;
+        const francisTSRWithoutEquipmentControl = approvalUserIsFrancis(user) ? `
+                    <div class="mt-3">
+                        ${approvalSwitchHtml(user, 'tsr-without-equipment', 'tsr-without-equipment-input', user.can_create_tsr_without_equipment, 'Allow TSR without assigned equipment', 'Francis may create a TSR for a client-linked schedule when Calendar has no assigned equipment. The server still verifies the client schedule and keeps product/serial blank.')}
+                    </div>` : '';
+
+        return `
+            <details class="approval-user-card" data-user-id="${user.id}" data-search="${approvalEscape(search)}" data-approver="${user.can_approve_requests ? '1' : '0'}" ${isOpen ? 'open' : ''}>
+                <summary>
+                    <div>
+                        <div class="approval-user-name">${approvalEscape(approvalUserLabel(user))}</div>
+                        <div class="approval-user-meta">@${approvalEscape(user.username)} ${approvalRoleBadge(user)}</div>
+                    </div>
+                    <div class="approval-user-badges">
+                        <span class="badge bg-warning text-dark approval-user-dirty-badge">Unsaved changes</span>
+                        ${badges}
+                        <i class="fa-solid fa-chevron-right approval-user-chevron" aria-hidden="true"></i>
+                    </div>
+                </summary>
+                <div class="approval-user-body">
+                    <div class="row g-3 align-items-start">
+                        <div class="col-md-3">
+                            ${approvalSwitchHtml(user, 'can-approve', 'approval-can-approve', user.can_approve_requests, 'Can Approve', '')}
+                        </div>
+                        <div class="col-md-3">
+                            ${approvalSwitchHtml(user, 'active', 'approval-active-input', user.is_active, 'Active', '')}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small fw-bold mb-1" for="${titleId}">Title printed under approvals</label>
+                            <input type="text" id="${titleId}" class="form-control form-control-sm approval-title-input" value="${approvalEscape(user.approval_title || '')}" placeholder="e.g. Vice President" maxlength="100">
+                        </div>
+                    </div>
+                    ${francisTSRWithoutEquipmentControl}
+                    <div class="mt-3">
+                        ${approvalSwitchHtml(user, 'approver-only', 'approval-approver-only-input', user.approver_only, 'Approver-only view', 'Use for executives/approvers who should only see Dashboard, My Requests, Approvals, Settings, and Logout.', 'toggleApprovalOnlyMode')}
+                    </div>
+                    <div class="border rounded-3 p-3 mt-3">
+                        <div class="row g-3 align-items-start">
+                            <div class="col-lg-4">
+                                ${approvalSwitchHtml(user, 'stock-access', 'stock-inventory-access-input', user.can_manage_stock_inventory, 'Can Manage Stock Inventory', 'Allows item registration and daily IN/OUT transactions.', 'toggleStockInventoryAccess')}
+                            </div>
+                            <div class="col-lg-4">
+                                ${approvalSwitchHtml(user, 'stock-only', 'stock-inventory-only-input', user.stock_inventory_only, 'Stock Inventory-only view', 'Restricts this account to inventory work and password settings.', 'toggleStockInventoryOnlyMode')}
+                            </div>
+                            <div class="col-lg-4">
+                                <label class="small fw-bold mb-1" for="${branchId}">Assigned Inventory Branch</label>
+                                <select id="${branchId}" class="form-select form-select-sm stock-inventory-branch-input">
+                                    <option value="">Select branch</option>
+                                    <option value="BC01" ${inventoryBranch === 'BC01' ? 'selected' : ''}>BC01 - Manila/Main</option>
+                                    <option value="BC02" ${inventoryBranch === 'BC02' ? 'selected' : ''}>BC02 - Cebu</option>
+                                    <option value="BC03" ${inventoryBranch === 'BC03' ? 'selected' : ''}>BC03 - Davao</option>
+                                    <option value="BC02_BC03" ${inventoryBranch === 'BC02_BC03' ? 'selected' : ''}>Cebu + Davao</option>
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                ${approvalSwitchHtml(user, 'hr-schedule', 'hr-schedule-view-input', user.hr_schedule_view, 'HR Schedule View', 'Read-only calendar access showing client name, assigned engineers, dates, times, and status only.')}
+                            </div>
+                            <div class="col-lg-4">
+                                ${approvalSwitchHtml(user, 'personnel-admin', 'personnel-admin-access-input', user.personnel_admin_access, 'Personnel management access', 'Add and edit personnel records, plus personnel export. Delete remains superadmin/regional-admin only.', 'toggleAdminCapability')}
+                            </div>
+                            <div class="col-lg-4">
+                                ${approvalSwitchHtml(user, 'reports-admin', 'reports-admin-access-input', user.reports_admin_access, 'Reports access', 'Open Analytics and the full reporting/archive read and export surfaces.', 'toggleAdminCapability')}
+                            </div>
+                            <div class="col-lg-4">
+                                ${approvalSwitchHtml(user, 'schedule-admin', 'schedule-admin-access-input', user.schedule_admin_access, 'Schedule management access', 'Create, edit, move, and complete calendar schedules across the schedule surface.', 'toggleAdminCapability')}
+                            </div>
+                            <div class="col-lg-4">
+                                ${approvalSwitchHtml(user, 'po-admin', 'po-admin-access-input', user.po_admin_access, 'P.O. records access', 'Add, edit, and remove client purchase-order records.', 'toggleAdminCapability')}
+                            </div>
+                            <div class="col-lg-4">
+                                ${approvalSwitchHtml(user, 'reimbursement-tracker', 'reimbursement-tracker-access-input', user.reimbursement_tracker_access, 'Reimbursement tracker access', 'Add, edit, delete, and export standalone reimbursement tracker rows.', 'toggleAdminCapability')}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-end mt-3">
+                        <button type="button" class="btn btn-indigo btn-sm fw-bold rounded-3" onclick="saveApprovalUser(${user.id})">
+                            <i class="fa-solid fa-check me-1"></i>Save ${approvalEscape(approvalUserLabel(user))}
+                        </button>
+                    </div>
+                </div>
+            </details>
+        `;
+    }
+
+    // Cards with unsaved edits are left untouched, so saving one person or changing a
+    // route never discards what was typed on another person.
     function renderApprovalUsers() {
         const container = document.getElementById('approval-users-list');
         if (!container) return;
@@ -1853,225 +2333,41 @@
             return;
         }
 
-        container.innerHTML = approvalRoutingState.users.map(user => {
-            const checked = user.can_approve_requests ? 'checked' : '';
-            const activeChecked = user.is_active ? 'checked' : '';
-            const approverOnlyChecked = user.approver_only ? 'checked' : '';
-            const inventoryChecked = user.can_manage_stock_inventory ? 'checked' : '';
-            const inventoryOnlyChecked = user.stock_inventory_only ? 'checked' : '';
-            const hrScheduleViewChecked = user.hr_schedule_view ? 'checked' : '';
-            const personnelAdminChecked = user.personnel_admin_access ? 'checked' : '';
-            const reportsAdminChecked = user.reports_admin_access ? 'checked' : '';
-            const scheduleAdminChecked = user.schedule_admin_access ? 'checked' : '';
-            const poAdminChecked = user.po_admin_access ? 'checked' : '';
-            const reimbursementTrackerChecked = user.reimbursement_tracker_access ? 'checked' : '';
-            const francisTSRWithoutEquipmentChecked = user.can_create_tsr_without_equipment ? 'checked' : '';
-            const francisTSRWithoutEquipmentControl = approvalUserIsFrancis(user) ? `
-                    <div class="form-check form-switch mt-3">
-                        <input class="form-check-input tsr-without-equipment-input" type="checkbox" ${francisTSRWithoutEquipmentChecked}>
-                        <label class="form-check-label small fw-bold">Allow TSR without assigned equipment</label>
-                        <div class="form-text small">Francis may create a TSR for a client-linked schedule when Calendar has no assigned equipment. The server still verifies the client schedule and keeps product/serial blank.</div>
-                    </div>` : '';
-            const inventoryBranch = user.stock_inventory_branch_code || '';
-            return `
-                <div class="approval-user-card" data-user-id="${user.id}">
-                    <div class="approval-user-main">
-                        <div>
-                            <div class="approval-user-name">${approvalEscape(user.display_name || user.username)}</div>
-                            <div class="approval-user-meta">@${approvalEscape(user.username)} ${approvalRoleBadge(user)}</div>
-                        </div>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input approval-can-approve" type="checkbox" ${checked}>
-                            <label class="form-check-label small fw-bold">Can Approve</label>
-                        </div>
-                    </div>
-                    <div class="row g-2 mt-2">
-                        <div class="col-md-5">
-                            <input type="text" class="form-control form-control-sm approval-title-input" value="${approvalEscape(user.approval_title || '')}" placeholder="Title e.g. Vice President">
-                        </div>
-                        <div class="col-md-4">
-                            <input type="text" class="form-control form-control-sm approval-scope-input" value="${approvalEscape(user.approval_scope || '')}" placeholder="Scope e.g. executive">
-                        </div>
-                        <div class="col-md-3 d-flex align-items-center gap-2">
-                            <div class="form-check form-switch mb-0">
-                                <input class="form-check-input approval-active-input" type="checkbox" ${activeChecked}>
-                                <label class="form-check-label small fw-bold">Active</label>
-                            </div>
-                        </div>
-                    </div>
-                    ${francisTSRWithoutEquipmentControl}
-                    <div class="form-check form-switch mt-2">
-                        <input class="form-check-input approval-approver-only-input" type="checkbox" ${approverOnlyChecked} onchange="toggleApprovalOnlyMode(this)">
-                        <label class="form-check-label small fw-bold">Approver-only view</label>
-                        <div class="form-text small">Use for executives/approvers who should only see Dashboard, My Requests, Approvals, Settings, and Logout.</div>
-                    </div>
-                    <div class="border rounded-3 p-3 mt-3">
-                        <div class="row g-3 align-items-start">
-                            <div class="col-lg-4">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input stock-inventory-access-input" type="checkbox" ${inventoryChecked} onchange="toggleStockInventoryAccess(this)">
-                                    <label class="form-check-label small fw-bold">Can Manage Stock Inventory</label>
-                                </div>
-                                <div class="form-text small">Allows item registration and daily IN/OUT transactions.</div>
-                            </div>
-                            <div class="col-lg-4">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input stock-inventory-only-input" type="checkbox" ${inventoryOnlyChecked} onchange="toggleStockInventoryOnlyMode(this)">
-                                    <label class="form-check-label small fw-bold">Stock Inventory-only view</label>
-                                </div>
-                                <div class="form-text small">Restricts this account to inventory work and password settings.</div>
-                            </div>
-                            <div class="col-lg-4">
-                                <label class="small fw-bold mb-1">Assigned Inventory Branch</label>
-                                <select class="form-select form-select-sm stock-inventory-branch-input">
-                                    <option value="">Select branch</option>
-                                    <option value="BC01" ${inventoryBranch === 'BC01' ? 'selected' : ''}>BC01 - Manila/Main</option>
-                                    <option value="BC02" ${inventoryBranch === 'BC02' ? 'selected' : ''}>BC02 - Cebu</option>
-                                    <option value="BC03" ${inventoryBranch === 'BC03' ? 'selected' : ''}>BC03 - Davao</option>
-                                    <option value="BC02_BC03" ${inventoryBranch === 'BC02_BC03' ? 'selected' : ''}>Cebu + Davao</option>
-                                </select>
-                            </div>
-                            <div class="col-12">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input hr-schedule-view-input" type="checkbox" ${hrScheduleViewChecked}>
-                                    <label class="form-check-label small fw-bold">HR Schedule View</label>
-                                </div>
-                                <div class="form-text small">Read-only calendar access showing client name, assigned engineers, dates, times, and status only.</div>
-                            </div>
-                            <div class="col-lg-4">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input personnel-admin-access-input" type="checkbox" ${personnelAdminChecked} onchange="toggleAdminCapability(this)">
-                                    <label class="form-check-label small fw-bold">Personnel management access</label>
-                                </div>
-                                <div class="form-text small">Add and edit personnel records, plus personnel export. Delete remains superadmin/regional-admin only.</div>
-                            </div>
-                            <div class="col-lg-4">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input reports-admin-access-input" type="checkbox" ${reportsAdminChecked} onchange="toggleAdminCapability(this)">
-                                    <label class="form-check-label small fw-bold">Reports access</label>
-                                </div>
-                                <div class="form-text small">Open Analytics and the full reporting/archive read and export surfaces.</div>
-                            </div>
-                            <div class="col-lg-4">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input schedule-admin-access-input" type="checkbox" ${scheduleAdminChecked} onchange="toggleAdminCapability(this)">
-                                    <label class="form-check-label small fw-bold">Schedule management access</label>
-                                </div>
-                                <div class="form-text small">Create, edit, move, and complete calendar schedules across the schedule surface.</div>
-                            </div>
-                            <div class="col-lg-4">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input po-admin-access-input" type="checkbox" ${poAdminChecked} onchange="toggleAdminCapability(this)">
-                                    <label class="form-check-label small fw-bold">P.O. records access</label>
-                                </div>
-                                <div class="form-text small">Add, edit, and remove client purchase-order records.</div>
-                            </div>
-                            <div class="col-lg-4">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input reimbursement-tracker-access-input" type="checkbox" ${reimbursementTrackerChecked} onchange="toggleAdminCapability(this)">
-                                    <label class="form-check-label small fw-bold">Reimbursement tracker access</label>
-                                </div>
-                                <div class="form-text small">Add, edit, delete, and export standalone reimbursement tracker rows.</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="text-end mt-2">
-                        <button type="button" class="btn btn-outline-indigo btn-sm fw-bold rounded-3" onclick="saveApprovalUser(${user.id})">
-                            <i class="fa-solid fa-check me-1"></i>Save
-                        </button>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        if (!container.dataset.dirtyBound) {
+            container.dataset.dirtyBound = '1';
+            const markDirty = event => {
+                const card = event.target.closest('.approval-user-card');
+                if (card) card.classList.add('is-dirty');
+            };
+            container.addEventListener('input', markDirty);
+            container.addEventListener('change', markDirty);
+        }
+
+        if (!container.querySelector('.approval-user-card')) container.innerHTML = '';
+        approvalRoutingState.users.forEach(user => {
+            const existing = container.querySelector(`.approval-user-card[data-user-id="${user.id}"]`);
+            if (existing && existing.classList.contains('is-dirty')) return;
+            const html = approvalUserCardHtml(user, Boolean(existing && existing.open));
+            if (existing) existing.outerHTML = html;
+            else container.insertAdjacentHTML('beforeend', html);
+        });
+
+        filterApprovalUsers();
     }
 
-    function renderApprovalRoutes() {
-        const container = document.getElementById('approval-routes-list');
-        const summary = document.getElementById('approval-routes-summary');
-        if (!container) return;
-
-        const activeRoutes = (approvalRoutingState.routes || [])
-            .filter(route => Boolean(route.active))
-            .sort((a, b) => {
-                const scopeCompare = String(a.request_scope || '').localeCompare(String(b.request_scope || ''));
-                if (scopeCompare !== 0) return scopeCompare;
-                const requesterCompare = String(a.requester_name || a.requester_username || '').localeCompare(String(b.requester_name || b.requester_username || ''));
-                if (requesterCompare !== 0) return requesterCompare;
-                return String(a.approver_name || a.approver_username || '').localeCompare(String(b.approver_name || b.approver_username || ''));
-            });
-
-        const inactiveCount = (approvalRoutingState.routes || []).filter(route => !Boolean(route.active)).length;
-        const uniqueRequesterScopeKeys = new Set(activeRoutes.map(route => `${route.request_scope || 'all'}::${route.requester_user_id}`));
-        if (summary) {
-            summary.textContent = activeRoutes.length
-                ? `Showing ${activeRoutes.length} active approver assignment(s) for ${uniqueRequesterScopeKeys.size} requester/request type combination(s). ${inactiveCount ? inactiveCount + ' inactive route(s) hidden.' : ''}`
-                : `${inactiveCount ? inactiveCount + ' inactive route(s) hidden. ' : ''}No active approval routes.`;
-        }
-
-        if (!activeRoutes.length) {
-            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">No active approval routes yet. Add a single route or create routes in bulk.</div>`;
-            return;
-        }
-
-        const groupedByScope = {};
-        activeRoutes.forEach(route => {
-            const scope = route.request_scope || 'all';
-            const requesterKey = `${route.requester_user_id || ''}`;
-            if (!groupedByScope[scope]) groupedByScope[scope] = {};
-            if (!groupedByScope[scope][requesterKey]) {
-                groupedByScope[scope][requesterKey] = {
-                    requesterName: route.requester_name || route.requester_username || 'Requester',
-                    requesterUsername: route.requester_username || '',
-                    routes: []
-                };
-            }
-            groupedByScope[scope][requesterKey].routes.push(route);
+    function filterApprovalUsers() {
+        const query = String(document.getElementById('approval-users-search')?.value || '').trim().toLowerCase();
+        const approversOnly = Boolean(document.getElementById('approval-users-approvers-only')?.checked);
+        const cards = document.querySelectorAll('#approval-users-list .approval-user-card');
+        let shown = 0;
+        cards.forEach(card => {
+            const matches = (!query || String(card.dataset.search || '').includes(query)) &&
+                (!approversOnly || card.dataset.approver === '1');
+            card.classList.toggle('d-none', !matches);
+            if (matches) shown += 1;
         });
-
-        const htmlParts = [];
-        Object.keys(groupedByScope).sort().forEach(scope => {
-            htmlParts.push(`<div class="approval-route-scope-header mt-2 mb-2"><span class="badge bg-light text-dark border">${approvalEscape(approvalScopeLabel(scope))}</span></div>`);
-
-            Object.values(groupedByScope[scope])
-                .sort((a, b) => String(a.requesterName).localeCompare(String(b.requesterName)))
-                .forEach(group => {
-                    const approverChips = group.routes.map(route => {
-                        const approverLabel = route.approver_name || route.approver_username || 'Approver';
-                        return `
-                            <div class="approval-approver-chip">
-                                <span><i class="fa-solid fa-user-check me-1 text-success"></i>${approvalEscape(approverLabel)}</span>
-                                <button type="button" class="approval-chip-remove" title="Deactivate this route" onclick="deleteApprovalRoute(${route.id})">
-                                    <i class="fa-solid fa-xmark"></i>
-                                </button>
-                            </div>
-                        `;
-                    }).join('');
-
-                    const routeIds = group.routes.map(route => `#${route.id}`).join(', ');
-                    const approverCount = group.routes.length;
-
-                    htmlParts.push(`
-                        <div class="approval-route-card approval-route-card-grouped">
-                            <div class="approval-route-group-main">
-                                <div>
-                                    <div class="approval-route-line">
-                                        <span>${approvalEscape(group.requesterName)}</span>
-                                        <span class="approval-route-count-badge">${approverCount} approver${approverCount === 1 ? '' : 's'}</span>
-                                    </div>
-                                    <div class="approval-user-meta">
-                                        @${approvalEscape(group.requesterUsername)} - Route ID(s): ${approvalEscape(routeIds)}
-                                    </div>
-                                </div>
-                                <div class="approval-approver-chip-list">
-                                    ${approverChips}
-                                </div>
-                            </div>
-                        </div>
-                    `);
-                });
-        });
-
-        container.innerHTML = htmlParts.join('');
+        const count = document.getElementById('approval-users-count');
+        if (count) count.textContent = `Showing ${shown} of ${cards.length} account${cards.length === 1 ? '' : 's'}.`;
     }
 
     async function loadApprovalRouting() {
@@ -2081,7 +2377,8 @@
 
         if (!loading || !content) return;
 
-        loading.classList.remove('d-none');
+        const firstLoad = content.classList.contains('d-none');
+        if (firstLoad) loading.classList.remove('d-none');
         if (error) error.classList.add('d-none');
 
         try {
@@ -2104,7 +2401,14 @@
             populateApprovalSelects();
             renderApprovalUsers();
             renderApprovalRoutes();
-            content.classList.remove('d-none');
+            if (firstLoad) {
+                let savedSubtab = 'routes';
+                try {
+                    savedSubtab = sessionStorage.getItem('medical_settings_approval_subtab') || 'routes';
+                } catch (err) {}
+                switchApprovalSubtab(savedSubtab);
+                content.classList.remove('d-none');
+            }
         } catch (err) {
             console.error('Approval routing load failed:', err);
             if (error) {
@@ -2120,6 +2424,7 @@
         const card = document.querySelector(`.approval-user-card[data-user-id="${userId}"]`);
         if (!card) return;
 
+        // approval_scope is deliberately not sent: the server keeps the stored value.
         const payload = {
             user_id: userId,
             can_approve_requests: Boolean(card.querySelector('.approval-can-approve')?.checked),
@@ -2134,10 +2439,9 @@
             po_admin_access: Boolean(card.querySelector('.po-admin-access-input')?.checked),
             reimbursement_tracker_access: Boolean(card.querySelector('.reimbursement-tracker-access-input')?.checked),
             approval_title: card.querySelector('.approval-title-input')?.value || '',
-            approval_scope: card.querySelector('.approval-scope-input')?.value || '',
             is_active: Boolean(card.querySelector('.approval-active-input')?.checked)
         };
-        const targetUser = approvalRoutingState.users.find(user => Number(user.id) === Number(userId));
+        const targetUser = approvalUserById(userId);
         if (approvalUserIsFrancis(targetUser)) {
             payload.can_create_tsr_without_equipment = Boolean(card.querySelector('.tsr-without-equipment-input')?.checked);
         }
@@ -2156,10 +2460,203 @@
                 throw new Error(data.error || data.message || 'Approver update failed.');
             }
 
+            card.classList.remove('is-dirty');
             await loadApprovalRouting();
-            settingsAlert('Approval user settings saved.', 'success');
+            settingsAlert(`Settings saved for ${approvalUserLabel(targetUser)}.`, 'success');
         } catch (err) {
             settingsAlert('Error: ' + (err.message || 'Approver update failed.'));
+        }
+    }
+
+    async function saveApprovalRoutesBulk() {
+        const approverId = document.getElementById('approval-add-approver')?.value;
+        const scope = document.getElementById('approval-add-scope')?.value || 'all';
+        const requesterIds = getApprovalAddRequesterIds();
+
+        if (!approverId) {
+            settingsAlert('Please select an approver.');
+            return;
+        }
+        if (!requesterIds.length) {
+            settingsAlert('Tick at least one requester. A user cannot approve their own requests.');
+            return;
+        }
+
+        const plan = updateApprovalAddPreview();
+        const changeCount = plan.fresh.length + plan.reactivate.length;
+        if (!changeCount) {
+            settingsAlert('Every selected requester already has this route.');
+            return;
+        }
+
+        const approverUser = approvalUserById(approverId);
+        const approverName = approvalUserLabel(approverUser);
+        const grantNote = approverUser && !approverUser.can_approve_requests
+            ? `\n\n${approverName} is not an approver yet and will be given approval rights.`
+            : '';
+
+        const shouldSave = await settingsConfirmDialog({
+            title: 'Save Approval Routes?',
+            message: `Route ${changeCount} requester(s) to ${approverName} for ${approvalScopeLabel(scope)}? Routes to other approvers stay active.${grantNote}`,
+            confirmText: 'Save Routes',
+            cancelText: 'Cancel',
+            tone: 'warning',
+            icon: 'route'
+        });
+        if (!shouldSave) return;
+
+        try {
+            const res = await fetch('/settings/save-approval-routes-bulk', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({
+                    requester_user_ids: requesterIds,
+                    approver_user_id: approverId,
+                    request_scope: scope,
+                    active: true
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Approval route save failed.');
+            }
+
+            document.querySelectorAll('.approval-add-check').forEach(input => { input.checked = false; });
+            await loadApprovalRouting();
+
+            const skipped = (data.skipped || []).map(item => `${item.username || 'User #' + item.user_id}: ${item.reason}`);
+            settingsAlert(
+                `Routes saved. Added: ${data.created_count || 0}, reactivated: ${data.updated_count || 0}, skipped: ${data.skipped_count || 0}.` +
+                (data.approver_granted ? ` ${approverName} was given approval rights.` : '') +
+                (skipped.length ? `\n\nSkipped:\n${skipped.join('\n')}` : ''),
+                'success'
+            );
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Approval route save failed.'));
+        }
+    }
+
+    async function reactivateApprovalRoute(routeId) {
+        const route = approvalRoutingState.routes.find(item => Number(item.id) === Number(routeId));
+        if (!route) return;
+
+        try {
+            const res = await fetch('/settings/save-approval-route', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({
+                    requester_user_id: route.requester_user_id,
+                    approver_user_id: route.approver_user_id,
+                    request_scope: route.request_scope || 'all',
+                    active: true
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Approval route reactivation failed.');
+            }
+
+            await loadApprovalRouting();
+            settingsAlert(
+                'Approval route reactivated.' +
+                (data.approver_granted ? ` ${route.approver_name || 'The approver'} was given approval rights.` : ''),
+                'success'
+            );
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Approval route reactivation failed.'));
+        }
+    }
+
+    async function deleteApprovalRoute(routeId) {
+        const route = approvalRoutingState.routes.find(item => Number(item.id) === Number(routeId));
+        const routeText = route
+            ? `${route.requester_name || route.requester_username}'s ${approvalScopeLabel(route.request_scope || 'all')} route to ${route.approver_name || route.approver_username}`
+            : 'This approval route';
+        const shouldDeactivate = await settingsConfirmDialog({
+            title: 'Deactivate Approval Route?',
+            message: `${routeText} will stop being used. Past activity stays available, and the route can be reactivated later.`,
+            confirmText: 'Deactivate',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'route'
+        });
+        if (!shouldDeactivate) return;
+
+        try {
+            const res = await fetch('/settings/delete-approval-route', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({ route_id: routeId })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Approval route deactivation failed.');
+            }
+
+            await loadApprovalRouting();
+            settingsAlert('Approval route deactivated.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Approval route deactivation failed.'));
+        }
+    }
+
+    async function deleteAllApprovalRoutes() {
+        const routeCount = (approvalRoutingState.routes || []).filter(route => Boolean(route.active)).length;
+        if (!routeCount) {
+            settingsAlert('There are no active approval routes to deactivate.');
+            return;
+        }
+
+        const shouldDeactivateAll = await settingsConfirmDialog({
+            title: 'Deactivate All Approval Routes?',
+            message: `This will deactivate all ${routeCount} active approval route(s). Continue?`,
+            confirmText: 'Continue',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'trash'
+        });
+        if (!shouldDeactivateAll) return;
+
+        const confirmText = await settingsPromptDialog({
+            title: 'Confirm Route Deactivation',
+            message: 'Type DELETE ALL ROUTES to stop using every active approval route. Past activity stays available for reference.',
+            inputLabel: 'Confirmation Text',
+            placeholder: 'DELETE ALL ROUTES',
+            inputHelp: 'This stops active approval routing. It does not erase past activity.',
+            confirmText: 'Deactivate Routes',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'trash'
+        });
+        if (!confirmText) return;
+
+        try {
+            const res = await fetch('/settings/delete-all-approval-routes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({ confirm_text: confirmText })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Deactivate all approval routes failed.');
+            }
+
+            await loadApprovalRouting();
+            settingsAlert(data.message || 'All active approval routes were deactivated.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Deactivate all approval routes failed.'));
         }
     }
 
@@ -2346,271 +2843,6 @@
     function approvalUserIsFrancis(user) {
         return String(user?.username || '').trim().toLowerCase() === 'francis';
     }
-
-    function getApprovalBulkRequesterIds() {
-        const group = document.getElementById('approval-bulk-group')?.value || 'engineers';
-        const approverId = String(document.getElementById('approval-bulk-approver')?.value || '');
-
-        let selectedUsers = [];
-
-        if (group === 'manual') {
-            selectedUsers = Array.from(document.querySelectorAll('.approval-bulk-manual-check:checked')).map(input => {
-                const userId = Number(input.value);
-                return approvalRoutingState.users.find(user => Number(user.id) === userId);
-            }).filter(Boolean);
-        } else if (group === 'active') {
-            selectedUsers = approvalRoutingState.users.filter(user => user.is_active);
-        } else if (group === 'non_approvers') {
-            selectedUsers = approvalRoutingState.users.filter(user => user.is_active && !user.can_approve_requests);
-        } else {
-            selectedUsers = approvalRoutingState.users.filter(user => user.is_active && approvalUserIsEngineer(user));
-        }
-
-        return selectedUsers
-            .filter(user => String(user.id) !== approverId)
-            .map(user => user.id);
-    }
-
-    function populateApprovalBulkControls() {
-        const approverSelect = document.getElementById('approval-bulk-approver');
-        const scopeSelect = document.getElementById('approval-bulk-scope');
-        const manualList = document.getElementById('approval-bulk-manual-list');
-        if (!approverSelect || !scopeSelect) return;
-
-        const approverPool = approvalRoutingState.approvers.length ? approvalRoutingState.approvers : approvalRoutingState.users;
-        approverSelect.innerHTML = approverPool.map(user => {
-            return `<option value="${user.id}">${approvalEscape(user.display_name || user.username)} (${approvalEscape(user.username)})</option>`;
-        }).join('');
-
-        scopeSelect.innerHTML = approvalRoutingState.scopes.map(scope => {
-            return `<option value="${approvalEscape(scope)}">${approvalEscape(approvalScopeLabel(scope))}</option>`;
-        }).join('');
-
-        if ([...scopeSelect.options].some(opt => opt.value === 'all')) {
-            scopeSelect.value = 'all';
-        }
-
-        if (manualList) {
-            manualList.innerHTML = approvalRoutingState.users.map(user => {
-                return `
-                    <label class="approval-bulk-manual-item">
-                        <input type="checkbox" class="form-check-input approval-bulk-manual-check" value="${user.id}" onchange="updateApprovalBulkPreview()">
-                        <span>
-                            <strong>${approvalEscape(user.display_name || user.username)}</strong>
-                            <small>@${approvalEscape(user.username)} - ${approvalEscape(user.display_role || user.role || 'User')}</small>
-                        </span>
-                    </label>
-                `;
-            }).join('');
-        }
-
-        updateApprovalBulkPreview();
-    }
-
-    function updateApprovalBulkPreview() {
-        const group = document.getElementById('approval-bulk-group')?.value || 'engineers';
-        const manualWrap = document.getElementById('approval-bulk-manual-wrap');
-        const preview = document.getElementById('approval-bulk-preview');
-
-        if (manualWrap) {
-            manualWrap.classList.toggle('d-none', group !== 'manual');
-        }
-
-        const ids = getApprovalBulkRequesterIds();
-        const label = ids.length === 1 ? '1 requester selected' : `${ids.length} requesters selected`;
-        if (preview) preview.textContent = label;
-    }
-
-    async function saveApprovalRoutesBulk() {
-        const approverId = document.getElementById('approval-bulk-approver')?.value;
-        const scope = document.getElementById('approval-bulk-scope')?.value || 'all';
-        const requesterIds = getApprovalBulkRequesterIds();
-        const overwriteExisting = false;
-
-        if (!approverId) {
-            settingsAlert('Please select an approver.');
-            return;
-        }
-
-        if (!requesterIds.length) {
-            settingsAlert('No valid requesters selected. The system also skips self-approval automatically.');
-            return;
-        }
-
-        const approverUser = approvalRoutingState.users.find(user => String(user.id) === String(approverId));
-        const approverName = approverUser ? (approverUser.display_name || approverUser.username) : 'selected approver';
-
-        const confirmAction = overwriteExisting ? 'Create/update' : 'Create missing routes only';
-        const confirmNote = overwriteExisting
-            ? 'Existing routes for selected requesters may be replaced.'
-            : 'Existing routes for selected requesters will be preserved.';
-
-        const shouldSaveBulk = await settingsConfirmDialog({
-            title: 'Create Bulk Approval Routes?',
-            message: `${confirmAction} ${requesterIds.length} route(s) to ${approverName} for ${approvalScopeLabel(scope)}?\n\n${confirmNote}`,
-            confirmText: 'Create Routes',
-            cancelText: 'Cancel',
-            tone: 'warning',
-            icon: 'route'
-        });
-        if (!shouldSaveBulk) {
-            return;
-        }
-
-        try {
-            const res = await fetch('/settings/save-approval-routes-bulk', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
-                },
-                body: JSON.stringify({
-                    requester_user_ids: requesterIds,
-                    approver_user_id: approverId,
-                    request_scope: scope,
-                    active: true,
-                    overwrite_existing: overwriteExisting
-                })
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Bulk approval route save failed.');
-            }
-
-            await loadApprovalRouting();
-            settingsAlert(`Bulk routing complete. Added: ${data.created_count || 0}, Reactivated: ${data.reactivated_count || data.updated_count || 0}, Exact duplicates skipped: ${data.skipped_count || 0}.`, 'success');
-        } catch (err) {
-            settingsAlert('Error: ' + (err.message || 'Bulk approval route save failed.'));
-        }
-    }
-
-    async function saveApprovalRoute() {
-        const requesterId = document.getElementById('approval-route-requester')?.value;
-        const approverId = document.getElementById('approval-route-approver')?.value;
-        const scope = document.getElementById('approval-route-scope')?.value || 'all';
-
-        if (!requesterId || !approverId) {
-            settingsAlert('Please select both requester and approver.');
-            return;
-        }
-
-        if (String(requesterId) === String(approverId)) {
-            settingsAlert('A user cannot approve their own requests.');
-            return;
-        }
-
-        try {
-            const res = await fetch('/settings/save-approval-route', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
-                },
-                body: JSON.stringify({
-                    requester_user_id: requesterId,
-                    approver_user_id: approverId,
-                    request_scope: scope,
-                    active: true
-                })
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Approval route save failed.');
-            }
-
-            await loadApprovalRouting();
-            settingsAlert('Approval route saved.', 'success');
-        } catch (err) {
-            settingsAlert('Error: ' + (err.message || 'Approval route save failed.'));
-        }
-    }
-
-    async function deleteApprovalRoute(routeId) {
-        const shouldDeactivate = await settingsConfirmDialog({
-            title: 'Deactivate Approval Route?',
-            message: 'This approval route will stop being used. Past activity stays available for reference.',
-            confirmText: 'Deactivate',
-            cancelText: 'Cancel',
-            tone: 'danger',
-            icon: 'route'
-        });
-        if (!shouldDeactivate) return;
-
-        try {
-            const res = await fetch('/settings/delete-approval-route', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
-                },
-                body: JSON.stringify({ route_id: routeId })
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Approval route deactivation failed.');
-            }
-
-            await loadApprovalRouting();
-            settingsAlert('Approval route deactivated.', 'success');
-        } catch (err) {
-            settingsAlert('Error: ' + (err.message || 'Approval route deactivation failed.'));
-        }
-    }
-
-
-    async function deleteAllApprovalRoutes() {
-        const routeCount = (approvalRoutingState.routes || []).filter(route => Boolean(route.active)).length;
-        if (!routeCount) {
-            settingsAlert('There are no active approval routes to delete.');
-            return;
-        }
-
-        const shouldDeleteAll = await settingsConfirmDialog({
-            title: 'Delete All Approval Routes?',
-            message: `This will deactivate all ${routeCount} active approval route(s). Continue?`,
-            confirmText: 'Continue',
-            cancelText: 'Cancel',
-            tone: 'danger',
-            icon: 'trash'
-        });
-        if (!shouldDeleteAll) {
-            return;
-        }
-
-        const confirmText = await settingsPromptDialog({
-            title: 'Confirm Route Deactivation',
-            message: 'Type DELETE ALL ROUTES to stop using every active approval route. Past activity stays available for reference.',
-            inputLabel: 'Confirmation Text',
-            placeholder: 'DELETE ALL ROUTES',
-            inputHelp: 'This stops active approval routing. It does not erase past activity.',
-            confirmText: 'Deactivate Routes',
-            cancelText: 'Cancel',
-            tone: 'danger',
-            icon: 'trash'
-        });
-        if (!confirmText) return;
-
-        try {
-            const res = await fetch('/settings/delete-all-approval-routes', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
-                },
-                body: JSON.stringify({ confirm_text: confirmText })
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Delete all approval routes failed.');
-            }
-
-            await loadApprovalRouting();
-            settingsAlert(data.message || 'All active approval routes were deactivated.', 'success');
-        } catch (err) {
-            settingsAlert('Error: ' + (err.message || 'Delete all approval routes failed.'));
-        }
-    }
-
 
     /**
      * EMAIL RECIPIENT SETTINGS LOGIC:
@@ -3621,6 +3853,33 @@
         display: grid;
         gap: 1rem;
     }
+    .approval-routing-subtabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .approval-routing-subtab {
+        min-height: 40px;
+        padding: 0.45rem 0.9rem;
+        border: 1px solid #c7d2fe;
+        border-radius: 999px;
+        background: #fff;
+        color: #3730a3;
+        font-size: 0.82rem;
+        font-weight: 900;
+    }
+    .approval-routing-subtab.active {
+        background: #4f46e5;
+        border-color: #4f46e5;
+        color: #fff;
+    }
+    .approval-routing-pane {
+        display: none;
+        gap: 1rem;
+    }
+    .approval-routing-pane.active {
+        display: grid;
+    }
     .approval-work-panel {
         border: 1px solid #e2e8f0;
         background: #fff;
@@ -3635,21 +3894,106 @@
         margin: -0.25rem 0 0.85rem;
         line-height: 1.35;
     }
+    .approval-info-note {
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        color: #1e3a8a;
+        border-radius: 0.85rem;
+        padding: 0.65rem 0.75rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+        line-height: 1.35;
+    }
+    .approval-coverage {
+        border: 1px solid #fcd34d;
+        background: #fffbeb;
+        color: #78350f;
+        border-radius: 1rem;
+        padding: 0.75rem 1rem;
+        font-size: 0.82rem;
+        font-weight: 800;
+    }
+    .approval-coverage.is-clear {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #14532d;
+    }
+    .approval-coverage summary {
+        cursor: pointer;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+    }
+    .approval-coverage-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.45rem 0;
+        border-top: 1px solid rgba(180, 83, 9, 0.2);
+    }
+    .approval-coverage-row small {
+        display: block;
+        font-weight: 700;
+        opacity: 0.85;
+    }
+    .approval-danger-zone {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        border: 1px solid #fecaca;
+        background: #fef2f2;
+        border-radius: 1rem;
+        padding: 0.85rem 1rem;
+    }
     .approval-user-card,
     .approval-route-card {
         border: 1px solid #e2e8f0;
         background: #fff;
         border-radius: 1rem;
-        padding: 0.9rem;
-        margin-bottom: 0.75rem;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+        padding: 0.75rem 0.9rem;
+        margin-bottom: 0.6rem;
     }
-    .approval-user-main,
-    .approval-route-card {
+    .approval-user-card.is-dirty {
+        border-color: #f59e0b;
+    }
+    .approval-user-card > summary {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 0.85rem;
+        gap: 0.75rem;
+        min-height: 40px;
+        cursor: pointer;
+        list-style: none;
+    }
+    .approval-user-card > summary::-webkit-details-marker {
+        display: none;
+    }
+    .approval-user-card > summary .approval-user-chevron {
+        color: #64748b;
+        transition: transform 0.15s ease;
+    }
+    .approval-user-card[open] > summary .approval-user-chevron {
+        transform: rotate(90deg);
+    }
+    .approval-user-badges {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 0.3rem;
+    }
+    .approval-user-dirty-badge {
+        display: none;
+    }
+    .approval-user-card.is-dirty .approval-user-dirty-badge {
+        display: inline-block;
+    }
+    .approval-user-body {
+        border-top: 1px solid #e2e8f0;
+        margin-top: 0.75rem;
+        padding-top: 0.85rem;
     }
     .approval-user-name,
     .approval-route-line {
@@ -3657,60 +4001,33 @@
         font-weight: 900;
         font-size: 0.92rem;
     }
-    .approval-route-line span {
-        display: inline-block;
-    }
     .approval-user-meta {
         color: #64748b;
         font-size: 0.72rem;
         font-weight: 800;
         margin-top: 0.18rem;
     }
-    .approval-users-list,
-    .approval-routes-list {
-        max-height: 420px;
-        overflow: auto;
-        padding-right: 0.25rem;
-    }
-
-    .approval-bulk-panel {
-        border: 1px solid #c7d2fe;
-        background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
-        border-radius: 1rem;
-        padding: 1rem;
-        box-shadow: 0 10px 26px rgba(79, 70, 229, 0.06);
-        margin-bottom: 0 !important;
-    }
-
-    .approval-bulk-note {
-        color: #475569;
-        font-size: 0.78rem;
-        font-weight: 800;
-        line-height: 1.35;
-    }
-
-    .approval-bulk-preview {
-        min-height: 31px;
+    .approval-route-card {
         display: flex;
-        align-items: center;
-        padding: 0.35rem 0.7rem;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    .approval-bulk-preview {
+        padding: 0.6rem 0.75rem;
         border: 1px dashed #a5b4fc;
         border-radius: 0.75rem;
         background: #fff;
         color: #3730a3;
         font-size: 0.8rem;
-        font-weight: 900;
+        font-weight: 800;
+        line-height: 1.5;
     }
-
     .approval-bulk-manual-list {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
         gap: 0.5rem;
-        max-height: 220px;
-        overflow: auto;
-        padding: 0.25rem;
     }
-
     .approval-bulk-manual-item {
         display: flex;
         align-items: flex-start;
@@ -3721,7 +4038,10 @@
         background: #fff;
         cursor: pointer;
     }
-
+    .approval-bulk-manual-item.is-disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
     .approval-bulk-manual-item strong {
         display: block;
         color: #0f172a;
@@ -3729,7 +4049,6 @@
         font-weight: 900;
         line-height: 1.15;
     }
-
     .approval-bulk-manual-item small {
         display: block;
         color: #64748b;
@@ -3737,73 +4056,61 @@
         font-weight: 800;
         margin-top: 0.12rem;
     }
-
-    .approval-route-card-grouped {
-        display: block;
-    }
-    .approval-route-group-main {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        gap: 1rem;
-        width: 100%;
-    }
-    .approval-route-count-badge {
-        display: inline-flex;
-        align-items: center;
-        margin-left: 0.5rem;
-        padding: 0.15rem 0.45rem;
-        border-radius: 999px;
-        background: #eef2ff;
-        color: #3730a3;
-        font-size: 0.68rem;
-        font-weight: 900;
-        vertical-align: middle;
-    }
     .approval-approver-chip-list {
         display: flex;
         flex-wrap: wrap;
         justify-content: flex-end;
         gap: 0.4rem;
-        max-width: 58%;
+        max-width: 65%;
     }
     .approval-approver-chip {
         display: inline-flex;
         align-items: center;
-        gap: 0.35rem;
+        gap: 0.4rem;
         border: 1px solid #bbf7d0;
         background: #f0fdf4;
         color: #14532d;
         border-radius: 999px;
-        padding: 0.32rem 0.45rem 0.32rem 0.65rem;
+        padding: 0.2rem 0.25rem 0.2rem 0.7rem;
         font-size: 0.76rem;
         font-weight: 900;
     }
-    .approval-chip-remove {
+    .approval-approver-chip.is-stale {
+        border-color: #fcd34d;
+        background: #fffbeb;
+        color: #78350f;
+    }
+    .approval-approver-chip.is-inactive {
+        border-color: #cbd5e1;
+        background: #f1f5f9;
+        color: #475569;
+    }
+    .approval-chip-scope {
+        font-weight: 700;
+        opacity: 0.8;
+    }
+    .approval-chip-action {
         border: 0;
-        background: rgba(22, 101, 52, 0.12);
-        color: #166534;
+        background: rgba(15, 23, 42, 0.08);
+        color: inherit;
         border-radius: 999px;
-        width: 1.35rem;
-        height: 1.35rem;
+        min-width: 2rem;
+        height: 2rem;
+        padding: 0 0.5rem;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        font-size: 0.72rem;
+        font-weight: 900;
         line-height: 1;
     }
-    .approval-chip-remove:hover {
+    .approval-chip-action.is-remove:hover {
         background: #dc3545;
         color: #fff;
     }
-    .approval-multi-note {
-        border: 1px solid #bfdbfe;
-        background: #eff6ff;
-        color: #1e3a8a;
-        border-radius: 0.85rem;
-        padding: 0.65rem 0.75rem;
-        font-size: 0.78rem;
-        font-weight: 800;
-        line-height: 1.35;
+    .approval-chip-action.is-restore:hover {
+        background: #4f46e5;
+        color: #fff;
     }
 
     .settings-signature-card { border-left: 5px solid #0d6efd !important; }
@@ -4439,18 +4746,18 @@
             padding: 0.95rem !important;
         }
 
-        .approval-user-main,
-        .approval-route-card {
+        .approval-route-card,
+        .approval-danger-zone {
             align-items: flex-start;
             flex-direction: column;
         }
 
-        .approval-route-card .btn {
-            width: 100%;
+        .approval-routing-subtab {
+            flex: 1 1 auto;
         }
 
-        .approval-route-group-main {
-            flex-direction: column;
+        .approval-user-card > summary {
+            align-items: flex-start;
         }
 
         .approval-approver-chip-list {
@@ -4458,8 +4765,8 @@
             justify-content: flex-start;
         }
 
-        .approval-bulk-panel {
-            padding: 0.85rem;
+        .approval-approver-chip {
+            border-radius: 0.85rem;
         }
 
         .approval-work-panel {
@@ -4472,7 +4779,6 @@
 
         .approval-bulk-manual-list {
             grid-template-columns: 1fr;
-            max-height: 260px;
         }
 
         .email-recipient-group-header,

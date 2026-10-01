@@ -42,7 +42,8 @@ class HRScheduleViewerSourceTests(unittest.TestCase):
 
     def test_settings_toggle_and_restricted_navigation_are_present(self):
         self.assertIn('hr_schedule_view', self.settings)
-        self.assertIn('hrScheduleViewChecked', self.settings)
+        self.assertIn('hr-schedule-view-input', self.settings)
+        self.assertIn('user.hr_schedule_view', self.settings)
         self.assertIn('hr_schedule_only_user', self.layout)
         self.assertIn("nav_link('/timeline', 'fa-calendar-days', 'Calendar')", self.layout)
         self.assertIn("nav_link('/settings', 'fa-key', 'Password Settings')", self.layout)

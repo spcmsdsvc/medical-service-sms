@@ -11195,6 +11195,12 @@ def approval_route_to_dict(route):
         'approver_user_id': route.approver_user_id,
         'approver_username': getattr(route.approver, 'username', '') if route.approver else '',
         'approver_name': approval_user_display_name(route.approver),
+        # The resolver ignores a route whose approver is inactive, and an approver without
+        # can_approve_requests sees an empty queue. Settings needs both to flag a route
+        # that is stored as active but that nobody can act on.
+        'requester_active': bool(route.requester and getattr(route.requester, 'is_active', True)),
+        'approver_active': bool(route.approver and getattr(route.approver, 'is_active', True)),
+        'approver_can_approve': bool(route.approver and getattr(route.approver, 'can_approve_requests', False)),
         'request_scope': route.request_scope or 'all',
         'active': bool(route.active),
         'updated_at': route.updated_at.isoformat() if getattr(route, 'updated_at', None) else None
@@ -26743,7 +26749,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v223-calibration-ch200m-second-tube';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v224-approval-routing-settings';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -29184,7 +29190,13 @@ def resolve_staff_permission_request(payload, target_user=None):
 
     return {
         'can_approve_requests': can_approve_requested or approver_only_requested,
-        'approval_scope': (clean_str(payload.get('approval_scope')) or '')[:50],
+        # Settings no longer shows this unused label, so an absent key keeps the stored
+        # value. Add Personnel still sends it and is unchanged.
+        'approval_scope': (
+            (clean_str(payload.get('approval_scope')) or '')[:50]
+            if 'approval_scope' in payload else
+            (clean_str(getattr(target_user, 'approval_scope', None)) or '')[:50]
+        ),
         'approval_title': (clean_str(payload.get('approval_title')) or '')[:100],
         'is_active': bool(payload.get('is_active', True)),
         'can_manage_stock_inventory': stock_inventory_requested,
@@ -29329,9 +29341,17 @@ def settings_save_approval_route():
         return jsonify({'success': False, 'error': 'Approver user not found.'}), 404
     if requester.id == approver.id:
         return jsonify({'success': False, 'error': 'A user cannot approve their own requests.'}), 400
+    # Same rule as the bulk route: the resolver ignores inactive accounts, so a route
+    # to or from one would be stored as active while routing nothing.
+    if active and not bool(getattr(approver, 'is_active', True)):
+        return jsonify({'success': False, 'error': 'Selected approver is inactive.'}), 400
+    if active and not bool(getattr(requester, 'is_active', True)):
+        return jsonify({'success': False, 'error': 'Requester is inactive.'}), 400
 
+    approver_granted = False
     if not getattr(approver, 'can_approve_requests', False):
         approver.can_approve_requests = True
+        approver_granted = True
         if not clean_str(getattr(approver, 'approval_scope', None)):
             approver.approval_scope = 'approver'
 
@@ -29363,6 +29383,7 @@ def settings_save_approval_route():
     return jsonify({
         'success': True,
         'message': 'Approval route saved.',
+        'approver_granted': approver_granted,
         'route': approval_route_to_dict(route)
     })
 
@@ -29423,8 +29444,10 @@ def settings_save_approval_routes_bulk():
             'error': 'Selected approver is inactive.'
         }), 400
 
+    approver_granted = False
     if not getattr(approver, 'can_approve_requests', False):
         approver.can_approve_requests = True
+        approver_granted = True
         if not clean_str(getattr(approver, 'approval_scope', None)):
             approver.approval_scope = 'approver'
         db.session.add(approver)
@@ -29525,6 +29548,7 @@ def settings_save_approval_routes_bulk():
         'message': 'Bulk approval routes processed.',
         'request_scope': request_scope,
         'approver': approval_user_to_dict(approver),
+        'approver_granted': approver_granted,
         'created_count': len(created),
         'updated_count': len(updated),
         'skipped_count': len(skipped),
@@ -29602,7 +29626,10 @@ def settings_delete_approval_route():
     db.session.add(route)
     db.session.add(ActivityLog(
         user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
-        action=f"Deactivated approval route #{route.id}"
+        action=(
+            f"Deactivated approval route: {getattr(route.requester, 'username', '') or '?'} -> "
+            f"{getattr(route.approver, 'username', '') or '?'} ({route.request_scope or 'all'})"
+        )[:255]
     ))
     db.session.commit()
 

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-01-approval-routing-settings",
+      "release_date": "2026-10-01",
+      "title": "Clearer Approval Routing in Settings",
+      "summary": "The Approval Routing tab is reorganized into Routes, Add Routes, and People & Permissions, and now shows who has no working approver.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-01-approval-routing-settings-admins",
+          "category": "Settings",
+          "description": "Approval Routing now has three sections. Routes can be searched and filtered by request type, flags routes whose approver is inactive or can no longer approve, lists active accounts with no working approver, and lets inactive routes be reactivated. Add Routes handles one or many requesters in one form with a preview. People & Permissions is searchable, opens one person at a time, and saving one person no longer discards unsaved changes on another. Travel Liquidation and Cash Advance Liquidation now show proper names, and routes can no longer be saved for inactive accounts.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-01-calibration-ch200m-second-tube",
       "release_date": "2026-10-01",
       "title": "Calibration Report Follows the CH-200M Model",
