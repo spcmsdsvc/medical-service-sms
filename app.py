@@ -24567,7 +24567,17 @@ def _calibration_center_record(approval):
         'update_available' if repair_history else
         'available'
     )
-    repair_last = repair_history[-1] if repair_history else {}
+    # The date shown is the most recent repair of any type, not only the complete-fields one.
+    repair_last_at = max(
+        [clean_str(item.get('repaired_at')) or '' for item in repair_history] + [
+            clean_str(marker.get('repaired_at')) or ''
+            for marker in (
+                repair_payload.get(CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER),
+                repair_payload.get(CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_MARKER),
+            ) if isinstance(marker, dict)
+        ],
+        default='',
+    )
     return {
         'approval_id': approval.id,
         'certificate_number': approval.certificate_number or '',
@@ -24598,7 +24608,7 @@ def _calibration_center_record(approval):
         'repair_source_file_id': repair_source_file_id,
         'repair_status': repair_status,
         'repair_history_count': len(repair_history),
-        'repair_last_at': repair_last.get('repaired_at') or '',
+        'repair_last_at': repair_last_at,
         'delivery_state': delivery_state,
         'can_send': bool(report_file and certificate_valid),
         'unavailable_reason': unavailable_reason,
@@ -26814,7 +26824,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v229-calibration-report-letterhead';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v230-calibration-repair-date';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

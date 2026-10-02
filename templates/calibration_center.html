@@ -334,7 +334,7 @@
     const repairButton = (record) => {
         const ready = repairableFor(record.repair_source_file_id);
         const lastDate = formatDate(record.repair_last_at);
-        const history = record.repair_status === 'repaired' && lastDate ? `<span class="small text-success">Repaired ${escapeHtml(lastDate)}</span>` : '';
+        const history = lastDate ?`<span class="small text-success">Repaired ${escapeHtml(lastDate)}</span>` : '';
         if (!ready.length) return history;
         const label = record.repair_status === 'update_available' ? 'Repair again' : 'Repair';
         return `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 fw-bold js-calibration-repair" data-repair-key="${escapeHtml(ready[0].repair_key)}" data-candidate-id="${escapeHtml(candidateId(ready[0]))}"><i class="fa-solid fa-wrench me-1" aria-hidden="true"></i>${label}</button>${history}`;
