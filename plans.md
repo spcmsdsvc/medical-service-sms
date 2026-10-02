@@ -1,6 +1,6 @@
 # Settings → Email Recipients: Friendlier Tab, Bulk Add, Copy, and Code Cleanup
 
-**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Status:** Executed — implementation commit `83ceefc`; published to `origin/main` on the owner's "commit and push".
 **Approved:** 2026-10-02 — the owner said "all approved partner, write it to plans.md" (all 16 proposed items, including the two marked optional).
 **Detailed:** 2026-10-02.
 **Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer", and later "do not over check".
