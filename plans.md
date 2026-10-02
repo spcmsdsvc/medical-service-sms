@@ -1,6 +1,7 @@
 # Calibration Report: Letterhead Stays at the Top of Pages 3 and 4
 
-**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Status:** Executed — implementation commit `d3b8f06`; publication to `origin/main` authorized.
+**Publication authorized:** 2026-10-02 — the owner said "commit and push partner, never the db and dirty files".
 **Finished:** 2026-10-02.
 **Approved and execution authorized:** 2026-10-02 — the owner said "approved. go ahead along with your recommendations".
 
