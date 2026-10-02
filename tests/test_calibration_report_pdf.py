@@ -725,6 +725,16 @@ class CalibrationReportPdfTests(unittest.TestCase):
         again, _inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(two_tube)
         self.assertEqual(again, two_tube)
 
+        # A result typed into a form table may mention the heading's words.
+        mentions_heading = self._docx_with_document_xml(
+            lambda xml: xml.replace('4.1 Collimation Assessment', 'SEE AVERAGE EXPOSURE OUTPUT', 1)
+        )
+        self.assertIn('SEE AVERAGE EXPOSURE OUTPUT', ''.join(self._document_texts(mentions_heading)))
+        self.assertEqual(
+            app_module._calibration_report_footer_layout_inspection(mentions_heading)['status'], 'repairable'
+        )
+        app_module._calibration_report_footer_layout_repair_docx_bytes(mentions_heading)
+
         unrecognized = self._docx_with_document_xml(
             lambda xml: xml.replace('Medical System Division', 'Other Division')
         )

@@ -1269,10 +1269,11 @@
   }
   function textBlocks(xml){ return directXmlBlocks(xml, 't'); }
   function outputRegion(documentXml){
-    var paragraphs = directXmlBlocks(documentXml,'p');
-    var headingIndex = paragraphs.findIndex(function(paragraph){ return cellText(paragraph.xml).indexOf('AVERAGE EXPOSURE OUTPUT') >= 0; });
+    var paragraphs = directXmlBlocks(documentXml,'p'); var tables = directXmlBlocks(documentXml,'tbl');
+    // Only a body paragraph is the page heading: a result typed into a form table may mention the same words.
+    var headingIndex = paragraphs.findIndex(function(paragraph){ return cellText(paragraph.xml).indexOf('AVERAGE EXPOSURE OUTPUT') === 0 && !tables.some(function(table){ return paragraph.start >= table.start && paragraph.start < table.end; }); });
     var heading = paragraphs[headingIndex]; var letterhead = paragraphs[headingIndex - 2];
-    var performance = directXmlBlocks(documentXml,'tbl').find(function(table){ return cellText(table.xml).indexOf('PERFORMANCE CRITERIA') >= 0; });
+    var performance = tables.find(function(table){ return cellText(table.xml).indexOf('PERFORMANCE CRITERIA') >= 0; });
     if(!heading || !performance || performance.start <= heading.start) throw templateSlotError('page 3 output region');
     // The region starts at the page letterhead so a second tube's page repeats it.
     if(!letterhead || cellText(letterhead.xml).indexOf('Shimadzu Philippines Corporation') < 0) throw templateSlotError('page 3 letterhead');

@@ -556,7 +556,7 @@ class CalibrationCenterContracts(unittest.TestCase):
             'buildRepairDocx',
             'What will change',
             'What stays the same',
-            "app-calibration-report.js') }}?v=43",
+            "app-calibration-report.js') }}?v=44",
         ):
             self.assertIn(marker, TEMPLATE_SOURCE)
         self.assertIn('mapped_data_json', APP_SOURCE)

@@ -19813,9 +19813,13 @@ def _calibration_report_anchor_output_pages_xml(document_xml):
         (match.start(), match.end(), match.group(0))
         for match in re.finditer(r'<w:p\b[^>]*/>|<w:p(?=[\s>]).*?</w:p>', document_xml, re.S)
     ]
+    # Only a body paragraph is a page heading: a result typed into a form table may
+    # mention the same words.
+    tables = _calibration_report_xml_blocks(document_xml, 'tbl')
     headings = [
-        index for index, (_start, _end, xml) in enumerate(paragraphs)
-        if 'AVERAGE EXPOSURE OUTPUT' in visible_text(xml)
+        index for index, (start, _end, xml) in enumerate(paragraphs)
+        if visible_text(xml).startswith('AVERAGE EXPOSURE OUTPUT') and
+        not any(table_start <= start < table_end for table_start, table_end in tables)
     ]
     if not headings:
         raise ValueError('Calibration Report output region is not recognized.')
@@ -26810,7 +26814,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v228-calibration-report-letterhead';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v229-calibration-report-letterhead';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -26835,7 +26839,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=43',
+  '/static/js/app-calibration-report.js?v=44',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
