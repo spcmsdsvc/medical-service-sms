@@ -369,11 +369,11 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn(':root[data-app-theme="dark"][data-app-palette="graphite"]', auth_css)
         self.assertIn('--login-page-bg: #202124;', auth_css)
 
-        self.assertIn("filename='css/app-themes.css') }}?v=21", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=22", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=30", layout)
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in sources:
-            self.assertIn("filename='css/app-themes.css') }}?v=21", source)
+            self.assertIn("filename='css/app-themes.css') }}?v=22", source)
             self.assertIn("filename='css/app-auth.css') }}?v=4", source)
 
     def test_graphite_release_and_cache_marker_are_current(self):
@@ -475,11 +475,11 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         ]
         self.assertIn("palette === 'amoled' ? '#000000'", runtime)
         self.assertIn('--login-page-bg: #000000;', auth_styles)
-        self.assertIn("filename='css/app-themes.css') }}?v=21", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=22", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=30", layout)
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in auth:
-            self.assertIn("filename='css/app-themes.css') }}?v=21", source)
+            self.assertIn("filename='css/app-themes.css') }}?v=22", source)
             self.assertIn("filename='css/app-auth.css') }}?v=4", source)
 
     def test_amoled_dark_page_layer_does_not_restore_navy_neutrals(self):
@@ -497,7 +497,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         styles = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
         auth_styles = (ROOT / 'static' / 'css' / 'app-auth.css').read_text(encoding='utf-8')
         expected = {
-            'purple': '#6d28d9',
+            'purple': '#8b5cf6',
             'pink': '#be185d',
             'teal': '#0f766e',
         }
@@ -510,6 +510,17 @@ class AppearanceThemeSourceTests(unittest.TestCase):
                 self.assertIn(f':root[data-accent-theme="{accent}"]', styles)
                 self.assertIn(f'--app-primary: {colour};', styles)
                 self.assertIn(f':root[data-accent-theme="{accent}"]', auth_styles)
+
+        for token in ('--app-primary-soft:', '--app-primary-soft-border:', '--app-primary-strong:', '--app-primary-text:'):
+            self.assertIn(token, styles)
+        dark_block = styles.split(':root[data-app-theme="dark"] {', 1)[1].split('}', 1)[0]
+        self.assertIn('--app-primary-text:', dark_block)
+        self.assertIn('</span>Lavender</button>', settings)
+        self.assertNotIn('class="appearance-swatch" style=', settings)
+        for name in ('approvals.html', 'travel_request.html', 'cash_advance.html', 'clients.html', 'engineers.html'):
+            page = (ROOT / 'templates' / name).read_text(encoding='utf-8').lower()
+            for blue in ('#0d6efd', '#2563eb', '#eff6ff'):
+                self.assertNotIn(blue, page, f'{name} still hardcodes accent blue {blue}')
 
         for name in ('layout.html', 'login.html', 'forgot_password.html', 'reset_password.html'):
             source = (ROOT / 'templates' / name).read_text(encoding='utf-8')
@@ -603,7 +614,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.receipt-pill, .reim-receipt-pill',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-themes.css') }}?v=21", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=22", layout)
 
     def test_dark_mode_covers_system_neutral_surfaces(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')

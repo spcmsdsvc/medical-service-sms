@@ -12,44 +12,51 @@
     --app-primary: #0d6efd;
     --app-primary-rgb: 13, 110, 253;
     --app-focus: rgba(13, 110, 253, .25);
+    --app-primary-soft: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface));
+    --app-primary-soft-border: color-mix(in srgb, var(--app-primary) 24%, var(--app-surface));
+    --app-primary-strong: color-mix(in srgb, var(--app-primary) 78%, #000);
+    --app-primary-text: var(--app-primary-strong);
     --app-sidebar: #2c3e50;
     --app-sidebar-deep: #1a252f;
     --app-shadow: 0 8px 24px rgba(15, 23, 42, .08);
     color-scheme: light;
 }
 
-:root[data-accent-theme="shimadzu-red"] {
+:root[data-accent-theme="shimadzu-red"], .appearance-swatch[data-accent-theme="shimadzu-red"] {
     --app-primary: #c8102e;
     --app-primary-rgb: 200, 16, 46;
     --app-focus: rgba(200, 16, 46, .25);
 }
-:root[data-accent-theme="clinical-green"] {
+:root[data-accent-theme="clinical-green"], .appearance-swatch[data-accent-theme="clinical-green"] {
     --app-primary: #198754;
     --app-primary-rgb: 25, 135, 84;
     --app-focus: rgba(25, 135, 84, .25);
 }
-:root[data-accent-theme="corporate-blue"] {
+:root[data-accent-theme="corporate-blue"], .appearance-swatch[data-accent-theme="corporate-blue"] {
     --app-primary: #2563eb;
     --app-primary-rgb: 37, 99, 235;
     --app-focus: rgba(37, 99, 235, .25);
 }
-:root[data-accent-theme="purple"] {
-    --app-primary: #6d28d9;
-    --app-primary-rgb: 109, 40, 217;
-    --app-focus: rgba(109, 40, 217, .25);
+:root[data-accent-theme="purple"], .appearance-swatch[data-accent-theme="purple"] {
+    --app-primary: #8b5cf6;
+    --app-primary-rgb: 139, 92, 246;
+    --app-focus: rgba(139, 92, 246, .25);
 }
-:root[data-accent-theme="pink"] {
+:root[data-accent-theme="pink"], .appearance-swatch[data-accent-theme="pink"] {
     --app-primary: #be185d;
     --app-primary-rgb: 190, 24, 93;
     --app-focus: rgba(190, 24, 93, .25);
 }
-:root[data-accent-theme="teal"] {
+:root[data-accent-theme="teal"], .appearance-swatch[data-accent-theme="teal"] {
     --app-primary: #0f766e;
     --app-primary-rgb: 15, 118, 110;
     --app-focus: rgba(15, 118, 110, .25);
 }
 
+.appearance-swatch[data-accent-theme="classic"] { --app-primary: #0d6efd; }
+
 :root[data-app-theme="dark"] {
+    --app-primary-text: color-mix(in srgb, var(--app-primary) 60%, #fff);
     --app-bg: #000000;
     --app-surface: #101010;
     --app-surface-raised: #191919;
@@ -130,13 +137,32 @@ body, .main-content { background-color: var(--app-bg) !important; }
     --bs-btn-active-border-color: color-mix(in srgb, var(--app-primary) 70%, #000);
 }
 .btn-outline-primary {
-    --bs-btn-color: var(--app-primary);
+    --bs-btn-color: var(--app-primary-text);
     --bs-btn-border-color: var(--app-primary);
     --bs-btn-hover-bg: var(--app-primary);
     --bs-btn-hover-border-color: var(--app-primary);
+    --bs-btn-active-bg: var(--app-primary);
+    --bs-btn-active-border-color: var(--app-primary);
 }
-a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
-.text-primary { color: var(--app-primary) !important; }
+a:not(.btn):not(.sidebar a) { color: var(--app-primary-text); }
+.text-primary { color: var(--app-primary-text) !important; }
+.text-primary-emphasis { color: var(--app-primary-strong) !important; }
+.bg-primary-subtle { background-color: var(--app-primary-soft) !important; }
+.border-primary-subtle { border-color: var(--app-primary-soft-border) !important; }
+.text-bg-primary { background-color: var(--app-primary) !important; color: #fff !important; }
+.pagination {
+    --bs-pagination-color: var(--app-primary-text);
+    --bs-pagination-hover-color: var(--app-primary-text);
+    --bs-pagination-focus-color: var(--app-primary-text);
+    --bs-pagination-active-bg: var(--app-primary);
+    --bs-pagination-active-border-color: var(--app-primary);
+}
+.nav-pills { --bs-nav-pills-link-active-bg: var(--app-primary); }
+.nav { --bs-nav-link-color: var(--app-primary-text); --bs-nav-link-hover-color: var(--app-primary-text); }
+.progress { --bs-progress-bar-bg: var(--app-primary); }
+.list-group { --bs-list-group-active-bg: var(--app-primary); --bs-list-group-active-border-color: var(--app-primary); }
+.form-range::-webkit-slider-thumb { background-color: var(--app-primary); }
+.form-range::-moz-range-thumb { background-color: var(--app-primary); }
 .bg-primary { background-color: var(--app-primary) !important; }
 .border-primary { border-color: var(--app-primary) !important; }
 .sidebar a.active,
@@ -205,7 +231,7 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
     border-color: var(--app-border) !important;
 }
 :root[data-app-theme="dark"] :is(.settings-title, .settings-dialog-title, .settings-dialog-message, .settings-subtitle) { color: var(--app-text) !important; }
-:root[data-app-theme="dark"] .settings-eyebrow { color: var(--app-primary) !important; }
+:root[data-app-theme="dark"] .settings-eyebrow { color: var(--app-primary-text) !important; }
 
 /* Document canvases and previews represent fixed white output, not application chrome. */
 :is(.pdf-page, .document-page, .print-page, .tsr-page, .canvas-container, .signature-pad, canvas[data-document-canvas]) {
@@ -223,7 +249,7 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
     color: var(--app-text);
     font-weight: 800;
 }
-.appearance-mode-button.active { border-color: var(--app-primary); box-shadow: inset 0 0 0 2px var(--app-primary); color: var(--app-primary); }
+.appearance-mode-button.active { border-color: var(--app-primary); box-shadow: inset 0 0 0 2px var(--app-primary); color: var(--app-primary-text); }
 .appearance-accent-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .appearance-accent-button {
     min-height: 70px;
@@ -235,7 +261,7 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
     padding: 9px 7px;
 }
 .appearance-accent-button.active { border-color: var(--app-primary); box-shadow: inset 0 0 0 2px var(--app-primary); }
-.appearance-swatch { width: 26px; height: 26px; border-radius: 50%; display: block; margin: 0 auto 6px; border: 2px solid rgba(255,255,255,.7); box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
+.appearance-swatch { background: var(--app-primary); width: 26px; height: 26px; border-radius: 50%; display: block; margin: 0 auto 6px; border: 2px solid rgba(255,255,255,.7); box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
 @media (max-width: 760px) { .appearance-mode-control { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .appearance-accent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 

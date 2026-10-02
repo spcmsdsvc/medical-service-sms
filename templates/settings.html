@@ -240,13 +240,13 @@
                     <div class="col-12 col-lg-7">
                         <label class="small fw-bold text-uppercase text-muted mb-2 d-block">Accent</label>
                         <div class="appearance-accent-grid" role="group" aria-label="Accent theme">
-                            <button type="button" class="appearance-accent-button" data-appearance-accent="classic" onclick="setAppearanceAccent('classic')"><span class="appearance-swatch" style="background:#0d6efd"></span>Classic</button>
-                            <button type="button" class="appearance-accent-button" data-appearance-accent="shimadzu-red" onclick="setAppearanceAccent('shimadzu-red')"><span class="appearance-swatch" style="background:#c8102e"></span>Shimadzu Red</button>
-                            <button type="button" class="appearance-accent-button" data-appearance-accent="clinical-green" onclick="setAppearanceAccent('clinical-green')"><span class="appearance-swatch" style="background:#198754"></span>Clinical Green</button>
-                            <button type="button" class="appearance-accent-button" data-appearance-accent="corporate-blue" onclick="setAppearanceAccent('corporate-blue')"><span class="appearance-swatch" style="background:#2563eb"></span>Corporate Blue</button>
-                            <button type="button" class="appearance-accent-button" data-appearance-accent="purple" onclick="setAppearanceAccent('purple')"><span class="appearance-swatch" style="background:#6d28d9"></span>Purple</button>
-                            <button type="button" class="appearance-accent-button" data-appearance-accent="pink" onclick="setAppearanceAccent('pink')"><span class="appearance-swatch" style="background:#be185d"></span>Pink</button>
-                            <button type="button" class="appearance-accent-button" data-appearance-accent="teal" onclick="setAppearanceAccent('teal')"><span class="appearance-swatch" style="background:#0f766e"></span>Teal</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="classic" onclick="setAppearanceAccent('classic')"><span class="appearance-swatch" data-accent-theme="classic"></span>Classic</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="shimadzu-red" onclick="setAppearanceAccent('shimadzu-red')"><span class="appearance-swatch" data-accent-theme="shimadzu-red"></span>Shimadzu Red</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="clinical-green" onclick="setAppearanceAccent('clinical-green')"><span class="appearance-swatch" data-accent-theme="clinical-green"></span>Clinical Green</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="corporate-blue" onclick="setAppearanceAccent('corporate-blue')"><span class="appearance-swatch" data-accent-theme="corporate-blue"></span>Corporate Blue</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="purple" onclick="setAppearanceAccent('purple')"><span class="appearance-swatch" data-accent-theme="purple"></span>Lavender</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="pink" onclick="setAppearanceAccent('pink')"><span class="appearance-swatch" data-accent-theme="pink"></span>Pink</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="teal" onclick="setAppearanceAccent('teal')"><span class="appearance-swatch" data-accent-theme="teal"></span>Teal</button>
                         </div>
                     </div>
                 </div>
@@ -3914,9 +3914,9 @@
     .rounded-4 { border-radius: 1rem !important; }
     .xsmall { font-size: 0.65rem; }
     .italic { font-style: italic; }
-    .table-hover tbody tr:hover { background-color: rgba(13, 110, 253, 0.03); }
+    .table-hover tbody tr:hover { background-color: rgba(var(--app-primary-rgb), 0.03); }
     .input-group-text { border-color: #dee2e6; }
-    .form-control:focus { border-color: #0d6efd; box-shadow: none; }
+    .form-control:focus { border-color: var(--app-primary); box-shadow: none; }
     .bg-purple { background-color: #6f42c1 !important; }
     .settings-backup-card { border-left: 5px solid #198754 !important; }
     .settings-approval-card { border-left: 5px solid #4f46e5 !important; }
@@ -4027,9 +4027,9 @@
         line-height: 1.35;
     }
     .approval-info-note {
-        border: 1px solid #bfdbfe;
-        background: #eff6ff;
-        color: #1e3a8a;
+        border: 1px solid var(--app-primary-soft-border);
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
         border-radius: 0.85rem;
         padding: 0.65rem 0.75rem;
         font-size: 0.78rem;
@@ -4271,8 +4271,8 @@
         padding: 0.45rem;
     }
     .signature-action-panel {
-        border: 1px solid #dbeafe;
-        background: linear-gradient(135deg, #eff6ff, #ffffff);
+        border: 1px solid var(--app-primary-soft-border);
+        background: linear-gradient(135deg, var(--app-primary-soft), var(--app-surface));
         border-radius: 0.95rem;
         padding: 0.85rem;
     }
@@ -4956,7 +4956,7 @@
         pointer-events: auto;
         border-radius: 16px;
         padding: 12px 14px;
-        border: 1px solid #dbeafe;
+        border: 1px solid var(--app-primary-soft-border);
         background: #ffffff;
         color: #0f172a;
         box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
@@ -4995,8 +4995,8 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(13,110,253,.12);
-        color: #0d6efd;
+        background: rgba(var(--app-primary-rgb),.12);
+        color: var(--app-primary-text);
         font-weight: 950;
     }
 
@@ -5042,7 +5042,7 @@
         background: #ffffff;
         border-radius: 22px;
         box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
-        border: 1px solid #dbeafe;
+        border: 1px solid var(--app-primary-soft-border);
         overflow: hidden;
         animation: settingsDialogIn .18s ease-out;
     }
@@ -5058,8 +5058,8 @@
         width: 42px;
         height: 42px;
         border-radius: 16px;
-        background: #eff6ff;
-        color: #0d6efd;
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
         display: inline-flex;
         align-items: center;
         justify-content: center;

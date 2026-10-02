@@ -840,7 +840,7 @@
         pointer-events: auto;
         border-radius: 16px;
         padding: 12px 14px;
-        border: 1px solid #dbeafe;
+        border: 1px solid var(--app-primary-soft-border);
         background: #ffffff;
         color: #0f172a;
         box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
@@ -872,8 +872,8 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(13,110,253,.12);
-        color: #0d6efd;
+        background: rgba(var(--app-primary-rgb),.12);
+        color: var(--app-primary-text);
     }
 
     .engineer-alert-title {
@@ -918,7 +918,7 @@
         background: #ffffff;
         border-radius: 22px;
         box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
-        border: 1px solid #dbeafe;
+        border: 1px solid var(--app-primary-soft-border);
         overflow: hidden;
         animation: engineerDialogIn .18s ease-out;
     }
@@ -934,8 +934,8 @@
         width: 42px;
         height: 42px;
         border-radius: 16px;
-        background: #eff6ff;
-        color: #0d6efd;
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -982,7 +982,7 @@
     }
 
     /* PERSONNEL MANAGEMENT STYLING */
-    .table-hover tbody tr:hover { background-color: rgba(13, 110, 253, 0.03); }
+    .table-hover tbody tr:hover { background-color: rgba(var(--app-primary-rgb), 0.03); }
     .font-monospace { font-family: 'Courier New', Courier, monospace; }
     .xsmall { font-size: 0.65rem; }
     .italic { font-style: italic; }
@@ -1055,8 +1055,8 @@
         width: 2.65rem;
         height: 2.65rem;
         border-radius: 0.9rem;
-        background: #e7f1ff;
-        color: #0d6efd;
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1114,9 +1114,9 @@
         width: 2.2rem;
         height: 2.2rem;
         border-radius: 999px;
-        border: 1px solid #dbeafe;
-        background: #eff6ff;
-        color: #0d6efd;
+        border: 1px solid var(--app-primary-soft-border);
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -1169,7 +1169,7 @@
     }
 
     .engineer-mobile-edit {
-        background: #0d6efd;
+        background: var(--app-primary);
         color: #fff;
     }
 

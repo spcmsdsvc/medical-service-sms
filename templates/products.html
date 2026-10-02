@@ -2113,7 +2113,7 @@ function openAddModal() {
         pointer-events: auto;
         border-radius: 16px;
         padding: 12px 14px;
-        border: 1px solid #dbeafe;
+        border: 1px solid var(--app-primary-soft-border);
         background: #ffffff;
         color: #0f172a;
         box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
@@ -2145,8 +2145,8 @@ function openAddModal() {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(13,110,253,.12);
-        color: #0d6efd;
+        background: rgba(var(--app-primary-rgb),.12);
+        color: var(--app-primary-text);
     }
 
     .product-alert-title {
@@ -2191,7 +2191,7 @@ function openAddModal() {
         background: #ffffff;
         border-radius: 22px;
         box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
-        border: 1px solid #dbeafe;
+        border: 1px solid var(--app-primary-soft-border);
         overflow: hidden;
         animation: productDialogIn .18s ease-out;
     }
@@ -2207,8 +2207,8 @@ function openAddModal() {
         width: 42px;
         height: 42px;
         border-radius: 16px;
-        background: #eff6ff;
-        color: #0d6efd;
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -2272,7 +2272,7 @@ function openAddModal() {
     
     .search-item:hover {
         background: #f0f7ff;
-        color: #0d6efd;
+        color: var(--app-primary-text);
     }
     
     .cursor-pointer {
@@ -2281,7 +2281,7 @@ function openAddModal() {
     
     /* TABLE HOVER EFFECTS */
     .table-hover tbody tr:hover {
-        background-color: rgba(13, 110, 253, 0.03);
+        background-color: rgba(var(--app-primary-rgb), 0.03);
     }
 
     .product-sort-btn {
@@ -2615,7 +2615,7 @@ function openAddModal() {
     }
 
     .product-table-state > i {
-        color: #0d6efd;
+        color: var(--app-primary-text);
         font-size: 1.45rem;
     }
 
@@ -2626,9 +2626,9 @@ function openAddModal() {
     .product-state-action {
         min-height: 2.3rem;
         padding: 0.4rem 0.85rem;
-        border: 1px solid #0d6efd;
+        border: 1px solid var(--app-primary);
         border-radius: 0.65rem;
-        background: #0d6efd;
+        background: var(--app-primary);
         color: #fff;
         font-size: 0.76rem;
         font-weight: 900;
@@ -2640,7 +2640,7 @@ function openAddModal() {
         border-color: #084298;
         background: #084298;
         color: #fff;
-        outline: 2px solid rgba(13, 110, 253, 0.25);
+        outline: 2px solid rgba(var(--app-primary-rgb), 0.25);
         outline-offset: 2px;
     }
 
@@ -2658,10 +2658,10 @@ function openAddModal() {
         gap: 0.45rem;
         margin-bottom: 0.55rem;
         padding: 0.55rem 0.7rem;
-        border: 1px solid #bfdbfe;
+        border: 1px solid var(--app-primary-soft-border);
         border-radius: 0.65rem;
-        background: #eff6ff;
-        color: #1e3a8a;
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
         font-size: 0.74rem;
         font-weight: 800;
     }
@@ -2700,7 +2700,7 @@ function openAddModal() {
     }
 
     .product-table-wrap:focus-visible {
-        outline: 2px solid #0d6efd;
+        outline: 2px solid var(--app-primary);
         outline-offset: 3px;
     }
 
@@ -2792,11 +2792,11 @@ function openAddModal() {
         align-items: center;
         gap: 0.25rem;
         margin-top: 0;
-        border: 1px solid #bfdbfe;
+        border: 1px solid var(--app-primary-soft-border);
         border-radius: 0.45rem;
         padding: 0.12rem 0.4rem;
-        background: #eff6ff;
-        color: #1d4ed8;
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
         font-size: 0.66rem;
         font-weight: 900;
         line-height: 1.2;
@@ -2806,7 +2806,7 @@ function openAddModal() {
 
     .product-serial-certificate-link:hover,
     .product-serial-certificate-link:focus-visible {
-        background: #dbeafe;
+        background: var(--app-primary-soft-border);
         color: #084298;
         text-decoration: underline;
     }
@@ -2958,7 +2958,7 @@ function openAddModal() {
     }
 
     .product-mobile-sn {
-        color: #0d6efd;
+        color: var(--app-primary-text);
         font-size: 0.72rem;
         font-weight: 900;
         font-family: monospace;
@@ -3084,7 +3084,7 @@ function openAddModal() {
     }
 
     .product-mobile-edit {
-        background: #0d6efd;
+        background: var(--app-primary);
         color: #fff;
     }
 
@@ -3253,7 +3253,7 @@ function openAddModal() {
 
     .product-clickable-row:hover .product-identity-cell,
     .product-mobile-card:hover {
-        background: rgba(13, 110, 253, 0.045);
+        background: rgba(var(--app-primary-rgb), 0.045);
     }
 
     .product-linked-vieworks {

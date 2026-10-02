@@ -1,3 +1,124 @@
+# Colour Themes: Lavender Accent and Accent-Aware Pages
+
+**Status:** Executed — not yet committed; commit and push await the owner's instruction.
+**Finished:** 2026-10-02.
+**Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not overengineer and over check".
+
+**Where the plan and the outcome differed:**
+
+- **Step 2, tokens.** Final values: soft 10%, soft-border 24% (not 30%), strong 78% toward black.
+- **Step 3, dark modes.** Only `--app-primary-text` is lightened in dark (60% accent, 40% white). `--app-primary-strong` stays dark in every mode because it is used for hero backgrounds under white text.
+- **Light-mode links and `.text-primary`** now use `--app-primary-text`, so under Classic they are a slightly darker blue than `#0d6efd`.
+- **Step 4.** No `.nav-tabs` or `.form-switch` rule was added; switches already follow `.form-check-input:checked`.
+- **Step 6, sweep.** Done in one scripted pass over 18 files rather than file by file. `#dbeafe`, `#bfdbfe` and `#93c5fd` all map to `--app-primary-soft-border`; `#e7f1ff`, `#eef5ff`, `#eaf2ff`, `#f8fbff` map to `--app-primary-soft`. `templates/reports.html` was added. Not swept: `static/css/app-offline-tsr.css`, `po_details.html`, `reimbursement_tracker.html`, `app-changelog.css`, `_request_recall_modal.html` (they already read `--app-primary`), `system_backup.html`, and `static/css/app-dark-pages.css` (its dark overrides for notices and lock banners are still blue).
+- **Kept blue as status or category colour:** submitted / processing / planned / update / schedule / syncing pills, the info notification, the Reimbursement advisory item, the Settings signature and bucket-migration card stripes, and the Products table-header sort colours.
+- **Step 7.** `app-themes.css` v22; `app-dashboard.css` v5 (Dashboard) and v75 (Analytics). Service worker `v227-lavender-accent-pages`.
+- **Step 8, tests.** One existing test was extended (new hex, the four tokens, the dark override, the Lavender label, no inline swatch hex, and no accent blue left in five swept templates). No separate contrast test and no fail-before-change run. Contrast was calculated once by hand: accent text is at least 4.6:1 on both dark surfaces and on the soft tint for all seven accents; white on the Lavender button is 4.2:1.
+- **Step 9, browser check.** Not done: the pages need a signed-in account and no test credentials were available. Nothing was seen rendered.
+- **Suite:** 1,457 tests, 23 failures, 3 errors, 5 skips — identical to the baseline.
+**Approved:** 2026-10-02 — the owner said "approved, along with your recommendations, write it to plans.md".
+**Detailed:** 2026-10-02.
+
+## Context
+
+The owner asked for the violet accent to be lighter ("like lavender"), for the theme to be scanned across the whole system for improvements, and for the calendar page to be skipped.
+
+The scan showed that an accent choice reaches only buttons, links, focus rings and checkboxes. Page-level styling is hardcoded blue, so choosing Purple (or any accent) leaves most surfaces blue, and in the two dark modes the accent is used unchanged as text on near-black. The intended outcome: the violet reads as lavender, every accent colours the pages it is chosen for, and accent text is readable in Graphite and AMOLED.
+
+## Decisions taken
+
+1. **Violet becomes `#8b5cf6`** (RGB `139, 92, 246`), replacing `#6d28d9`. Chosen over a pastel `#a78bfa` because primary buttons keep white text; the lavender look comes from the derived soft tints.
+2. **The stored key stays `purple`.** Only the visible label changes, to "Lavender". No migration, no change to `APPEARANCE_ACCENT_THEMES`.
+3. **Full scope in one plan:** tokens, dark-mode accent, Bootstrap coverage, and the page sweep.
+4. **Calendar is skipped.** `templates/timeline.html` is not edited.
+5. **Status blues stay blue.** A blue that means a state (for example an "In progress" pill or an info alert) is not an accent and is left alone.
+6. **Browser check permitted for this plan.** The owner approved the recommendation to view the changed pages in a browser in Light, Graphite and AMOLED.
+
+## Investigation
+
+Line numbers are as of commit `a2983a8`.
+
+- **Tokens:** `static/css/app-themes.css:1-19` defines `--app-primary`, `--app-primary-rgb`, `--app-focus` and neutrals. Accent blocks at 21-50 each restate those three by hand; `purple` is at 36-40. Dark at 52-64, Graphite at 67-79. There is no soft, border, strong or text variant of the accent.
+- **Accent consumers:** `app-themes.css:124-148` covers `.btn-primary`, `.btn-outline-primary`, links, `.text-primary`, `.bg-primary`, `.border-primary`, the active sidebar item, focus rings and checked inputs. Pagination, nav pills, progress bars, active list-group items, `.text-bg-primary`, and switches are not covered. `color-mix` is already used in this file (127-130) and in `app-dark-pages.css` (389-393, 745-746).
+- **Dark modes:** links and `.text-primary` use `--app-primary` unchanged (`app-themes.css:138-139`), so `#6d28d9`, `#c8102e` and `#0f766e` sit on `#000000` / `#202124` at low contrast. Not measured; the test at `tests/test_appearance_themes.py:220` and `:426` shows how contrast is computed in this suite.
+- **Hardcoded blue outside the calendar:** about 310 occurrences of `#0d6efd`, `#eff6ff`, `#dbeafe`, `#bfdbfe`, `#1d4ed8`, `#1e3a8a`, `#2563eb` and `13, 110, 253`. Counts: `templates/approvals.html` 49, `templates/travel_request.html` 42, `templates/products.html` 40, `static/css/app-offline-tsr.css` 23, `static/css/app-dashboard.css` 22, `templates/settings.html` 17, `static/css/app-calibration-report.css` 17, `templates/cash_advance.html` 13, `templates/engineers.html` 12, `static/css/app-dark-pages.css` 11, `templates/offline_tsr.html` 9, `templates/_embedded_lpr_modal.html` 8, `templates/clients.html` 7, `templates/reimbursement.html` 6, `templates/activity.html` 5, and 1-4 each in `travel_liquidation`, `po_details`, `app-changelog.css`, `inventory_pm`, `cash_advance_liquidation`, `reimbursement_tracker`, `calibration_center`, `accounting_center`, `system_backup`, `reports`, `_request_recall_modal`. `templates/timeline.html` has 258 and is excluded. The counts were not sorted into accent versus status use; that is done per page in step 6.
+- **Swatches:** `templates/settings.html:243-249` carry each accent's hex inline; the Purple button is line 247. Controls script at 3797-3833.
+- **Auth pages:** `static/css/app-auth.css:16-25` lists the accents by selector and reads `--app-primary`, so the new violet reaches the login pages without an edit there. `login.html`, `forgot_password.html` and `reset_password.html` load `app-themes.css?v=21`, as does `layout.html:52`.
+- **Tests:** `tests/test_appearance_themes.py:494-517` pins `'purple': '#6d28d9'` and the selector/handler strings for each accent. `:42` asserts every theme token used anywhere is defined, so new tokens must be declared in `app-themes.css`. No test was found pinning `app-themes.css?v=21`; recheck at execution.
+- **Versions at planning time:** `app-themes.css?v=21`, `app-dark-pages.css?v=30` (`layout.html:403`), `app-shell.css?v=3`, service worker `medical-service-pwa-offline-navigation-v226-product-name-standardization` (`app.py:26720`).
+- **Suite baseline at the last run:** 1,457 tests, 23 failures, 3 errors, 5 skips.
+- `changes.md` was read at its current top sections, not end to end (the file is 856 KB).
+
+## Execution steps
+
+1. **Lavender.** In `static/css/app-themes.css:36-40` set `--app-primary: #8b5cf6`, `--app-primary-rgb: 139, 92, 246`, `--app-focus: rgba(139, 92, 246, .25)`. In `templates/settings.html:247` change the label to "Lavender" (swatch handled in step 5). Done: choosing the accent shows the lighter violet on buttons and links; the saved value is still `purple`.
+2. **Derived tokens.** In `app-themes.css` `:root` add, computed from `--app-primary` so every accent gets them:
+   - `--app-primary-soft: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface))` — tinted panel background;
+   - `--app-primary-soft-border: color-mix(in srgb, var(--app-primary) 30%, var(--app-surface))` — border for those panels;
+   - `--app-primary-strong: color-mix(in srgb, var(--app-primary) 78%, #000)` — headings and text on a soft background;
+   - `--app-primary-text: var(--app-primary-strong)` — accent-coloured text.
+   Mixing with `--app-surface` makes the soft tokens follow Graphite and AMOLED without separate rules. Adjust the percentages by eye in the browser check and record the final values here. Done: the four tokens resolve for all seven accents in all three palettes.
+3. **Dark-mode accent text.** Under `:root[data-app-theme="dark"]` set `--app-primary-text: color-mix(in srgb, var(--app-primary) 60%, #fff)` and `--app-primary-strong` to the same. Point links, `.text-primary`, `.btn-outline-primary` text and border, `.appearance-mode-button.active` and `.settings-eyebrow` at `--app-primary-text`. Button fills keep `--app-primary`. Done: accent text on `--app-surface` reaches at least 4.5:1 for every accent in both dark palettes.
+4. **Bootstrap coverage.** In `app-themes.css` point at the tokens: `.page-link` / `.page-item.active .page-link`, `.nav-pills .nav-link.active`, `.nav-tabs .nav-link.active`, `.progress-bar` (only where no contextual `bg-*` class is set), `.list-group-item.active`, `.text-bg-primary`, `.form-switch .form-check-input:checked`, `.form-range` thumb, `.btn-outline-primary` active/checked state, and `.bg-primary-subtle` / `.text-primary-emphasis` / `.border-primary-subtle`. Done: none of these shows Bootstrap blue under a non-Classic accent.
+5. **Swatches.** In `templates/settings.html:243-249` replace each inline `style="background:#…"` with `data-accent-theme="<key>"` on the swatch span, and in `app-themes.css` set `.appearance-swatch { background: var(--app-primary); }`. A `data-accent-theme` selector written as `:root[...]` does not match a span, so change the seven accent blocks to `:root[data-accent-theme="x"], .appearance-swatch[data-accent-theme="x"]`; Classic gets a matching `.appearance-swatch[data-accent-theme="classic"]` block with the default values. Done: no accent hex remains in `settings.html`.
+6. **Page sweep.** For each file below, classify every blue as accent or status (decision 5), and replace accent uses: `#0d6efd` / `#2563eb` → `var(--app-primary)`; `#eff6ff` / `#dbeafe` backgrounds → `var(--app-primary-soft)`; `#bfdbfe` / `#dbeafe` borders → `var(--app-primary-soft-border)`; `#1d4ed8` / `#1e3a8a` text → `var(--app-primary-text)` or `--app-primary-strong`; `rgba(13, 110, 253, a)` → `rgba(var(--app-primary-rgb), a)`; hero gradients such as `approvals.html:13` → `linear-gradient(135deg, var(--app-primary-strong), var(--app-primary))`. Order, one file at a time with the suite's theme tests run between:
+   1. `templates/approvals.html`
+   2. `templates/travel_request.html`
+   3. `templates/products.html`
+   4. `static/css/app-offline-tsr.css` and `templates/offline_tsr.html`
+   5. `static/css/app-dashboard.css`
+   6. `templates/settings.html`
+   7. `templates/cash_advance.html`, `engineers.html`, `clients.html`, `_embedded_lpr_modal.html`, `reimbursement.html`, `activity.html`
+   8. the files with 1-4 occurrences listed under Investigation
+   Colours set from inline JavaScript strings are treated the same as CSS. Where a dark-mode override in `app-dark-pages.css` existed only to undo a hardcoded light blue that is now a token, remove the override. Done: with Lavender selected, no accent-role element on these pages is blue; with Classic selected, the pages look as they do today.
+7. **Version literals.** Bump `app-themes.css?v=` in `layout.html`, `login.html`, `forgot_password.html`, `reset_password.html`; bump `app-dark-pages.css`, `app-dashboard.css`, `app-offline-tsr.css` literals for each file actually edited, and any test that pins them. Done: every edited stylesheet has a new query version.
+8. **Tests** in `tests/test_appearance_themes.py`:
+   - update the pinned value to `'purple': '#8b5cf6'`;
+   - the four new tokens are defined in `app-themes.css`, and the dark block redefines `--app-primary-text`;
+   - contrast: for each accent, `--app-primary-text` against the Graphite and AMOLED `--app-surface` is at least 4.5:1, computing `color-mix` in the test with the suite's existing contrast helper;
+   - `settings.html` contains the "Lavender" label and no inline accent hex on the swatches;
+   - a guard that the swept files (the list in step 6, not `timeline.html`) contain no `#0d6efd`, with an explicit allow-list for the status uses kept under decision 5.
+   Done: each new assertion fails against the pre-change files.
+9. **Browser check** (decision 6). Start the local server and view Dashboard, Approvals, Travel Request, Products, Offline TSR, Settings and the login page with Lavender in Light, Graphite and AMOLED, then spot-check Shimadzu Red and Classic. Tune the step 2 and 3 percentages here. Done: findings and final percentages recorded in this plan.
+10. **Release records.** Bump the service-worker `CACHE_VERSION` (read live at that time), add a `static/changelog/releases.json` entry, update `changes.md` and this plan's status.
+11. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Calendar** (`templates/timeline.html`) — the owner asked to skip it; its schedule colours are semantic.
+- **Status and semantic colours** — success, warning, danger and informational blues keep their meaning (decision 5).
+- **Sidebar, header and the browser `theme-color`** (`#2c3e50`) — neutral chrome, not accent.
+- **Documents and print** — PDF/TSR previews, signature canvases and `static/css/app-calibration-report.css` represent fixed white output.
+- **Neutral greys** (`#64748b`, `#0f172a`, `#e2e8f0` and similar, several hundred uses) — already handled in dark mode by `app-dark-pages.css`; converting them to tokens is a separate, larger job.
+- **New accents, renaming the `purple` key, schema or API changes.**
+- **`static/css/app-auth.css`** — already follows `--app-primary`.
+
+## Verification
+
+- New and updated tests in step 8, each seen failing without its change.
+- `tests/test_appearance_themes.py`, `tests/test_dark_mode_readability.py`, `tests/test_login_page.py`, `tests/test_changelog_coverage.py`, then one full-suite pass quoted against the baseline.
+- `node --check` on the inline script of any template whose JavaScript colour strings were edited.
+- Flask test client: GET each swept page returns 200.
+- Browser sequence in step 9, including 375px width on Approvals and Settings and a clean console.
+
+## After implementation
+
+1. Self-review the diff file by file; confirm `templates/timeline.html` is untouched.
+2. Prove the new tests fail without the change.
+3. Full suite, quoting counts against the baseline.
+4. Service worker bump and `releases.json` entry.
+5. `changes.md` and this plan's status, with the commit hash, the final token percentages, and any difference between plan and outcome.
+6. Commit checklist with explicit staging of the edited templates, stylesheets, `tests/test_appearance_themes.py`, `app.py` (cache version only), `static/changelog/releases.json`, `plans.md`, `changes.md`. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and unrelated dirty entries. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **A status blue converted to accent, or the reverse.** A blue "info" element would turn red under Shimadzu Red and read as an error. Safety net: per-file classification in step 6, the allow-list in the step 8 guard, and the Shimadzu Red spot-check in step 9.
+- **White text on `#8b5cf6`.** About 4.2:1, slightly under the 4.5:1 mark for small text; button labels are bold. If it reads poorly in step 9, darken to `#7c3aed` and record it.
+- **Classic regressions.** Soft tints derived by `color-mix` will not be pixel-identical to `#eff6ff` / `#dbeafe`. Accepted; step 9 compares Classic before and after.
+- **`color-mix` support.** Already relied on by the app, so no new browser floor.
+- **Wide blast radius.** About 25 files of styling. Each file is its own step with tests between, and the change is styling only: no route, data or markup-structure change.
+- **Cached stylesheets.** A missed version bump leaves installed PWAs on old CSS; step 7 and the service worker bump cover it.
+
 # Settings: Product Names Tab — Faster Standardization and a Clearer Catalog
 
 **Status:** Executed — implementation commit `66f91f4`; publication to `origin/main` authorized.

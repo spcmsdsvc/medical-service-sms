@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-02-lavender-accent-pages",
+      "release_date": "2026-10-02",
+      "title": "Lavender Accent and Accent Colours Across Pages",
+      "summary": "The Purple accent is now a lighter Lavender, and the chosen accent colours page panels, badges and headings instead of only buttons.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-lavender-accent-pages-everyone",
+          "category": "System",
+          "description": "In Settings > Appearance, Purple is now Lavender, a lighter violet. Whichever accent you choose now also colours panels, badges, headings and highlights on Approvals, Travel Request, Cash Advance, Products, Create TSR, the Dashboard, Settings and other pages, which previously stayed blue. Accent-coloured text is lighter in Graphite Dark and AMOLED Black so it is easier to read. The Calendar is unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-01-approval-routing-settings",
       "release_date": "2026-10-01",
       "title": "Clearer Approval Routing in Settings",
