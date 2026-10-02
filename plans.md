@@ -1,6 +1,7 @@
 # Colour Themes: Lavender Accent and Accent-Aware Pages
 
-**Status:** Executed — not yet committed; commit and push await the owner's instruction.
+**Status:** Executed — implementation commit `69196de`; publication to `origin/main` authorized.
+**Publication authorized:** 2026-10-02 — the owner said "commit and push partner, never the db and dirty files".
 **Finished:** 2026-10-02.
 **Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not overengineer and over check".
 
