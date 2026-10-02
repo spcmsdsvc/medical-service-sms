@@ -1,6 +1,6 @@
 # Calibration Report: Performance Criteria Table Is Not Cut Across Pages
 
-**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Status:** Executed — implementation commit `fca812a`; published to `origin/main` on the owner's "commit and push".
 **Approved and execution authorized:** 2026-10-02 — the owner said "i think we can do better by giving it a letterhead and the heading. go ahead partner. do not overengineer and over check".
 **Finished:** 2026-10-02.
 
