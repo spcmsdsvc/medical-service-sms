@@ -141,7 +141,8 @@ Line numbers are as of commit `d812a42`.
 
 # Calibration Center: Clearer Records List and a Friendlier Repair Section
 
-**Status:** Executed — uncommitted (no commit, push, or deployment).
+**Status:** Executed — implementation commit `35ad164`; publication to `origin/main` authorized.
+**Publication authorized:** 2026-10-02 — the owner said "commit and push partner, never the db and dirty files".
 **Execution authorized:** 2026-10-02 — the owner said "go ahead partner. go with your recommendations also". During execution the owner added "do not overengineer and over check".
 **Approved:** 2026-10-02 — after the plan was presented the owner said "yes you can remove the typed REPAIR. and you can use broswer to check".
 **Detailed:** 2026-10-02.
