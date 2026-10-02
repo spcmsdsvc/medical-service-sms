@@ -363,128 +363,91 @@
     </div>
 
     <div class="row g-4 settings-section-panel" data-settings-section="storage">
-        <div class="col-12 col-xl-9">
-            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 settings-storage-card">
-                <div class="card-header bg-info text-dark py-3 border-0 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 fw-bold">
-                        <i class="fa-solid fa-cloud me-2"></i>Private Bucket Storage
-                    </h5>
-                    <span id="storage-status-badge" class="badge bg-light text-secondary small fw-bold">Checking...</span>
-                </div>
-                <div class="card-body p-4 bg-white">
-                    <div id="storage-health-loading" class="text-muted small fw-bold">
-                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Checking private bucket storage...
-                    </div>
-
-                    <div id="storage-health-content" class="d-none">
-                        <div class="storage-meter mb-3" aria-label="Bucket storage usage">
-                            <div class="storage-meter-fill" id="storage-meter-fill" style="width: 0%;"></div>
-                        </div>
-
-                        <div class="row g-3 mb-3">
-                            <div class="col-6 col-lg-3">
-                                <div class="storage-stat">
-                                    <div class="storage-stat-label">Used</div>
-                                    <div class="storage-stat-value" id="storage-bucket-used-gb">--</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-lg-3">
-                                <div class="storage-stat">
-                                    <div class="storage-stat-label">Total Capacity</div>
-                                    <div class="storage-stat-value" id="storage-bucket-capacity">--</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-lg-3">
-                                <div class="storage-stat">
-                                    <div class="storage-stat-label">Remaining</div>
-                                    <div class="storage-stat-value" id="storage-bucket-remaining">--</div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-lg-3">
-                                <div class="storage-stat">
-                                    <div class="storage-stat-label">Usage</div>
-                                    <div class="storage-stat-value" id="storage-bucket-percent">--</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="storage-breakdown mb-3">
-                            <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-file-lines me-2 text-primary"></i>Bucket Objects</span>
-                                <strong id="storage-bucket-objects">--</strong>
-                            </div>
-                            <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-cloud me-2 text-info"></i>Storage Mode</span>
-                                <strong id="storage-active-mode">--</strong>
-                            </div>
-                            <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-shield-check me-2 text-success"></i>Verified Objects</span>
-                                <strong id="storage-verified-objects">--</strong>
-                            </div>
-                            <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-triangle-exclamation me-2 text-warning"></i>Pending / Issues</span>
-                                <strong id="storage-bucket-issues">--</strong>
-                            </div>
-                            <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-location-dot me-2 text-info"></i>Bucket Region</span>
-                                <strong id="storage-bucket-region">--</strong>
-                            </div>
-                            <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-rotate-left me-2 text-secondary"></i>Legacy Fallback</span>
-                                <strong id="storage-fallback">--</strong>
-                            </div>
-                        </div>
-
-                        <div class="small text-muted fw-bold" id="storage-recommendation">
-                            Bucket storage status will appear here.
-                        </div>
-
-                        <div class="storage-last-checked mt-2" id="storage-last-checked">
-                            Last checked: --
-                        </div>
-
-                        <button type="button" class="btn btn-outline-info btn-sm fw-bold rounded-3 mt-3" onclick="loadStorageHealth(true)">
-                            <i class="fa-solid fa-rotate me-1"></i>Refresh Storage Health
-                        </button>
-                    </div>
-
-                    <div id="storage-health-error" class="alert alert-warning small d-none mb-0">
-                        Storage health could not be loaded. Please check server logs.
-                    </div>
-                </div>
+        <div class="col-12">
+            <div id="storage-health-loading" class="text-muted small fw-bold mb-3">
+                <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Checking storage...
             </div>
+            <div id="storage-health-error" class="alert alert-warning small d-none mb-3"></div>
 
-            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 bucket-migration-card">
-                <div class="card-header bg-dark text-white py-3 border-0 d-flex justify-content-between align-items-center gap-3">
-                    <h5 class="mb-0 fw-bold"><i class="fa-solid fa-shield-check me-2 text-info"></i>Bucket Verification</h5>
-                    <span id="bucket-mode-badge" class="badge bg-secondary">Checking...</span>
+            <div id="storage-health-content" class="d-none">
+                <div id="storage-overview" class="storage-recommendation d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+                    <span id="storage-overview-message"></span>
+                    <span class="d-flex flex-wrap align-items-center gap-2">
+                        <span class="storage-last-checked" id="storage-last-checked"></span>
+                        <button type="button" class="btn btn-outline-secondary btn-sm fw-bold rounded-3" onclick="loadStorageHealth()">
+                            <i class="fa-solid fa-rotate me-1"></i>Refresh
+                        </button>
+                    </span>
                 </div>
-                <div class="card-body p-4 bg-white">
-                    <div id="bucket-migration-loading" class="text-muted small fw-bold">
-                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Checking private bucket...
-                    </div>
-                    <div id="bucket-migration-content" class="d-none">
-                        <div id="bucket-connection-message" class="bucket-connection-status mb-3"></div>
-                        <div class="row g-3 mb-3">
-                            <div class="col-6 col-lg-4"><div class="storage-stat"><div class="storage-stat-label">Bucket Objects</div><div id="bucket-object-count" class="storage-stat-value">--</div></div></div>
-                            <div class="col-6 col-lg-4"><div class="storage-stat"><div class="storage-stat-label">Verified</div><div id="bucket-verified-count" class="storage-stat-value">--</div></div></div>
-                            <div class="col-12 col-lg-4"><div class="storage-stat"><div class="storage-stat-label">Pending / Issues</div><div id="bucket-pending-count" class="storage-stat-value">--</div></div></div>
+
+                <div class="row g-4">
+                    <div class="col-12 col-xl-6">
+                        <div class="card shadow-sm border-0 rounded-4 overflow-hidden h-100 settings-storage-card">
+                            <div class="card-header bg-dark text-white py-3 border-0 d-flex justify-content-between align-items-center gap-3">
+                                <h5 class="mb-0 fw-bold"><i class="fa-solid fa-hard-drive me-2 text-info"></i>Server Volume</h5>
+                                <span id="storage-volume-badge" class="badge bg-secondary small fw-bold">--</span>
+                            </div>
+                            <div class="card-body p-4 bg-white">
+                                <p class="small text-muted">Holds the database and backup files. Uploads and saving stop working if it fills up.</p>
+                                <div class="storage-meter mb-3" aria-label="Volume usage">
+                                    <div class="storage-meter-fill" id="storage-volume-meter" style="width: 0%;"></div>
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-6"><div class="storage-stat"><div class="storage-stat-label">Used</div><div class="storage-stat-value" id="storage-volume-used">--</div></div></div>
+                                    <div class="col-6"><div class="storage-stat"><div class="storage-stat-label">Limit</div><div class="storage-stat-value" id="storage-volume-limit">--</div></div></div>
+                                    <div class="col-6"><div class="storage-stat"><div class="storage-stat-label">Remaining</div><div class="storage-stat-value" id="storage-volume-remaining">--</div></div></div>
+                                    <div class="col-6"><div class="storage-stat"><div class="storage-stat-label">Usage</div><div class="storage-stat-value" id="storage-volume-percent">--</div></div></div>
+                                </div>
+                                <div class="small fw-bold text-muted text-uppercase mb-1">What is using the space</div>
+                                <div class="storage-breakdown mb-2" id="storage-volume-breakdown"></div>
+                                <a id="storage-backup-link" class="small fw-bold d-none" href="{{ url_for('system_backup_page') }}">A stored backup is taking space — open Backup Center</a>
+                                <details class="mt-3">
+                                    <summary class="small fw-bold">Largest files</summary>
+                                    <div class="storage-breakdown mt-2" id="storage-largest-files"></div>
+                                </details>
+                            </div>
                         </div>
-                        <div class="bucket-progress mb-3"><div id="bucket-progress-fill" class="bucket-progress-fill" style="width:0%"></div></div>
-                        <div id="bucket-migration-summary" class="small text-muted fw-bold mb-3"></div>
-                        <div id="bucket-status-counts" class="bucket-status-counts mb-3"></div>
-                        <div class="d-flex flex-column flex-sm-row gap-2">
-                            <button type="button" class="btn btn-outline-secondary fw-bold" onclick="loadBucketMigrationStatus(true)">
-                                <i class="fa-solid fa-rotate me-2"></i>Refresh
-                            </button>
-                        </div>
-                        <div class="xsmall text-muted mt-3">All managed uploads are stored in the private bucket. Verification compares stored object size and SHA-256 checksum.</div>
                     </div>
-                    <div id="bucket-migration-error" class="alert alert-warning small d-none mb-0"></div>
+
+                    <div class="col-12 col-xl-6">
+                        <div class="card shadow-sm border-0 rounded-4 overflow-hidden h-100 settings-storage-card">
+                            <div class="card-header bg-info text-dark py-3 border-0 d-flex justify-content-between align-items-center gap-3">
+                                <h5 class="mb-0 fw-bold"><i class="fa-solid fa-cloud me-2"></i>File Storage (Private Bucket)</h5>
+                                <span id="storage-status-badge" class="badge bg-light text-secondary small fw-bold">--</span>
+                            </div>
+                            <div class="card-body p-4 bg-white">
+                                <p class="small text-muted">Holds uploaded files such as TSRs, reports and attachments.</p>
+                                <div class="storage-meter mb-3" aria-label="Bucket storage usage">
+                                    <div class="storage-meter-fill" id="storage-meter-fill" style="width: 0%;"></div>
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-6"><div class="storage-stat"><div class="storage-stat-label">Used</div><div class="storage-stat-value" id="storage-bucket-used-gb">--</div></div></div>
+                                    <div class="col-6"><div class="storage-stat"><div class="storage-stat-label">Configured Limit</div><div class="storage-stat-value" id="storage-bucket-capacity">--</div></div></div>
+                                    <div class="col-6"><div class="storage-stat"><div class="storage-stat-label">Files</div><div class="storage-stat-value" id="storage-bucket-objects">--</div></div></div>
+                                    <div class="col-6"><div class="storage-stat"><div class="storage-stat-label">Usage</div><div class="storage-stat-value" id="storage-bucket-percent">--</div></div></div>
+                                </div>
+                                <div id="bucket-connection-message" class="bucket-connection-status mb-3"></div>
+                                <div class="small fw-bold" id="storage-verification-line"></div>
+                                <button type="button" id="bucket-verify-btn" class="btn btn-outline-info btn-sm fw-bold rounded-3 mt-2 d-none" onclick="verifyBucketNow()">
+                                    <i class="fa-solid fa-shield-halved me-1"></i>Verify now
+                                </button>
+                                <details class="mt-3">
+                                    <summary class="small fw-bold">Details</summary>
+                                    <div class="storage-breakdown mt-2">
+                                        <div class="storage-breakdown-row"><span>Where new uploads go</span><strong id="storage-active-mode">--</strong></div>
+                                        <div class="storage-breakdown-row"><span>Bucket region</span><strong id="storage-bucket-region">--</strong></div>
+                                        <div class="storage-breakdown-row"><span>Read old files from the volume if missing</span><strong id="storage-fallback">--</strong></div>
+                                    </div>
+                                    <div id="bucket-status-counts" class="bucket-status-counts mt-2"></div>
+                                    <div class="xsmall text-muted mt-2">Verification compares each file's size and checksum between the volume and the bucket.</div>
+                                </details>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-            </div>
+    </div>
         {% endif %}
 
         <!-- COLUMN 2: ADMINISTRATIVE PERSONNEL MANAGEMENT -->
@@ -1131,7 +1094,6 @@
             loadMySignature();
         } else if (sectionName === 'storage' && document.getElementById('storage-health-content')) {
             loadStorageHealth();
-            loadBucketMigrationStatus();
         } else if (sectionName === 'approval' && document.getElementById('approval-routing-content')) {
             loadApprovalRouting();
         } else if (sectionName === 'email-recipients' && document.getElementById('email-recipient-content')) {
@@ -1645,26 +1607,128 @@
         if (el) el.textContent = value || '--';
     }
 
-    function setStorageStatusBadge(data) {
-        const badge = document.getElementById('storage-status-badge');
-        if (!badge) return;
+    function setStorageMeter(id, percent) {
+        const meter = document.getElementById(id);
+        if (!meter) return;
+        const value = Math.max(0, Math.min(100, Number(percent || 0)));
+        meter.style.width = `${value}%`;
+        meter.classList.toggle('storage-meter-warning', value >= 75 && value < 90);
+        meter.classList.toggle('storage-meter-critical', value >= 90);
+    }
 
+    function setStorageBadge(id, tone, label) {
+        const badge = document.getElementById(id);
+        if (!badge) return;
+        const tones = {
+            healthy: 'bg-success text-white',
+            warning: 'bg-warning text-dark',
+            critical: 'bg-danger text-white'
+        };
+        badge.textContent = label;
+        badge.className = 'badge small fw-bold ' + (tones[tone] || tones.warning);
+    }
+
+    function storageBreakdownRows(rows) {
+        return rows.map(([label, value, title]) => `
+            <div class="storage-breakdown-row" ${title ? `title="${settingsEscape(title)}"` : ''}>
+                <span class="text-break">${settingsEscape(label)}</span>
+                <strong class="text-nowrap">${settingsEscape(value)}</strong>
+            </div>
+        `).join('');
+    }
+
+    function renderStorageHealth(data) {
+        const overall = data.overall || {};
+        const overview = document.getElementById('storage-overview');
+        if (overview) {
+            overview.className = 'storage-recommendation storage-recommendation-' + (overall.status || 'warning')
+                + ' d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4';
+        }
+        setStorageText('storage-overview-message', overall.message);
+        setStorageText('storage-last-checked', 'Last checked: ' + String(data.generated_at_manila || '').slice(0, 16).replace('T', ' '));
+
+        // Server volume
+        setStorageBadge('storage-volume-badge', data.storage_status, data.storage_status_label || 'Unknown');
+        setStorageMeter('storage-volume-meter', data.usage_percent);
+        setStorageText('storage-volume-used', data.used_human);
+        setStorageText('storage-volume-limit', (data.limit_human || '--') + (data.limit_is_default ? ' (default)' : ''));
+        setStorageText('storage-volume-remaining', data.remaining_human);
+        setStorageText('storage-volume-percent', `${Number(data.usage_percent || 0).toFixed(1)}%`);
+
+        const sizeOf = item => (item && item.size_human) || '0 B';
+        const backupArchive = data.backup_archive || {};
+        const breakdown = document.getElementById('storage-volume-breakdown');
+        if (breakdown) {
+            breakdown.innerHTML = storageBreakdownRows([
+                ['Database', sizeOf(data.database)],
+                ['Stored backup', sizeOf(backupArchive)],
+                ['Uploaded files still on the volume', sizeOf(data.legacy_upload_usage)]
+            ]);
+        }
+        document.getElementById('storage-backup-link')?.classList.toggle('d-none', !Number(backupArchive.size_bytes || 0));
+        const largest = document.getElementById('storage-largest-files');
+        if (largest) {
+            const files = data.largest_files || [];
+            largest.innerHTML = files.length
+                ? storageBreakdownRows(files.map(file => [file.name || file.path || 'File', file.size_human || '', file.path || '']))
+                : '<div class="small text-muted">No files found.</div>';
+        }
+
+        // Private bucket
         const migration = data.bucket_migration || {};
         const storage = migration.storage || {};
         const connection = data.bucket_connection || migration.connection || {};
-        const healthy = Boolean(storage.bucket_enabled && connection.ok);
-        const status = healthy ? 'healthy' : 'warning';
-        badge.textContent = healthy ? 'Connected' : 'Check connection';
-        badge.className = 'badge small fw-bold';
+        const bucket = data.bucket_usage || migration.bucket || {};
+        const capacity = data.bucket_capacity || {};
+        const counts = migration.counts || {};
+        const issues = Number(data.bucket_issue_count || 0);
+        const unverified = Number(data.bucket_unverified_count || 0);
 
-        if (status === 'healthy') {
-            badge.classList.add('bg-success', 'text-white');
-        } else {
-            badge.classList.add('bg-warning', 'text-dark');
+        setStorageBadge(
+            'storage-status-badge',
+            connection.ok && !issues ? 'healthy' : 'warning',
+            !connection.ok ? 'Not connected' : (issues ? 'Needs attention' : 'Connected')
+        );
+        setStorageMeter('storage-meter-fill', capacity.usage_percent);
+        setStorageText('storage-bucket-used-gb', capacity.used_human || '0.00 GB');
+        setStorageText('storage-bucket-capacity', (capacity.limit_human || 'No limit') + (capacity.limit_is_default ? ' (default)' : ''));
+        setStorageText('storage-bucket-objects', String(bucket.object_count || 0));
+        setStorageText('storage-bucket-percent', capacity.usage_percent == null ? 'No limit' : `${Number(capacity.usage_percent).toFixed(2)}%`);
+
+        const connectionBox = document.getElementById('bucket-connection-message');
+        if (connectionBox) {
+            connectionBox.className = 'bucket-connection-status mb-3 ' + (connection.ok ? 'connected' : 'disconnected');
+            connectionBox.innerHTML = `<i class="fa-solid fa-${connection.ok ? 'circle-check' : 'triangle-exclamation'} me-2"></i>${settingsEscape(connection.message || 'Bucket status unavailable.')}`;
+        }
+        setStorageText('storage-verification-line', issues || unverified
+            ? `${unverified} file(s) not yet verified, ${issues} with problems.`
+            : 'No files are waiting for verification.');
+        const verifyBtn = document.getElementById('bucket-verify-btn');
+        if (verifyBtn) {
+            verifyBtn.classList.toggle('d-none', !(issues || unverified));
+            verifyBtn.disabled = !connection.ok;
+        }
+
+        const modeLabels = { bucket: 'Private bucket', mirror: 'Bucket and volume', volume: 'Server volume' };
+        setStorageText('storage-active-mode', modeLabels[storage.mode] || String(storage.mode || 'Unknown'));
+        setStorageText('storage-bucket-region', String(storage.region || '--').toUpperCase());
+        setStorageText('storage-fallback', storage.volume_fallback ? 'Yes' : 'No');
+        const countBox = document.getElementById('bucket-status-counts');
+        if (countBox) {
+            countBox.innerHTML = [
+                ['Verified', counts.verified, 'success'],
+                ['Copied, not yet verified', counts.migrated, 'info'],
+                ['Not yet copied', counts.pending, 'secondary'],
+                ['Missing from bucket', counts.missing, 'warning'],
+                ['Size differs', counts.conflicting, 'danger'],
+                ['Failed', counts.failed, 'danger']
+            ].filter(([, value]) => Number(value || 0) > 0)
+                .map(([label, value, tone]) => `<span class="badge bg-${tone}${tone === 'warning' || tone === 'info' ? ' text-dark' : ''}">${settingsEscape(label)}: ${Number(value)}</span>`)
+                .join(' ');
         }
     }
 
-    async function loadStorageHealth(forceRefresh=false) {
+    async function loadStorageHealth() {
         const loading = document.getElementById('storage-health-loading');
         const content = document.getElementById('storage-health-content');
         const error = document.getElementById('storage-health-error');
@@ -1673,66 +1737,20 @@
         if (error) error.classList.add('d-none');
 
         try {
-            const res = await fetch('/admin/storage-health' + (forceRefresh ? '?refresh=1' : ''), {
+            const res = await fetch('/admin/storage-health', {
                 credentials: 'same-origin',
                 cache: 'no-store'
             });
-            const data = await res.json();
-
+            const data = await res.json().catch(() => ({}));
             if (!res.ok || data.status !== 'success') {
-                throw new Error(data.message || 'Storage health request failed.');
+                throw new Error(data.message || data.error || 'Storage health could not be loaded.');
             }
-
-            setStorageStatusBadge(data);
-            const migration = data.bucket_migration || {};
-            const storage = migration.storage || {};
-            const connection = data.bucket_connection || migration.connection || {};
-            const bucket = data.bucket_usage || migration.bucket || {};
-            const capacity = data.bucket_capacity || {};
-            const counts = migration.counts || {};
-            const pendingIssues = Number(counts.pending || 0)
-                + Number(counts.missing || 0)
-                + Number(counts.conflicting || 0)
-                + Number(counts.failed || 0);
-            setStorageText('storage-bucket-used-gb', capacity.used_human || '0.00 GB');
-            setStorageText('storage-bucket-capacity', capacity.limit_human || 'Unlimited');
-            setStorageText('storage-bucket-remaining', capacity.remaining_human || 'Unlimited');
-            const usagePercent = capacity.usage_percent == null ? null : Number(capacity.usage_percent || 0);
-            setStorageText('storage-bucket-percent', usagePercent == null ? 'Unlimited' : `${usagePercent.toFixed(3)}%`);
-            setStorageText('storage-bucket-objects', String(bucket.object_count || 0));
-            setStorageText('storage-active-mode', String(storage.mode || 'unknown').toUpperCase());
-            setStorageText('storage-connection', connection.ok ? 'Connected' : 'Attention');
-            setStorageText('storage-verified-objects', String(counts.verified || 0));
-            setStorageText('storage-bucket-issues', String(pendingIssues));
-            setStorageText('storage-bucket-region', String(storage.region || '--').toUpperCase());
-            setStorageText('storage-fallback', storage.volume_fallback ? 'Enabled' : 'Disabled');
-            const recommendation = document.getElementById('storage-recommendation');
-            if (recommendation) {
-                const healthy = Boolean(storage.bucket_enabled && connection.ok && pendingIssues === 0);
-                recommendation.className = 'storage-recommendation storage-recommendation-' + (healthy ? 'healthy' : 'warning');
-                recommendation.textContent = healthy
-                    ? 'Healthy: New uploads are stored in the private Railway bucket.'
-                    : `Attention: ${connection.message || 'Review the private bucket status.'}`;
-            }
-            setStorageText('storage-last-checked', `Last checked: ${new Date().toLocaleString()}`);
-
-            const meter = document.getElementById('storage-meter-fill');
-            if (meter) {
-                const meterPercent = Math.max(0, Math.min(100, Number(usagePercent || 0)));
-                meter.style.width = `${meterPercent}%`;
-                meter.classList.remove('storage-meter-warning', 'storage-meter-critical');
-                if (meterPercent >= 90) {
-                    meter.classList.add('storage-meter-critical');
-                } else if (meterPercent >= 75) {
-                    meter.classList.add('storage-meter-warning');
-                }
-            }
-
+            renderStorageHealth(data);
             if (content) content.classList.remove('d-none');
         } catch (err) {
             console.error('Storage health failed:', err);
             if (error) {
-                error.textContent = 'Storage health could not be loaded. Please check server logs.';
+                error.textContent = err.message || 'Storage health could not be loaded.';
                 error.classList.remove('d-none');
             }
         } finally {
@@ -1740,91 +1758,12 @@
         }
     }
 
-    function renderBucketMigrationStatus(data) {
-        const storage = data.storage || {};
-        const connection = data.connection || {};
-        const volume = data.volume || {};
-        const bucket = data.bucket || {};
-        const counts = data.counts || {};
-        const total = Number(bucket.object_count || 0);
-        const verified = Number(counts.verified || 0);
-        const pending = Number(counts.pending || 0) + Number(counts.missing || 0);
-        const issues = Number(counts.conflicting || 0) + Number(counts.failed || 0);
-        const completedPercent = total > 0 ? Math.round((verified / total) * 100) : 0;
-
-        setStorageText('bucket-object-count', `${bucket.object_count || 0} / ${bucket.size_human || '0 B'}`);
-        setStorageText('bucket-verified-count', String(verified));
-        setStorageText('bucket-pending-count', issues ? `${pending} / ${issues} issues` : String(pending));
-
-        const modeBadge = document.getElementById('bucket-mode-badge');
-        if (modeBadge) {
-            modeBadge.textContent = String(storage.mode || 'volume').toUpperCase();
-            modeBadge.className = 'badge ' + (storage.mode === 'bucket' ? 'bg-success' : (storage.mode === 'mirror' ? 'bg-warning text-dark' : 'bg-secondary'));
-        }
-        const connectionBox = document.getElementById('bucket-connection-message');
-        if (connectionBox) {
-            connectionBox.className = 'bucket-connection-status mb-3 ' + (connection.ok ? 'connected' : 'disconnected');
-            connectionBox.innerHTML = `<i class="fa-solid fa-${connection.ok ? 'circle-check' : 'triangle-exclamation'} me-2"></i>${settingsEscape(connection.message || 'Bucket status unavailable.')}`;
-        }
-        const progress = document.getElementById('bucket-progress-fill');
-        if (progress) progress.style.width = `${Math.max(0, Math.min(100, completedPercent))}%`;
-        const summary = document.getElementById('bucket-migration-summary');
-        if (summary) {
-            summary.textContent = data.complete
-                ? 'All bucket objects have passed size and SHA-256 verification.'
-                : `${verified} of ${total} bucket objects verified. ${Number(counts.migrated || 0)} awaiting verification.`;
-        }
-        const countBox = document.getElementById('bucket-status-counts');
-        if (countBox) {
-            countBox.innerHTML = [
-                ['Migrated', counts.migrated || 0, 'info'],
-                ['Pending', counts.pending || 0, 'secondary'],
-                ['Missing', counts.missing || 0, 'warning'],
-                ['Conflicting', counts.conflicting || 0, 'danger'],
-                ['Failed', counts.failed || 0, 'danger']
-            ].map(([label, value, tone]) => `<span class="badge bg-${tone}${tone === 'warning' || tone === 'info' ? ' text-dark' : ''}">${settingsEscape(label)}: ${Number(value || 0)}</span>`).join('');
-        }
-        const disabled = !connection.ok;
-        const migrateBtn = document.getElementById('bucket-migrate-btn');
-        const verifyBtn = document.getElementById('bucket-verify-btn');
-        if (migrateBtn) migrateBtn.disabled = disabled || data.complete;
-        if (verifyBtn) verifyBtn.disabled = disabled || data.complete;
-    }
-
-    async function loadBucketMigrationStatus(forceRefresh=false) {
-        const loading = document.getElementById('bucket-migration-loading');
-        const content = document.getElementById('bucket-migration-content');
-        const error = document.getElementById('bucket-migration-error');
-        if (!loading) return;
-        loading.classList.remove('d-none');
-        error?.classList.add('d-none');
-        try {
-            const response = await fetch('/admin/storage-bucket/status' + (forceRefresh ? '?refresh=1' : ''), {
-                credentials: 'same-origin', cache: 'no-store'
-            });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok || data.status !== 'success') throw new Error(data.message || 'Bucket status failed.');
-            renderBucketMigrationStatus(data);
-            content?.classList.remove('d-none');
-        } catch (err) {
-            console.error('Bucket migration status failed:', err);
-            if (error) {
-                error.textContent = err.message || 'Bucket migration status could not be loaded.';
-                error.classList.remove('d-none');
-            }
-        } finally {
-            loading.classList.add('d-none');
-        }
-    }
-
-    async function runBucketOperation(url, buttonId, workingLabel) {
-        const button = document.getElementById(buttonId);
+    async function verifyBucketNow() {
+        const button = document.getElementById('bucket-verify-btn');
         if (!button || button.disabled) return;
-        const originalHtml = button.innerHTML;
         button.disabled = true;
-        button.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin me-2"></i>${settingsEscape(workingLabel)}`;
         try {
-            const response = await fetch(url, {
+            const response = await fetch('/admin/storage-bucket/verify', {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
@@ -1832,24 +1771,13 @@
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok || !['success', 'warning'].includes(data.status)) {
-                throw new Error(data.message || 'Bucket operation failed.');
+                throw new Error(data.message || 'Verification failed.');
             }
-            settingsAlert(`${data.processed || 0} file(s) processed.`, data.status === 'warning' ? 'warning' : 'success');
-            await Promise.all([loadBucketMigrationStatus(true), loadStorageHealth(true)]);
+            settingsAlert(`${data.processed || 0} file(s) checked.`, data.status === 'warning' ? 'warning' : 'success');
         } catch (err) {
-            settingsAlert(err.message || 'Bucket operation failed.');
-        } finally {
-            button.innerHTML = originalHtml;
-            button.disabled = false;
+            settingsAlert(err.message || 'Verification failed.');
         }
-    }
-
-    function runBucketMigrationBatch() {
-        return runBucketOperation('/admin/storage-bucket/migrate-batch', 'bucket-migrate-btn', 'Migrating...');
-    }
-
-    function runBucketVerificationBatch() {
-        return runBucketOperation('/admin/storage-bucket/verify', 'bucket-verify-btn', 'Verifying...');
+        await loadStorageHealth();
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -4403,19 +4331,6 @@
     }
     .bucket-connection-status.connected { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
     .bucket-connection-status.disconnected { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
-    .bucket-progress {
-        height: 10px;
-        overflow: hidden;
-        border-radius: 999px;
-        background: #e2e8f0;
-    }
-    .bucket-progress-fill {
-        height: 100%;
-        border-radius: inherit;
-        background: #16a34a;
-        transition: width 0.3s ease;
-    }
-    .bucket-status-counts { display: flex; flex-wrap: wrap; gap: 0.45rem; }
     .storage-meter {
         width: 100%;
         height: 14px;

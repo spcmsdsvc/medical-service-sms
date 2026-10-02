@@ -27027,7 +27027,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v235-backup-tab';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v236-storage-tab';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27529,6 +27529,7 @@ def dashboard_page():
     profile = getattr(current_user, 'engineer_profile', None)
     dashboard_caps = get_dashboard_capabilities(current_user)
     backup_overdue_notice = None
+    storage_full_notice = None
     if is_superadmin_user():
         summary = backup_summary()
         if summary['overdue'] and summary['status'] != 'running':
@@ -27536,9 +27537,13 @@ def dashboard_page():
                 f"No system backup in {summary['days_since_last']} days."
                 if summary['days_since_last'] is not None else 'No system backup on record.'
             )
+        disk_percent = volume_disk_usage_percent()
+        if disk_percent is not None and disk_percent >= 90:
+            storage_full_notice = f'Storage volume is {disk_percent}% full.'
     return render_template(
         'dashboard.html',
         backup_overdue_notice=backup_overdue_notice,
+        storage_full_notice=storage_full_notice,
         logged_in_engineer_id=getattr(profile, 'id', None),
         logged_in_engineer_name=getattr(profile, 'name', '') or getattr(current_user, 'username', ''),
         logged_in_user_role=getattr(current_user, 'role', ''),
@@ -31718,10 +31723,40 @@ def get_storage_health_report():
         'remaining_gb': round(bucket_remaining_bytes / (1024 ** 3), 4) if bucket_remaining_bytes is not None else None,
         'remaining_human': f'{bucket_remaining_bytes / (1024 ** 3):,.2f} GB' if bucket_remaining_bytes is not None else 'Unlimited',
         'usage_percent': bucket_usage_percent,
+        'limit_is_default': not clean_str(os.environ.get('STORAGE_BUCKET_LIMIT_GB')),
     }
+
+    bucket_counts = bucket_migration.get('counts') or {}
+    bucket_issue_count = sum(clean_int(bucket_counts.get(key)) or 0 for key in ('missing', 'conflicting', 'failed'))
+    bucket_unverified_count = sum(clean_int(bucket_counts.get(key)) or 0 for key in ('pending', 'migrated'))
+    bucket_connection = bucket_migration.get('connection') or {}
+    # One plain sentence for the top of the Storage tab: the volume first, then the bucket.
+    if status == 'critical':
+        overall = {'status': 'critical', 'message': (
+            f'The server volume is {usage_percent}% full. Download a backup, then free space '
+            'or raise the limit before uploads and saving fail.'
+        )}
+    elif status == 'warning':
+        overall = {'status': 'warning', 'message': (
+            f'The server volume is {usage_percent}% full. Plan a cleanup or a larger volume.'
+        )}
+    elif not bucket_connection.get('ok'):
+        overall = {'status': 'warning', 'message': (
+            f"File storage cannot be reached: {bucket_connection.get('message') or 'no details'}"
+        )}
+    elif bucket_issue_count:
+        overall = {'status': 'warning', 'message': (
+            f'{bucket_issue_count} stored file(s) need attention. See File Storage below.'
+        )}
+    else:
+        overall = {'status': 'healthy', 'message': 'Storage is healthy.'}
 
     return {
         'status': 'success',
+        'overall': overall,
+        'bucket_issue_count': bucket_issue_count,
+        'bucket_unverified_count': bucket_unverified_count,
+        'limit_is_default': not clean_str(os.environ.get('STORAGE_LIMIT_GB')),
         'storage_status': status,
         'storage_status_label': status_label,
         'generated_at_manila': get_manila_time().isoformat(),
@@ -32121,6 +32156,18 @@ def run_system_backup_job(job_id, username):
 
 
 BACKUP_OVERDUE_DAYS = 7
+
+
+def volume_disk_usage_percent():
+    """Whole-number percent of the database's disk in use; None when unreadable.
+
+    A cheap check for the dashboard, not the full storage scan.
+    """
+    try:
+        usage = shutil.disk_usage(os.path.dirname(get_active_sqlite_database_path()) or '.')
+        return int(usage.used * 100 / usage.total) if usage.total else None
+    except (OSError, TypeError, ValueError):
+        return None
 
 
 def backup_summary(state=None, archive=None):

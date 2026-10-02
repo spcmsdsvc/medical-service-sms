@@ -1,3 +1,130 @@
+# Settings → Storage: Volume Usage, One Bucket Card, Plain Wording, and Largest Files
+
+**Status:** Executed — not yet committed; commit and push wait for the owner's instruction.
+**Finished:** 2026-10-02.
+**Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer and over check things".
+**Approved:** 2026-10-02 — the owner said "all approved partner, write it to plans.md" (all 19 proposed items, including item 17, the dashboard warning).
+**Detailed:** 2026-10-02.
+
+**Where the plan and the outcome differed:**
+
+- **The bucket usage percentage is rounded on the page** (two places), not in the report; the report's `bucket_capacity.usage_percent` is unchanged.
+- **Unverified files do not make the overall status a warning**; only a disconnected bucket or missing / size-differs / failed files do.
+- **No dark-theme rule was added.** The new elements reuse existing classes and Bootstrap badges; `app-dark-pages.css` is untouched.
+- **The "Uploaded files still on the volume" row uses the bucket report's volume figure** (`legacy_upload_usage`), so the three breakdown rows need not add up to the Used total.
+- **Verification:** new `tests/test_storage_settings.py` (4 tests) passes; full-suite counts are recorded in `changes.md`. `/settings` and `/` render in the test client and the new tab script passes `node --check`. The new tests were not run against the unfixed code, "Verify now" was not exercised, and nothing was opened in a browser.
+
+## Context
+
+The owner asked for a review of the next Settings tab after Backup, which is Storage. The tab has two cards, both about the private bucket, that repeat each other from two separate requests. It does not show the Railway volume — the disk that holds the database and backup archives and that breaks uploads and the database when it fills — although the server already computes that. Its wording is technical, its capacity figure is a configured default, and leftover script refers to buttons that are no longer on the page. The intended outcome: a superadmin opens Storage and sees in plain words whether the volume and the bucket are healthy, what is using the space, and what to do when something needs attention.
+
+## Decisions taken
+
+1. **All 19 items are in scope**, including the dashboard warning.
+2. **The tab reads one endpoint,** `/admin/storage-health`, which already contains the bucket report. The page stops calling `/admin/storage-bucket/status`.
+3. **No server route is removed.** `/admin/storage-bucket/status`, `/migrate-batch` and `/verify` stay as they are; only the page's dead Migrate code goes.
+4. **The tab is read-only except for "Verify now".** No file can be deleted from it.
+5. **The dashboard warning uses a cheap disk check** (`shutil.disk_usage` on the database's folder), not the full storage scan, and shows at 90% or more.
+6. **No change to storage mode, limits, or Railway variables.**
+7. **Superadmin-only stays.** No browser automation (project rule).
+
+## Investigation
+
+Line numbers are as of commit `cd4649c`.
+
+- **Markup:** `templates/settings.html:365-489`. Card 1 "Private Bucket Storage" (`:367-457`): meter, four figures (Used, Total Capacity, Remaining, Usage), six rows (Bucket Objects, Storage Mode, Verified Objects, Pending / Issues, Bucket Region, Legacy Fallback), a summary line, last checked, Refresh. Card 2 "Bucket Verification" (`:459-485`): connection message, three figures (Bucket Objects, Verified, Pending / Issues), a progress bar, a summary, status badges, Refresh. The row is `col-12 col-xl-9` with no second column, followed by a stray closing `</div>` (`:488`).
+- **Page script:** `templates/settings.html:1648-1850`.
+  - `loadStorageHealth` (`:1667`) reads `bucket_migration`, `bucket_connection`, `bucket_usage`, `bucket_capacity` only. It never reads `used_human`, `limit_human`, `remaining_human`, `usage_percent`, `storage_status`, `recommendation`, `database`, `backup_archive`, `legacy_upload_usage`, `largest_files` or `generated_at_manila`.
+  - It writes to `storage-connection` (`:1706`), which is not in the markup. "Last checked" uses the browser clock (`:1719`). The error text is fixed (`:1736`) and drops the server's message.
+  - `setStorageStatusBadge` (`:1648`) says "Connected" from `bucket_enabled && connection.ok`; the summary line (`:1712`) also requires zero issues.
+  - `renderBucketMigrationStatus` (`:1743`) disables `bucket-migrate-btn` and `bucket-verify-btn`, neither of which exists; `runBucketOperation`, `runBucketMigrationBatch`, `runBucketVerificationBatch` (`:1818-1850`) have no caller. `const volume` (`:1746`) is unused.
+  - Both loaders append `?refresh=1`; no storage route reads `request.args`.
+  - Both are called when the section opens (`:1133-1134`).
+- **Server:**
+  - `get_storage_health_report` (`app.py:31583`): volume `used_*`, `limit_*` from `get_storage_limit_bytes()`, `remaining_*`, `usage_percent`, `storage_status` (healthy / warning at 75 / critical at 90), `recommendation`, `database`, `backup_archive`, `legacy_upload_usage`, `upload_roots`, `largest_files` (15), `bucket_capacity`, `bucket_migration` (without items). Volume "used" is the sum of the files it finds (database, upload folders, backup archives), not the disk's own figure.
+  - `bucket_capacity` (`:31703-31721`): limit from `STORAGE_BUCKET_LIMIT_GB`, default 1,024; `usage_percent` rounded to 4 places. **Not verified:** whether that variable, or the one behind `get_storage_limit_bytes()`, is set on Railway.
+  - `get_bucket_migration_report` (`:31083`): `counts` (verified, migrated, pending, missing, conflicting, failed) are counted over the files still on the volume, while the page divides `verified` by the bucket's total object count (`settings.html:1754`) — two different totals. `complete` is true only when there are volume files and all are verified.
+  - Routes: `/admin/storage-bucket/status` (`:31162`, builds the report with `include_objects=True`; the page ignores `items`), `/migrate-batch` (`:31178`), `/verify` (`:31427`, returns `processed`, `results`, `report`), `/admin/storage-health` (`:31762`). POST routes are not CSRF-exempt.
+- **Icons:** Font Awesome 6.4.0 free from the CDN (`templates/layout.html:51`). `fa-shield-check` is used at `settings.html:421`, `:459` and `templates/products.html:176`. **Not verified** in a browser that it fails to render; it is not in the free set as far as I know.
+- **Dashboard:** the superadmin notice added for backups is at `templates/dashboard.html:40` and `app.py:27531-27541`.
+- **Styles:** `templates/settings.html:4397-4500` (`.bucket-connection-status`, `.bucket-progress*`, `.storage-meter*`, `.storage-stat*`, `.storage-breakdown*`, `.storage-recommendation*`); dark rules in `static/css/app-dark-pages.css` name `.storage-meter`, `.storage-breakdown-row`, `.storage-recommendation`, `.storage-last-checked`.
+- **Existing tests:** `tests/test_system_backup.py` has one storage-health test (`test_storage_health_reports_published_archive_separately`). No test calls the storage routes.
+- **Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v235-backup-tab` (`app.py:27030`). Suite baseline: 1,481 tests, 23 failures, 3 errors, 5 skips.
+- The findings were read from the code, not reproduced. `changes.md` was read at its top sections, not end to end.
+
+## Execution steps
+
+1. **Server: small additions to the health report** (`app.py`, `get_storage_health_report`).
+   - Add `overall`: `status` (`healthy` / `warning` / `critical`) and one plain `message`, taking the worse of the volume status and the bucket state (bucket not connected, or any missing / conflicting / failed → warning).
+   - Add `bucket_issue_count` (missing + conflicting + failed) and `bucket_unverified_count` (pending + migrated), both from `counts`.
+   - Round `bucket_capacity.usage_percent` for display to 2 places and add `limit_is_default` (true when `STORAGE_BUCKET_LIMIT_GB` is unset).
+   - Read `get_storage_limit_bytes()` and add the same `limit_is_default` for the volume if its limit also comes from a default.
+   - Done: the existing keys are unchanged; the new keys are present.
+
+2. **Server: cheap disk check for the dashboard** (`app.py`, new `volume_disk_usage_percent()` near `backup_summary`, and `dashboard_page`). `shutil.disk_usage` on the database's folder; returns a whole-number percent or `None` on error. `dashboard_page` passes `storage_full_notice` ("Storage volume is N% full.") for superadmins when it is 90 or more.
+
+3. **Markup** (`templates/settings.html:365-489`).
+   - Overview line at the top: the `overall.message` and one status badge.
+   - **Volume card:** meter; Used, Limit, Remaining, Usage; a "What is using the space" list (Database, Backup archive, Old upload folders) with sizes; a link to Backup Center when a stored backup has size; a collapsed "Largest files" list (name, folder, size).
+   - **Bucket card** (one, replacing both): Used "of N GB (configured limit)" with meter, file count, connection message, verification line ("All files verified" or "N not yet verified, N with problems"), and a "Verify now" button rendered hidden and shown only when either count is above zero. A collapsed "Details" holds storage mode, region, fallback and the per-status counts above zero.
+   - Row uses the full width in two columns on wide screens (`col-xl-6` each); remove the stray closing tag. Replace `fa-shield-check` with `fa-shield-halved` here (not in `products.html`; that page is out of scope).
+   - One Refresh button for the whole tab; one "Last checked".
+
+4. **Page script** (`templates/settings.html:1648-1850`).
+   - One `loadStorageHealth()` using `settingsJsonRequest`-style handling that shows the server's message on failure (the route returns `status`, not `success`, so keep a small local fetch or accept both).
+   - Delete `loadBucketMigrationStatus`, `renderBucketMigrationStatus`, `runBucketOperation`, `runBucketMigrationBatch`, `runBucketVerificationBatch`, the `storage-connection` write and `?refresh=1`. Update the section-open call (`:1133-1134`).
+   - `verifyBucketNow()`: POST `/admin/storage-bucket/verify` with the CSRF header, show "N file(s) checked", reload.
+   - "Last checked" from `generated_at_manila`.
+   - Done: the tab makes one GET on open; no reference to a missing element remains.
+
+5. **Dashboard** (`templates/dashboard.html:40`). Second dismissible line for `storage_full_notice`, linking to Settings.
+
+6. **Styles** (`templates/settings.html:4397-4500`, `static/css/app-dark-pages.css`). Remove `.bucket-progress*` if unused after the merge; add the largest-files list and overview line; keep 375 px working. Dark counterparts for any new coloured element.
+
+7. **Tests** — new `tests/test_storage_settings.py`.
+   - `/admin/storage-health`, `/admin/storage-bucket/status` and `/admin/storage-bucket/verify` refuse a non-superadmin.
+   - Health report (with the bucket report patched): `overall.status` is `warning` when the bucket is disconnected or has a conflicting file, `critical` when volume usage is 90 or more, `healthy` otherwise; `bucket_issue_count` and `bucket_unverified_count` add up.
+   - Dashboard: the storage line shows for a superadmin at 90 and not at 50, and never for another role.
+   - Source-level: `templates/settings.html` no longer contains `runBucketMigrationBatch`, `bucket-migrate-btn`, `storage-connection` or `refresh=1`; the section marker `data-settings-section="storage"` is present.
+   - Cache version pin.
+
+8. **Release records.** Service worker bump (such as `…-v236-storage-tab`), `static/changelog/releases.json`, `changes.md`, this plan's status and any difference between plan and outcome.
+
+9. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Deleting or cleaning files from the tab** — too easy to remove something needed; the largest-files list is read-only.
+- **Removing the server's migrate / verify / status routes or the migration state file** — they are the record of the bucket move, and Verify is still used.
+- **Fixing the two-totals mismatch in the verification counts on the server** — the merged card states the counts as they are ("N not yet verified") instead of a percentage, which avoids the wrong division without changing the report.
+- **`fa-shield-check` in `templates/products.html`** — another page.
+- **Changing storage mode, limits or Railway variables; caching the health report.**
+
+## Verification
+
+- The tests in step 7. Positive controls: the `overall`, issue-count and source-level tests fail against the current code.
+- Focused modules: the new file, `tests/test_system_backup.py`, `tests/test_backup_permanent_fix.py`, the dashboard test modules, `tests/test_appearance_themes.py`, `tests/test_approval_routing_settings.py`, `tests/test_changelog_workflow.py`, `tests/test_changelog_coverage.py`. Then one full-suite pass quoted against the baseline.
+- A test-client render of `/settings` and `/` as superadmin, and `node --check` of the Settings page script.
+- No browser check by the agent. The owner checks on desktop and phone width, light and dark: the overview line, the Volume card and its breakdown, Largest files, the Bucket card and its Details, Refresh, and the icons.
+
+## After implementation
+
+1. Self-review the diff.
+2. Focused modules, then the full suite, quoting counts against the baseline.
+3. Service worker bump and `releases.json` entry.
+4. `changes.md` and this plan's status, with any difference between plan and outcome.
+5. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`. Commit and push only on the owner's instruction, then verify `origin/main` and Railway's deployment.
+
+## Risks
+
+- **The Volume card's "used" is a sum of known files, the dashboard's percent is the disk's own figure.** They can differ. The card says what it counts; the dashboard line only appears at 90% of the real disk.
+- **On a development machine the dashboard check reads the local drive**, so a nearly full laptop disk shows the line locally. Production reads the Railway volume.
+- **The verification wording changes** from a percentage to counts; nothing else reads it.
+- **Tests that read `settings.html` by string** (`tests/test_appearance_themes.py`, `tests/test_approval_routing_settings.py`) may assert storage class names or text; they are in the focused run.
+- **"Verify now" can only be exercised when there are unverified files**, which production may not have; its route is unchanged and already existed.
+
+---
+
 # Settings → Backup: Live Summary, Honest Status, Pre-Build Check, and Overdue Reminder
 
 **Status:** Executed — implementation commit `81dfbd7`; published to `origin/main` on the owner's "commit and push".

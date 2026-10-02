@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-02-storage-tab",
+      "release_date": "2026-10-02",
+      "title": "Clearer Storage Health",
+      "summary": "Settings → Storage now shows the server volume as well as file storage, in plain words, with what is using the space.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-storage-tab-admins",
+          "category": "Settings",
+          "description": "Storage opens with one sentence saying whether storage is healthy. A new Server Volume card shows used, limit and remaining space, how much the database, stored backup and remaining uploaded files take, and the largest files. The two bucket cards are now one File Storage card with plain labels; a Verify now button appears only when files are waiting, and technical details are tucked under Details. Superadmins also see a dashboard warning when the volume is 90% full or more.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-backup-tab",
       "release_date": "2026-10-02",
       "title": "Clearer Backup Status",
