@@ -1,6 +1,7 @@
 # Create TSR: Each TSR Gets Its Own Number After a Schedule Change
 
-**Status:** In progress — implemented and tested; not committed. Awaiting the owner's "commit and push".
+**Status:** Executed — implementation commit `02607ad`; published to `origin/main` on the owner's "commit and push".
+**Finished:** 2026-10-02.
 **Approved:** 2026-10-02 — the owner said "approved partner, write it to plans.md".
 **Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer".
 

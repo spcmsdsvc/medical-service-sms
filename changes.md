@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-02
 
+- Committed only the TSR number schedule-change fix (`app.py`, `templates/offline_tsr.html`, `tests/test_online_tsr_numbering.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `02607ad` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this change log remained unstaged. No Railway variable change or manual redeploy was performed.
+
 - Executed the plan **Create TSR: Each TSR Gets Its Own Number After a Schedule Change** on the owner's go-ahead; not committed, pushed, or deployed. No database or schema change; the number format and sequence rules are unchanged.
 - Create TSR (`templates/offline_tsr.html`, `applyScheduleToStandaloneTSR`): picking a different schedule now clears the reservation token and the TSR number field along with the draft ID, so the new TSR reserves its own number instead of carrying over the previous one.
 - TSR number reservation (`app.py`, `reserve_online_tsr_number`): a token that already belongs to another draft of the same account no longer returns HTTP 409 "belongs to a different draft"; the request gets a new token and the next free number, and the first draft keeps its own. This applies to `/reserve_tsr_number`, `/save_tsr_draft` and the final TSR save, so device drafts that shared a number are renumbered the next time they are opened and saved or submitted. A token owned by another account is still refused. A Calibration Report or certificate generated inside such a draft before it was renumbered keeps the old number until it is generated again.
