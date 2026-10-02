@@ -173,6 +173,53 @@ class ProductNameStandardizationTests(unittest.TestCase):
         with self.app.app_context():
             self.assertEqual(app_module.db.session.get(app_module.Product, first).name, "Atomic Legacy")
 
+    def test_review_tiers_counts_and_audit_serials(self):
+        names = {
+            "PRODUCT-STANDARDIZATION-TIER-MATCH": "TRINIAS: unity-smart",
+            "PRODUCT-STANDARDIZATION-TIER-CLOSEST": "Trinias Unity Smart C16",
+            "PRODUCT-STANDARDIZATION-TIER-NONE": "Zzqx Unrelated Device",
+            "PRODUCT-STANDARDIZATION-TIER-BLANK": "",
+        }
+        with self.app.app_context():
+            app_module.db.session.add_all([
+                app_module.Product(serial_number=serial, name=name, client_id=self.client_id)
+                for serial, name in names.items()
+            ])
+            app_module.db.session.commit()
+        self.add_product("PRODUCT-STANDARDIZATION-TIER-USED", "Bransist Alexa")
+
+        data = self.client.get("/settings/product-name-standardization-data").get_json()
+        groups = {row["legacy_name"]: row for row in data["groups"]}
+        match = groups["TRINIAS: unity-smart"]
+        self.assertEqual((match["suggestion_tier"], match["suggestion"]["name"]), ("match", "Trinias Unity Smart"))
+        closest = groups["Trinias Unity Smart C16"]
+        self.assertEqual((closest["suggestion_tier"], closest["suggestion"]["name"]), ("closest", "Trinias Unity Smart"))
+        for name in ("Zzqx Unrelated Device", ""):
+            self.assertIsNone(groups[name]["suggestion"])
+            self.assertIsNone(groups[name]["suggestion_tier"])
+
+        usage = {row["name"]: row["usage_count"] for row in data["catalog"]}
+        self.assertGreaterEqual(usage["Bransist Alexa"], 1)
+        self.assertEqual(data["standardized_products"], sum(usage.values()))
+        self.assertEqual(
+            data["total_products"],
+            data["standardized_products"] + sum(row["count"] for row in data["groups"]),
+        )
+
+        applied = self.client.post(
+            "/settings/product-name-standardization-apply",
+            json={
+                "expected_current_name": "TRINIAS: unity-smart",
+                "serial_numbers": ["PRODUCT-STANDARDIZATION-TIER-MATCH"],
+                "product_name_id": match["suggestion"]["id"],
+            },
+        )
+        self.assertEqual(applied.status_code, 200, applied.get_data(as_text=True))
+        with self.app.app_context():
+            self.assertTrue(app_module.ActivityLog.query.filter(
+                app_module.ActivityLog.action.like("%[serials: PRODUCT-STANDARDIZATION-TIER-MATCH]")
+            ).first())
+
     def test_catalog_rename_cascades_and_delete_blocks_in_use(self):
         created = self.client.post("/settings/product-names", json={"name": "Standardization Catalog Original"})
         self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
@@ -238,6 +285,9 @@ class ProductNameStandardizationTests(unittest.TestCase):
         self.assertIn("product-name-standardization-data", source)
         self.assertIn("product-name-standardization-apply", source)
         self.assertIn("Existing Products to Standardize", settings)
+        for marker in ("Select all Matches", "Apply selected (", "Add as new name", "product-name-catalog-search"):
+            self.assertIn(marker, settings)
+        self.assertNotIn("product-standardization-options-", settings)
         self.assertTrue(isinstance(manifest.get("releases"), list))
         settings_response = self.client.get("/settings")
         self.assertEqual(settings_response.status_code, 200, settings_response.get_data(as_text=True))

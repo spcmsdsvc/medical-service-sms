@@ -1,3 +1,145 @@
+# Settings: Product Names Tab — Faster Standardization and a Clearer Catalog
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Finished:** 2026-10-02.
+**Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not overengineer and over check".
+
+**Where the plan and the outcome differed:**
+
+- **Step 1, baseline.** No fresh baseline run; the counts recorded earlier the same day (1,456 tests, 23 failures, 2 errors, 5 skips) were used, per the owner's "do not over check".
+- **Step 4, audit line.** A log line longer than 255 characters is cut and ends with `...` instead of `+K more`.
+- **Step 7, mobile.** Rows stack through Bootstrap's `flex-column flex-md-row`; the only new CSS is the catalog select's width. No dark-mode stylesheet change was needed (step 10).
+- **Step 8, missing catalog name.** If any ticked row has no catalog name chosen, nothing is sent and the rows are named, rather than skipping them and applying the rest.
+- **Step 11, tests.** One new test covers tiers, counts and audit serials, and the page-contract test gained markers. The "non-administrator denied" test and the fail-before-change run were not done.
+- **Step 12, tiers on local data (cutoff kept at 0.75):** 10 Match, 36 Closest, 14 none out of 60 names. Some Closest guesses are wrong (`MUX-10` to `MUX-100`, `Radspeed Pro CM` to `Radspeed Pro MF`, `MobileArt Evolution(MX8) DRv` to `MobileDart Evolution MX8v`); they are prefill only.
+- **Confirmation dialog.** `.settings-dialog-message` gained a `max-height` with scrolling so a long list of mappings fits; this applies to every Settings dialog.
+- **Suite:** 1,457 tests, 23 failures, 3 errors, 5 skips. The failures are the baseline's. The third error is the new test, which fails only in the full run for the same reason as its two siblings in `tests/test_product_name_standardization.py` (the seeded catalog names are missing by the time that file runs); the file passes on its own.
+- **Not verified:** no browser check, so the page was not seen rendered at any width or in dark mode. The inline script passed `node --check` and GET `/settings` returned 200.
+**Approved:** 2026-10-02 — the owner said "approved, along with your recommendations, write it to plans.md".
+**Detailed:** 2026-10-02.
+
+## Context
+
+The owner asked how the Product Names tab on System Settings could be improved, and the standardization section in particular. The tab is administrator-only and does two jobs in one card: it maintains the catalog of selectable Product names, and it lets an administrator map Products whose name is not in the catalog ("legacy names") onto a catalog name.
+
+In the local database 79 of 101 Products sit in 60 legacy-name groups, and only 2 of those groups receive a suggestion, because matching ignores case and whitespace only. Each group must be expanded, typed into, applied and confirmed on its own, so clearing the list takes about 60 rounds. The intended outcome is a review the administrator can finish in a few passes: most groups arrive with the right catalog name prefilled, many can be applied together, and names missing from the catalog can be added from the row. Production counts were not read and may differ.
+
+## Decisions taken
+
+1. **Fuzzy "closest" suggestions are prefill only.** They fill the row's catalog select but are never picked up by "Select all Matches"; the administrator must tick such a row by hand.
+2. **Dropped variant detail is accepted.** Mapping `Radspeed Fit (32kW CE)` to `Radspeed Fit 32` loses the suffix from the Product name. The original name and the affected serial numbers are kept in the activity log. Where a variant matters operationally the administrator uses "Add as new name" instead.
+3. **Nothing is applied without review.** No row is pre-ticked and there is no automatic standardization.
+4. **Bulk apply loops the existing apply endpoint from the page**, one legacy name per request. No new write route.
+5. **No undo feature and no schema change.**
+
+## Investigation
+
+Line numbers are as of commit `0d8fd9b`.
+
+- **Markup:** `templates/settings.html:259-290`, inside `{% if can_manage_product_names %}`. Nav button at 54-57. Section load hook at 1083-1084 calls `loadProductNameCatalogSettings()`.
+- **Script:** `templates/settings.html:2668-2841` — state `productNameCatalogSettings` / `productStandardizationGroups`, `renderProductNameCatalogSettings`, `renderProductStandardizationSettings`, `syncProductStandardizationSelection`, `loadProductNameCatalogSettings`, `loadProductStandardizationSettings`, `applyProductStandardization`, `saveProductNameCatalogItem`, `editProductNameCatalogItem`, `deleteProductNameCatalogItem`. Dialog helper `settingsPromptDialog` (978) supports `defaultValue` (1013).
+- **Server:** `normalize_product_name_catalog_value` (`app.py:2779`), `product_name_catalog_to_dict` (2792), `ensure_product_name_catalog` (2796); `product_name_catalog_api` (28562, also used by the Products page, gated by `can_edit_products_inventory`); `create_product_name_catalog_item` (28573), `update_product_name_catalog_item` (28597), `delete_product_name_catalog_item` (28641); `product_name_standardization_data` (28664); `apply_product_name_standardization` (28715). `can_manage_product_names` is `is_admin_authorized()` (28554).
+- **Findings:**
+  1. The suggestion at `app.py:28700-28705` compares `normalize_product_name_catalog_value(...).casefold()` only. `MobileDart Evolution (MX8c)` (4 Products) does not match `MobileDart Evolution MX8c`; `Opescope Acteno FD Type`, `Trinias: Unity Smart C16` and similar get nothing.
+  2. Each group is a collapsed `<details>` with its own free-text input and `<datalist>` (60 groups x 49 options), its own Apply and its own confirm. After every apply the whole list is re-rendered and collapses.
+  3. Legacy names with no catalog equivalent (`Radspeed Pro CM`, `Vieworks FPD`, `Genoray C-Arm`, `MUX-10`) need a trip to the Add field at the top of the card and back.
+  4. The section shows no totals and has search only.
+  5. The audit line at `app.py:28750-28753` is `Standardized N Product master(s): old -> new`, with no serial numbers.
+  6. The catalog list is 49 rows in id order with no search and no usage count. Delete reports "still used by existing Products" only after the click (28649-28655).
+  7. `editProductNameCatalogItem` (2821-2829) opens the prompt without `defaultValue`, so the current name is not prefilled, and it saves by writing into the Add input.
+  8. `product_name_standardization_data` already returns `catalog` alongside `groups`; the page ignores it and fetches `/api/product-name-catalog` separately.
+  9. `static/css/app-dark-pages.css` has no selector for this tab; the tab uses Bootstrap classes only.
+- **Tests:** `tests/test_product_name_standardization.py` has five tests. It pins `group["suggestion"]["name"]`, the log prefix `Standardized 1 Product master(s)`, and the heading text `Existing Products to Standardize` in the template and the rendered page. `tests/test_product_room_catalog.py` touches the catalog API.
+- Service worker at planning time: `medical-service-pwa-offline-navigation-v225-calibration-center-repairs` (`app.py:26714`).
+- Suite baseline at the last run: 1,456 tests, 23 failures, 2 errors, 5 skips.
+- `changes.md` was read at its current top sections, not end to end (the file is 856 KB).
+- Not checked: the `ActivityLog.action` column length, and whether production's legacy names resemble the local ones.
+
+## Execution steps
+
+1. **Baseline.** Run the full suite before the first edit and record the counts. Done: counts written in this plan.
+2. **Server: comparison key and tiers.** Add `product_name_match_key(value)` next to `normalize_product_name_catalog_value` in `app.py`: casefold, then drop every character that is not a letter or digit. In `product_name_standardization_data`:
+   - build `key -> catalog item` (lowest id wins on a collision);
+   - a group whose key equals a catalog key gets that item as `suggestion` and `suggestion_tier: 'match'`;
+   - otherwise `difflib.get_close_matches(key, catalog_keys, n=1, cutoff=0.75)`; a hit becomes `suggestion` with `suggestion_tier: 'closest'`;
+   - otherwise `suggestion: None`, `suggestion_tier: None`. A blank legacy name never gets a suggestion.
+   Done: `MobileDart Evolution (MX8c)` returns `match` to `MobileDart Evolution MX8c`; the existing `"  trinias   unity  "` case still returns `Trinias Unity`.
+3. **Server: counts.** In the same response add `usage_count` to each `catalog` entry (Products whose name equals it exactly), plus `total_products` and `standardized_products`. Computed from the Product list the function already loads. `/api/product-name-catalog` is not changed. Done: the three values are in the JSON and add up.
+4. **Server: audit line.** In `apply_product_name_standardization` append the serial numbers: `Standardized N Product master(s): old -> new [serials: A, B]`. Check the `ActivityLog.action` column length first; if it is bounded, list as many serials as fit and end with `+K more`. Done: the log entry names the Products, and the existing prefix test still passes.
+5. **Page: one load.** `loadProductNameCatalogSettings` fetches `/settings/product-name-standardization-data` once and fills the catalog (with usage counts), the groups and the totals. Remove the separate `/api/product-name-catalog` fetch from this tab and fold `loadProductStandardizationSettings` into it; "Refresh review" calls the same function. Done: one request per load, both sections filled.
+6. **Page: catalog section** (`renderProductNameCatalogSettings`, markup at 268-274):
+   - a search input above the list, filtering client-side;
+   - each row shows the name and a count badge ("12 Products" / "Not used");
+   - Delete is disabled with a `title` explaining why when the count is above zero;
+   - `editProductNameCatalogItem` passes `defaultValue: item.name`, states in the dialog how many Products will be renamed, and saves through a `saveProductNameCatalogItem(id, name)` signature that no longer writes into the Add input.
+   Done: the Add input is used only for adding; renaming shows the current name.
+7. **Page: review table** (`renderProductStandardizationSettings`, markup at 276-285). Replace the `<details>` accordions with rows. Keep the heading text `Existing Products to Standardize`. Each row has:
+   - a checkbox;
+   - the legacy name and Product count, with a toggle that shows serial number, owner and room inline;
+   - a `<select>` of catalog names, prefilled with the suggestion, first option "Choose a name";
+   - a tier badge: Match / Closest / none;
+   - an "Add as new name" button (hidden for a blank legacy name).
+   Remove the per-group datalists and `syncProductStandardizationSelection`. Ticks, select values and expanded rows are kept in state keyed by legacy name so a re-render does not lose them. At 768px and below each row stacks as a card. Done: no row is ticked on load; changing a select does not re-render the list.
+8. **Page: header, filters, bulk bar.**
+   - Summary line: "X of Y Products standardized · N names to review".
+   - Filter chips All / Match / Closest / No suggestion, next to the existing search (legacy name or serial).
+   - "Select all Matches" ticks only visible rows whose tier is `match` and whose select still holds the suggested name.
+   - "Apply selected (N)" is disabled at zero. It opens one confirmation listing every `old -> new` pair with its Product count. On confirm it posts each row in turn to `/settings/product-name-standardization-apply` with the existing payload, then reloads once and reports "A names standardized (B Products)" plus any row that was not applied and the server's reason. A row with no catalog name chosen is reported and skipped before any request is sent.
+   Done: a stale row returns its 409 message without stopping the remaining rows.
+9. **Page: "Add as new name".** Confirm, then POST the whitespace-normalized legacy name to `/settings/product-names` and reload. A legacy name that already equals the new entry drops out of the review; one that differed only in spacing stays, now with a Match suggestion. Done: no scrolling to the Add field is needed for a missing model.
+10. **Styles.** Inline rules in `templates/settings.html` for the review rows, tier badges, bulk bar and the mobile card layout. Add dark-mode selectors to `static/css/app-dark-pages.css` only if a new custom class needs them; if that file is edited, bump its version literal in `templates/layout.html` and the tests that pin it. Done: no horizontal scroll at 375px, tap targets at least 32px.
+11. **Tests** in `tests/test_product_name_standardization.py`:
+    - punctuation and case differences return `suggestion_tier == 'match'`;
+    - a near miss returns `closest`; an unrelated name and a blank name return no suggestion;
+    - `usage_count`, `total_products` and `standardized_products` are correct;
+    - the audit line contains the serial numbers;
+    - a non-administrator is denied on the data and apply endpoints;
+    - page contract: the heading, the filter chips, "Apply selected" and "Select all Matches" are in the template, and the per-group datalist id is gone.
+    Done: each new test fails against the pre-change code.
+12. **Local sanity check of the tiers.** Run the new suggestion logic read-only against the local `scheduler.db` and report to the owner how the 60 groups split into Match / Closest / none, with the Closest pairs listed. Adjust the cutoff only if a clearly wrong pair shows up, and record the final value here.
+13. **Release records.** Bump the service-worker `CACHE_VERSION` (read live at that time), add a `static/changelog/releases.json` entry, update `changes.md` and this plan's status.
+14. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Automatic standardization.** Every mapping is ticked and confirmed by an administrator (decision 3).
+- **Undo.** The activity log with serial numbers is the record; a reverse operation is not built (decision 5).
+- **Database schema.** No column for the original name; no new table.
+- **A bulk apply endpoint.** The page loops the existing one, which keeps its per-group stale check and atomicity (decision 4).
+- **`/api/product-name-catalog` and the Products page.** Shared with inventory editing; this plan does not touch the picker there.
+- **Product create/edit and CSV import validation.** Unchanged.
+- **Cleaning up junk names** (`F`, `CT One 21ba776e`). They appear in the review like any other group; fixing the Product itself stays on the Products page.
+- **Browser automation.** Not authorized for this plan (`AGENTS.md`); ask the owner first if it becomes essential.
+
+## Verification
+
+- New tests in step 11, each seen failing without its change; the five existing tests in the file still pass.
+- `tests/test_product_room_catalog.py` and `tests/test_changelog_coverage.py`, then one full-suite pass quoted against the step 1 baseline.
+- Script syntax: extract the Settings inline script and run `node --check` on it.
+- Flask test client: GET `/settings` as an administrator and confirm the new markup; GET `/settings/product-name-standardization-data` and confirm the new keys.
+- Step 12's tier split on local data, reported with the Closest pairs.
+- 375px, tap targets and dark mode are checked at source level only unless the owner authorizes a browser check; say so in the report.
+
+## After implementation
+
+1. Self-review the diff: `templates/settings.html`, `app.py`, `tests/test_product_name_standardization.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`, and `static/css/app-dark-pages.css` / `templates/layout.html` only if step 10 needed them.
+2. Prove the new tests fail without the change.
+3. Full suite, quoting counts against the baseline.
+4. Service worker bump and `releases.json` entry.
+5. `changes.md` and this plan's status, with the commit hash and any difference between plan and outcome.
+6. Commit checklist with explicit staging of the files in item 1. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and unrelated dirty entries. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **A wrong Closest suggestion accepted.** A prefilled near miss (`Radspeed MC` to `Radspeed Pro MC`) could be ticked without a careful look, renaming real Products. Safety net: Closest rows are excluded from "Select all Matches", the confirmation lists every pair, and the log keeps the old name and serials.
+- **Key collisions.** Two catalog names that differ only in punctuation would share a key and the lower id would win. None exist in the seeded catalog; the tier is still only a suggestion.
+- **Partial bulk run.** The loop is not one transaction; a failure midway leaves earlier rows applied. Each row is atomic on its own and the result message says which rows were not applied.
+- **Lost variant detail.** Accepted under decision 2; recoverable from the activity log, not from the Product record.
+- **Shared-endpoint drift.** The catalog list on this tab now comes from the standardization response instead of `/api/product-name-catalog`; both read the same table, so the two cannot disagree beyond a stale page.
+- **No rendered check.** Without a browser pass, layout faults at 375px or in dark mode could ship. Blast radius is one administrator-only tab.
+
+---
+
 # Settings: Approval Routing Tab — UI and Function Improvements
 
 **Status:** Executed — implementation commit `1707e9a`; publication to `origin/main` authorized.

@@ -270,17 +270,24 @@
                         <input type="text" id="product-name-catalog-input" class="form-control form-control-sm rounded-3" maxlength="100" placeholder="Product name">
                         <button type="button" class="btn btn-primary btn-sm fw-bold rounded-3" onclick="saveProductNameCatalogItem()"><i class="fa-solid fa-plus me-1"></i>Add Name</button>
                     </div>
+                    <input type="search" id="product-name-catalog-search" class="form-control form-control-sm rounded-3 mb-3" placeholder="Search catalog names" oninput="renderProductNameCatalogSettings()">
                     <div id="product-name-catalog-error" class="alert alert-warning small d-none"></div>
                     <div id="product-name-catalog-list" class="list-group"></div>
                     <hr class="my-4">
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
                         <div>
                             <h6 class="mb-1 fw-bold">Existing Products to Standardize</h6>
-                            <p class="text-muted small mb-0">Review legacy names and map one exact group at a time. Suggestions use only case- and whitespace-normalized matches.</p>
+                            <p class="text-muted small mb-0">Tick the legacy names to map, check the catalog name beside each, then apply them together. <strong>Match</strong> differs only in case, spacing, or punctuation; <strong>Closest</strong> is a guess to review.</p>
+                            <p id="product-standardization-summary" class="small fw-bold mb-0 mt-1"></p>
                         </div>
-                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold rounded-3" onclick="loadProductStandardizationSettings()"><i class="fa-solid fa-rotate me-1"></i>Refresh review</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold rounded-3" onclick="loadProductNameCatalogSettings()"><i class="fa-solid fa-rotate me-1"></i>Refresh review</button>
                     </div>
                     <input type="search" id="product-standardization-search" class="form-control form-control-sm rounded-3 mt-3" placeholder="Search legacy Product names or serial numbers" oninput="renderProductStandardizationSettings()">
+                    <div id="product-standardization-filters" class="d-flex flex-wrap gap-2 mt-2"></div>
+                    <div class="product-standardization-bulk d-flex flex-wrap align-items-center gap-2 mt-3">
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold rounded-3" onclick="selectProductStandardizationMatches()">Select all Matches</button>
+                        <button type="button" id="product-standardization-apply" class="btn btn-primary btn-sm fw-bold rounded-3" onclick="applySelectedProductStandardization()" disabled>Apply selected (0)</button>
+                    </div>
                     <div id="product-standardization-error" class="alert alert-warning small d-none mt-3"></div>
                     <div id="product-standardization-list" class="list-group mt-3"></div>
                 </div>
@@ -2667,100 +2674,174 @@
 
     let productNameCatalogSettings = [];
     let productStandardizationGroups = [];
+    let productStandardizationTotals = { total: 0, standardized: 0 };
+    let productStandardizationFilter = 'all';
+    // Review choices keyed by legacy name so a re-render or reload keeps them.
+    let productStandardizationRows = {};
+
+    function productCountLabel(count) {
+        return `${count} Product${count === 1 ? '' : 's'}`;
+    }
 
     function renderProductNameCatalogSettings() {
         const list = document.getElementById('product-name-catalog-list');
         if (!list) return;
-        list.innerHTML = productNameCatalogSettings.length
-            ? productNameCatalogSettings.map(item => `
+        const query = String(document.getElementById('product-name-catalog-search')?.value || '').trim().toLowerCase();
+        const items = productNameCatalogSettings.filter(item => !query || String(item.name || '').toLowerCase().includes(query));
+        if (!items.length) {
+            list.innerHTML = `<div class="text-muted small border rounded-3 p-3">${productNameCatalogSettings.length ? 'No catalog names match this search.' : 'No product names are configured.'}</div>`;
+            return;
+        }
+        list.innerHTML = items.map(item => {
+            const usage = Number(item.usage_count || 0);
+            return `
                 <div class="list-group-item d-flex flex-wrap align-items-center justify-content-between gap-2">
-                    <span>${settingsEscape(item.name)}</span>
+                    <span>${settingsEscape(item.name)} <span class="badge ${usage ? 'text-bg-primary' : 'text-bg-light border'}">${usage ? productCountLabel(usage) : 'Not used'}</span></span>
                     <span class="d-flex gap-2">
                         <button type="button" class="btn btn-outline-primary btn-sm" onclick="editProductNameCatalogItem(${item.id})">Edit</button>
-                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteProductNameCatalogItem(${item.id})">Delete</button>
+                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteProductNameCatalogItem(${item.id})" ${usage ? `disabled title="Used by ${productCountLabel(usage)}. Rename it, or move those Products to another name first."` : ''}>Delete</button>
                     </span>
-                </div>`).join('')
-            : '<div class="text-muted small border rounded-3 p-3">No product names are configured.</div>';
+                </div>`;
+        }).join('');
+    }
+
+    function productStandardizationRow(group) {
+        const key = group.legacy_name || '';
+        if (!productStandardizationRows[key]) {
+            productStandardizationRows[key] = { checked: false, targetId: group.suggestion?.id ? String(group.suggestion.id) : '', open: false };
+        }
+        return productStandardizationRows[key];
+    }
+
+    function productStandardizationVisibleGroups() {
+        const query = String(document.getElementById('product-standardization-search')?.value || '').trim().toLowerCase();
+        return productStandardizationGroups.filter(group => {
+            const tier = group.suggestion_tier || 'none';
+            if (productStandardizationFilter !== 'all' && tier !== productStandardizationFilter) return false;
+            if (!query) return true;
+            return String(group.legacy_name || '').toLowerCase().includes(query) ||
+                (group.products || []).some(product => String(product.serial_number || '').toLowerCase().includes(query));
+        });
+    }
+
+    function updateProductStandardizationApplyButton() {
+        const button = document.getElementById('product-standardization-apply');
+        if (!button) return;
+        const count = productStandardizationGroups.filter(group => productStandardizationRow(group).checked).length;
+        button.textContent = `Apply selected (${count})`;
+        button.disabled = !count;
     }
 
     function renderProductStandardizationSettings() {
         const list = document.getElementById('product-standardization-list');
         if (!list) return;
-        const query = String(document.getElementById('product-standardization-search')?.value || '').trim().toLowerCase();
-        const groups = productStandardizationGroups.filter(group => {
-            if (!query) return true;
-            return String(group.legacy_name || '').toLowerCase().includes(query) ||
-                (group.products || []).some(product => String(product.serial_number || '').toLowerCase().includes(query));
-        });
+        const summary = document.getElementById('product-standardization-summary');
+        if (summary) {
+            const names = productStandardizationGroups.length;
+            summary.textContent = `${productStandardizationTotals.standardized} of ${productStandardizationTotals.total} Products standardized · ${names} name${names === 1 ? '' : 's'} to review`;
+        }
+        const filters = document.getElementById('product-standardization-filters');
+        if (filters) {
+            const tierCount = tier => productStandardizationGroups.filter(group => (group.suggestion_tier || 'none') === tier).length;
+            filters.innerHTML = [
+                ['all', 'All', productStandardizationGroups.length],
+                ['match', 'Match', tierCount('match')],
+                ['closest', 'Closest', tierCount('closest')],
+                ['none', 'No suggestion', tierCount('none')]
+            ].map(([value, label, count]) =>
+                `<button type="button" class="btn btn-sm rounded-pill ${productStandardizationFilter === value ? 'btn-dark' : 'btn-outline-secondary'}" onclick="setProductStandardizationFilter('${value}')">${label} (${count})</button>`
+            ).join('');
+        }
+        updateProductStandardizationApplyButton();
+
+        const groups = productStandardizationVisibleGroups();
         if (!groups.length) {
             list.innerHTML = productStandardizationGroups.length
-                ? '<div class="text-muted small border rounded-3 p-3">No legacy Product names match this search.</div>'
+                ? '<div class="text-muted small border rounded-3 p-3">No legacy Product names match this search or filter.</div>'
                 : '<div class="text-muted small border rounded-3 p-3">All existing Product names already match the current catalog.</div>';
             return;
         }
+        const tierBadges = {
+            match: '<span class="badge text-bg-success">Match</span>',
+            closest: '<span class="badge text-bg-warning">Closest</span>'
+        };
         list.innerHTML = groups.map(group => {
             const groupIndex = productStandardizationGroups.indexOf(group);
-            const suggestionId = group.suggestion?.id ? String(group.suggestion.id) : '';
-            const suggestionName = group.suggestion?.name || '';
+            const row = productStandardizationRow(group);
             const options = productNameCatalogSettings.map(item =>
-                `<option value="${settingsEscape(item.name)}"></option>`
+                `<option value="${item.id}" ${String(item.id) === row.targetId ? 'selected' : ''}>${settingsEscape(item.name)}</option>`
             ).join('');
-            const products = (group.products || []).map(product => `
+            const products = row.open ? `<ul class="mt-2 mb-0 ps-4">${(group.products || []).map(product => `
                 <li class="small mb-1"><strong>${settingsEscape(product.serial_number)}</strong> · ${settingsEscape(product.owner || 'N/A')}${product.room ? ` · Room ${settingsEscape(product.room)}` : ''}</li>
-            `).join('');
-            return `<details class="list-group-item" data-standardization-group="${groupIndex}">
-                <summary class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-                    <span><strong>${settingsEscape(group.legacy_name || '(blank)')}</strong> <span class="badge text-bg-secondary">${group.count} Product${group.count === 1 ? '' : 's'}</span></span>
-                    <span class="small text-muted">Review mapping</span>
-                </summary>
-                <div class="mt-3">
-                    <ul class="mb-3 ps-3">${products}</ul>
-                    <div class="d-flex flex-column flex-md-row gap-2 align-items-md-end">
-                        <label class="small fw-bold flex-grow-1">Standard Product Name
-                            <input type="text" id="product-standardization-select-${groupIndex}" class="form-control form-control-sm mt-1" list="product-standardization-options-${groupIndex}" value="${settingsEscape(suggestionName)}" autocomplete="off" placeholder="Search catalog names" oninput="syncProductStandardizationSelection(${groupIndex})">
-                            <input type="hidden" id="product-standardization-select-${groupIndex}-id" value="${settingsEscape(suggestionId)}">
-                            <datalist id="product-standardization-options-${groupIndex}">${options}</datalist>
-                        </label>
-                        <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="applyProductStandardization(${groupIndex})">Apply to ${group.count}</button>
-                    </div>
-                </div>
-            </details>`;
+            `).join('')}</ul>` : '';
+            return `<div class="list-group-item product-standardization-row">
+                <div class="d-flex flex-column flex-md-row gap-2 align-items-md-center">
+                    <label class="d-flex align-items-start gap-2 flex-grow-1 mb-0">
+                        <input type="checkbox" class="form-check-input mt-1 flex-shrink-0" ${row.checked ? 'checked' : ''} onchange="setProductStandardizationChecked(${groupIndex}, this.checked)">
+                        <span><strong>${settingsEscape(group.legacy_name || '(blank)')}</strong> <span class="badge text-bg-secondary">${productCountLabel(group.count)}</span> ${tierBadges[group.suggestion_tier] || ''}</span>
+                    </label>
+                    <select class="form-select form-select-sm product-standardization-target" aria-label="Standard Product Name for ${settingsEscape(group.legacy_name || '(blank)')}" onchange="setProductStandardizationTarget(${groupIndex}, this.value)">
+                        <option value="">Choose a name</option>${options}
+                    </select>
+                    <span class="d-flex gap-2 flex-shrink-0">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="toggleProductStandardizationProducts(${groupIndex})">${row.open ? 'Hide' : 'Show'} Products</button>
+                        ${String(group.legacy_name || '').trim() ? `<button type="button" class="btn btn-outline-primary btn-sm" onclick="addProductStandardizationName(${groupIndex})">Add as new name</button>` : ''}
+                    </span>
+                </div>${products}
+            </div>`;
         }).join('');
     }
 
-    function syncProductStandardizationSelection(groupIndex) {
-        const input = document.getElementById(`product-standardization-select-${groupIndex}`);
-        const hidden = document.getElementById(`product-standardization-select-${groupIndex}-id`);
-        if (!input || !hidden) return;
-        const value = String(input.value || '').trim().toLowerCase();
-        const match = productNameCatalogSettings.find(item => String(item.name || '').trim().toLowerCase() === value);
-        hidden.value = match ? match.id : '';
+    function setProductStandardizationFilter(value) {
+        productStandardizationFilter = value;
+        renderProductStandardizationSettings();
+    }
+
+    function setProductStandardizationChecked(groupIndex, checked) {
+        const group = productStandardizationGroups[groupIndex];
+        if (!group) return;
+        productStandardizationRow(group).checked = Boolean(checked);
+        updateProductStandardizationApplyButton();
+    }
+
+    function setProductStandardizationTarget(groupIndex, value) {
+        const group = productStandardizationGroups[groupIndex];
+        if (group) productStandardizationRow(group).targetId = String(value || '');
+    }
+
+    function toggleProductStandardizationProducts(groupIndex) {
+        const group = productStandardizationGroups[groupIndex];
+        if (!group) return;
+        const row = productStandardizationRow(group);
+        row.open = !row.open;
+        renderProductStandardizationSettings();
+    }
+
+    function selectProductStandardizationMatches() {
+        const matches = productStandardizationVisibleGroups().filter(group =>
+            group.suggestion_tier === 'match' && productStandardizationRow(group).targetId === String(group.suggestion?.id || '')
+        );
+        if (!matches.length) return settingsAlert('No Match rows are in view.', 'warn');
+        matches.forEach(group => { productStandardizationRow(group).checked = true; });
+        renderProductStandardizationSettings();
     }
 
     async function loadProductNameCatalogSettings() {
         const error = document.getElementById('product-name-catalog-error');
         try {
-            const response = await fetch('/api/product-name-catalog?_=' + Date.now(), { cache: 'no-store' });
-            const data = await response.json().catch(() => []);
-            if (!response.ok) throw new Error(data.error || data.message || 'Unable to load Product Names.');
-            productNameCatalogSettings = Array.isArray(data) ? data : (data.items || []);
-            renderProductNameCatalogSettings();
-            await loadProductStandardizationSettings();
-            error?.classList.add('d-none');
-        } catch (err) {
-            if (error) { error.textContent = err.message; error.classList.remove('d-none'); }
-        }
-    }
-
-    async function loadProductStandardizationSettings() {
-        const error = document.getElementById('product-standardization-error');
-        const list = document.getElementById('product-standardization-list');
-        if (!list) return;
-        try {
             const response = await fetch('/settings/product-name-standardization-data?_=' + Date.now(), { cache: 'no-store' });
             const data = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(data.error || data.message || 'Unable to load Product standardization review.');
+            if (!response.ok) throw new Error(data.error || data.message || 'Unable to load Product Names.');
+            productNameCatalogSettings = Array.isArray(data.catalog) ? data.catalog : [];
             productStandardizationGroups = Array.isArray(data.groups) ? data.groups : [];
+            productStandardizationTotals = {
+                total: Number(data.total_products || 0),
+                standardized: Number(data.standardized_products || 0)
+            };
+            const rows = {};
+            productStandardizationGroups.forEach(group => { rows[group.legacy_name || ''] = productStandardizationRow(group); });
+            productStandardizationRows = rows;
+            renderProductNameCatalogSettings();
             renderProductStandardizationSettings();
             error?.classList.add('d-none');
         } catch (err) {
@@ -2768,40 +2849,81 @@
         }
     }
 
-    async function applyProductStandardization(groupIndex) {
-        const group = productStandardizationGroups[groupIndex];
-        syncProductStandardizationSelection(groupIndex);
-        const selectedId = document.getElementById(`product-standardization-select-${groupIndex}-id`);
-        const productNameId = Number(selectedId?.value || 0);
-        if (!group || !productNameId) return settingsAlert('Select a standard Product Name first.');
-        const selected = productNameCatalogSettings.find(item => Number(item.id) === productNameId);
+    async function applySelectedProductStandardization() {
+        const selected = productStandardizationGroups.filter(group => productStandardizationRow(group).checked);
+        if (!selected.length) return;
+        const catalogName = group => {
+            const targetId = Number(productStandardizationRow(group).targetId || 0);
+            return productNameCatalogSettings.find(item => Number(item.id) === targetId) || null;
+        };
+        const missing = selected.filter(group => !catalogName(group));
+        if (missing.length) {
+            return settingsAlert(`Choose a catalog name for: ${missing.map(group => group.legacy_name || '(blank)').join(', ')}`);
+        }
         const confirmed = await settingsConfirmDialog({
             title: 'Standardize Product Names?',
-            message: `Update ${group.count} Product${group.count === 1 ? '' : 's'} from “${group.legacy_name || '(blank)'}” to “${selected?.name || 'the selected name'}”?`,
-            confirmText: 'Apply',
+            message: selected.map(group =>
+                `${group.legacy_name || '(blank)'} → ${catalogName(group).name} (${productCountLabel(group.count)})`
+            ).join('\n'),
+            confirmText: `Apply ${selected.length}`,
             cancelText: 'Cancel',
             tone: 'primary',
             icon: 'tags'
         });
         if (!confirmed) return;
-        const response = await fetch('/settings/product-name-standardization-apply', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
-            body: JSON.stringify({
-                expected_current_name: group.legacy_name,
-                serial_numbers: (group.products || []).map(product => product.serial_number),
-                product_name_id: productNameId
-            })
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.success) return settingsAlert(data.error || data.message || 'Product names could not be standardized.');
-        await loadProductStandardizationSettings();
-        settingsAlert(data.message || 'Product names standardized.', 'success');
+        let appliedNames = 0;
+        let appliedProducts = 0;
+        const failures = [];
+        for (const group of selected) {
+            let data = {};
+            let ok = false;
+            try {
+                const response = await fetch('/settings/product-name-standardization-apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+                    body: JSON.stringify({
+                        expected_current_name: group.legacy_name,
+                        serial_numbers: (group.products || []).map(product => product.serial_number),
+                        product_name_id: catalogName(group).id
+                    })
+                });
+                data = await response.json().catch(() => ({}));
+                ok = response.ok && data.success;
+            } catch (err) {
+                data = { error: 'Network error.' };
+            }
+            if (ok) {
+                appliedNames += 1;
+                appliedProducts += Number(data.updated_product_count || 0);
+            } else {
+                failures.push(`${group.legacy_name || '(blank)'}: ${data.error || data.message || 'not applied'}`);
+            }
+        }
+        await loadProductNameCatalogSettings();
+        if (appliedNames) settingsAlert(`${appliedNames} name${appliedNames === 1 ? '' : 's'} standardized (${productCountLabel(appliedProducts)}).`, 'success');
+        if (failures.length) settingsAlert(`Not applied — ${failures.join(' | ')}`);
     }
 
-    async function saveProductNameCatalogItem(id) {
+    async function addProductStandardizationName(groupIndex) {
+        const group = productStandardizationGroups[groupIndex];
+        const name = String(group?.legacy_name || '').trim().split(/\s+/).join(' ');
+        if (!name) return;
+        const confirmed = await settingsConfirmDialog({
+            title: 'Add as New Product Name?',
+            message: `“${name}” will be added to the catalog as its own selectable name.`,
+            confirmText: 'Add Name',
+            cancelText: 'Cancel',
+            tone: 'primary',
+            icon: 'plus'
+        });
+        if (!confirmed) return;
+        await saveProductNameCatalogItem(null, name);
+    }
+
+    async function saveProductNameCatalogItem(id, newName) {
         const input = document.getElementById('product-name-catalog-input');
-        const name = (input?.value || '').trim();
+        const fromInput = newName === undefined;
+        const name = String(fromInput ? (input?.value || '') : newName).trim();
         if (!name) return settingsAlert('Enter a product name.');
         const response = await fetch(id ? `/settings/product-names/${id}` : '/settings/product-names', {
             method: id ? 'PUT' : 'POST',
@@ -2810,10 +2932,10 @@
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.success) return settingsAlert(data.error || data.message || 'Product name could not be saved.');
-        if (input) input.value = '';
+        if (fromInput && input) input.value = '';
         await loadProductNameCatalogSettings();
         const cascadeNote = Object.prototype.hasOwnProperty.call(data, 'updated_product_count')
-            ? ` ${data.updated_product_count} existing Product${data.updated_product_count === 1 ? '' : 's'} updated.`
+            ? ` ${productCountLabel(data.updated_product_count)} updated.`
             : '';
         settingsAlert((data.message || 'Product name saved.') + cascadeNote, 'success');
     }
@@ -2821,17 +2943,27 @@
     async function editProductNameCatalogItem(id) {
         const item = productNameCatalogSettings.find(row => Number(row.id) === Number(id));
         if (!item) return;
-        const name = await settingsPromptDialog({ title: 'Edit Product Name', message: 'Update the selectable product name.', inputLabel: 'Product Name', placeholder: 'Product name', inputHelp: 'Maximum 100 characters.', confirmText: 'Save', cancelText: 'Cancel', tone: 'primary', icon: 'pen' });
-        if (name === null) return;
-        const input = document.getElementById('product-name-catalog-input');
-        if (input) input.value = name;
-        await saveProductNameCatalogItem(id);
+        const usage = Number(item.usage_count || 0);
+        const name = await settingsPromptDialog({
+            title: 'Edit Product Name',
+            message: usage ? `Renaming also renames the ${productCountLabel(usage)} using this name.` : 'No Products use this name yet.',
+            inputLabel: 'Product Name',
+            placeholder: 'Product name',
+            defaultValue: item.name,
+            inputHelp: 'Maximum 100 characters.',
+            confirmText: 'Save',
+            cancelText: 'Cancel',
+            tone: 'primary',
+            icon: 'pen'
+        });
+        if (name === null || String(name).trim() === item.name) return;
+        await saveProductNameCatalogItem(id, name);
     }
 
     async function deleteProductNameCatalogItem(id) {
         const item = productNameCatalogSettings.find(row => Number(row.id) === Number(id));
         if (!item) return;
-        const confirmed = await settingsConfirmDialog({ title: 'Delete Product Name?', message: `${item.name} will no longer be available for new Product records. Deletion is blocked while existing Products use this name.`, confirmText: 'Delete', cancelText: 'Cancel', tone: 'danger', icon: 'trash' });
+        const confirmed = await settingsConfirmDialog({ title: 'Delete Product Name?', message: `${item.name} will no longer be available for new Product records.`, confirmText: 'Delete', cancelText: 'Cancel', tone: 'danger', icon: 'trash' });
         if (!confirmed) return;
         const response = await fetch(`/settings/product-names/${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': getCSRFToken() } });
         const data = await response.json().catch(() => ({}));
@@ -4962,7 +5094,17 @@
         color: #475569;
         font-weight: 800;
         line-height: 1.45;
-        white-space: pre-wrap;
+        white-space: pre-wrap;        max-height: 50vh;
+        overflow-y: auto;
+    }
+    .product-standardization-target {
+        width: 100%;
+    }
+    @media (min-width: 768px) {
+        .product-standardization-target {
+            width: 280px;
+            flex-shrink: 0;
+        }
     }
 
     .settings-dialog-input-wrap {

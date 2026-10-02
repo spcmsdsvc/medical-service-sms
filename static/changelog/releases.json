@@ -19,6 +19,24 @@
       ]
     },
     {
+      "release_key": "2026-10-02-product-name-standardization",
+      "release_date": "2026-10-02",
+      "title": "Faster Product Name Standardization",
+      "summary": "The Product Names tab in Settings now suggests the right catalog name for most legacy names and lets many be applied together.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-product-name-standardization-admins",
+          "category": "Settings",
+          "description": "Existing Products to Standardize is now a review list: each legacy name shows a suggested catalog name marked Match or Closest, several names can be ticked and applied with one confirmation, and a name missing from the catalog can be added from its row. The tab shows how many Products are standardized, the catalog list is searchable and shows how many Products use each name, and renaming shows the current name. The activity log now records the serial numbers of the Products that were standardized.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-calibration-center-repairs",
       "release_date": "2026-10-02",
       "title": "Clearer Calibration Center and Simpler Repairs",

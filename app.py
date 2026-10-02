@@ -105,6 +105,7 @@ from dotenv import load_dotenv
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import os
 import re
+import difflib
 import calendar
 import io
 import csv
@@ -2779,6 +2780,11 @@ PRODUCT_NAME_CATALOG_SEED_VALUES = (
 def normalize_product_name_catalog_value(value):
     """Trim and collapse whitespace while preserving display casing/punctuation."""
     return ' '.join(str(value or '').split())
+
+
+def product_name_match_key(value):
+    """Comparison key that ignores case, spacing, and punctuation."""
+    return ''.join(ch for ch in str(value or '').casefold() if ch.isalnum())
 
 
 def normalize_inventory_room(value):
@@ -26711,7 +26717,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v225-calibration-center-repairs';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v226-product-name-standardization';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28669,10 +28675,10 @@ def product_name_standardization_data():
     ensure_product_name_catalog()
     catalog = ProductNameCatalog.query.order_by(ProductNameCatalog.id.asc()).all()
     exact_names = {item.name for item in catalog}
-    normalized_catalog = {
-        normalize_product_name_catalog_value(item.name).casefold(): item
-        for item in catalog
-    }
+    catalog_by_key = {}
+    for item in catalog:
+        catalog_by_key.setdefault(product_name_match_key(item.name), item)
+    usage_counts = {}
     grouped = {}
     products = (
         Product.query
@@ -28683,12 +28689,14 @@ def product_name_standardization_data():
     for product in products:
         legacy_name = product.name or ''
         if legacy_name in exact_names:
+            usage_counts[legacy_name] = usage_counts.get(legacy_name, 0) + 1
             continue
         group = grouped.setdefault(legacy_name, {
             'legacy_name': legacy_name,
             'count': 0,
             'products': [],
             'suggestion': None,
+            'suggestion_tier': None,
         })
         group['count'] += 1
         group['products'].append({
@@ -28698,15 +28706,25 @@ def product_name_standardization_data():
         })
 
     for group in grouped.values():
-        suggestion = normalized_catalog.get(
-            normalize_product_name_catalog_value(group['legacy_name']).casefold()
-        )
+        key = product_name_match_key(group['legacy_name'])
+        if not key:
+            continue
+        suggestion, tier = catalog_by_key.get(key), 'match'
+        if not suggestion:
+            closest = difflib.get_close_matches(key, list(catalog_by_key), n=1, cutoff=0.75)
+            suggestion, tier = (catalog_by_key[closest[0]], 'closest') if closest else (None, None)
         if suggestion:
             group['suggestion'] = product_name_catalog_to_dict(suggestion)
+            group['suggestion_tier'] = tier
 
     return no_store_jsonify({
         'groups': list(grouped.values()),
-        'catalog': [product_name_catalog_to_dict(item) for item in catalog],
+        'catalog': [
+            {**product_name_catalog_to_dict(item), 'usage_count': usage_counts.get(item.name, 0)}
+            for item in catalog
+        ],
+        'total_products': len(products),
+        'standardized_products': sum(usage_counts.values()),
     })
 
 
@@ -28747,10 +28765,13 @@ def apply_product_name_standardization():
     try:
         for product in products:
             product.name = catalog_item.name
-        add_activity_log_entry(
+        action = (
             f'Standardized {len(products)} Product master(s): '
-            f'{expected_current_name} -> {catalog_item.name}'
+            f'{expected_current_name} -> {catalog_item.name} '
+            f"[serials: {', '.join(serial_numbers)}]"
         )
+        # ActivityLog.action holds 255 characters.
+        add_activity_log_entry(action if len(action) <= 255 else action[:252] + '...')
         db.session.commit()
     except Exception:
         db.session.rollback()
