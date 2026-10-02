@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-02
 
+- Committed only the Settings Product Names package (`templates/settings.html`, `app.py`, `tests/test_product_name_standardization.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `66f91f4` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this change log remained unstaged. No Railway variable change or manual redeploy was performed.
+
 - Committed only the Calibration Center package (`templates/calibration_center.html`, `app.py`, `tests/test_calibration_center.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `35ad164` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this change log remained unstaged. No Railway variable change or manual redeploy was performed.
 
 - Recorded the owner-approved plan **Calibration Center: Clearer Records List and a Friendlier Repair Section** at the top of `plans.md` with status `Approved — awaiting go-ahead`, including the owner's decisions to remove the typed `REPAIR` confirmations and to permit a browser check for this plan. No application code, template, test, cache version, or database change was made.

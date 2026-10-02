@@ -1,6 +1,7 @@
 # Settings: Product Names Tab — Faster Standardization and a Clearer Catalog
 
-**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Status:** Executed — implementation commit `66f91f4`; publication to `origin/main` authorized.
+**Publication authorized:** 2026-10-02 — the owner said "commit and push partner, never the db and dirty files".
 **Finished:** 2026-10-02.
 **Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not overengineer and over check".
 
