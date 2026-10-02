@@ -34,8 +34,8 @@ class TsrFilenameTemplateSourceTests(unittest.TestCase):
 
     def test_settings_preview_supports_billing_scenarios(self):
         for scenario in ('standard', 'warranty', 'foc', 'po', 'po_sc', 'po_sv'):
-            self.assertIn(f'{scenario}:', self.settings_source)
-        self.assertIn('sanitizeTSRFilenamePreview', self.settings_source)
+            self.assertIn(f"'{scenario}': {{'label':", self.app_source)
+        self.assertIn('/settings/email-templates-preview', self.settings_source)
 
     def test_online_offline_and_legacy_queue_paths_are_covered(self):
         self.assertIn('render_tsr_pdf_filename(context)', self.app_source)

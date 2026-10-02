@@ -93,7 +93,7 @@ class TsrSubjectScenarioTests(unittest.TestCase):
         self.assertEqual(metadata['scenarios'], ['standard'])
 
     def test_grouped_settings_and_mixed_send_controls_exist(self):
-        self.assertIn('Subject Scenario', self.settings_source)
+        self.assertIn('aria-label="Subject scenario"', self.settings_source)
         self.assertIn('switchTSRSubjectScenario', self.settings_source)
         self.assertIn('tsr-subject-scenario-panel', self.timeline_source)
         self.assertIn('subject_scenario: subjectScenario', self.timeline_source)

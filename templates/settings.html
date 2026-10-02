@@ -825,27 +825,32 @@
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden mt-0 settings-email-templates-card">
                 <div class="card-header bg-email-templates text-white py-3 border-0 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 fw-bold">
-                        <i class="fa-solid fa-file-signature me-2 text-warning"></i>System Templates
+                        <i class="fa-solid fa-file-signature me-2 text-warning"></i>Templates
                     </h5>
                     <span class="badge bg-light text-email-templates small fw-bold">Superadmin Only</span>
                 </div>
 
                 <div class="card-body p-4 bg-white">
                     <div class="alert alert-light border small mb-4">
-                        <strong>Purpose:</strong> Manage generated TSR filenames and outgoing email subject formats without changing application code.
-                        Use the placeholder chips shown under each template. Changes apply only to newly generated files and future emails.
+                        These set the TSR PDF filename and the subject of each system email. Changes apply to new files and future emails only.
                     </div>
 
                     <div id="email-template-loading" class="text-muted small fw-bold mb-3">
-                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading system templates...
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading templates...
                     </div>
 
                     <div id="email-template-error" class="alert alert-warning small d-none mb-3">
-                        System templates could not be loaded.
+                        Templates could not be loaded.
                     </div>
 
                     <div id="email-template-content" class="d-none">
-                        <div id="email-template-list" class="email-template-list"></div>
+                        <div class="email-template-toolbar d-flex flex-wrap gap-2 mb-3">
+                            <input type="search" id="email-template-search" class="form-control form-control-sm rounded-3 flex-grow-1 w-auto" placeholder="Search templates" aria-label="Search templates" oninput="renderEmailTemplates()">
+                            <button type="button" class="btn btn-outline-email-templates btn-sm fw-bold rounded-3" onclick="loadEmailTemplates()">
+                                <i class="fa-solid fa-rotate me-1"></i>Refresh
+                            </button>
+                        </div>
+                        <div id="email-template-list"></div>
                     </div>
                 </div>
             </div>
@@ -3002,7 +3007,7 @@
         return (emailRecipientState.recipients || []).find(item => Number(item.id) === Number(recipientId));
     }
 
-    async function emailRecipientRequest(url, body) {
+    async function settingsJsonRequest(url, body) {
         const options = {
             credentials: 'same-origin',
             cache: 'no-store',
@@ -3017,7 +3022,7 @@
         const res = await fetch(url, options);
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.success) {
-            throw new Error(data.error || data.message || 'Email recipient request failed.');
+            throw new Error(data.error || data.message || 'Request failed.');
         }
         return data;
     }
@@ -3240,7 +3245,7 @@
         if (error) error.classList.add('d-none');
 
         try {
-            const data = await emailRecipientRequest('/settings/email-recipients-data?_=' + Date.now());
+            const data = await settingsJsonRequest('/settings/email-recipients-data?_=' + Date.now());
             emailRecipientState = {
                 groups: data.groups || [],
                 recipients: data.recipients || []
@@ -3276,7 +3281,7 @@
             let message = 'Email recipient saved.';
             let tone = 'success';
             if (recipient) {
-                await emailRecipientRequest('/settings/email-recipients-save', {
+                await settingsJsonRequest('/settings/email-recipients-save', {
                     ...details,
                     id: recipient.id,
                     group_key: recipient.group_key,
@@ -3285,7 +3290,7 @@
                     is_active: recipient.is_active
                 });
             } else {
-                const data = await emailRecipientRequest('/settings/email-recipients-bulk-add', {
+                const data = await settingsJsonRequest('/settings/email-recipients-bulk-add', {
                     ...details,
                     group_key: groupKey,
                     emails: email
@@ -3308,7 +3313,7 @@
 
     async function toggleEmailRecipient(recipientId, isActive) {
         try {
-            await emailRecipientRequest('/settings/email-recipients-save', { id: recipientId, is_active: isActive });
+            await settingsJsonRequest('/settings/email-recipients-save', { id: recipientId, is_active: isActive });
         } catch (err) {
             settingsAlert('Error: ' + (err.message || 'Email recipient save failed.'));
         }
@@ -3325,7 +3330,7 @@
         }
 
         try {
-            const data = await emailRecipientRequest(`/settings/email-recipients-copy/${recipientId}`, { group_keys: groupKeys });
+            const data = await settingsJsonRequest(`/settings/email-recipients-copy/${recipientId}`, { group_keys: groupKeys });
             bootstrap.Modal.getInstance(document.getElementById('emailRecipientCopyModal'))?.hide();
             await loadEmailRecipients(true);
             settingsAlert('Copied to ' + data.copied.length + ' group(s).', 'success');
@@ -3349,7 +3354,7 @@
         if (!shouldDelete) return;
 
         try {
-            const data = await emailRecipientRequest(`/settings/email-recipients-delete/${recipientId}`, {});
+            const data = await settingsJsonRequest(`/settings/email-recipients-delete/${recipientId}`, {});
             await loadEmailRecipients(true);
             settingsAlert(data.message || 'Email recipient deleted.', 'success');
         } catch (err) {
@@ -3360,11 +3365,15 @@
 
 
     /**
-     * SYSTEM TEMPLATE SETTINGS LOGIC:
+     * TEMPLATE SETTINGS LOGIC:
      */
     let emailTemplateState = {
         templates: []
     };
+    // Unsaved text per template key, so redrawing the list never discards typing.
+    let emailTemplateDrafts = {};
+    let emailTemplatePreviewTimers = {};
+    let emailTemplateFilenameScenario = 'standard';
     let tsrSubjectSelectedTemplateKey = 'tsr_client_subject';
 
     function getEmailTemplateByKey(templateKey) {
@@ -3375,111 +3384,145 @@
         return (emailTemplateState.templates || []).filter(template => template.scenario_group === 'tsr_client_subject');
     }
 
-    function emailTemplateEscape(value) {
-        return settingsEscape(value);
+    function emailTemplateCurrentValue(template) {
+        const draft = emailTemplateDrafts[template.template_key];
+        return draft === undefined ? (template.template_value || '') : draft;
     }
 
-    function renderEmailTemplatePlaceholders(template, cardTemplateKey=null) {
-        const placeholders = template.allowed_placeholders || [];
-        if (!placeholders.length) {
-            return `<div class="email-template-placeholder-muted">No placeholders configured.</div>`;
+    function emailTemplateIsDirty(template) {
+        return emailTemplateCurrentValue(template) !== (template.template_value || '');
+    }
+
+    function emailTemplateStatusBadge(template) {
+        if (!template.is_active) {
+            const fallback = template.scenario_group && template.scenario_key !== 'standard' ? 'Standard' : 'default';
+            return `<span class="email-template-status is-off">Off — ${fallback} in use</span>`;
         }
-
-        return placeholders.map(key => {
-            const targetKey = cardTemplateKey || template.template_key;
-            return `<button type="button" class="email-template-placeholder-chip" onclick="insertEmailTemplatePlaceholder('${emailTemplateEscape(targetKey)}', '${emailTemplateEscape(key)}')">{${emailTemplateEscape(key)}}</button>`;
-        }).join('');
+        return template.is_customized
+            ? `<span class="email-template-status is-customized">Customized</span>`
+            : `<span class="email-template-status">Default</span>`;
     }
 
-    function emailTemplateSampleContext(templateKey, scenario='standard') {
-        const shared = {
-            tsr_number: '20260722-01-JP',
-            billing_marker: '',
-            billing_label: 'Billing',
-            client_name: 'Sample Medical Center',
-            machine_name: 'Mobile X-Ray',
-            product_name: 'Mobile X-Ray',
-            service_case: 'Preventive Maintenance',
-            date_mmddyyyy: '07222026',
-            date_yyyymmdd: '20260722',
-            date_mmddyy: '06-25-26',
-            service_date: '2026-07-22',
-            task: 'Preventive Maintenance',
-            product: 'Mobile X-Ray',
-            serial: 'MXR-12345',
-            serial_number: 'MXR-12345',
-            engineer_initials: 'JP',
-            billing_tags: '',
-            warranty: '',
-            foc: '',
-            with_po: '',
-            sc: '',
-            sv: '',
-            shift_id: '1001',
-            tsr_count: '1',
-            request_no: 'TR-2026-001',
-            requester: 'Juan Dela Cruz',
-            destination: 'Cebu City',
-            travel_dates: 'June 25-27, 2026',
-            requested_amount: '12,000.00',
-            approved_amount: '10,000.00',
-            approved_by: 'Approver Name',
-            cash_advance_no: 'CA-2026-001',
-            request_date: 'June 20, 2026',
-            needed_date: 'June 25, 2026',
-            liquidation_days: '7',
-            employee_name: 'Juan Dela Cruz',
-            date_range: 'June 1-15, 2026',
-            period_start: 'June 1, 2026',
-            period_end: 'June 15, 2026',
-            grand_total: '8,500.00'
-        };
-        const scenarios = {
-            standard: {},
-            warranty: { warranty: 'Warranty', billing_tags: 'Warranty' },
-            foc: { foc: 'FOC', billing_tags: 'FOC' },
-            po: { billing_marker: 'B', with_po: 'With PO', billing_tags: 'With_PO' },
-            with_po: { billing_marker: 'B', with_po: 'With PO', billing_tags: 'With_PO' },
-            po_sc: { billing_marker: 'B', with_po: 'With PO', sc: 'SC', billing_tags: 'With_PO_SC' },
-            po_sv: { billing_marker: 'B', with_po: 'With PO', sv: 'SV', billing_tags: 'With_PO_SV' },
-            installation: { service_case: 'System Installation', task: 'System Installation' }
-        };
-        Object.assign(shared, scenarios[scenario] || scenarios.standard);
-        return shared;
-    }
-
-    function sanitizeTSRFilenamePreview(value) {
-        let result = String(value || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ');
-        result = result.replace(/\s+/g, ' ').trim().replace(/_+/g, '_');
-        result = result.replace(/\s*_\s*/g, '_').replace(/_+([).])/g, '$1').replace(/\(_*\)/g, '');
-        result = result.replace(/^[-_. ]+|[-_. ]+$/g, '');
-        result = result.replace(/\.pdf$/i, '').replace(/^[-_. ]+|[-_. ]+$/g, '').slice(0, 195);
-        return `${result || 'TSR'}.pdf`;
-    }
-
-    function previewEmailTemplateSubject(templateKey, templateValue, scenario='standard') {
-        const context = emailTemplateSampleContext(templateKey, scenario);
-        let rendered = String(templateValue || '').replace(/\{([a-zA-Z0-9_]+)\}/g, function(match, key) {
-            return Object.prototype.hasOwnProperty.call(context, key) ? context[key] : match;
+    function storeEmailTemplates(templates) {
+        (templates || []).forEach(template => {
+            const index = emailTemplateState.templates.findIndex(item => item.template_key === template.template_key);
+            if (index >= 0) emailTemplateState.templates[index] = template;
+            delete emailTemplateDrafts[template.template_key];
         });
-        if (templateKey === 'tsr_pdf_filename') rendered = sanitizeTSRFilenamePreview(rendered);
-        return rendered;
-    }
-
-    function updateEmailTemplatePreview(templateKey) {
-        const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
-        const input = card?.querySelector('.email-template-input');
-        const preview = card?.querySelector('.email-template-preview-value');
-        if (!input || !preview) return;
-        const activeTemplateKey = card.dataset.activeTemplateKey || templateKey;
-        const activeTemplate = getEmailTemplateByKey(activeTemplateKey);
-        const scenario = card?.querySelector('.email-template-scenario')?.value || activeTemplate?.scenario_key || 'standard';
-        preview.textContent = previewEmailTemplateSubject(activeTemplateKey, input.value, scenario);
-    }
-
-    function switchTSRSubjectScenario(templateKey) {
-        tsrSubjectSelectedTemplateKey = templateKey || 'tsr_client_subject';
         renderEmailTemplates();
+    }
+
+    function renderEmailTemplateCard(baseTemplate) {
+        const isTSRSubjectGroup = baseTemplate.scenario_group === 'tsr_client_subject';
+        const scenarioTemplates = isTSRSubjectGroup ? getTSRSubjectScenarioTemplates() : [];
+        const template = isTSRSubjectGroup
+            ? (getEmailTemplateByKey(tsrSubjectSelectedTemplateKey) || baseTemplate)
+            : baseTemplate;
+        const cardKey = settingsEscape(baseTemplate.template_key || '');
+        const isFilename = template.template_type === 'filename';
+        const isDirty = emailTemplateIsDirty(template);
+        const offNote = isTSRSubjectGroup && template.scenario_key !== 'standard'
+            ? 'When off, the Standard subject is used.'
+            : 'When off, the built-in default is used.';
+        const updatedText = template.updated_at
+            ? `Updated ${settingsEscape(String(template.updated_at).slice(0, 10))}${template.updated_by ? ' by ' + settingsEscape(template.updated_by) : ''}`
+            : '';
+
+        const scenarioPills = isTSRSubjectGroup ? `
+            <div class="email-template-pill-list mb-2" role="tablist" aria-label="Subject scenario">
+                ${scenarioTemplates.map(item => `
+                    <button type="button" role="tab"
+                            class="email-template-pill ${item.template_key === template.template_key ? 'active' : ''}"
+                            aria-selected="${item.template_key === template.template_key ? 'true' : 'false'}"
+                            title="${item.is_customized ? 'Customized' : 'Default'}${emailTemplateIsDirty(item) ? ', unsaved changes' : ''}"
+                            onclick="switchTSRSubjectScenario('${settingsEscape(item.template_key)}')">
+                        ${settingsEscape(item.scenario_label || item.label)}${item.is_customized ? '<span class="email-template-pill-dot"></span>' : ''}${emailTemplateIsDirty(item) ? ' *' : ''}
+                    </button>
+                `).join('')}
+            </div>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <button type="button" class="btn btn-outline-email-templates btn-sm fw-bold rounded-3" onclick="copyStandardToTSRScenarios()">
+                    <i class="fa-solid fa-copy me-1"></i>Copy Standard to all scenarios
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm fw-bold rounded-3" onclick="resetAllTSRScenarios()">
+                    <i class="fa-solid fa-rotate-left me-1"></i>Reset all scenarios
+                </button>
+            </div>` : '';
+
+        const filenameScenarioPicker = isFilename ? `
+            <div class="mt-2">
+                <label class="small fw-bold text-muted text-uppercase mb-1">Preview Scenario</label>
+                <select class="form-select form-select-sm rounded-3 email-template-scenario" onchange="emailTemplateFilenameScenario = this.value; refreshEmailTemplatePreview('${cardKey}')">
+                    ${(template.preview_scenarios || []).map(item => `
+                        <option value="${settingsEscape(item.key)}" ${item.key === emailTemplateFilenameScenario ? 'selected' : ''}>${settingsEscape(item.label)}</option>
+                    `).join('')}
+                </select>
+            </div>` : '';
+
+        const placeholders = (template.placeholders || []).map(item => `
+            <button type="button" class="email-template-placeholder-chip"
+                    title="Example: ${settingsEscape(item.sample || '(blank)')}"
+                    onclick="insertEmailTemplatePlaceholder('${cardKey}', '${settingsEscape(item.key)}')">{${settingsEscape(item.key)}}</button>
+        `).join('') || `<div class="email-template-placeholder-muted">No placeholders configured.</div>`;
+
+        return `
+            <div class="email-template-card" data-template-key="${cardKey}" data-active-template-key="${settingsEscape(template.template_key || '')}">
+                <div class="email-template-header">
+                    <div>
+                        <div class="email-template-title">${settingsEscape(baseTemplate.label || baseTemplate.template_key)}</div>
+                        <div class="email-template-description">${settingsEscape(template.description || '')}</div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-1">
+                        ${emailTemplateStatusBadge(template)}
+                        <span class="email-template-type-badge">${settingsEscape(template.template_type || 'subject')}</span>
+                    </div>
+                </div>
+
+                <div class="email-template-body">
+                    ${scenarioPills}
+                    <label class="small fw-bold text-muted text-uppercase mb-1">${isFilename ? 'Filename Template' : 'Subject Template'}</label>
+                    <input type="text" maxlength="500"
+                           class="form-control form-control-sm rounded-3 email-template-input"
+                           value="${settingsEscape(emailTemplateCurrentValue(template))}"
+                           placeholder="${settingsEscape(template.default_template || '')}"
+                           oninput="onEmailTemplateInput('${cardKey}')">
+                    <div class="email-template-error-line d-none" role="alert"></div>
+
+                    <div class="email-template-placeholder-wrap mt-2">
+                        <div class="email-template-placeholder-label">Available placeholders</div>
+                        <div class="email-template-placeholder-list">${placeholders}</div>
+                    </div>
+
+                    <div class="email-template-default mt-2">
+                        <strong>Default:</strong> ${settingsEscape(template.default_template || '')}
+                    </div>
+
+                    ${filenameScenarioPicker}
+
+                    <div class="email-template-preview mt-2">
+                        <i class="fa-solid ${isFilename ? 'fa-file-pdf' : 'fa-envelope'} me-1"></i>
+                        <strong>${isFilename ? 'File:' : 'Subject:'}</strong>
+                        <span class="email-template-preview-value">${settingsEscape(template.preview || '')}</span>
+                    </div>
+
+                    <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                        <button type="button" class="btn btn-email-templates btn-sm fw-bold rounded-3 email-template-save" ${isDirty ? '' : 'disabled'} onclick="saveEmailTemplate('${cardKey}')">
+                            <i class="fa-solid fa-floppy-disk me-1"></i>Save
+                        </button>
+                        <button type="button" class="btn btn-outline-email-templates btn-sm fw-bold rounded-3" onclick="resetEmailTemplate('${cardKey}')">
+                            <i class="fa-solid fa-rotate-left me-1"></i>Reset Default
+                        </button>
+                        <span class="email-template-unsaved ${isDirty ? '' : 'd-none'}">Unsaved changes</span>
+                        <span class="email-template-default">${updatedText}</span>
+                        <div class="form-check form-switch ms-sm-auto" title="${offNote}">
+                            <input class="form-check-input email-template-active" type="checkbox" ${template.is_active ? 'checked' : ''} onchange="toggleEmailTemplateActive('${cardKey}', this)">
+                            <label class="form-check-label small fw-bold">Active</label>
+                        </div>
+                    </div>
+                    <div class="email-template-default text-sm-end mt-1">${offNote}</div>
+                </div>
+            </div>
+        `;
     }
 
     function renderEmailTemplates() {
@@ -3487,124 +3530,121 @@
         if (!container) return;
 
         const templates = emailTemplateState.templates || [];
-        if (!templates.length) {
-            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">No email subject templates found.</div>`;
+        if (!getEmailTemplateByKey(tsrSubjectSelectedTemplateKey)) {
+            tsrSubjectSelectedTemplateKey = 'tsr_client_subject';
+        }
+
+        const query = (document.getElementById('email-template-search')?.value || '').trim().toLowerCase();
+        const matches = template => !query || [template.label, template.description, template.template_value, template.scenario_label]
+            .some(text => String(text || '').toLowerCase().includes(query));
+
+        // One card per template; the client subject scenarios share the Standard card.
+        const sections = [];
+        templates.forEach(template => {
+            const isScenario = template.scenario_group === 'tsr_client_subject';
+            if (isScenario && template.scenario_key !== 'standard') return;
+            const visible = isScenario ? getTSRSubjectScenarioTemplates().some(matches) : matches(template);
+            if (!visible) return;
+            let section = sections.find(item => item.name === template.section);
+            if (!section) {
+                section = { name: template.section, cards: [] };
+                sections.push(section);
+            }
+            section.cards.push(renderEmailTemplateCard(template));
+        });
+
+        if (!sections.length) {
+            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">No templates found.</div>`;
             return;
         }
 
-        const displayTemplates = templates.filter(template => (
-            template.scenario_group !== 'tsr_client_subject' || template.scenario_key === 'standard'
-        ));
+        container.innerHTML = sections.map(section => `
+            <details class="email-recipient-section" open>
+                <summary class="email-recipient-section-title">${settingsEscape(section.name)}</summary>
+                <div class="email-template-list">${section.cards.join('')}</div>
+            </details>
+        `).join('');
 
-        container.innerHTML = displayTemplates.map(baseTemplate => {
-            const isTSRSubjectGroup = baseTemplate.scenario_group === 'tsr_client_subject';
-            const scenarioTemplates = isTSRSubjectGroup ? getTSRSubjectScenarioTemplates() : [];
-            if (isTSRSubjectGroup && !scenarioTemplates.some(template => template.template_key === tsrSubjectSelectedTemplateKey)) {
-                tsrSubjectSelectedTemplateKey = 'tsr_client_subject';
+        // Cards with unsaved text or a non-standard filename scenario need a fresh preview.
+        container.querySelectorAll('.email-template-card').forEach(card => {
+            const template = getEmailTemplateByKey(card.dataset.activeTemplateKey);
+            const scenario = card.querySelector('.email-template-scenario')?.value;
+            if (template && (emailTemplateIsDirty(template) || (scenario && scenario !== 'standard'))) {
+                refreshEmailTemplatePreview(card.dataset.templateKey);
             }
-            const template = isTSRSubjectGroup
-                ? (getEmailTemplateByKey(tsrSubjectSelectedTemplateKey) || baseTemplate)
-                : baseTemplate;
-            const cardTemplateKey = emailTemplateEscape(baseTemplate.template_key || '');
-            const activeTemplateKey = emailTemplateEscape(template.template_key || '');
-            const isActiveChecked = template.is_active ? 'checked' : '';
-            const isFilename = template.template_type === 'filename';
-            const fieldLabel = isFilename ? 'Filename Template' : 'Subject Template';
-            const saveLabel = isFilename ? 'Save Filename' : 'Save Subject';
-            const filenameScenarioPicker = isFilename ? `
-                <div class="email-template-scenario-wrap mt-2">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">Preview Scenario</label>
-                    <select class="form-select form-select-sm rounded-3 email-template-scenario" onchange="updateEmailTemplatePreview('${cardTemplateKey}')">
-                        <option value="standard">Standard</option>
-                        <option value="warranty">Warranty</option>
-                        <option value="foc">FOC</option>
-                        <option value="po">With P.O.</option>
-                        <option value="po_sc">With P.O. + SC</option>
-                        <option value="po_sv">With P.O. + SV</option>
-                    </select>
-                </div>` : '';
-            const subjectScenarioPicker = isTSRSubjectGroup ? `
-                <div class="email-template-scenario-wrap mb-3">
-                    <label class="small fw-bold text-muted text-uppercase mb-1">Subject Scenario</label>
-                    <select class="form-select form-select-sm rounded-3 tsr-subject-template-scenario" onchange="switchTSRSubjectScenario(this.value)">
-                        ${scenarioTemplates.map(item => `
-                            <option value="${emailTemplateEscape(item.template_key)}" ${item.template_key === template.template_key ? 'selected' : ''}>
-                                ${emailTemplateEscape(item.scenario_label || item.label || item.template_key)}
-                            </option>
-                        `).join('')}
-                    </select>
-                    <div class="xsmall text-muted mt-1">Each scenario keeps its own saved subject and Active setting.</div>
-                </div>` : '';
-            return `
-                <div class="email-template-card" data-template-key="${cardTemplateKey}" data-active-template-key="${activeTemplateKey}">
-                    <div class="email-template-header">
-                        <div>
-                            <div class="email-template-title">${emailTemplateEscape(baseTemplate.label || baseTemplate.template_key)}</div>
-                            <div class="email-template-description">${emailTemplateEscape(template.description || '')}</div>
-                        </div>
-                        <span class="email-template-type-badge">${emailTemplateEscape(template.template_type || 'subject')}</span>
-                    </div>
+        });
+    }
 
-                    <div class="email-template-body">
-                        ${subjectScenarioPicker}
-                        <label class="small fw-bold text-muted text-uppercase mb-1">${fieldLabel}</label>
-                        <input type="text"
-                               class="form-control form-control-sm rounded-3 email-template-input"
-                               value="${emailTemplateEscape(template.template_value || '')}"
-                               placeholder="${emailTemplateEscape(template.default_template || '')}"
-                               oninput="updateEmailTemplatePreview('${cardTemplateKey}')">
+    function getEmailTemplateCard(templateKey) {
+        return document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
+    }
 
-                        <div class="email-template-placeholder-wrap mt-2">
-                            <div class="email-template-placeholder-label">Available placeholders</div>
-                            <div class="email-template-placeholder-list">
-                                ${renderEmailTemplatePlaceholders(template, cardTemplateKey)}
-                            </div>
-                        </div>
+    function updateEmailTemplateCardState(card) {
+        const template = getEmailTemplateByKey(card.dataset.activeTemplateKey);
+        if (!template) return;
+        const isDirty = emailTemplateIsDirty(template);
+        card.querySelector('.email-template-unsaved')?.classList.toggle('d-none', !isDirty);
+        const saveButton = card.querySelector('.email-template-save');
+        if (saveButton) saveButton.disabled = !isDirty || card.dataset.invalid === '1';
+    }
 
-                        <div class="email-template-default mt-2">
-                            <strong>Default:</strong> ${emailTemplateEscape(template.default_template || '')}
-                        </div>
+    function onEmailTemplateInput(templateKey) {
+        const card = getEmailTemplateCard(templateKey);
+        const input = card?.querySelector('.email-template-input');
+        if (!input) return;
+        emailTemplateDrafts[card.dataset.activeTemplateKey] = input.value;
+        updateEmailTemplateCardState(card);
+        clearTimeout(emailTemplatePreviewTimers[templateKey]);
+        emailTemplatePreviewTimers[templateKey] = setTimeout(() => refreshEmailTemplatePreview(templateKey), 300);
+    }
 
-                        ${filenameScenarioPicker}
+    async function refreshEmailTemplatePreview(templateKey) {
+        const card = getEmailTemplateCard(templateKey);
+        const input = card?.querySelector('.email-template-input');
+        if (!input) return;
+        const sentValue = input.value;
+        let preview = '';
+        let error = '';
+        try {
+            const data = await settingsJsonRequest('/settings/email-templates-preview', {
+                template_key: card.dataset.activeTemplateKey,
+                template_value: sentValue,
+                scenario: card.querySelector('.email-template-scenario')?.value || ''
+            });
+            preview = data.preview || '';
+            error = data.error || '';
+        } catch (err) {
+            error = 'Preview unavailable: ' + (err.message || 'request failed.');
+        }
+        // Ignore an answer for text that has since changed or a card that was redrawn.
+        if (!card.isConnected || input.value !== sentValue) return;
+        const errorLine = card.querySelector('.email-template-error-line');
+        card.querySelector('.email-template-preview-value').textContent = preview;
+        errorLine.textContent = error;
+        errorLine.classList.toggle('d-none', !error);
+        card.dataset.invalid = error && !error.startsWith('Preview unavailable') ? '1' : '';
+        updateEmailTemplateCardState(card);
+    }
 
-                        <div class="email-template-preview mt-2">
-                            <strong>Preview:</strong>
-                            <span class="email-template-preview-value">${emailTemplateEscape(previewEmailTemplateSubject(template.template_key, template.template_value || template.default_template || '', template.scenario_key || 'standard'))}</span>
-                        </div>
-
-                        <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
-                            <button type="button" class="btn btn-email-templates btn-sm fw-bold rounded-3" onclick="saveEmailTemplate('${cardTemplateKey}')">
-                                <i class="fa-solid fa-floppy-disk me-1"></i>${saveLabel}
-                            </button>
-                            <button type="button" class="btn btn-outline-email-templates btn-sm fw-bold rounded-3" onclick="resetEmailTemplate('${cardTemplateKey}')">
-                                <i class="fa-solid fa-rotate-left me-1"></i>Reset Default
-                            </button>
-                            <div class="form-check form-switch ms-sm-auto">
-                                <input class="form-check-input email-template-active" type="checkbox" ${isActiveChecked}>
-                                <label class="form-check-label small fw-bold">Active</label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+    function switchTSRSubjectScenario(templateKey) {
+        tsrSubjectSelectedTemplateKey = templateKey || 'tsr_client_subject';
+        renderEmailTemplates();
     }
 
     function insertEmailTemplatePlaceholder(templateKey, placeholderKey) {
-        const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
-        const input = card?.querySelector('.email-template-input');
+        const input = getEmailTemplateCard(templateKey)?.querySelector('.email-template-input');
         if (!input) return;
 
         const insertText = `{${placeholderKey}}`;
-        const start = input.selectionStart || input.value.length;
-        const end = input.selectionEnd || input.value.length;
-        input.value = input.value.slice(0, start) + insertText + input.value.slice(end);
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        input.value = (input.value.slice(0, start) + insertText + input.value.slice(end)).slice(0, 500);
         input.focus();
         const cursorPos = start + insertText.length;
         try {
             input.setSelectionRange(cursorPos, cursorPos);
         } catch (err) {}
-        updateEmailTemplatePreview(templateKey);
+        onEmailTemplateInput(templateKey);
     }
 
     async function loadEmailTemplates(silent=false) {
@@ -3618,16 +3658,7 @@
         if (error) error.classList.add('d-none');
 
         try {
-            const res = await fetch('/settings/email-templates-data?_=' + Date.now(), {
-                credentials: 'same-origin',
-                cache: 'no-store',
-                headers: { 'Accept': 'application/json' }
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Template request failed.');
-            }
-
+            const data = await settingsJsonRequest('/settings/email-templates-data?_=' + Date.now());
             emailTemplateState = {
                 templates: data.templates || []
             };
@@ -3635,9 +3666,9 @@
             renderEmailTemplates();
             content.classList.remove('d-none');
         } catch (err) {
-            console.error('System templates load failed:', err);
+            console.error('Templates load failed:', err);
             if (error) {
-                error.textContent = err.message || 'System templates could not be loaded.';
+                error.textContent = err.message || 'Templates could not be loaded.';
                 error.classList.remove('d-none');
             }
         } finally {
@@ -3646,82 +3677,101 @@
     }
 
     async function saveEmailTemplate(templateKey) {
-        const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
+        const card = getEmailTemplateCard(templateKey);
         if (!card) return;
 
-        const activeTemplateKey = card.dataset.activeTemplateKey || templateKey;
-
-        const payload = {
-            template_key: activeTemplateKey,
-            template_value: card.querySelector('.email-template-input')?.value || '',
-            is_active: Boolean(card.querySelector('.email-template-active')?.checked)
-        };
-
-        if (!payload.template_value.trim()) {
+        const templateValue = card.querySelector('.email-template-input')?.value || '';
+        if (!templateValue.trim()) {
             settingsAlert('Template value cannot be blank.');
             return;
         }
 
         try {
-            const res = await fetch('/settings/email-templates-save', {
-                method: 'POST',
-                credentials: 'same-origin',
-                cache: 'no-store',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
-                },
-                body: JSON.stringify(payload)
+            const data = await settingsJsonRequest('/settings/email-templates-save', {
+                template_key: card.dataset.activeTemplateKey,
+                template_value: templateValue
             });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Email template save failed.');
-            }
-
-            await loadEmailTemplates(true);
+            storeEmailTemplates([data.template]);
             settingsAlert(data.message || 'Template saved.', 'success');
         } catch (err) {
-            settingsAlert('Error: ' + (err.message || 'Email template save failed.'));
+            settingsAlert('Error: ' + (err.message || 'Template save failed.'));
         }
     }
 
-    async function resetEmailTemplate(templateKey) {
-        const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
-        const activeTemplateKey = card?.dataset.activeTemplateKey || templateKey;
-        const shouldReset = await settingsConfirmDialog({
-            title: 'Reset Template?',
-            message: 'This will restore the default value for this template.',
-            confirmText: 'Reset Default',
-            cancelText: 'Cancel',
-            tone: 'warning',
-            icon: 'rotate-left'
-        });
-        if (!shouldReset) return;
+    async function toggleEmailTemplateActive(templateKey, checkbox) {
+        const card = getEmailTemplateCard(templateKey);
+        if (!card) return;
+        const activeTemplateKey = card.dataset.activeTemplateKey;
+        const draft = emailTemplateDrafts[activeTemplateKey];
 
         try {
-            const res = await fetch(`/settings/email-templates-reset/${activeTemplateKey}`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                cache: 'no-store',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
-                },
-                body: JSON.stringify({})
+            const data = await settingsJsonRequest('/settings/email-templates-save', {
+                template_key: activeTemplateKey,
+                is_active: checkbox.checked
             });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Email template reset failed.');
+            storeEmailTemplates([data.template]);
+            // The switch does not save the text box; keep what was being typed.
+            if (draft !== undefined) {
+                emailTemplateDrafts[activeTemplateKey] = draft;
+                renderEmailTemplates();
             }
-
-            await loadEmailTemplates(true);
-            settingsAlert(data.message || 'Email subject template reset.', 'success');
         } catch (err) {
-            settingsAlert('Error: ' + (err.message || 'Email template reset failed.'));
+            checkbox.checked = !checkbox.checked;
+            settingsAlert('Error: ' + (err.message || 'Template update failed.'));
         }
     }
+
+    async function emailTemplateConfirmedAction(dialog, url, fallbackMessage) {
+        const confirmed = await settingsConfirmDialog({
+            cancelText: 'Cancel',
+            tone: 'warning',
+            ...dialog
+        });
+        if (!confirmed) return;
+
+        try {
+            const data = await settingsJsonRequest(url, {});
+            storeEmailTemplates(data.templates || [data.template]);
+            settingsAlert(data.message || fallbackMessage, 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Template update failed.'));
+        }
+    }
+
+    function resetEmailTemplate(templateKey) {
+        const activeTemplateKey = getEmailTemplateCard(templateKey)?.dataset.activeTemplateKey || templateKey;
+        return emailTemplateConfirmedAction({
+            title: 'Reset Template?',
+            message: 'This will restore the default value for this template and switch it on.',
+            confirmText: 'Reset Default',
+            icon: 'rotate-left'
+        }, `/settings/email-templates-reset/${activeTemplateKey}`, 'Template reset.');
+    }
+
+    function copyStandardToTSRScenarios() {
+        return emailTemplateConfirmedAction({
+            title: 'Copy Standard to All Scenarios?',
+            message: 'The saved Standard subject and its Active setting will replace the other six scenarios.',
+            confirmText: 'Copy to All',
+            icon: 'copy'
+        }, '/settings/email-templates-copy-standard', 'Standard subject copied.');
+    }
+
+    function resetAllTSRScenarios() {
+        return emailTemplateConfirmedAction({
+            title: 'Reset All Scenarios?',
+            message: 'All seven client subject scenarios will return to the default and be switched on.',
+            confirmText: 'Reset All',
+            icon: 'rotate-left'
+        }, '/settings/email-templates-reset-scenarios', 'All scenarios reset.');
+    }
+
+    window.addEventListener('beforeunload', function(event) {
+        if ((emailTemplateState.templates || []).some(emailTemplateIsDirty)) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
+    });
 
 
     /**
@@ -4705,6 +4755,62 @@
         font-weight: 900;
         overflow-wrap: anywhere;
     }
+    .email-template-status {
+        flex: 0 0 auto;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: #475569;
+        font-size: 0.72rem;
+        font-weight: 950;
+    }
+    .email-template-status.is-customized {
+        background: #dcfce7;
+        color: #166534;
+    }
+    .email-template-status.is-off {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    .email-template-pill-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+    .email-template-pill {
+        border: 1px solid #c4b5fd;
+        background: #ffffff;
+        color: #5b21b6;
+        border-radius: 999px;
+        padding: 0.3rem 0.75rem;
+        font-size: 0.76rem;
+        font-weight: 900;
+    }
+    .email-template-pill.active {
+        background: #7c3aed;
+        border-color: #7c3aed;
+        color: #fff;
+    }
+    .email-template-pill-dot {
+        display: inline-block;
+        width: 0.4rem;
+        height: 0.4rem;
+        margin-left: 0.35rem;
+        border-radius: 50%;
+        background: #22c55e;
+        vertical-align: middle;
+    }
+    .email-template-unsaved {
+        color: #b45309;
+        font-size: 0.72rem;
+        font-weight: 950;
+    }
+    .email-template-error-line {
+        color: #b91c1c;
+        font-size: 0.74rem;
+        font-weight: 800;
+        margin-top: 0.3rem;
+    }
 
     /* MOBILE SETTINGS PAGE UPGRADE */
     .settings-mobile-user-list {
@@ -4919,8 +5025,10 @@
             gap: 0.3rem;
         }
 
-        .email-template-placeholder-chip {
+        .email-template-placeholder-chip,
+        .email-template-pill {
             flex: 1 1 auto;
+            min-height: 44px;
         }
     }
     /* S11F8 SETTINGS CUSTOM ALERTS / CONFIRMATIONS */

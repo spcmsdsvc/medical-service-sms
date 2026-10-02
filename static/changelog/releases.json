@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-02-templates-tab",
+      "release_date": "2026-10-02",
+      "title": "Easier Templates in Settings",
+      "summary": "The Templates tab keeps unsaved edits, shows the exact result before saving, and now covers schedule, liquidation, Reimbursement Paid and What's New email subjects.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-templates-tab-admins",
+          "category": "Settings",
+          "description": "Templates is now grouped under Service Files, Schedule, Accounting, LPR, Leave and Announcements, with a search box. Each template shows whether it is Default, Customized or Off, who last changed it, and an Unsaved changes marker; text typed in one template is no longer lost when another is saved. The preview is produced by the same rules that build the real subject or filename and flags an unknown placeholder before saving. The Active switch saves immediately. Service Files client subjects have one button per scenario, plus Copy Standard to all scenarios and Reset all scenarios. Seven more email subjects can now be edited: New Schedule Assigned, Schedule Change, Schedule Deleted, Travel Liquidation, Cash Advance Liquidation, Reimbursement Paid and What's New.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-email-recipients-tab",
       "release_date": "2026-10-02",
       "title": "Easier Email Recipients in Settings",

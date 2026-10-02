@@ -547,216 +547,313 @@ TSR_CLIENT_SUBJECT_TEMPLATE_KEYS = {
     for scenario, details in TSR_CLIENT_SUBJECT_SCENARIOS.items()
 }
 
+# Sample values double as the list of allowed placeholders for each template:
+# the keys are what an admin may type, the values feed the Settings preview.
+TSR_FILENAME_TEMPLATE_SAMPLE = {
+    'tsr_number': '20260722-01-JP',
+    'client_name': 'Sample Medical Center',
+    'product_name': 'Mobile X-Ray',
+    'machine_name': 'Mobile X-Ray',
+    'serial_number': 'MXR-12345',
+    'serial': 'MXR-12345',
+    'task': 'Preventive Maintenance',
+    'service_case': 'Preventive Maintenance',
+    'service_date': '2026-07-22',
+    'date_mmddyyyy': '07222026',
+    'date_yyyymmdd': '20260722',
+    'engineer_initials': 'JP',
+    'billing_marker': '',
+    'billing_tags': '',
+    'warranty': '',
+    'foc': '',
+    'with_po': '',
+    'sc': '',
+    'sv': '',
+}
+
+TSR_FILENAME_PREVIEW_SCENARIOS = {
+    'standard': {'label': 'Standard', 'values': {}},
+    'warranty': {'label': 'Warranty', 'values': {'warranty': 'Warranty', 'billing_tags': 'Warranty'}},
+    'foc': {'label': 'FOC', 'values': {'foc': 'FOC', 'billing_tags': 'FOC'}},
+    'po': {'label': 'With P.O.', 'values': {'billing_marker': 'B', 'with_po': 'With PO', 'billing_tags': 'With_PO'}},
+    'po_sc': {'label': 'With P.O. + SC', 'values': {'billing_marker': 'B', 'with_po': 'With PO', 'sc': 'SC', 'billing_tags': 'With_PO_SC'}},
+    'po_sv': {'label': 'With P.O. + SV', 'values': {'billing_marker': 'B', 'with_po': 'With PO', 'sv': 'SV', 'billing_tags': 'With_PO_SV'}},
+}
+
+TSR_CLIENT_SUBJECT_SAMPLE = {
+    'billing_marker': '',
+    'billing_label': 'Non-Billed',
+    'client_name': 'Sample Medical Center',
+    'machine_name': 'Mobile X-Ray(MXR-12345)',
+    'service_case': 'Preventive Maintenance',
+    'date_mmddyyyy': '07222026',
+    'date_mmddyy': '072226',
+    'service_date': 'July 22, 2026',
+    'task': 'Preventive Maintenance',
+    'product': 'Mobile X-Ray',
+    'serial': 'MXR-12345',
+    'shift_id': '1001',
+    'tsr_count': '1',
+}
+TSR_CLIENT_SUBJECT_BILLED_SAMPLE = {
+    **TSR_CLIENT_SUBJECT_SAMPLE,
+    'billing_marker': '_B',
+    'billing_label': 'Billed',
+}
+
 EMAIL_TEMPLATE_DEFAULTS = {
     'tsr_pdf_filename': {
         'label': 'TSR PDF Filename',
         'description': 'Filename used for newly generated TSR PDF files.',
         'template_type': 'filename',
-        'default_template': 'NCS_TSR_{billing_marker}_Shimadzu_{client_name}_{product_name}({serial_number})_{task}_{date_mmddyyyy}.pdf'
+        'section': 'Service Files',
+        'default_template': 'NCS_TSR_{billing_marker}_Shimadzu_{client_name}_{product_name}({serial_number})_{task}_{date_mmddyyyy}.pdf',
+        'sample': TSR_FILENAME_TEMPLATE_SAMPLE,
     },
     'tsr_client_subject': {
         'label': 'Service Files Client Email Subject',
         'description': 'Subject used when sending service files to clients.',
         'template_type': 'subject',
+        'section': 'Service Files',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
         'scenario_key': 'standard',
         'scenario_label': 'Standard',
+        'sample': TSR_CLIENT_SUBJECT_SAMPLE,
     },
     'tsr_client_subject_warranty': {
         'label': 'Service Files Client Email Subject - Warranty',
         'description': 'Subject used for Warranty service files sent to clients.',
         'template_type': 'subject',
+        'section': 'Service Files',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
         'scenario_key': 'warranty',
         'scenario_label': 'Warranty',
         'seed_from_template_key': 'tsr_client_subject',
+        'sample': TSR_CLIENT_SUBJECT_SAMPLE,
     },
     'tsr_client_subject_foc': {
         'label': 'Service Files Client Email Subject - FOC',
         'description': 'Subject used for FOC service files sent to clients.',
         'template_type': 'subject',
+        'section': 'Service Files',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
         'scenario_key': 'foc',
         'scenario_label': 'FOC',
         'seed_from_template_key': 'tsr_client_subject',
+        'sample': TSR_CLIENT_SUBJECT_SAMPLE,
     },
     'tsr_client_subject_with_po': {
         'label': 'Service Files Client Email Subject - With P.O.',
         'description': 'Subject used for service files with a P.O. sent to clients.',
         'template_type': 'subject',
+        'section': 'Service Files',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
         'scenario_key': 'with_po',
         'scenario_label': 'With P.O.',
         'seed_from_template_key': 'tsr_client_subject',
+        'sample': TSR_CLIENT_SUBJECT_BILLED_SAMPLE,
     },
     'tsr_client_subject_po_sc': {
         'label': 'Service Files Client Email Subject - With P.O. + SC',
         'description': 'Subject used for SC service files with a P.O. sent to clients.',
         'template_type': 'subject',
+        'section': 'Service Files',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
         'scenario_key': 'po_sc',
         'scenario_label': 'With P.O. + SC',
         'seed_from_template_key': 'tsr_client_subject',
+        'sample': TSR_CLIENT_SUBJECT_BILLED_SAMPLE,
     },
     'tsr_client_subject_po_sv': {
         'label': 'Service Files Client Email Subject - With P.O. + SV',
         'description': 'Subject used for SV service files with a P.O. sent to clients.',
         'template_type': 'subject',
+        'section': 'Service Files',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
         'scenario_key': 'po_sv',
         'scenario_label': 'With P.O. + SV',
         'seed_from_template_key': 'tsr_client_subject',
+        'sample': TSR_CLIENT_SUBJECT_BILLED_SAMPLE,
     },
     'tsr_client_subject_installation': {
         'label': 'Service Files Client Email Subject - Installation',
         'description': 'Subject used when Installation is selected in Create TSR.',
         'template_type': 'subject',
+        'section': 'Service Files',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
         'scenario_key': 'installation',
         'scenario_label': 'Installation',
         'seed_from_template_key': 'tsr_client_subject',
+        'sample': {
+            **TSR_CLIENT_SUBJECT_SAMPLE,
+            'service_case': 'System Installation',
+            'task': 'System Installation',
+        },
+    },
+    'schedule_assigned_subject': {
+        'label': 'New Schedule Assigned Subject',
+        'description': 'Subject used when engineers are emailed a newly assigned schedule.',
+        'template_type': 'subject',
+        'section': 'Schedule',
+        'default_template': 'New Schedule Assigned - {schedule_date} - {title}',
+        'sample': {
+            'schedule_date': 'Jul 22, 2026',
+            'title': 'Preventive Maintenance',
+        },
+    },
+    'schedule_updated_subject': {
+        'label': 'Schedule Change Subject',
+        'description': 'Subject used when engineers are emailed a change to their schedule.',
+        'template_type': 'subject',
+        'section': 'Schedule',
+        'default_template': 'Schedule {action} - {schedule_date} - {title}',
+        'sample': {
+            'action': 'Updated',
+            'schedule_date': 'Jul 22, 2026',
+            'title': 'Preventive Maintenance',
+        },
+    },
+    'schedule_deleted_subject': {
+        'label': 'Schedule Deleted Subject',
+        'description': 'Subject used when engineers are emailed that their schedule was deleted.',
+        'template_type': 'subject',
+        'section': 'Schedule',
+        'default_template': 'Schedule Deleted - {schedule_date} - {title}',
+        'sample': {
+            'schedule_date': 'Jul 22, 2026',
+            'title': 'Preventive Maintenance',
+        },
     },
     'travel_accounting_subject': {
         'label': 'Travel Request Accounting Subject',
         'description': 'Subject used when an approved Travel Request is emailed to Accounting.',
         'template_type': 'subject',
-        'default_template': '[TRAVEL REQUEST] {request_no} | {requester} | {destination}'
+        'section': 'Accounting',
+        'default_template': '[TRAVEL REQUEST] {request_no} | {requester} | {destination}',
+        'sample': {
+            'request_no': 'TR-2026-001',
+            'requester': 'Juan Dela Cruz',
+            'destination': 'Cebu City',
+            'travel_dates': 'July 22-24, 2026',
+            'requested_amount': '12,000.00',
+            'approved_amount': '10,000.00',
+            'approved_by': 'Approver Name',
+        },
+    },
+    'travel_liquidation_subject': {
+        'label': 'Travel Liquidation Accounting Subject',
+        'description': 'Subject used when a Travel Liquidation is emailed to Accounting. A trailing " |" left by a blank value is removed.',
+        'template_type': 'subject',
+        'section': 'Accounting',
+        'default_template': '[TRAVEL LIQUIDATION] {liquidation_no} | {employee_name} | {request_no}',
+        'sample': {
+            'liquidation_no': 'TL-2026-001',
+            'employee_name': 'Juan Dela Cruz',
+            'request_no': 'TR-2026-001',
+        },
     },
     'cash_advance_accounting_subject': {
         'label': 'Cash Advance Accounting Subject',
         'description': 'Subject used when an approved standalone Cash Advance is emailed to Accounting.',
         'template_type': 'subject',
-        'default_template': '[CASH ADVANCE] {cash_advance_no} | {requester} | PHP {approved_amount}'
+        'section': 'Accounting',
+        'default_template': '[CASH ADVANCE] {cash_advance_no} | {requester} | PHP {approved_amount}',
+        'sample': {
+            'cash_advance_no': 'CA-2026-001',
+            'requester': 'Juan Dela Cruz',
+            'request_date': 'July 20, 2026',
+            'needed_date': 'July 22, 2026',
+            'requested_amount': '12,000.00',
+            'approved_amount': '10,000.00',
+            'approved_by': 'Approver Name',
+            'liquidation_days': '7',
+        },
+    },
+    'cash_advance_liquidation_subject': {
+        'label': 'Cash Advance Liquidation Accounting Subject',
+        'description': 'Subject used when a Cash Advance Liquidation is emailed to Accounting. A trailing " |" left by a blank value is removed.',
+        'template_type': 'subject',
+        'section': 'Accounting',
+        'default_template': '[CASH ADVANCE LIQUIDATION] {liquidation_no} | {employee_name} | {cash_advance_no}',
+        'sample': {
+            'liquidation_no': 'CAL-2026-001',
+            'employee_name': 'Juan Dela Cruz',
+            'cash_advance_no': 'CA-2026-001',
+        },
     },
     'reimbursement_accounting_subject': {
         'label': 'Reimbursement Accounting Subject',
         'description': 'Subject used when reimbursement packages are emailed to Accounting.',
         'template_type': 'subject',
-        'default_template': '[REIMBURSEMENT] {employee_name} | {date_range} | PHP {grand_total}'
+        'section': 'Accounting',
+        'default_template': '[REIMBURSEMENT] {employee_name} | {date_range} | PHP {grand_total}',
+        'sample': {
+            'employee_name': 'Juan Dela Cruz',
+            'date_range': 'July 1-15, 2026',
+            'period_start': 'July 1, 2026',
+            'period_end': 'July 15, 2026',
+            'grand_total': '8,500.00',
+        },
+    },
+    'reimbursement_paid_subject': {
+        'label': 'Reimbursement Paid Subject',
+        'description': 'Subject used when an employee is emailed that a reimbursement was paid.',
+        'template_type': 'subject',
+        'section': 'Accounting',
+        'default_template': 'Reimbursement Paid - {control_number}',
+        'sample': {
+            'control_number': 'RB-2026-001',
+        },
     },
     'lpr_procurement_subject': {
         'label': 'LPR Procurement Subject',
         'description': 'Subject used when an approved Local Purchase Requisition is emailed to Procurement.',
         'template_type': 'subject',
-        'default_template': '[LPR] {lpr_no} | {requester} | PHP {total_requested}'
+        'section': 'LPR',
+        'default_template': '[LPR] {lpr_no} | {requester} | PHP {total_requested}',
+        'sample': {
+            'lpr_no': 'LPR-2026-001',
+            'requester': 'Juan Dela Cruz',
+            'request_date': 'July 20, 2026',
+            'total_requested': '15,000.00',
+            'approved_by': 'Approver Name',
+        },
     },
     'leave_request_hr_subject': {
         'label': 'Leave Request HR Subject',
         'description': 'Subject used when an approved Leave Request is emailed to HR.',
         'template_type': 'subject',
-        'default_template': '[LEAVE REQUEST] {request_no} | {requester} | {leave_type} | {date_range} | {duration_label}'
-    }
+        'section': 'Leave',
+        'default_template': '[LEAVE REQUEST] {request_no} | {requester} | {leave_type} | {date_range} | {duration_label}',
+        'sample': {
+            'request_no': 'LR-2026-001',
+            'requester': 'Juan Dela Cruz',
+            'leave_type': 'Vacation Leave',
+            'date_range': 'July 22-24, 2026',
+            'weekday_count': '3',
+            'duration_label': '3 days',
+            'approved_by': 'Approver Name',
+        },
+    },
+    'changelog_announcement_subject': {
+        'label': "What's New Announcement Subject",
+        'description': "Subject used for the manually sent What's New update digest.",
+        'template_type': 'subject',
+        'section': 'Announcements',
+        'default_template': "Medical Service - What's New ({item_count} {update_word})",
+        'sample': {
+            'item_count': '3',
+            'update_word': 'updates',
+        },
+    },
 }
-
-EMAIL_TEMPLATE_ORDER = [
-    'tsr_pdf_filename',
-    'tsr_client_subject',
-    'tsr_client_subject_warranty',
-    'tsr_client_subject_foc',
-    'tsr_client_subject_with_po',
-    'tsr_client_subject_po_sc',
-    'tsr_client_subject_po_sv',
-    'tsr_client_subject_installation',
-    'travel_accounting_subject',
-    'cash_advance_accounting_subject',
-    'reimbursement_accounting_subject',
-    'lpr_procurement_subject',
-    'leave_request_hr_subject'
-]
-
-EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS = {
-    'tsr_pdf_filename': [
-        'tsr_number',
-        'client_name',
-        'product_name',
-        'machine_name',
-        'serial_number',
-        'serial',
-        'task',
-        'service_case',
-        'service_date',
-        'date_mmddyyyy',
-        'date_yyyymmdd',
-        'engineer_initials',
-        'billing_marker',
-        'billing_tags',
-        'warranty',
-        'foc',
-        'with_po',
-        'sc',
-        'sv'
-    ],
-    'tsr_client_subject': [
-        'billing_marker',
-        'billing_label',
-        'client_name',
-        'machine_name',
-        'service_case',
-        'date_mmddyyyy',
-        'date_mmddyy',
-        'service_date',
-        'task',
-        'product',
-        'serial',
-        'shift_id',
-        'tsr_count'
-    ],
-    'travel_accounting_subject': [
-        'request_no',
-        'requester',
-        'destination',
-        'travel_dates',
-        'requested_amount',
-        'approved_amount',
-        'approved_by'
-    ],
-    'cash_advance_accounting_subject': [
-        'cash_advance_no',
-        'requester',
-        'request_date',
-        'needed_date',
-        'requested_amount',
-        'approved_amount',
-        'approved_by',
-        'liquidation_days'
-    ],
-    'reimbursement_accounting_subject': [
-        'employee_name',
-        'date_range',
-        'period_start',
-        'period_end',
-        'grand_total'
-    ],
-    'lpr_procurement_subject': [
-        'lpr_no',
-        'requester',
-        'request_date',
-        'total_requested',
-        'approved_by'
-    ],
-    'leave_request_hr_subject': [
-        'request_no',
-        'requester',
-        'leave_type',
-        'date_range',
-        'weekday_count',
-        'duration_label',
-        'approved_by'
-    ]
-}
-
-for _tsr_subject_template_key in TSR_CLIENT_SUBJECT_TEMPLATE_KEYS:
-    EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS.setdefault(
-        _tsr_subject_template_key,
-        list(EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS['tsr_client_subject'])
-    )
 
 
 # Approved email-safe font stacks for TSR client emails.
@@ -5623,11 +5720,7 @@ def normalize_email_template_key(template_key):
 
 def seed_default_email_templates():
     """Ensure default subject templates exist without overwriting admin edits."""
-    for template_key in EMAIL_TEMPLATE_ORDER:
-        cfg = EMAIL_TEMPLATE_DEFAULTS.get(template_key)
-        if not cfg:
-            continue
-
+    for template_key, cfg in EMAIL_TEMPLATE_DEFAULTS.items():
         existing = EmailTemplateSetting.query.filter_by(template_key=template_key).first()
         if existing:
             continue
@@ -5701,16 +5794,30 @@ def email_template_setting_to_dict(template):
         if template.template_key in TSR_CLIENT_SUBJECT_TEMPLATE_KEYS
         else (template.description or cfg.get('description') or '')
     )
+    template_type = template.template_type or cfg.get('template_type') or 'subject'
+    template_value = template.template_value or cfg.get('default_template') or ''
+    updated_by = getattr(template, 'updated_by', None)
     return {
         'id': template.id,
         'template_key': template.template_key or '',
-        'template_type': template.template_type or cfg.get('template_type') or 'subject',
+        'template_type': template_type,
+        'section': cfg.get('section') or '',
         'label': visible_label,
         'description': visible_description,
-        'template_value': template.template_value or cfg.get('default_template') or '',
+        'template_value': template_value,
         'default_template': cfg.get('default_template') or '',
         'is_active': bool(template.is_active),
-        'allowed_placeholders': EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS.get(template.template_key or '', []),
+        'is_customized': template_value != (cfg.get('default_template') or ''),
+        'placeholders': [
+            {'key': key, 'sample': value}
+            for key, value in (cfg.get('sample') or {}).items()
+        ],
+        'preview': preview_managed_template(template.template_key or '', template_value),
+        'preview_scenarios': [
+            {'key': key, 'label': details['label']}
+            for key, details in TSR_FILENAME_PREVIEW_SCENARIOS.items()
+        ] if template_type == 'filename' else [],
+        'updated_by': (getattr(updated_by, 'username', None) or '').capitalize(),
         'scenario_group': cfg.get('scenario_group') or '',
         'scenario_key': cfg.get('scenario_key') or '',
         'scenario_label': cfg.get('scenario_label') or '',
@@ -5778,7 +5885,10 @@ def validate_managed_template_value(template_key, template_value):
     if not template_value:
         return False, 'Template value cannot be blank.'
 
-    allowed = set(EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS.get(template_key, []))
+    if len(template_value) > 500:
+        return False, 'Template value cannot be longer than 500 characters.'
+
+    allowed = set(EMAIL_TEMPLATE_DEFAULTS[template_key].get('sample') or {})
     placeholders = set(re.findall(r'\{([a-zA-Z0-9_]+)\}', template_value))
     unknown = sorted(placeholders - allowed)
     if unknown:
@@ -5910,6 +6020,16 @@ def render_tsr_pdf_filename(context=None, template_value=None):
         fallback = EMAIL_TEMPLATE_DEFAULTS['tsr_pdf_filename']['default_template']
         rendered = render_email_template(fallback, context or {})
     return sanitize_tsr_pdf_filename(rendered)
+
+
+def preview_managed_template(template_key, template_value, scenario=''):
+    """Render one managed template against its registry sample values."""
+    cfg = EMAIL_TEMPLATE_DEFAULTS.get(template_key, {})
+    context = dict(cfg.get('sample') or {})
+    if cfg.get('template_type') == 'filename':
+        context.update(TSR_FILENAME_PREVIEW_SCENARIOS.get(scenario, {}).get('values', {}))
+        return render_tsr_pdf_filename(context, template_value) if clean_str(template_value) else ''
+    return render_email_template(template_value, context)[:180]
 
 
 def ensure_user_approval_columns():
@@ -10547,7 +10667,9 @@ def format_reimbursement_tracker_paid_email(entry):
     transfer_date = getattr(entry, 'paid_transfer_date', None)
     transfer_date_label = transfer_date.isoformat() if transfer_date else 'Not specified'
 
-    subject = f'Reimbursement Paid - {control_number}'
+    subject = render_email_subject_template('reimbursement_paid_subject', {
+        'control_number': control_number,
+    })
     text_body = "\n".join([
         'Reimbursement Paid',
         '',
@@ -11918,7 +12040,11 @@ def send_schedule_event_notification_async(app_obj, shift_id, engineer_ids, acti
 
                 actor_name = (actor_username or 'Scheduler').capitalize()
                 subject_date = shift.start_time.strftime('%b %d, %Y')
-                subject = f"Schedule {action_label} - {subject_date} - {shift.title}"
+                subject = render_email_subject_template('schedule_updated_subject', {
+                    'action': action_label,
+                    'schedule_date': subject_date,
+                    'title': shift.title,
+                })
 
                 text_body = format_schedule_event_email_text(action_label, shift, assigned_engineers, actor_name, extra_note)
                 html_body = format_schedule_event_email_html(action_label, shift, assigned_engineers, actor_name, extra_note)
@@ -11964,7 +12090,10 @@ def send_schedule_deleted_notification_async(app_obj, snapshot, recipient_engine
                 actor_name = (actor_username or 'Scheduler').capitalize()
                 assigned_names = ", ".join([engineer.name for engineer in assigned_engineers]) or "N/A"
 
-                subject = f"Schedule Deleted - {snapshot.get('date_label')} - {snapshot.get('title')}"
+                subject = render_email_subject_template('schedule_deleted_subject', {
+                    'schedule_date': snapshot.get('date_label'),
+                    'title': snapshot.get('title'),
+                })
 
                 text_body = (
                     "Schedule Deleted\n\n"
@@ -12446,7 +12575,10 @@ def notify_engineers_for_new_schedule(first_shift, engineer_ids):
 
     created_by = current_user.username.capitalize() if current_user and current_user.is_authenticated else 'Scheduler'
     subject_date = first_shift.start_time.strftime('%b %d, %Y')
-    subject = f"New Schedule Assigned - {subject_date} - {first_shift.title}"
+    subject = render_email_subject_template('schedule_assigned_subject', {
+        'schedule_date': subject_date,
+        'title': first_shift.title,
+    })
 
     text_body = format_schedule_email_text(first_shift, assigned_engineers, created_by)
     html_body = format_schedule_email_html(first_shift, assigned_engineers, created_by)
@@ -12576,7 +12708,10 @@ def notify_engineers_for_new_schedule_async(app_obj, first_shift_id, engineer_id
 
                 created_by = (actor_username or 'Scheduler').capitalize()
                 subject_date = shift.start_time.strftime('%b %d, %Y')
-                subject = f"New Schedule Assigned - {subject_date} - {shift.title}"
+                subject = render_email_subject_template('schedule_assigned_subject', {
+                    'schedule_date': subject_date,
+                    'title': shift.title,
+                })
 
                 text_body = format_schedule_email_text(shift, assigned_engineers, created_by)
                 html_body = format_schedule_email_html(shift, assigned_engineers, created_by)
@@ -26892,7 +27027,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v233-email-recipients-tab';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v234-templates-tab';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28266,7 +28401,10 @@ def build_changelog_digest(audience='everyone', branch_code='', limit=5, item_id
         return {'subject': '', 'html': '', 'text': '', 'release_count': 0, 'item_count': 0}
 
     item_count = sum(len(r['items']) for r in releases)
-    subject = f"Medical Service - What's New ({item_count} update{'' if item_count == 1 else 's'})"
+    subject = render_email_subject_template('changelog_announcement_subject', {
+        'item_count': item_count,
+        'update_word': 'update' if item_count == 1 else 'updates',
+    })
 
     text_lines = ["Here is what changed recently in Medical Service.", '']
     html_parts = [
@@ -28963,39 +29101,80 @@ def apply_product_name_standardization():
 @app.route('/settings/email-templates-data')
 @login_required
 def settings_email_templates_data():
-    """S12A2 backend API: list editable email subject templates for Settings UI."""
+    """S12A2 backend API: list editable templates for Settings UI."""
     if not is_superadmin_user():
         return denied('Only superadmins can manage email templates.')
 
     ensure_email_template_setting_table()
 
-    templates = (
-        EmailTemplateSetting.query
-        .filter(EmailTemplateSetting.template_key.in_(EMAIL_TEMPLATE_ORDER))
-        .order_by(EmailTemplateSetting.template_key.asc())
-        .all()
-    )
-    template_map = {template.template_key: template for template in templates}
-
-    ordered_templates = []
-    for template_key in EMAIL_TEMPLATE_ORDER:
-        template = template_map.get(template_key)
-        if template:
-            ordered_templates.append(email_template_setting_to_dict(template))
+    template_map = {
+        template.template_key: template
+        for template in EmailTemplateSetting.query.all()
+    }
 
     return jsonify({
         'success': True,
-        'templates': ordered_templates,
-        'template_order': EMAIL_TEMPLATE_ORDER,
-        'placeholder_help': EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS
+        'templates': [
+            email_template_setting_to_dict(template_map[template_key])
+            for template_key in EMAIL_TEMPLATE_DEFAULTS
+            if template_key in template_map
+        ]
+    })
+
+
+def get_or_create_email_template_setting(template_key):
+    """Return the saved row for one registry template, refreshed from the registry."""
+    cfg = EMAIL_TEMPLATE_DEFAULTS.get(template_key, {})
+    template = EmailTemplateSetting.query.filter_by(template_key=template_key).first()
+    if not template:
+        template = EmailTemplateSetting(
+            template_key=template_key,
+            template_value=cfg.get('default_template') or '',
+            created_at=get_manila_time()
+        )
+
+    template.template_type = cfg.get('template_type') or template.template_type or 'subject'
+    template.label = cfg.get('label') or template.label or template_key
+    template.description = cfg.get('description') or template.description or ''
+    template.updated_by_id = getattr(current_user, 'id', None)
+    template.updated_at = get_manila_time()
+    db.session.add(template)
+    return template
+
+
+def log_managed_template_action(action):
+    db.session.add(ActivityLog(
+        user=current_user.username.capitalize(),
+        action=action[:255]
+    ))
+
+
+@app.route('/settings/email-templates-preview', methods=['POST'])
+@login_required
+def settings_email_templates_preview():
+    """Render one unsaved template value against its sample values. Writes nothing."""
+    if not is_superadmin_user():
+        return denied('Only superadmins can manage email templates.')
+
+    payload = request.get_json(silent=True) or {}
+    template_key = normalize_email_template_key(payload.get('template_key'))
+    template_value = clean_str(payload.get('template_value')) or ''
+
+    is_valid, validation_error = validate_managed_template_value(template_key, template_value)
+    if not is_valid:
+        return jsonify({'success': True, 'preview': '', 'error': validation_error})
+
+    return jsonify({
+        'success': True,
+        'preview': preview_managed_template(template_key, template_value, clean_str(payload.get('scenario')) or ''),
+        'error': ''
     })
 
 
 @app.route('/settings/email-templates-save', methods=['POST'])
-@csrf.exempt
 @login_required
 def settings_email_templates_save():
-    """S12A2 backend API: save one editable email subject template."""
+    """S12A2 backend API: save one template, or only its Active switch."""
     if not is_superadmin_user():
         return denied('Only superadmins can manage email templates.')
 
@@ -29003,37 +29182,34 @@ def settings_email_templates_save():
 
     payload = request.get_json(silent=True) or {}
     template_key = normalize_email_template_key(payload.get('template_key'))
-    template_value = clean_str(payload.get('template_value')) or ''
-    is_active = bool(payload.get('is_active', True))
+    if not template_key:
+        return jsonify({'success': False, 'error': 'Please select a valid template.'}), 400
 
+    if 'template_value' not in payload:
+        # Card switch: only the Active state changes.
+        template = get_or_create_email_template_setting(template_key)
+        template.is_active = bool(payload.get('is_active'))
+        log_managed_template_action(
+            f"{'Activated' if template.is_active else 'Deactivated'} managed template: {template.label}"
+        )
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': f"{template.label} switched {'on' if template.is_active else 'off'}.",
+            'template': email_template_setting_to_dict(template)
+        })
+
+    template_value = clean_str(payload.get('template_value')) or ''
     is_valid, validation_error = validate_managed_template_value(template_key, template_value)
     if not is_valid:
         return jsonify({'success': False, 'error': validation_error}), 400
 
-    cfg = EMAIL_TEMPLATE_DEFAULTS.get(template_key, {})
-    template = EmailTemplateSetting.query.filter_by(template_key=template_key).first()
-    if not template:
-        template = EmailTemplateSetting(
-            template_key=template_key,
-            template_type=cfg.get('template_type') or 'subject',
-            label=cfg.get('label') or template_key,
-            description=cfg.get('description') or '',
-            created_at=get_manila_time()
-        )
-
-    template.template_type = cfg.get('template_type') or template.template_type or 'subject'
-    template.label = cfg.get('label') or template.label or template_key
-    template.description = cfg.get('description') or template.description or ''
-    template.template_value = template_value[:500]
-    template.is_active = is_active
-    template.updated_by_id = getattr(current_user, 'id', None)
-    template.updated_at = get_manila_time()
-
-    db.session.add(template)
-    db.session.add(ActivityLog(
-        user=current_user.username.capitalize(),
-        action=f"Updated managed template: {template.label}"
-    ))
+    template = get_or_create_email_template_setting(template_key)
+    old_value = template.template_value or ''
+    template.template_value = template_value
+    log_managed_template_action(
+        f"Updated managed template: {template.label} ({old_value} → {template_value})"
+    )
     db.session.commit()
 
     return jsonify({
@@ -29044,10 +29220,9 @@ def settings_email_templates_save():
 
 
 @app.route('/settings/email-templates-reset/<template_key>', methods=['POST'])
-@csrf.exempt
 @login_required
 def settings_email_templates_reset(template_key):
-    """S12A2 backend API: reset one email subject template to default."""
+    """S12A2 backend API: reset one template to default."""
     if not is_superadmin_user():
         return denied('Only superadmins can manage email templates.')
 
@@ -29057,35 +29232,74 @@ def settings_email_templates_reset(template_key):
     if not template_key:
         return jsonify({'success': False, 'error': 'Email template not found.'}), 404
 
-    cfg = EMAIL_TEMPLATE_DEFAULTS.get(template_key, {})
-    template = EmailTemplateSetting.query.filter_by(template_key=template_key).first()
-    if not template:
-        template = EmailTemplateSetting(
-            template_key=template_key,
-            template_type=cfg.get('template_type') or 'subject',
-            label=cfg.get('label') or template_key,
-            description=cfg.get('description') or '',
-            created_at=get_manila_time()
-        )
-
-    template.label = cfg.get('label') or template.label or template_key
-    template.description = cfg.get('description') or template.description or ''
-    template.template_value = cfg.get('default_template') or ''
+    template = get_or_create_email_template_setting(template_key)
+    old_value = template.template_value or ''
+    template.template_value = EMAIL_TEMPLATE_DEFAULTS[template_key].get('default_template') or ''
     template.is_active = True
-    template.updated_by_id = getattr(current_user, 'id', None)
-    template.updated_at = get_manila_time()
-
-    db.session.add(template)
-    db.session.add(ActivityLog(
-        user=current_user.username.capitalize(),
-        action=f"Reset managed template to default: {template.label}"
-    ))
+    log_managed_template_action(
+        f"Reset managed template to default: {template.label} (was {old_value})"
+    )
     db.session.commit()
 
     return jsonify({
         'success': True,
         'message': f'{template.label} reset to default.',
         'template': email_template_setting_to_dict(template)
+    })
+
+
+@app.route('/settings/email-templates-copy-standard', methods=['POST'])
+@login_required
+def settings_email_templates_copy_standard():
+    """Copy the Standard client subject and its Active state to every other scenario."""
+    if not is_superadmin_user():
+        return denied('Only superadmins can manage email templates.')
+
+    ensure_email_template_setting_table()
+
+    standard = get_or_create_email_template_setting('tsr_client_subject')
+    templates = [standard]
+    for template_key in TSR_CLIENT_SUBJECT_TEMPLATE_KEYS:
+        if template_key == 'tsr_client_subject':
+            continue
+        template = get_or_create_email_template_setting(template_key)
+        template.template_value = standard.template_value
+        template.is_active = standard.is_active
+        templates.append(template)
+    log_managed_template_action(
+        f"Copied the Standard client subject to all scenarios: {standard.template_value}"
+    )
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': 'Standard subject copied to all scenarios.',
+        'templates': [email_template_setting_to_dict(template) for template in templates]
+    })
+
+
+@app.route('/settings/email-templates-reset-scenarios', methods=['POST'])
+@login_required
+def settings_email_templates_reset_scenarios():
+    """Reset every client subject scenario to the default."""
+    if not is_superadmin_user():
+        return denied('Only superadmins can manage email templates.')
+
+    ensure_email_template_setting_table()
+
+    templates = []
+    for template_key in TSR_CLIENT_SUBJECT_TEMPLATE_KEYS:
+        template = get_or_create_email_template_setting(template_key)
+        template.template_value = EMAIL_TEMPLATE_DEFAULTS[template_key].get('default_template') or ''
+        template.is_active = True
+        templates.append(template)
+    log_managed_template_action('Reset all client subject scenarios to default')
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'message': 'All scenarios reset to default.',
+        'templates': [email_template_setting_to_dict(template) for template in templates]
     })
 
 
@@ -44435,9 +44649,11 @@ def format_travel_liquidation_accounting_email(liquidation, approved_by_user=Non
     currency_code = normalize_travel_currency_code(getattr(liquidation, 'currency_code', None) or getattr(request_rec, 'currency_code', None) or 'PHP')
     action_remarks = clean_str(remarks) or clean_str(getattr(liquidation, 'approval_remarks', None)) or 'None'
 
-    subject = f"[TRAVEL LIQUIDATION] {liquidation_no} | {employee_name}"
-    if request_no:
-        subject += f" | {request_no}"
+    subject = render_email_subject_template('travel_liquidation_subject', {
+        'liquidation_no': liquidation_no,
+        'employee_name': employee_name,
+        'request_no': request_no,
+    }).rstrip(' |')
 
     text_lines = [
         'Approved Travel Liquidation Package',
@@ -70329,9 +70545,11 @@ def format_cash_advance_liquidation_accounting_email(liquidation, approved_by_us
     action_remarks = clean_str(remarks) or clean_str(getattr(liquidation, 'approval_remarks', None)) or 'None'
     receipt_count = CashAdvanceLiquidationReceipt.query.filter_by(liquidation_id=liquidation.id).count()
 
-    subject = f"[CASH ADVANCE LIQUIDATION] {liquidation_no} | {employee_name}"
-    if cash_advance_no:
-        subject += f" | {cash_advance_no}"
+    subject = render_email_subject_template('cash_advance_liquidation_subject', {
+        'liquidation_no': liquidation_no,
+        'employee_name': employee_name,
+        'cash_advance_no': cash_advance_no,
+    }).rstrip(' |')
 
     rfp_line = '- Request for Payment (RFP), because Due to Employee is greater than zero' if due_to_employee > 0 else '- Request for Payment (RFP): Not required because Due to Employee is zero'
     shimadzu_note = f"Note: Due to Shimadzu is PHP {due_to_shimadzu:,.2f}. Please coordinate collection/offset if required." if due_to_shimadzu > 0 else ''

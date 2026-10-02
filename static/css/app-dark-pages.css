@@ -1127,7 +1127,7 @@
     color: var(--dark-text) !important;
     border-color: var(--dark-border) !important;
 }
-:root[data-app-theme="dark"] .email-template-placeholder-chip {
+:root[data-app-theme="dark"] :is(.email-template-placeholder-chip, .email-template-pill:not(.active)) {
     background: #2a2140 !important;
     color: #d8b4fe !important;
     border-color: #75529c !important;
@@ -1141,6 +1141,8 @@
     .email-template-placeholder-label, .email-template-preview-value,
     .email-template-default strong
 ) { color: #d8b4fe !important; }
+:root[data-app-theme="dark"] .email-template-unsaved { color: #fbbf24 !important; }
+:root[data-app-theme="dark"] .email-template-error-line { color: #fca5a5 !important; }
 :root[data-app-theme="dark"] :is(
     .settings-user-filter-count, .email-template-default,
     .email-template-placeholder-muted

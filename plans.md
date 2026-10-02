@@ -1,3 +1,159 @@
+# Settings → Templates: Friendlier Tab, Real Preview, More Subjects, and Code Cleanup
+
+**Status:** Executed — not yet committed; commit and push wait for the owner's instruction.
+**Finished:** 2026-10-02.
+**Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer and over check things".
+**Approved:** 2026-10-02 — the owner said "all approved partner, write it to plans.md" (all 21 proposed items, including item 18, the hardcoded subjects).
+**Detailed:** 2026-10-02.
+
+**Where the plan and the outcome differed:**
+
+- **Seven subjects were added, not eight.** "Calibration Report & Certificate awaiting approval" is an in-app notification title (`create_system_notification`), not an email subject, so it stays in code.
+- **One `sample` field per registry entry** serves as both the allowed-placeholder list and the preview values; there is no separate `placeholders` field.
+- **Liquidation subjects** use `{request_no}` / `{cash_advance_no}` in the default; the send site removes a trailing " |" when the value is blank, which reproduces the old with-and-without forms.
+- **Converted subjects now pass through the shared renderer**, which collapses repeated spaces and cuts at 180 characters; the old hardcoded subjects did neither.
+- **Unsaved text is kept by a drafts map** and the list is still redrawn as a whole. Drafts survive switching Settings sections, so there is no confirm on a section switch; the browser's leave-page warning covers closing or reloading.
+- **The activity-log line is cut at 255 characters** (the column length), so very long old → new values are truncated there.
+- **`app-dark-pages.css?v=30` was not bumped**; five existing tests pin that value. The file gained three rules.
+- **Two existing tests asserted removed page text** and now check the new source: `tests/test_tsr_filename_template.py`, `tests/test_tsr_subject_scenarios.py`.
+- **Verification:** new module `tests/test_email_template_settings.py` (8 tests) passes; full suite 1,476 tests, 23 failures, 3 errors, 5 skips — the baseline's non-passing counts. `/settings` renders in the test client and the page script passes `node --check`. The new tests were not run against the unfixed code, CSRF enforcement was not exercised by a test (the test apps disable CSRF), and the tab was not opened in a browser.
+
+## Context
+
+The owner asked for a review of the Templates tab on the Settings page: UI design and functionality, functions to add, and overall improvement. The tab manages the TSR PDF filename and 12 email subject templates (7 of them Service Files client-subject scenarios behind one dropdown) as a flat list of cards. The review found six bugs — the worst being that unsaved edits in other cards are lost on any save, reset or scenario switch — a preview that runs on a second, drifting copy of the server's rules, and eight outgoing emails whose subjects cannot be edited at all. The intended outcome is a tab where a superadmin can see which templates are customized, edit one without losing work in another, trust the preview, and manage every routine email subject from one place.
+
+## Decisions taken
+
+1. **All 21 proposed items are in scope.** Items 1–17 and 19–21 are Phase 1; item 18 (hardcoded subjects) is Phase 2 in the same plan, executed after Phase 1's tests pass. If Phase 2 has to be split off, amend this plan and tell the owner.
+2. **The server registry is the only source** of template definitions, placeholders, sections and sample values. The page keeps no sample data and no render or filename-cleanup rules.
+3. **No schema change.** `EmailTemplateSetting` keeps its columns. New templates are new rows seeded by the existing `seed_default_email_templates`.
+4. **Each new template's default reproduces today's hardcoded subject exactly**, so nothing changes for recipients until a superadmin edits it.
+5. **Email bodies stay in code.** Only subjects and the TSR filename are editable.
+6. **Superadmin-only stays.**
+7. **No browser automation** (project rule). Verification is by the Flask test client and source-level checks; the owner checks the look.
+
+## Investigation
+
+Line numbers are as of commit `a79e915`.
+
+- **Markup:** `templates/settings.html:823-852`. A "Purpose" alert, loading and error lines, and the list container `#email-template-list`. Tab button at `:68-69` reads "Templates"; the card header reads "System Templates"; the empty state and messages say "email subject template(s)" (`:3491`, `:3720`).
+- **Page script:** `templates/settings.html:3362-3724`.
+  - `renderEmailTemplates` (`:3485`) rebuilds every card from `emailTemplateState`. It runs after every save and reset (through `loadEmailTemplates(true)`, `:3682`, `:3719`) and on every scenario switch (`switchTSRSubjectScenario`, `:3480`), so text typed in any other card, and in the scenario being left, is discarded.
+  - `emailTemplateSampleContext` (`:3394`) has no `lpr_no`, `total_requested`, `leave_type`, `weekday_count` or `duration_label`; `previewEmailTemplateSubject` (`:3460`) leaves unknown keys as typed, so the LPR and Leave previews print the placeholders. `date_mmddyy` is `06-25-26` while the other dates are 2026-07-22.
+  - `sanitizeTSRFilenamePreview` (`:3451`) is a hand copy of `sanitize_tsr_pdf_filename` (`app.py:5800`) and lacks its `([_(\-]){2,}` collapse and `os.path.basename` step; the page preview also skips the whitespace collapse and 180-character cut that `render_email_template` / `render_email_subject_template` apply (`app.py:5739-5769`).
+  - `insertEmailTemplatePlaceholder` (`:3599-3600`) uses `selectionStart || value.length`, so a cursor at position 0 inserts at the end.
+  - The Active switch is only sent with Save (`:3657`); nothing on the card says what "off" does.
+  - `emailTemplateEscape` (`:3378`) only wraps `settingsEscape`. Load, save and reset repeat the fetch / parse / error handling that `emailRecipientRequest` (`:3005`) already does for the Recipients tab.
+- **Styles:** `templates/settings.html:4583-4710`, mobile rules at `:4913-4925`; dark rules in `static/css/app-dark-pages.css:1093-1146` (12 matches), loaded with `?v=30` (`templates/layout.html:403`). `tests/test_appearance_themes.py:639-640` asserts two of those dark selectors by string.
+- **Registry:** `EMAIL_TEMPLATE_DEFAULTS` (`app.py:550-656`), `EMAIL_TEMPLATE_ORDER` (`:658-672`, the same 13 keys in the same order), `EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS` (`:674-759`, the six scenario keys filled by a loop from `tsr_client_subject`). `TSR_CLIENT_SUBJECT_SCENARIOS` at `:507`.
+- **Model:** `EmailTemplateSetting` (`app.py:1867-1886`) already has `updated_at`, `updated_by_id` and the `updated_by` relationship; `email_template_setting_to_dict` (`:5690`) returns `updated_at` but not the name.
+- **Runtime rule for Active off:** `get_email_template_value` (`app.py:5722`) falls back to the built-in default; `get_tsr_client_subject_template_value` (`:59039`) falls back to the Standard scenario first, then the built-in default.
+- **Routes:** `/settings/email-templates-data` (`app.py:28963`), `-save` (`:28994`), `-reset/<key>` (`:29046`). Save and reset are `@csrf.exempt` although the page sends `X-CSRFToken`. Save stores `template_value[:500]` (`:29027`) with no warning. The activity log records only the label (`:29035`, `:29081`). The data route also returns `template_order` and `placeholder_help` (`:28989-28990`); no reader was found in `templates/` or `static/`.
+- **Hardcoded subjects (Phase 2):** Reimbursement Paid (`app.py:10550`), Schedule Updated (`:11921`, `action_label` variable), Schedule Deleted (`:11967`), New Schedule Assigned (`:12449`, `:12579`), Calibration awaiting approval (`:25605`, `approval_subject`), What's New (`:28269`), Travel Liquidation (`:44438`), Cash Advance Liquidation (`:70332`). The two liquidation subjects have a conditional suffix on the following lines (`if request_no:` / `if cash_advance_no:`). **Not verified:** what that suffix appends, the values `action_label` can take, and whether `approval_subject` is an email subject or only an in-app notification title — step 9 reads each before converting it.
+- **Existing tests:** `tests/test_tsr_filename_template.py`, `tests/test_tsr_subject_scenarios.py`, `tests/test_service_file_delivery.py:105-125` (calls `email_template_setting_to_dict`), `tests/test_calibration_certificate_approval_workflow.py:242` (patches `get_email_template_value`). None call the three Settings routes.
+- **Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v233-email-recipients-tab` (`app.py:26895`). Suite baseline at the last recorded run: 1,461 tests, 23 failures, 3 errors, 5 skips (before the 7 tests added by the Email Recipients work).
+- The tab was not opened in a browser. `changes.md` was read at its top sections, not end to end.
+
+## Execution steps
+
+### Phase 1 — the tab (items 1–17, 19–21)
+
+1. **Registry becomes the single source** (`app.py:550-759`, `email_template_setting_to_dict` `:5690`, `seed_default_email_templates` `:5624`, the data route `:28963`).
+   - Add to every entry of `EMAIL_TEMPLATE_DEFAULTS`: `section` (Service Files, Accounting, LPR, Leave; Phase 2 adds Schedule, Calibration, Announcements), `placeholders` (the list now in `EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS`), and `sample` (a value for every placeholder; move the values from `settings.html:3394-3436`, add the five missing ones, make `date_mmddyy` agree with the other dates).
+   - Move the preview scenario overrides (`settings.html:3437-3446`) to one module-level dict beside `TSR_CLIENT_SUBJECT_SCENARIOS`.
+   - Delete `EMAIL_TEMPLATE_ORDER` and `EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS`; iterate the dict, and read placeholders from the entry. The six scenario entries share the `tsr_client_subject` placeholder and sample lists by reference rather than by a fill-in loop.
+   - `email_template_setting_to_dict` returns `section`, `is_customized` (stored value differs from the default), `updated_by` (display name or empty), and each placeholder as `{key, sample}`.
+   - The data route drops `template_order` and `placeholder_help`.
+   - Done: no reader of the two deleted names remains in `app.py`, `leave_feature.py` or `tests/`; the payload lists the 13 templates in registry order with the new fields.
+
+2. **Routes** (`app.py:28963-29090`).
+   - New `/settings/email-templates-preview` (POST, superadmin): `template_key`, `template_value`, optional `scenario`. Runs `validate_managed_template_value`, then renders the value against the registry sample with `render_email_template` and the same 180-character cut as `render_email_subject_template`; for `template_type == 'filename'` it uses the same steps as the real filename builder (`app.py:5907` area) ending in `sanitize_tsr_pdf_filename`. Returns `preview`, and `error` when validation fails. Writes nothing.
+   - Save: accept `template_key` with only `is_active` for the card switch (value untouched); reject a value longer than 500 characters with a 400 instead of cutting it; log "Updated", "Activated" or "Deactivated managed template: <label>" with `old → new` values on a value change.
+   - Reset: log the value that was replaced.
+   - New `/settings/email-templates-copy-standard` (POST, superadmin): copies the Standard client subject's value and Active state to the other six scenario rows; and `/settings/email-templates-reset-scenarios` (POST): resets all seven to the default. One activity-log line each.
+   - Remove `@csrf.exempt` from save and reset; the new routes are not exempt either.
+   - Done: every route returns JSON with `success` and refuses non-superadmins.
+
+3. **Markup** (`templates/settings.html:823-852`).
+   - One wording throughout: tab "Templates", card header "Templates", messages "template".
+   - Replace the Purpose alert with one sentence: these set the TSR PDF filename and the subject of each system email; changes apply to new files and future emails only.
+   - Add a toolbar with a search box and Refresh, reusing the Recipients toolbar classes.
+   - Done: the section marker `data-settings-section="email-templates"` is unchanged.
+
+4. **Page script** (`templates/settings.html:3362-3724`).
+   - Delete `emailTemplateSampleContext`, `sanitizeTSRFilenamePreview`, `previewEmailTemplateSubject`, `emailTemplateEscape` (call `settingsEscape` directly). Rename `emailRecipientRequest` to a shared `settingsJsonRequest` and use it for both tabs.
+   - **Keep unsaved text:** hold drafts in a map keyed by `template_key`, written on every input. `renderEmailTemplates` fills each box from the draft when one exists. Save, reset and the switch update only that template's entry in the state and redraw only that card. Switching scenario keeps each scenario's draft.
+   - Cards grouped under section headings in registry order, using the Recipients section-heading style. Search filters by label, description or value and hides sections with no match.
+   - Each card: a status badge ("Default", "Customized", or "Off — default in use"; for a scenario, "Off — Standard in use"), "Updated <date> by <name>", an "Unsaved changes" marker, Save disabled until the value differs from the saved one, an input `maxlength` of 500, and a one-line note under the Active switch saying what off does. The switch saves immediately.
+   - TSR client subject: scenario pills instead of the dropdown, each with a dot when customized; "Copy Standard to all scenarios" and "Reset all scenarios" buttons, each behind `settingsConfirmDialog`.
+   - Preview: a debounced call to the preview route (about 300 ms); the returned `error` shows under the box in red and disables Save. The filename card keeps its Preview Scenario picker and sends it as `scenario`. Preview is laid out as a mock subject line or a filename with a file icon.
+   - Placeholder chips carry the sample value as a tooltip. Fix the insert position by testing `selectionStart` for `null` instead of falsiness.
+   - `beforeunload` warning and a confirm on switching Settings section while any draft differs from its saved value.
+   - Done: the page holds no sample values and no render or filename rules for this tab; typing in two cards and saving one leaves the other's text in place.
+
+5. **Styles** (`templates/settings.html:4583-4710`, `:4913-4925`, `static/css/app-dark-pages.css:1093-1146`). Add the status badge, unsaved marker, scenario pills, inline error and mock preview; remove rules for the removed dropdown wrapper if nothing else uses them; keep the 375 px rules working and tap targets at least 44 px. Dark-theme counterparts for each new coloured element; bump `app-dark-pages.css?v=` in `layout.html` if the file changes. Keep the two selectors that `tests/test_appearance_themes.py:639-640` asserts, or update that test in the same step.
+
+6. **Tests** — new `tests/test_email_template_settings.py`.
+   - Data route: non-superadmin refused; superadmin gets every registry key in registry order with `section`, `is_customized`, `updated_by`, and placeholders with samples.
+   - Registry: every placeholder of every template has a sample value; every default template passes `validate_managed_template_value`; a preview of every default contains no `{`.
+   - Preview route: an unknown placeholder returns `error`; the filename preview equals `sanitize_tsr_pdf_filename` of the rendered value; nothing is written.
+   - Save: unknown key → 400; blank → 400; 501 characters → 400; switch-only payload flips `is_active` and leaves the value; activity log says "Deactivated" on switch-off and carries old → new on a value change.
+   - Reset restores the default and sets Active; copy-standard writes the six scenario rows; reset-scenarios restores all seven.
+   - Source-level: `templates/settings.html` no longer contains `emailTemplateSampleContext` or `sanitizeTSRFilenamePreview`; `app.py` no longer contains `EMAIL_TEMPLATE_ORDER` or `EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS`.
+   - Cache version pin for the new service worker version.
+
+### Phase 2 — hardcoded subjects (item 18)
+
+7. **Read each of the eight send sites** listed under Investigation and record here: the exact subject including any conditional suffix, the values available at that point, and for `approval_subject` whether it is an email subject. Anything that is not an outgoing email subject is dropped from Phase 2 and noted.
+
+8. **Add registry entries** (`EMAIL_TEMPLATE_DEFAULTS`), one per subject, each with `section`, `placeholders`, `sample` and a `default_template` that renders to today's subject: `reimbursement_paid_subject`, `schedule_assigned_subject`, `schedule_updated_subject`, `schedule_deleted_subject`, `calibration_approval_subject`, `changelog_announcement_subject`, `travel_liquidation_subject`, `cash_advance_liquidation_subject`. A conditional suffix becomes a placeholder that renders empty when the value is absent (as `{billing_marker}` does today); the plural "update(s)" in What's New becomes a `{update_word}` placeholder. The existing seeding creates the rows on first use.
+
+9. **Convert each send site** to `render_email_subject_template('<key>', {...})`, with the two "New Schedule Assigned" sites (`app.py:12449`, `:12579`) sharing one key. Done: with no saved row, each site produces the same subject string as before.
+
+10. **Tests** (same new file): for each new key, the default rendered with the send site's values equals the previous hardcoded subject, including the with-suffix and without-suffix cases and the singular and plural What's New subject. Existing tests that assert these subject strings stay green unchanged.
+
+### Both phases
+
+11. **Release records.** Service worker bump from the live value in `app.py` with a name such as `…-v234-templates-tab`; an entry in `static/changelog/releases.json`; `changes.md`; this plan's status and any difference between plan and outcome.
+
+12. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Editable email bodies** — far larger scope and risk than subjects.
+- **Version history with one-click restore** — the activity log's old → new line is enough to put a value back.
+- **Sending a test email from the tab** — the preview route shows the exact result.
+- **Moving the tab's CSS and JS out of `settings.html`** — the whole Settings page is inline; splitting one tab adds a file and a cache entry for no behaviour change.
+- **Schema changes, and any change to who receives which email.**
+- **Approval-request and other in-app notification titles** that are not email subjects.
+
+## Verification
+
+- The tests in steps 6 and 10. Positive controls: the source-level tests, the registry sample test and the preview-route tests fail against the current code; the Phase 2 equality tests are written against the hardcoded strings before the send sites are converted.
+- Focused modules: the new file, `tests/test_tsr_filename_template.py`, `tests/test_tsr_subject_scenarios.py`, `tests/test_service_file_delivery.py`, `tests/test_calibration_certificate_approval_workflow.py`, `tests/test_email_recipient_settings.py` (shares the renamed request helper), `tests/test_appearance_themes.py`, `tests/test_changelog_workflow.py`, `tests/test_changelog_coverage.py`, and for Phase 2 the schedule-email, liquidation and reimbursement-tracker modules. Then one full-suite pass quoted against the baseline.
+- A Flask test-client render of `/settings` as superadmin and a `node --check` of the page script.
+- No browser check by the agent. The owner checks on a desktop and at phone width: type in two cards and save one; switch scenario pills with unsaved text; an unknown placeholder; a chip with the cursor at the start; the Active switch; copy Standard to all; search; the LPR and Leave previews; dark theme.
+
+## After implementation
+
+1. Self-review the diff.
+2. Focused modules, then the full suite, quoting counts against the baseline.
+3. Service worker bump and `releases.json` entry.
+4. `changes.md` and this plan's status, with any difference between plan and outcome.
+5. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`. Commit and push only on the owner's instruction, then verify `origin/main` and Railway's deployment.
+
+## Risks
+
+- **A converted subject differs from the old one** (Phase 2) — recipients' mail filters could miss it. Safety net: the per-key equality tests in step 10, and Decision 4.
+- **Eight new rows are seeded in production** on the first call after deployment. They hold the defaults; nothing reads differently until edited.
+- **CSRF now enforced on save and reset.** The page already sends the token; if `getCSRFToken()` returns nothing in some state, saves fail with a 400 instead of passing. The Recipients tab has run this way since `83ceefc`.
+- **Saves over 500 characters are now refused** instead of cut. The input's `maxlength` stops it at the box.
+- **The preview now needs the server.** Offline, the preview shows an error line and Save stays as it was; nothing else on the tab depends on it.
+- **Renaming `emailRecipientRequest`** touches the Recipients tab's script; its test module is in the focused run.
+- **Deleting `EMAIL_TEMPLATE_ORDER` / `EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS`** breaks any reader missed by the search; the suite import and the source-level test catch it.
+
+---
+
 # Settings → Email Recipients: Friendlier Tab, Bulk Add, Copy, and Code Cleanup
 
 **Status:** Executed — implementation commit `83ceefc`; published to `origin/main` on the owner's "commit and push".
