@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-02
 
+- Committed only the Backup package (`app.py`, `templates/settings.html`, `templates/dashboard.html`, `templates/system_backup.html`, `static/changelog/releases.json`, `tests/test_system_backup.py`, `plans.md`, and this package's `changes.md` entries) as `81dfbd7` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this file were not staged.
+
 - Executed the plan **Settings → Backup: Live Summary, Honest Status, Pre-Build Check, and Overdue Reminder** on the owner's go-ahead; not committed, pushed, or deployed. No schema change; how the archive is built, downloaded and retained is unchanged.
 - Last-backup record (`app.py`): the backup job state file now carries `last_backup` (finish time, who built it, filename, size, complete or warning count, duration, downloaded time). It is written when a build succeeds, kept when a new build starts or the archive is deleted, and marked downloaded by `download_system_backup`. New `backup_summary()` returns the record, days since the last backup, an `overdue` flag (more than 7 days, or no record) and the stored archive's remaining hours without scanning storage.
 - Backup status (`app.py`, `backup_status_payload`): when the last job finished but its archive has expired or been deleted, the job is reported as idle with a message saying so, and no longer as ready, complete or database-included. The payload also returns `last_backup`, `last_backup_date` and `overdue`.

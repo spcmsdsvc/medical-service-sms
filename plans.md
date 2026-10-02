@@ -1,6 +1,6 @@
 # Settings → Backup: Live Summary, Honest Status, Pre-Build Check, and Overdue Reminder
 
-**Status:** Executed — not yet committed; commit and push wait for the owner's instruction.
+**Status:** Executed — implementation commit `81dfbd7`; published to `origin/main` on the owner's "commit and push".
 **Finished:** 2026-10-02.
 **Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer and over check things".
 **Approved:** 2026-10-02 — the owner said "all approved." (all 19 proposed items, including item 17, the dashboard reminder).
