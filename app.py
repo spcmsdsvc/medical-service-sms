@@ -19672,8 +19672,27 @@ def calibration_report_filename_is_pdf(filename):
     return schedule_attachment_extension(filename) == 'pdf'
 
 
+# While the repair inventory scans one source file, every registered repair inspects the same
+# DOCX and PDF. Hold those bytes for that file only, so each stored object is read once.
+_calibration_repair_scan_cache = threading.local()
+
+
+def _calibration_repair_scan_cached(kind, file_record, reader):
+    cache = getattr(_calibration_repair_scan_cache, 'files', None)
+    if cache is None:
+        return reader(file_record)
+    key = (kind, clean_int(getattr(file_record, 'id', None)))
+    if key not in cache:
+        cache[key] = reader(file_record)
+    return cache[key]
+
+
 def _calibration_report_source_bytes(source_file):
     """Read a retained source through the configured volume/bucket backend."""
+    return _calibration_repair_scan_cached('source', source_file, _calibration_report_read_source_bytes)
+
+
+def _calibration_report_read_source_bytes(source_file):
     disk_name = get_shift_file_disk_name(source_file)
     if not disk_name:
         raise FileNotFoundError('The Calibration Report source has no stored filename.')
@@ -20424,22 +20443,6 @@ def _calibration_report_repair_candidate_for_file(source_file):
     return base
 
 
-def _calibration_report_historical_repair_candidates():
-    """Inventory every generated DOCX revision, including superseded approvals."""
-    candidates = []
-    files = ShiftFile.query.filter(
-        or_(
-            ShiftFile.original_filename.ilike('%.docx'),
-            ShiftFile.filename.ilike('%.docx'),
-        )
-    ).order_by(ShiftFile.id.asc()).all()
-    for source_file in files:
-        candidate = _calibration_report_repair_candidate_for_file(source_file)
-        if candidate:
-            candidates.append(candidate)
-    return candidates
-
-
 def _calibration_report_footer_layout_candidate_for_file(source_file):
     """Build one layout-only footer repair candidate from the retained DOCX/PDF pair."""
     if not source_file or not calibration_report_source_file_is_private(source_file):
@@ -20496,22 +20499,6 @@ def _calibration_report_footer_layout_candidate_for_file(source_file):
         base['reason'] = inspection.get('reason') or 'Calibration Report footer layout can be repaired safely.'
     base.update(_calibration_report_repair_approval_context(source_file, pdf_file))
     return base
-
-
-def _calibration_report_footer_layout_repair_candidates():
-    """Inventory every generated DOCX revision that lacks the footer reserve."""
-    candidates = []
-    files = ShiftFile.query.filter(
-        or_(
-            ShiftFile.original_filename.ilike('%.docx'),
-            ShiftFile.filename.ilike('%.docx'),
-        )
-    ).order_by(ShiftFile.id.asc()).all()
-    for source_file in files:
-        candidate = _calibration_report_footer_layout_candidate_for_file(source_file)
-        if candidate:
-            candidates.append(candidate)
-    return candidates
 
 
 def _calibration_report_repair_walk_values(value, path='', output=None):
@@ -21345,7 +21332,7 @@ def register_calibration_repair(definition):
         raise TypeError('Calibration repair definitions must be dictionaries.')
     required = {
         'key', 'version', 'title', 'description', 'artifact_scope',
-        'inventory', 'apply', 'audit', 'idempotency', 'bulk_safe',
+        'inventory', 'candidate_for_file', 'apply', 'audit', 'idempotency', 'bulk_safe',
     }
     missing = required.difference(definition)
     if missing:
@@ -21357,57 +21344,50 @@ def register_calibration_repair(definition):
     return CALIBRATION_REPAIR_REGISTRY[key]
 
 
-def _calibration_repair_units_inventory():
-    candidates = []
-    for candidate in _calibration_report_historical_repair_candidates():
-        item = dict(candidate)
-        item.update({
-            'repair_key': 'calibration-report-units-v3',
-            'repair_version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
-            'candidate_id': clean_int(candidate.get('source_file_id')),
-            'title': 'Calibration Report headings and units',
-            'artifact_scope': 'Calibration Report DOCX/PDF',
-            'bulk_safe': True,
-            'editable_fields': [],
-            'detected_fields': [],
-        })
-        candidates.append(item)
-    return candidates
-
-
-def _calibration_repair_footer_layout_inventory():
-    candidates = []
-    for candidate in _calibration_report_footer_layout_repair_candidates():
-        item = dict(candidate)
-        item.update({
-            'repair_key': 'calibration-report-footer-layout-v1',
-            'repair_version': CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION,
-            'candidate_id': clean_int(candidate.get('source_file_id')),
-            'title': 'Protect Calibration Report footer layout',
-            'artifact_scope': 'Calibration Report DOCX/PDF',
-            # Individual application is exposed in the existing center. Keep
-            # this out of Repair All because it rewrites retained files.
-            'bulk_safe': False,
-            'editable_fields': [],
-            'detected_fields': [],
-        })
-        candidates.append(item)
-    return candidates
-
-
-def _calibration_repair_complete_fields_inventory():
-    candidates = []
-    files = ShiftFile.query.filter(
+def _calibration_repair_source_files():
+    """Every retained Calibration Report DOCX, including superseded revisions."""
+    return ShiftFile.query.filter(
         or_(
             ShiftFile.original_filename.ilike('%.docx'),
             ShiftFile.filename.ilike('%.docx'),
         )
     ).order_by(ShiftFile.id.asc()).all()
-    for source_file in files:
-        candidate = _calibration_report_complete_fields_candidate_for_file(source_file)
-        if candidate:
-            candidates.append(candidate)
-    return candidates
+
+
+def _calibration_repair_units_candidate_for_file(source_file):
+    candidate = _calibration_report_repair_candidate_for_file(source_file)
+    if not candidate:
+        return None
+    item = dict(candidate)
+    item.update({
+        'candidate_id': clean_int(candidate.get('source_file_id')),
+        'editable_fields': [],
+        'detected_fields': [],
+    })
+    return item
+
+
+def _calibration_repair_footer_layout_candidate_for_file(source_file):
+    candidate = _calibration_report_footer_layout_candidate_for_file(source_file)
+    if not candidate:
+        return None
+    item = dict(candidate)
+    item.update({
+        'candidate_id': clean_int(candidate.get('source_file_id')),
+        'editable_fields': [],
+        'detected_fields': [],
+    })
+    return item
+
+
+def _calibration_repair_inventory_for(candidate_for_file):
+    def inventory():
+        return [
+            candidate for candidate in (
+                candidate_for_file(source_file) for source_file in _calibration_repair_source_files()
+            ) if candidate
+        ]
+    return inventory
 
 
 def _calibration_repair_complete_fields_apply(candidate_id, **kwargs):
@@ -21422,11 +21402,15 @@ def _calibration_repair_complete_fields_apply(candidate_id, **kwargs):
 register_calibration_repair({
     'key': 'calibration-report-units-v3',
     'version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
-    'title': 'Calibration Report headings and units',
-    'description': 'Repair legacy Calibration Report headings and exposure units.',
-    'artifact_scope': 'Calibration Report DOCX/PDF',
+    'title': 'Fix headings and units',
+    'description': (
+        'Corrects the exposure table headings and the mA / mAs unit on older reports. '
+        'Measured values are not changed.'
+    ),
+    'artifact_scope': 'Calibration Report (Word and PDF)',
     'bulk_safe': True,
-    'inventory': _calibration_repair_units_inventory,
+    'inventory': _calibration_repair_inventory_for(_calibration_repair_units_candidate_for_file),
+    'candidate_for_file': _calibration_repair_units_candidate_for_file,
     'apply': lambda candidate_id, **kwargs: _calibration_report_apply_historical_repair(candidate_id),
     'audit': 'existing-universal-approval-and-activity-log',
     'idempotency': 'existing-repair-marker',
@@ -21434,11 +21418,16 @@ register_calibration_repair({
 register_calibration_repair({
     'key': 'calibration-report-footer-layout-v1',
     'version': CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION,
-    'title': 'Protect Calibration Report footer layout',
-    'description': 'Reserve the retained footer area before regenerating the linked report PDF.',
-    'artifact_scope': 'Calibration Report DOCX/PDF',
+    'title': 'Keep text clear of the footer',
+    'description': (
+        'Adds space above the page footer so table text cannot run into it, '
+        'then rebuilds the report PDF.'
+    ),
+    'artifact_scope': 'Calibration Report (Word and PDF)',
+    # Individual application only: this rewrites retained files, so it stays out of Repair All.
     'bulk_safe': False,
-    'inventory': _calibration_repair_footer_layout_inventory,
+    'inventory': _calibration_repair_inventory_for(_calibration_repair_footer_layout_candidate_for_file),
+    'candidate_for_file': _calibration_repair_footer_layout_candidate_for_file,
     'apply': lambda candidate_id, **kwargs: _calibration_report_apply_footer_layout_repair(candidate_id, **kwargs),
     'audit': 'universal-approval-and-activity-log',
     'idempotency': 'versioned-layout-and-conversion-state',
@@ -21446,23 +21435,49 @@ register_calibration_repair({
 register_calibration_repair({
     'key': 'calibration-complete-fields-v1',
     'version': CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION,
-    'title': 'Complete report and certificate fields',
-    'description': 'Regenerate affected report and certificate artifacts from immutable saved snapshots.',
-    'artifact_scope': 'Calibration Report DOCX/PDF and linked certificates',
+    'title': 'Restore cut-off text',
+    'description': (
+        'Rebuilds the report and its certificates so text that was cut short is shown in full, '
+        'using the information already saved.'
+    ),
+    'artifact_scope': 'Calibration Report and its certificates',
     'bulk_safe': True,
-    'inventory': _calibration_repair_complete_fields_inventory,
+    'inventory': _calibration_repair_inventory_for(_calibration_report_complete_fields_candidate_for_file),
+    'candidate_for_file': _calibration_report_complete_fields_candidate_for_file,
     'apply': _calibration_repair_complete_fields_apply,
     'audit': 'universal-approval-and-activity-log',
     'idempotency': 'versioned-payload-repair-marker',
 })
 
 
+def _calibration_repair_file_candidates(source_file):
+    """Return one source file's candidate for every registered repair."""
+    items = []
+    _calibration_repair_scan_cache.files = {}
+    try:
+        for key, definition in CALIBRATION_REPAIR_REGISTRY.items():
+            candidate = definition['candidate_for_file'](source_file)
+            if not candidate:
+                continue
+            item = dict(candidate)
+            item.update({
+                'repair_key': key,
+                'repair_version': definition.get('version'),
+                'title': definition.get('title'),
+                'description': definition.get('description'),
+                'artifact_scope': definition.get('artifact_scope'),
+                'bulk_safe': bool(definition.get('bulk_safe')) and item.get('status') == 'repairable',
+            })
+            items.append(item)
+    finally:
+        _calibration_repair_scan_cache.files = None
+    return items
+
+
 def _calibration_repair_registry_inventory():
     """Return the shared registry inventory without executing any repair."""
-    definitions = []
-    candidates = []
-    for key, definition in CALIBRATION_REPAIR_REGISTRY.items():
-        definition_public = {
+    definitions = [
+        {
             'repair_key': key,
             'repair_version': definition.get('version'),
             'title': definition.get('title'),
@@ -21470,21 +21485,14 @@ def _calibration_repair_registry_inventory():
             'artifact_scope': definition.get('artifact_scope'),
             'bulk_safe': bool(definition.get('bulk_safe')),
         }
-        definitions.append(definition_public)
-        for candidate in definition['inventory']() or []:
-            item = dict(candidate)
-            item.update({
-                'repair_key': key,
-                'repair_version': definition.get('version'),
-                'title': definition.get('title'),
-                'artifact_scope': definition.get('artifact_scope'),
-                'bulk_safe': bool(definition.get('bulk_safe')) and item.get('status') == 'repairable',
-            })
-            candidates.append(item)
+        for key, definition in CALIBRATION_REPAIR_REGISTRY.items()
+    ]
+    candidates = []
+    for source_file in _calibration_repair_source_files():
+        candidates.extend(_calibration_repair_file_candidates(source_file))
     summary = {
         'total': len(candidates),
         'repairable': sum(1 for item in candidates if item.get('status') == 'repairable'),
-        'manual_required': sum(1 for item in candidates if item.get('status') == 'manual_required'),
         'already_repaired': sum(1 for item in candidates if item.get('status') == 'already_repaired'),
         'blocked': sum(1 for item in candidates if item.get('status') == 'blocked'),
         'bulk_safe': sum(1 for item in candidates if item.get('status') == 'repairable' and item.get('bulk_safe')),
@@ -21995,6 +22003,10 @@ def convert_calibration_report_docx_bytes(docx_bytes, original_filename='Calibra
 
 def _calibration_report_file_bytes(file_rec):
     """Read one managed report object for conversion validation."""
+    return _calibration_repair_scan_cached('file', file_rec, _calibration_report_read_file_bytes)
+
+
+def _calibration_report_read_file_bytes(file_rec):
     disk_name = get_shift_file_disk_name(file_rec)
     if not disk_name:
         raise FileNotFoundError('The report file has no stored filename.')
@@ -24458,7 +24470,11 @@ def _calibration_center_record(approval):
         'certificate_number': approval.certificate_number or '',
         'revision_no': clean_int(approval.revision_no) or 1,
         'approved_at': approval.approved_at.isoformat() if approval.approved_at else None,
-        'requester': getattr(getattr(approval, 'requester', None), 'username', '') or '',
+        'requester': (
+            getattr(getattr(getattr(approval, 'requester', None), 'engineer_profile', None), 'name', '')
+            or getattr(getattr(approval, 'requester', None), 'username', '')
+            or ''
+        ),
         'facility': mapped.get('Text6', '') or getattr(client, 'name', '') or '',
         'client_name': getattr(client, 'name', '') or mapped.get('Text6', '') or '',
         'equipment': getattr(product, 'name', '') or mapped.get('Text1', '') or '',
@@ -24476,19 +24492,10 @@ def _calibration_center_record(approval):
         'certificate_last_emailed_at': _calibration_center_file_timestamp(certificate_file) if certificate_valid else '',
         'certificate_preview_url': url_for('calibration_certificate_preview', approval_id=approval.id, artifact='signed') if certificate_valid else '',
         'certificate_download_url': url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='signed') if certificate_valid else '',
-        'repair_url': (
-            url_for(
-                'calibration_center_repair_context',
-                repair_key='calibration-complete-fields-v1',
-                candidate_id=repair_source_file_id,
-            )
-            if repair_source_file_id else ''
-        ),
         'repair_source_file_id': repair_source_file_id,
         'repair_status': repair_status,
         'repair_history_count': len(repair_history),
         'repair_last_at': repair_last.get('repaired_at') or '',
-        'repair_last_version': repair_last.get('version') or '',
         'delivery_state': delivery_state,
         'can_send': bool(report_file and certificate_valid),
         'unavailable_reason': unavailable_reason,
@@ -24553,9 +24560,13 @@ def calibration_center_data():
     if search:
         all_records = [record for record in all_records if search in _calibration_center_search_text(record)]
     delivery = (clean_str(request.args.get('delivery')) or 'all').strip().lower()
-    if delivery not in {'all', 'unsent', 'partial', 'sent'}:
+    if delivery not in {'all', 'ready', 'unavailable', 'unsent', 'partial', 'sent'}:
         delivery = 'all'
-    if delivery != 'all':
+    if delivery == 'ready':
+        all_records = [record for record in all_records if record['can_send']]
+    elif delivery == 'unavailable':
+        all_records = [record for record in all_records if not record['can_send']]
+    elif delivery != 'all':
         all_records = [record for record in all_records if record['delivery_state'] == delivery]
     try:
         page = max(int(request.args.get('page') or 1), 1)
@@ -24574,91 +24585,41 @@ def calibration_center_data():
         'total': total,
         'pages': pages,
         'summary': summary,
-        'approved': summary['approved'],
-        'ready': summary['ready'],
-        'unavailable': summary['unavailable'],
-        'unsent': summary['unsent'],
-        'partial': summary['partial'],
-        'sent': summary['sent'],
         'delivery': delivery,
     })
 
 
-@app.route('/admin/calibration-center/repair-preview')
-@app.route('/admin/calibration-center/repair-preview/data')
-@login_required
-def calibration_center_repair_preview():
-    """Preview every generated Calibration Report revision without writing files."""
-    if not can_access_calibration_center():
-        return denied('Only authorized system administrators can access Calibration Center.')
-    try:
-        candidates = _calibration_report_historical_repair_candidates()
-    except Exception as inventory_error:
-        return no_store_jsonify({
-            'status': 'failed',
-            'message': 'Calibration Report repair inventory could not be loaded.',
-            'reason': clean_str(str(inventory_error))[:300],
-            'repair_version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
-            'candidates': [],
-            'summary': {'total': 0, 'repairable': 0, 'already_repaired': 0, 'blocked': 0},
-        }, 500)
-    summary = {
-        'total': len(candidates),
-        'repairable': sum(1 for item in candidates if item.get('status') == 'repairable'),
-        'already_repaired': sum(1 for item in candidates if item.get('status') == 'already_repaired'),
-        'blocked': sum(1 for item in candidates if item.get('status') == 'blocked'),
-    }
-    return no_store_jsonify({
-        'status': 'success',
-        'repair_version': CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION,
-        'warning': (
-            'Repairing approved or emailed artifacts changes report headings. Numeric values, '
-            'focal sizes, file IDs, approval/delivery status, and email history remain unchanged; '
-            'existing email previews become stale and must be regenerated.'
-        ),
-        'summary': summary,
-        'candidates': candidates,
-    })
-
-
 def _calibration_repair_registry_candidate(repair_key, candidate_id):
-    definition = CALIBRATION_REPAIR_REGISTRY.get(clean_str(repair_key) or '')
+    """Resolve one record's candidate from its own source file, without scanning the others."""
+    key = clean_str(repair_key) or ''
+    definition = CALIBRATION_REPAIR_REGISTRY.get(key)
     if not definition:
         return None, None
     wanted = clean_int(candidate_id)
-    for candidate in definition['inventory']() or []:
-        if clean_int(candidate.get('candidate_id') or candidate.get('source_file_id')) == wanted:
-            item = dict(candidate)
-            item.update({
-                'repair_key': clean_str(repair_key),
-                'repair_version': definition.get('version'),
-                'title': definition.get('title'),
-                'artifact_scope': definition.get('artifact_scope'),
-                'bulk_safe': bool(definition.get('bulk_safe')),
-            })
-            return definition, item
-    # A Repair button is available for every approved row, including records
-    # whose old value no longer matches a detectable legacy cap.  Re-scan the
-    # immutable source, never create a manual-value candidate.
-    if clean_str(repair_key) == 'calibration-complete-fields-v1':
-        source_file = db.session.get(ShiftFile, wanted)
-        if source_file and calibration_report_source_file_is_private(source_file):
-            candidate = _calibration_report_complete_fields_candidate_for_file(source_file, force=True)
-            if candidate:
-                item = dict(candidate)
-                item.update({
-                    'repair_key': clean_str(repair_key),
-                    'repair_version': definition.get('version'),
-                    'title': definition.get('title'),
-                    'artifact_scope': definition.get('artifact_scope'),
-                    'bulk_safe': bool(definition.get('bulk_safe')) and candidate.get('status') == 'repairable',
-                })
-                return definition, item
-    return definition, None
+    source_file = db.session.get(ShiftFile, wanted) if wanted else None
+    candidate = definition['candidate_for_file'](source_file) if source_file else None
+    # A Repair button can be opened for a record whose old value no longer matches a
+    # detectable legacy cap.  Re-scan the immutable source, never create a manual-value candidate.
+    if (
+        not candidate and key == 'calibration-complete-fields-v1'
+        and source_file and calibration_report_source_file_is_private(source_file)
+    ):
+        candidate = _calibration_report_complete_fields_candidate_for_file(source_file, force=True)
+    if not candidate:
+        return definition, None
+    item = dict(candidate)
+    item.update({
+        'repair_key': key,
+        'repair_version': definition.get('version'),
+        'title': definition.get('title'),
+        'description': definition.get('description'),
+        'artifact_scope': definition.get('artifact_scope'),
+        'bulk_safe': bool(definition.get('bulk_safe')) and item.get('status') == 'repairable',
+    })
+    return definition, item
 
 
 @app.route('/admin/calibration-center/repairs')
-@app.route('/admin/calibration-center/repairs/data')
 @login_required
 def calibration_center_repairs():
     """Return all registered Calibration Center repair definitions and candidates."""
@@ -24672,7 +24633,7 @@ def calibration_center_repairs():
             'message': 'Calibration repair inventory could not be loaded.',
             'reason': clean_str(str(inventory_error))[:300],
             'definitions': [], 'repairs': [], 'candidates': [],
-            'summary': {'total': 0, 'repairable': 0, 'manual_required': 0, 'already_repaired': 0, 'blocked': 0, 'bulk_safe': 0},
+            'summary': {'total': 0, 'repairable': 0, 'already_repaired': 0, 'blocked': 0, 'bulk_safe': 0},
         }, 500)
     repairs = []
     for definition in definitions:
@@ -24680,18 +24641,27 @@ def calibration_center_repairs():
         repairs.append({**definition, 'summary': {
             'total': len(repair_candidates),
             'repairable': sum(1 for item in repair_candidates if item.get('status') == 'repairable'),
-            'manual_required': sum(1 for item in repair_candidates if item.get('status') == 'manual_required'),
             'already_repaired': sum(1 for item in repair_candidates if item.get('status') == 'already_repaired'),
             'blocked': sum(1 for item in repair_candidates if item.get('status') == 'blocked'),
-        }, 'candidates': repair_candidates})
+        }})
     return no_store_jsonify({
         'status': 'success',
         'definitions': definitions,
         'repairs': repairs,
         'candidates': candidates,
         'summary': summary,
-        'warning': 'Repairs never run automatically. Complete-field repairs regenerate artifacts from immutable saved report and approved certificate snapshots without changing business data.',
     })
+
+
+@app.route('/admin/calibration-center/repair-file/<int:source_file_id>')
+@login_required
+def calibration_center_repair_file(source_file_id):
+    """Return one source file's repair candidates, to refresh its rows after a repair."""
+    if not can_access_calibration_center():
+        return denied('Only authorized system administrators can access Calibration Center.')
+    source_file = db.session.get(ShiftFile, clean_int(source_file_id))
+    candidates = _calibration_repair_file_candidates(source_file) if source_file else []
+    return no_store_jsonify({'status': 'success', 'source_file_id': clean_int(source_file_id), 'candidates': candidates})
 
 
 @app.route('/admin/calibration-center/repairs/<repair_key>/<int:candidate_id>')
@@ -24704,18 +24674,11 @@ def calibration_center_repair_context(repair_key, candidate_id):
     if not definition:
         return no_store_jsonify({'status': 'failed', 'message': 'Calibration repair type not found.'}), 404
     if not candidate:
-        if clean_str(repair_key) == 'calibration-complete-fields-v1':
-            source_file = db.session.get(ShiftFile, clean_int(candidate_id))
-            if source_file and calibration_report_source_file_is_private(source_file):
-                candidate = _calibration_report_complete_fields_candidate_for_file(source_file, force=True)
-            if not candidate:
-                return no_store_jsonify({'status': 'failed', 'message': 'Calibration repair candidate not found.'}), 404
-        else:
-            return no_store_jsonify({'status': 'failed', 'message': 'Calibration repair candidate not found.'}), 404
+        return no_store_jsonify({'status': 'failed', 'message': 'Calibration repair candidate not found.'}), 404
     if clean_str(repair_key) == 'calibration-complete-fields-v1':
         source_file = db.session.get(ShiftFile, clean_int(candidate_id))
         candidate = _calibration_report_complete_fields_context(source_file) or candidate
-    candidate.update({'repair_key': repair_key, 'repair_version': definition.get('version'), 'title': definition.get('title'), 'artifact_scope': definition.get('artifact_scope'), 'bulk_safe': bool(definition.get('bulk_safe')) and candidate.get('status') == 'repairable'})
+    candidate.update({'repair_key': repair_key, 'repair_version': definition.get('version'), 'title': definition.get('title'), 'description': definition.get('description'), 'artifact_scope': definition.get('artifact_scope'), 'bulk_safe': bool(definition.get('bulk_safe')) and candidate.get('status') == 'repairable'})
     return no_store_jsonify({'status': 'success', 'definition': {
         'repair_key': repair_key,
         'repair_version': definition.get('version'),
@@ -24765,7 +24728,6 @@ def calibration_center_repair_apply_registered(repair_key, candidate_id):
 
 
 @app.route('/admin/calibration-center/<int:source_file_id>/repair', methods=['POST'])
-@app.route('/admin/calibration-center/repair/<int:source_file_id>', methods=['POST'])
 @login_required
 def calibration_center_repair_apply(source_file_id):
     """Apply one CSRF-protected historical Calibration Report repair."""
@@ -26749,7 +26711,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v224-approval-routing-settings';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v225-calibration-center-repairs';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

@@ -6,17 +6,23 @@
     .calibration-center-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
     .calibration-center-header h1 { font-weight:900; letter-spacing:-.02em; }
     .calibration-center-summary { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.8rem; }
-    .calibration-center-summary-card { border:1px solid rgba(100,116,139,.18); border-radius:16px; padding:1rem; background:var(--bs-body-bg,#fff); box-shadow:0 5px 18px rgba(15,23,42,.05); }
+    .calibration-center-summary-card { display:block; width:100%; text-align:left; color:inherit; border:1px solid rgba(100,116,139,.18); border-radius:16px; padding:1rem; background:var(--bs-body-bg,#fff); box-shadow:0 5px 18px rgba(15,23,42,.05); cursor:pointer; }
+    .calibration-center-summary-card:hover { border-color:rgba(37,99,235,.45); }
+    .calibration-center-summary-card:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+    .calibration-center-summary-card[aria-pressed="true"] { border-color:#2563eb; box-shadow:0 0 0 2px rgba(37,99,235,.25); }
     .calibration-center-summary-card .label { color:#64748b; font-size:.7rem; font-weight:900; text-transform:uppercase; letter-spacing:.06em; }
     .calibration-center-summary-card .value { display:block; margin-top:.25rem; font-size:1.55rem; font-weight:900; }
     .calibration-center-toolbar { display:flex; gap:.75rem; flex-wrap:wrap; align-items:end; }
     .calibration-center-toolbar .search-wrap { flex:1 1 300px; }
     .calibration-center-toolbar .filter-wrap { flex:0 1 190px; }
     .calibration-center-table-wrap { overflow-x:auto; border:1px solid rgba(100,116,139,.2); border-radius:16px; }
-    .calibration-center-table { min-width:980px; margin:0; }
+    .calibration-center-table { min-width:900px; margin:0; }
     .calibration-center-table th { white-space:nowrap; color:#64748b; font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; }
     .calibration-center-table td { vertical-align:middle; }
-    .calibration-center-file { display:flex; gap:.45rem; flex-wrap:wrap; }
+    .calibration-center-files { display:grid; gap:.35rem; }
+    .calibration-center-file-group { display:flex; align-items:center; gap:.35rem; }
+    .calibration-center-file-group .name { min-width:5.2rem; font-size:.82rem; font-weight:700; }
+    .calibration-center-actions { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; }
     .calibration-center-mobile { display:none; }
     .calibration-center-status { font-size:.72rem; font-weight:900; border-radius:999px; padding:.28rem .55rem; white-space:nowrap; }
     .calibration-center-status.sent { background:#dcfce7; color:#166534; }
@@ -27,36 +33,38 @@
     .calibration-center-modal-backdrop { position:fixed; inset:0; z-index:1100; display:none; align-items:center; justify-content:center; padding:1rem; background:rgba(15,23,42,.62); }
     .calibration-center-modal-backdrop.open { display:flex; }
     .calibration-center-modal { width:min(900px,100%); max-height:92vh; overflow:auto; border-radius:20px; background:var(--bs-body-bg,#fff); color:var(--bs-body-color,#111827); box-shadow:0 24px 70px rgba(0,0,0,.28); }
+    .calibration-center-modal.narrow { width:min(520px,100%); }
     .calibration-center-modal-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; padding:1.1rem 1.25rem; border-bottom:1px solid rgba(100,116,139,.18); }
     .calibration-center-modal-body { padding:1.25rem; }
     .calibration-center-modal-footer { display:flex; justify-content:flex-end; gap:.6rem; flex-wrap:wrap; padding:1rem 1.25rem; border-top:1px solid rgba(100,116,139,.18); }
     .calibration-center-attachment-list { display:grid; gap:.55rem; }
     .calibration-center-attachment { display:flex; align-items:center; justify-content:space-between; gap:.8rem; padding:.7rem .8rem; border:1px solid rgba(100,116,139,.2); border-radius:12px; }
-    .calibration-center-preview { white-space:pre-wrap; max-height:260px; overflow:auto; background:#f8fafc; border-radius:12px; padding:.9rem; font-size:.82rem; }
-    .calibration-center-repair-panel { border:1px solid rgba(180,83,9,.25); background:linear-gradient(135deg,rgba(255,251,235,.96),rgba(255,255,255,.96)); }
-    .calibration-center-repair-summary { display:flex; gap:.75rem; flex-wrap:wrap; }
-    .calibration-center-repair-summary .badge { font-size:.78rem; }
+    .calibration-center-preview { white-space:pre-wrap; max-height:260px; overflow:auto; background:#f8fafc; color:#111827; border-radius:12px; padding:.9rem; font-size:.82rem; }
+    .calibration-center-preview-frame { display:block; width:100%; height:320px; border:1px solid rgba(100,116,139,.25); border-radius:12px; background:#fff; }
+    .calibration-center-repair-panel { border:1px solid rgba(180,83,9,.25); }
+    .calibration-center-repair-summary { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.75rem; }
+    .calibration-center-repair-summary .badge { font-size:.78rem; font-weight:700; }
     .calibration-center-repair-table-wrap { overflow-x:auto; border:1px solid rgba(100,116,139,.2); border-radius:12px; }
     .calibration-center-repair-table { width:100%; table-layout:fixed; margin:0; }
-    .calibration-center-repair-table th:nth-child(1) { width:28%; }
+    .calibration-center-repair-table th:nth-child(1) { width:30%; }
     .calibration-center-repair-table th:nth-child(2) { width:34%; }
-    .calibration-center-repair-table th:nth-child(3) { width:26%; }
+    .calibration-center-repair-table th:nth-child(3) { width:24%; }
     .calibration-center-repair-table th:nth-child(4) { width:12%; }
-    .calibration-center-repair-table td { white-space:normal!important; overflow-wrap:anywhere; vertical-align:top; padding:1rem .75rem; }
+    .calibration-center-repair-table th { white-space:nowrap; color:#64748b; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
+    .calibration-center-repair-table td { white-space:normal!important; overflow-wrap:anywhere; vertical-align:top; padding:.9rem .75rem; }
     .calibration-center-repair-table details { margin-top:.5rem; font-size:.8rem; }
     .calibration-center-repair-table summary { cursor:pointer; color:var(--bs-secondary-color,#64748b); }
     .calibration-center-repair-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:.75rem; margin:1rem 0; }
     .calibration-center-repair-toolbar .repair-search { flex:1 1 240px; }
     .calibration-center-repair-toolbar .repair-filter { flex:1 1 150px; }
     .calibration-center-repair-pager { display:flex; justify-content:space-between; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:1rem; }
-    @media(max-width:760px) {
+    .calibration-center-repair-change { border:1px solid rgba(100,116,139,.2); border-radius:12px; padding:.7rem .85rem; }
+    @media (max-width: 760px) {
         .calibration-center-repair-table thead { display:none; }
         .calibration-center-repair-table, .calibration-center-repair-table tbody, .calibration-center-repair-table tr, .calibration-center-repair-table td { display:block; width:100%; }
         .calibration-center-repair-table tr { border-bottom:2px solid var(--bs-border-color,#e2e8f0); padding:.5rem; }
-        .calibration-center-repair-table td { border:0; padding:.5rem; }
+        .calibration-center-repair-table td { border:0; padding:.4rem .5rem; }
     }
-    .calibration-center-repair-table th { white-space:nowrap; color:#64748b; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
-    .calibration-center-repair-confirm { border:1px solid rgba(180,83,9,.28); border-radius:12px; background:#fff7ed; }
     @media (max-width: 1100px) { .calibration-center-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } }
     @media (max-width: 700px) {
         .calibration-center-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -65,12 +73,13 @@
         .calibration-center-mobile-card { border:1px solid rgba(100,116,139,.2); border-radius:16px; padding:1rem; background:var(--bs-body-bg,#fff); }
         .calibration-center-mobile-card .identity { font-weight:900; }
         .calibration-center-mobile-card .meta { color:#64748b; font-size:.82rem; }
-        .calibration-center-mobile-card .actions { display:flex; gap:.45rem; flex-wrap:wrap; margin-top:.75rem; }
+        .calibration-center-mobile-card .calibration-center-files { margin-top:.75rem; }
+        .calibration-center-mobile-card .calibration-center-actions { margin-top:.75rem; }
         .calibration-center-toolbar > * { flex:1 1 100%; }
         .calibration-center-modal { max-height:96vh; }
     }
     @media (max-width: 420px) { .calibration-center-summary { gap:.5rem; } .calibration-center-summary-card { padding:.75rem; } .calibration-center-summary-card .value { font-size:1.25rem; } }
-    @media (max-width: 600px) { .calibration-center-page .btn, .calibration-center-page .form-control, .calibration-center-page .form-select { min-height:44px; } }
+    @media (max-width: 600px) { .calibration-center-page .btn, .calibration-center-modal .btn, .calibration-center-page .form-control, .calibration-center-page .form-select, .calibration-center-page .page-link { min-height:44px; min-width:44px; } }
 </style>
 {% endblock %}
 
@@ -79,63 +88,58 @@
     <div class="calibration-center-header mb-4">
         <div>
             <h1 class="h3 mb-1"><i class="fa-solid fa-certificate me-2 text-primary" aria-hidden="true"></i>Calibration Center</h1>
-            <p class="text-muted mb-0">Approved Calibration Reports and signed Certificates available to authorized administrators.</p>
+            <p class="text-muted mb-0">Approved Calibration Reports and signed Certificates, ready to view, download, and email.</p>
         </div>
-        <a class="btn btn-outline-secondary rounded-3 fw-bold" href="/admin/calibration-center" aria-label="Refresh Calibration Center"><i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Refresh</a>
+        <button id="calibration-center-refresh" type="button" class="btn btn-outline-secondary rounded-3 fw-bold"><i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Refresh</button>
     </div>
 
-    <section class="calibration-center-summary mb-4" aria-label="Calibration Center summary">
-        <div class="calibration-center-summary-card"><span class="label">Approved</span><span id="summary-approved" class="value">0</span></div>
-        <div class="calibration-center-summary-card"><span class="label">Ready</span><span id="summary-ready" class="value text-success">0</span></div>
-        <div class="calibration-center-summary-card"><span class="label">Unavailable</span><span id="summary-unavailable" class="value text-danger">0</span></div>
-        <div class="calibration-center-summary-card"><span class="label">Unsent</span><span id="summary-unsent" class="value">0</span></div>
-        <div class="calibration-center-summary-card"><span class="label">Partial</span><span id="summary-partial" class="value text-warning">0</span></div>
-        <div class="calibration-center-summary-card"><span class="label">Sent</span><span id="summary-sent" class="value text-success">0</span></div>
+    <section class="calibration-center-summary mb-4" aria-label="Calibration Center summary. Select a card to filter the list.">
+        <button type="button" class="calibration-center-summary-card" data-delivery="all" aria-pressed="true"><span class="label">Approved</span><span id="summary-approved" class="value">0</span></button>
+        <button type="button" class="calibration-center-summary-card" data-delivery="ready" aria-pressed="false"><span class="label">Ready to send</span><span id="summary-ready" class="value text-success">0</span></button>
+        <button type="button" class="calibration-center-summary-card" data-delivery="unavailable" aria-pressed="false"><span class="label">Not ready</span><span id="summary-unavailable" class="value text-danger">0</span></button>
+        <button type="button" class="calibration-center-summary-card" data-delivery="unsent" aria-pressed="false"><span class="label">Unsent</span><span id="summary-unsent" class="value">0</span></button>
+        <button type="button" class="calibration-center-summary-card" data-delivery="partial" aria-pressed="false"><span class="label">Partially sent</span><span id="summary-partial" class="value text-warning">0</span></button>
+        <button type="button" class="calibration-center-summary-card" data-delivery="sent" aria-pressed="false"><span class="label">Sent</span><span id="summary-sent" class="value text-success">0</span></button>
     </section>
 
-    <section id="calibration-center-repair-area" class="d-none mb-4" aria-live="polite" aria-atomic="true">
-        <!-- Historical Report Repair compatibility contracts remain represented by the registry surface: All historical report repairs are complete; repair-preview; candidate.target_units; candidate.unit_sources; Target units / source; `/admin/calibration-center/${sourceFileId}/repair`. -->
+    <section id="calibration-center-repair-area" class="d-none mb-4">
         <div id="calibration-center-repair-notice" class="alert alert-warning small d-none mb-3" role="status">
             <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-                <div><strong>Calibration Report &amp; Certificate repairs need attention.</strong> <span id="repair-notice-repairable">0</span> repairable · <span id="repair-notice-manual">0</span> manual · <span id="repair-notice-blocked">0</span> blocked.</div>
+                <div><strong>Some reports or certificates need a repair.</strong> <span id="repair-notice-repairable">0</span> ready to repair · <span id="repair-notice-blocked">0</span> cannot be repaired.</div>
                 <button id="calibration-center-repair-view" type="button" class="btn btn-sm btn-warning rounded-3 fw-bold" aria-expanded="false" aria-controls="calibration-center-repair-panel">View repairs</button>
             </div>
         </div>
-        <div id="calibration-center-repair-success" class="alert alert-success small d-none mb-3" role="status">All registered Calibration Report &amp; Certificate repairs are complete.</div>
-        <div id="calibration-center-repair-load-error" class="alert alert-danger small d-none mb-3" role="alert"><strong>Calibration Report &amp; Certificate Repair is unavailable.</strong> <span id="calibration-center-repair-load-error-message">Inventory could not be loaded.</span></div>
+        <div id="calibration-center-repair-success" class="alert alert-success small d-none mb-3" role="status">All repairs are complete. Nothing else needs attention.</div>
+        <div id="calibration-center-repair-load-error" class="alert alert-danger small d-none mb-3" role="alert"><strong>The repair list could not be loaded.</strong> <span id="calibration-center-repair-load-error-message">Please refresh and try again.</span></div>
+        <div id="calibration-center-repair-result" class="alert small d-none mb-3" role="status">
+            <div class="d-flex justify-content-between align-items-start gap-3"><div id="calibration-center-repair-result-message"></div><button id="calibration-center-repair-result-close" type="button" class="btn-close" aria-label="Dismiss repair result"></button></div>
+        </div>
         <section id="calibration-center-repair-panel" class="d-none card border-0 shadow-sm rounded-4 calibration-center-repair-panel" aria-labelledby="calibration-center-repair-title" aria-hidden="true">
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
                     <div>
-                        <h2 id="calibration-center-repair-title" class="h5 fw-bold mb-1"><i class="fa-solid fa-wrench me-2 text-warning" aria-hidden="true"></i>Calibration Report &amp; Certificate Repair</h2>
-                        <p class="small text-muted mb-2">Find a record, review what needs fixing, then run its repair. Completed and blocked repairs are included below.</p>
+                        <h2 id="calibration-center-repair-title" class="h5 fw-bold mb-1"><i class="fa-solid fa-wrench me-2 text-warning" aria-hidden="true"></i>Repairs</h2>
+                        <p class="small text-muted mb-2">A repair rebuilds a report or certificate from the information already saved. Signatures, approvals, and email history are kept.</p>
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
-                        <button id="calibration-center-repair-hide" type="button" class="btn btn-outline-secondary rounded-3 fw-bold" aria-expanded="true" aria-controls="calibration-center-repair-panel">Hide details</button>
-                        <button id="calibration-center-repair-all" type="button" class="btn btn-warning rounded-3 fw-bold">Repair All</button>
+                        <button id="calibration-center-repair-hide" type="button" class="btn btn-outline-secondary rounded-3 fw-bold" aria-expanded="true" aria-controls="calibration-center-repair-panel">Hide repairs</button>
+                        <button id="calibration-center-repair-all" type="button" class="btn btn-warning rounded-3 fw-bold" disabled>Repair All</button>
                     </div>
                 </div>
-                <div id="calibration-center-repair-warning" class="alert alert-warning small mb-3">Repairs rebuild the existing files using saved information. Signatures, approvals, and email history are preserved. Repair All runs every eligible repair across all pages, including records hidden by filters.</div>
-                <div id="calibration-center-repair-loading" class="small text-muted" role="status"><i class="fa-solid fa-circle-notch fa-spin me-2" aria-hidden="true"></i>Loading repair inventory...</div>
-                <div id="calibration-center-repair-summary" class="calibration-center-repair-summary d-none mb-3" aria-label="Calibration repair totals"><span class="badge text-bg-primary">Total <strong id="repair-total">0</strong></span><span class="badge text-bg-warning">Repairable <strong id="repair-repairable">0</strong></span><span class="badge text-bg-info">Manual <strong id="repair-manual">0</strong></span><span class="badge text-bg-success">Already repaired <strong id="repair-already">0</strong></span><span class="badge text-bg-danger">Blocked <strong id="repair-blocked">0</strong></span></div>
+                <div id="calibration-center-repair-loading" class="small text-muted" role="status"><i class="fa-solid fa-circle-notch fa-spin me-2" aria-hidden="true"></i>Checking saved reports...</div>
+                <div id="calibration-center-repair-summary" class="calibration-center-repair-summary d-none mb-2" aria-label="Repair totals"><span class="badge text-bg-warning">Ready to repair <strong id="repair-repairable">0</strong></span><span class="badge text-bg-danger">Cannot be repaired <strong id="repair-blocked">0</strong></span><span class="badge text-bg-success">Completed <strong id="repair-already">0</strong></span></div>
                 <div id="calibration-center-repair-progress" class="small text-muted d-none mb-2" role="status"></div>
-                <div id="calibration-center-repair-error" class="alert alert-danger small d-none" role="alert"></div>
                 <div class="calibration-center-repair-toolbar">
-                    <div class="repair-search"><label class="form-label small fw-bold" for="calibration-center-repair-search">Find a repair</label><input id="calibration-center-repair-search" class="form-control" type="search" placeholder="Client, model, certificate, serial, or filename"></div>
-                    <div class="repair-filter"><label class="form-label small fw-bold" for="calibration-center-repair-status-filter">Status</label><select id="calibration-center-repair-status-filter" class="form-select"><option value="all">All statuses</option><option value="repairable">Ready to repair</option><option value="blocked">Blocked</option><option value="already_repaired">Completed</option><option value="manual_required">Needs review</option></select></div>
-                    <div class="repair-filter"><label class="form-label small fw-bold" for="calibration-center-repair-type-filter">Repair type</label><select id="calibration-center-repair-type-filter" class="form-select"><option value="all">All repairs</option><option value="calibration-complete-fields-v1">Cut-off fields</option><option value="calibration-report-units-v3">Headings and units</option></select></div>
+                    <div class="repair-search"><label class="form-label small fw-bold" for="calibration-center-repair-search">Find a record</label><input id="calibration-center-repair-search" class="form-control" type="search" placeholder="Client, model, certificate, serial, or file name"></div>
+                    <div class="repair-filter"><label class="form-label small fw-bold" for="calibration-center-repair-status-filter">Show</label><select id="calibration-center-repair-status-filter" class="form-select"><option value="attention">Needs action</option><option value="repairable">Ready to repair</option><option value="blocked">Cannot be repaired</option><option value="already_repaired">Completed</option><option value="all">Everything</option></select></div>
+                    <div class="repair-filter"><label class="form-label small fw-bold" for="calibration-center-repair-type-filter">Repair</label><select id="calibration-center-repair-type-filter" class="form-select"><option value="all">All repairs</option></select></div>
                     <div><label class="form-label small fw-bold" for="calibration-center-repair-page-size">Per page</label><select id="calibration-center-repair-page-size" class="form-select"><option value="10">10</option><option value="20">20</option><option value="50">50</option></select></div>
                 </div>
-                <div id="calibration-center-repair-empty" class="small text-muted d-none">No registered Calibration Report or Certificate repairs were found.</div>
+                <div id="calibration-center-repair-empty" class="small text-muted d-none"></div>
                 <div id="calibration-center-repair-table-wrap" class="calibration-center-repair-table-wrap d-none">
-                    <table class="table table-sm table-hover calibration-center-repair-table mb-0"><thead><tr><th>Record</th><th>What will be repaired</th><th>Status</th><th>Action</th></tr></thead><tbody id="calibration-center-repair-table-body"></tbody></table>
+                    <table class="table table-sm table-hover calibration-center-repair-table mb-0"><thead><tr><th>Record</th><th>Repair</th><th>Status</th><th>Action</th></tr></thead><tbody id="calibration-center-repair-table-body"></tbody></table>
                 </div>
                 <nav id="calibration-center-repair-pagination" class="calibration-center-repair-pager" aria-label="Repair list pages"><span id="calibration-center-repair-page-info" class="small text-muted" role="status"></span><div class="d-flex gap-2"><button id="calibration-center-repair-previous" type="button" class="btn btn-sm btn-outline-secondary">Previous</button><button id="calibration-center-repair-next" type="button" class="btn btn-sm btn-outline-secondary">Next</button></div></nav>
-                <div id="calibration-center-repair-confirm" class="calibration-center-repair-confirm d-none mt-3 p-3" role="dialog" aria-labelledby="calibration-center-repair-confirm-title" aria-modal="false">
-                    <div id="calibration-center-repair-confirm-title" class="fw-bold mb-1">Confirm Repair All</div>
-                    <p class="small mb-2">This runs only candidates explicitly marked bulk-safe. Manual-value repairs are excluded. Type <code>REPAIR ALL</code> to continue.</p>
-                    <div class="d-flex gap-2 flex-wrap"><input id="calibration-center-repair-confirm-input" class="form-control rounded-3" style="max-width:260px" type="text" autocomplete="off" aria-label="Type REPAIR ALL to confirm"><button id="calibration-center-repair-confirm-button" type="button" class="btn btn-warning rounded-3 fw-bold" disabled>Confirm</button><button id="calibration-center-repair-cancel-button" type="button" class="btn btn-outline-secondary rounded-3">Cancel</button></div>
-                </div>
             </div>
         </section>
     </section>
@@ -148,9 +152,9 @@
                     <input id="calibration-center-search" class="form-control rounded-3" type="search" autocomplete="off" placeholder="Certificate, client, equipment, serial, BSID, TSR...">
                 </div>
                 <div class="filter-wrap">
-                    <label for="calibration-center-delivery" class="form-label small fw-bold text-muted mb-1">Delivery</label>
+                    <label for="calibration-center-delivery" class="form-label small fw-bold text-muted mb-1">Show</label>
                     <select id="calibration-center-delivery" class="form-select rounded-3">
-                        <option value="all">All states</option><option value="unsent">Unsent</option><option value="partial">Partially sent</option><option value="sent">Sent</option>
+                        <option value="all">All approved</option><option value="ready">Ready to send</option><option value="unavailable">Not ready</option><option value="unsent">Unsent</option><option value="partial">Partially sent</option><option value="sent">Sent</option>
                     </select>
                 </div>
             </div>
@@ -159,16 +163,16 @@
 
     <div id="calibration-center-error" class="alert alert-danger calibration-center-error d-none" role="alert"></div>
     <div id="calibration-center-loading" class="alert alert-light calibration-center-loading" role="status"><i class="fa-solid fa-circle-notch fa-spin me-2" aria-hidden="true"></i>Loading approved calibration records...</div>
-    <div id="calibration-center-empty" class="alert alert-light calibration-center-empty d-none" role="status">No approved calibration records match the current search and delivery filter.</div>
+    <div id="calibration-center-empty" class="alert alert-light calibration-center-empty d-none" role="status">No approved calibration records match the current search and filter.</div>
 
     <section id="calibration-center-table-wrap" class="calibration-center-table-wrap d-none" aria-label="Approved calibration records">
         <table class="table table-hover calibration-center-table mb-0">
-            <thead><tr><th>Calibration</th><th>Client / Equipment</th><th>Approval</th><th>Delivery</th><th>Artifacts</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Certificate</th><th>Client / Equipment</th><th>Approved</th><th>Delivery</th><th>Files</th><th>Actions</th></tr></thead>
             <tbody id="calibration-center-table-body"></tbody>
         </table>
     </section>
     <section id="calibration-center-mobile" class="calibration-center-mobile d-none" aria-label="Approved calibration records on mobile"></section>
-    <nav id="calibration-center-pagination" class="d-none mt-3" aria-label="Calibration Center pages"><ul class="pagination justify-content-center mb-0"></ul></nav>
+    <nav id="calibration-center-pagination" class="d-none mt-3" aria-label="Calibration Center pages"><ul class="pagination justify-content-center flex-wrap mb-0"></ul></nav>
 </main>
 
 <div id="calibration-center-modal-backdrop" class="calibration-center-modal-backdrop" role="presentation">
@@ -180,32 +184,42 @@
             <div class="mb-3"><label for="calibration-center-manual-cc" class="form-label fw-bold">Manual CC <span class="text-muted fw-normal">(optional)</span></label><input id="calibration-center-manual-cc" class="form-control rounded-3" type="text" placeholder="recipient@example.com"></div>
             <div class="mb-3"><label for="calibration-center-font" class="form-label fw-bold">Email font</label><select id="calibration-center-font" class="form-select rounded-3"></select></div>
             <div class="mb-3"><div class="fw-bold mb-2">Suggested client recipients</div><div id="calibration-center-suggestions" class="d-flex flex-wrap gap-2"></div></div>
-            <div class="mb-3"><div class="fw-bold mb-2">Attachments <span class="text-muted fw-normal">(fixed approved pair)</span></div><div id="calibration-center-attachments" class="calibration-center-attachment-list"></div></div>
-            <div id="calibration-center-preview-box" class="d-none"><div class="fw-bold mb-2">Preview</div><div class="small mb-1"><strong>To:</strong> <span id="calibration-center-preview-to"></span></div><div class="small mb-1"><strong id="calibration-center-preview-system-cc-label">Settings CC:</strong> <span id="calibration-center-preview-system-cc"></span></div><div class="small mb-1"><strong>Creator engineer:</strong> <span id="calibration-center-preview-creator-copy">Creator email unavailable</span></div><div class="small mb-1"><strong>Sender copy:</strong> <span id="calibration-center-preview-sender-copy"></span></div><div class="small mb-1"><strong>Final CC:</strong> <span id="calibration-center-preview-cc"></span></div><div class="small mb-2"><strong>Subject:</strong> <span id="calibration-center-preview-subject"></span></div><div class="small fw-bold mb-1">HTML body</div><div id="calibration-center-preview-html" class="calibration-center-preview"></div><details class="mt-2"><summary class="small fw-bold">Plain-text body</summary><div id="calibration-center-preview-body" class="calibration-center-preview mt-2"></div></details></div>
+            <div class="mb-3"><div class="fw-bold mb-2">Attachments <span class="text-muted fw-normal">(always the approved report and certificate)</span></div><div id="calibration-center-attachments" class="calibration-center-attachment-list"></div></div>
+            <div id="calibration-center-preview-box" class="d-none"><div class="fw-bold mb-2">Preview</div><div class="small mb-1"><strong>To:</strong> <span id="calibration-center-preview-to"></span></div><div class="small mb-1"><strong id="calibration-center-preview-system-cc-label">Settings CC:</strong> <span id="calibration-center-preview-system-cc"></span></div><div class="small mb-1"><strong>Creator engineer:</strong> <span id="calibration-center-preview-creator-copy">Creator email unavailable</span></div><div class="small mb-1"><strong>Sender copy:</strong> <span id="calibration-center-preview-sender-copy"></span></div><div class="small mb-1"><strong>Final CC:</strong> <span id="calibration-center-preview-cc"></span></div><div class="small mb-2"><strong>Subject:</strong> <span id="calibration-center-preview-subject"></span></div><div class="small fw-bold mb-1">Message</div><iframe id="calibration-center-preview-html" class="calibration-center-preview-frame" sandbox="" title="Email message preview"></iframe><details class="mt-2"><summary class="small fw-bold">Plain-text version</summary><div id="calibration-center-preview-body" class="calibration-center-preview mt-2"></div></details></div>
         </div>
-        <div class="calibration-center-modal-footer"><span class="small text-muted me-auto align-self-center">Preview, then Confirm the exact two-file delivery.</span><button type="button" id="calibration-center-preview" class="btn btn-outline-primary rounded-3 fw-bold">Preview</button><button type="button" id="calibration-center-send" class="btn btn-primary rounded-3 fw-bold">Send Email</button></div>
+        <div class="calibration-center-modal-footer"><span class="small text-muted me-auto align-self-center">Preview is optional. Send Email asks for a second click to confirm.</span><button type="button" id="calibration-center-preview" class="btn btn-outline-primary rounded-3 fw-bold">Preview</button><button type="button" id="calibration-center-send" class="btn btn-primary rounded-3 fw-bold">Send Email</button></div>
     </section>
 </div>
 
 <div id="calibration-center-repair-modal-backdrop" class="calibration-center-modal-backdrop" role="presentation">
     <section class="calibration-center-modal" role="dialog" aria-modal="true" aria-labelledby="calibration-center-repair-modal-title">
-        <div class="calibration-center-modal-header"><div><h2 id="calibration-center-repair-modal-title" class="h5 mb-1">Repair Calibration Report &amp; Certificate</h2><div id="calibration-center-repair-modal-subtitle" class="small text-muted"></div></div><button type="button" id="calibration-center-repair-modal-close" class="btn btn-outline-secondary rounded-3" aria-label="Close repair dialog">Close</button></div>
+        <div class="calibration-center-modal-header"><div><h2 id="calibration-center-repair-modal-title" class="h5 mb-1">Repair</h2><div id="calibration-center-repair-modal-subtitle" class="small text-muted"></div></div><button type="button" id="calibration-center-repair-modal-close" class="btn btn-outline-secondary rounded-3" aria-label="Close repair dialog">Close</button></div>
         <div class="calibration-center-modal-body">
             <div id="calibration-center-repair-modal-error" class="alert alert-danger d-none" role="alert"></div>
-            <div id="calibration-center-repair-modal-message" class="alert alert-warning small"><strong>What this repair does:</strong> rebuilds the existing report and certificate so complete saved values are displayed instead of being cut off. It does not ask you to re-enter any information.</div>
-            <div class="fw-bold mb-2">Fields that will be repaired</div>
-            <div id="calibration-center-repair-fields" class="d-grid gap-2 mb-3"></div>
-            <div class="border rounded-3 p-3 mb-3 bg-light-subtle">
-                <div class="fw-bold mb-2">What will stay unchanged</div>
-                <div class="small">✓ Saved report and certificate information</div>
-                <div class="small">✓ Service engineer and approver signatures</div>
-                <div class="small">✓ Approval, revision, delivery, and email history</div>
+            <div id="calibration-center-repair-modal-loading" class="small text-muted d-none" role="status"><i class="fa-solid fa-circle-notch fa-spin me-2" aria-hidden="true"></i>Loading this record...</div>
+            <div id="calibration-center-repair-modal-content" class="d-none">
+                <p id="calibration-center-repair-modal-message" class="mb-3"></p>
+                <div class="fw-bold mb-2">What will change</div>
+                <div id="calibration-center-repair-fields" class="d-grid gap-2 mb-3"></div>
+                <div class="border rounded-3 p-3 mb-3">
+                    <div class="fw-bold mb-2">What stays the same</div>
+                    <div class="small"><i class="fa-solid fa-check text-success me-2" aria-hidden="true"></i>The saved report and certificate information</div>
+                    <div class="small"><i class="fa-solid fa-check text-success me-2" aria-hidden="true"></i>Service engineer and approver signatures</div>
+                    <div class="small"><i class="fa-solid fa-check text-success me-2" aria-hidden="true"></i>Approval, revision, and email history</div>
+                </div>
+                <div id="calibration-center-repair-reason-wrap" class="mb-3"><label for="calibration-center-repair-reason" class="form-label fw-bold">Note <span class="text-muted fw-normal">(optional)</span></label><textarea id="calibration-center-repair-reason" class="form-control rounded-3" rows="2" placeholder="Why this repair is being run. Saved with the repair record."></textarea></div>
+                <details><summary class="small fw-bold">File details</summary><div id="calibration-center-repair-technical" class="small text-muted mt-2"></div></details>
             </div>
-            <details class="mb-3"><summary class="small fw-bold">Technical details</summary><div class="small text-muted mt-2">Repair source: <span id="calibration-center-repair-technical-source"></span></div><div class="small text-muted mt-1">The files are rebuilt from the immutable saved report payload and approved certificate snapshot.</div><div id="calibration-center-repair-certificate-values" class="small text-muted mt-2">No certificate mapping available.</div></details>
-            <div class="mb-3"><label for="calibration-center-repair-reason" class="form-label fw-bold">Repair reason <span class="text-muted fw-normal">(optional)</span></label><textarea id="calibration-center-repair-reason" class="form-control rounded-3" rows="3" placeholder="Optional note for the repair audit."></textarea></div>
-            <div class="mb-3"><label for="calibration-center-manual-repair-confirm-input" class="form-label fw-bold">Type <code>REPAIR</code> to confirm</label><input id="calibration-center-manual-repair-confirm-input" class="form-control rounded-3" type="text" autocomplete="off"></div>
         </div>
-        <div class="calibration-center-modal-footer"><span class="small text-muted me-auto align-self-center">The saved report is regenerated in the browser before the existing files are replaced.</span><button type="button" id="calibration-center-repair-apply" class="btn btn-warning rounded-3 fw-bold">Regenerate and Repair</button></div>
+        <div class="calibration-center-modal-footer"><button type="button" id="calibration-center-repair-cancel" class="btn btn-outline-secondary rounded-3">Cancel</button><button type="button" id="calibration-center-repair-apply" class="btn btn-warning rounded-3 fw-bold" disabled>Repair</button></div>
+    </section>
+</div>
+
+<div id="calibration-center-confirm-backdrop" class="calibration-center-modal-backdrop" role="presentation">
+    <section class="calibration-center-modal narrow" role="dialog" aria-modal="true" aria-labelledby="calibration-center-confirm-title">
+        <div class="calibration-center-modal-header"><h2 id="calibration-center-confirm-title" class="h5 mb-0">Repair All</h2></div>
+        <div class="calibration-center-modal-body"><p id="calibration-center-confirm-message" class="mb-0"></p></div>
+        <div class="calibration-center-modal-footer"><button type="button" id="calibration-center-confirm-cancel" class="btn btn-outline-secondary rounded-3">Cancel</button><button type="button" id="calibration-center-confirm-ok" class="btn btn-warning rounded-3 fw-bold">Repair All</button></div>
     </section>
 </div>
 {% endblock %}
@@ -214,25 +228,49 @@
 <script>
 (function () {
     'use strict';
-    const state = { q: '', delivery: 'all', page: 1, records: [], email: null, manifest: '', message: null, sending: false, confirmKey: '', repairDefinitions: [], repairCandidates: [], repairRunning: false, repairDetailsOpen: false, repairActionOccurred: false, repairAttention: 0, repairContext: null };
+    const COMPLETE_FIELDS_REPAIR = 'calibration-complete-fields-v1';
+    const UNITS_REPAIR = 'calibration-report-units-v3';
+    const DELIVERY_LABELS = {sent: 'Sent', partial: 'Partially sent', unsent: 'Unsent', unavailable: 'Not ready'};
+    const REPAIR_STATUS = {
+        repairable: {label: 'Ready to repair', badge: 'text-bg-warning', order: 0, note: 'Press Repair to rebuild the files.'},
+        blocked: {label: 'Cannot be repaired', badge: 'text-bg-danger', order: 1, note: 'The saved information or files needed are unavailable.'},
+        already_repaired: {label: 'Completed', badge: 'text-bg-success', order: 2, note: 'Nothing more to do.'},
+    };
+    const state = { q: '', delivery: 'all', page: 1, records: [], email: null, manifest: '', message: null, sending: false, confirmKey: '', repairDefinitions: [], repairCandidates: [], repairRunning: false, repairDetailsOpen: false, repairActionOccurred: false, repairAttention: 0, repairDialog: null, dialogOpener: null };
+    const repairList = {page: 1, pageSize: 10, query: '', status: 'attention', type: 'all'};
     const byId = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value == null ? '' : value).replace(/[&<>'"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
     const csrf = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    const requestError = (response, data) => { const error = new Error(data.message || data.reason || 'Request failed.'); error.status = response.status; error.data = data; return error; };
     const request = async (url, options = {}) => {
         const headers = Object.assign({'Accept': 'application/json'}, options.headers || {});
         if (options.body) { headers['Content-Type'] = 'application/json'; headers['X-CSRFToken'] = csrf(); }
         const response = await fetch(url, Object.assign({}, options, {headers, credentials: 'same-origin', cache: 'no-store'}));
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) { const error = new Error(data.message || 'Request failed.'); error.status = response.status; error.data = data; throw error; }
+        if (!response.ok) throw requestError(response, data);
         return data;
     };
     const multipartRequest = async (url, formData) => {
-        const response = await fetch(url, {method:'POST', body:formData, headers:{'Accept':'application/json', 'X-CSRFToken':csrf()}, credentials:'same-origin', cache:'no-store'});
+        const response = await fetch(url, {method: 'POST', body: formData, headers: {'Accept': 'application/json', 'X-CSRFToken': csrf()}, credentials: 'same-origin', cache: 'no-store'});
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) { const error = new Error(data.message || data.reason || 'Request failed.'); error.status = response.status; error.data = data; throw error; }
+        if (!response.ok) throw requestError(response, data);
         return data;
     };
     const setVisible = (id, visible) => byId(id)?.classList.toggle('d-none', !visible);
+    const formatDate = (value) => { if (!value) return ''; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString(undefined, {year: 'numeric', month: 'short', day: 'numeric'}); };
+
+    // ----- dialogs -----
+    function openDialog(backdropId, focusId) {
+        if (!document.querySelector?.('.calibration-center-modal-backdrop.open')) state.dialogOpener = document.activeElement || null;
+        byId(backdropId)?.classList.add('open');
+        byId(focusId)?.focus();
+    }
+    function closeDialog(backdropId) {
+        byId(backdropId)?.classList.remove('open');
+        if (!document.querySelector?.('.calibration-center-modal-backdrop.open') && state.dialogOpener?.focus) { state.dialogOpener.focus(); state.dialogOpener = null; }
+    }
+
+    // ----- repair notice and panel visibility -----
     function setRepairDetails(open) {
         state.repairDetailsOpen = !!open;
         const panel = byId('calibration-center-repair-panel');
@@ -243,102 +281,141 @@
         if (hide) hide.setAttribute('aria-expanded', String(state.repairDetailsOpen));
     }
     function renderRepairSurface(summary) {
-        // Legacy contract marker: const attention = repairable + blocked
         const repairable = Number(summary?.repairable || 0);
-        const manual = Number(summary?.manual_required || summary?.manual || 0);
         const blocked = Number(summary?.blocked || 0);
-        const attention = repairable + manual + blocked;
+        const attention = repairable + blocked;
         state.repairAttention = attention;
         const repairableNotice = byId('repair-notice-repairable');
         const blockedNotice = byId('repair-notice-blocked');
         if (repairableNotice) repairableNotice.textContent = String(repairable);
-        const manualNotice = byId('repair-notice-manual');
-        if (manualNotice) manualNotice.textContent = String(manual);
         if (blockedNotice) blockedNotice.textContent = String(blocked);
+        setVisible('calibration-center-repair-load-error', false);
         if (attention > 0) {
-            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', true); setVisible('calibration-center-repair-success', false); setVisible('calibration-center-repair-load-error', false);
+            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', true); setVisible('calibration-center-repair-success', false);
             setRepairDetails(state.repairDetailsOpen || state.repairRunning);
         } else if (state.repairRunning) {
-            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', false); setVisible('calibration-center-repair-load-error', false);
+            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', false);
             setRepairDetails(true);
         } else if (state.repairActionOccurred) {
-            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', true); setVisible('calibration-center-repair-load-error', false);
+            setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', true);
             setRepairDetails(false);
         } else {
-            setVisible('calibration-center-repair-area', false); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', false); setVisible('calibration-center-repair-load-error', false);
+            setVisible('calibration-center-repair-area', false); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', false);
             setRepairDetails(false);
         }
     }
     function showRepairLoadError(message) {
         setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-notice', false); setVisible('calibration-center-repair-success', false); setVisible('calibration-center-repair-load-error', true); setRepairDetails(false);
-        const el = byId('calibration-center-repair-load-error-message'); if (el) el.textContent = message || 'Inventory could not be loaded.';
+        const el = byId('calibration-center-repair-load-error-message'); if (el) el.textContent = message || 'Please refresh and try again.';
     }
-    const statusHtml = (record) => `<span class="calibration-center-status ${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}">${escapeHtml(record.can_send ? record.delivery_state : 'unavailable')}</span>`;
-    const artifactButton = (url, label) => url ? `<a class="btn btn-sm btn-outline-secondary rounded-3" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(label)}</a>` : `<span class="text-muted small">Unavailable</span>`;
-    const sendButton = (record) => record.can_send ? `<button type="button" class="btn btn-sm btn-primary rounded-3 js-calibration-email" data-approval-id="${record.approval_id}">Email</button>` : `<span class="text-danger small" title="${escapeHtml(record.unavailable_reason)}">${escapeHtml(record.unavailable_reason || 'Not ready')}</span>`;
-    const repairDate = (value) => { if (!value) return ''; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, {year:'numeric', month:'short', day:'numeric'}); };
-    const repairButton = (record) => {
-        const count = Number(record.repair_history_count || 0); const lastDate = repairDate(record.repair_last_at);
-        const status = record.repair_status === 'repaired'
-            ? `<div class="small text-success fw-bold mt-1">Repaired${lastDate ? ` ${escapeHtml(lastDate)}` : ''}${count > 1 ? ` · ${count} repairs` : ''}</div>`
-            : record.repair_status === 'update_available'
-                ? `<div class="small text-warning-emphasis fw-bold mt-1">Previously repaired${lastDate ? ` ${escapeHtml(lastDate)}` : ''} · update available</div>`
-                : `<div class="small text-muted mt-1">No repair history</div>`;
-        if (!record.repair_source_file_id) return status;
-        if (record.repair_status === 'repaired') return status;
-        const label = record.repair_status === 'update_available' ? 'Update Repair' : 'Repair';
-        return `<div><button type="button" class="btn btn-sm btn-outline-warning rounded-3 js-calibration-deterministic-repair" data-repair-key="calibration-complete-fields-v1" data-candidate-id="${escapeHtml(record.repair_source_file_id)}">${label}</button>${status}</div>`;
+    function showRepairResult(ok, message) {
+        const box = byId('calibration-center-repair-result'); const text = byId('calibration-center-repair-result-message');
+        if (!box || !text) return;
+        text.textContent = message;
+        box.classList.toggle('alert-success', !!ok); box.classList.toggle('alert-danger', !ok);
+        setVisible('calibration-center-repair-area', true); setVisible('calibration-center-repair-result', true);
+    }
+
+    // ----- approved records -----
+    const candidateFileId = (candidate) => Number(candidate.source_file_id || candidate.candidate_id || 0);
+    const candidateId = (candidate) => Number(candidate.candidate_id || candidate.source_file_id || 0);
+    const repairableFor = (sourceFileId) => sourceFileId ? state.repairCandidates.filter((candidate) => candidate.status === 'repairable' && candidateFileId(candidate) === Number(sourceFileId)) : [];
+    const deliveryKey = (record) => record.can_send ? record.delivery_state : 'unavailable';
+    const statusHtml = (record) => `<span class="calibration-center-status ${escapeHtml(deliveryKey(record))}">${escapeHtml(DELIVERY_LABELS[deliveryKey(record)] || deliveryKey(record))}</span>`;
+    const fileGroup = (label, previewUrl, downloadUrl) => {
+        const name = `<span class="name">${escapeHtml(label)}</span>`;
+        if (!previewUrl && !downloadUrl) return `<div class="calibration-center-file-group">${name}<span class="text-muted small">Unavailable</span></div>`;
+        const link = (url, action, icon) => url ? `<a class="btn btn-sm btn-outline-secondary rounded-3" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="${action} ${escapeHtml(label)}" aria-label="${action} ${escapeHtml(label)}"><i class="fa-solid ${icon}" aria-hidden="true"></i></a>` : '';
+        return `<div class="calibration-center-file-group">${name}${link(previewUrl, 'View', 'fa-eye')}${link(downloadUrl, 'Download', 'fa-download')}</div>`;
     };
+    const filesHtml = (record) => `<div class="calibration-center-files">${fileGroup('Report', record.report_preview_url, record.report_download_url)}${fileGroup('Certificate', record.certificate_preview_url, record.certificate_download_url)}</div>`;
+    const sendButton = (record) => record.can_send ? `<button type="button" class="btn btn-sm btn-primary rounded-3 fw-bold js-calibration-email" data-approval-id="${escapeHtml(record.approval_id)}"><i class="fa-solid fa-envelope me-1" aria-hidden="true"></i>Email</button>` : `<span class="text-danger small">${escapeHtml(record.unavailable_reason || 'Not ready')}</span>`;
+    // A record shows Repair only when the repair list has something ready for its report.
+    const repairButton = (record) => {
+        const ready = repairableFor(record.repair_source_file_id);
+        const lastDate = formatDate(record.repair_last_at);
+        const history = record.repair_status === 'repaired' && lastDate ? `<span class="small text-success">Repaired ${escapeHtml(lastDate)}</span>` : '';
+        if (!ready.length) return history;
+        const label = record.repair_status === 'update_available' ? 'Repair again' : 'Repair';
+        return `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 fw-bold js-calibration-repair" data-repair-key="${escapeHtml(ready[0].repair_key)}" data-candidate-id="${escapeHtml(candidateId(ready[0]))}"><i class="fa-solid fa-wrench me-1" aria-hidden="true"></i>${label}</button>${history}`;
+    };
+    const actionsHtml = (record) => `<div class="calibration-center-actions">${sendButton(record)}${repairButton(record)}</div>`;
     function renderSummary(summary) { ['approved','ready','unavailable','unsent','partial','sent'].forEach((key) => { const el = byId(`summary-${key}`); if (el) el.textContent = summary?.[key] ?? 0; }); }
+    function renderDeliveryFilter() {
+        document.querySelectorAll('.calibration-center-summary-card').forEach((card) => card.setAttribute('aria-pressed', String(card.dataset.delivery === state.delivery)));
+        const select = byId('calibration-center-delivery'); if (select) select.value = state.delivery;
+    }
     function renderRows(records) {
-        byId('calibration-center-table-body').innerHTML = records.map((record) => `<tr><td><strong>${escapeHtml(record.certificate_number)}</strong><div class="small text-muted">REV${escapeHtml(record.revision_no)} · ${escapeHtml(record.tsr_number || 'No TSR')}</div></td><td><strong>${escapeHtml(record.client_name || record.facility)}</strong><div class="small text-muted">${escapeHtml(record.equipment || record.model)} · ${escapeHtml(record.serial_number)}</div></td><td><div>${escapeHtml(record.approved_at || '')}</div><div class="small text-muted">${escapeHtml(record.requester || 'Requester')}</div></td><td>${statusHtml(record)}</td><td><div class="calibration-center-file">${artifactButton(record.report_preview_url, 'Report Preview')}${artifactButton(record.report_download_url, 'Report Download')}${artifactButton(record.certificate_preview_url, 'Certificate Preview')}${artifactButton(record.certificate_download_url, 'Certificate Download')}</div></td><td>${repairButton(record)} ${sendButton(record)}</td></tr>`).join('');
-        byId('calibration-center-mobile').innerHTML = records.map((record) => `<article class="calibration-center-mobile-card"><div class="identity">${escapeHtml(record.certificate_number)} <span class="ms-1">${statusHtml(record)}</span></div><div class="meta mt-1">${escapeHtml(record.client_name || record.facility)} · ${escapeHtml(record.equipment || record.model)} · ${escapeHtml(record.serial_number)}</div><div class="meta">Approved ${escapeHtml(record.approved_at || '')} · REV${escapeHtml(record.revision_no)}</div><div class="actions">${artifactButton(record.report_preview_url, 'Report Preview')}${artifactButton(record.report_download_url, 'Report Download')}${artifactButton(record.certificate_preview_url, 'Certificate Preview')}${artifactButton(record.certificate_download_url, 'Certificate Download')}${repairButton(record)} ${sendButton(record)}</div></article>`).join('');
-        document.querySelectorAll('.js-calibration-email').forEach((button) => button.addEventListener('click', () => openEmail(Number(button.dataset.approvalId))));
-        document.querySelectorAll('.js-calibration-manual-repair, .js-calibration-deterministic-repair').forEach((button) => button.addEventListener('click', () => openRepairContext(button.dataset.repairKey, Number(button.dataset.candidateId))));
+        const tableBody = byId('calibration-center-table-body'); const mobile = byId('calibration-center-mobile');
+        if (tableBody) tableBody.innerHTML = records.map((record) => `<tr><td><strong>${escapeHtml(record.certificate_number)}</strong><div class="small text-muted">Revision ${escapeHtml(record.revision_no)} · ${escapeHtml(record.tsr_number ? `TSR ${record.tsr_number}` : 'No TSR')}</div></td><td><strong>${escapeHtml(record.client_name || record.facility)}</strong><div class="small text-muted">${escapeHtml(record.equipment || record.model)} · ${escapeHtml(record.serial_number)}</div></td><td><div>${escapeHtml(formatDate(record.approved_at))}</div><div class="small text-muted">${escapeHtml(record.requester || '')}</div></td><td>${statusHtml(record)}</td><td>${filesHtml(record)}</td><td>${actionsHtml(record)}</td></tr>`).join('');
+        if (mobile) mobile.innerHTML = records.map((record) => `<article class="calibration-center-mobile-card"><div class="identity">${escapeHtml(record.certificate_number)} <span class="ms-1">${statusHtml(record)}</span></div><div class="meta mt-1">${escapeHtml(record.client_name || record.facility)} · ${escapeHtml(record.equipment || record.model)} · ${escapeHtml(record.serial_number)}</div><div class="meta">Approved ${escapeHtml(formatDate(record.approved_at))} · Revision ${escapeHtml(record.revision_no)}</div>${filesHtml(record)}${actionsHtml(record)}</article>`).join('');
+    }
+    function pageWindow(current, pages) {
+        const wanted = new Set([1, pages]);
+        for (let page = current - 2; page <= current + 2; page += 1) if (page >= 1 && page <= pages) wanted.add(page);
+        return Array.from(wanted).sort((first, second) => first - second);
     }
     function renderPagination(data) {
         const nav = byId('calibration-center-pagination'); const list = nav?.querySelector('ul');
         if (!nav || !list || !data.pages || data.pages <= 1) { setVisible('calibration-center-pagination', false); return; }
-        setVisible('calibration-center-pagination', true); let html = '';
-        for (let page = 1; page <= data.pages; page++) html += `<li class="page-item ${page === data.page ? 'active' : ''}"><button class="page-link" type="button" data-page="${page}">${page}</button></li>`;
-        list.innerHTML = html; list.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', () => { state.page = Number(button.dataset.page); loadRecords(); }));
+        setVisible('calibration-center-pagination', true);
+        const item = (page, label, options = {}) => `<li class="page-item ${options.active ? 'active' : ''} ${options.disabled ? 'disabled' : ''}"><button class="page-link" type="button" data-page="${page}" ${options.disabled ? 'disabled' : ''} ${options.active ? 'aria-current="page"' : ''} aria-label="${escapeHtml(options.aria || `Page ${page}`)}">${escapeHtml(label)}</button></li>`;
+        let html = item(data.page - 1, 'Previous', {disabled: data.page <= 1, aria: 'Previous page'}); let last = 0;
+        pageWindow(data.page, data.pages).forEach((page) => {
+            if (page - last > 1) html += '<li class="page-item disabled"><span class="page-link" aria-hidden="true">…</span></li>';
+            html += item(page, String(page), {active: page === data.page}); last = page;
+        });
+        html += item(data.page + 1, 'Next', {disabled: data.page >= data.pages, aria: 'Next page'});
+        list.innerHTML = html;
     }
     async function loadRecords() {
         setVisible('calibration-center-loading', true); setVisible('calibration-center-error', false);
         try {
             const params = new URLSearchParams({q: state.q, delivery: state.delivery, page: String(state.page)});
-            const data = await request(`/admin/calibration-center/data?${params.toString()}`); state.records = data.records || []; renderSummary(data.summary || {}); renderRows(state.records); renderPagination(data);
+            const data = await request(`/admin/calibration-center/data?${params.toString()}`); state.records = data.records || []; state.page = Number(data.page || state.page);
+            renderSummary(data.summary || {}); renderDeliveryFilter(); renderRows(state.records); renderPagination(data);
             setVisible('calibration-center-loading', false); setVisible('calibration-center-empty', !state.records.length); setVisible('calibration-center-table-wrap', !!state.records.length); setVisible('calibration-center-mobile', !!state.records.length);
         } catch (error) { setVisible('calibration-center-loading', false); setVisible('calibration-center-table-wrap', false); setVisible('calibration-center-mobile', false); const el = byId('calibration-center-error'); if (el) { el.textContent = error.message; el.classList.remove('d-none'); } }
     }
-    function renderRepairInventory(data) {
-        const summary = data.summary || {};
-        ['total','repairable','manual_required','already_repaired','blocked'].forEach((key) => { const id = key === 'already_repaired' ? 'already' : key === 'manual_required' ? 'manual' : key; const el = byId(`repair-${id}`); if (el) el.textContent = summary[key] ?? 0; });
-        state.repairDefinitions = data.definitions || [];
-        state.repairCandidates = data.candidates || (data.repairs || []).flatMap((item) => item.candidates || []);
-        setVisible('calibration-center-repair-loading', false); setVisible('calibration-center-repair-error', false); setVisible('calibration-center-repair-summary', true); setVisible('calibration-center-repair-empty', !state.repairCandidates.length); setVisible('calibration-center-repair-table-wrap', !!state.repairCandidates.length);
-        renderRepairSurface(summary);
-        renderRepairList();
-        const repairAll = byId('calibration-center-repair-all'); if (repairAll) repairAll.disabled = state.repairRunning || !state.repairCandidates.some((item) => item.status === 'repairable' && item.bulk_safe);
-    }
-    const repairList = {page:1, pageSize:10, query:'', status:'all', type:'all'};
+    function setDelivery(value) { state.delivery = value; state.page = 1; renderDeliveryFilter(); loadRecords(); }
+
+    // ----- repair list -----
+    const repairDefinition = (repairKey) => state.repairDefinitions.find((definition) => definition.repair_key === repairKey) || {};
     function repairRecordName(candidate) {
         if (candidate.record_label || candidate.record_detail) return [candidate.record_label, candidate.record_detail].filter(Boolean).join(' · ');
         const filename = candidate.filename || '';
-        // Older heading repairs identify the record through the generated filename.
-        return filename.replace(/^(?:NCS_)?CALIBRATION_REPORT_Shimadzu_/i, '').replace(/\.docx$/i, '').replace(/_\d{8}$/, '').replace(/_/g, ' ') || `Calibration record #${candidate.candidate_id || candidate.source_file_id || ''}`;
+        // Older reports are identified through their generated file name.
+        return filename.replace(/^(?:NCS_)?CALIBRATION_REPORT_Shimadzu_/i, '').replace(/\.docx$/i, '').replace(/_\d{8}$/, '').replace(/_/g, ' ') || `Calibration record ${candidateId(candidate)}`;
+    }
+    // What a repair will change, in the admin's words. Works from the data each repair supplies.
+    function repairChanges(candidate) {
+        const fields = candidate.detected_fields || [];
+        if (fields.length) return fields.map((item) => ({title: item.label || 'Saved text', badge: item.artifact_label || '', note: item.issue_label || 'Will be shown in full.'}));
+        const units = candidate.target_units;
+        if (units && (units.small || units.large)) return [{title: 'Exposure table headings', badge: '', note: `Small focal spot: ${units.small || 'not set'} · Large focal spot: ${units.large || 'not set'}`}];
+        return [];
+    }
+    function repairChangeSummary(candidate) {
+        const changes = repairChanges(candidate);
+        if (!changes.length) return '';
+        if (changes.length === 1 && changes[0].note && !(candidate.detected_fields || []).length) return changes[0].note;
+        return changes.slice(0, 3).map((change) => change.title).join(', ') + (changes.length > 3 ? ` and ${changes.length - 3} more` : '');
+    }
+    function repairSummary() {
+        const count = (status) => state.repairCandidates.filter((candidate) => candidate.status === status).length;
+        return {total: state.repairCandidates.length, repairable: count('repairable'), blocked: count('blocked'), already_repaired: count('already_repaired')};
     }
     function repairListPage(candidates) {
+        const query = repairList.query.toLowerCase().trim();
         const matches = candidates.filter((candidate) => {
-            if (repairList.status !== 'all' && candidate.status !== repairList.status) return false;
+            if (repairList.status === 'attention' ? !['repairable', 'blocked'].includes(candidate.status) : (repairList.status !== 'all' && candidate.status !== repairList.status)) return false;
             if (repairList.type !== 'all' && candidate.repair_key !== repairList.type) return false;
-            const text = [repairRecordName(candidate), candidate.filename, candidate.reason, candidate.title, candidate.candidate_id || candidate.source_file_id].join(' ').toLowerCase();
-            return text.includes(repairList.query.toLowerCase().trim());
-        });
+            return [repairRecordName(candidate), candidate.filename, candidate.reason, candidate.title, candidateId(candidate)].join(' ').toLowerCase().includes(query);
+        }).sort((first, second) => (REPAIR_STATUS[first.status]?.order ?? 9) - (REPAIR_STATUS[second.status]?.order ?? 9));
         const pages = Math.max(1, Math.ceil(matches.length / repairList.pageSize));
         repairList.page = Math.max(1, Math.min(repairList.page, pages));
         const start = (repairList.page - 1) * repairList.pageSize;
-        return {items:matches.slice(start, start + repairList.pageSize), total:matches.length, pages, start};
+        return {items: matches.slice(start, start + repairList.pageSize), total: matches.length, pages, start};
     }
     function renderRepairList() {
         const body = byId('calibration-center-repair-table-body');
@@ -346,136 +423,156 @@
         const page = repairListPage(state.repairCandidates);
         setVisible('calibration-center-repair-table-wrap', !!page.total);
         setVisible('calibration-center-repair-empty', !page.total);
-        const empty = byId('calibration-center-repair-empty'); if (empty) empty.textContent = state.repairCandidates.length ? 'No repairs match your search and filters.' : 'No registered repairs were found.';
-        const info = byId('calibration-center-repair-page-info'); if (info) info.textContent = page.total ? `Showing ${page.start + 1}–${page.start + page.items.length} of ${page.total} repairs · Page ${repairList.page} of ${page.pages}` : '0 matching repairs';
+        const empty = byId('calibration-center-repair-empty');
+        if (empty) empty.textContent = !state.repairCandidates.length ? 'No saved reports need a repair.' : repairList.status === 'attention' && !repairList.query && repairList.type === 'all' ? 'Nothing needs action. Choose "Completed" or "Everything" to see finished repairs.' : 'No repairs match your search and filters.';
+        const info = byId('calibration-center-repair-page-info'); if (info) info.textContent = page.total ? `Showing ${page.start + 1}–${page.start + page.items.length} of ${page.total}` : '';
         const previous = byId('calibration-center-repair-previous'); if (previous) previous.disabled = repairList.page <= 1;
         const next = byId('calibration-center-repair-next'); if (next) next.disabled = repairList.page >= page.pages;
         body.innerHTML = page.items.map((candidate) => {
-            const candidateId = candidate.candidate_id || candidate.source_file_id;
-            const units = candidate.repair_key === 'calibration-report-units-v3';
-            const footerLayout = candidate.repair_key === 'calibration-report-footer-layout-v1';
-            const direct = units || footerLayout;
-            const repairTitle = units ? 'Correct headings and units' : footerLayout ? 'Protect footer layout' : 'Restore complete fields';
-            const action = candidate.status === 'repairable' && (candidate.bulk_safe || footerLayout)
-                ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 fw-bold js-calibration-repair" data-repair-key="${escapeHtml(candidate.repair_key)}" data-candidate-id="${escapeHtml(candidateId)}">${direct ? 'Repair' : 'Review repair'}</button>`
-                : candidate.status === 'manual_required'
-                    ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-3 fw-bold js-calibration-manual-repair" data-repair-key="${escapeHtml(candidate.repair_key)}" data-candidate-id="${escapeHtml(candidateId)}">Review</button>`
-                    : '<span class="text-muted small">No action</span>';
-            const targets = candidate.target_units || candidate.exposure_current_units || {};
-            const sources = candidate.unit_sources || candidate.unit_resolution_source || {};
-            const targetText = units ? `Small ${targets.small || 'blank'} · Large ${targets.large || 'blank'}` : footerLayout ? `Footer reserve ${candidate.footer_reserve_twips || 3600} twips` : (candidate.detected_fields || []).map((item) => item.label || 'Saved field').join(', ') || 'Rebuild saved artifacts';
-            const sourceText = units ? `Small ${sources.small || 'unknown'} · Large ${sources.large || 'unknown'}` : footerLayout ? 'Layout-only DOCX/PDF repair' : candidate.artifact_scope || '';
-            const artifactText = units || footerLayout ? 'Calibration Report (Word and PDF)' : 'Calibration Report and linked certificates';
-            const statusClass = candidate.status === 'repairable' ? 'text-bg-warning' : candidate.status === 'already_repaired' ? 'text-bg-success' : candidate.status === 'manual_required' ? 'text-bg-info' : 'text-bg-danger';
-            const statusLabel = {repairable:'Ready to repair', already_repaired:'Completed', manual_required:'Needs review', blocked:'Blocked'}[candidate.status] || 'Needs review';
-            const fields = candidate.detected_fields || [];
-            const fieldSummary = units ? `Exposure headings and current units: ${targetText}` : footerLayout ? 'Reserve footer area and regenerate linked PDF' : fields.slice(0,3).map((item) => item.label || 'Saved field').join(', ') + (fields.length > 3 ? ` and ${fields.length - 3} more` : '') || 'Regenerate files using saved values';
-            const details = `<details><summary>View details</summary><div class="mt-2">${escapeHtml(candidate.reason || '')}</div><div class="mt-2">${escapeHtml(targetText)}</div><div class="mt-2 text-muted">${escapeHtml(sourceText)}</div><div class="mt-2 text-muted">${escapeHtml(candidate.filename || '')}<br>Repair version: ${escapeHtml(candidate.repair_version || '')}<br>Record reference: ${escapeHtml(candidateId)}</div></details>`;
-            return `<tr><td><strong>${escapeHtml(repairRecordName(candidate))}</strong><div class="small text-muted mt-1">${candidate.emailed ? 'Previously emailed' : candidate.approved ? 'Approved' : 'Historical report'}</div></td><td><strong>${repairTitle}</strong><div class="small mt-1">${escapeHtml(fieldSummary)}</div><div class="small text-muted mt-1">${escapeHtml(artifactText)}</div>${details}</td><td><span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span><div class="small mt-2">${candidate.status === 'blocked' ? escapeHtml(candidate.reason || 'Required saved information or files are unavailable.') : candidate.status === 'already_repaired' ? 'This repair version has been applied.' : 'Review the details before continuing.'}</div></td><td>${action}</td></tr>`;
+            const status = REPAIR_STATUS[candidate.status] || REPAIR_STATUS.blocked;
+            const definition = repairDefinition(candidate.repair_key);
+            const title = candidate.title || definition.title || 'Repair';
+            const summary = repairChangeSummary(candidate) || candidate.description || definition.description || '';
+            const scope = candidate.artifact_scope || definition.artifact_scope || '';
+            const context = candidate.emailed ? 'Already emailed' : candidate.approved ? 'Approved' : 'Earlier revision';
+            const note = candidate.status === 'blocked' ? (candidate.reason || status.note) : status.note;
+            const action = candidate.status === 'repairable' ? `<button type="button" class="btn btn-sm btn-warning rounded-3 fw-bold js-calibration-repair" data-repair-key="${escapeHtml(candidate.repair_key)}" data-candidate-id="${escapeHtml(candidateId(candidate))}">Repair</button>` : '';
+            const details = `<details><summary>View details</summary>${candidate.status !== 'blocked' && candidate.reason ? `<div class="mt-2">${escapeHtml(candidate.reason)}</div>` : ''}<div class="mt-2 text-muted">File: ${escapeHtml(candidate.filename || 'Not available')}<br>Reference: ${escapeHtml(candidateId(candidate))}</div></details>`;
+            return `<tr><td><strong>${escapeHtml(repairRecordName(candidate))}</strong><div class="small text-muted mt-1">${context}</div></td><td><strong>${escapeHtml(title)}</strong><div class="small mt-1">${escapeHtml(summary)}</div><div class="small text-muted mt-1">${escapeHtml(scope)}</div>${details}</td><td><span class="badge ${status.badge}">${escapeHtml(status.label)}</span><div class="small mt-2">${escapeHtml(note)}</div></td><td>${action}</td></tr>`;
         }).join('');
-        body.querySelectorAll('.js-calibration-repair').forEach((button) => button.addEventListener('click', () => applyRepair(button.dataset.repairKey, Number(button.dataset.candidateId), button)));
-        body.querySelectorAll('.js-calibration-manual-repair, .js-calibration-deterministic-repair').forEach((button) => button.addEventListener('click', () => openRepairContext(button.dataset.repairKey, Number(button.dataset.candidateId))));
+    }
+    function renderRepairTypeFilter() {
+        const select = byId('calibration-center-repair-type-filter'); if (!select) return;
+        select.innerHTML = '<option value="all">All repairs</option>' + state.repairDefinitions.map((definition) => `<option value="${escapeHtml(definition.repair_key)}">${escapeHtml(definition.title)}</option>`).join('');
+        if (repairList.type !== 'all' && !state.repairDefinitions.some((definition) => definition.repair_key === repairList.type)) repairList.type = 'all';
+        select.value = repairList.type;
+    }
+    const bulkCandidates = () => state.repairCandidates.filter((candidate) => candidate.status === 'repairable' && candidate.bulk_safe);
+    function refreshRepairViews() {
+        const summary = repairSummary();
+        [['repairable', 'repairable'], ['blocked', 'blocked'], ['already', 'already_repaired']].forEach(([id, key]) => { const el = byId(`repair-${id}`); if (el) el.textContent = summary[key]; });
+        setVisible('calibration-center-repair-loading', false); setVisible('calibration-center-repair-summary', true);
+        renderRepairSurface(summary); renderRepairList(); renderRows(state.records);
+        const repairAll = byId('calibration-center-repair-all');
+        if (repairAll && !state.repairRunning) { const count = bulkCandidates().length; repairAll.disabled = !count; repairAll.textContent = count ? `Repair All (${count})` : 'Repair All'; }
+    }
+    function renderRepairInventory(data) {
+        state.repairDefinitions = data.definitions || [];
+        state.repairCandidates = data.candidates || [];
+        renderRepairTypeFilter(); refreshRepairViews();
     }
     async function loadRepairInventory() {
-        setVisible('calibration-center-repair-loading', true); setVisible('calibration-center-repair-error', false); setVisible('calibration-center-repair-load-error', false);
+        setVisible('calibration-center-repair-loading', true); setVisible('calibration-center-repair-load-error', false);
         try { renderRepairInventory(await request('/admin/calibration-center/repairs')); }
         catch (error) { setVisible('calibration-center-repair-loading', false); showRepairLoadError(error.message); }
     }
-    async function applyRepair(repairKey, candidateId, button) {
-        if (state.repairRunning) return;
-        if (repairKey === 'calibration-complete-fields-v1') { openRepairContext(repairKey, candidateId); return; }
-        state.repairActionOccurred = true; state.repairDetailsOpen = true;
-        if (button) { button.disabled = true; button.textContent = 'Applying...'; }
+    // After one repair, only that report's rows are checked again.
+    async function refreshRepairFile(sourceFileId) {
         try {
-            const url = repairKey === 'calibration-report-units-v3' ? `/admin/calibration-center/${candidateId}/repair` : `/admin/calibration-center/repairs/${encodeURIComponent(repairKey)}/${candidateId}/apply`;
-            const result = await request(url, {method:'POST', body:JSON.stringify({})});
-            if (result.status === 'failed') { const el = byId('calibration-center-repair-error'); if (el) { el.textContent = result.reason || 'Repair failed.'; el.classList.remove('d-none'); } }
-            await loadRepairInventory();
-        } catch (error) { const el = byId('calibration-center-repair-error'); if (el) { el.textContent = error.message; el.classList.remove('d-none'); } if (button) { button.disabled = false; button.textContent = 'Apply'; } }
+            const data = await request(`/admin/calibration-center/repair-file/${sourceFileId}`);
+            state.repairCandidates = state.repairCandidates.filter((candidate) => candidateFileId(candidate) !== Number(sourceFileId)).concat(data.candidates || []);
+            refreshRepairViews();
+        } catch (error) { await loadRepairInventory(); }
     }
-    function openRepairConfirmation() {
-        const panel = byId('calibration-center-repair-confirm'); const input = byId('calibration-center-repair-confirm-input');
-        if (!panel || state.repairRunning) return;
-        panel.classList.remove('d-none'); if (input) { input.value = ''; input.focus(); }
-    }
-    function closeRepairConfirmation() { byId('calibration-center-repair-confirm')?.classList.add('d-none'); }
-    async function runRepairAll() {
-        const input = byId('calibration-center-repair-confirm-input');
-        if (!input || input.value.trim().toUpperCase() !== 'REPAIR ALL' || state.repairRunning) return;
-        const candidates = state.repairCandidates.filter((item) => item.status === 'repairable' && item.bulk_safe);
-        if (!candidates.length) { closeRepairConfirmation(); return; }
-        state.repairActionOccurred = true; state.repairDetailsOpen = true; state.repairRunning = true; closeRepairConfirmation(); const button = byId('calibration-center-repair-all'); if (button) { button.disabled = true; button.textContent = 'Repairing...'; }
-        const progress = byId('calibration-center-repair-progress'); if (progress) { progress.classList.remove('d-none'); progress.textContent = `Repairing 0 of ${candidates.length}...`; }
-        let failures = 0;
-        for (let index = 0; index < candidates.length; index += 1) {
-            try {
-                const item = candidates[index];
-                let result;
-                if (item.repair_key === 'calibration-report-units-v3') {
-                    result = await request(`/admin/calibration-center/${item.source_file_id}/repair`, {method:'POST', body:JSON.stringify({})});
-                } else {
-                    const context = await request(`/admin/calibration-center/repairs/${encodeURIComponent(item.repair_key)}/${item.candidate_id || item.source_file_id}`);
-                    result = await submitDeterministicRepair(context, 'Repair All — deterministic saved-artifact regeneration.');
-                }
-                if (result?.status !== 'repaired') failures += 1;
-            }
-            catch (error) { failures += 1; }
-            if (progress) progress.textContent = `Repairing ${index + 1} of ${candidates.length}${failures ? ` · ${failures} failed` : ''}...`;
-            await loadRepairInventory();
-        }
-        state.repairRunning = false; if (button) { button.disabled = !state.repairCandidates.some((item) => item.status === 'repairable' && item.bulk_safe); button.textContent = 'Repair All'; }
-        if (state.repairAttention === 0) renderRepairSurface({repairable: 0, blocked: 0}); else setRepairDetails(true);
-        if (progress) progress.textContent = `Repair All complete: ${candidates.length - failures} repaired, ${failures} failed.`;
-    }
-    function setRepairModalError(message) { const el = byId('calibration-center-repair-modal-error'); if (el) { el.textContent = message || ''; el.classList.toggle('d-none', !message); } }
-    function closeRepairModal() { byId('calibration-center-repair-modal-backdrop')?.classList.remove('open'); state.repairContext = null; setRepairModalError(''); }
-    function renderRepairContext(data) {
-        const candidate = data?.candidate || {}; state.repairContext = data;
-        const subtitle = byId('calibration-center-repair-modal-subtitle'); if (subtitle) subtitle.textContent = [candidate.record_label || 'Calibration record', candidate.record_detail].filter(Boolean).join(' · ');
-        const container = byId('calibration-center-repair-fields');
-        const detected = candidate.detected_fields || [];
-        if (container) container.innerHTML = detected.map((item) => `<div class="border rounded-3 p-3"><div class="d-flex flex-wrap gap-2 align-items-center"><strong>${escapeHtml(item.label || 'Saved field')}</strong><span class="badge text-bg-secondary">${escapeHtml(item.artifact_label || 'Calibration Report')}</span></div><div class="small text-muted mt-1">${escapeHtml(item.issue_label || 'Will be regenerated from the complete saved value.')}</div></div>`).join('') || '<div class="small text-muted">No individual cutoff fields were detected. The repair will still rebuild the files from their complete saved values.</div>';
-        const mapping = byId('calibration-center-repair-certificate-values'); const certificateValues = candidate.certificate_values || {};
-        if (mapping) mapping.innerHTML = Object.entries(certificateValues).map(([key, value]) => `<div><strong>${escapeHtml(key)}</strong>: ${escapeHtml(value)}</div>`).join('') || 'No certificate mapping available.';
-        const technicalSource = byId('calibration-center-repair-technical-source'); if (technicalSource) technicalSource.textContent = candidate.repair_id || candidate.filename || 'Saved calibration record';
-        const reason = byId('calibration-center-repair-reason'); if (reason) reason.value = '';
-        const confirmation = byId('calibration-center-manual-repair-confirm-input'); if (confirmation) confirmation.value = '';
-        setRepairModalError(''); byId('calibration-center-repair-modal-backdrop')?.classList.add('open'); byId('calibration-center-repair-modal-close')?.focus();
-    }
-    async function openRepairContext(repairKey, candidateId) {
-        const backdrop = byId('calibration-center-repair-modal-backdrop'); if (backdrop) backdrop.classList.add('open');
-        setRepairModalError('Loading repair context...');
-        try { renderRepairContext(await request(`/admin/calibration-center/repairs/${encodeURIComponent(repairKey)}/${candidateId}`)); }
-        catch (error) { setRepairModalError(error.message); }
-    }
-    async function submitDeterministicRepair(context, reason, confirmation = 'REPAIR') {
+
+    // ----- running a repair -----
+    async function submitDeterministicRepair(context, reason) {
         const candidate = context?.candidate;
-        if (!candidate) throw new Error('The repair context is unavailable.');
-        if (candidate.status !== 'repairable') throw new Error(candidate.reason || 'This repair is blocked because immutable source data is unavailable.');
-        if (!window.calibrationReport?.buildRepairDocx) { setRepairModalError('The existing Calibration Report builder is unavailable. Reload Calibration Center and try again.'); return; }
-        const payload = candidate.report_payload || {calibration_report:{}};
+        if (!candidate) throw new Error('This record could not be loaded for repair.');
+        if (candidate.status !== 'repairable') throw new Error(candidate.reason || 'This record cannot be repaired because its saved information is unavailable.');
+        if (!window.calibrationReport?.buildRepairDocx) throw new Error('The report builder did not load. Refresh Calibration Center and try again.');
+        const payload = candidate.report_payload || {calibration_report: {}};
         const report = payload.calibration_report && typeof payload.calibration_report === 'object' ? payload.calibration_report : {};
         payload.calibration_report = report;
         const built = await window.calibrationReport.buildRepairDocx(payload, report, candidate.filename || 'Calibration_Report.docx');
         const formData = new FormData(); formData.append('docx', built.blob, candidate.filename || built.filename || 'Calibration_Report.docx');
-        formData.append('reason', reason || 'Deterministic Calibration Report and Certificate artifact regeneration.'); formData.append('confirmation', confirmation); formData.append('before_hash', candidate.source_sha256 || ''); formData.append('before_pdf_hash', candidate.pdf_sha256 || ''); formData.append('before_certificate_hash', candidate.certificate_sha256 || '');
-        return multipartRequest(`/admin/calibration-center/repairs/${encodeURIComponent(candidate.repair_key)}/${candidate.candidate_id || candidate.source_file_id}/apply`, formData);
+        formData.append('reason', reason || 'Calibration Report and Certificate rebuilt from saved information.'); formData.append('confirmation', 'REPAIR'); formData.append('before_hash', candidate.source_sha256 || ''); formData.append('before_pdf_hash', candidate.pdf_sha256 || ''); formData.append('before_certificate_hash', candidate.certificate_sha256 || '');
+        return multipartRequest(`/admin/calibration-center/repairs/${encodeURIComponent(candidate.repair_key)}/${candidateId(candidate)}/apply`, formData);
     }
-    async function submitRepairContext() {
-        const context = state.repairContext; if (!context?.candidate) return;
-        const reason = byId('calibration-center-repair-reason')?.value.trim() || '';
-        const confirmation = byId('calibration-center-manual-repair-confirm-input')?.value.trim().toUpperCase() || '';
-        if (confirmation !== 'REPAIR') { setRepairModalError('Type REPAIR to confirm deterministic artifact regeneration.'); return; }
-        const submitButton = byId('calibration-center-repair-apply'); if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'Generating...'; }
+    async function runRepair(candidate, context, reason) {
+        const repairKey = candidate.repair_key; const id = candidateId(candidate);
+        let result;
+        if (repairKey === COMPLETE_FIELDS_REPAIR) {
+            result = await submitDeterministicRepair(context || await request(`/admin/calibration-center/repairs/${encodeURIComponent(repairKey)}/${id}`), reason);
+        } else if (repairKey === UNITS_REPAIR) {
+            result = await request(`/admin/calibration-center/${id}/repair`, {method: 'POST', body: JSON.stringify({})});
+        } else {
+            result = await request(`/admin/calibration-center/repairs/${encodeURIComponent(repairKey)}/${id}/apply`, {method: 'POST', body: JSON.stringify({})});
+        }
+        if (!['repaired', 'already_repaired'].includes(result?.status)) throw new Error(result?.reason || result?.message || 'The repair did not complete.');
+        return result;
+    }
+    function setRepairModalError(message) { const el = byId('calibration-center-repair-modal-error'); if (el) { el.textContent = message || ''; el.classList.toggle('d-none', !message); } }
+    function closeRepairModal() { closeDialog('calibration-center-repair-modal-backdrop'); state.repairDialog = null; setRepairModalError(''); }
+    function renderRepairDialog(candidate, context) {
+        state.repairDialog = {candidate, context};
+        const definition = repairDefinition(candidate.repair_key);
+        const title = byId('calibration-center-repair-modal-title'); if (title) title.textContent = candidate.title || definition.title || 'Repair';
+        const subtitle = byId('calibration-center-repair-modal-subtitle'); if (subtitle) subtitle.textContent = repairRecordName(candidate);
+        const message = byId('calibration-center-repair-modal-message'); if (message) message.textContent = candidate.description || definition.description || '';
+        const changes = repairChanges(candidate);
+        const container = byId('calibration-center-repair-fields');
+        if (container) container.innerHTML = changes.map((change) => `<div class="calibration-center-repair-change"><div class="d-flex flex-wrap gap-2 align-items-center"><strong>${escapeHtml(change.title)}</strong>${change.badge ? `<span class="badge text-bg-secondary">${escapeHtml(change.badge)}</span>` : ''}</div><div class="small text-muted mt-1">${escapeHtml(change.note)}</div></div>`).join('') || `<div class="small text-muted">${escapeHtml(candidate.artifact_scope || definition.artifact_scope || 'The files')} will be rebuilt from the saved information.</div>`;
+        const technical = byId('calibration-center-repair-technical'); if (technical) technical.innerHTML = `File: ${escapeHtml(candidate.filename || 'Not available')}<br>Reference: ${escapeHtml(candidateId(candidate))}`;
+        const reason = byId('calibration-center-repair-reason'); if (reason) reason.value = '';
+        setVisible('calibration-center-repair-reason-wrap', candidate.repair_key === COMPLETE_FIELDS_REPAIR);
+        const canRepair = candidate.status === 'repairable';
+        setRepairModalError(canRepair ? '' : (candidate.reason || 'This record cannot be repaired.'));
+        const apply = byId('calibration-center-repair-apply'); if (apply) { apply.disabled = !canRepair; apply.textContent = 'Repair'; }
+        setVisible('calibration-center-repair-modal-loading', false); setVisible('calibration-center-repair-modal-content', true);
+    }
+    async function openRepair(repairKey, id) {
+        setRepairModalError(''); setVisible('calibration-center-repair-modal-content', false); setVisible('calibration-center-repair-modal-loading', true);
+        const apply = byId('calibration-center-repair-apply'); if (apply) apply.disabled = true;
+        openDialog('calibration-center-repair-modal-backdrop', 'calibration-center-repair-modal-close');
         try {
-            const result = await submitDeterministicRepair(context, reason, confirmation);
-            closeRepairModal(); state.repairActionOccurred = true; await loadRepairInventory(); await loadRecords();
-            if (result.status !== 'repaired') throw new Error(result.message || 'Repair did not complete.');
-        } catch (error) { setRepairModalError(error.message || 'Repair failed.'); }
-        finally { if (submitButton) { submitButton.disabled = false; submitButton.textContent = 'Regenerate and Repair'; } }
+            let candidate = state.repairCandidates.find((item) => item.repair_key === repairKey && candidateId(item) === Number(id)); let context = null;
+            // Restoring cut-off text needs the saved report itself, which is loaded only when the dialog opens.
+            if (repairKey === COMPLETE_FIELDS_REPAIR) { context = await request(`/admin/calibration-center/repairs/${encodeURIComponent(repairKey)}/${id}`); candidate = context.candidate; }
+            if (!candidate) throw new Error('This record is no longer in the repair list. Refresh and try again.');
+            renderRepairDialog(candidate, context);
+        } catch (error) { setVisible('calibration-center-repair-modal-loading', false); setRepairModalError(error.message); }
     }
+    async function submitRepairDialog() {
+        const dialog = state.repairDialog; if (!dialog?.candidate || state.repairRunning) return;
+        const candidate = dialog.candidate; const name = repairRecordName(candidate); const title = candidate.title || 'Repair';
+        const reason = byId('calibration-center-repair-reason')?.value.trim() || '';
+        const apply = byId('calibration-center-repair-apply'); if (apply) { apply.disabled = true; apply.textContent = 'Repairing...'; }
+        try {
+            await runRepair(candidate, dialog.context, reason);
+            state.repairActionOccurred = true; closeRepairModal();
+            showRepairResult(true, `${name}: "${title}" is complete. The files were rebuilt.`);
+            await refreshRepairFile(candidateFileId(candidate)); loadRecords();
+        } catch (error) { setRepairModalError(`The repair did not complete. ${error.message || ''}`.trim()); if (apply) { apply.disabled = false; apply.textContent = 'Repair'; } }
+    }
+    function openRepairAllConfirmation() {
+        const count = bulkCandidates().length; if (!count || state.repairRunning) return;
+        const skipped = repairSummary().repairable - count;
+        const message = byId('calibration-center-confirm-message');
+        if (message) message.textContent = `Repair ${count} record${count === 1 ? '' : 's'} now? Each one is rebuilt from its saved information.${skipped ? ` ${skipped} repair${skipped === 1 ? ' is' : 's are'} not included and must be run one at a time.` : ''}`;
+        openDialog('calibration-center-confirm-backdrop', 'calibration-center-confirm-ok');
+    }
+    async function runRepairAll() {
+        closeDialog('calibration-center-confirm-backdrop');
+        const candidates = bulkCandidates(); if (!candidates.length || state.repairRunning) return;
+        state.repairActionOccurred = true; state.repairRunning = true; setRepairDetails(true); setVisible('calibration-center-repair-result', false);
+        const button = byId('calibration-center-repair-all'); if (button) { button.disabled = true; button.textContent = 'Repairing...'; }
+        const progress = byId('calibration-center-repair-progress'); if (progress) { progress.classList.remove('d-none'); progress.textContent = `Repairing 0 of ${candidates.length}...`; }
+        const failed = [];
+        for (let index = 0; index < candidates.length; index += 1) {
+            try { await runRepair(candidates[index], null, 'Repair All'); }
+            catch (error) { failed.push(repairRecordName(candidates[index])); }
+            if (progress) progress.textContent = `Repairing ${index + 1} of ${candidates.length}${failed.length ? ` · ${failed.length} not completed` : ''}...`;
+        }
+        state.repairRunning = false; if (progress) progress.classList.add('d-none');
+        await loadRepairInventory(); loadRecords();
+        const repaired = candidates.length - failed.length;
+        showRepairResult(!failed.length, `Repair All finished: ${repaired} repaired${failed.length ? `, ${failed.length} not completed (${failed.slice(0, 5).join('; ')}${failed.length > 5 ? '; and more' : ''})` : ''}.`);
+    }
+
+    // ----- email -----
     function setModalError(message) { const el = byId('calibration-center-modal-error'); if (el) { el.textContent = message || ''; el.classList.toggle('d-none', !message); } }
-    function closeModal() { byId('calibration-center-modal-backdrop')?.classList.remove('open'); state.email = null; state.manifest = ''; state.message = null; state.confirmKey = ''; }
+    function closeModal() { closeDialog('calibration-center-modal-backdrop'); state.email = null; state.manifest = ''; state.message = null; state.confirmKey = ''; }
     function addSuggestion(candidate) { const input = byId('calibration-center-to'); if (!input) return; const existing = input.value.trim(); input.value = existing ? `${existing}, ${candidate.email}` : candidate.email; state.confirmKey = ''; }
     function renderEmailContext(data) {
         state.email = data; state.manifest = data.attachment_manifest_signature || ''; state.message = null; state.confirmKey = '';
@@ -485,19 +582,38 @@
         const font = byId('calibration-center-font'); font.innerHTML = (data.font_options || []).map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.label)}</option>`).join(''); font.value = data.default_font_key || '';
         byId('calibration-center-suggestions').innerHTML = (data.suggested_emails || []).map((item) => `<button type="button" class="btn btn-sm btn-outline-secondary rounded-3 js-calibration-suggestion">${escapeHtml(item.email)}</button>`).join('') || '<span class="text-muted small">No client suggestion found; enter an address manually.</span>';
         byId('calibration-center-suggestions').querySelectorAll('.js-calibration-suggestion').forEach((button, index) => button.addEventListener('click', () => addSuggestion(data.suggested_emails[index])));
-        byId('calibration-center-attachments').innerHTML = (data.attachments || []).map((item) => `<div class="calibration-center-attachment"><span><strong>${escapeHtml(item.source_label)}</strong><br><span class="small text-muted">${escapeHtml(item.display_name || item.filename)}</span></span><span class="badge bg-light text-dark">Fixed</span></div>`).join('');
-        setVisible('calibration-center-preview-box', false); setModalError(''); byId('calibration-center-modal-backdrop').classList.add('open'); byId('calibration-center-modal-close').focus();
+        byId('calibration-center-attachments').innerHTML = (data.attachments || []).map((item) => `<div class="calibration-center-attachment"><span><strong>${escapeHtml(item.source_label)}</strong><br><span class="small text-muted">${escapeHtml(item.display_name || item.filename)}</span></span><span class="badge bg-light text-dark">Included</span></div>`).join('');
+        setVisible('calibration-center-preview-box', false); setModalError('');
     }
-    async function openEmail(approvalId) { setModalError('Loading email context...'); byId('calibration-center-modal-backdrop').classList.add('open'); try { renderEmailContext(await request(`/admin/calibration-center/${approvalId}/email`)); } catch (error) { setModalError(error.message); } }
+    async function openEmail(approvalId) { setModalError('Loading email details...'); openDialog('calibration-center-modal-backdrop', 'calibration-center-modal-close'); try { renderEmailContext(await request(`/admin/calibration-center/${approvalId}/email`)); } catch (error) { setModalError(error.message); } }
     function emailPayload() { return {emails: byId('calibration-center-to').value, manual_cc: byId('calibration-center-manual-cc').value, font_key: byId('calibration-center-font').value, attachment_manifest_signature: state.manifest}; }
-    async function previewEmail() { if (!state.email) return; try { const data = await request(`/admin/calibration-center/${state.email.approval_id}/email-preview`, {method:'POST', body:JSON.stringify(emailPayload())}); state.message = data; state.confirmKey = ''; byId('calibration-center-preview-to').textContent = (data.to || []).join(', ') || 'None'; byId('calibration-center-preview-system-cc-label').textContent = `${data.cc_group_label || 'Settings CC'}${data.creator_branch ? ` (${data.creator_branch})` : ''}:`; byId('calibration-center-preview-system-cc').textContent = (data.system_cc || []).join(', ') || 'None'; byId('calibration-center-preview-creator-copy').textContent = (data.creator_copy || []).join(', ') || data.creator_copy_message || 'Creator email unavailable'; byId('calibration-center-preview-sender-copy').textContent = (data.sender_copy || []).join(', ') || 'None'; byId('calibration-center-preview-cc').textContent = (data.cc || []).join(', ') || 'None'; byId('calibration-center-preview-subject').textContent = data.subject || ''; byId('calibration-center-preview-html').textContent = data.html_body || ''; byId('calibration-center-preview-body').textContent = data.text_body || ''; setVisible('calibration-center-preview-box', true); setModalError(''); } catch (error) { if (error.status === 409 && error.data?.attachments_changed) { state.manifest = ''; state.confirmKey = ''; } setModalError(error.message); } }
+    async function previewEmail() {
+        if (!state.email) return;
+        try {
+            const data = await request(`/admin/calibration-center/${state.email.approval_id}/email-preview`, {method: 'POST', body: JSON.stringify(emailPayload())});
+            state.message = data; state.confirmKey = '';
+            byId('calibration-center-preview-to').textContent = (data.to || []).join(', ') || 'None';
+            byId('calibration-center-preview-system-cc-label').textContent = `${data.cc_group_label || 'Settings CC'}${data.creator_branch ? ` (${data.creator_branch})` : ''}:`;
+            byId('calibration-center-preview-system-cc').textContent = (data.system_cc || []).join(', ') || 'None';
+            byId('calibration-center-preview-creator-copy').textContent = (data.creator_copy || []).join(', ') || data.creator_copy_message || 'Creator email unavailable';
+            byId('calibration-center-preview-sender-copy').textContent = (data.sender_copy || []).join(', ') || 'None';
+            byId('calibration-center-preview-cc').textContent = (data.cc || []).join(', ') || 'None';
+            byId('calibration-center-preview-subject').textContent = data.subject || '';
+            // The message is shown as it will look, inside a frame that cannot run scripts.
+            byId('calibration-center-preview-html').srcdoc = data.html_body || '';
+            byId('calibration-center-preview-body').textContent = data.text_body || '';
+            setVisible('calibration-center-preview-box', true); setModalError('');
+        } catch (error) { if (error.status === 409 && error.data?.attachments_changed) { state.manifest = ''; state.confirmKey = ''; } setModalError(error.message); }
+    }
     async function sendEmail() {
         if (!state.email || state.sending) return;
         const key = JSON.stringify(emailPayload());
-        if (state.confirmKey !== key) { state.confirmKey = key; setModalError('Click Send Email again to confirm this exact two-file delivery.'); return; }
+        if (state.confirmKey !== key) { state.confirmKey = key; setModalError('Click Send Email again to confirm sending these two files.'); return; }
         state.sending = true; const button = byId('calibration-center-send'); if (button) { button.disabled = true; button.textContent = 'Sending...'; }
-        try { await request(`/admin/calibration-center/${state.email.approval_id}/send-email`, {method:'POST', body:JSON.stringify(emailPayload())}); closeModal(); await loadRecords(); } catch (error) { setModalError(error.message); } finally { state.sending = false; if (button) { button.disabled = false; button.textContent = 'Send Email'; } }
+        try { await request(`/admin/calibration-center/${state.email.approval_id}/send-email`, {method: 'POST', body: JSON.stringify(emailPayload())}); closeModal(); await loadRecords(); } catch (error) { setModalError(error.message); } finally { state.sending = false; if (button) { button.disabled = false; button.textContent = 'Send Email'; } }
     }
+
+    // ----- events -----
     let searchTimer = null;
     [['calibration-center-repair-search','query','input'], ['calibration-center-repair-status-filter','status','change'], ['calibration-center-repair-type-filter','type','change'], ['calibration-center-repair-page-size','pageSize','change']].forEach(([id, key, eventName]) => {
         byId(id)?.addEventListener(eventName, (event) => { repairList[key] = key === 'pageSize' ? Number(event.target.value) : event.target.value; repairList.page = 1; renderRepairList(); });
@@ -505,15 +621,31 @@
     byId('calibration-center-repair-previous')?.addEventListener('click', () => { repairList.page -= 1; renderRepairList(); });
     byId('calibration-center-repair-next')?.addEventListener('click', () => { repairList.page += 1; renderRepairList(); });
     byId('calibration-center-search')?.addEventListener('input', (event) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.q = event.target.value.trim(); state.page = 1; loadRecords(); }, 250); });
-    byId('calibration-center-delivery')?.addEventListener('change', (event) => { state.delivery = event.target.value; state.page = 1; loadRecords(); });
-    byId('calibration-center-modal-close')?.addEventListener('click', closeModal); byId('calibration-center-modal-backdrop')?.addEventListener('click', (event) => { if (event.target.id === 'calibration-center-modal-backdrop') closeModal(); });
+    byId('calibration-center-delivery')?.addEventListener('change', (event) => setDelivery(event.target.value));
+    byId('calibration-center-refresh')?.addEventListener('click', () => { loadRecords(); loadRepairInventory(); });
     byId('calibration-center-preview')?.addEventListener('click', previewEmail); byId('calibration-center-send')?.addEventListener('click', sendEmail);
     byId('calibration-center-repair-view')?.addEventListener('click', () => setRepairDetails(true));
     byId('calibration-center-repair-hide')?.addEventListener('click', () => { setRepairDetails(false); byId('calibration-center-repair-view')?.focus(); });
-    byId('calibration-center-repair-all')?.addEventListener('click', openRepairConfirmation); byId('calibration-center-repair-confirm-button')?.addEventListener('click', runRepairAll); byId('calibration-center-repair-cancel-button')?.addEventListener('click', closeRepairConfirmation);
-    byId('calibration-center-repair-confirm-input')?.addEventListener('input', (event) => { const button = byId('calibration-center-repair-confirm-button'); if (button) button.disabled = event.target.value.trim().toUpperCase() !== 'REPAIR ALL'; });
-    byId('calibration-center-repair-modal-close')?.addEventListener('click', closeRepairModal); byId('calibration-center-repair-modal-backdrop')?.addEventListener('click', (event) => { if (event.target.id === 'calibration-center-repair-modal-backdrop') closeRepairModal(); }); byId('calibration-center-repair-apply')?.addEventListener('click', submitRepairContext);
+    byId('calibration-center-repair-result-close')?.addEventListener('click', () => setVisible('calibration-center-repair-result', false));
+    byId('calibration-center-repair-all')?.addEventListener('click', openRepairAllConfirmation);
+    byId('calibration-center-confirm-ok')?.addEventListener('click', runRepairAll);
+    byId('calibration-center-repair-apply')?.addEventListener('click', submitRepairDialog);
+    const dialogClosers = {'calibration-center-modal-backdrop': closeModal, 'calibration-center-repair-modal-backdrop': closeRepairModal, 'calibration-center-confirm-backdrop': () => closeDialog('calibration-center-confirm-backdrop')};
+    [['calibration-center-modal-close', 'calibration-center-modal-backdrop'], ['calibration-center-repair-modal-close', 'calibration-center-repair-modal-backdrop'], ['calibration-center-repair-cancel', 'calibration-center-repair-modal-backdrop'], ['calibration-center-confirm-cancel', 'calibration-center-confirm-backdrop']].forEach(([id, backdrop]) => byId(id)?.addEventListener('click', dialogClosers[backdrop]));
+    Object.keys(dialogClosers).forEach((backdrop) => byId(backdrop)?.addEventListener('click', (event) => { if (event.target.id === backdrop) dialogClosers[backdrop](); }));
     ['calibration-center-to','calibration-center-manual-cc','calibration-center-font'].forEach((id) => ['input', 'change'].forEach((eventName) => byId(id)?.addEventListener(eventName, () => { state.confirmKey = ''; })));
+    document.addEventListener?.('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        const open = Array.from(document.querySelectorAll('.calibration-center-modal-backdrop.open')).pop();
+        if (open && dialogClosers[open.id] && !state.sending) { event.preventDefault(); dialogClosers[open.id](); }
+    });
+    document.addEventListener?.('click', (event) => {
+        const target = event.target?.closest ? event.target : null; if (!target) return;
+        const card = target.closest('.calibration-center-summary-card'); if (card) { setDelivery(card.dataset.delivery || 'all'); return; }
+        const pageButton = target.closest('#calibration-center-pagination [data-page]'); if (pageButton && !pageButton.disabled) { state.page = Number(pageButton.dataset.page); loadRecords(); return; }
+        const email = target.closest('.js-calibration-email'); if (email) { openEmail(Number(email.dataset.approvalId)); return; }
+        const repair = target.closest('.js-calibration-repair'); if (repair) openRepair(repair.dataset.repairKey, Number(repair.dataset.candidateId));
+    });
     loadRecords(); loadRepairInventory();
 })();
 </script>

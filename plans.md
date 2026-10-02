@@ -139,6 +139,124 @@ Line numbers are as of commit `d812a42`.
 
 ---
 
+# Calibration Center: Clearer Records List and a Friendlier Repair Section
+
+**Status:** Executed — uncommitted (no commit, push, or deployment).
+**Execution authorized:** 2026-10-02 — the owner said "go ahead partner. go with your recommendations also". During execution the owner added "do not overengineer and over check".
+**Approved:** 2026-10-02 — after the plan was presented the owner said "yes you can remove the typed REPAIR. and you can use broswer to check".
+**Detailed:** 2026-10-02.
+
+## Context
+
+The owner asked for a scan of the Calibration Center page (`/admin/calibration-center`) for things to improve and things to remove, in the UI and the code, and for the repair section to be made UI friendly. The page grew through several repair packages; the repair section speaks in implementation terms, demands typed confirmations, lists completed repairs alongside the ones needing action, and reloads a heavy inventory far more often than needed. The intended outcome is a page an administrator can read at a glance, a repair flow of "see what is wrong, press Repair, see the result", and less dead code.
+
+## Decisions taken
+
+1. **The typed `REPAIR` and `REPAIR ALL` confirmations are removed** (owner, 2026-10-02). Single repairs confirm with one Repair button in the dialog; Repair All uses a normal confirmation dialog stating the count. The server-side safeguards (hash checks, rollback, audit entry, idempotency) are unchanged.
+2. **Browser checking is permitted for this plan's verification** (owner, 2026-10-02), against a local server with an isolated test database. This permission is for this plan only and does not cover the Codex app.
+3. Only the screen, the wording and the inventory lookups change. What each repair does to the files is not touched.
+4. The repair list defaults to records needing action; completed repairs stay available through the filter.
+5. The Repair button on an approved-record row appears only when that record has a repair available or an update available.
+
+## Investigation
+
+Line numbers are `templates/calibration_center.html` and `app.py` as of commit `d812a42`.
+
+**Repair section**
+- Technical wording reaches the admin: the details block prints `Repair version: …` and `Record reference: …` (template 373); footer rows print `Footer reserve 3600 twips` and `Layout-only DOCX/PDF repair` (366–367); the dialog says "immutable saved report payload", "deterministic", and the Repair All box says "bulk-safe" (136, 204, 208, 468).
+- Typed confirmations: `REPAIR` per repair (206, 467–468) and `REPAIR ALL` in an inline box below the table marked `role="dialog" aria-modal="false"` (134–138, 404, 514). The server requires `confirmation` for the complete-fields repair (`_calibration_report_apply_complete_fields_repair`, `app.py:21058`); the page will keep sending the fixed value so the server contract is unchanged.
+- The list defaults to all statuses (125, 324) and every non-blocked, non-completed row says "Review the details before continuing." (374).
+- `manual_required` is never produced: no inventory sets that status (`app.py` only counts it at 21487, 24675, 24683). The page still carries a Manual badge and notice count (100, 120), a "Needs review" filter option (125), `.js-calibration-manual-repair` (297, 362, 377) and a branch that renders a "Review" button. `editable_fields` is always `[]`; `fields_json` is forwarded at `app.py:24756` only to be rejected at 21090.
+- The repair-type filter is hardcoded with two of the three registered types and omits `calibration-report-footer-layout-v1` (126); the server already returns `definitions`.
+- Button labels differ: "Repair", "Review repair", "Review", "Update Repair" (290, 360, 362); a failed direct repair resets the label to "Apply" (394).
+- No result message: `submitRepairContext` closes the dialog on success (472); `applyRepair` shows only failures (392).
+- Cost: `/admin/calibration-center/repairs` runs three inventories (`_calibration_repair_registry_inventory`, `app.py:21460`), each of which reads report source bytes and PDF bytes from storage to hash them (20388/20410, 20464/20485, 20850/20969). `_calibration_repair_registry_candidate` (24624) runs a full inventory to find one record, for both the context and the apply routes. The page reloads the whole inventory after every single repair (393, 472) and after every item of Repair All (424). The response carries the candidates twice (`repairs[].candidates` and `candidates`, 24680–24691).
+- The complete-fields inventory scans every `.docx` `ShiftFile` (21398).
+
+**Approved records list**
+- `repairButton` (280–291) renders a Repair button and "No repair history" on every row with a source file, including records with nothing to repair.
+- Each row has four artifact buttons plus Repair and Email (294–295).
+- Raw values: delivery state lowercase from the server (276), `approved_at` as ISO text (294), requester as `username` (`app.py:24461`).
+- Summary cards are static (87–94); the delivery filter has no "unavailable" option (153; server whitelist at `app.py:24556`).
+- Pagination renders one button per page (303). The data route builds a record for every approved approval on every request, then filters and slices (24543–24571); each record performs storage-existence checks.
+- Email preview puts `html_body` into `textContent`, so the admin sees HTML source (493). The footer says "Preview, then Confirm" (186) but the flow is a second click on Send (497).
+- Neither dialog handles Escape (509, 515); the Refresh control is a full page link (84).
+
+**Code to remove**
+- The HTML comment at 97 and the comment at 246 exist to satisfy string assertions in `tests/test_calibration_center.py` (209–214, 240).
+- `/admin/calibration-center/repair-preview` and `/repair-preview/data` (`app.py:24587`) are not called by the page; only tests reference them (155–157). Aliases `/repairs/data` (24661) and `/repair/<id>` (24768) are likewise unused by the page.
+- Unused response fields: `repair_url`, `repair_last_version` (24479, 24491); the summary values repeated at the top level of the data response (24577–24582); `state.repairDefinitions` (217, 317); fallbacks for field names the server no longer sends (318, 364–365).
+- The context route repeats the forced lookup that `_calibration_repair_registry_candidate` already performed (24706–24714).
+
+**Not verified:** actual load time on production storage, and whether any external bookmark or script calls the alias routes. `changes.md` was read at its top section, not end to end.
+
+## Execution steps
+
+1. **Repair list default and dead status.** In the template, default `repairList.status` to a new "Needs action" value (repairable and blocked), sort repairable first, and remove the Manual badge, the manual notice count, the "Needs review" option, `.js-calibration-manual-repair` and its branch. In `app.py`, stop forwarding `fields_json`. Done: the list opens on actionable rows only and no "manual" wording remains.
+2. **Plain wording.** One title and one sentence per repair type — "Restore cut-off text", "Fix headings and units", "Keep text clear of the footer" — supplied by the registry definitions (`title`, `description`) so the page has no per-key wording table. Status text: "Ready to repair", "Completed", "Cannot be repaired" with the server's reason. "View details" keeps the filename and record reference; version strings, twips, "bulk-safe", "deterministic" and "immutable" are removed from visible text. Done: no visible string contains those terms.
+3. **One Repair flow.** Every repair button is labelled "Repair" ("Repair again" when an update is available) and opens the same dialog: record name, what will change, what stays the same, optional reason, one Repair button. Remove the typed input; send `confirmation: 'REPAIR'` from code. Direct repairs (units, footer) use the same dialog and then call their existing endpoints. Done: no typed confirmation exists; a failed repair restores the "Repair" label.
+4. **Repair All.** Replace the inline typed box with the same modal pattern: "Repair N records?" with Confirm and Cancel, a progress line, and a closing summary of repaired and failed with the failed record names. Done: Repair All needs no typing and reports its outcome.
+5. **Result message.** After any repair, show a dismissible success or failure line in the repair panel naming the record and what was rebuilt. Done: closing the dialog is never the only feedback.
+6. **Type filter from the server.** Build the repair-type options from `definitions`. Done: the footer repair is selectable and a future type appears without a template change.
+7. **Speed.** In `app.py`: let `_calibration_repair_registry_candidate` resolve one source file through a per-file candidate function for each type instead of running the full inventory; return candidates once in the repairs response. In the template: after a single repair, re-request only that record's context and update its row and the totals; Repair All reloads the inventory once at the end. Done: a single repair triggers no full inventory request, and context/apply for one record do not scan all files.
+8. **Records list.** Show Repair only when `repair_status` is `available` with a detected need, or `update_available`; drop "No repair history". Group file actions as "Report" and "Certificate", each with view and download icon buttons and accessible labels. Show delivery as "Sent / Partially sent / Unsent / Not ready", the approval date in a readable local format, and the requester's display name. Done: an untroubled row shows two file groups and Email only.
+9. **Summary cards and paging.** Make the cards buttons that set the filter (with `aria-pressed`), add `unavailable` to the delivery filter and the server whitelist, and window the pagination (first, previous, two either side, next, last). Done: clicking "Unavailable" filters the list; 30 pages render at most nine controls.
+10. **Email dialog and dialogs generally.** Render the HTML preview in a sandboxed `iframe` (`srcdoc`, no scripts), correct the footer hint to match the two-click send, close both dialogs with Escape and return focus to the opening button. Done: the preview looks like the email, and Escape closes the open dialog.
+11. **Remove dead code.** Delete the two contract comments, the `repair-preview` routes, the `/repairs/data` and `/repair/<id>` aliases, `repair_url`, `repair_last_version`, the duplicated top-level summary keys, `state.repairDefinitions`, the stale field fallbacks and the duplicated lookup in the context route. Done: `grep` finds none of them and the page still works.
+12. **Tests.** In `tests/test_calibration_center.py`: replace the string-pinning assertions that step 11 invalidates with behaviour assertions (Node, as the existing surface-state test does) for the default filter, the Repair-button visibility rule, the no-typing flow and the type filter built from definitions; add a server test that the single-record lookup does not call the full inventories and that `unavailable` filters correctly. Each new assertion is seen failing against the current page first.
+13. **Release records.** Bump the service-worker `CACHE_VERSION` (read live), add a `static/changelog/releases.json` entry, update `changes.md` and this plan's status.
+14. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Repair behaviour and safeguards** — what is rewritten, hash checks, rollback, audit and idempotency.
+- **Email rules** — recipients, CC groups, the fixed two-file attachment and the manifest signature.
+- **Moving the page script to a static file.** It would touch caching and tests for no user benefit now.
+- **Server-side paging of the approvals query.** The record builder needs per-row storage checks; changing it is a separate performance package if the page proves slow after step 7.
+- **Running any repair on production data.**
+
+## Verification
+
+- Tests in step 12, each with its failing control; `tests/test_calibration_center.py`, `tests/test_calibration_report_pdf.py`, `tests/test_tsr_calibration_report.py`, `tests/test_changelog_coverage.py`; one full-suite pass quoted against the baseline (1,438 tests: 23 failures, 2 errors, 5 skips).
+- Browser check on a local server with an isolated test database (never `scheduler.db`, never production): the records list, card filters, paging, the repair panel in its states (needs action, completed, blocked, empty), a single repair, Repair All, the email dialog and preview, Escape handling; at desktop width and 375 px; tap targets at least 44 px; no console errors. The local server is stopped afterwards by verified PID only.
+
+## After implementation
+
+1. Self-review the diff: `templates/calibration_center.html`, `app.py`, `tests/test_calibration_center.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`.
+2. Prove the new tests fail without the change.
+3. Full suite, quoting counts against the baseline.
+4. Browser verification as above.
+5. Service worker bump and `releases.json` entry.
+6. `changes.md` and this plan's status, with the commit hash and any difference between plan and outcome.
+7. Commit checklist with explicit staging of the files in item 1. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and unrelated dirty entries. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **A repair made easier to trigger by mistake.** The typed word goes, but each repair still opens a dialog that states what will change, and the server safeguards are unchanged. Repair All still asks for confirmation with the count.
+- **Removing routes something else calls.** Only tests reference them in this repository; an outside caller would get a 404. Stated above as not verified.
+- **Single-record lookup diverging from the inventory.** Both must go through the same per-file candidate functions; the test in step 12 compares them.
+- **Sandboxed preview rendering differently from mail clients.** It is a closer view than raw source, not a guarantee.
+- **Database:** none. No schema or data change.
+
+## Recording outcome
+
+- 2026-10-02: Recorded the owner-approved plan with status **Approved — awaiting go-ahead**. Only `plans.md` and `changes.md` were changed.
+- 2026-10-02: Executed steps 1–13 on the owner's go-ahead; not committed, pushed or deployed. Differences from the plan and what was verified:
+  - Step 1: `fields_json` is still forwarded by the apply route. It is forwarded only so the repair rejects any attempt to send replacement values; removing it would have turned a refusal into a silent ignore.
+  - Step 2: the plain titles and descriptions live in the three registry definitions in `app.py` and are sent to the page; the page has no per-repair wording table.
+  - Step 7: stored files are read once per report during the scan through a per-file cache (`_calibration_repair_scan_cached`) that is cleared after each file, so nothing is held across reports or outside a scan. A new route, `/admin/calibration-center/repair-file/<id>`, returns one report's candidates; the page calls it after a single repair instead of reloading the whole list. Two inventory functions that became unused were removed.
+  - Step 8: the Repair button on an approved row is decided from the repair list already loaded by the page (a ready repair for that report's source file), not from a new server check per row.
+  - Step 10: the Refresh control now reloads the data in place instead of reloading the page.
+  - Step 11: `state.repairDefinitions` was kept; it now feeds the repair-type filter and the wording.
+  - Step 12: four tests added to `tests/test_calibration_center.py` (repair list behaviour under Node, single-record lookup, one read per stored file, ready/unavailable filters) and eight existing string-pinning tests updated. Against the previous page and server, 12 of the 35 tests in the file failed; all 35 pass now.
+  - Step 13: service worker `medical-service-pwa-offline-navigation-v225-calibration-center-repairs` (the marker had moved to v224 with the separately committed approval-routing package); release entry `2026-10-02-calibration-center-repairs`.
+  - Full suite: 1,456 tests, 23 failures, 2 errors, 5 skips — the baseline's non-passing counts (the count grew by the approval-routing package's tests and these four).
+  - Browser check, on a local server with a throwaway database and made-up records served in place of the data routes (no real file or record was read or changed): records list, card filters, windowed paging (Previous, 1, 2, 3, …, 13, Next), repair panel, one repair through the dialog (only that record was re-requested), Repair All (19 repaired, one inventory reload at the end, result line shown), email preview rendered in the sandboxed frame, Escape closing a dialog and returning focus; at 1366 px and 375 px, with no horizontal overflow and no control under 44 px at 375 px. Because the data routes were replaced by fixtures, the real routes are covered by the tests only, and a failed repair's message was not seen in the browser.
+  - Seen and left alone: on a brand-new empty database, the first concurrent requests can fail while default email templates and the release manifest are seeded (unique-constraint error); a reload works. It predates this plan and does not affect an existing database.
+  - Intended commit files: `templates/calibration_center.html`, `app.py`, `tests/test_calibration_center.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`. Exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and the loose handoff file.
+
+---
+
 # Calibration Report: CH-200M Second Tube and Console, Complete PDF
 
 **Status:** Executed — implementation commit `d07f77e`; publication to `origin/main` authorized.

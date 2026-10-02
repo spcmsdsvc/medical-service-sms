@@ -19,6 +19,24 @@
       ]
     },
     {
+      "release_key": "2026-10-02-calibration-center-repairs",
+      "release_date": "2026-10-02",
+      "title": "Clearer Calibration Center and Simpler Repairs",
+      "summary": "Calibration Center repairs are now explained in plain words and run with one button, and the records list is easier to scan.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-calibration-center-repairs-admins",
+          "category": "Calibration Center",
+          "description": "The Repairs list opens on records that need action, says in plain words what each repair will change, and no longer asks you to type REPAIR; Repair All asks for one confirmation and reports what was repaired. In the records list, the summary cards now filter the list, files are grouped as Report and Certificate, Repair appears only on records that have one ready, and the email preview shows the message as the client will see it.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-01-calibration-ch200m-second-tube",
       "release_date": "2026-10-01",
       "title": "Calibration Report Follows the CH-200M Model",

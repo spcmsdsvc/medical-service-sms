@@ -14,7 +14,7 @@ import tempfile
 import textwrap
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import app as app_module
 
@@ -152,15 +152,18 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertIn("@app.route('/admin/calibration-center/<int:approval_id>/email'", APP_SOURCE)
         self.assertIn("@app.route('/admin/calibration-center/<int:approval_id>/email-preview'", APP_SOURCE)
         self.assertIn("@app.route('/admin/calibration-center/<int:approval_id>/send-email'", APP_SOURCE)
-        self.assertIn("@app.route('/admin/calibration-center/repair-preview'", APP_SOURCE)
         self.assertIn("@app.route('/admin/calibration-center/<int:source_file_id>/repair'", APP_SOURCE)
-        repair_preview_block = APP_SOURCE.split("@app.route('/admin/calibration-center/repair-preview'", 1)[1].split(
-            "@app.route('/admin/calibration-center/<int:source_file_id>/repair'", 1
-        )[0]
+        self.assertIn("@app.route('/admin/calibration-center/repair-file/<int:source_file_id>')", APP_SOURCE)
+        # Routes the page never called were removed with the repair-section cleanup.
+        for removed in (
+            '/admin/calibration-center/repair-preview',
+            "'/admin/calibration-center/repairs/data'",
+            "'/admin/calibration-center/repair/<int:source_file_id>'",
+        ):
+            self.assertNotIn(removed, APP_SOURCE)
         repair_apply_block = APP_SOURCE.split("@app.route('/admin/calibration-center/<int:source_file_id>/repair'", 1)[1].split(
             "def calibration_report_certificate_cc_group_for_branch", 1
         )[0]
-        self.assertNotIn('@csrf.exempt', repair_preview_block)
         self.assertNotIn('@csrf.exempt', repair_apply_block)
 
     def test_center_query_is_current_approved_only_and_paginated(self):
@@ -203,17 +206,29 @@ class CalibrationCenterContracts(unittest.TestCase):
             'state.confirmKey = \'\'',
             'calibration-center-preview-creator-copy',
             'Creator email unavailable',
-            'Confirm',
-            'Historical Report Repair',
             'Repair All',
-            'REPAIR ALL',
-            'repair-preview',
             'repairRunning',
             'candidate.target_units',
-            'candidate.unit_sources',
-            'Target units / source',
+            'calibration-center-confirm-backdrop',
+            'calibration-center-repair-result',
+            'sandbox=""',
         ):
             self.assertIn(marker, template)
+        # No typed confirmations, test-only markers, or implementation wording on the page.
+        for removed in (
+            'REPAIR ALL',
+            'confirm-input',
+            'repair-preview',
+            'contract marker',
+            'compatibility contracts',
+            'twips',
+            'Repair version',
+            'bulk-safe',
+            'immutable saved',
+            'manual_required',
+            'Needs review',
+        ):
+            self.assertNotIn(removed, template)
 
     def test_historical_repair_starts_hidden_and_exposes_accessible_toggle(self):
         self.assertRegex(
@@ -244,20 +259,19 @@ class CalibrationCenterContracts(unittest.TestCase):
 
     def test_historical_repair_completion_and_load_failure_stay_viewable(self):
         self.assertIn('calibration-center-repair-success', TEMPLATE_SOURCE)
-        self.assertIn('All historical report repairs are complete', TEMPLATE_SOURCE)
+        self.assertIn('All repairs are complete', TEMPLATE_SOURCE)
         self.assertIn('calibration-center-repair-load-error', TEMPLATE_SOURCE)
-        self.assertIn('Inventory could not be loaded', TEMPLATE_SOURCE)
+        self.assertIn('The repair list could not be loaded', TEMPLATE_SOURCE)
         self.assertIn('setVisible(\'calibration-center-repair-area\', true)', TEMPLATE_SOURCE)
 
     def test_historical_repair_details_keep_existing_actions(self):
         for marker in (
-            'calibration-center-repair-warning',
             'calibration-center-repair-summary',
             'calibration-center-repair-table-wrap',
-            'calibration-center-repair-confirm',
             'calibration-center-repair-all',
             'js-calibration-repair',
-            '`/admin/calibration-center/${sourceFileId}/repair`',
+            '`/admin/calibration-center/${id}/repair`',
+            '`/admin/calibration-center/repair-file/${sourceFileId}`',
             'state.repairRunning',
         ):
             self.assertIn(marker, TEMPLATE_SOURCE)
@@ -345,6 +359,153 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         self.assertIn('repair surface states: PASS', result.stdout)
 
+    def test_repair_list_behaviour_executes_in_node(self):
+        script_match = re.search(r'<script>\s*(.*?)\s*</script>', TEMPLATE_SOURCE, re.DOTALL)
+        source = script_match.group(1)
+        bootstrap = '    loadRecords(); loadRepairInventory();\n})();'
+        source = source.replace(
+            bootstrap,
+            '    globalThis.__repairTest = {state, repairList, renderRepairInventory, repairListPage, repairButton, pageWindow, bulkCandidates};\n})();',
+            1,
+        )
+        node_script = textwrap.dedent(f"""
+            const assert = require('assert');
+            class ClassList {{
+              constructor() {{ this.names = new Set(); }}
+              toggle(name, force) {{ const on = force === undefined ? !this.names.has(name) : Boolean(force); if (on) this.names.add(name); else this.names.delete(name); return on; }}
+              add(name) {{ this.names.add(name); }}
+              remove(name) {{ this.names.delete(name); }}
+              contains(name) {{ return this.names.has(name); }}
+            }}
+            class Element {{
+              constructor(id) {{ this.id = id; this.classList = new ClassList(); this.attributes = {{}}; this.textContent = ''; this.innerHTML = ''; this.value = ''; }}
+              setAttribute(name, value) {{ this.attributes[name] = String(value); }}
+              getAttribute(name) {{ return this.attributes[name] ?? null; }}
+              addEventListener() {{}}
+              focus() {{}}
+              querySelector() {{ return null; }}
+              querySelectorAll() {{ return []; }}
+            }}
+            const elements = new Map();
+            const getElement = id => {{ if (!elements.has(id)) elements.set(id, new Element(id)); return elements.get(id); }};
+            globalThis.document = {{ getElementById: getElement, querySelector: () => null, querySelectorAll: () => [] }};
+            globalThis.fetch = async () => {{ throw new Error('fetch should not run in this harness'); }};
+            eval({json.dumps(source)});
+            const api = globalThis.__repairTest;
+            const definitions = [
+              {{repair_key: 'calibration-report-units-v3', title: 'Fix headings and units', description: 'Units.', artifact_scope: 'Calibration Report (Word and PDF)'}},
+              {{repair_key: 'calibration-report-footer-layout-v1', title: 'Keep text clear of the footer', description: 'Footer.', artifact_scope: 'Calibration Report (Word and PDF)'}},
+              {{repair_key: 'calibration-complete-fields-v1', title: 'Restore cut-off text', description: 'Text.', artifact_scope: 'Calibration Report and its certificates'}},
+            ];
+            const candidate = (key, id, status, extra) => Object.assign({{repair_key: key, candidate_id: id, source_file_id: id, status, title: definitions.find(d => d.repair_key === key).title, filename: 'CALIBRATION_REPORT_Shimadzu_Client_' + id + '.docx', repair_version: 'calibration-report-complete-fields-v5', footer_reserve_twips: 3600, bulk_safe: status === 'repairable' && key !== 'calibration-report-footer-layout-v1', reason: status === 'blocked' ? 'The saved file is missing.' : ''}}, extra || {{}});
+            api.renderRepairInventory({{definitions, candidates: [
+              candidate('calibration-report-units-v3', 1, 'already_repaired'),
+              candidate('calibration-complete-fields-v1', 2, 'blocked'),
+              candidate('calibration-report-footer-layout-v1', 3, 'repairable'),
+              candidate('calibration-complete-fields-v1', 5, 'repairable', {{detected_fields: [{{label: 'Client / facility name'}}]}}),
+            ]}});
+            // Every registered repair type is selectable, including the footer repair.
+            const typeOptions = getElement('calibration-center-repair-type-filter').innerHTML;
+            definitions.forEach(d => assert.ok(typeOptions.includes('value="' + d.repair_key + '"'), d.repair_key));
+            // The list opens on records needing action, ready ones first; completed ones are filtered out.
+            assert.strictEqual(api.repairList.status, 'attention');
+            const page = api.repairListPage(api.state.repairCandidates);
+            assert.deepStrictEqual(page.items.map(item => item.status), ['repairable', 'repairable', 'blocked']);
+            api.repairList.status = 'all';
+            assert.strictEqual(api.repairListPage(api.state.repairCandidates).total, 4);
+            api.repairList.status = 'attention';
+            const body = getElement('calibration-center-repair-table-body').innerHTML;
+            assert.ok(body.includes('Client / facility name'));
+            assert.ok(body.includes('The saved file is missing.'));
+            assert.ok(body.includes('Ready to repair') && body.includes('Cannot be repaired'));
+            for (const jargon of ['twips', '3600', 'Repair version', 'complete-fields-v5', 'Review repair', 'Needs review']) assert.ok(!body.includes(jargon), jargon);
+            assert.strictEqual((body.match(/js-calibration-repair/g) || []).length, 2);
+            // Repair All covers only the repairs marked safe to run together.
+            assert.deepStrictEqual(api.bulkCandidates().map(item => item.candidate_id), [5]);
+            assert.strictEqual(getElement('calibration-center-repair-all').textContent, 'Repair All (1)');
+            // An approved row offers Repair only when its report has a repair ready.
+            assert.ok(api.repairButton({{repair_source_file_id: 5, repair_status: 'available'}}).includes('js-calibration-repair'));
+            assert.ok(api.repairButton({{repair_source_file_id: 5, repair_status: 'update_available'}}).includes('Repair again'));
+            assert.strictEqual(api.repairButton({{repair_source_file_id: 1, repair_status: 'available'}}), '');
+            assert.strictEqual(api.repairButton({{repair_source_file_id: 2, repair_status: 'available'}}), '');
+            assert.strictEqual(api.repairButton({{repair_source_file_id: null, repair_status: 'unavailable'}}), '');
+            // Paging stays short however many pages exist.
+            assert.deepStrictEqual(api.pageWindow(15, 30), [1, 13, 14, 15, 16, 17, 30]);
+            assert.deepStrictEqual(api.pageWindow(1, 2), [1, 2]);
+            console.log('repair list behaviour: PASS');
+        """)
+        with tempfile.NamedTemporaryFile('w', suffix='.js', encoding='utf-8', delete=False) as script_file:
+            script_file.write(node_script)
+            script_path = script_file.name
+        try:
+            result = subprocess.run(['node', script_path], cwd=ROOT, capture_output=True, text=True, check=False)
+        finally:
+            pathlib.Path(script_path).unlink(missing_ok=True)
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        self.assertIn('repair list behaviour: PASS', result.stdout)
+
+    def test_single_record_lookup_does_not_scan_every_report(self):
+        source_file = SimpleNamespace(id=77)
+        lookup = MagicMock(return_value={'candidate_id': 77, 'source_file_id': 77, 'status': 'repairable'})
+        key = 'calibration-report-footer-layout-v1'
+        with patch.dict(app_module.CALIBRATION_REPAIR_REGISTRY[key], {'candidate_for_file': lookup}), \
+                patch.object(app_module.db.session, 'get', return_value=source_file), \
+                patch.object(app_module, '_calibration_repair_source_files', side_effect=AssertionError('full scan')):
+            definition, candidate = app_module._calibration_repair_registry_candidate(key, 77)
+        lookup.assert_called_once_with(source_file)
+        self.assertEqual(candidate['repair_key'], key)
+        self.assertEqual(candidate['title'], definition['title'])
+        self.assertFalse(candidate['bulk_safe'])
+
+    def test_repair_scan_reads_each_stored_file_once_per_report(self):
+        source_file = SimpleNamespace(id=31)
+        reads = []
+
+        def read_source(file_record):
+            reads.append(file_record.id)
+            return b'docx-bytes'
+
+        def candidate_for_file(file_record):
+            app_module._calibration_report_source_bytes(file_record)
+            return {'source_file_id': file_record.id, 'status': 'repairable'}
+
+        definition = {'version': 'v', 'title': 't', 'description': 'd', 'artifact_scope': 's', 'bulk_safe': True, 'candidate_for_file': candidate_for_file}
+        registry = {'first': dict(definition), 'second': dict(definition), 'third': dict(definition)}
+        with patch.dict(app_module.CALIBRATION_REPAIR_REGISTRY, registry, clear=True), \
+                patch.object(app_module, '_calibration_report_read_source_bytes', side_effect=read_source):
+            candidates = app_module._calibration_repair_file_candidates(source_file)
+            self.assertEqual([item['repair_key'] for item in candidates], ['first', 'second', 'third'])
+            self.assertEqual(reads, [31])
+            # Outside a scan nothing is held, so applying a repair always reads the current file.
+            app_module._calibration_report_source_bytes(source_file)
+            self.assertEqual(reads, [31, 31])
+
+    def test_data_route_filters_ready_and_unavailable_records(self):
+        records = {
+            1: {'approval_id': 1, 'can_send': True, 'delivery_state': 'sent'},
+            2: {'approval_id': 2, 'can_send': False, 'delivery_state': 'unsent'},
+            3: {'approval_id': 3, 'can_send': True, 'delivery_state': 'unsent'},
+        }
+        approvals = MagicMock()
+        approvals.query.options.return_value.filter.return_value.order_by.return_value.all.return_value = [1, 2, 3]
+
+        def fetch(delivery):
+            with app_module.app.test_request_context(f'/admin/calibration-center/data?delivery={delivery}'), \
+                    patch.object(app_module, 'can_access_calibration_center', return_value=True), \
+                    patch.object(app_module, 'ensure_calibration_certificate_approval_table'), \
+                    patch.object(app_module, 'CalibrationCertificateApproval', approvals), \
+                    patch.object(app_module, 'joinedload'), \
+                    patch.object(app_module, '_calibration_center_record', side_effect=lambda approval: dict(records[approval])):
+                response = app_module.calibration_center_data.__wrapped__()
+            return response.get_json()
+
+        self.assertEqual([item['approval_id'] for item in fetch('unavailable')['records']], [2])
+        self.assertEqual([item['approval_id'] for item in fetch('ready')['records']], [1, 3])
+        self.assertEqual([item['approval_id'] for item in fetch('unsent')['records']], [2, 3])
+        data = fetch('all')
+        self.assertEqual(data['summary'], {'approved': 3, 'ready': 2, 'unavailable': 1, 'unsent': 2, 'partial': 0, 'sent': 1})
+        self.assertNotIn('approved', data)
+
     def test_service_worker_uses_v158_network_first_center_prefix(self):
         self.assertIn('medical-service-pwa-offline-navigation-v158-calibration-center', APP_SOURCE)
         self.assertIn("medical-service-pwa-offline-navigation-v195-pre-submission-calibration-report';", APP_SOURCE)
@@ -378,7 +539,6 @@ class CalibrationCenterContracts(unittest.TestCase):
             "@app.route('/admin/calibration-center/repairs/<repair_key>/<int:candidate_id>')",
             "@app.route('/admin/calibration-center/repairs/<repair_key>/<int:candidate_id>/apply'",
             'bulk_safe',
-            'manual_required',
             'before_pdf_hash',
             'before_certificate_hash',
             'calibration_repair_applied',
@@ -393,13 +553,9 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertNotIn('_calibration_report_set_field_values', APP_SOURCE)
         for marker in (
             '/admin/calibration-center/repairs',
-            'calibration-center-manual-repair-confirm-input',
             'buildRepairDocx',
-            'Repair Calibration Report &amp; Certificate',
-            'immutable saved report payload',
-            'Footer reserve',
-            'Layout-only DOCX/PDF repair',
-            'Protect footer layout',
+            'What will change',
+            'What stays the same',
             "app-calibration-report.js') }}?v=42",
         ):
             self.assertIn(marker, TEMPLATE_SOURCE)
@@ -409,6 +565,10 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertNotIn('fields_json', TEMPLATE_SOURCE)
         for repair_key, definition in app_module.CALIBRATION_REPAIR_REGISTRY.items():
             self.assertTrue(callable(definition['inventory']), repair_key)
+            self.assertTrue(callable(definition['candidate_for_file']), repair_key)
+            # Titles and descriptions are shown to administrators as written.
+            for wording in (definition['title'], definition['description'], definition['artifact_scope']):
+                self.assertNotRegex(wording, r'DOCX|immutable|artifact|deterministic|legacy', repair_key)
             self.assertTrue(callable(definition['apply']), repair_key)
             self.assertTrue(definition['audit'], repair_key)
             self.assertTrue(definition['idempotency'], repair_key)
@@ -431,12 +591,12 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertEqual(response[1], 403)
 
     def test_approved_record_repair_button_opens_deterministic_context(self):
-        render_rows = TEMPLATE_SOURCE.split('function renderRows(records)', 1)[1].split(
-            'function renderPagination', 1
+        repair_button = TEMPLATE_SOURCE.split('const repairButton = (record) =>', 1)[1].split(
+            'const actionsHtml', 1
         )[0]
-        self.assertIn('js-calibration-deterministic-repair', render_rows)
-        self.assertIn("document.querySelectorAll('.js-calibration-manual-repair, .js-calibration-deterministic-repair')", render_rows)
-        self.assertIn('openRepairContext(button.dataset.repairKey, Number(button.dataset.candidateId))', render_rows)
+        self.assertIn('repairableFor(record.repair_source_file_id)', repair_button)
+        self.assertIn('js-calibration-repair', repair_button)
+        self.assertIn('openRepair(repair.dataset.repairKey, Number(repair.dataset.candidateId))', TEMPLATE_SOURCE)
 
     def test_complete_fields_repair_uses_readable_relevant_targets(self):
         detected = app_module._calibration_report_repair_walk_values({
@@ -453,16 +613,16 @@ class CalibrationCenterContracts(unittest.TestCase):
             'Client / facility address',
         )
         for marker in (
-            'Fields that will be repaired',
-            'What will stay unchanged',
-            'Technical details',
+            'What will change',
+            'What stays the same',
+            'File details',
             'item.label',
             'item.artifact_label',
             'item.issue_label',
         ):
             self.assertIn(marker, TEMPLATE_SOURCE)
-        render_context = TEMPLATE_SOURCE.split('function renderRepairContext(data)', 1)[1].split(
-            'async function openRepairContext', 1
+        render_context = TEMPLATE_SOURCE.split('function repairChanges(candidate)', 1)[1].split(
+            'function repairChangeSummary', 1
         )[0]
         self.assertNotIn("item.path || 'saved field'", render_context)
 
@@ -598,9 +758,9 @@ class CalibrationCenterContracts(unittest.TestCase):
             'repair_status',
             'repair_history_count',
             'repair_last_at',
-            'Previously repaired',
-            'update available',
-            'No repair history',
+            'update_available',
+            'Repair again',
+            'Repaired ',
         ):
             self.assertIn(marker, APP_SOURCE + TEMPLATE_SOURCE)
 
