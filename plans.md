@@ -1,6 +1,6 @@
 # Settings → Templates: Friendlier Tab, Real Preview, More Subjects, and Code Cleanup
 
-**Status:** Executed — not yet committed; commit and push wait for the owner's instruction.
+**Status:** Executed — implementation commit `9f38a54`; published to `origin/main` on the owner's "commit and push".
 **Finished:** 2026-10-02.
 **Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer and over check things".
 **Approved:** 2026-10-02 — the owner said "all approved partner, write it to plans.md" (all 21 proposed items, including item 18, the hardcoded subjects).
