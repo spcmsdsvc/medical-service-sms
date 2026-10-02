@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-02-backup-tab",
+      "release_date": "2026-10-02",
+      "title": "Clearer Backup Status",
+      "summary": "Settings and the dashboard now show when the last system backup was made and warn when one is overdue.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-backup-tab-admins",
+          "category": "Settings",
+          "description": "Settings → Backup now shows the last backup's date, who built it, whether it was downloaded, and how long the stored file remains. A warning appears there and on the dashboard when no backup has been made for more than seven days; until the next backup is built it reads \"No backup on record\". Backup Center checks storage space and asks for confirmation before building, shows errors clearly, no longer says Ready after the file has expired or been deleted, and shows who built the backup, how long it took and when it expires.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-templates-tab",
       "release_date": "2026-10-02",
       "title": "Easier Templates in Settings",

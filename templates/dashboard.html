@@ -37,6 +37,14 @@
 {% set dashboard_effective_manager_view = dashboard_manager_view and not dashboard_scheduler_account %}
 
     
+    {% if backup_overdue_notice %}
+    <div class="alert alert-warning alert-dismissible fade show small py-2" role="alert">
+        <i class="fa-solid fa-database me-2"></i>{{ backup_overdue_notice }}
+        <a class="alert-link" href="{{ url_for('system_backup_page') }}">Open Backup Center</a>
+        <button type="button" class="btn-close py-2" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
     <!-- DASHBOARD BRANDING HEADER (PERSONALIZED) -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div class="branding-group">

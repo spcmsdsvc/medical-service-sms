@@ -12,6 +12,8 @@ import zipfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from tests.sw_cache_version import assert_cache_version_at_least
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / f'medical_service_backup_{uuid.uuid4().hex}.db'
@@ -389,6 +391,102 @@ class BackupCenterRouteTests(unittest.TestCase):
             except OSError:
                 pass
             shutil.rmtree(archive_root, ignore_errors=True)
+
+class BackupSummaryAndHonestStatusTests(unittest.TestCase):
+    """The last-backup record, the overdue summary, and a status that matches the disk."""
+
+    ARCHIVE_NAME = 'medical_service_backup_20260809_120000.zip'
+    tearDown = BackupCenterRouteTests.tearDown
+
+    def setUp(self):
+        BackupCenterRouteTests.setUp(self)
+        self.archive_root = tempfile.mkdtemp(prefix='medical_service_backup_archive_')
+        self.state_root = tempfile.mkdtemp(prefix='medical_service_backup_state_')
+        patches = [
+            patch.object(app_module, 'BACKUP_ARCHIVE_DIR', self.archive_root),
+            patch.object(app_module, 'RUNTIME_STATE_DIR', self.state_root),
+            patch.object(app_module, 'get_storage_health_report', return_value={}),
+        ]
+        for item in patches:
+            item.start()
+            self.addCleanup(item.stop)
+        self.addCleanup(shutil.rmtree, self.archive_root, True)
+        self.addCleanup(shutil.rmtree, self.state_root, True)
+
+    def _superadmin(self, value=True):
+        return patch.object(app_module, 'is_superadmin_user', return_value=value)
+
+    def _finished_backup(self, days_ago=0):
+        with open(os.path.join(self.archive_root, self.ARCHIVE_NAME), 'wb') as archive_file:
+            archive_file.write(b'backup')
+        finished = app_module.get_manila_time() - app_module.timedelta(days=days_ago)
+        state = app_module.empty_backup_job_state()
+        state.update({
+            'status': 'completed',
+            'backup_complete': True,
+            'database_included': True,
+            'last_backup': {
+                'finished_at': finished.isoformat(),
+                'started_by': 'jonamar',
+                'filename': self.ARCHIVE_NAME,
+                'size_human': '6 B',
+                'complete': True,
+                'downloaded_at': '',
+            },
+        })
+        app_module.save_backup_job_state(state)
+
+    def test_last_backup_survives_download_delete_and_a_new_build(self):
+        self._finished_backup()
+        with self._superadmin():
+            self.client.get('/admin/download-backup').close()
+            self.assertTrue(app_module.load_backup_job_state()['last_backup']['downloaded_at'])
+
+            self.assertEqual(self.client.post('/admin/backup/delete', json={}).status_code, 200)
+            payload = self.client.get('/admin/backup/status').get_json()
+            self.assertEqual(payload['job']['status'], 'idle')
+            self.assertFalse(payload['job']['backup_complete'])
+            self.assertFalse(payload['job']['database_included'])
+            self.assertIsNone(payload['archive'])
+            self.assertEqual(payload['last_backup']['filename'], self.ARCHIVE_NAME)
+
+            preflight = {'ok': True, 'reason': '', 'reclaim_existing': False}
+            with patch.object(app_module, 'backup_preflight_report', return_value=preflight), \
+                    patch.object(app_module.threading, 'Thread'):
+                self.assertEqual(self.client.post('/admin/backup/start', json={}).status_code, 202)
+        self.assertEqual(app_module.load_backup_job_state()['last_backup']['filename'], self.ARCHIVE_NAME)
+
+    def test_summary_is_overdue_without_a_record_or_after_seven_days(self):
+        self.assertTrue(app_module.backup_summary()['overdue'])
+        self._finished_backup(days_ago=8)
+        summary = app_module.backup_summary()
+        self.assertTrue(summary['overdue'])
+        self.assertEqual(summary['days_since_last'], 8)
+        self._finished_backup(days_ago=1)
+        self.assertFalse(app_module.backup_summary()['overdue'])
+
+    def test_preflight_route_is_superadmin_only(self):
+        with self._superadmin(False):
+            self.assertEqual(self.client.get('/admin/backup/preflight').status_code, 403)
+        with self._superadmin(), \
+                patch.object(app_module, 'backup_preflight_report', return_value={'ok': True}):
+            self.assertEqual(self.client.get('/admin/backup/preflight').get_json()['preflight'], {'ok': True})
+
+    def test_settings_card_and_dashboard_reminder(self):
+        with self._superadmin():
+            self.assertIn(b'No backup on record.', self.client.get('/settings').data)
+            self.assertIn(b'No system backup on record.', self.client.get('/').data)
+            self.assertEqual(self.client.get('/admin/backup').status_code, 200)
+        with self._superadmin(False):
+            self.assertNotIn(b'No system backup', self.client.get('/').data)
+
+    def test_backup_center_page_uses_in_page_confirm(self):
+        template = (ROOT / 'templates' / 'system_backup.html').read_text(encoding='utf-8')
+        self.assertNotIn('window.confirm', template)
+        self.assertNotIn('escapeText', template)
+        self.assertIn('admin_backup_preflight', template)
+        assert_cache_version_at_least(self, 235, (ROOT / 'app.py').read_text(encoding='utf-8'))
+
 
 class BackupArchiveIsDataOnlyTests(unittest.TestCase):
     """Application source is no longer archived.

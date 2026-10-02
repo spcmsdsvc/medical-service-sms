@@ -27027,7 +27027,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v234-templates-tab';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v235-backup-tab';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27528,8 +27528,17 @@ def dashboard_page():
         )
     profile = getattr(current_user, 'engineer_profile', None)
     dashboard_caps = get_dashboard_capabilities(current_user)
+    backup_overdue_notice = None
+    if is_superadmin_user():
+        summary = backup_summary()
+        if summary['overdue'] and summary['status'] != 'running':
+            backup_overdue_notice = (
+                f"No system backup in {summary['days_since_last']} days."
+                if summary['days_since_last'] is not None else 'No system backup on record.'
+            )
     return render_template(
         'dashboard.html',
+        backup_overdue_notice=backup_overdue_notice,
         logged_in_engineer_id=getattr(profile, 'id', None),
         logged_in_engineer_name=getattr(profile, 'name', '') or getattr(current_user, 'username', ''),
         logged_in_user_role=getattr(current_user, 'role', ''),
@@ -28870,6 +28879,7 @@ def settings_page():
         'settings.html',
         users=all_accounts,
         backup_superadmin=backup_superadmin,
+        backup_summary=backup_summary() if backup_superadmin else None,
         can_manage_product_names=bool(is_admin_authorized()),
         approval_routing_enabled=True,
         approval_request_scopes=available_approval_request_scopes()
@@ -30728,6 +30738,8 @@ def empty_backup_job_state():
         'bucket': {},
         'archive': {},
         'preflight': {},
+        # The last finished build. Carried across new builds so it outlives the archive.
+        'last_backup': {},
     }
 
 
@@ -32082,6 +32094,16 @@ def run_system_backup_job(job_id, username):
                 'sha256': result.get('sha256', ''),
                 'created_at': result.get('created_at', ''),
             },
+            last_backup={
+                'finished_at': get_manila_time().isoformat(),
+                'started_by': username,
+                'filename': result.get('filename', ''),
+                'size_human': result.get('size_human', ''),
+                'complete': bool(result.get('backup_complete')),
+                'warning_count': len(warnings),
+                'duration_seconds': result.get('duration_seconds', 0),
+                'downloaded_at': '',
+            },
         )
 
         action = f"Built system backup: {result.get('filename')} ({result.get('size_human')})"
@@ -32098,11 +32120,56 @@ def run_system_backup_job(job_id, username):
             print(f"[BACKUP] Activity log skipped: {log_error}", flush=True)
 
 
+BACKUP_OVERDUE_DAYS = 7
+
+
+def backup_summary(state=None, archive=None):
+    """Light summary for the Settings card and the dashboard: no storage scan."""
+    state = state or load_backup_job_state()
+    if archive is None:
+        archive = current_backup_archive()
+    last_backup = state.get('last_backup') or {}
+    finished_at = parse_state_timestamp(last_backup.get('finished_at'))
+    days_since_last = None
+    if finished_at:
+        now = get_manila_time()
+        if finished_at.tzinfo is None:
+            now = now.replace(tzinfo=None)
+        days_since_last = max(0, (now - finished_at).days)
+    return {
+        'status': state.get('status', 'idle'),
+        'percent': state.get('percent', 0),
+        'last_backup': last_backup,
+        'last_backup_date': finished_at.strftime('%b %d, %Y %I:%M %p') if finished_at else '',
+        'days_since_last': days_since_last,
+        'overdue': days_since_last is None or days_since_last > BACKUP_OVERDUE_DAYS,
+        'archive': {
+            'filename': archive['filename'],
+            'size_human': archive['size_human'],
+            'expires_in_hours': archive['expires_in_seconds'] // 3600,
+        } if archive else None,
+    }
+
+
 def backup_status_payload():
     """The single shape the page polls, assembled from state plus the disk."""
     state = reconcile_backup_job_state()
     sweep_backup_artifacts_throttled(state.get('job_id') if state.get('status') == 'running' else '')
     archive = current_backup_archive()
+    summary = backup_summary(state, archive or False)
+    if not archive and state.get('status') in ('completed', 'completed_with_warnings'):
+        # The archive expired or was deleted: do not keep reporting the old job as ready.
+        state = {
+            **state,
+            'status': 'idle',
+            'phase_label': '',
+            'percent': 0,
+            'message': 'The last backup has expired or was deleted. Build a new one to download it.',
+            'backup_complete': False,
+            'database_included': False,
+            'warning_count': 0,
+            'warnings': [],
+        }
     if archive:
         saved_archive = state.get('archive') or {}
         archive = {
@@ -32152,6 +32219,9 @@ def backup_status_payload():
         'archive': archive,
         'storage': health,
         'download_url': url_for('download_system_backup') if archive else '',
+        'last_backup': summary['last_backup'],
+        'last_backup_date': summary['last_backup_date'],
+        'overdue': summary['overdue'],
     }
 
 
@@ -32173,6 +32243,14 @@ def admin_backup_status():
     if not is_superadmin_user():
         return denied('Only superadmins can view system backups.')
     return jsonify(backup_status_payload())
+
+
+@app.route('/admin/backup/preflight')
+@login_required
+def admin_backup_preflight():
+    if not is_superadmin_user():
+        return denied('Only superadmins can start system backups.')
+    return jsonify({'status': 'success', 'preflight': backup_preflight_report()})
 
 
 @app.route('/admin/backup/start', methods=['POST'])
@@ -32224,6 +32302,7 @@ def admin_backup_start():
             'started_by': username,
             'message': 'Building the backup. You can leave this page and come back.',
             'preflight': preflight,
+            'last_backup': state.get('last_backup') or {},
         })
         save_backup_job_state(fresh)
 
@@ -32342,6 +32421,11 @@ def download_system_backup():
         except Exception as log_error:
             db.session.rollback()
             print(f"[BACKUP] Activity log skipped: {log_error}", flush=True)
+        last_backup = state.get('last_backup') or {}
+        if last_backup.get('filename') == archive['filename']:
+            update_backup_job_state(
+                last_backup={**last_backup, 'downloaded_at': get_manila_time().isoformat()}
+            )
 
     return response
 

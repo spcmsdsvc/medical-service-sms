@@ -307,17 +307,55 @@
                     <span class="badge bg-light text-success small fw-bold">Superadmin Only</span>
                 </div>
                 <div class="card-body p-4">
-                    <p class="text-muted small mb-3">
-                        Open Backup Center to build a data-only ZIP containing a consistent database snapshot,
-                        TSR metadata, volume uploads, private bucket objects, and a checksum manifest.
-                        The archive is built first and remains available for resumable downloads for 24 hours.
-                    </p>
+                    {% set last_backup = backup_summary.last_backup %}
+                    {% if backup_summary.status == 'running' %}
+                    <div class="alert alert-info small py-2 mb-3">
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>A backup is being built ({{ backup_summary.percent }}% when this page was opened).
+                    </div>
+                    {% elif backup_summary.overdue %}
+                    <div class="alert alert-danger small py-2 mb-3">
+                        <i class="fa-solid fa-triangle-exclamation me-2"></i>
+                        {% if backup_summary.days_since_last is none %}No backup on record.{% else %}Overdue — last backup {{ backup_summary.days_since_last }} days ago.{% endif %}
+                        Build one in Backup Center.
+                    </div>
+                    {% endif %}
+                    <dl class="row small mb-3">
+                        <dt class="col-sm-4 text-muted">Last backup</dt>
+                        <dd class="col-sm-8 mb-1">
+                            {% if last_backup.finished_at %}
+                            {{ backup_summary.last_backup_date }} by {{ (last_backup.started_by or 'superadmin')|capitalize }} ({{ last_backup.size_human }})
+                            {% else %}None on record{% endif %}
+                        </dd>
+                        {% if last_backup.finished_at %}
+                        <dt class="col-sm-4 text-muted">Result</dt>
+                        <dd class="col-sm-8 mb-1">
+                            {% if last_backup.complete %}Complete{% else %}{{ last_backup.warning_count }} warning(s){% endif %}
+                            · {% if last_backup.downloaded_at %}Downloaded{% else %}Not downloaded yet{% endif %}
+                        </dd>
+                        {% endif %}
+                        <dt class="col-sm-4 text-muted">Stored archive</dt>
+                        <dd class="col-sm-8 mb-0">
+                            {% if backup_summary.archive %}
+                            {{ backup_summary.archive.size_human }}, removed from the server in about {{ backup_summary.archive.expires_in_hours }} hr
+                            {% else %}None stored{% endif %}
+                        </dd>
+                    </dl>
                     <a class="btn btn-success fw-bold rounded-3 shadow-sm" href="{{ url_for('system_backup_page') }}">
                         <i class="fa-solid fa-shield-halved me-2"></i>Open Backup Center
                     </a>
-                    <div class="xsmall text-muted mt-3">
-                        Recommended before major updates and at least once per week during rollout. Backup Center is superadmin-only.
-                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-4">
+            <div class="card shadow-sm border-0 rounded-4 mb-4">
+                <div class="card-body p-4">
+                    <h6 class="fw-bold mb-2"><i class="fa-solid fa-circle-info me-2 text-success"></i>Good to know</h6>
+                    <ul class="small text-muted ps-3 mb-0">
+                        <li>The backup holds the database, uploaded files and stored documents in one ZIP.</li>
+                        <li>Download it after building; the server removes it after 24 hours.</li>
+                        <li>Back up before major updates and at least once a week.</li>
+                        <li>Backup Center does not restore or replace live data.</li>
+                    </ul>
                 </div>
             </div>
 

@@ -1,3 +1,133 @@
+# Settings → Backup: Live Summary, Honest Status, Pre-Build Check, and Overdue Reminder
+
+**Status:** Executed — not yet committed; commit and push wait for the owner's instruction.
+**Finished:** 2026-10-02.
+**Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer and over check things".
+**Approved:** 2026-10-02 — the owner said "all approved." (all 19 proposed items, including item 17, the dashboard reminder).
+**Detailed:** 2026-10-02.
+
+**Where the plan and the outcome differed:**
+
+- **Badge colours** keep their tints and gain a darker text colour for the light theme with the previous light text kept under the dark theme, instead of moving to theme tokens.
+- **One confirm window** serves both Build and Delete.
+- **The dashboard line is not shown while a backup is building.**
+- **The bucket figures shown** are the count of stored documents included and skipped (`job.bucket.object_count`, `skipped_count`).
+- **Tests** went into `tests/test_system_backup.py` as one new class (5 tests) rather than a new file.
+- **Verification:** the two backup modules pass (52 tests); full suite 1,481 tests, 23 failures, 3 errors, 5 skips — the baseline's non-passing counts. `/settings`, `/` and `/admin/backup` render in the test client and the Backup Center script passes `node --check`. The new tests were not run against the unfixed code, a real build was not run, and nothing was opened in a browser.
+
+## Context
+
+The owner asked for a review of the next Settings tab after Templates, which is Backup. The tab is one static card linking to the Backup Center page (`/admin/backup`), so both were reviewed. The tab shows nothing about the current state; the Backup Center can show "Ready" and "Complete" after the archive is gone, ignores information the server already sends, and replaces the previous archive without saying so. Nothing records when the last backup was made once its archive expires after 24 hours, so the card's "at least once per week" advice cannot be checked. The intended outcome: a superadmin sees at a glance when the last backup was made and whether one is overdue, and the Backup Center's badges always match what is actually on disk.
+
+## Decisions taken
+
+1. **All 19 items are in scope**, including the dashboard reminder.
+2. **How the archive is built and downloaded does not change.** `build_system_backup_archive`, `download_system_backup`, the 24-hour retention, the service-worker download rule and the URL names stay as they are.
+3. **The last-backup record lives in the existing job state file** (`_system_backup_job.json`), as one `last_backup` field carried across builds. No table, no schema change.
+4. **The Settings card and the dashboard reminder are rendered by the server at page load**, from a light summary that does not call the storage health report. No new polling.
+5. **"Overdue" means more than 7 days since the last finished backup, or no record at all.**
+6. **Superadmin-only stays.**
+7. **No browser automation** (project rule).
+
+## Investigation
+
+Line numbers are as of commit `db0c1d0`.
+
+- **Settings tab:** `templates/settings.html:299-325`. One `col-12 col-xl-8` card with a paragraph and a link to `system_backup_page`; no second column. The Settings route sets `backup_superadmin` (`app.py:28862`, passed at `:28872`).
+- **Backup Center page:** `templates/system_backup.html` (225 lines; styles `:4-37`, markup `:41-108`, script `:112-224`).
+  - Header badge and "Database Snapshot" stat are derived from `job.status` and `job.database_included` (`:161-164`, `:186`); the "Latest Archive" badge is `job.backup_complete ? 'Complete' : (archive ? 'Warnings recorded' : 'Not built')` (`:193`). None check that an archive exists.
+  - Badge colours are fixed light tints (`:21-24`: `#75b6ff`, `#61d49a`, `#f7ca55`, `#ff8e99`). **Not verified** in a browser on the light theme.
+  - Errors from start, cancel, delete and status go into `#backup-message` as plain text (`:208`, `:215`).
+  - The page never reads `started_by`, `started_at`, `finished_at`, `warning_count`, `warnings_truncated`, `bucket`, `archive.expires_in_seconds` or the `preflight` returned with a 507.
+  - The progress block (`:66-75`) is always visible. Delete uses `window.confirm` (`:220`). `escapeText` (`:129`) is `String(value)`. There is no link back to Settings.
+- **Server:** status payload `backup_status_payload` (`app.py:32101`); routes `/admin/backup` (`:32158`), `/status` (`:32170`), `/start` (`:32178`), `/cancel` (`:32237`), `/delete` (`:32249`), `/admin/download-backup` (`:32274`). The POST routes are not CSRF-exempt and the page sends `X-CSRFToken`.
+  - `admin_backup_start` replaces the whole state with `empty_backup_job_state()` (`:32215-32227`), so anything kept in the state file must be carried over there. When `preflight['reclaim_existing']` is set it deletes the previous archive first (`:32197-32211`).
+  - `admin_backup_delete` clears only `archive` and `message` (`:32270`); `status`, `backup_complete` and `database_included` keep their last values — the source of bug 1. Expiry by `sweep_backup_artifacts` leaves them too.
+  - `run_system_backup_job` (`:32023`) writes the terminal state and the "Built system backup" activity line. `download_system_backup` already logs "Downloaded system backup" once per download (`:32336-32346`), so item 16 needs no new log line.
+  - `backup_preflight_report` (`:30983`) returns estimate, required, free, `reclaim_existing`, `ok`, `reason`. `current_backup_archive` (`:30928`) returns `expires_in_seconds`. State helpers at `:30699-30790`.
+- **Dashboard:** rendered at `app.py:27532` (`templates/dashboard.html`). **Not read yet:** where a superadmin-only notice fits and what the route already passes; step 6 starts with that read.
+- **Existing tests:** `tests/test_system_backup.py` (34 tests), `tests/test_backup_permanent_fix.py` (14 tests). Two of the latter assert Backup Center template text (`:221-233`): "Overall progress:", "filesDone} files archived", "filesDone} of ${filesTotal} files archived", "Overall backup build progress", "databaseConfirmed", "completed_with_warnings", "Not confirmed". Those strings stay.
+- **Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v234-templates-tab` (`app.py:27030`). Suite baseline: 1,476 tests, 23 failures, 3 errors, 5 skips.
+- The bugs were read from the code, not reproduced. `changes.md` was read at its top sections, not end to end.
+
+## Execution steps
+
+1. **Last-backup record** (`app.py`: `empty_backup_job_state`, `admin_backup_start`, `run_system_backup_job`, `download_system_backup`).
+   - Add `last_backup: {}` to the empty state. On a successful build set it to `finished_at`, `started_by`, `filename`, `size_human`, `complete` (the `backup_complete` flag), `warning_count`, `duration_seconds`, `downloaded_at: ''`.
+   - `admin_backup_start` copies the previous `last_backup` into the fresh state.
+   - `download_system_backup`, in the branch that already logs the download, sets `last_backup.downloaded_at` when the file served is the recorded one.
+   - Done: after a build, a delete and a new start, `last_backup` still describes the last finished build.
+
+2. **Light summary** (`app.py`, new `backup_summary()` beside `backup_status_payload`). Returns `status`, `percent`, `last_backup`, `archive` (filename, size, `expires_in_seconds`, or none), `days_since_last` and `overdue`. Reads the state and `current_backup_archive()` only. `backup_status_payload` includes the same `last_backup`, `overdue` and the archive's `expires_in_seconds`.
+
+3. **Honest status** (`app.py`, `backup_status_payload`). When the job is `completed` / `completed_with_warnings` and no archive is on disk, report the job as `idle` with a message such as "The last backup has expired or was deleted. Build a new one to download it.", and `backup_complete` / `database_included` as false. The state file is not rewritten for this; `last_backup` still tells what was built. Done: after a delete, the payload carries no "ready" or "complete" signal.
+
+4. **Pre-build check** (`app.py`, new `GET /admin/backup/preflight`, superadmin). Returns `backup_preflight_report()` as is. `admin_backup_start` is unchanged and still re-checks.
+
+5. **Settings tab** (`templates/settings.html:299-325`, Settings route `app.py:28862`). The route passes `backup_summary` when `backup_superadmin`. The card shows: last backup date, who built it, size, complete or with warnings, downloaded or not; "Stored archive expires in N hr" or "No archive stored"; "Building… N%" when running; a red "Overdue — last backup N days ago" or "No backup on record" line when overdue; and the Open Backup Center button. A second column holds the short plain-language notes (what is in the archive, download it within 24 hours, this does not restore). Done: the long paragraph is gone and the row has no empty column.
+
+6. **Dashboard reminder** (`templates/dashboard.html`, route at `app.py:27532`). Read where a page-level notice fits; pass `backup_overdue_notice` only for superadmins; show one dismissible line "No system backup in N days" linking to the Backup Center. Nothing is rendered or computed for other roles.
+
+7. **Backup Center page** (`templates/system_backup.html`).
+   - "Back to Settings" link in the header.
+   - Build Backup first calls the preflight route and shows a confirm with estimated size, free space, and "the previous archive will be replaced" when `reclaim_existing`; when `ok` is false it shows the reason and does not start.
+   - Errors render in a visible alert (`role="alert"`), separate from the status sentence.
+   - Progress block hidden unless running.
+   - "Latest Archive" shows built by, built on, duration, "Expires in N hr", and the bucket figures present in `job.bucket` (read its keys in `build_system_backup_archive` before naming them).
+   - Warnings heading shows the true count, with "showing the first 50" when `warnings_truncated`.
+   - A "Last backup" line from `last_backup` when no archive is stored.
+   - Copy button beside the SHA-256.
+   - Delete uses an in-page confirm (a small Bootstrap modal, as `layout.html` already loads Bootstrap) instead of `window.confirm`.
+   - Notes rewritten in plain language, leading with "Download the file; it is removed from the server after 24 hours."
+   - Badge colours use the theme tokens already used on the page, with text colours that read on both themes; remove `escapeText` and the duplicate download URL.
+   - Keep every string that `tests/test_backup_permanent_fix.py:221-233` asserts.
+
+8. **Tests** (extend `tests/test_system_backup.py`, following its existing fixtures).
+   - `last_backup` is written on a successful build, survives delete and a new start, and gets `downloaded_at` on download.
+   - Status payload after delete: job `idle`, `backup_complete` false, `last_backup` present.
+   - `backup_summary`: overdue with no record; overdue at 8 days; not overdue at 1 day.
+   - Preflight route: refused for a non-superadmin; returns the report keys for a superadmin.
+   - `/settings` as superadmin contains the summary; `/dashboard` contains the reminder for a superadmin when overdue and not for another role.
+   - Source-level: `system_backup.html` no longer contains `window.confirm` or `escapeText`.
+   - Cache version pin.
+
+9. **Release records.** Service worker bump (such as `…-v235-backup-tab`), `static/changelog/releases.json`, `changes.md`, this plan's status and any difference between plan and outcome.
+
+10. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Restore from a backup** — high risk; needs its own plan.
+- **Scheduled automatic backups** — the archive sits on the same volume and expires in 24 hours, so an unattended one protects nothing unless it is also copied off-site.
+- **A backup history list** — one last-backup record answers "when and by whom"; the activity log already holds every build and download.
+- **Any change to the build, the download route, retention, or the service-worker download rule.**
+- **Live polling on the Settings card or dashboard.**
+
+## Verification
+
+- The tests in step 8. Positive controls: the status-after-delete, `last_backup` and source-level tests fail against the current code.
+- Focused modules: `tests/test_system_backup.py`, `tests/test_backup_permanent_fix.py`, the dashboard test modules, `tests/test_appearance_themes.py`, `tests/test_changelog_workflow.py`, `tests/test_changelog_coverage.py`. Then one full-suite pass quoted against the baseline.
+- Test-client renders of `/settings`, `/admin/backup` and `/dashboard` as superadmin, and `node --check` of the Backup Center script.
+- No browser check by the agent. The owner checks on desktop and phone width, light and dark: the Settings card; Build with the confirm; progress; Download; Delete, then the badges; the dashboard line.
+
+## After implementation
+
+1. Self-review the diff.
+2. Focused modules, then the full suite, quoting counts against the baseline.
+3. Service worker bump and `releases.json` entry.
+4. `changes.md` and this plan's status, with any difference between plan and outcome.
+5. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`. Commit and push only on the owner's instruction, then verify `origin/main` and Railway's deployment.
+
+## Risks
+
+- **Production has no `last_backup` yet**, so on deployment the Settings card and the dashboard show "No backup on record" and overdue until the next build. That is accurate but may look like something broke; the release note says so.
+- **The dashboard line is on every superadmin page load.** It reads one small JSON file and one directory listing; no storage scan.
+- **Reporting an expired job as `idle`** changes what the status route returns after delete or expiry. Only the Backup Center reads it.
+- **Preflight confirm adds one request before a build.** If it fails, the page says so and does not start; the server-side check in `admin_backup_start` is unchanged.
+- **Template-text tests** in `tests/test_backup_permanent_fix.py` break if their strings are reworded; they are in the focused run.
+
+---
+
 # Settings → Templates: Friendlier Tab, Real Preview, More Subjects, and Code Cleanup
 
 **Status:** Executed — implementation commit `9f38a54`; published to `origin/main` on the owner's "commit and push".
