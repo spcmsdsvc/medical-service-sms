@@ -19444,7 +19444,7 @@ CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
 CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
 CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v3'
 CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER = '_calibration_report_historical_repair'
-CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION = 'calibration-report-footer-layout-v1'
+CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION = 'calibration-report-footer-layout-v2'
 CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_MARKER = '_calibration_report_footer_layout_repair'
 # The retained footer measures 2,360 twips of artwork plus 708 twips of footer
 # distance.  Add the required 120-twip (6pt) clearance and round up for a stable
@@ -19775,18 +19775,110 @@ def _calibration_report_footer_layout_inspection(docx_bytes):
         return {'status': 'blocked', 'reason': 'Calibration Report footer references are missing.'}
     if 'AVERAGE EXPOSURE OUTPUT' not in html.unescape(document_xml) or 'PERFORMANCE CRITERIA' not in html.unescape(document_xml):
         return {'status': 'blocked', 'reason': 'Calibration Report output region is not recognized.'}
-    safe = all(bottom >= CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS for bottom in margins)
+    margins_safe = all(bottom >= CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS for bottom in margins)
+    try:
+        anchored = _calibration_report_anchor_output_pages_xml(document_xml) == document_xml
+    except ValueError as anchor_error:
+        return {'status': 'blocked', 'reason': clean_str(str(anchor_error))[:300]}
+    safe = margins_safe and anchored
+    if safe:
+        reason = ''
+    elif not margins_safe:
+        reason = 'Calibration Report body margin does not reserve the footer area.'
+    else:
+        reason = 'Calibration Report output page heading is not anchored to the top of its page.'
     return {
         'status': 'already_repaired' if safe else 'repairable',
-        'reason': '' if safe else 'Calibration Report body margin does not reserve the footer area.',
+        'reason': reason,
         'bottom_margins': margins,
         'footer_reserve_twips': CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS,
         'document_xml': document_xml,
     }
 
 
+def _calibration_report_anchor_output_pages_xml(document_xml):
+    """Start every output page at its letterhead with a real page break.
+
+    Generated reports reached page 3 through a run of empty paragraphs, which spill onto
+    that page and push the letterhead down once the footer reserve shortens page 2.  A
+    second tube's page had a bare page break and no letterhead.  Idempotent.
+    """
+    def visible_text(xml):
+        return html.unescape(''.join(re.findall(r'<w:t\b[^>]*>(.*?)</w:t>', xml, re.S))).strip()
+
+    def is_blank(xml):
+        return not visible_text(xml) and not re.search(r'<w:(?:drawing|br|sectPr)\b', xml)
+
+    paragraphs = [
+        (match.start(), match.end(), match.group(0))
+        for match in re.finditer(r'<w:p\b[^>]*/>|<w:p(?=[\s>]).*?</w:p>', document_xml, re.S)
+    ]
+    headings = [
+        index for index, (_start, _end, xml) in enumerate(paragraphs)
+        if 'AVERAGE EXPOSURE OUTPUT' in visible_text(xml)
+    ]
+    if not headings:
+        raise ValueError('Calibration Report output region is not recognized.')
+
+    def letterhead_index(heading):
+        index = heading - 2
+        if (
+            index >= 0 and
+            visible_text(paragraphs[index][2]) == 'Shimadzu Philippines Corporation' and
+            visible_text(paragraphs[heading - 1][2]) == 'Medical System Division' and
+            paragraphs[index][1] == paragraphs[heading - 1][0] and
+            paragraphs[heading - 1][1] == paragraphs[heading][0]
+        ):
+            return index
+        return None
+
+    def with_page_break(paragraph_xml):
+        if '<w:pageBreakBefore/>' in paragraph_xml:
+            return paragraph_xml
+        if '</w:pPr>' in paragraph_xml:
+            return paragraph_xml.replace('</w:pPr>', '<w:pageBreakBefore/></w:pPr>', 1)
+        opening_end = paragraph_xml.find('>')
+        return paragraph_xml[:opening_end + 1] + '<w:pPr><w:pageBreakBefore/></w:pPr>' + paragraph_xml[opening_end + 1:]
+
+    first_letterhead = letterhead_index(headings[0])
+    if first_letterhead is None:
+        raise ValueError('Calibration Report output page letterhead is not recognized.')
+    letterhead_copy = (
+        with_page_break(paragraphs[first_letterhead][2]) +
+        paragraphs[first_letterhead + 1][2]
+    )
+    letterhead_copy = re.sub(r'(<wp:docPr id=")\d+(")', r'\g<1>2000000002\g<2>', letterhead_copy, count=1)
+
+    operations = []
+    for heading in headings:
+        index = letterhead_index(heading)
+        if index is None:
+            # Stored second-tube page: a bare page-break paragraph sits before the heading.
+            previous = paragraphs[heading - 1]
+            if previous[1] != paragraphs[heading][0] or visible_text(previous[2]) or not re.search(
+                r'<w:br\b[^>]*w:type="page"', previous[2]
+            ):
+                raise ValueError('Calibration Report second output page is not recognized.')
+            operations.append((previous[0], previous[1], letterhead_copy))
+            continue
+        spacer_start = paragraphs[index][0]
+        cursor = index - 1
+        # Only page 3 was reached through spacer paragraphs.
+        while (
+            heading == headings[0] and cursor >= 0 and
+            paragraphs[cursor][1] == spacer_start and is_blank(paragraphs[cursor][2])
+        ):
+            spacer_start = paragraphs[cursor][0]
+            cursor -= 1
+        operations.append((spacer_start, paragraphs[index][1], with_page_break(paragraphs[index][2])))
+
+    for start, end, replacement in sorted(operations, reverse=True):
+        document_xml = document_xml[:start] + replacement + document_xml[end:]
+    return document_xml
+
+
 def _calibration_report_footer_layout_repair_document_xml(document_xml):
-    """Raise the body bottom margin without changing report values or footer parts."""
+    """Reserve the footer area and anchor the output pages without changing report values."""
     if not isinstance(document_xml, str) or not document_xml:
         raise ValueError('Calibration Report document XML is empty.')
 
@@ -19817,9 +19909,10 @@ def _calibration_report_footer_layout_repair_document_xml(document_xml):
         document_xml,
         flags=re.S,
     )
-    if not changed:
+    anchored = _calibration_report_anchor_output_pages_xml(repaired)
+    if not changed and anchored == repaired:
         raise ValueError('Calibration Report already has the protected footer reserve.')
-    return repaired
+    return anchored
 
 
 def _calibration_report_footer_layout_repair_docx_bytes(docx_bytes):
@@ -21424,10 +21517,10 @@ register_calibration_repair({
 register_calibration_repair({
     'key': 'calibration-report-footer-layout-v1',
     'version': CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION,
-    'title': 'Keep text clear of the footer',
+    'title': 'Keep text clear of the footer and the page heading at the top',
     'description': (
-        'Adds space above the page footer so table text cannot run into it, '
-        'then rebuilds the report PDF.'
+        'Adds space above the page footer so table text cannot run into it, keeps the '
+        'company heading at the top of each output page, then rebuilds the report PDF.'
     ),
     'artifact_scope': 'Calibration Report (Word and PDF)',
     # Individual application only: this rewrites retained files, so it stays out of Repair All.
@@ -26717,7 +26810,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v227-lavender-accent-pages';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v228-calibration-report-letterhead';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -26742,7 +26835,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=42',
+  '/static/js/app-calibration-report.js?v=43',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

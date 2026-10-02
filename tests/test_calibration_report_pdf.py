@@ -656,9 +656,21 @@ class CalibrationReportPdfTests(unittest.TestCase):
                 self.assertEqual(before_package.read(name), after_package.read(name), name)
             before_document = before_package.read('word/document.xml').decode('utf-8')
             after_document = after_package.read('word/document.xml').decode('utf-8')
+            # Besides the margin, only the spacer run before the page 3 letterhead changes:
+            # it is replaced by a page break on the letterhead paragraph.
+            letterhead_text = before_document.rindex('Shimadzu Philippines Corporation')
+            letterhead_start = before_document.rindex('<w:p ', 0, letterhead_text)
+            spacer_start = before_document.rindex('</w:tbl>', 0, letterhead_start) + len('</w:tbl>')
+            self.assertEqual(before_document[spacer_start:letterhead_start].count('<w:p '), 10)
+            expected_document = before_document[:spacer_start] + before_document[letterhead_start:]
+            self.assertEqual(after_document.count('<w:pageBreakBefore/>'), 1)
             self.assertEqual(
-                re.sub(r'w:bottom="\d+"', 'w:bottom="BOTTOM"', before_document),
-                re.sub(r'w:bottom="\d+"', 'w:bottom="BOTTOM"', after_document),
+                re.sub(r'w:bottom="\d+"', 'w:bottom="BOTTOM"', expected_document),
+                re.sub(r'w:bottom="\d+"', 'w:bottom="BOTTOM"', after_document.replace('<w:pageBreakBefore/>', '')),
+            )
+            self.assertIn(
+                '<w:pStyle w:val="Title"/><w:pageBreakBefore/></w:pPr>',
+                after_document[spacer_start:spacer_start + 400],
             )
             for footer_name in ('word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml'):
                 self.assertEqual(before_package.read(footer_name), after_package.read(footer_name))
@@ -668,6 +680,57 @@ class CalibrationReportPdfTests(unittest.TestCase):
         )
         self.assertEqual(second_inspection['status'], 'already_repaired')
         self.assertEqual(second_bytes, repaired_bytes)
+
+    def _docx_with_document_xml(self, mutate):
+        output = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(self.docx_bytes), 'r') as source, zipfile.ZipFile(output, 'w') as target:
+            for info in source.infolist():
+                data = source.read(info.filename)
+                if info.filename == 'word/document.xml':
+                    data = mutate(data.decode('utf-8')).encode('utf-8')
+                target.writestr(info, data)
+        return output.getvalue()
+
+    def test_footer_layout_repair_anchors_output_pages_of_stored_reports(self):
+        # A report that only had its margin raised still has the dropped page 3 letterhead.
+        margin_only = self._docx_with_document_xml(
+            lambda xml: xml.replace('w:bottom="1440"', 'w:bottom="3600"')
+        )
+        inspection = app_module._calibration_report_footer_layout_inspection(margin_only)
+        self.assertEqual(inspection['status'], 'repairable')
+        self.assertIn('heading', inspection['reason'])
+        repaired, repaired_inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(margin_only)
+        self.assertEqual(repaired_inspection['status'], 'already_repaired')
+        self.assertEqual(self._document_texts(repaired), self._document_texts(margin_only))
+
+        # A stored second-tube page starts with a bare page break and has no letterhead.
+        def add_tube2_page(xml):
+            section = xml.rindex('<w:sectPr')
+            return (
+                xml[:section] +
+                '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+                '<w:p><w:r><w:t>AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 2</w:t></w:r></w:p>' +
+                xml[section:]
+            )
+
+        two_tube, _inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(
+            self._docx_with_document_xml(add_tube2_page)
+        )
+        with zipfile.ZipFile(io.BytesIO(two_tube), 'r') as package:
+            document = package.read('word/document.xml').decode('utf-8')
+        self.assertEqual(document.count('Shimadzu Philippines Corporation'), 3)
+        self.assertEqual(document.count('<w:pageBreakBefore/>'), 2)
+        self.assertNotIn('<w:br w:type="page"/>', document)
+        self.assertEqual(document.count('<wp:docPr id="2000000002"'), 1)
+        again, _inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(two_tube)
+        self.assertEqual(again, two_tube)
+
+        unrecognized = self._docx_with_document_xml(
+            lambda xml: xml.replace('Medical System Division', 'Other Division')
+        )
+        self.assertEqual(
+            app_module._calibration_report_footer_layout_inspection(unrecognized)['status'], 'blocked'
+        )
 
     def test_footer_layout_repair_rebuilds_pdf_preserves_approval_and_rolls_back(self):
         source_id, submission_id, disk_name = self._create_source_fixture()

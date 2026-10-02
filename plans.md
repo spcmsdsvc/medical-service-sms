@@ -1,3 +1,78 @@
+# Calibration Report: Letterhead Stays at the Top of Pages 3 and 4
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Finished:** 2026-10-02.
+**Approved and execution authorized:** 2026-10-02 — the owner said "approved. go ahead along with your recommendations".
+
+**Where the plan and the outcome differed:**
+
+- **Step 3.** Spacer paragraphs are stripped only before the page 3 letterhead; the single empty paragraph before a second tube's letterhead is kept, so a freshly generated two-tube report inspects as already repaired.
+- **Step 5.** `tests/test_calibration_center.py` also pinned the script version and was updated.
+- **Verification.** No "fails without the fix" run was made. The repair was dry-run in memory against the 8 stored reports in `static/uploads/reports/`: all went from `repairable` to `already_repaired`; nothing was written. No PDF was rendered.
+- **Suite:** 23 failures, 3 errors, 5 skips — the baseline's non-passing counts.
+**Detailed:** 2026-10-02.
+
+## Context
+
+The owner sent a screenshot of page 3 of a generated Calibration Report: the "Shimadzu Philippines Corporation / Medical System Division" letterhead sits several lines below the top of the page. The owner asked for the header to be fixed, for page 4 to be checked, and for the Calibration Center repair section to fix stored reports as well.
+
+## Decisions taken
+
+1. **Page 4 (second X-ray tube) gets the letterhead**, matching page 3 (the owner approved the recommendation).
+2. **The existing footer-layout repair is extended**; no new repair type is added. Its key stays `calibration-report-footer-layout-v1`; its version becomes `calibration-report-footer-layout-v2`.
+3. **The template file is not edited.** The generator and the repair apply the same rule in code.
+4. **No browser check.**
+
+## Investigation
+
+Line numbers are as of commit `e0f846f`.
+
+- **The page-3 letterhead is body text, not a Word header.** `static/templates/calibration-report/calibration-report-template.docx` has one section and no page break. After the Mechanical Checks table there are ten empty paragraphs, then the letterhead paragraph (style `Title`, anchored logo `rId8`), "Medical System Division", and the "AVERAGE EXPOSURE OUTPUT" heading. The empty paragraphs are what push the letterhead onto page 3.
+- **Why it drops.** `applyFooterReserve` (`static/js/app-calibration-report.js:1317`) raises the bottom margin from 1440 to 3600 twips, so page 2 holds about 1.5 inches less and the empty paragraphs spill onto page 3 above the letterhead. `_calibration_report_footer_layout_repair_document_xml` (`app.py:19788`) makes the same margin change to stored reports and so causes the same drop.
+- **Page 4.** `insertTube2OutputPage` (`app-calibration-report.js:1352`) inserts a paragraph holding a hard page break and then a copy of the output region. `outputRegion` (`:1271`) starts at the heading, so page 4 has no letterhead, and the break paragraph leaves one blank line at its top. It is not pushed down by spacers.
+- **Stored reports** in `static/uploads/reports/` have the same body shape as the template (ten spacers, margin 1440).
+- **Repair wiring.** Inspection `app.py:19750`, repair `19788` / `19825`, candidate `20452`, apply `21747`, registry entry `21424`. The repair already rebuilds the PDF, snapshots both files and rolls back.
+- **Tests.** `tests/test_calibration_report_pdf.py:639` asserts the repaired document equals the original except for the bottom margin; this must change. `tests/test_tsr_calibration_report.py:334` asserts the two-tube document contains a hard page break; this must change. `:955-957`, `:1029`, `:1071` pin `app-calibration-report.js?v=42`.
+- **Versions at planning time:** `app-calibration-report.js?v=42`, service worker `medical-service-pwa-offline-navigation-v227-lavender-accent-pages`.
+- **LibreOffice is not installed on the development machine**, so the generated PDF cannot be rendered locally.
+- `changes.md` was read at its current top sections, not end to end.
+
+## Execution steps
+
+1. **Generator, page 3** (`static/js/app-calibration-report.js`). `outputRegion` starts at the letterhead paragraph (two paragraphs before the heading; `templateSlotError` if it is not "Shimadzu Philippines Corporation"). New `anchorOutputPage(documentXml)` removes the empty paragraphs between the previous table and the letterhead and adds `<w:pageBreakBefore/>` to the letterhead; called in `buildDocx` before `releaseFormTableKeepNext`. Done: a generated document has no empty paragraph between the Mechanical Checks table and the letterhead, and the letterhead carries the page break.
+2. **Generator, page 4.** `insertTube2OutputPage` no longer inserts a break paragraph; the copied region now begins with the letterhead and its page break. The copied logo's `wp:docPr` id is set to `2000000002`. Done: a two-tube document has three letterheads, two `pageBreakBefore`, and no `w:br w:type="page"`.
+3. **Repair** (`app.py`). New `_calibration_report_anchor_output_pages_xml(document_xml)`: for each "AVERAGE EXPOSURE OUTPUT" heading, either (a) the letterhead precedes it — strip the contiguous empty paragraphs before the letterhead and add `pageBreakBefore`; or (b) a hard-page-break paragraph precedes it (stored two-tube report) — replace that paragraph with a copy of the first letterhead pair. Anything else raises `ValueError` (fail closed). Idempotent. `_calibration_report_footer_layout_inspection` reports `repairable` when the margin is short or the anchoring would change the document; `_calibration_report_footer_layout_repair_document_xml` applies both. Version constant to `-v2`; registry title and description mention the page heading. Done: a margin-only-repaired report is `repairable` again and a second repair is a no-op.
+4. **Tests.** `tests/test_calibration_report_pdf.py`: update the idempotency test for the new edit; add a margin-only-repaired case and a stored two-tube case. `tests/test_tsr_calibration_report.py`: replace the hard-page-break assertion with the letterhead and `pageBreakBefore` counts, add a page-3 anchor key to the sample/final node script, update the `?v=` pins.
+5. **Release records.** `app-calibration-report.js?v=43` in the template and the service-worker precache list, service worker `v228`, `static/changelog/releases.json`, `changes.md`, this plan's status.
+6. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **The template file** — one rule in code serves both new and stored reports.
+- **The heading-units repair and certificates** — unrelated.
+- **Page 1 letterhead** — already at the top of its page.
+
+## Verification
+
+- The tests in step 4, then one full-suite pass against the baseline (1,457 tests, 23 failures, 3 errors, 5 skips).
+- A rendered PDF check of pages 3 and 4 is not possible locally (no LibreOffice); it is confirmed on the deployed app by generating a sample report and repairing one stored report.
+
+## After implementation
+
+1. Self-review the diff.
+2. Full suite, quoting counts against the baseline.
+3. Service worker bump and `releases.json` entry.
+4. `changes.md` and this plan's status, with any difference between plan and outcome.
+5. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **Reports already repaired for the footer reappear as ready to repair.** Intended: they are the affected ones.
+- **A stored report with an unrecognized shape becomes `blocked`** for this repair instead of being edited. Fail closed, as the other repairs do.
+- **Rendering is unverified locally.** `pageBreakBefore` is standard Word markup that LibreOffice honours; confirmed only after deployment.
+
+---
+
 # Colour Themes: Lavender Accent and Accent-Aware Pages
 
 **Status:** Executed — implementation commit `69196de`; publication to `origin/main` authorized.

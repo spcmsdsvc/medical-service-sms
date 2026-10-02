@@ -1269,10 +1269,26 @@
   }
   function textBlocks(xml){ return directXmlBlocks(xml, 't'); }
   function outputRegion(documentXml){
-    var heading = directXmlBlocks(documentXml,'p').find(function(paragraph){ return cellText(paragraph.xml).indexOf('AVERAGE EXPOSURE OUTPUT') >= 0; });
+    var paragraphs = directXmlBlocks(documentXml,'p');
+    var headingIndex = paragraphs.findIndex(function(paragraph){ return cellText(paragraph.xml).indexOf('AVERAGE EXPOSURE OUTPUT') >= 0; });
+    var heading = paragraphs[headingIndex]; var letterhead = paragraphs[headingIndex - 2];
     var performance = directXmlBlocks(documentXml,'tbl').find(function(table){ return cellText(table.xml).indexOf('PERFORMANCE CRITERIA') >= 0; });
     if(!heading || !performance || performance.start <= heading.start) throw templateSlotError('page 3 output region');
-    return { start:heading.start, end:performance.end, xml:documentXml.slice(heading.start,performance.end) };
+    // The region starts at the page letterhead so a second tube's page repeats it.
+    if(!letterhead || cellText(letterhead.xml).indexOf('Shimadzu Philippines Corporation') < 0) throw templateSlotError('page 3 letterhead');
+    return { start:letterhead.start, end:performance.end, xml:documentXml.slice(letterhead.start,performance.end) };
+  }
+  function anchorOutputPage(documentXml){
+    // The supplied template pushes the page 3 letterhead onto its page with a run of empty
+    // paragraphs, which spill onto page 3 once the footer reserve shortens page 2. Replace
+    // them with a real page break on the letterhead.
+    var region = outputRegion(documentXml);
+    var previousTable = directXmlBlocks(documentXml,'tbl').filter(function(table){ return table.end <= region.start; }).pop();
+    if(!previousTable) throw templateSlotError('table before page 3');
+    var spacers = documentXml.slice(previousTable.end, region.start);
+    if(cellText(spacers) || /<w:(drawing|br|sectPr)\b/.test(spacers)) throw templateSlotError('page 3 spacer paragraphs');
+    var letterhead = directXmlBlocks(region.xml,'p')[0];
+    return documentXml.slice(0, previousTable.end) + addParagraphProperty(letterhead.xml, '<w:pageBreakBefore/>') + documentXml.slice(region.start + letterhead.end);
   }
   function addRowProperty(rowXml, propertyXml){
     var rowProperties = directXmlBlocks(rowXml, 'trPr');
@@ -1352,8 +1368,9 @@
   function insertTube2OutputPage(documentXml,tube2Region){
     var sectionStart = documentXml.lastIndexOf('<w:sectPr');
     if(sectionStart < 0) throw templateSlotError('document section properties');
-    var pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
-    return documentXml.slice(0,sectionStart) + pageBreak + tube2Region + documentXml.slice(sectionStart);
+    // The copied letterhead carries the page break; its logo needs its own drawing id.
+    tube2Region = tube2Region.replace(/(<wp:docPr id=")\d+(")/, '$12000000002$2');
+    return documentXml.slice(0,sectionStart) + tube2Region + documentXml.slice(sectionStart);
   }
   function releaseFormTableKeepNext(documentXml){
     // The form tables label every row with Heading 2, whose keep-with-next chains the whole
@@ -1445,6 +1462,7 @@
     }
     [[0,1,1,report.mechanical_checks[0]?.result],[0,3,1,report.generator_checks[0]?.result],[0,4,1,report.generator_checks[1]?.result],[0,5,1,report.generator_checks[2]?.result],[0,6,1,report.generator_checks[3]?.result]].forEach(function(item){ documentXml = patchTableCell(documentXml, 1, item[1], item[2], function(cell){ return replaceResultLine(cell, item[3]); }); });
     [['calibration.machine_calibration_date',8],['calibration.next_calibration_date',9],['calibration.test_tool_manufacturer',10],['calibration.test_tool_model',11],['calibration.test_tool_serial',12],['calibration.test_tool_calibration_date',13]].forEach(function(field){ var value = getPath(report, field[0]); if(!String(value || '').trim()) return; documentXml = patchTableCell(documentXml, 1, field[1], 1, function(cell){ return appendTextToCell(cell, value); }); });
+    documentXml = anchorOutputPage(documentXml);
     documentXml = releaseFormTableKeepNext(documentXml);
     var sourceOutput = outputRegion(documentXml);
     var tube1Output = fillOutputRegion(sourceOutput.xml,report,1);

@@ -331,7 +331,9 @@ for (const marker of ['Shimadzu', 'Flexavision F4 with CH-200M', 'SN-1', '2026-0
 }
 if ((generatedDocument.match(/<w:tbl\b/g) || []).length !== 8) throw new Error('two-tube DOCX did not append one output page with its three source tables');
 if (!generatedDocument.includes('AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 1') || !generatedDocument.includes('AVERAGE EXPOSURE OUTPUT - X-RAY TUBE 2')) throw new Error('generated output pages are not labeled by tube');
-if (!/<w:br\b[^>]*w:type="page"/.test(generatedDocument)) throw new Error('Tube 2 output page has no explicit page break');
+if ((generatedDocument.match(/Shimadzu Philippines Corporation/g) || []).length !== 3 || (generatedDocument.match(/<w:pStyle w:val="Title"\/><w:pageBreakBefore\/>/g) || []).length !== 2 || /<w:br\b[^>]*w:type="page"/.test(generatedDocument)) throw new Error('output pages do not each start at their own letterhead with a page break');
+if (!/^<w:p\b[^>]*><w:pPr><w:pStyle w:val="Title"\/><w:pageBreakBefore\/>/.test(generatedDocument.split('</w:tbl>')[2])) throw new Error('page 3 letterhead is still pushed down by spacer paragraphs');
+if ((generatedDocument.match(/<wp:docPr id="2000000002"/g) || []).length !== 1) throw new Error('Tube 2 letterhead logo does not have its own drawing id');
 const pageOneRows = Array.from(generatedDocument.slice(0, generatedDocument.indexOf('</w:tbl>')).matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g), match => match[0].replace(/<\/w:tc>/g, '|').replace(/<[^>]+>/g, ''));
 if (pageOneRows.length !== 29 || pageOneRows[12] !== '|Console 1|CON-1|' || pageOneRows[13] !== '|Model (2):|Serial Number (2):|' || pageOneRows[14] !== '|Console 2|CON-2|' || pageOneRows[16] !== '|Tube 1|TUBE-1|' || pageOneRows[18] !== '|Tube 2|TUBE-2|' || pageOneRows[19] !== '2.7 Date of Installation:|2024-01-02|' || !pageOneRows[28].includes('2.5mm Al')) throw new Error('Console 2 rows were not inserted under Control Console or shifted later Page 1 values: ' + JSON.stringify(pageOneRows.slice(11, 20)));
 const formTablesXml = generatedDocument.slice(0, generatedDocument.indexOf('AVERAGE EXPOSURE OUTPUT'));
@@ -952,9 +954,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('?v=11', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
         self.assertIn('app-calibration-report.js', self.template_source)
-        self.assertIn('?v=42', self.template_source)
+        self.assertIn('?v=43', self.template_source)
         self.assertIn("app-calibration-report.css?v=11", self.app_source)
-        self.assertIn("app-calibration-report.js?v=42", self.app_source)
+        self.assertIn("app-calibration-report.js?v=43", self.app_source)
         assert_cache_version_at_least(self, 208, self.app_source)
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
         paste_release = next(item for item in releases if item['release_key'] == '2026-09-26-calibration-report-paste-criteria')
@@ -993,7 +995,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         result = subprocess.run([str(NODE), '-e', NODE_SAMPLE_FINAL_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
-        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'mixedUnitsInDocx', 'mixedUnitHeadersCentered', 'compactRows', 'fiveRowsOutput', 'sixRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'footerReserveApplied', 'focalHeadersRepeat', 'performanceHeaderRepeats', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule', 'implicitTemporaryRejected', 'explicitTemporaryAccepted', 'temporaryPersistsAfterReload', 'temporaryClearedForCatalog'):
+        for key in ('legacyDefaults', 'legacyRowsPadded', 'legacyDoseUnchanged', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'mixedUnitsInDocx', 'mixedUnitHeadersCentered', 'compactRows', 'fiveRowsOutput', 'sixRowsOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3LetterheadAnchored', 'page3MeasurementsCentered', 'footerReserveApplied', 'focalHeadersRepeat', 'performanceHeaderRepeats', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule', 'implicitTemporaryRejected', 'explicitTemporaryAccepted', 'temporaryPersistsAfterReload', 'temporaryClearedForCatalog'):
             self.assertTrue(payload[key], key)
 
     def test_entry_page_has_single_card_action_and_accessible_dialog_contract(self):
@@ -1025,8 +1027,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=11", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=42", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=42'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=43", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=43'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1067,8 +1069,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=42", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=42'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=43", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=43'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
@@ -1710,6 +1712,7 @@ function report(overrides = {}) {
   const page3Gap = page3Tables.length >= 5 ? body.slice(page3Tables[3].end, page3Tables[4].start) : '';
   const page3FocalGapPreserved = (focalGap.match(/<w:p\b/g) || []).length === 2;
   const page3FooterGapCompacted = (page3Gap.match(/<w:p\b/g) || []).length === 1;
+  const page3LetterheadAnchored = page3Tables.length > 2 && /^<w:p\b[^>]*><w:pPr><w:pStyle w:val="Title"\/><w:pageBreakBefore\/>/.test(body.slice(page3Tables[1].end)) && (xml.match(/<w:pageBreakBefore\/>/g) || []).length === 1;
   function measurementRowsAreCentered(tableBlock) {
     const tableXml = body.slice(tableBlock.start, tableBlock.end);
     const rows = directBlocks(tableXml, 'tr').slice(4, 12);
@@ -1776,7 +1779,7 @@ const compactRows = compactSmallRows.length === 3 && compactLargeRows.length ===
   await api.clearForm();
   const cleared = api.collect();
   const clearPreservesSchedule = cleared.facility.name === 'Schedule Client' && cleared.machine.model === 'Schedule Model' && cleared.focal_spots.small && cleared.focal_spots.large && cleared.focal_sizes.small === '0.6' && cleared.focal_sizes.large === '1.2' && documents.value === '';
-  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, mixedUnitsInDocx, mixedUnitHeadersCentered, compactRows, fiveRowsOutput, sixRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, footerReserveApplied, focalHeadersRepeat, performanceHeaderRepeats, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule, implicitTemporaryRejected:!implicitTemporaryValidation.ok && /catalog Equipment Model/i.test(implicitTemporaryValidation.message), explicitTemporaryAccepted:explicitTemporaryValidation.ok && explicitTemporaryValidation.model_source === 'temporary', temporaryPersistsAfterReload:temporaryReloaded.certificate.model_source === 'temporary' && temporaryReloaded.certificate.equipment_model === 'Temporary Model 9000', temporaryClearedForCatalog }));
+  console.log(JSON.stringify({ legacyDefaults, legacyRowsPadded, legacyDoseUnchanged, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, mixedUnitsInDocx, mixedUnitHeadersCentered, compactRows, fiveRowsOutput, sixRowsOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3LetterheadAnchored, page3MeasurementsCentered, footerReserveApplied, focalHeadersRepeat, performanceHeaderRepeats, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule, implicitTemporaryRejected:!implicitTemporaryValidation.ok && /catalog Equipment Model/i.test(implicitTemporaryValidation.message), explicitTemporaryAccepted:explicitTemporaryValidation.ok && explicitTemporaryValidation.model_source === 'temporary', temporaryPersistsAfterReload:temporaryReloaded.certificate.model_source === 'temporary' && temporaryReloaded.certificate.equipment_model === 'Temporary Model 9000', temporaryClearedForCatalog }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

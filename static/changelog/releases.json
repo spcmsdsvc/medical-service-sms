@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-02-calibration-report-letterhead",
+      "release_date": "2026-10-02",
+      "title": "Calibration Report Heading Stays at the Top of the Page",
+      "summary": "The company heading on the output pages of a Calibration Report no longer drops down the page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-calibration-report-letterhead-users",
+          "category": "Calibration",
+          "description": "On a generated Calibration Report, the Shimadzu Philippines Corporation heading on page 3 now starts at the top of the page instead of several lines down. On reports with a second X-ray tube, page 4 now carries the same heading. In the Calibration Center, the footer repair also fixes the heading on reports that were already saved.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-lavender-accent-pages",
       "release_date": "2026-10-02",
       "title": "Lavender Accent and Accent Colours Across Pages",
