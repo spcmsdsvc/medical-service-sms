@@ -28,6 +28,8 @@
   // The retained template measures 2,360 twips of footer artwork plus 708 twips
   // of footer distance.  The 120-twip (6pt) clearance is rounded up to 3,600.
   var CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS = 3600;
+  // Most measurement rows (Small + Large) that still leave room for Performance Criteria on the same page.
+  var CALIBRATION_REPORT_SHARED_PAGE_MAX_ROWS = 8;
   var DEFAULT_MANUFACTURER = 'Shimadzu';
   var CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH = 40;
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -1364,13 +1366,32 @@
     (output.performance_results || []).forEach(function(value,index){ regionXml = patchTableCell(regionXml,2,index + 1,1,function(cell){ return appendTextToCell(cell,value); }); });
     if(output.focal_spots?.large === false) regionXml = removeDirectTable(regionXml,1);
     if(output.focal_spots?.small === false) regionXml = removeDirectTable(regionXml,0);
-    return compactPageThreeGap(regionXml);
+    return placePerformanceTable(compactPageThreeGap(regionXml));
+  }
+  function placePerformanceTable(regionXml){
+    // The Performance Criteria table is never cut across pages. With both focal tables and
+    // more measurement rows than fit beside it, it gets its own page with the letterhead and heading.
+    var tables = directXmlBlocks(regionXml,'tbl'); var performance = tables[tables.length - 1]; var rows = directXmlBlocks(performance.xml,'tr');
+    var tableXml = performance.xml;
+    rows.slice().reverse().forEach(function(row, reverseIndex){
+      var updated = addRowProperty(row.xml, '<w:cantSplit/>');
+      if(reverseIndex > 0) directXmlBlocks(updated,'p').slice().reverse().forEach(function(paragraph){ updated = updated.slice(0, paragraph.start) + addParagraphProperty(paragraph.xml, '<w:keepNext/>') + updated.slice(paragraph.end); });
+      tableXml = tableXml.slice(0, row.start) + updated + tableXml.slice(row.end);
+    });
+    regionXml = regionXml.slice(0, performance.start) + tableXml + regionXml.slice(performance.end);
+    var focalTables = tables.slice(0, -1);
+    var measurementRows = focalTables.reduce(function(total, table){ return total + directXmlBlocks(table.xml,'tr').length - 4; }, 0);
+    if(focalTables.length < 2 || measurementRows <= CALIBRATION_REPORT_SHARED_PAGE_MAX_ROWS) return regionXml;
+    var pageHead = directXmlBlocks(regionXml,'p').slice(0, 3); var insertAt = focalTables[focalTables.length - 1].end;
+    var pageHeadXml = regionXml.slice(pageHead[0].start, pageHead[2].end).replace(/(<wp:docPr id=")\d+(")/, '$12000000003$2');
+    return regionXml.slice(0, insertAt) + pageHeadXml + regionXml.slice(insertAt);
   }
   function insertTube2OutputPage(documentXml,tube2Region){
     var sectionStart = documentXml.lastIndexOf('<w:sectPr');
     if(sectionStart < 0) throw templateSlotError('document section properties');
-    // The copied letterhead carries the page break; its logo needs its own drawing id.
-    tube2Region = tube2Region.replace(/(<wp:docPr id=")\d+(")/, '$12000000002$2');
+    // The copied letterheads carry the page breaks; their logos need their own drawing ids.
+    var drawingIds = ['2000000002', '2000000004'];
+    tube2Region = tube2Region.replace(/(<wp:docPr id=")\d+(")/g, function(match, open, close){ return drawingIds.length ? open + drawingIds.shift() + close : match; });
     return documentXml.slice(0,sectionStart) + tube2Region + documentXml.slice(sectionStart);
   }
   function releaseFormTableKeepNext(documentXml){

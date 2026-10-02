@@ -1,3 +1,48 @@
+# Calibration Report: Performance Criteria Table Is Not Cut Across Pages
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Approved and execution authorized:** 2026-10-02 — the owner said "i think we can do better by giving it a letterhead and the heading. go ahead partner. do not overengineer and over check".
+**Finished:** 2026-10-02.
+
+## Context
+
+The owner sent a rendered report where the last row of the Performance Criteria table was cut: its first line at the bottom of page 3 and its second line alone on page 4 under a repeated header row.
+
+## Decisions taken
+
+1. The table is never cut across pages.
+2. When it cannot share the page with the focal tables, it goes on its own page **with the letterhead and the "AVERAGE EXPOSURE OUTPUT" heading** (the owner's improvement on the first proposal).
+3. Stored reports get the same fix through the existing footer/heading repair; no new repair type.
+4. No over-checking: no rendered-PDF check and no full-suite run were asked for.
+
+## Investigation
+
+- Only header rows carried `cantSplit` (`markTableHeaderRows`, `static/js/app-calibration-report.js`); the criteria rows could split.
+- Whether the table fits cannot be known when the document is built, because nothing here lays the page out. Measured from the owner's first screenshot: with both focal tables, about nine measurement rows in total fit above the table.
+
+## Execution steps
+
+1. **Generator** — `placePerformanceTable(regionXml)`, called at the end of `fillOutputRegion`: add `cantSplit` to every row of the last table and `keepNext` to the paragraphs of every row but the last. If the region has two focal tables and more than `CALIBRATION_REPORT_SHARED_PAGE_MAX_ROWS` (8) measurement rows, insert a copy of the region's first three paragraphs (letterhead with its page break, division line, heading) after the last focal table; the copied logo gets drawing id `2000000003` (`2000000004` on the second tube's page). Done.
+2. **Repair** — the same two changes in `_calibration_report_anchor_output_pages_xml` (`app.py`), with `CALIBRATION_REPORT_SHARED_PAGE_MAX_ROWS = 8`; a table already directly under a heading is left alone, so the repair stays idempotent. Version `calibration-report-footer-layout-v3`. Done.
+3. **Tests and records** — the two calibration test files, script `?v=45`, service worker `v231`, `releases.json`, `changes.md`. Done.
+
+## Deliberately excluded
+
+- **A real fit calculation** — it would need a layout engine; the row limit plus keep-together covers it.
+- **The template file.**
+
+## Verification
+
+- `tests/test_calibration_report_pdf.py`, `tests/test_tsr_calibration_report.py`, `tests/test_calibration_center.py`, `tests/test_changelog_coverage.py` pass. Not rendered locally; confirmed on the deployed app.
+
+## Risks
+
+- **The row limit is an estimate.** Rows that wrap to two lines take more room; then the table moves whole to the next page without the heading rather than being cut.
+- **Whole-table keep-together depends on the PDF converter honouring keep-with-next on table rows.** If it does not, a row is still never split, but the table could break between rows.
+- **Reports repaired earlier today reappear as ready to repair.** Intended.
+
+---
+
 # Calibration Report: Letterhead Stays at the Top of Pages 3 and 4
 
 **Status:** Executed — implementation commit `d3b8f06`; publication to `origin/main` authorized.

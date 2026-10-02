@@ -656,30 +656,40 @@ class CalibrationReportPdfTests(unittest.TestCase):
                 self.assertEqual(before_package.read(name), after_package.read(name), name)
             before_document = before_package.read('word/document.xml').decode('utf-8')
             after_document = after_package.read('word/document.xml').decode('utf-8')
-            # Besides the margin, only the spacer run before the page 3 letterhead changes:
-            # it is replaced by a page break on the letterhead paragraph.
+            # The spacer run before the page 3 letterhead is replaced by a page break, and the
+            # Performance Criteria table (16 measurement rows here) moves to its own headed page.
             letterhead_text = before_document.rindex('Shimadzu Philippines Corporation')
             letterhead_start = before_document.rindex('<w:p ', 0, letterhead_text)
             spacer_start = before_document.rindex('</w:tbl>', 0, letterhead_start) + len('</w:tbl>')
             self.assertEqual(before_document[spacer_start:letterhead_start].count('<w:p '), 10)
-            expected_document = before_document[:spacer_start] + before_document[letterhead_start:]
-            self.assertEqual(after_document.count('<w:pageBreakBefore/>'), 1)
-            self.assertEqual(
-                re.sub(r'w:bottom="\d+"', 'w:bottom="BOTTOM"', expected_document),
-                re.sub(r'w:bottom="\d+"', 'w:bottom="BOTTOM"', after_document.replace('<w:pageBreakBefore/>', '')),
-            )
             self.assertIn(
                 '<w:pStyle w:val="Title"/><w:pageBreakBefore/></w:pPr>',
                 after_document[spacer_start:spacer_start + 400],
             )
+            self.assertEqual(after_document.count('<w:pageBreakBefore/>'), 2)
+            performance = after_document[after_document.rindex('<w:tbl>'):]
+            self.assertEqual(performance.count('<w:cantSplit/>'), performance.count('<w:tr ') + performance.count('<w:tr>'))
+            self.assertIn('<w:keepNext/>', performance)
+            page_head = after_document[after_document.rindex('<w:pageBreakBefore/>'):after_document.rindex('<w:tbl>')]
+            self.assertIn('AVERAGE EXPOSURE OUTPUT', page_head)
+            self.assertNotIn('<w:tbl>', page_head)
             for footer_name in ('word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml'):
                 self.assertEqual(before_package.read(footer_name), after_package.read(footer_name))
-        self.assertEqual(self._document_texts(self.docx_bytes), self._document_texts(repaired_bytes))
+        self._assert_only_page_head_added(self.docx_bytes, repaired_bytes)
         second_bytes, second_inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(
             repaired_bytes
         )
         self.assertEqual(second_inspection['status'], 'already_repaired')
         self.assertEqual(second_bytes, repaired_bytes)
+
+    def _assert_only_page_head_added(self, before_bytes, after_bytes):
+        from collections import Counter
+        before = Counter(self._document_texts(before_bytes))
+        after = Counter(self._document_texts(after_bytes))
+        self.assertFalse(before - after)
+        self.assertEqual(after - before, Counter({
+            'Shimadzu Philippines Corporation': 1, 'Medical System Division': 1, 'AVERAGE EXPOSURE OUTPUT': 1,
+        }))
 
     def _docx_with_document_xml(self, mutate):
         output = io.BytesIO()
@@ -701,7 +711,7 @@ class CalibrationReportPdfTests(unittest.TestCase):
         self.assertIn('heading', inspection['reason'])
         repaired, repaired_inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(margin_only)
         self.assertEqual(repaired_inspection['status'], 'already_repaired')
-        self.assertEqual(self._document_texts(repaired), self._document_texts(margin_only))
+        self._assert_only_page_head_added(margin_only, repaired)
 
         # A stored second-tube page starts with a bare page break and has no letterhead.
         def add_tube2_page(xml):
@@ -718,8 +728,8 @@ class CalibrationReportPdfTests(unittest.TestCase):
         )
         with zipfile.ZipFile(io.BytesIO(two_tube), 'r') as package:
             document = package.read('word/document.xml').decode('utf-8')
-        self.assertEqual(document.count('Shimadzu Philippines Corporation'), 3)
-        self.assertEqual(document.count('<w:pageBreakBefore/>'), 2)
+        self.assertEqual(document.count('Shimadzu Philippines Corporation'), 4)
+        self.assertEqual(document.count('<w:pageBreakBefore/>'), 3)
         self.assertNotIn('<w:br w:type="page"/>', document)
         self.assertEqual(document.count('<wp:docPr id="2000000002"'), 1)
         again, _inspection = app_module._calibration_report_footer_layout_repair_docx_bytes(two_tube)
@@ -792,7 +802,7 @@ class CalibrationReportPdfTests(unittest.TestCase):
             self.assertEqual(converter.call_count, 1)
             self.assertEqual(first['pdf_file_id'], pdf_file.id)
             self.assertEqual(pathlib.Path(self.storage.name, pdf_disk_name).read_bytes(), self.pdf_bytes)
-            self.assertEqual(self._document_texts(source_path.read_bytes()), self._document_texts(original_source))
+            self._assert_only_page_head_added(original_source, source_path.read_bytes())
             refreshed_approval = self.db.session.get(app_module.CalibrationCertificateApproval, approval.id)
             refreshed_job = self.db.session.get(app_module.CalibrationReportConversion, job.id)
             self.assertEqual(refreshed_approval.status, 'Approved')

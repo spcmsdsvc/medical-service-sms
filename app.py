@@ -19444,12 +19444,14 @@ CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
 CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
 CALIBRATION_REPORT_HISTORICAL_REPAIR_VERSION = 'calibration-report-units-v3'
 CALIBRATION_REPORT_HISTORICAL_REPAIR_MARKER = '_calibration_report_historical_repair'
-CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION = 'calibration-report-footer-layout-v2'
+CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_VERSION = 'calibration-report-footer-layout-v3'
 CALIBRATION_REPORT_FOOTER_LAYOUT_REPAIR_MARKER = '_calibration_report_footer_layout_repair'
 # The retained footer measures 2,360 twips of artwork plus 708 twips of footer
 # distance.  Add the required 120-twip (6pt) clearance and round up for a stable
 # 3,600-twip body reserve on generated and repaired reports.
 CALIBRATION_REPORT_FOOTER_RESERVE_TWIPS = 3600
+# Most measurement rows (Small + Large) that still leave room for Performance Criteria on the same page.
+CALIBRATION_REPORT_SHARED_PAGE_MAX_ROWS = 8
 CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_VERSION = 'calibration-report-complete-fields-v5'
 CALIBRATION_REPORT_COMPLETE_FIELDS_REPAIR_MARKER = '_calibration_report_complete_fields_repair'
 CALIBRATION_REPAIR_LEGACY_LIMITS = (40, 22, 60, 30, 12, 36)
@@ -19875,6 +19877,55 @@ def _calibration_report_anchor_output_pages_xml(document_xml):
             spacer_start = paragraphs[cursor][0]
             cursor -= 1
         operations.append((spacer_start, paragraphs[index][1], with_page_break(paragraphs[index][2])))
+
+    # The Performance Criteria table is never cut across pages.  With both focal tables and
+    # more measurement rows than fit beside it, it gets its own page with letterhead and heading.
+    def with_property(xml, container, property_xml):
+        if property_xml[:-2] in xml:
+            return xml
+        if f'</w:{container}>' in xml:
+            return xml.replace(f'</w:{container}>', f'{property_xml}</w:{container}>', 1)
+        opening_end = xml.find('>')
+        return xml[:opening_end + 1] + f'<w:{container}>{property_xml}</w:{container}>' + xml[opening_end + 1:]
+
+    performance_count = 0
+    for table_start, table_end in tables:
+        table_xml = document_xml[table_start:table_end]
+        if 'PERFORMANCE CRITERIA' not in visible_text(table_xml):
+            continue
+        rows = _calibration_report_xml_blocks(table_xml, 'tr')
+        for row_number in range(len(rows) - 1, -1, -1):
+            row_start, row_end = rows[row_number]
+            row_xml = with_property(table_xml[row_start:row_end], 'trPr', '<w:cantSplit/>')
+            if row_number < len(rows) - 1:
+                row_xml = re.sub(
+                    r'<w:p(?=[\s>]).*?</w:p>',
+                    lambda match: with_property(match.group(0), 'pPr', '<w:keepNext/>'),
+                    row_xml,
+                    flags=re.S,
+                )
+            table_xml = table_xml[:row_start] + row_xml + table_xml[row_end:]
+        operations.append((table_start, table_end, table_xml))
+        page_headings = [index for index in headings if paragraphs[index][1] <= table_start]
+        if not page_headings:
+            continue
+        heading_end = paragraphs[page_headings[-1]][1]
+        focal_tables = [item for item in tables if heading_end <= item[0] and item[1] <= table_start]
+        measurement_rows = sum(
+            len(_calibration_report_xml_blocks(document_xml[start:end], 'tr')) - 4
+            for start, end in focal_tables
+        )
+        if len(focal_tables) == 2 and measurement_rows > CALIBRATION_REPORT_SHARED_PAGE_MAX_ROWS:
+            page_head = re.sub(
+                r'(<wp:docPr id=")\d+(")',
+                rf'\g<1>{2000000003 + performance_count}\g<2>',
+                letterhead_copy,
+                count=1,
+            ) + paragraphs[page_headings[-1]][2]
+            # A block range ends just before the closing tag's ">".
+            insert_at = focal_tables[-1][1] + 1
+            operations.append((insert_at, insert_at, page_head))
+        performance_count += 1
 
     for start, end, replacement in sorted(operations, reverse=True):
         document_xml = document_xml[:start] + replacement + document_xml[end:]
@@ -21524,7 +21575,8 @@ register_calibration_repair({
     'title': 'Keep text clear of the footer and the page heading at the top',
     'description': (
         'Adds space above the page footer so table text cannot run into it, keeps the '
-        'company heading at the top of each output page, then rebuilds the report PDF.'
+        'company heading at the top of each output page, keeps the Performance Criteria '
+        'table in one piece, then rebuilds the report PDF.'
     ),
     'artifact_scope': 'Calibration Report (Word and PDF)',
     # Individual application only: this rewrites retained files, so it stays out of Repair All.
@@ -26824,7 +26876,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v230-calibration-repair-date';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v231-calibration-performance-table';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -26849,7 +26901,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=44',
+  '/static/js/app-calibration-report.js?v=45',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

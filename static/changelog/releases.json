@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-02-calibration-performance-table",
+      "release_date": "2026-10-02",
+      "title": "Calibration Report Performance Criteria Table Stays in One Piece",
+      "summary": "The Performance Criteria table on a Calibration Report is no longer cut across two pages.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-calibration-performance-table-users",
+          "category": "Calibration",
+          "description": "On a generated Calibration Report, the Performance Criteria table is no longer split between two pages. When a report has both focal spot tables and more than eight measurement rows in total, the table is placed on its own page with the company heading and the Average Exposure Output title. In the Calibration Center, the footer repair applies the same fix to reports that were already saved, and the repair date under a record now shows the most recent repair of any type.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-calibration-report-letterhead",
       "release_date": "2026-10-02",
       "title": "Calibration Report Heading Stays at the Top of the Page",
