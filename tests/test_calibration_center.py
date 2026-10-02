@@ -188,8 +188,8 @@ class CalibrationCenterContracts(unittest.TestCase):
         self.assertIn("nav_can_access_calibration_center", APP_SOURCE)
         self.assertIn('/admin/calibration-center', LAYOUT_SOURCE)
         self.assertIn('Calibration Center', LAYOUT_SOURCE)
-        self.assertIn('calibration_report_certificate_cc', SETTINGS_SOURCE)
-        self.assertIn('calibration_report_certificate_cc_cebu_davao', SETTINGS_SOURCE)
+        self.assertIn("'Used by Cebu/Davao Calibration Center emails'", APP_SOURCE)
+        self.assertNotIn('calibration_report_certificate_cc', SETTINGS_SOURCE)
 
     def test_template_contains_required_safe_states_and_controls(self):
         template = TEMPLATE_SOURCE

@@ -1,3 +1,144 @@
+# Settings → Email Recipients: Friendlier Tab, Bulk Add, Copy, and Code Cleanup
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Approved:** 2026-10-02 — the owner said "all approved partner, write it to plans.md" (all 16 proposed items, including the two marked optional).
+**Detailed:** 2026-10-02.
+**Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer", and later "do not over check".
+**Finished:** 2026-10-02.
+
+**Where the plan and the outcome differed:**
+
+- **One Add window instead of "Add recipient" plus "Add several".** Each group's Add button opens one window whose address box takes one or several addresses and always uses the bulk-add route. Edit uses the same window with the save route.
+- **No separate toggle route.** The row switch posts `id` and `is_active` to the save route.
+- **Step 1 group check:** every group matched the expected `primary` / `cc` value. `cash_advance_accounting` and `reimbursement_accounting` descriptions were corrected.
+- **Styles:** the search toolbar reuses `.email-recipient-form-panel`, so that rule stayed. `app-dark-pages.css` gained one selector (the section heading); its `?v=30` in `layout.html` was not bumped.
+- **Four existing tests asserted the removed page text** and were pointed at the registry instead: `tests/test_accounting_handoff_recipient_routing.py` (two tests), `tests/test_calibration_center.py`, `tests/test_service_file_delivery.py`; `tests/test_changelog_workflow.py` lost its `EMAIL_RECIPIENT_GROUP_ORDER` assertion.
+- **Verification:** the new tests were not run against the unfixed code. The page script passes a `node --check` syntax check and `/settings` renders in the test client; the tab was not opened in a browser. CSRF enforcement on the save and delete routes was not exercised by a test (the test apps disable CSRF); the page sends `X-CSRFToken` from the layout's meta tag as the other Settings routes do.
+
+## Context
+
+The owner asked for a review of the Email Recipients tab on the Settings page: UI friendliness, functionality to improve, functions to add, and code to simplify or remove. The tab manages 15 recipient groups through one form at the top of the page and a long flat list below it. The intended outcome is a tab where a superadmin can see at a glance which emails have nobody to go to, add or switch off a recipient in the group they are looking at, and where the page no longer carries its own copy of the group list.
+
+## Decisions taken
+
+1. **All 16 proposed items are in scope**, including "copy a recipient to other groups" and "updated on" per row.
+2. **The server is the only source of group definitions.** The page renders what `/settings/email-recipients-data` returns and keeps no fallback list.
+3. **No schema change.** `EmailRecipientSetting` keeps its columns; `sort_order` stays in the table and the API but leaves the form.
+4. **Routing is untouched.** Which workflow reads which group, To versus CC, branch splits, and the cash-advance threshold do not change.
+5. **Superadmin-only stays.**
+6. **No browser automation** (project rule). Verification is by the Flask test client and source-level checks; the owner checks the look on production or locally.
+
+## Investigation
+
+Line numbers are as of commit `8ff46a7`.
+
+- **Markup:** `templates/settings.html:733-813`. A "Purpose" alert (`:744-748`) that names only some groups; one Add / Edit form (`:759-806`) with Group, Display Name, Email, Display Order, Active, Remarks, and Save / Clear / Refresh; the list container `#email-recipient-groups` (`:808`).
+- **Page script:** `templates/settings.html:2980-3399`.
+  - `emailRecipientGroupFallbacks` (`:2987-3053`) is a second copy of the group list with 13 of the 15 groups (no `lpr_procurement`, no `changelog_announcements`) and different descriptions. `normalizeEmailRecipientGroups` (`:3055`) re-sorts by that list, so the server's order is ignored and the two missing groups sort last.
+  - `emailRecipientUsageLabel` (`:3137`) maps 10 groups; LPR, the three Leave groups and What's New fall through to "Used by system email". The label is printed in the group header (`:3263`) and again on every recipient row (`:3237`).
+  - `emailRecipientGroupDescription` (`:3086`) has no callers. `emailRecipientEscape` (`:3077`) only wraps `settingsEscape`.
+  - `editEmailRecipient` (`:3178`) fills the top form and scrolls to the card top; nothing marks the form as editing.
+  - Load, save and delete (`:3277`, `:3317`, `:3362`) repeat the same fetch / parse / error handling.
+  - Unrelated approval-card functions (`toggleApprovalOnlyMode` … `toggleStockInventoryAccess`, `:3091-3135`) sit in the middle of this block; they are not part of this work and stay where they are.
+- **Styles:** `templates/settings.html:4458-4595` and the mobile rules at `:4916-4926`; dark-page rules in `static/css/app-dark-pages.css` (5 matches for "recipient").
+- **Registry:** `EMAIL_RECIPIENT_GROUPS` (`app.py:395-456`) and `EMAIL_RECIPIENT_GROUP_ORDER` (`:458-474`) list the same 15 keys in the same order. `get_email_recipient_groups_payload` (`:5563`) is the only reader of the order list in `app.py`; `tests/test_changelog_workflow.py:97` asserts membership in it.
+- **Stale description:** `reimbursement_accounting` says "Future accounting recipients" (`app.py:430`) although `get_reimbursement_accounting_recipient_emails` exists (`:10622`).
+- **Routes:** `/settings/email-recipients-data` (`app.py:29080`), `-save` (`:29102`), `-delete/<id>` (`:29165`). Save and delete are `@csrf.exempt` while the page sends `X-CSRFToken` (`settings.html:3345`, `:3384`). Save logs "Updated email recipient setting" for adds and edits alike (`:29154`).
+- **Delete's duplicate loop** (`app.py:29182-29192`) removes every row in the group whose email matches case-insensitively. Save lowercases addresses and refuses duplicates, and the table has a unique constraint on (`group_key`, `email`), so rows saved through the page cannot be duplicates. **Not verified:** whether production holds older rows that differ only by letter case; the unique constraint is case-sensitive and would allow them.
+- **Dead code:** `seed_default_email_recipients` (`app.py:5528`) has no callers in `app.py`, `leave_feature.py`, templates, or tests.
+- **Model:** `EmailRecipientSetting` (`app.py:1815-1835`); `updated_at` is already returned by `email_recipient_setting_to_dict` (`:5575`).
+- **Existing tests:** `tests/test_accounting_handoff_recipient_routing.py` (`:237-260` call the data and save routes), `tests/test_changelog_workflow.py:96-113`, `tests/test_approval_routing_settings.py:47` (splits the template on `data-settings-section="email-recipients"`), `tests/test_reimbursement_tracker.py:402-445`. None cover permissions, validation, or delete on these routes.
+- **Whether a group is a primary recipient list or a CC list** was taken from the labels and descriptions, not from each send path. Step 1 confirms it per group before the flag is set.
+- **Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v232-tsr-number-schedule-change` (`app.py:26883`). Suite baseline at the last recorded run: 1,461 tests, 23 failures, 3 errors, 5 skips.
+- The tab was not opened in a browser. `changes.md` was read at its top sections, not end to end.
+
+## Execution steps
+
+1. **Registry becomes the single source** (`app.py:395-474`, `get_email_recipient_groups_payload` `:5563`).
+   - Add three fields to every entry of `EMAIL_RECIPIENT_GROUPS`: `section` (one of Service Files, Calibration, Accounting, Leave, LPR, Announcements), `kind` (`primary` or `cc`), and `usage` (the short "Used by …" text; take the ten existing ones from `settings.html:3137` and write the missing five).
+   - Before setting `kind`, read each group's send path and confirm: expected `primary` for `travel_accounting`, `cash_advance_accounting`, `cash_advance_release`, `reimbursement_accounting`, `lpr_procurement`, `leave_request_hr`, `changelog_announcements`; `cc` for the rest. Record any difference in this plan.
+   - Correct the `reimbursement_accounting` description, and any other description found stale during that read.
+   - Delete `EMAIL_RECIPIENT_GROUP_ORDER`; the payload iterates the dict, which is already in display order. Update `tests/test_changelog_workflow.py:97` accordingly.
+   - The payload returns `key`, `label`, `description`, `section`, `kind`, `usage`.
+   - Done: the payload lists all 15 groups in registry order with the three new fields; no other reader of the order list remains.
+
+2. **Routes** (`app.py:29080-29203`).
+   - Save: log "Added", "Updated", "Activated" or "Deactivated email recipient setting" according to what changed.
+   - Save accepts a partial update when `id` is given and only `is_active` is sent, for the row switch (or add a small `/settings/email-recipients-toggle/<id>` route if that reads more simply — choose one, not both).
+   - New `/settings/email-recipients-bulk-add` (POST, superadmin): `group_key` plus raw text; split with the same rules as a pasted address list (commas, semicolons, whitespace, new lines), validate each with `normalize_single_email_address`, skip addresses already in the group, add the rest as active. Returns `added`, `skipped_existing`, `invalid` lists. One activity-log line with the count and group label.
+   - New `/settings/email-recipients-copy/<id>` (POST, superadmin): `group_keys` list; creates the same email, display name and remarks in each named group, skipping groups that already have the address. Returns per-group results.
+   - Delete: remove the case-insensitive duplicate loop and delete the one row; accept POST only.
+   - Remove `@csrf.exempt` from save and delete; the new routes are not exempt either. Confirm first that `getCSRFToken()` in `settings.html` returns a token the other non-exempt Settings routes accept.
+   - Delete `seed_default_email_recipients`.
+   - Done: each route returns JSON with `success`, refuses non-superadmins, and the test client passes with and fails without a CSRF token where the test app enforces it.
+
+3. **Markup** (`templates/settings.html:733-813`).
+   - Replace the Purpose alert with one sentence: these lists decide who receives or is copied on each system email; a group with no active address sends nothing.
+   - Remove the top Add / Edit form. Keep a toolbar: a search box and Refresh.
+   - Add one modal (Bootstrap, as used elsewhere on the page) for Add / Edit: Group (pre-selected, read-only when adding from a group), Email, Display Name, Remarks, Active. Title reads "Add recipient to <group>" or "Edit recipient". Display Order is not shown.
+   - Add a second small modal for "Add several": a textarea and the result summary; and a third for "Copy to other groups": a checklist of the other groups.
+   - Done: no element with id `email-recipient-order` remains; the section marker `data-settings-section="email-recipients"` is unchanged.
+
+4. **Page script** (`templates/settings.html:2980-3399`).
+   - Delete `emailRecipientGroupFallbacks`, `normalizeEmailRecipientGroups`, `emailRecipientUsageLabel`, `emailRecipientGroupDescription`, `emailRecipientEscape` (call `settingsEscape` directly), and `populateEmailRecipientGroupSelect` if the modal no longer needs it.
+   - One helper, `emailRecipientRequest(url, body)`, used by load, save, toggle, bulk add, copy and delete.
+   - `renderEmailRecipients`: groups under collapsible section headings in server order; each group header shows label, usage, description, the active count, and "Add recipient" / "Add several" buttons; each row shows email, name and remarks, "Updated <date>", an Active switch, and Edit / Copy / Delete. The per-row usage badge is gone.
+   - Empty or all-inactive group: `kind == 'primary'` shows a red badge "No active recipients — this email will not be sent"; `cc` shows a neutral "Nobody is copied".
+   - Search filters rows by email or display name, hides groups with no match, and expands the sections that have one.
+   - Saving an edit keeps the recipient's existing `sort_order`; a new recipient gets the default.
+   - Leave the approval-card functions at `:3091-3135` untouched.
+   - Done: the page holds no hardcoded group keys, labels or descriptions for this tab.
+
+5. **Styles** (`templates/settings.html:4458-4595`, `:4916-4926`, `static/css/app-dark-pages.css`). Remove rules for elements that no longer exist (form panel, row usage badge); add the section heading, the warning badge and the row switch; keep the 375 px rules working and tap targets at least 44 px. Add dark-theme counterparts for any new coloured element.
+
+6. **Tests** — new `tests/test_email_recipient_settings.py`, plus the edits named above.
+   - Data route: non-superadmin is refused; superadmin gets 15 groups in registry order, each with `section`, `kind`, `usage`.
+   - Save: invalid email → 400; unknown group → 400; duplicate in the same group → 400; same email in another group → saved; activity log says "Added" on create and "Deactivated" on switch-off.
+   - Toggle: flips `is_active` and leaves the other fields unchanged.
+   - Bulk add: a mixed paste returns the right `added` / `skipped_existing` / `invalid` lists and creates only the added rows.
+   - Copy: creates rows in the named groups, skips a group that already has the address.
+   - Delete: removes exactly the one row; unknown id → 404.
+   - Source-level: `templates/settings.html` no longer contains `emailRecipientGroupFallbacks` or `emailRecipientUsageLabel`; `app.py` no longer contains `EMAIL_RECIPIENT_GROUP_ORDER` or `seed_default_email_recipients`.
+   - Cache version pin for the new service worker version.
+
+7. **Release records.** Service worker bump from the live value in `app.py` with a name such as `…-v233-email-recipients-tab`; an entry in `static/changelog/releases.json`; `changes.md`; this plan's status and any difference between plan and outcome.
+
+8. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **A per-group "send test email" and a send history** — more than a settings tab needs.
+- **The cash-advance alias group keys** (`app.py:65219-65229`, `get_active_email_recipients_by_exact_group_key`, `cash_advance_accounting_recipient_debug_counts`) — they look like leftovers from early test data, but removing them safely needs a look at production rows. Separate task.
+- **Moving the tab's CSS and JS out of `settings.html`** — the whole Settings page is inline; splitting one tab adds a file and a cache entry for no behaviour change.
+- **Drag-to-reorder recipients** — order only affects the sequence of addresses in a header.
+- **Schema changes and any change to which workflow reads which group.**
+- **Editing `pending-work.md`** (its note that `reimbursement_tracker_paid_cc` has no recipients) — only on the owner's request.
+
+## Verification
+
+- The tests in step 6. Positive controls: the source-level tests and the registry-field test fail against the current code; the duplicate, bulk-add and copy tests fail before their routes exist.
+- Focused modules: the new file, `tests/test_accounting_handoff_recipient_routing.py`, `tests/test_changelog_workflow.py`, `tests/test_approval_routing_settings.py`, `tests/test_reimbursement_tracker.py`, `tests/test_appearance_themes.py`, `tests/test_changelog_coverage.py`. Then one full-suite pass quoted against the baseline (1,461 tests, 23 failures, 3 errors, 5 skips).
+- A Flask test-client render of `/settings` as superadmin to confirm the page builds and the section marker is present.
+- No browser check by the agent. The owner checks on a desktop and at phone width: add from a group, switch a row off and on, paste several addresses, copy to another group, search, and the red badge on an empty primary group.
+
+## After implementation
+
+1. Self-review the diff.
+2. Focused modules, then the full suite, quoting counts against the baseline.
+3. Service worker bump and `releases.json` entry.
+4. `changes.md` and this plan's status, with any difference between plan and outcome.
+5. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`. Commit and push only on the owner's instruction, then verify `origin/main` and Railway's deployment.
+
+## Risks
+
+- **CSRF now enforced on save and delete.** A page cached before the update still sends the token, so it should keep working; if `getCSRFToken()` returns nothing in some state, saves fail with a 400 instead of silently passing. Safety net: the test in step 2 and the owner's first save after deployment.
+- **Delete no longer removes case-variant duplicates.** If production has older rows differing only by letter case, each now needs its own delete. They remain visible in the list.
+- **A wrong `kind` flag** would show a red "will not be sent" badge on a CC group or hide it on a primary one. It is display only; routing does not read it. Step 1's per-group check is the safeguard.
+- **Bulk add and copy make it easier to put a wrong address on many lists at once.** The result summary lists exactly what was added, and each row can be switched off or deleted.
+- **Tests that read the template by string** (`tests/test_approval_routing_settings.py:47`, appearance tests) may break on the markup change; they are in the focused run.
+
+---
+
 # Create TSR: Each TSR Gets Its Own Number After a Schedule Change
 
 **Status:** Executed — implementation commit `02607ad`; published to `origin/main` on the owner's "commit and push".

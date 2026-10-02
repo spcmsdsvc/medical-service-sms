@@ -179,19 +179,12 @@ class AccountingHandoffRecipientRoutingTests(unittest.TestCase):
         self.assertEqual(app_module.normalize_email_recipient_group(regional_key), regional_key)
         self.assertEqual(app_module.normalize_email_recipient_group('not_a_group'), '')
 
-    def test_settings_fallback_identifies_both_accounting_cc_lists(self):
-        settings_source = (ROOT / 'templates' / 'settings.html').read_text(encoding='utf-8')
-        for expected in (
-            "key: 'accounting_handoff_cc'",
-            "label: 'Accounting Handoff CC - Manila'",
-            "key: 'accounting_handoff_cc_cebu_davao'",
-            "label: 'Accounting Handoff CC - Cebu/Davao'",
-            'accounting_handoff_cc_cebu_davao: \'Used by Cebu/Davao Accounting handoffs\'',
-        ):
-            self.assertIn(expected, settings_source)
-        self.assertLess(
-            settings_source.index("key: 'accounting_handoff_cc'"),
-            settings_source.index("key: 'accounting_handoff_cc_cebu_davao'"),
+    def test_registry_describes_where_both_accounting_cc_lists_are_used(self):
+        groups = app_module.EMAIL_RECIPIENT_GROUPS
+        self.assertEqual(groups['accounting_handoff_cc']['usage'], 'Used by Manila/Main Accounting handoffs')
+        self.assertEqual(
+            groups['accounting_handoff_cc_cebu_davao']['usage'],
+            'Used by Cebu/Davao Accounting handoffs',
         )
 
     def test_requester_branch_selects_only_the_matching_shared_cc_group(self):
@@ -262,13 +255,12 @@ class AccountingHandoffRecipientRoutingTests(unittest.TestCase):
             app_module.db.session.delete(saved)
             app_module.db.session.commit()
 
-    def test_settings_page_renders_the_split_metadata(self):
+    def test_settings_page_renders_the_email_recipients_tab(self):
         response = self._admin_client().get('/settings')
         self.assertEqual(response.status_code, 200)
         rendered = response.get_data(as_text=True)
-        self.assertIn('Accounting Handoff CC - Manila', rendered)
-        self.assertIn('Accounting Handoff CC - Cebu/Davao', rendered)
-        self.assertIn('accounting_handoff_cc_cebu_davao', rendered)
+        self.assertIn('data-settings-section="email-recipients"', rendered)
+        self.assertIn('id="emailRecipientModal"', rendered)
 
     def test_all_accounting_handoff_callers_still_converge_on_shared_helper(self):
         source = (ROOT / 'app.py').read_text(encoding='utf-8')

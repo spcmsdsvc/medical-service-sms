@@ -94,7 +94,6 @@ class ChangelogDigestRecipientGroupTests(unittest.TestCase):
         key = app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY
         self.assertEqual(key, 'changelog_announcements')
         self.assertIn(key, app_module.EMAIL_RECIPIENT_GROUPS)
-        self.assertIn(key, app_module.EMAIL_RECIPIENT_GROUP_ORDER)
         self.assertEqual(
             app_module.EMAIL_RECIPIENT_GROUPS[key]['label'],
             "What's New Announcements"

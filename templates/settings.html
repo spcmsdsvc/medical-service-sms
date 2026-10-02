@@ -742,9 +742,7 @@
 
                 <div class="card-body p-4 bg-white">
                     <div class="alert alert-light border small mb-4">
-                        <strong>Purpose:</strong> Manage reusable email recipient groups from one place.
-                        Service Files Client Email CC is used when sending service files to clients. Calibration Report &amp; Certificate CC is split by the calibration creator's Engineer-profile branch: Manila/Main uses the Manila list, while Cebu/Davao uses the regional list. The creator engineer is also copied automatically when a valid email is available. Accounting Handoff CC remains split by the requester's Engineer-profile branch. Travel Request Accounting, Reimbursement Accounting, Cash Advance Accounting, and Cash Advance Release remain separate groups for their own handoffs.
-                        Service Files Client Email Subject templates remain available below for the same outbound service-file workflow.
+                        These lists decide who receives or is copied on each system email. A group with no active address sends to nobody.
                     </div>
 
                     <div id="email-recipient-loading" class="text-muted small fw-bold mb-3">
@@ -756,57 +754,67 @@
                     </div>
 
                     <div id="email-recipient-content" class="d-none">
-                        <div class="email-recipient-form-panel mb-4">
-                            <div class="email-recipient-section-title mb-3">
-                                <i class="fa-solid fa-plus-circle me-2 text-email-recipients"></i>Add / Edit Recipient
-                            </div>
-
-                            <input type="hidden" id="email-recipient-id">
-
-                            <div class="row g-3">
-                                <div class="col-lg-3">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Group</label>
-                                    <select id="email-recipient-group" class="form-select form-select-sm rounded-3"></select>
-                                </div>
-                                <div class="col-lg-3">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Display Name</label>
-                                    <input type="text" id="email-recipient-name" class="form-control form-control-sm rounded-3" placeholder="Optional e.g. Accounting Team">
-                                </div>
-                                <div class="col-lg-3">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Email Address</label>
-                                    <input type="email" id="email-recipient-email" class="form-control form-control-sm rounded-3" placeholder="name@company.com">
-                                </div>
-                                <div class="col-lg-2">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Display Order</label>
-                                    <input type="number" id="email-recipient-order" class="form-control form-control-sm rounded-3" value="100" min="1" step="1">
-                                </div>
-                                <div class="col-lg-1 d-flex align-items-end">
-                                    <div class="form-check form-switch mb-1">
-                                        <input class="form-check-input" type="checkbox" id="email-recipient-active" checked>
-                                        <label class="form-check-label small fw-bold" for="email-recipient-active">Active</label>
-                                    </div>
-                                </div>
-                                <div class="col-12">
-                                    <label class="small fw-bold text-muted text-uppercase mb-1">Remarks</label>
-                                    <input type="text" id="email-recipient-remarks" class="form-control form-control-sm rounded-3" placeholder="Optional note">
-                                </div>
-                            </div>
-
-                            <div class="d-flex flex-wrap gap-2 mt-3">
-                                <button type="button" class="btn btn-email-recipients btn-sm fw-bold rounded-3" onclick="saveEmailRecipient()">
-                                    <i class="fa-solid fa-floppy-disk me-1"></i>Save Recipient
-                                </button>
-                                <button type="button" class="btn btn-outline-secondary btn-sm fw-bold rounded-3" onclick="resetEmailRecipientForm()">
-                                    <i class="fa-solid fa-rotate-left me-1"></i>Clear
-                                </button>
-                                <button type="button" class="btn btn-outline-email-recipients btn-sm fw-bold rounded-3" onclick="loadEmailRecipients(true)">
-                                    <i class="fa-solid fa-rotate me-1"></i>Refresh
-                                </button>
-                            </div>
+                        <div class="email-recipient-form-panel d-flex flex-wrap gap-2 mb-4">
+                            <input type="search" id="email-recipient-search" class="form-control form-control-sm rounded-3 flex-grow-1 w-auto" placeholder="Search by email or name" aria-label="Search email recipients" oninput="renderEmailRecipients()">
+                            <button type="button" class="btn btn-outline-email-recipients btn-sm fw-bold rounded-3" onclick="loadEmailRecipients(true)">
+                                <i class="fa-solid fa-rotate me-1"></i>Refresh
+                            </button>
                         </div>
 
                         <div id="email-recipient-groups" class="email-recipient-groups"></div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="emailRecipientModal" tabindex="-1" aria-labelledby="email-recipient-modal-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold" id="email-recipient-modal-title"></h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="email-recipient-id">
+                    <input type="hidden" id="email-recipient-group">
+
+                    <label class="small fw-bold text-muted text-uppercase mb-1" for="email-recipient-email">Email Address</label>
+                    <textarea id="email-recipient-email" class="form-control form-control-sm rounded-3" rows="2" placeholder="name@company.com"></textarea>
+                    <div id="email-recipient-email-help" class="form-text small mb-3">Paste one or more addresses, separated by commas, spaces or new lines.</div>
+
+                    <label class="small fw-bold text-muted text-uppercase mb-1" for="email-recipient-name">Display Name</label>
+                    <input type="text" id="email-recipient-name" class="form-control form-control-sm rounded-3 mb-3" placeholder="Optional e.g. Accounting Team">
+
+                    <label class="small fw-bold text-muted text-uppercase mb-1" for="email-recipient-remarks">Remarks</label>
+                    <input type="text" id="email-recipient-remarks" class="form-control form-control-sm rounded-3" placeholder="Optional note">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary btn-sm fw-bold rounded-3" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-email-recipients btn-sm fw-bold rounded-3" onclick="saveEmailRecipient()">
+                        <i class="fa-solid fa-floppy-disk me-1"></i>Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="emailRecipientCopyModal" tabindex="-1" aria-labelledby="email-recipient-copy-title" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content rounded-4">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold" id="email-recipient-copy-title"></h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="email-recipient-copy-id">
+                    <div id="email-recipient-copy-list"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary btn-sm fw-bold rounded-3" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-email-recipients btn-sm fw-bold rounded-3" onclick="copyEmailRecipient()">
+                        <i class="fa-solid fa-copy me-1"></i>Copy
+                    </button>
                 </div>
             </div>
         </div>
@@ -2983,109 +2991,35 @@
         groups: [],
         recipients: []
     };
-
-    const emailRecipientGroupFallbacks = [
-        {
-            key: 'tsr_client_cc',
-            label: 'Service Files Client Email CC',
-            description: 'Reusable CC recipients when service files are emailed to clients.'
-        },
-        {
-            key: 'calibration_report_certificate_cc',
-            label: 'Calibration Report & Certificate CC - Manila',
-            description: "Used when the calibration creator's Engineer-profile branch is Manila/Main."
-        },
-        {
-            key: 'calibration_report_certificate_cc_cebu_davao',
-            label: 'Calibration Report & Certificate CC - Cebu/Davao',
-            description: "Used when the calibration creator's Engineer-profile branch is Cebu or Davao."
-        },
-        {
-            key: 'accounting_handoff_cc',
-            label: 'Accounting Handoff CC - Manila',
-            description: 'Extra internal CC recipients for approved accounting handoff emails from Manila/Main employees.'
-        },
-        {
-            key: 'accounting_handoff_cc_cebu_davao',
-            label: 'Accounting Handoff CC - Cebu/Davao',
-            description: 'Extra internal CC recipients for approved accounting handoff emails from Cebu or Davao employees.'
-        },
-        {
-            key: 'travel_accounting',
-            label: 'Travel Request Accounting',
-            description: 'Accounting recipients for approved Travel Request handoff and cash advance processing.'
-        },
-        {
-            key: 'reimbursement_accounting',
-            label: 'Reimbursement Accounting',
-            description: 'Accounting recipients for approved Reimbursement handoff.'
-        },
-        {
-            key: 'reimbursement_tracker_paid_cc',
-            label: 'Reimbursement Tracker Paid CC',
-            description: 'Additional recipients copied when a Tracker row is marked Paid in Full.'
-        },
-        {
-            key: 'cash_advance_accounting',
-            label: 'Cash Advance Accounting',
-            description: 'Accounting recipients for standalone Cash Advances over PHP 10,000.00.'
-        },
-        {
-            key: 'cash_advance_release',
-            label: 'Cash Advance Release',
-            description: 'Recipients for approved standalone Cash Advances of PHP 10,000.00 or below.'
-        },
-        {
-            key: 'leave_request_hr',
-            label: 'Leave Request HR',
-            description: 'Primary HR recipients for approved Leave Request handoff.'
-        },
-        {
-            key: 'leave_request_cc',
-            label: 'Leave Request CC - Manila',
-            description: 'Additional recipients copied on approved Leave Requests from Manila/Main employees.'
-        },
-        {
-            key: 'leave_request_cc_cebu_davao',
-            label: 'Leave Request CC - Cebu/Davao',
-            description: 'Additional recipients copied on approved Leave Requests from Cebu or Davao employees.'
-        }
-    ];
-
-    function normalizeEmailRecipientGroups(groups) {
-        const incoming = Array.isArray(groups) ? groups.slice() : [];
-        const seen = new Set(incoming.map(group => String(group.key || '').trim()).filter(Boolean));
-
-        emailRecipientGroupFallbacks.forEach(function(group) {
-            if (!seen.has(group.key)) {
-                incoming.push({ ...group, frontend_fallback: true });
-                seen.add(group.key);
-            }
-        });
-
-        const preferredOrder = new Map(emailRecipientGroupFallbacks.map((group, index) => [group.key, index]));
-        incoming.sort(function(a, b) {
-            const aOrder = preferredOrder.has(a.key) ? preferredOrder.get(a.key) : 100;
-            const bOrder = preferredOrder.has(b.key) ? preferredOrder.get(b.key) : 100;
-            if (aOrder !== bOrder) return aOrder - bOrder;
-            return String(a.label || a.key || '').localeCompare(String(b.label || b.key || ''));
-        });
-
-        return incoming;
-    }
-
-    function emailRecipientEscape(value) {
-        return settingsEscape(value);
-    }
+    const emailRecipientCollapsedSections = new Set();
 
     function emailRecipientGroupLabel(groupKey) {
         const group = (emailRecipientState.groups || []).find(item => item.key === groupKey);
         return group ? group.label : (groupKey || 'Email Group');
     }
 
-    function emailRecipientGroupDescription(groupKey) {
-        const group = (emailRecipientState.groups || []).find(item => item.key === groupKey);
-        return group ? group.description : '';
+    function emailRecipientById(recipientId) {
+        return (emailRecipientState.recipients || []).find(item => Number(item.id) === Number(recipientId));
+    }
+
+    async function emailRecipientRequest(url, body) {
+        const options = {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' }
+        };
+        if (body !== undefined) {
+            options.method = 'POST';
+            options.headers['Content-Type'] = 'application/json';
+            options.headers['X-CSRFToken'] = getCSRFToken();
+            options.body = JSON.stringify(body);
+        }
+        const res = await fetch(url, options);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || data.message || 'Email recipient request failed.');
+        }
+        return data;
     }
 
     function toggleApprovalOnlyMode(input) {
@@ -3134,70 +3068,55 @@
         if (inventoryOnly) inventoryOnly.checked = false;
     }
 
-    function emailRecipientUsageLabel(groupKey) {
-        const map = {
-            tsr_client_cc: 'Used by Send Service Files',
-            calibration_report_certificate_cc: 'Used by Manila/Main Calibration Center emails',
-            calibration_report_certificate_cc_cebu_davao: 'Used by Cebu/Davao Calibration Center emails',
-            accounting_handoff_cc: 'Used by Manila/Main Accounting handoffs',
-            accounting_handoff_cc_cebu_davao: 'Used by Cebu/Davao Accounting handoffs',
-            travel_accounting: 'Used by Travel Request',
-            reimbursement_accounting: 'Used by Reimbursement',
-            reimbursement_tracker_paid_cc: 'Used by Reimbursement Tracker Paid',
-            cash_advance_accounting: 'Used by Cash Advance > PHP 10,000',
-            cash_advance_release: 'Used by Cash Advance <= PHP 10,000'
-        };
-        return map[groupKey] || 'Used by system email';
+    function emailRecipientSectionToggled(details) {
+        if (document.getElementById('email-recipient-search')?.value.trim()) return;
+        if (details.open) {
+            emailRecipientCollapsedSections.delete(details.dataset.section);
+        } else {
+            emailRecipientCollapsedSections.add(details.dataset.section);
+        }
     }
 
-    function populateEmailRecipientGroupSelect() {
-        const select = document.getElementById('email-recipient-group');
-        if (!select) return;
+    function openEmailRecipientModal(groupKey, recipientId) {
+        const recipient = recipientId ? emailRecipientById(recipientId) : null;
+        if (recipientId && !recipient) return;
 
-        select.innerHTML = (emailRecipientState.groups || []).map(group => {
-            return `<option value="${emailRecipientEscape(group.key)}">${emailRecipientEscape(group.label)}</option>`;
-        }).join('');
+        document.getElementById('email-recipient-id').value = recipient ? recipient.id : '';
+        document.getElementById('email-recipient-group').value = recipient ? recipient.group_key : groupKey;
+        document.getElementById('email-recipient-email').value = recipient ? recipient.email : '';
+        document.getElementById('email-recipient-name').value = recipient ? recipient.display_name : '';
+        document.getElementById('email-recipient-remarks').value = recipient ? recipient.remarks : '';
+        document.getElementById('email-recipient-email-help').classList.toggle('d-none', Boolean(recipient));
+        document.getElementById('email-recipient-modal-title').textContent = recipient
+            ? 'Edit recipient'
+            : 'Add recipients to ' + emailRecipientGroupLabel(groupKey);
+
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('emailRecipientModal')).show();
     }
 
-    function resetEmailRecipientForm() {
-        const idEl = document.getElementById('email-recipient-id');
-        const nameEl = document.getElementById('email-recipient-name');
-        const emailEl = document.getElementById('email-recipient-email');
-        const orderEl = document.getElementById('email-recipient-order');
-        const activeEl = document.getElementById('email-recipient-active');
-        const remarksEl = document.getElementById('email-recipient-remarks');
-
-        if (idEl) idEl.value = '';
-        if (nameEl) nameEl.value = '';
-        if (emailEl) emailEl.value = '';
-        if (orderEl) orderEl.value = '100';
-        if (activeEl) activeEl.checked = true;
-        if (remarksEl) remarksEl.value = '';
-    }
-
-    function editEmailRecipient(recipientId) {
-        const recipient = (emailRecipientState.recipients || []).find(item => Number(item.id) === Number(recipientId));
+    function openEmailRecipientCopyModal(recipientId) {
+        const recipient = emailRecipientById(recipientId);
         if (!recipient) return;
 
-        const idEl = document.getElementById('email-recipient-id');
-        const groupEl = document.getElementById('email-recipient-group');
-        const nameEl = document.getElementById('email-recipient-name');
-        const emailEl = document.getElementById('email-recipient-email');
-        const orderEl = document.getElementById('email-recipient-order');
-        const activeEl = document.getElementById('email-recipient-active');
-        const remarksEl = document.getElementById('email-recipient-remarks');
+        const takenGroups = new Set(
+            (emailRecipientState.recipients || [])
+                .filter(item => item.email === recipient.email)
+                .map(item => item.group_key)
+        );
+        const options = (emailRecipientState.groups || []).filter(group => !takenGroups.has(group.key));
 
-        if (idEl) idEl.value = recipient.id || '';
-        if (groupEl) groupEl.value = recipient.group_key || '';
-        if (nameEl) nameEl.value = recipient.display_name || '';
-        if (emailEl) emailEl.value = recipient.email || '';
-        if (orderEl) orderEl.value = recipient.sort_order || 100;
-        if (activeEl) activeEl.checked = Boolean(recipient.is_active);
-        if (remarksEl) remarksEl.value = recipient.remarks || '';
+        document.getElementById('email-recipient-copy-id').value = recipient.id;
+        document.getElementById('email-recipient-copy-title').textContent = 'Copy ' + recipient.email + ' to other groups';
+        document.getElementById('email-recipient-copy-list').innerHTML = options.length
+            ? options.map(group => `
+                <label class="form-check email-recipient-copy-option">
+                    <input class="form-check-input" type="checkbox" value="${settingsEscape(group.key)}">
+                    <span class="form-check-label small fw-bold">${settingsEscape(group.label)}</span>
+                </label>
+            `).join('')
+            : `<div class="text-muted small">This address is already in every group.</div>`;
 
-        try {
-            document.querySelector('.settings-email-recipients-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        } catch (err) {}
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('emailRecipientCopyModal')).show();
     }
 
     function renderEmailRecipients() {
@@ -3206,25 +3125,32 @@
 
         const groups = emailRecipientState.groups || [];
         const recipients = emailRecipientState.recipients || [];
+        const query = (document.getElementById('email-recipient-search')?.value || '').trim().toLowerCase();
 
-        if (!groups.length) {
-            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">No recipient groups configured.</div>`;
-            return;
-        }
-
-        container.innerHTML = groups.map(group => {
+        const sections = [];
+        groups.forEach(group => {
             const groupRecipients = recipients
                 .filter(recipient => recipient.group_key === group.key)
                 .sort((a, b) => Number(a.sort_order || 100) - Number(b.sort_order || 100) || String(a.email || '').localeCompare(String(b.email || '')));
-            const activeCount = groupRecipients.filter(recipient => recipient.is_active).length;
+            const shownRecipients = query
+                ? groupRecipients.filter(recipient => (recipient.email + ' ' + recipient.display_name).toLowerCase().includes(query))
+                : groupRecipients;
+            if (query && !shownRecipients.length) return;
 
-            const cardsHtml = groupRecipients.length
-                ? groupRecipients.map(recipient => {
-                    const statusClass = recipient.is_active ? 'success' : 'secondary';
-                    const statusText = recipient.is_active ? 'Active' : 'Inactive';
+            const activeCount = groupRecipients.filter(recipient => recipient.is_active).length;
+            let countHtml = `<span class="email-recipient-count">${activeCount}/${groupRecipients.length} active</span>`;
+            if (!activeCount) {
+                countHtml = group.kind === 'primary'
+                    ? `<span class="email-recipient-count warn"><i class="fa-solid fa-triangle-exclamation me-1"></i>No active recipients — this email will not be sent</span>`
+                    : `<span class="email-recipient-count muted">Nobody is copied</span>`;
+            }
+
+            const cardsHtml = shownRecipients.length
+                ? shownRecipients.map(recipient => {
                     const metaParts = [
                         recipient.display_name || '',
-                        recipient.remarks || ''
+                        recipient.remarks || '',
+                        recipient.updated_at ? 'Updated ' + String(recipient.updated_at).slice(0, 10) : ''
                     ].filter(Boolean);
                     return `
                         <div class="email-recipient-card ${recipient.is_active ? '' : 'inactive'}">
@@ -3232,17 +3158,22 @@
                                 <div>
                                     <div class="email-recipient-email-line">
                                         <i class="fa-solid fa-envelope me-1 text-email-recipients"></i>
-                                        ${emailRecipientEscape(recipient.email)}
-                                        <span class="badge bg-${statusClass} ms-2">${statusText}</span>
-                                        <span class="email-recipient-usage-badge">${emailRecipientEscape(emailRecipientUsageLabel(group.key))}</span>
+                                        ${settingsEscape(recipient.email)}
                                     </div>
                                     <div class="email-recipient-meta">
-                                        ${emailRecipientEscape(metaParts.join(' - '))}
+                                        ${settingsEscape(metaParts.join(' - '))}
                                     </div>
                                 </div>
                                 <div class="email-recipient-actions">
-                                    <button type="button" class="btn btn-outline-email-recipients btn-sm fw-bold rounded-3" onclick="editEmailRecipient(${recipient.id})">
+                                    <label class="form-check form-switch email-recipient-switch">
+                                        <input class="form-check-input" type="checkbox" ${recipient.is_active ? 'checked' : ''} onchange="toggleEmailRecipient(${recipient.id}, this.checked)">
+                                        <span class="form-check-label small fw-bold">Active</span>
+                                    </label>
+                                    <button type="button" class="btn btn-outline-email-recipients btn-sm fw-bold rounded-3" onclick="openEmailRecipientModal('', ${recipient.id})">
                                         <i class="fa-solid fa-pen-to-square me-1"></i>Edit
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm fw-bold rounded-3" onclick="openEmailRecipientCopyModal(${recipient.id})">
+                                        <i class="fa-solid fa-copy me-1"></i>Copy
                                     </button>
                                     <button type="button" class="btn btn-outline-danger btn-sm fw-bold rounded-3" onclick="deleteEmailRecipient(${recipient.id})">
                                         <i class="fa-solid fa-trash-can me-1"></i>Delete
@@ -3254,24 +3185,48 @@
                 }).join('')
                 : `<div class="text-muted small border rounded-3 p-3 bg-light">No recipients yet for this group.</div>`;
 
-            return `
+            const groupHtml = `
                 <div class="email-recipient-group-card">
                     <div class="email-recipient-group-header">
                         <div>
-                            <div class="email-recipient-group-title">${emailRecipientEscape(group.label)}</div>
+                            <div class="email-recipient-group-title">${settingsEscape(group.label)}</div>
                             <div class="email-recipient-group-description">
-                                <span class="email-recipient-usage-pill">${emailRecipientEscape(emailRecipientUsageLabel(group.key))}</span>
-                                ${emailRecipientEscape(group.description || '')}
+                                <span class="email-recipient-usage-pill">${settingsEscape(group.usage)}</span>
+                                ${settingsEscape(group.description)}
                             </div>
                         </div>
-                        <span class="email-recipient-count">${activeCount}/${groupRecipients.length} active</span>
+                        <div class="email-recipient-group-tools">
+                            ${countHtml}
+                            <button type="button" class="btn btn-email-recipients btn-sm fw-bold rounded-3" onclick="openEmailRecipientModal('${settingsEscape(group.key)}')">
+                                <i class="fa-solid fa-plus me-1"></i>Add
+                            </button>
+                        </div>
                     </div>
                     <div class="email-recipient-list">
                         ${cardsHtml}
                     </div>
                 </div>
             `;
-        }).join('');
+
+            const section = sections.find(item => item.name === group.section);
+            if (section) {
+                section.html.push(groupHtml);
+            } else {
+                sections.push({ name: group.section, html: [groupHtml] });
+            }
+        });
+
+        if (!sections.length) {
+            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">${query ? 'No recipient matches your search.' : 'No recipient groups configured.'}</div>`;
+            return;
+        }
+
+        container.innerHTML = sections.map(section => `
+            <details class="email-recipient-section" data-section="${settingsEscape(section.name)}" ${!query && emailRecipientCollapsedSections.has(section.name) ? '' : 'open'} ontoggle="emailRecipientSectionToggled(this)">
+                <summary class="email-recipient-section-title">${settingsEscape(section.name)}</summary>
+                <div class="email-recipient-groups">${section.html.join('')}</div>
+            </details>
+        `).join('');
     }
 
     async function loadEmailRecipients(silent=false) {
@@ -3285,22 +3240,11 @@
         if (error) error.classList.add('d-none');
 
         try {
-            const res = await fetch('/settings/email-recipients-data?_=' + Date.now(), {
-                credentials: 'same-origin',
-                cache: 'no-store',
-                headers: { 'Accept': 'application/json' }
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Email recipient request failed.');
-            }
-
+            const data = await emailRecipientRequest('/settings/email-recipients-data?_=' + Date.now());
             emailRecipientState = {
-                groups: normalizeEmailRecipientGroups(data.groups || []),
+                groups: data.groups || [],
                 recipients: data.recipients || []
             };
-
-            populateEmailRecipientGroupSelect();
             renderEmailRecipients();
             content.classList.remove('d-none');
         } catch (err) {
@@ -3315,52 +3259,83 @@
     }
 
     async function saveEmailRecipient() {
-        const payload = {
-            id: document.getElementById('email-recipient-id')?.value || null,
-            group_key: document.getElementById('email-recipient-group')?.value || '',
-            display_name: document.getElementById('email-recipient-name')?.value || '',
-            email: document.getElementById('email-recipient-email')?.value || '',
-            sort_order: Number(document.getElementById('email-recipient-order')?.value || 100),
-            is_active: Boolean(document.getElementById('email-recipient-active')?.checked),
-            remarks: document.getElementById('email-recipient-remarks')?.value || ''
+        const recipient = emailRecipientById(document.getElementById('email-recipient-id').value);
+        const groupKey = document.getElementById('email-recipient-group').value;
+        const email = document.getElementById('email-recipient-email').value.trim();
+        const details = {
+            display_name: document.getElementById('email-recipient-name').value,
+            remarks: document.getElementById('email-recipient-remarks').value
         };
 
-        if (!payload.group_key) {
-            settingsAlert('Please select a recipient group.');
-            return;
-        }
-        if (!payload.email) {
+        if (!email) {
             settingsAlert('Please enter an email address.');
             return;
         }
 
         try {
-            const res = await fetch('/settings/email-recipients-save', {
-                method: 'POST',
-                credentials: 'same-origin',
-                cache: 'no-store',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
-                },
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Email recipient save failed.');
+            let message = 'Email recipient saved.';
+            let tone = 'success';
+            if (recipient) {
+                await emailRecipientRequest('/settings/email-recipients-save', {
+                    ...details,
+                    id: recipient.id,
+                    group_key: recipient.group_key,
+                    email: email,
+                    sort_order: recipient.sort_order,
+                    is_active: recipient.is_active
+                });
+            } else {
+                const data = await emailRecipientRequest('/settings/email-recipients-bulk-add', {
+                    ...details,
+                    group_key: groupKey,
+                    emails: email
+                });
+                message = 'Added ' + data.added.length + '.';
+                if (data.skipped_existing.length) message += ' Already in this group: ' + data.skipped_existing.join(', ') + '.';
+                if (data.invalid.length) {
+                    message += ' Not valid: ' + data.invalid.join(', ') + '.';
+                    tone = 'warn';
+                }
             }
 
-            resetEmailRecipientForm();
+            bootstrap.Modal.getInstance(document.getElementById('emailRecipientModal'))?.hide();
             await loadEmailRecipients(true);
-            settingsAlert(data.message || 'Email recipient saved.', 'success');
+            settingsAlert(message, tone);
         } catch (err) {
             settingsAlert('Error: ' + (err.message || 'Email recipient save failed.'));
         }
     }
 
+    async function toggleEmailRecipient(recipientId, isActive) {
+        try {
+            await emailRecipientRequest('/settings/email-recipients-save', { id: recipientId, is_active: isActive });
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Email recipient save failed.'));
+        }
+        await loadEmailRecipients(true);
+    }
+
+    async function copyEmailRecipient() {
+        const recipientId = document.getElementById('email-recipient-copy-id').value;
+        const groupKeys = Array.from(document.querySelectorAll('#email-recipient-copy-list input:checked')).map(input => input.value);
+
+        if (!groupKeys.length) {
+            settingsAlert('Please select at least one group.');
+            return;
+        }
+
+        try {
+            const data = await emailRecipientRequest(`/settings/email-recipients-copy/${recipientId}`, { group_keys: groupKeys });
+            bootstrap.Modal.getInstance(document.getElementById('emailRecipientCopyModal'))?.hide();
+            await loadEmailRecipients(true);
+            settingsAlert('Copied to ' + data.copied.length + ' group(s).', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Email recipient copy failed.'));
+        }
+    }
+
     async function deleteEmailRecipient(recipientId) {
-        const recipient = (emailRecipientState.recipients || []).find(item => Number(item.id) === Number(recipientId));
+        const recipient = emailRecipientById(recipientId);
         const emailLabel = recipient ? recipient.email : 'this recipient';
 
         const shouldDelete = await settingsConfirmDialog({
@@ -3374,23 +3349,7 @@
         if (!shouldDelete) return;
 
         try {
-            const res = await fetch(`/settings/email-recipients-delete/${recipientId}`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                cache: 'no-store',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRFToken': getCSRFToken()
-                },
-                body: JSON.stringify({})
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Email recipient delete failed.');
-            }
-
-            resetEmailRecipientForm();
+            const data = await emailRecipientRequest(`/settings/email-recipients-delete/${recipientId}`, {});
             await loadEmailRecipients(true);
             settingsAlert(data.message || 'Email recipient deleted.', 'success');
         } catch (err) {
@@ -4483,6 +4442,14 @@
         font-weight: 900;
         text-transform: uppercase;
         letter-spacing: 0.04em;
+        cursor: pointer;
+        padding: 0.75rem 0.25rem;
+    }
+    .email-recipient-section + .email-recipient-section {
+        border-top: 1px solid #e2e8f0;
+    }
+    .email-recipient-section > .email-recipient-groups {
+        padding-bottom: 1rem;
     }
     .email-recipient-form-panel {
         border: 1px solid #bae6fd;
@@ -4532,8 +4499,23 @@
         font-size: 0.72rem;
         font-weight: 950;
     }
-    .email-recipient-usage-pill,
-    .email-recipient-usage-badge {
+    .email-recipient-count.warn {
+        flex: 0 1 auto;
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    .email-recipient-count.muted {
+        background: #e2e8f0;
+        color: #475569;
+    }
+    .email-recipient-group-tools {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .email-recipient-usage-pill {
         display: inline-flex;
         align-items: center;
         width: fit-content;
@@ -4544,16 +4526,16 @@
         font-size: 0.68rem;
         font-weight: 950;
         line-height: 1;
-    }
-    .email-recipient-usage-pill {
         padding: 0.24rem 0.5rem;
         margin-right: 0.4rem;
         margin-bottom: 0.18rem;
     }
-    .email-recipient-usage-badge {
-        padding: 0.2rem 0.45rem;
-        margin-left: 0.35rem;
-        vertical-align: middle;
+    .email-recipient-switch {
+        margin: 0 0.35rem 0 0;
+    }
+    .email-recipient-copy-option {
+        padding-top: 0.4rem;
+        padding-bottom: 0.4rem;
     }
     .email-recipient-list {
         display: grid;
@@ -4593,6 +4575,7 @@
         display: flex;
         gap: 0.45rem;
         flex-wrap: wrap;
+        align-items: center;
         justify-content: flex-end;
     }
 

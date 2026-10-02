@@ -37,8 +37,8 @@ class ServiceFileDeliverySourceTests(unittest.TestCase):
 
     def test_service_file_labels_replace_outbound_tsr_labels(self):
         self.assertIn("Send Service Files", self.timeline_source)
-        self.assertIn("Service Files Client Email CC", self.settings_source)
-        self.assertIn("Service Files Client Email Subject", self.settings_source)
+        self.assertIn("Service Files Client Email CC", self.app_source)
+        self.assertIn("Service Files Client Email Subject", self.app_source)
         self.assertIn("2026-09-02-service-file-delivery", self.releases_source)
         assert_cache_version_at_least(self, 119, self.app_source)
 

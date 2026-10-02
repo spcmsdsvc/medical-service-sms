@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-02-email-recipients-tab",
+      "release_date": "2026-10-02",
+      "title": "Easier Email Recipients in Settings",
+      "summary": "The Email Recipients tab is grouped by workflow, lets you add and switch off recipients in place, and warns when an email has nobody to go to.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-email-recipients-tab-admins",
+          "category": "Settings",
+          "description": "Email Recipients is now grouped under Service Files, Calibration, Accounting, LPR, Leave and Announcements, with a search box. Each group has its own Add button that accepts one or several pasted addresses, each recipient has an Active switch, and Copy puts the same address into other groups. A group that is the main recipient list of its email and has no active address shows a warning that the email will not be sent.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-tsr-number-schedule-change",
       "release_date": "2026-10-02",
       "title": "Each TSR Gets Its Own Number",

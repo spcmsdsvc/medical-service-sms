@@ -1101,7 +1101,7 @@
 :root[data-app-theme="dark"] :is(
     .product-confirm-title, .client-confirm-title, .engineer-confirm-title,
     .product-alert-title, .client-alert-title, .engineer-alert-title,
-    .email-recipient-group-title, .email-recipient-email-line,
+    .email-recipient-group-title, .email-recipient-email-line, .email-recipient-section-title,
     .email-template-title, .email-template-preview-value
 ) {
     color: var(--dark-text) !important;

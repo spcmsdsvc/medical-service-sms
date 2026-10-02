@@ -392,86 +392,115 @@ def is_new_workflow_path(path):
         return True
     return clean_path.startswith(NEW_WORKFLOW_BLOCKED_PREFIXES)
 
+# Settings -> Email Recipients groups, in display order. `kind` is display-only:
+# 'primary' groups are the To list of their email, 'cc' groups are copied.
 EMAIL_RECIPIENT_GROUPS = {
     'tsr_client_cc': {
         'label': 'Service Files Client Email CC',
+        'section': 'Service Files',
+        'kind': 'cc',
+        'usage': 'Used by Send Service Files',
         'description': 'Internal recipients automatically copied when service files are emailed to clients.'
     },
     'calibration_report_certificate_cc': {
         'label': 'Calibration Report & Certificate CC - Manila',
+        'section': 'Calibration',
+        'kind': 'cc',
+        'usage': 'Used by Manila/Main Calibration Center emails',
         'description': "Internal recipients automatically copied when the calibration creator's Engineer-profile branch is Manila/Main."
     },
     'calibration_report_certificate_cc_cebu_davao': {
         'label': 'Calibration Report & Certificate CC - Cebu/Davao',
+        'section': 'Calibration',
+        'kind': 'cc',
+        'usage': 'Used by Cebu/Davao Calibration Center emails',
         'description': "Internal recipients automatically copied when the calibration creator's Engineer-profile branch is Cebu or Davao."
     },
     'accounting_handoff_cc': {
         'label': 'Accounting Handoff CC - Manila',
+        'section': 'Accounting',
+        'kind': 'cc',
+        'usage': 'Used by Manila/Main Accounting handoffs',
         'description': 'Extra internal recipients copied on approved accounting handoff emails from Manila/Main employees.'
     },
     'accounting_handoff_cc_cebu_davao': {
         'label': 'Accounting Handoff CC - Cebu/Davao',
+        'section': 'Accounting',
+        'kind': 'cc',
+        'usage': 'Used by Cebu/Davao Accounting handoffs',
         'description': 'Extra internal recipients copied on approved accounting handoff emails from Cebu or Davao employees.'
     },
     'travel_accounting': {
         'label': 'Travel Request Accounting',
+        'section': 'Accounting',
+        'kind': 'primary',
+        'usage': 'Used by Travel Request',
         'description': 'Accounting recipients for approved Travel Request / cash advance email handoff.'
     },
     'cash_advance_accounting': {
         'label': 'Cash Advance Accounting',
-        'description': 'Accounting recipients for approved standalone Cash Advance handoff.'
+        'section': 'Accounting',
+        'kind': 'primary',
+        'usage': 'Used by Cash Advance > PHP 10,000',
+        'description': 'Accounting recipients for approved standalone Cash Advances over PHP 10,000.00.'
     },
     'cash_advance_release': {
         'label': 'Cash Advance Release',
+        'section': 'Accounting',
+        'kind': 'primary',
+        'usage': 'Used by Cash Advance <= PHP 10,000',
         'description': 'Recipients for approved standalone Cash Advances of PHP 10,000.00 or below.'
     },
     'reimbursement_accounting': {
         'label': 'Reimbursement Accounting',
-        'description': 'Future accounting recipients for reimbursement handoff.'
+        'section': 'Accounting',
+        'kind': 'primary',
+        'usage': 'Used by Reimbursement',
+        'description': 'Accounting recipients for approved Reimbursement handoff.'
     },
     'reimbursement_tracker_paid_cc': {
         'label': 'Reimbursement Tracker Paid CC',
+        'section': 'Accounting',
+        'kind': 'cc',
+        'usage': 'Used by Reimbursement Tracker Paid',
         'description': 'Additional recipients copied when a Reimbursement Tracker row is marked Paid in Full.'
     },
     'lpr_procurement': {
         'label': 'LPR Procurement',
+        'section': 'LPR',
+        'kind': 'primary',
+        'usage': 'Used by Local Purchase Requisition',
         'description': 'Recipients for approved Local Purchase Requisition procurement handoff.'
     },
     'leave_request_hr': {
         'label': 'Leave Request HR',
+        'section': 'Leave',
+        'kind': 'primary',
+        'usage': 'Used by Leave Request',
         'description': 'Primary HR recipients for approved Leave Request handoff.'
     },
     'leave_request_cc': {
         'label': 'Leave Request CC - Manila',
+        'section': 'Leave',
+        'kind': 'cc',
+        'usage': 'Used by Manila/Main Leave Requests',
         'description': 'Additional recipients copied on approved Leave Requests from Manila/Main employees.'
     },
     'leave_request_cc_cebu_davao': {
         'label': 'Leave Request CC - Cebu/Davao',
+        'section': 'Leave',
+        'kind': 'cc',
+        'usage': 'Used by Cebu/Davao Leave Requests',
         'description': 'Additional recipients copied on approved Leave Requests from Cebu or Davao employees.'
     },
     'changelog_announcements': {
         'label': "What's New Announcements",
+        'section': 'Announcements',
+        'kind': 'primary',
+        'usage': "Used by the What's New digest",
         'description': "Recipients of the manually sent What's New update digest. Unlike the other groups this is an announcement list, not a workflow handoff."
     }
 }
-
-EMAIL_RECIPIENT_GROUP_ORDER = [
-    'tsr_client_cc',
-    'calibration_report_certificate_cc',
-    'calibration_report_certificate_cc_cebu_davao',
-    'accounting_handoff_cc',
-    'accounting_handoff_cc_cebu_davao',
-    'travel_accounting',
-    'cash_advance_accounting',
-    'cash_advance_release',
-    'reimbursement_accounting',
-    'reimbursement_tracker_paid_cc',
-    'lpr_procurement',
-    'leave_request_hr',
-    'leave_request_cc',
-    'leave_request_cc_cebu_davao',
-    'changelog_announcements'
-]
 
 TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE = 'NCS_TSR{billing_marker}_Shimadzu_{client_name}_{machine_name}_{service_case}_{date_mmddyyyy} - TSR'
 
@@ -5525,15 +5554,6 @@ def normalize_single_email_address(email_value):
     return email_value.lower()
 
 
-def seed_default_email_recipients():
-    """S12A0-4: hardcoded email seed retired.
-
-    Email recipients are now maintained only through:
-    Settings → Email Recipients
-    """
-    return
-
-
 def ensure_email_recipient_setting_table():
     """Create S12A0 Email Recipient Settings table on existing SQLite databases."""
     global _email_recipient_setting_table_ready
@@ -5561,15 +5581,7 @@ def ensure_email_recipient_setting_table():
 
 
 def get_email_recipient_groups_payload():
-    return [
-        {
-            'key': key,
-            'label': EMAIL_RECIPIENT_GROUPS[key]['label'],
-            'description': EMAIL_RECIPIENT_GROUPS[key]['description']
-        }
-        for key in EMAIL_RECIPIENT_GROUP_ORDER
-        if key in EMAIL_RECIPIENT_GROUPS
-    ]
+    return [{'key': key, **meta} for key, meta in EMAIL_RECIPIENT_GROUPS.items()]
 
 
 def email_recipient_setting_to_dict(recipient):
@@ -26880,7 +26892,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v232-tsr-number-schedule-change';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v233-email-recipients-tab';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -29099,11 +29111,29 @@ def settings_email_recipients_data():
     })
 
 
+def email_recipient_in_group(group_key, email_addr):
+    return (
+        EmailRecipientSetting.query
+        .filter(EmailRecipientSetting.group_key == group_key)
+        .filter(func.lower(EmailRecipientSetting.email) == email_addr.lower())
+        .first()
+    )
+
+
+def log_email_recipient_change(verb, detail):
+    db.session.add(ActivityLog(
+        user=current_user.username.capitalize(),
+        action=f"{verb} email recipient setting: {detail}"
+    ))
+
+
 @app.route('/settings/email-recipients-save', methods=['POST'])
-@csrf.exempt
 @login_required
 def settings_email_recipients_save():
-    """S12A0 backend API: add or update one Settings-managed email recipient."""
+    """Add or update one Settings-managed email recipient.
+
+    A payload with an id and no email only switches the recipient on or off.
+    """
     if not is_superadmin_user():
         return denied('Only superadmins can manage email recipients.')
 
@@ -29111,11 +29141,27 @@ def settings_email_recipients_save():
 
     payload = request.get_json(silent=True) or {}
     recipient_id = clean_int(payload.get('id'))
+    recipient = db.session.get(EmailRecipientSetting, recipient_id) if recipient_id else None
+    if recipient_id and not recipient:
+        return jsonify({'success': False, 'error': 'Email recipient not found.'}), 404
+
+    if recipient and 'email' not in payload:
+        recipient.is_active = bool(payload.get('is_active'))
+        recipient.updated_at = get_manila_time()
+        group_label = EMAIL_RECIPIENT_GROUPS.get(recipient.group_key or '', {}).get('label', recipient.group_key or '')
+        log_email_recipient_change(
+            'Activated' if recipient.is_active else 'Deactivated',
+            f"{recipient.email} ({group_label})"
+        )
+        db.session.commit()
+        return no_store_jsonify({
+            'success': True,
+            'message': 'Email recipient switched on.' if recipient.is_active else 'Email recipient switched off.',
+            'recipient': email_recipient_setting_to_dict(recipient)
+        })
+
     group_key = normalize_email_recipient_group(payload.get('group_key'))
     email_addr = normalize_single_email_address(payload.get('email'))
-    display_name = (clean_str(payload.get('display_name')) or '')[:150]
-    remarks = clean_str(payload.get('remarks')) or ''
-    sort_order = clean_int(payload.get('sort_order')) or 100
     is_active = bool(payload.get('is_active', True))
 
     if not group_key:
@@ -29123,36 +29169,26 @@ def settings_email_recipients_save():
     if not email_addr:
         return jsonify({'success': False, 'error': 'Please enter a valid email address.'}), 400
 
-    existing = (
-        EmailRecipientSetting.query
-        .filter(EmailRecipientSetting.group_key == group_key)
-        .filter(func.lower(EmailRecipientSetting.email) == email_addr.lower())
-        .first()
-    )
-
-    if existing and (not recipient_id or existing.id != recipient_id):
+    existing = email_recipient_in_group(group_key, email_addr)
+    if existing and (not recipient or existing.id != recipient.id):
         return jsonify({'success': False, 'error': 'This email already exists in the selected group.'}), 400
 
-    if recipient_id:
-        recipient = db.session.get(EmailRecipientSetting, recipient_id)
-        if not recipient:
-            return jsonify({'success': False, 'error': 'Email recipient not found.'}), 404
+    if recipient:
+        verb = 'Updated' if recipient.is_active == is_active else ('Activated' if is_active else 'Deactivated')
     else:
+        verb = 'Added'
         recipient = EmailRecipientSetting(created_at=get_manila_time())
 
     recipient.group_key = group_key
     recipient.email = email_addr
-    recipient.display_name = display_name
-    recipient.remarks = remarks
-    recipient.sort_order = sort_order
+    recipient.display_name = (clean_str(payload.get('display_name')) or '')[:150]
+    recipient.remarks = clean_str(payload.get('remarks')) or ''
+    recipient.sort_order = clean_int(payload.get('sort_order')) or recipient.sort_order or 100
     recipient.is_active = is_active
     recipient.updated_at = get_manila_time()
 
     db.session.add(recipient)
-    db.session.add(ActivityLog(
-        user=current_user.username.capitalize(),
-        action=f"Updated email recipient setting: {email_addr} ({EMAIL_RECIPIENT_GROUPS[group_key]['label']})"
-    ))
+    log_email_recipient_change(verb, f"{email_addr} ({EMAIL_RECIPIENT_GROUPS[group_key]['label']})")
     db.session.commit()
 
     return no_store_jsonify({
@@ -29162,11 +29198,72 @@ def settings_email_recipients_save():
     })
 
 
-@app.route('/settings/email-recipients-delete/<int:recipient_id>', methods=['POST', 'DELETE'])
-@csrf.exempt
+@app.route('/settings/email-recipients-bulk-add', methods=['POST'])
 @login_required
-def settings_email_recipients_delete(recipient_id):
-    """S12A0 backend API: delete one Settings-managed email recipient."""
+def settings_email_recipients_bulk_add():
+    """Add one or more pasted addresses to one Settings-managed group."""
+    if not is_superadmin_user():
+        return denied('Only superadmins can manage email recipients.')
+
+    ensure_email_recipient_setting_table()
+
+    payload = request.get_json(silent=True) or {}
+    group_key = normalize_email_recipient_group(payload.get('group_key'))
+    if not group_key:
+        return jsonify({'success': False, 'error': 'Please select a valid email recipient group.'}), 400
+
+    display_name = (clean_str(payload.get('display_name')) or '')[:150]
+    remarks = clean_str(payload.get('remarks')) or ''
+    added, skipped_existing, invalid = [], [], []
+
+    for token in re.split(r'[\s,;<>]+', str(payload.get('emails') or '')):
+        if not token:
+            continue
+        email_addr = normalize_single_email_address(token)
+        if not email_addr:
+            invalid.append(token)
+        elif email_addr in added or email_addr in skipped_existing:
+            continue
+        elif email_recipient_in_group(group_key, email_addr):
+            skipped_existing.append(email_addr)
+        else:
+            db.session.add(EmailRecipientSetting(
+                group_key=group_key,
+                email=email_addr,
+                display_name=display_name,
+                remarks=remarks,
+                created_at=get_manila_time()
+            ))
+            added.append(email_addr)
+
+    if not added:
+        db.session.rollback()
+        if skipped_existing and not invalid:
+            error = 'Already in this group: ' + ', '.join(skipped_existing)
+        else:
+            error = 'Please enter a valid email address.'
+        return jsonify({
+            'success': False,
+            'error': error,
+            'skipped_existing': skipped_existing,
+            'invalid': invalid
+        }), 400
+
+    log_email_recipient_change('Added', f"{', '.join(added)} ({EMAIL_RECIPIENT_GROUPS[group_key]['label']})")
+    db.session.commit()
+
+    return no_store_jsonify({
+        'success': True,
+        'added': added,
+        'skipped_existing': skipped_existing,
+        'invalid': invalid
+    })
+
+
+@app.route('/settings/email-recipients-copy/<int:recipient_id>', methods=['POST'])
+@login_required
+def settings_email_recipients_copy(recipient_id):
+    """Copy one recipient into other Settings-managed groups."""
     if not is_superadmin_user():
         return denied('Only superadmins can manage email recipients.')
 
@@ -29176,30 +29273,60 @@ def settings_email_recipients_delete(recipient_id):
     if not recipient:
         return jsonify({'success': False, 'error': 'Email recipient not found.'}), 404
 
-    email_addr = recipient.email or ''
-    group_key = recipient.group_key or ''
-    group_label = EMAIL_RECIPIENT_GROUPS.get(group_key, {}).get('label', group_key)
-    duplicate_recipients = (
-        EmailRecipientSetting.query
-        .filter(EmailRecipientSetting.group_key == group_key)
-        .filter(func.lower(EmailRecipientSetting.email) == (email_addr or '').lower())
-        .all()
-    )
+    payload = request.get_json(silent=True) or {}
+    group_keys = payload.get('group_keys')
+    group_keys = [normalize_email_recipient_group(key) for key in group_keys] if isinstance(group_keys, list) else []
+    group_keys = [key for key in dict.fromkeys(group_keys) if key]
+    if not group_keys:
+        return jsonify({'success': False, 'error': 'Please select at least one group.'}), 400
 
-    deleted_count = 0
-    for duplicate_recipient in duplicate_recipients or [recipient]:
-        db.session.delete(duplicate_recipient)
-        deleted_count += 1
-    db.session.add(ActivityLog(
-        user=current_user.username.capitalize(),
-        action=f"Deleted email recipient setting: {email_addr} ({group_label})"
-    ))
+    copied, skipped_existing = [], []
+    for group_key in group_keys:
+        label = EMAIL_RECIPIENT_GROUPS[group_key]['label']
+        if email_recipient_in_group(group_key, recipient.email):
+            skipped_existing.append(label)
+            continue
+        db.session.add(EmailRecipientSetting(
+            group_key=group_key,
+            email=recipient.email,
+            display_name=recipient.display_name,
+            remarks=recipient.remarks,
+            created_at=get_manila_time()
+        ))
+        copied.append(label)
+
+    if copied:
+        log_email_recipient_change('Copied', f"{recipient.email} to {', '.join(copied)}")
+        db.session.commit()
+
+    return no_store_jsonify({
+        'success': True,
+        'copied': copied,
+        'skipped_existing': skipped_existing
+    })
+
+
+@app.route('/settings/email-recipients-delete/<int:recipient_id>', methods=['POST'])
+@login_required
+def settings_email_recipients_delete(recipient_id):
+    """Delete one Settings-managed email recipient."""
+    if not is_superadmin_user():
+        return denied('Only superadmins can manage email recipients.')
+
+    ensure_email_recipient_setting_table()
+
+    recipient = db.session.get(EmailRecipientSetting, recipient_id)
+    if not recipient:
+        return jsonify({'success': False, 'error': 'Email recipient not found.'}), 404
+
+    group_label = EMAIL_RECIPIENT_GROUPS.get(recipient.group_key or '', {}).get('label', recipient.group_key or '')
+    log_email_recipient_change('Deleted', f"{recipient.email} ({group_label})")
+    db.session.delete(recipient)
     db.session.commit()
 
     return no_store_jsonify({
         'success': True,
-        'message': 'Email recipient deleted.',
-        'deleted_count': deleted_count
+        'message': 'Email recipient deleted.'
     })
 
 
