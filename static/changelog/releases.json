@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-02-tsr-number-schedule-change",
+      "release_date": "2026-10-02",
+      "title": "Each TSR Gets Its Own Number",
+      "summary": "Picking a different schedule on Create TSR no longer carries over the previous TSR's number.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-02-tsr-number-schedule-change-engineers",
+          "category": "TSR",
+          "description": "On Create TSR, choosing a different schedule now gives the new TSR its own number instead of keeping the previous one. Saved drafts that ended up sharing a number are corrected the next time you open and save or submit them: the first draft keeps its number and the others get the next numbers in the order you open them.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-calibration-performance-table",
       "release_date": "2026-10-02",
       "title": "Calibration Report Performance Criteria Table Stays in One Piece",

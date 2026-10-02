@@ -2656,6 +2656,11 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
     if(!isSameSchedule && !awaitingScheduleRepick){
       clearStandaloneTSRWorkFieldsForScheduleChange();
       standaloneCurrentDraftId = '';
+      // A different schedule is a different TSR: it must not reuse the previous TSR's
+      // reservation token or number.
+      standaloneTSRReservationToken = '';
+      const numberField = document.getElementById('tsr-number');
+      if(numberField) numberField.value = '';
     }
     awaitingScheduleRepick = false;
     selectedStandaloneScheduleId = nextScheduleId;

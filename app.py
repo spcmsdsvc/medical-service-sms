@@ -14671,11 +14671,15 @@ def reserve_online_tsr_number(
         if clean_int(existing.user_id) != owner_id:
             raise PermissionError('This TSR number reservation belongs to another account.')
         if existing.draft_key and draft_key and existing.draft_key != draft_key:
-            raise ValueError('This TSR number reservation belongs to a different draft.')
-        if not existing.draft_key and draft_key:
-            existing.draft_key = draft_key
-            existing.updated_at = get_manila_time()
-        return existing
+            # The token was carried over from another draft (a schedule switch on Create TSR).
+            # That draft keeps its number; this one gets its own token and the next number.
+            token = f"tsr-res-{secrets.token_urlsafe(32)}"[:120]
+            existing = None
+        else:
+            if not existing.draft_key and draft_key:
+                existing.draft_key = draft_key
+                existing.updated_at = get_manila_time()
+            return existing
 
     preferred = clean_str(preferred_number)[:120] if preferred_number else ''
     for _attempt in range(5):
@@ -26876,7 +26880,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v231-calibration-performance-table';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v232-tsr-number-schedule-change';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

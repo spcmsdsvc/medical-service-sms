@@ -301,6 +301,43 @@ class StableTsrNumberReservationAllocatorTests(unittest.TestCase):
                 reservation_token=self.SECOND_TOKEN
             ).first())
 
+    def test_token_carried_to_another_draft_gets_its_own_number(self):
+        """Regression: a schedule switch on Create TSR reused the previous TSR's token."""
+        with app_module.app.app_context():
+            first = app_module.reserve_online_tsr_number(
+                700005, self.FIRST_TOKEN, 'draft-a', self.SEQUENCE_DATE, initials='ENG'
+            )
+            app_module.db.session.commit()
+            first_number = first.tsr_number
+            second = app_module.reserve_online_tsr_number(
+                700005, self.FIRST_TOKEN, 'draft-b', self.SEQUENCE_DATE, initials='ENG',
+                preferred_number=first_number,
+            )
+            app_module.db.session.commit()
+            self.assertNotEqual(second.reservation_token, self.FIRST_TOKEN)
+            self.assertEqual(second.tsr_number, '20990102-02-ENG')
+            repeated = app_module.reserve_online_tsr_number(
+                700005, self.FIRST_TOKEN, 'draft-a', self.SEQUENCE_DATE, initials='ENG'
+            )
+            self.assertEqual(repeated.tsr_number, first_number)
+            with self.assertRaises(PermissionError):
+                app_module.reserve_online_tsr_number(
+                    700006, self.FIRST_TOKEN, 'draft-b', self.SEQUENCE_DATE, initials='ENG'
+                )
+
+
+class TsrNumberScheduleChangeTests(unittest.TestCase):
+    def test_schedule_change_resets_the_number_identity(self):
+        template = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+        start = template.index('if(!isSameSchedule && !awaitingScheduleRepick){')
+        branch = template[start:template.index('awaitingScheduleRepick = false;', start)]
+        self.assertIn("standaloneTSRReservationToken = '';", branch)
+        self.assertIn("getElementById('tsr-number')", branch)
+
+    def test_service_worker_cache_is_bumped(self):
+        app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        assert_cache_version_at_least(self, 232, app_source)
+
 
 if __name__ == '__main__':
     unittest.main()

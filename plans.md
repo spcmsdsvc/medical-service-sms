@@ -1,3 +1,85 @@
+# Create TSR: Each TSR Gets Its Own Number After a Schedule Change
+
+**Status:** In progress — implemented and tested; not committed. Awaiting the owner's "commit and push".
+**Approved:** 2026-10-02 — the owner said "approved partner, write it to plans.md".
+**Execution authorized:** 2026-10-02 — the owner said "go ahead partner. do not over engineer".
+
+**Where the plan and the outcome differed:**
+
+- **Step 3 findings, no code change needed.** Before a final save the page reserves through `/reserve_tsr_number` (`prepareTSRForFinalSave`), so a stuck draft is renumbered before its PDF is built; if the server's number still differs from the submitted one, the server rebuilds the PDF itself (`backend_reportlab_number_refresh`). A Calibration Report reads the TSR number when it is generated (`static/js/app-calibration-report.js:764`), so a report or certificate generated inside a stuck draft before it was renumbered keeps the old number until it is generated again.
+- **Verification.** The new tests were not run against the unfixed code (the owner asked for no over-engineering). Focused modules: 83 tests pass. Full suite: 1,461 tests, 23 failures, 3 errors, 5 skips — the baseline's non-passing counts.
+**Detailed:** 2026-10-02.
+
+## Context
+
+An engineer (Jasper Redoble) reported from production that with four TSRs on 2026-09-29 the TSR number did not change when he created the next TSR, the fourth TSR showed `-03-` instead of `-04-`, and his saved drafts share the same number. The intended outcome: every TSR created for a different schedule gets its own number, and drafts already stuck with a shared number correct themselves.
+
+## Decisions taken
+
+1. **The number format and sequence rules stay as they are:** `YYYYMMDD-NN-INITIALS`, per engineer (initials) per service date, restarting at 01 for each date. The owner confirmed the format is "as is".
+2. **Two changes, both small:** the page resets the number identity on a schedule change, and the server issues a fresh number instead of refusing a token that belongs to another draft.
+3. **Stuck drafts heal on their next save or submit**, not all at once. The first draft that reserved the number keeps it; the others get the next free numbers in the order they are opened. The owner was told this and approved.
+4. **Submitted TSRs are not renumbered.**
+5. **No browser automation** (project rule); verification is by tests and source-level checks.
+
+## Investigation
+
+Line numbers are as of commit `e8afc00`.
+
+- **Root cause (page).** `applyScheduleToStandaloneTSR` (`templates/offline_tsr.html:2636`) clears `standaloneCurrentDraftId` when a different schedule is picked (`:2656-2659`) but leaves `standaloneTSRReservationToken` (`:875`) and the `tsr-number` field untouched; `clearStandaloneTSRWorkFieldsForScheduleChange` (`:2571`) does not list `tsr-number`. Only `initializeBlankStandaloneTSR` (`:1360-1366`, the New TSR path) resets the token.
+- **Why the number never changes (server).** The next TSR sends the old token with a new draft key (`resolveStandaloneTSRDraftId`, `:3654`). `reserve_online_tsr_number` (`app.py:14641`) finds the token, sees a different `draft_key`, and raises `ValueError('This TSR number reservation belongs to a different draft.')` (`:14673-14674`). `/reserve_tsr_number` (`:18250`), `/save_tsr_draft` (reservation call at `:18705`) and the final save (`:19198`) all return HTTP 409 for it, so the account backup fails and the device draft keeps the previous number.
+- **The page already adopts the server's identity.** `reconcileTSRReservationFromServer` (`offline_tsr.html:995`) writes the returned token and number into the form and the local draft when the draft is the active one. `/save_tsr_draft` and the final save both use `reservation.reservation_token` / `reservation.tsr_number` after the call (`app.py:18724-18747`, `:19221-19226`), and the final save consumes by the returned token (`:19334`).
+- **Draft sync is save-triggered.** `syncStandaloneTSRDraftToServer` (`offline_tsr.html:4233`) runs from a save of the open draft; no background job re-syncs unopened drafts was found.
+- **Not verified:** production data. `railway ssh` timed out on port 22 and a database read was not permitted, so whether any submitted TSRs share a number is unknown. The schedule-switch path is inferred from the code and the engineer's report; it was not reproduced in a running app.
+- **Not verified:** whether a Calibration Report or certificate already generated inside a draft keeps the old number after the draft is renumbered, and whether the final-save PDF is rebuilt when the server's number differs from the submitted one (`app.py:19269-19290`). Both are checked in step 3.
+- **Existing tests:** `tests/test_online_tsr_numbering.py` (`StableTsrNumberReservationAllocatorTests` at `:228`, uses `reserve_online_tsr_number` directly with `SEQUENCE_DATE = 2099-01-02`), `tests/test_tsr_draft_sync.py`.
+- **Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v231-calibration-performance-table` (`app.py:26879`).
+- `changes.md` was read at its current top sections, not end to end.
+
+## Execution steps
+
+1. **Page — reset the number identity on a schedule change** (`templates/offline_tsr.html`, `applyScheduleToStandaloneTSR`, the `!isSameSchedule && !awaitingScheduleRepick` branch at `:2656`). Next to `standaloneCurrentDraftId = ''`, set `standaloneTSRReservationToken = ''` and blank the `tsr-number` field. Done: after picking a different schedule the field is empty (Pending) and the next save sends a new token.
+2. **Server — fresh number instead of a refusal** (`app.py`, `reserve_online_tsr_number`, `:14669-14678`). When the token exists, belongs to the same owner, and carries a different `draft_key`, do not raise: discard the incoming token (generate a new `tsr-res-…` token) and fall through to the normal candidate loop, with the preferred number left as sent (it is taken, so the allocator moves to highest + 1). The other-account `PermissionError` stays. Done: the same token with a second draft key returns a reservation with a different token and the next number; the first draft's reservation row is unchanged.
+3. **Check the two open points** (read-only, `app.py:19269-19290` and the Calibration Report number source in `static/js/app-calibration-report.js` / `offline_tsr.html`). Confirm the final-save PDF is rebuilt with the server's number when it differs, and find out whether generated documents inside a draft carry the old number. Record the findings here; if either needs a code change, amend this plan and tell the owner before making it.
+4. **Tests** (`tests/test_online_tsr_numbering.py`).
+   - Allocator: token T + `draft-a`, then T + `draft-b` for the same owner → different token, next number; T + `draft-a` again still returns the first number. Positive control: fails with `ValueError` against the current code.
+   - Allocator: T + `draft-b` from another account still raises `PermissionError`.
+   - Source-level: the schedule-change branch of `applyScheduleToStandaloneTSR` contains the token reset and the `tsr-number` reset. Positive control: fails against the current template.
+   - Cache version pin: `assert_cache_version_at_least(self, 232, …)`.
+5. **Release records.** Service worker `v232` (`app.py:26879`), an entry in `static/changelog/releases.json`, `changes.md`, this plan's status and any difference between plan and outcome.
+6. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Renumbering submitted TSRs** — production data has not been seen; if duplicates exist among submitted TSRs it is a separate data fix.
+- **A background re-sync of unopened drafts** — drafts heal when opened; a sweep adds risk for little gain.
+- **The number format, the initials-based scope, and the service-date basis** — the owner confirmed they stay.
+- **Releasing the old reservation on a schedule change** — the earlier draft still exists and keeps its number, as drafts do today.
+
+## Verification
+
+- The tests in step 4, each run once against the unfixed code to prove it fails.
+- `tests/test_online_tsr_numbering.py`, `tests/test_tsr_draft_sync.py`, `tests/test_tsr_sync_reliability.py`, `tests/test_changelog_coverage.py`, then one full-suite pass against the baseline (1,457 tests, 23 failures, 3 errors, 5 skips at the last recorded run).
+- No browser check. After deployment, the owner or the engineer confirms on production: pick a second schedule and see a new number; open a stuck draft and see it renumbered.
+
+## After implementation
+
+1. Self-review the diff.
+2. Full suite, quoting counts against the baseline.
+3. Service worker bump and `releases.json` entry.
+4. `changes.md` and this plan's status, with any difference between plan and outcome.
+5. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`. Commit and push only on the owner's instruction.
+
+## Risks
+
+- **Gaps in a day's sequence.** A draft left behind after a schedule switch keeps its number until it is deleted. Same as today's draft behaviour.
+- **Healed numbers follow opening order, not creation order.** The engineer should open stuck drafts in the order he wants them numbered.
+- **A draft whose key legitimately changed would get a new number** instead of a 409. Draft keys are stable once assigned (`resolveStandaloneTSRDraftId` reuses `_draft_id`), so this is not expected; the cost if it happens is one skipped number.
+- **Documents already generated inside a stuck draft may show the old number** — unknown until step 3.
+- **Old cached pages** keep the page-side bug until the service worker updates; the server change covers them.
+
+---
+
 # Calibration Report: Performance Criteria Table Is Not Cut Across Pages
 
 **Status:** Executed — implementation commit `fca812a`; published to `origin/main` on the owner's "commit and push".
