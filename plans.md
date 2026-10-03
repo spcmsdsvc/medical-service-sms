@@ -1,6 +1,6 @@
 # Activity Log: TSR Filter Fix, Simpler Page, Plain Numbers, and Less Code
 
-**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Status:** Executed — commit `45a1258`; published to `origin/main` on the owner's "commit and push".
 **Finished:** 2026-10-03.
 **Execution authorized:** 2026-10-03 — the owner said "go ahead partner. do not over over engineer and over check things".
 **Approved:** 2026-10-03 — the owner said "approved, include the theme-click change".
