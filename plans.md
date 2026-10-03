@@ -1501,7 +1501,7 @@ All line numbers are `templates/offline_tsr.html` as of commit `4ee5786`.
 
 # Reduce Railway Memory and Egress Cost
 
-**Status:** Executed — implementation commit `b2fb633`; publication to `origin/main` authorized. Post-deploy measurement (step 6) pending.
+**Status:** Executed — implementation commit `b2fb633`; published to `origin/main` 2026-10-01 14:50 PHT. Step 6 measured 2026-10-03: both parts kept.
 **Publication authorized:** 2026-10-01 — the owner said "commit and push partner, never the db and dirty files".
 **Execution authorized:** 2026-10-01 — the owner said "go ahead partner".
 **Approved:** 2026-10-01 — the owner said "yes partner, write the plan. just make sure it won't affect the database and also won't break the system".
@@ -1613,7 +1613,20 @@ Measured on production on 2026-10-01 (read-only):
   - Step 3: the `/login` test compares the decompressed length and closing tag rather than exact bytes, because the CSRF token differs between two renders. Exact round-trip equality is asserted on the JSON case.
   - Step 4: **no `releases.json` entry was added.** `tests/test_changelog_coverage.py` only requires a release dated the commit date, and a 2026-10-01 release already exists; the change is invisible to users. If this is committed on a later date, add an entry dated that day or the coverage test will fail.
   - No service-worker bump, as planned (still v221).
-  - Verification: the 5 new tests failed before the change and pass after. Full suite: 1,429 tests, 23 failures, 2 errors, 5 skips — the same non-passing counts as the baseline. Steps 5–6 (publish, measure) are pending.
+  - Verification: the 5 new tests failed before the change and pass after. Full suite: 1,429 tests, 23 failures, 2 errors, 5 skips — the same non-passing counts as the baseline. Steps 5–6 (publish, measure) were pending at that point.
+- 2026-10-03: Step 6 measurement (Railway metrics, PHT days; 2026-10-02 is the first full working day after the change, 2026-10-03 is a partial Saturday):
+
+  | Day | Memory avg | Working-hours avg | Night avg (0–6 am) | Egress |
+  | --- | --- | --- | --- | --- |
+  | 09-28 | 1.28 GB | 1.44 GB | 1.15 GB | 2.39 GB |
+  | 09-29 | 1.17 GB | 1.44 GB | 0.93 GB | 3.74 GB |
+  | 09-30 | 1.41 GB | 1.87 GB | 0.97 GB | 1.95 GB |
+  | 10-02 | 0.72 GB | 1.07 GB | 0.47 GB | 0.51 GB |
+  | 10-03 (partial) | 0.49 GB | 0.54 GB | 0.45 GB | 0.05 GB |
+
+  - Egress: per-request bytes leaving the service fell as planned (`/timeline` 1,009 → 236 KB, `/offline-tsr` 670 → 191 KB, `/get_products` 599 → 34 KB), and Railway's billed egress metric fell with them (about 75–85% per working day), so Railway bills the bytes before its edge. Part B stays.
+  - Memory: about 40–50% lower on daily average and half overnight. Working-hour peaks still reach about 2.4 GB during heavy work. Five deploys on 10-02 each restarted the worker, which flatters the daytime figure; the overnight level after a full day (0.45–0.47 GB against 0.93–1.15 GB before) is the cleaner signal. Part A stays.
+  - Estimated monthly effect: memory about $10–12 → $6–7, egress about $3.70 → under $1.
 
 ---
 

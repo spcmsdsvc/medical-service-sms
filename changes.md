@@ -1,5 +1,9 @@
 # Project Change Log
 
+codex changes - 2026-10-03
+
+- Recorded the post-deploy measurement for the **Reduce Railway Memory and Egress Cost** plan (`b2fb633`) in `plans.md`. Railway metrics for the first full working day after the change show average memory about 40–50% lower (0.72 GB against 1.17–1.41 GB; overnight 0.47 GB against 0.93–1.15 GB) and daily egress about 75–85% lower (0.51 GB against 1.95–3.74 GB). Both the allocator setting and the gzip hook are kept. Read-only measurement; no application, database, Railway variable, commit, push, or deployment change.
+
 codex changes - 2026-10-02
 
 - Committed only the Storage package (`app.py`, `templates/settings.html`, `templates/dashboard.html`, `static/changelog/releases.json`, `tests/test_storage_settings.py`, `plans.md`, and this package's `changes.md` entries) as `456b3eb` on `main` for the owner-authorized push to `origin/main`. `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this file were not staged.
