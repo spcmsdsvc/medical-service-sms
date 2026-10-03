@@ -84,6 +84,7 @@ from sqlalchemy import (
     or_,
     case,
     event,
+    literal,
 )
 from sqlalchemy.exc import IntegrityError
 
@@ -27027,7 +27028,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v236-storage-tab';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v237-activity-log-simple';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -31323,11 +31324,6 @@ def appearance_preferences_api():
     current_user.ui_theme_updated_at = get_manila_time()
     db.session.commit()
 
-    try:
-        log_activity(f"Updated appearance preference: {raw_mode} / {raw_accent}")
-    except Exception as log_error:
-        print(f"[Appearance] Activity log skipped: {log_error}", flush=True)
-
     return jsonify(appearance_preference_payload(current_user))
 
 
@@ -32482,174 +32478,104 @@ def download_system_backup():
 # --- DATA RETRIEVAL API MODULE ---
 
 
-ACTIVITY_CATEGORY_META = {
-    'Schedule': {'icon': 'fa-calendar-check', 'label': 'Schedule'},
-    'TSR': {'icon': 'fa-file-signature', 'label': 'TSR'},
-    'Reimbursement': {'icon': 'fa-receipt', 'label': 'Reimbursement'},
-    'Travel Request': {'icon': 'fa-plane-departure', 'label': 'Travel Request'},
-    'Travel Liquidation': {'icon': 'fa-file-invoice-dollar', 'label': 'Travel Liquidation'},
-    'Cash Advance': {'icon': 'fa-money-check-dollar', 'label': 'Cash Advance'},
-    'Cash Advance Liquidation': {'icon': 'fa-file-circle-check', 'label': 'Cash Advance Liquidation'},
-    'Leave Request': {'icon': 'fa-calendar-minus', 'label': 'Leave Request'},
-    'Approval': {'icon': 'fa-route', 'label': 'Approval'},
-    'Accounting': {'icon': 'fa-calculator', 'label': 'Accounting'},
-    'Email': {'icon': 'fa-envelope', 'label': 'Email'},
-    'Client': {'icon': 'fa-hospital', 'label': 'Client'},
-    'Product': {'icon': 'fa-boxes-stacked', 'label': 'Product'},
-    'Stock Inventory': {'icon': 'fa-barcode', 'label': 'Stock Inventory'},
-    'Personnel': {'icon': 'fa-user-gear', 'label': 'Personnel'},
-    'Export': {'icon': 'fa-file-export', 'label': 'Export'},
-    'Security': {'icon': 'fa-shield-halved', 'label': 'Security'},
-    'System': {'icon': 'fa-circle-info', 'label': 'System'}
-}
+# Activity rules: one ordered list per dimension, read by both the Python
+# classifiers (badges, CSV) and the SQL expressions (filters, counts).
+# A rule is (value, terms): any term matches. A tuple term needs all of its
+# parts; a tuple inside that needs any of its parts. Text is padded with one
+# space on each side, so ' moved ' also matches at the start or end.
+ACTIVITY_CATEGORY_RULES = [
+    ('Stock Inventory', ['stock inventory']),
+    ('Leave Request', ['leave request', 'form to follow', 'lr-']),
+    ('Security', ['password', 'unauthorized', 'denied']),
+    ('Cash Advance Liquidation', ['cash advance liquidation', 'cal-']),
+    ('Travel Liquidation', ['travel liquidation', 'tl-']),
+    ('Cash Advance', ['cash advance', 'ca-']),
+    ('Travel Request', ['travel request', 'travel block', 'tr-']),
+    ('Reimbursement', ['reimbursement', 'pcv', 'rfp']),
+    ('Accounting', ['accounting', 'cash advance release', ('marked reimbursement', ('paid', 'processing'))]),
+    ('TSR', ['tsr', 'service report']),
+    ('Approval', ['approval route', 'approval user', 'approver']),
+    ('Email', ['email notification', ('sent ', 'email')]),
+    ('Export', ['export']),
+    ('Client', ['client', 'medical center']),
+    ('Product', ['product', 'equipment', 'inventory']),
+    ('Personnel', ['engineer', 'technical staff', 'personnel', 'profile']),
+    ('Schedule', ['schedule', 'calendar', 'record', 'bulk-purged', 'wiped technical']),
+]
 
-ACTIVITY_ACTION_META = {
-    'Create': {'icon': 'fa-circle-plus', 'label': 'Create'},
-    'Update': {'icon': 'fa-pen-to-square', 'label': 'Update'},
-    'Move': {'icon': 'fa-arrows-up-down-left-right', 'label': 'Move'},
-    'Delete': {'icon': 'fa-trash-can', 'label': 'Delete'},
-    'Submit': {'icon': 'fa-paper-plane', 'label': 'Submit'},
-    'Approve': {'icon': 'fa-circle-check', 'label': 'Approve'},
-    'Reject': {'icon': 'fa-circle-xmark', 'label': 'Reject'},
-    'Return': {'icon': 'fa-reply', 'label': 'Return'},
-    'Complete': {'icon': 'fa-clipboard-check', 'label': 'Complete'},
-    'Upload': {'icon': 'fa-upload', 'label': 'Upload'},
-    'Download': {'icon': 'fa-download', 'label': 'Download'},
-    'Export': {'icon': 'fa-file-export', 'label': 'Export'},
-    'Import': {'icon': 'fa-file-import', 'label': 'Import'},
-    'Email': {'icon': 'fa-envelope', 'label': 'Email'},
-    'Security': {'icon': 'fa-shield-halved', 'label': 'Security'},
-    'Other': {'icon': 'fa-circle-info', 'label': 'Other'}
-}
+ACTIVITY_ACTION_RULES = [
+    ('Security', ['password', 'unauthorized', 'denied']),
+    ('Reject', ['rejected ', ' rejected', 'rejection']),
+    ('Return', ['returned ', ' returned', 'return ']),
+    ('Approve', ['approved ', ' approved', 'approval stamp']),
+    ('Submit', ['submitted ', ' submitted', 'submit ']),
+    ('Complete', ['completed ', ' completed', 'confirmed ', 'ready for liquidation', 'marked travel request ready']),
+    ('Upload', ['uploaded ', ' upload']),
+    ('Download', ['downloaded ', ' download']),
+    ('Email', [('sent ', ('email', 'accounting', 'client')), 'email notification']),
+    ('Export', ['export']),
+    ('Import', ['import']),
+    ('Create', ['added ', 'created ', 'registered ', 'new client', 'new schedule']),
+    ('Update', ['updated ', 'modified ', 'changed ', 'reset ', 'forced password', 'saved ', ' save ', 'save:']),
+    ('Move', [' moved ']),
+    ('Delete', ['deleted ', 'removed ', 'purged ', 'wiped ', 'bulk-purged']),
+]
+
+ACTIVITY_SEVERITY_RULES = [
+    ('danger', ['failed', 'failure', 'error', 'unable', 'unauthorized', 'denied']),
+    ('warning', ['skipped', 'not sent', 'no recipients', 'missing', 'blocked', 'returned', 'rejected', 'rejection', 'warning']),
+    ('success', ['sent', 'submitted', 'approved', 'completed', 'confirmed', 'paid', 'uploaded', 'downloaded', 'created', 'saved', 'imported', 'exported', 'updated', 'marked']),
+]
+
+ACTIVITY_CATEGORIES = [value for value, _terms in ACTIVITY_CATEGORY_RULES] + ['System']
+ACTIVITY_ACTIONS = [value for value, _terms in ACTIVITY_ACTION_RULES] + ['Other']
+
+
+def activity_terms_match(text, terms, need_all=False):
+    checks = (term in text if isinstance(term, str) else activity_terms_match(text, term, not need_all) for term in terms)
+    return all(checks) if need_all else any(checks)
+
+
+def activity_terms_sql(terms, need_all=False):
+    padded = literal(' ') + ActivityLog.action + literal(' ')
+    parts = [padded.ilike(f'%{term}%') if isinstance(term, str) else activity_terms_sql(term, not need_all) for term in terms]
+    return and_(*parts) if need_all else or_(*parts)
+
+
+def classify_activity(action, rules, default):
+    text = f" {(action or '').lower()} "
+    return next((value for value, terms in rules if activity_terms_match(text, terms)), default)
+
+
+def activity_rules_expression(rules, default):
+    return case(*((activity_terms_sql(terms), value) for value, terms in rules), else_=default)
 
 
 def classify_activity_action(action):
-    """Return a normalized audit category for dashboard badges and filters."""
-    text = (action or '').lower()
-
-    if 'stock inventory' in text:
-        return 'Stock Inventory'
-    if 'leave request' in text or 'form to follow' in text or 'lr-' in text:
-        return 'Leave Request'
-    if 'password' in text or 'unauthorized' in text or 'denied' in text:
-        return 'Security'
-    if 'cash advance liquidation' in text or 'cal-' in text:
-        return 'Cash Advance Liquidation'
-    if 'travel liquidation' in text or 'tl-' in text:
-        return 'Travel Liquidation'
-    if 'cash advance' in text or 'request for cash advance' in text or 'ca-' in text:
-        return 'Cash Advance'
-    if 'travel request' in text or 'travel block' in text or 'tr-' in text:
-        return 'Travel Request'
-    if 'reimbursement' in text or 'pcv' in text or 'rfp' in text:
-        return 'Reimbursement'
-    if 'accounting' in text or 'cash advance release' in text or 'marked reimbursement' in text and ('paid' in text or 'processing' in text):
-        return 'Accounting'
-    if 'tsr' in text or 'service report' in text or 'online tsr' in text:
-        return 'TSR'
-    if 'approval route' in text or 'approval user' in text or 'approver' in text:
-        return 'Approval'
-    if 'email notification' in text or ('sent schedule' in text and 'email' in text) or 'sent ' in text and 'email' in text:
-        return 'Email'
-    if 'export' in text:
-        return 'Export'
-    if 'client' in text or 'medical center' in text:
-        return 'Client'
-    if 'product' in text or 'equipment' in text or 'inventory' in text:
-        return 'Product'
-    if 'engineer' in text or 'technical staff' in text or 'personnel' in text or 'profile' in text:
-        return 'Personnel'
-    if 'schedule' in text or 'calendar' in text or 'record' in text or 'bulk-purged' in text or 'wiped technical' in text:
-        return 'Schedule'
-
-    return 'System'
+    """Return a normalized audit category for badges and filters."""
+    return classify_activity(action, ACTIVITY_CATEGORY_RULES, 'System')
 
 
 def classify_activity_verb(action):
-    """Return the action subtype used by the advanced activity log UI."""
-    text = (action or '').lower()
-
-    if 'password' in text or 'unauthorized' in text or 'denied' in text:
-        return 'Security'
-    if any(token in text for token in ['rejected ', ' rejected', 'rejection']):
-        return 'Reject'
-    if any(token in text for token in ['returned ', ' returned', 'return ']):
-        return 'Return'
-    if any(token in text for token in ['approved ', ' approved', 'approval stamp']):
-        return 'Approve'
-    if any(token in text for token in ['submitted ', ' submitted', 'submit ']):
-        return 'Submit'
-    if any(token in text for token in ['completed ', ' completed', 'confirmed ', 'ready for liquidation', 'marked travel request ready']):
-        return 'Complete'
-    if any(token in text for token in ['uploaded ', ' upload']):
-        return 'Upload'
-    if any(token in text for token in ['downloaded ', ' download']):
-        return 'Download'
-    if 'sent ' in text and ('email' in text or 'accounting' in text or 'client' in text) or 'email notification' in text:
-        return 'Email'
-    if 'export' in text:
-        return 'Export'
-    if 'import' in text:
-        return 'Import'
-    if any(token in text for token in ['added ', 'created ', 'registered ', 'new client', 'new schedule']):
-        return 'Create'
-    if any(token in text for token in ['updated ', 'modified ', 'changed ', 'reset ', 'forced password', 'saved ', ' save ', 'save:']):
-        return 'Update'
-    if re.search(r'\bmoved\b', text):
-        return 'Move'
-    if any(token in text for token in ['deleted ', 'removed ', 'purged ', 'wiped ', 'bulk-purged']):
-        return 'Delete'
-
-    return 'Other'
+    """Return the action subtype used by the Activity Log."""
+    return classify_activity(action, ACTIVITY_ACTION_RULES, 'Other')
 
 
 def classify_activity_severity(action):
     """Return display-only severity for highlighting audit outcomes."""
-    text = (action or '').lower()
+    return classify_activity(action, ACTIVITY_SEVERITY_RULES, 'normal')
 
-    danger_tokens = [
-        'failed',
-        'failure',
-        'error',
-        'unable',
-        'unauthorized',
-        'denied'
-    ]
-    warning_tokens = [
-        'skipped',
-        'not sent',
-        'no recipients',
-        'missing',
-        'blocked',
-        'returned',
-        'rejected',
-        'rejection',
-        'warning'
-    ]
-    success_tokens = [
-        'sent',
-        'submitted',
-        'approved',
-        'completed',
-        'confirmed',
-        'paid',
-        'uploaded',
-        'downloaded',
-        'created',
-        'saved',
-        'imported',
-        'exported',
-        'updated',
-        'marked'
-    ]
 
-    if any(token in text for token in danger_tokens):
-        return 'danger'
-    if any(token in text for token in warning_tokens):
-        return 'warning'
-    if any(token in text for token in success_tokens):
-        return 'success'
-    return 'normal'
+def activity_category_expression():
+    return activity_rules_expression(ACTIVITY_CATEGORY_RULES, 'System')
+
+
+def activity_action_expression():
+    return activity_rules_expression(ACTIVITY_ACTION_RULES, 'Other')
+
+
+def activity_severity_expression():
+    return activity_rules_expression(ACTIVITY_SEVERITY_RULES, 'normal')
 
 
 def infer_activity_branch(action):
@@ -32660,18 +32586,6 @@ def infer_activity_branch(action):
         if branch.lower() in text:
             branches.append(branch)
     return ', '.join(branches)
-
-
-def extract_activity_label(action, label):
-    """Extract a pipe-delimited label from ActivityLog.action text.
-
-    Example:
-    Added calendar schedule: PM on 2026-05-22 | Client: ABC Hospital | Product: CT (123)
-    """
-    text_value = action or ''
-    pattern = rf"(?:^|\|\s*){re.escape(label)}:\s*([^|]+)"
-    match = re.search(pattern, text_value, flags=re.I)
-    return match.group(1).strip() if match else ''
 
 
 def clean_activity_display_action(action):
@@ -32695,28 +32609,28 @@ def clean_activity_display_action(action):
     return re.sub(r'\s+', ' ', text_value).strip()
 
 
-def activity_log_to_dict(log):
-    """Serialize an ActivityLog row for API responses."""
-    category = classify_activity_action(log.action)
-    action_type = classify_activity_verb(log.action)
-    severity = classify_activity_severity(log.action)
-    client_name = extract_activity_label(log.action, 'Client')
-    product_name = extract_activity_label(log.action, 'Product')
+def activity_log_to_dict(log, today=None):
+    """Serialize an ActivityLog row for the Activity Log page."""
+    stamp = log.timestamp
+    today = today or get_manila_time().date()
+    days_ago = (today - stamp.date()).days
+    if days_ago == 0:
+        date_label = 'Today'
+    elif days_ago == 1:
+        date_label = 'Yesterday'
+    else:
+        date_label = f"{stamp.strftime('%b')} {stamp.day}, {stamp.year}"
     return {
         'id': log.id,
         'user': log.user,
         'action': log.action,
         'display_action': clean_activity_display_action(log.action),
-        'type': category,
-        'module': category,
-        'action_type': action_type,
-        'severity': severity,
+        'type': classify_activity_action(log.action),
+        'action_type': classify_activity_verb(log.action),
+        'severity': classify_activity_severity(log.action),
         'branch': infer_activity_branch(log.action),
-        'client_name': client_name,
-        'product_name': product_name,
-        'timestamp': log.timestamp.strftime("%Y-%m-%d %H:%M"),
-        'date': log.timestamp.strftime("%b %d, %Y"),
-        'time': log.timestamp.strftime("%I:%M %p")
+        'date': date_label,
+        'time': stamp.strftime('%I:%M %p').lstrip('0')
     }
 
 
@@ -32768,88 +32682,12 @@ def parse_activity_date_bounds():
 
 
 
-def activity_contains(*terms):
-    """Build a case-insensitive ActivityLog action predicate."""
-    return or_(*(ActivityLog.action.ilike(f'%{term}%') for term in terms))
-
-
-def activity_category_expression():
-    """Return the SQL expression matching classify_activity_action precedence."""
-    return case(
-        (activity_contains('stock inventory'), 'Stock Inventory'),
-        (activity_contains('leave request', 'form to follow', 'lr-'), 'Leave Request'),
-        (activity_contains('password', 'unauthorized', 'denied'), 'Security'),
-        (activity_contains('cash advance liquidation', 'cal-'), 'Cash Advance Liquidation'),
-        (activity_contains('travel liquidation', 'tl-'), 'Travel Liquidation'),
-        (activity_contains('cash advance', 'request for cash advance', 'ca-'), 'Cash Advance'),
-        (activity_contains('travel request', 'travel block', 'tr-'), 'Travel Request'),
-        (activity_contains('reimbursement', 'pcv', 'rfp'), 'Reimbursement'),
-        (or_(
-            activity_contains('accounting', 'cash advance release'),
-            and_(activity_contains('marked reimbursement'), activity_contains('paid', 'processing')),
-        ), 'Accounting'),
-        (activity_contains('approval route', 'approval user', 'approver'), 'Approval'),
-        (or_(
-            activity_contains('email notification'),
-            and_(activity_contains('sent schedule'), activity_contains('email')),
-            and_(activity_contains('sent '), activity_contains('email')),
-        ), 'Email'),
-        (activity_contains('export'), 'Export'),
-        (activity_contains('client', 'medical center'), 'Client'),
-        (activity_contains('product', 'equipment', 'inventory'), 'Product'),
-        (activity_contains('engineer', 'technical staff', 'personnel', 'profile'), 'Personnel'),
-        (activity_contains('schedule', 'calendar', 'record', 'bulk-purged', 'wiped technical'), 'Schedule'),
-        else_='System',
+def activity_routine_expression():
+    """Legacy reimbursement autosaves and theme changes: hidden by default, never deleted."""
+    return or_(
+        ActivityLog.action.ilike('Saved reimbursement draft%'),
+        ActivityLog.action.ilike('Updated appearance preference:%'),
     )
-
-
-def activity_action_expression():
-    """Return the SQL expression matching classify_activity_verb precedence."""
-    return case(
-        (activity_contains('password', 'unauthorized', 'denied'), 'Security'),
-        (activity_contains('rejected ', ' rejected', 'rejection'), 'Reject'),
-        (activity_contains('returned ', ' returned', 'return '), 'Return'),
-        (activity_contains('approved ', ' approved', 'approval stamp'), 'Approve'),
-        (activity_contains('submitted ', ' submitted', 'submit '), 'Submit'),
-        (activity_contains('completed ', ' completed', 'confirmed ', 'ready for liquidation', 'marked travel request ready'), 'Complete'),
-        (activity_contains('uploaded ', ' upload'), 'Upload'),
-        (activity_contains('downloaded ', ' download'), 'Download'),
-        (and_(activity_contains('sent '), activity_contains('email', 'accounting', 'client')), 'Email'),
-        (activity_contains('email notification'), 'Email'),
-        (activity_contains('export'), 'Export'),
-        (activity_contains('import'), 'Import'),
-        (activity_contains('added ', 'created ', 'registered ', 'new client', 'new schedule'), 'Create'),
-        (activity_contains('updated ', 'modified ', 'changed ', 'reset ', 'forced password', 'saved ', ' save ', 'save:'), 'Update'),
-        (or_(ActivityLog.action.ilike('Moved %'), ActivityLog.action.ilike('% moved %')), 'Move'),
-        (activity_contains('deleted ', 'removed ', 'purged ', 'wiped ', 'bulk-purged'), 'Delete'),
-        else_='Other',
-    )
-
-
-def activity_severity_expression():
-    """Return the SQL expression matching classify_activity_severity precedence."""
-    return case(
-        (activity_contains('failed', 'failure', 'error', 'unable', 'unauthorized', 'denied'), 'danger'),
-        (activity_contains('skipped', 'not sent', 'no recipients', 'missing', 'blocked', 'returned', 'rejected', 'rejection', 'warning'), 'warning'),
-        (activity_contains('sent', 'submitted', 'approved', 'completed', 'confirmed', 'paid', 'uploaded', 'downloaded', 'created', 'saved', 'imported', 'exported', 'updated', 'marked'), 'success'),
-        else_='normal',
-    )
-
-
-def activity_routine_save_expression():
-    """Identify legacy per-autosave reimbursement rows without deleting them."""
-    return ActivityLog.action.ilike('Saved reimbursement draft%')
-
-
-def activity_group_counts(query, expression):
-    """Count derived ActivityLog values without materialising every match."""
-    return {
-        value: int(count or 0)
-        for value, count in query.with_entities(expression, func.count(ActivityLog.id))
-        .group_by(expression)
-        .all()
-        if value
-    }
 
 
 def safe_activity_csv_cell(value):
@@ -32885,54 +32723,26 @@ def build_activity_query():
     if end_date:
         query = query.filter(ActivityLog.timestamp < datetime.combine(end_date + timedelta(days=1), datetime.min.time()))
 
-    category_expression = activity_category_expression()
-    action_expression = activity_action_expression()
-    severity_expression = activity_severity_expression()
-
     if type_filter:
         type_filter = 'Personnel' if type_filter == 'Engineer' else type_filter
-        query = query.filter(category_expression == type_filter)
+        query = query.filter(activity_category_expression() == type_filter)
 
     if action_filter:
-        query = query.filter(action_expression == action_filter)
+        query = query.filter(activity_action_expression() == action_filter)
 
     if severity_filter == 'warning_or_danger':
-        query = query.filter(severity_expression.in_(['warning', 'danger']))
+        query = query.filter(activity_severity_expression().in_(['warning', 'danger']))
     elif severity_filter:
-        query = query.filter(severity_expression == severity_filter)
+        query = query.filter(activity_severity_expression() == severity_filter)
 
     if branch_filter:
         query = query.filter(ActivityLog.action.ilike(f'%{branch_filter}%'))
 
-    hidden_routine_count = query.filter(activity_routine_save_expression()).count()
-    include_routine = parse_bool_flag(request.args.get('include_routine'), default=False)
-    if not include_routine:
-        query = query.filter(~activity_routine_save_expression())
+    hidden_routine_count = query.filter(activity_routine_expression()).count()
+    if not parse_bool_flag(request.args.get('include_routine'), default=False):
+        query = query.filter(~activity_routine_expression())
 
-    return query, type_filter, action_filter, severity_filter, branch_filter, hidden_routine_count
-
-
-def filter_activity_logs_by_derived_fields(logs, type_filter='', action_filter='', severity_filter='', branch_filter=''):
-    """Apply filters derived from ActivityLog.action text."""
-    filtered = list(logs or [])
-    type_filter = 'Personnel' if type_filter == 'Engineer' else type_filter
-
-    if type_filter:
-        filtered = [log for log in filtered if classify_activity_action(log.action) == type_filter]
-
-    if action_filter:
-        filtered = [log for log in filtered if classify_activity_verb(log.action) == action_filter]
-
-    if severity_filter:
-        if severity_filter == 'warning_or_danger':
-            filtered = [log for log in filtered if classify_activity_severity(log.action) in {'warning', 'danger'}]
-        else:
-            filtered = [log for log in filtered if classify_activity_severity(log.action) == severity_filter]
-
-    if branch_filter:
-        filtered = [log for log in filtered if branch_filter.lower() in (log.action or '').lower()]
-
-    return filtered
+    return query, hidden_routine_count
 
 
 @app.route('/get_activity_filter_options')
@@ -32944,9 +32754,8 @@ def get_activity_filter_options():
 
     return jsonify({
         'users': get_activity_users(),
-        'categories': list(ACTIVITY_CATEGORY_META.keys()),
-        'action_types': list(ACTIVITY_ACTION_META.keys()),
-        'severities': ['normal', 'success', 'warning', 'danger', 'warning_or_danger'],
+        'categories': ACTIVITY_CATEGORIES,
+        'action_types': ACTIVITY_ACTIONS,
         'branches': ['Manila', 'Cebu', 'Davao']
     })
 
@@ -32963,7 +32772,7 @@ def get_activity_logs():
     page = max(page, 1)
     per_page = min(max(per_page, 10), 100)
 
-    query, type_filter, action_filter, severity_filter, branch_filter, hidden_routine_count = build_activity_query()
+    query, hidden_routine_count = build_activity_query()
     total = query.order_by(None).count()
     start_idx = (page - 1) * per_page
     page_logs = (
@@ -32973,20 +32782,19 @@ def get_activity_logs():
         .all()
     )
 
-    category_counts = activity_group_counts(query, activity_category_expression())
-    action_counts = activity_group_counts(query, activity_action_expression())
-    severity_counts = activity_group_counts(query, activity_severity_expression())
+    problem_count = query.filter(activity_severity_expression().in_(['warning', 'danger'])).order_by(None).count()
+    user_count = query.order_by(None).with_entities(func.count(ActivityLog.user.distinct())).scalar() or 0
+    today = get_manila_time().date()
 
     return jsonify({
         'page': page,
         'per_page': per_page,
         'total': total,
         'pages': (total + per_page - 1) // per_page,
-        'category_counts': dict(sorted(category_counts.items())),
-        'action_counts': dict(sorted(action_counts.items())),
-        'severity_counts': dict(sorted(severity_counts.items())),
+        'problem_count': problem_count,
+        'user_count': user_count,
         'hidden_routine_count': hidden_routine_count,
-        'logs': [activity_log_to_dict(log) for log in page_logs]
+        'logs': [activity_log_to_dict(log, today) for log in page_logs]
     })
 
 
@@ -32997,7 +32805,7 @@ def export_activity_logs():
     if not is_admin_authorized():
         return denied()
 
-    query, type_filter, action_filter, severity_filter, branch_filter, _hidden_routine_count = build_activity_query()
+    query, _hidden_routine_count = build_activity_query()
     logs = query.order_by(ActivityLog.timestamp.desc(), ActivityLog.id.desc()).all()
 
     output = io.StringIO()

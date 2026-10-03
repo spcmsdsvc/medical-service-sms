@@ -163,9 +163,8 @@ class StockInventorySourceTests(unittest.TestCase):
         self.assertNotIn('stock_inventory_access_locked', self.settings_source)
 
     def test_activity_log_has_distinct_stock_category(self):
-        self.assertIn("'Stock Inventory': {'icon': 'fa-barcode'", self.app_source)
-        self.assertIn("if 'stock inventory' in text:", self.app_source)
-        self.assertIn("return 'Stock Inventory'", self.app_source)
+        self.assertIn('Stock Inventory', app_module.ACTIVITY_CATEGORIES)
+        self.assertEqual(app_module.classify_activity_action('Updated stock inventory count'), 'Stock Inventory')
 
     def test_release_manifest_contains_stock_inventory(self):
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))

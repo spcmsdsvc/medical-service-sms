@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-03-activity-log-simple",
+      "release_date": "2026-10-03",
+      "title": "Simpler Activity Log",
+      "summary": "The Activity Log is easier to read and filter, and the TSR filter now works.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-03-activity-log-simple-admins",
+          "category": "Activity Log",
+          "description": "Filtering by TSR now finds TSR entries. The page shows one summary line (entries, problems, people), fewer filters with a Problems only switch and date presets, and a simpler table: When, Who, What and Details. Click a person or category to filter by it, and filters stay in the address bar after a refresh. Theme changes are no longer recorded; older ones are hidden with other routine entries.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-02-storage-tab",
       "release_date": "2026-10-02",
       "title": "Clearer Storage Health",

@@ -188,28 +188,7 @@
 :root[data-app-theme="dark"] { scrollbar-color: #626262 var(--dark-page); }
 
 /* Activity Logs */
-:root[data-app-theme="dark"] .activity-summary-card,
-:root[data-app-theme="dark"] .activity-mobile-card,
-:root[data-app-theme="dark"] .activity-mobile-empty {
-    background: var(--dark-card) !important;
-    color: var(--dark-text) !important;
-    border-color: var(--dark-border) !important;
-}
-:root[data-app-theme="dark"] .activity-summary-card .h5 { color: var(--dark-text) !important; }
-:root[data-app-theme="dark"] .activity-mobile-list,
-:root[data-app-theme="dark"] .activity-mobile-details {
-    background: var(--dark-panel) !important;
-    color: var(--dark-text) !important;
-    border-color: var(--dark-border) !important;
-}
-:root[data-app-theme="dark"] :is(.activity-mobile-time, .activity-mobile-user, .activity-mobile-branch) { color: var(--dark-text) !important; }
-:root[data-app-theme="dark"] .quick-filter {
-    background: var(--dark-card) !important;
-    color: var(--dark-text) !important;
-    border-color: var(--dark-border) !important;
-}
-:root[data-app-theme="dark"] .quick-filter:hover { background: var(--dark-card-hover) !important; color: #fff !important; }
-:root[data-app-theme="dark"] .branch-chip { background: var(--dark-card-hover); color: var(--dark-text); border-color: var(--dark-border); }
+:root[data-app-theme="dark"] .activity-chip { background: var(--dark-card-hover); color: var(--dark-text); border-color: var(--dark-border); }
 :root[data-app-theme="dark"] .activity-table-wrap { background: var(--dark-panel) !important; }
 :root[data-app-theme="dark"] .activity-log-row:hover > * { background: var(--dark-card-hover) !important; }
 
@@ -904,7 +883,7 @@
     .cash-notification-list, .reim-notification-card, .reim-notification-list,
     .reim-status-window-card, .approval-notification-card,
     .reim-empty, .approval-empty, .approval-empty-state,
-    .activity-mobile-empty, .reports-empty,
+    .reports-empty,
     .product-mobile-empty, .client-mobile-empty, .engineer-mobile-empty,
     .dashboard-empty-state, .dashboard-team-empty, .dashboard-mobile-empty-card,
     .mobile-empty-state

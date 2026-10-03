@@ -101,8 +101,7 @@ class LeaveRequestSourceTests(unittest.TestCase):
 
     def test_startup_schema_and_activity_log_classification_are_registered(self):
         self.assertIn('ensure_leave_request_tables()', self.app_source)
-        self.assertIn("'Leave Request': {'icon': 'fa-calendar-minus'", self.app_source)
-        self.assertIn("if 'leave request' in text or 'form to follow' in text or 'lr-' in text", self.app_source)
+        self.assertIn("('Leave Request', ['leave request', 'form to follow', 'lr-'])", self.app_source)
 
     def test_half_day_schema_and_validation_are_additive(self):
         for marker in (

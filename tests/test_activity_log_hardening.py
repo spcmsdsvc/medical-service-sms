@@ -3,8 +3,11 @@
 import json
 import pathlib
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import patch
+
+from sqlalchemy import create_engine, select
 
 import app as app_module
 
@@ -49,6 +52,68 @@ class ActivityLogClassifierTests(unittest.TestCase):
                 self.assertEqual(app_module.classify_activity_severity(action), expected_severity)
 
 
+class ActivityLogRuleParityTests(unittest.TestCase):
+    """The SQL filters and counts must classify exactly like the badges."""
+
+    SAMPLES = (
+        'Generated online TSR PDF and completed schedule scope',
+        'Saved TSR draft for Davao Doctors Hospital',
+        'Added calendar schedule: PM on 2026-05-22 | Client: ABC Hospital | Product: CT (123)',
+        'Moved schedule #12 to 2026-06-01',
+        'Removed 2 worksheet rows',
+        'Sent approved Reimbursement to Accounting',
+        'Marked reimbursement #4 as paid',
+        'Failed to send Travel Request PDF to Accounting',
+        'Returned Cash Advance Liquidation CAL-0003 for correction',
+        'Submitted Leave Request LR-0007',
+        'Updated stock inventory count',
+        'Sent schedule email notification to Cebu team',
+        'Admin forced password change for: hanna',
+        'Approved Calibration Report & Certificate 2026-0604-23425',
+        'Updated appearance preference: graphite / purple',
+        'Exported activity log report',
+        'Modified details for client: Allied Care Experts (ACE)',
+        'Updated approval route for Travel Request',
+        'Something unrelated happened',
+    )
+
+    def test_sql_expressions_match_python_classifiers(self):
+        engine = create_engine('sqlite://')
+        table = app_module.ActivityLog.__table__
+        table.create(engine)
+        with engine.begin() as conn:
+            conn.execute(table.insert(), [
+                {'user': 'Tester', 'action': action, 'timestamp': datetime(2026, 10, 3, 9, 0)}
+                for action in self.SAMPLES
+            ])
+            rows = conn.execute(select(
+                table.c.action,
+                app_module.activity_category_expression(),
+                app_module.activity_action_expression(),
+                app_module.activity_severity_expression(),
+                app_module.activity_routine_expression(),
+            )).all()
+        for action, category, verb, severity, routine in rows:
+            with self.subTest(action=action):
+                self.assertEqual(category, app_module.classify_activity_action(action))
+                self.assertEqual(verb, app_module.classify_activity_verb(action))
+                self.assertEqual(severity, app_module.classify_activity_severity(action))
+                self.assertEqual(bool(routine), action.startswith('Updated appearance preference:'))
+        self.assertEqual(rows[0][1], 'TSR')
+        self.assertIn('Leave Request', app_module.ACTIVITY_CATEGORIES)
+        self.assertIn('Stock Inventory', app_module.ACTIVITY_CATEGORIES)
+
+    def test_theme_changes_are_not_logged(self):
+        self.assertNotIn('log_activity(f"Updated appearance preference', APP_SOURCE)
+
+    def test_row_dates_are_plain(self):
+        log = SimpleNamespace(id=1, user='Kent', action='Added client: X', timestamp=datetime(2026, 10, 3, 9, 5))
+        self.assertEqual(app_module.activity_log_to_dict(log, datetime(2026, 10, 3).date())['date'], 'Today')
+        self.assertEqual(app_module.activity_log_to_dict(log, datetime(2026, 10, 4).date())['date'], 'Yesterday')
+        row = app_module.activity_log_to_dict(log, datetime(2026, 10, 9).date())
+        self.assertEqual((row['date'], row['time']), ('Oct 3, 2026', '9:05 AM'))
+
+
 class ActivityLogImplementationContractTests(unittest.TestCase):
     def test_database_query_and_legacy_routine_controls_are_present(self):
         for token in (
@@ -57,7 +122,7 @@ class ActivityLogImplementationContractTests(unittest.TestCase):
             "ActivityLog.timestamp >= datetime.combine(start_date, datetime.min.time())",
             "ActivityLog.timestamp < datetime.combine(end_date + timedelta(days=1), datetime.min.time())",
             "ActivityLog.timestamp.desc(), ActivityLog.id.desc()",
-            "activity_group_counts(query, activity_category_expression())",
+            "problem_count",
             "safe_activity_csv_cell(log.action)",
             "query = activity_scope_query(db.session.query(ActivityLog.user))",
         ):
@@ -80,8 +145,8 @@ class ActivityLogImplementationContractTests(unittest.TestCase):
             'scope="col"',
             'activityLoadController.abort()',
             'Retry',
-            'Leave Request',
-            'Stock Inventory',
+            'history.replaceState',
+            'data-label="Details"',
         ):
             self.assertIn(token, ACTIVITY_TEMPLATE)
 
@@ -98,11 +163,11 @@ class ActivityLogImplementationContractTests(unittest.TestCase):
     def test_release_entry_exists_and_cache_marker_is_bumped(self):
         release = next(
             item for item in RELEASES['releases']
-            if item['release_key'] == '2026-09-27-activity-log-signal-quality'
+            if item['release_key'] == '2026-10-03-activity-log-simple'
         )
         self.assertTrue(release['is_published'])
         self.assertTrue(any(item['category'] == 'Activity Log' for item in release['items']))
-        self.assertIn('medical-service-pwa-offline-navigation-v204-activity-log', APP_SOURCE)
+        self.assertIn('medical-service-pwa-offline-navigation-v237-activity-log-simple', APP_SOURCE)
 
 
 if __name__ == '__main__':

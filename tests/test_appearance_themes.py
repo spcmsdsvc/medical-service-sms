@@ -541,7 +541,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
     def test_dark_page_repair_covers_high_risk_surfaces(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
         for selector in (
-            '.activity-summary-card',
+            '.activity-chip',
             '.calendar-drop-cell',
             '.schedule-card',
             '.mobile-schedule-client',

@@ -1,3 +1,163 @@
+# Activity Log: TSR Filter Fix, Simpler Page, Plain Numbers, and Less Code
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Finished:** 2026-10-03.
+**Execution authorized:** 2026-10-03 — the owner said "go ahead partner. do not over over engineer and over check things".
+**Approved:** 2026-10-03 — the owner said "approved, include the theme-click change".
+**Detailed:** 2026-10-03.
+
+**Where the plan and the outcome differed:**
+
+- **Words are matched with a space added at each end of the text**, so " moved " works at the start or end in both Python and SQL. The old regex for Move is gone. Python results are unchanged on every local row.
+- **The theme-change test checks the source**, not the endpoint. The TSR check sits inside the parity test, which runs the SQL on an in-memory SQLite table.
+- **Dark mode shows the category chips in one neutral tone.** The six light-mode tones are not repeated for dark.
+- **Three older source-string tests were updated** (`test_stock_inventory.py`, `test_leave_request_workflow.py`, `test_appearance_themes.py`). They named the removed meta dicts or classes.
+- **Verification:** the endpoints were exercised with the view functions directly, not through a logged-in test client. Results: all 2,108 shown (82 routine hidden), TSR 112, problems 23, CSV export works. No browser check was made.
+
+## Context
+
+The owner asked for a review of the Activity Log page (`/activity_page`) aimed at a simpler design, better functionality, clearer labels and numbers, and less code. The review found a real bug: the TSR category can never be filtered or counted, because the category rules are written twice (Python for badges, SQL for filters and counts) and the SQL copy is missing TSR. The page also carries 4 stat cards, 8 filter controls, 10 inconsistent quick buttons and 3 badge columns, and renders every row twice (table and mobile cards). The intended outcome: an admin opens Activity Log and sees who did what and when, can narrow it with a few obvious filters, and problems (warnings and failures) stand out. Theme clicks no longer fill the log.
+
+## Decisions taken
+
+1. **All proposed items are in scope**, including stopping the theme-click (appearance preference) entries.
+2. **Rules are defined once.** Category, action and severity are ordered keyword lists from which both the Python classifiers and the SQL `case()` expressions are built.
+3. **The Severity column goes.** Problems are shown by the existing red or amber left stripe on the row, and a "Problems only" toggle filters them. The severity filter value `warning_or_danger` stays on the server.
+4. **One renderer.** The table stacks into cards on phones with CSS; the separate mobile card renderer goes.
+5. **Filters persist in the URL** so refresh and shared links keep them.
+6. **Theme clicks:** `/api/appearance` (the handler around `app.py:31326`) stops writing to the activity log. The 37 existing local rows (and any in production) are not deleted. They are hidden by default together with the legacy reimbursement autosaves, under one "Show N routine entries" toggle.
+7. **No browser automation by the agent** (project rule). Verification uses the Flask test client and source checks; the owner checks the page visually.
+8. **Admin-only access and the regional scope are unchanged.**
+
+## Investigation
+
+Line numbers are as of commit `bf88cca`.
+
+- **Template:** `templates/activity.html` is 980 lines: markup `:1-212`, script `:214-713`, styles `:715-979`.
+  - Header title "Advanced Activity Logs" with a marketing subtitle (`:8-14`); a second heading "Audit Trail" (`:158-161`).
+  - Four cards (`:30-75`): Total Logs, Workflow Logs, Approval / Accounting, Warnings / Failures (the last uses `fa-envelope`).
+  - Filters (`:79-151`): Search, Category, Action, User (datalist), Branch, Severity, From, To, ten quick buttons (`:134-145`) that mix category filters (`setCategoryQuick`) with free-text search (`setSearchQuick('Travel')`, `'Cash Advance'`), and the "Include routine reimbursement draft saves" checkbox.
+  - Table columns Timestamp, User, Category, Action, Severity, Details (`:180-185`); a separate `#activity-mobile-list` (`:198`) filled by `renderActivityMobileCards` (`:347-403`) on every load and shown by CSS below 900 px.
+  - `getActivityClientName` (`:230-273`) checks nine keys in four places; `getActivityDisplayAction` (`:275-289`) appends "Client:" only for schedule-create rows, whose action text already contains "| Client: …" (for example the local row "Added calendar schedule: … | Client: Davao Doctors Hospital (DDH) | …"). In practice it does nothing.
+  - `getCategoryMeta` / `getActionMeta` / `getSeverityMeta` (`:291-345`) duplicate icon data; 18 category and 16 action colour classes (`:762-796`).
+  - The error block is written three times (`:521-563`); rows are appended with `tbody.innerHTML +=` inside a loop (`:593-626`).
+  - `updateSummaryCards` (`:475-495`) sums a hard-coded workflow category list.
+  - Counts are shown without thousands separators; times keep the leading zero (`%I:%M %p`, `app.py:32719`); the pager says only "Page X of Y".
+- **Server (`app.py`):**
+  - `ACTIVITY_CATEGORY_META` / `ACTIVITY_ACTION_META` (`:32485-32523`): only the keys are used (`get_activity_filter_options`, `:32947-32948`).
+  - `classify_activity_action` (`:32526`) has a TSR rule (`:32548`); `activity_category_expression` (`:32776-32803`) does not. **Confirmed on the local database (2,190 rows):** Python classifies 112 rows as TSR; SQL classifies none, counting them as Schedule (+34), Client (+20), Product (+15) and System (+43).
+  - `classify_activity_verb` / `activity_action_expression` and `classify_activity_severity` / `activity_severity_expression` are likewise hand-kept pairs.
+  - `filter_activity_logs_by_derived_fields` (`:32915-32935`) has no caller.
+  - `get_activity_logs` (`:32954-32990`) runs `action_counts`, which the page never reads, and returns `module`, `client_name`, `product_name`, `timestamp` that the page never reads. `get_activity_filter_options` returns an unused `severities`.
+  - `build_activity_query` (`:32863-32912`) returns a 6-tuple; the export ignores all but the query.
+  - `activity_routine_save_expression` (`:32839`) matches only `Saved reimbursement draft%`.
+  - The appearance handler logs `Updated appearance preference: <mode> / <accent>` (`:31326-31329`); 37 local rows.
+- **Local data:** severity is 1,235 success, 932 normal, 20 warning, 3 failure.
+- **Styles elsewhere:** `static/css/app-dark-pages.css:190-214` has dark rules for `.activity-summary-card`, `.activity-mobile-*`, `.quick-filter`, `.branch-chip`, `.activity-table-wrap`, `.activity-log-row`.
+- **Tests that read this page:** `tests/test_activity_log_hardening.py` (string contract on the template, including `filter-include-routine`, `activityLoadController.abort()`, `Retry`, `Leave Request`, `Stock Inventory`, and on `app.py` source tokens), `tests/test_dashboard_engineer.py:140-144`, `tests/test_dashboard_hybrid.py:89-99`, `tests/test_layout_sidebar.py`.
+- **Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v236-storage-tab` (`app.py:27030`); latest release `2026-10-02-storage-tab`. Suite baseline from the last plan: 1,485 tests, 23 failures, 3 errors, 5 skips.
+
+## Execution steps
+
+1. **One rule table** (`app.py`, replacing `:32485-32836`).
+   - Add ordered lists `ACTIVITY_CATEGORY_RULES`, `ACTIVITY_ACTION_RULES`, `ACTIVITY_SEVERITY_RULES`, each a list of `(value, any_terms, all_terms)` or an equivalent simple shape that can express the current compound rules (Accounting's "marked reimbursement" and "paid"/"processing"; Email's "sent " and "email"; Move's whole-word "moved").
+   - Rewrite `classify_activity_action`, `classify_activity_verb` and `classify_activity_severity` to walk the lists, and the three `*_expression()` functions to build `case()` from the same lists. TSR is included, in its current Python position (after Accounting, before Approval).
+   - Replace the two `*_META` dicts with `ACTIVITY_CATEGORIES` / `ACTIVITY_ACTIONS` key lists derived from the rules (plus `System` / `Other`).
+   - Done: for every local row, Python and SQL give the same category, action and severity.
+
+2. **Trim the API** (`app.py`).
+   - Delete `filter_activity_logs_by_derived_fields`.
+   - `build_activity_query` returns `(query, hidden_routine_count)`; update both callers.
+   - `get_activity_logs`: drop `action_counts` and `category_counts`; return `total`, `page`, `pages`, `per_page`, `problem_count` (warning + danger within the filtered query), `user_count` (distinct users within it), `hidden_routine_count`, `logs`.
+   - `activity_log_to_dict`: return `id`, `user`, `action` (original), `display_action`, `type`, `action_type`, `severity`, `branch`, `date` and `time`. Time without the leading zero ("3:04 PM"), plus an ISO `timestamp` only if step 4's "Today/Yesterday" needs it. Drop `module`, `client_name`, `product_name`.
+   - `get_activity_filter_options`: drop `severities`.
+   - Keep the `Engineer` → `Personnel` alias (old bookmarks).
+   - Done: the page's requests return only what it reads.
+
+3. **Theme clicks** (`app.py`).
+   - Remove the `log_activity(...)` call and its try/except in the appearance handler (around `:31326-31329`).
+   - Widen `activity_routine_save_expression` (rename to `activity_routine_expression`) to also match `Updated appearance preference:%`, and keep the `include_routine` parameter.
+   - Done: changing the theme writes no row; existing rows are hidden by default and counted in `hidden_routine_count`.
+
+4. **Page markup** (`templates/activity.html`, `:1-212`).
+   - Header: "Activity Log", subtitle "Who did what, and when.", buttons Refresh and Export CSV. Reset moves next to the filters.
+   - Replace the four cards with one summary line: "2,190 entries · 23 problems · 8 people" (thousands separators via `toLocaleString`).
+   - Filter row: Search, Category, User, a date preset select (All time / Today / Last 7 days / Last 30 days / Custom, showing From/To only for Custom), a "Problems only" switch, Reset, and a "More filters" toggle revealing Action and Branch. Remove the ten quick buttons and the Severity select.
+   - Show "Show N routine entries" only when `hidden_routine_count` > 0 (keep `id="filter-include-routine"`).
+   - Table columns: When, Who, What (category chip + action as plain text), Details (display action, branch chip). Keep the row stripe for warning and danger; the original action text goes in the Details cell's `title` when it differs from the display text.
+   - When: "Today 3:04 PM", "Yesterday 3:04 PM", otherwise "Oct 1, 2026 3:04 PM".
+   - Remove "Audit Trail" heading and `#activity-mobile-list`.
+   - Footer: "1–25 of 2,190", Prev / Next, Rows (25 / 50 / 100).
+   - Done: one heading, one summary line, one filter row, one table.
+
+5. **Page script** (`templates/activity.html`, `:214-713`).
+   - Keep the abort controller and request sequence.
+   - Delete `getActivityClientName`, `getActivityDisplayAction`, `getActionMeta`, `getSeverityMeta`, `renderActivityMobileCards`, `updateSummaryCards`, `clearActivityWorkflowFilters` and the `set*Quick` functions.
+   - Keep a small category → icon map (one place).
+   - One `showLoadError(message, page)` used by all three failure paths.
+   - Render rows with `logs.map(...).join('')`.
+   - Clicking a Who badge or category chip sets that filter and reloads.
+   - Sync filters to `location.search` with `history.replaceState` on each load; read them on `DOMContentLoaded` before the first load.
+   - Done: no reference to a removed element; the script passes `node --check` (extracted).
+
+6. **Styles** (`templates/activity.html` `:715-979`, `static/css/app-dark-pages.css:190-214`).
+   - Replace the 34 colour classes with about six neutral chip tones grouped by category family (workflow, approval/accounting, email, records, security, system).
+   - Remove `.rounded-4` (Bootstrap 5.3 provides it), the summary-card, quick-filter and mobile-card styles.
+   - Add a ≤ 900 px rule that stacks table rows as cards with `data-label` headings.
+   - Dark mode: remove rules for deleted classes, add the summary line and stacked-row rules.
+   - Done: works at 375 px with no horizontal scroll and 44 px tap targets on the filters and pager.
+
+7. **Tests.**
+   - In `tests/test_activity_log_hardening.py`, add a parity test that runs a fixed list of sample actions (at least one per category, including a TSR one such as "Generated online TSR PDF and completed schedule scope" and an appearance one) through each Python classifier and through the SQL expression (SQLite `select case …` on an in-memory or test table), and requires equal results.
+   - Add a test that the appearance endpoint writes no `ActivityLog` row, and that `get_activity_logs` hides an appearance row by default and reports it in `hidden_routine_count`.
+   - Add a test that filtering `type=TSR` returns the TSR row.
+   - Update the template contract test for the new markup; keep `filter-include-routine`, `aria-live`, `scope="col"`, the abort controller and `Retry`. Replace the `Leave Request`/`Stock Inventory` template assertions with a check that they are in `ACTIVITY_CATEGORIES`.
+   - Update the release-entry test for the new release key.
+   - Check `tests/test_dashboard_engineer.py`, `tests/test_dashboard_hybrid.py` and `tests/test_layout_sidebar.py` still pass unchanged.
+
+8. **Release records.**
+   - Service worker `medical-service-pwa-offline-navigation-v237-activity-log-simple` (`app.py:27030`), keeping the historical marker line for v204.
+   - `static/changelog/releases.json` entry `2026-10-03-activity-log-simple` (category Activity Log): the TSR filter now works, a simpler page, theme changes are no longer logged.
+   - `changes.md`, and this plan's status with any difference between plan and outcome.
+
+9. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Normalising user names** ("Robert" vs "Robert Rio"): written by about 60 call sites; a separate change.
+- **The hard-coded "Kevin" term in `activity_scope_query`:** a permissions change, not a page change.
+- **Deleting existing appearance rows:** the log is an audit record; they are hidden, not removed.
+- **Storing category, action or severity as columns:** classification stays derived from the action text; no schema change.
+- **Auto-refresh or live polling:** the retired dashboard poll was removed for cost; Refresh stays manual.
+- **Changing CSV columns:** the export keeps its current columns, including Severity and Original Action.
+
+## Verification
+
+- The tests in step 7. **Positive controls:** the parity test and the `type=TSR` test fail on the current code (missing TSR rule); the appearance test fails while the `log_activity` call is present. Run each against the unfixed code first and record that it failed.
+- Focused modules: `tests/test_activity_log_hardening.py`, `tests/test_dashboard_engineer.py`, `tests/test_dashboard_hybrid.py`, `tests/test_layout_sidebar.py`, `tests/test_appearance_themes.py`, `tests/test_changelog_workflow.py`, `tests/test_changelog_coverage.py`. Then one full-suite pass quoted against the baseline (1,485 / 23 F / 3 E / 5 S).
+- Test-client checks as an admin: `/activity_page` renders; `/get_activity_logs` with no filters, `type=TSR`, `severity=warning_or_danger`, `include_routine=true` and a date range return consistent `total` and `problem_count`; `/export_activity_logs` returns CSV.
+- `node --check` on the extracted page script.
+- No browser check by the agent. The owner checks on desktop and at phone width, light and dark: header, summary line, filters (including Custom dates and More filters), chip click filtering, the stacked rows on a phone, URL persistence after refresh, and the routine toggle.
+
+## After implementation
+
+1. Self-review the diff for removed IDs still referenced and for dark-mode rules naming deleted classes.
+2. Prove the new tests fail without the fix (see Verification), then pass with it.
+3. Focused modules, then the full suite, quoting counts against the baseline.
+4. Service worker bump and `releases.json` entry.
+5. `changes.md` and this plan's status, with any difference between plan and outcome.
+6. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and the loose handoff file. Commit and push only on the owner's instruction, then verify `origin/main` and Railway's deployment.
+
+## Risks
+
+- **Rule-table rewrite changes a classification.** The parity test plus a before/after count over the local database (all three dimensions, all 2,190 rows) must match except for TSR moving out of Schedule/Client/Product/System. Any other difference is a bug.
+- **Counts on the page change** (TSR appears; appearance rows are hidden). This is intended and is in the release note.
+- **Old bookmarks or links with `severity=success` or removed quick filters** still work on the server; only the controls are gone.
+- **String-contract tests** on `activity.html` will need edits; they are in the focused run.
+- **Stacked-table CSS on phones** is new; the owner's phone-width check covers it.
+
+---
+
 # Settings → Storage: Volume Usage, One Bucket Card, Plain Wording, and Largest Files
 
 **Status:** Executed — implementation commit `456b3eb`; published to `origin/main` on the owner's "commit and push".

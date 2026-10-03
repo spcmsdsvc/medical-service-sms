@@ -1,23 +1,16 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<div class="container-fluid py-4">
+<div class="container-fluid py-4 activity-page">
 
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
         <div>
             <h2 class="h4 mb-0 fw-bold">
-                <i class="fa-solid fa-clock-rotate-left me-2 text-primary"></i>
-                Advanced Activity Logs
+                <i class="fa-solid fa-clock-rotate-left me-2 text-primary"></i>Activity Log
             </h2>
-            <p class="text-muted small mb-0" id="activity-page-status" role="status" aria-live="polite">
-                Workflow-focused audit trail with smarter categories, severity badges, filters, pagination, and CSV export.
-            </p>
+            <p class="text-muted small mb-0" id="activity-page-status" role="status" aria-live="polite">Who did what, and when.</p>
         </div>
-
         <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary btn-sm fw-bold" onclick="resetFilters()">
-                <i class="fa-solid fa-rotate-left me-1"></i>Reset
-            </button>
             <button class="btn btn-outline-primary btn-sm fw-bold" onclick="loadLogs(currentPage)">
                 <i class="fa-solid fa-arrows-rotate me-1"></i>Refresh
             </button>
@@ -27,186 +20,114 @@
         </div>
     </div>
 
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
-            <div class="activity-summary-card border-0 shadow-sm rounded-4">
-                <div class="activity-summary-icon bg-primary-subtle text-primary">
-                    <i class="fa-solid fa-list-check"></i>
-                </div>
-                <div>
-                    <div class="xsmall text-muted text-uppercase fw-bold">Total Logs</div>
-                    <div class="h5 fw-bold mb-0" id="summary-total">-</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="activity-summary-card border-0 shadow-sm rounded-4">
-                <div class="activity-summary-icon bg-success-subtle text-success">
-                    <i class="fa-solid fa-calendar-check"></i>
-                </div>
-                <div>
-                    <div class="xsmall text-muted text-uppercase fw-bold">Workflow Logs</div>
-                    <div class="h5 fw-bold mb-0" id="summary-workflow">-</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="activity-summary-card border-0 shadow-sm rounded-4">
-                <div class="activity-summary-icon bg-warning-subtle text-warning">
-                    <i class="fa-solid fa-shield-halved"></i>
-                </div>
-                <div>
-                    <div class="xsmall text-muted text-uppercase fw-bold">Approval / Accounting</div>
-                    <div class="h5 fw-bold mb-0" id="summary-approval-accounting">-</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="activity-summary-card border-0 shadow-sm rounded-4">
-                <div class="activity-summary-icon bg-info-subtle text-info">
-                    <i class="fa-solid fa-envelope"></i>
-                </div>
-                <div>
-                    <div class="xsmall text-muted text-uppercase fw-bold">Warnings / Failures</div>
-                    <div class="h5 fw-bold mb-0" id="summary-warning">-</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card border-0 shadow-sm rounded-4 mb-3">
         <div class="card-body p-3">
-            <div class="row g-3 align-items-end">
+            <div class="row g-2 align-items-end">
                 <div class="col-lg-3 col-md-6">
-                    <label for="filter-q" class="small fw-bold text-muted text-uppercase mb-1">Search</label>
-                    <input type="text" id="filter-q" class="form-control form-control-sm" placeholder="Search user, action, client, engineer..." oninput="debouncedLoadLogs()">
+                    <label for="filter-q" class="activity-label">Search</label>
+                    <input type="search" id="filter-q" class="form-control form-control-sm" placeholder="Action, client, engineer..." oninput="debouncedLoadLogs()">
                 </div>
-
                 <div class="col-lg-2 col-md-6">
-                    <label for="filter-type" class="small fw-bold text-muted text-uppercase mb-1">Category</label>
+                    <label for="filter-type" class="activity-label">Category</label>
                     <select id="filter-type" class="form-select form-select-sm" onchange="loadLogs(1)">
-                        <option value="">All Categories</option>
+                        <option value="">All categories</option>
                     </select>
                 </div>
-
                 <div class="col-lg-2 col-md-6">
-                    <label for="filter-action-type" class="small fw-bold text-muted text-uppercase mb-1">Action</label>
-                    <select id="filter-action-type" class="form-select form-select-sm" onchange="loadLogs(1)">
-                        <option value="">All Actions</option>
-                    </select>
-                </div>
-
-                <div class="col-lg-2 col-md-6">
-                    <label for="filter-user" class="small fw-bold text-muted text-uppercase mb-1">User</label>
-                    <input type="text" id="filter-user" class="form-control form-control-sm" list="activity-user-list" placeholder="e.g. Jonamar" oninput="debouncedLoadLogs()">
+                    <label for="filter-user" class="activity-label">User</label>
+                    <input type="text" id="filter-user" class="form-control form-control-sm" list="activity-user-list" placeholder="Anyone" oninput="debouncedLoadLogs()">
                     <datalist id="activity-user-list"></datalist>
                 </div>
-
-                <div class="col-lg-1 col-md-4">
-                    <label for="filter-branch" class="small fw-bold text-muted text-uppercase mb-1">Branch</label>
-                    <select id="filter-branch" class="form-select form-select-sm" onchange="loadLogs(1)">
-                        <option value="">All</option>
+                <div class="col-lg-2 col-md-6">
+                    <label for="filter-range" class="activity-label">Date</label>
+                    <select id="filter-range" class="form-select form-select-sm" onchange="onRangeChange()">
+                        <option value="">All time</option>
+                        <option value="today">Today</option>
+                        <option value="7d">Last 7 days</option>
+                        <option value="30d">Last 30 days</option>
+                        <option value="custom">Custom...</option>
                     </select>
                 </div>
-
-                <div class="col-lg-1 col-md-4">
-                    <label for="filter-severity" class="small fw-bold text-muted text-uppercase mb-1">Severity</label>
-                    <select id="filter-severity" class="form-select form-select-sm" onchange="loadLogs(1)">
-                        <option value="">All</option>
-                        <option value="warning_or_danger">Warnings / Failures</option>
-                        <option value="success">Success</option>
-                        <option value="warning">Warning</option>
-                        <option value="danger">Failure</option>
-                    </select>
+                <div class="col-lg-3 col-md-12 d-flex flex-wrap align-items-center gap-3">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="filter-problems" onchange="loadLogs(1)">
+                        <label class="form-check-label small fw-bold" for="filter-problems">Problems only</label>
+                    </div>
+                    <button type="button" class="btn btn-link btn-sm p-0" onclick="toggleMoreFilters()" id="more-filters-btn" aria-expanded="false" aria-controls="more-filters">More filters</button>
+                    <button type="button" class="btn btn-link btn-sm p-0 text-muted" onclick="resetFilters()">Reset</button>
                 </div>
+            </div>
 
-                <div class="col-lg-1 col-md-4">
-                    <label for="filter-start" class="small fw-bold text-muted text-uppercase mb-1">From</label>
+            <div class="row g-2 mt-1" id="custom-range" hidden>
+                <div class="col-md-3 col-6">
+                    <label for="filter-start" class="activity-label">From</label>
                     <input type="date" id="filter-start" class="form-control form-control-sm" onchange="loadLogs(1)">
                 </div>
-
-                <div class="col-lg-1 col-md-4">
-                    <label for="filter-end" class="small fw-bold text-muted text-uppercase mb-1">To</label>
+                <div class="col-md-3 col-6">
+                    <label for="filter-end" class="activity-label">To</label>
                     <input type="date" id="filter-end" class="form-control form-control-sm" onchange="loadLogs(1)">
                 </div>
             </div>
 
-            <div class="d-flex flex-wrap gap-2 mt-3">
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setQuickRange('today')">Today</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setQuickRange('7d')">Last 7 Days</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setQuickRange('30d')">Last 30 Days</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('TSR')">TSR</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('Reimbursement')">Reimbursement</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setSearchQuick('Travel')">Travel</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setSearchQuick('Cash Advance')">Cash Advance</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setActionQuick('Approve')">Approvals</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('Accounting')">Accounting</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setSeverityQuick('warning_or_danger')">Warnings / Failures</button>
-            </div>
-            <div class="form-check mt-3">
-                <input class="form-check-input" type="checkbox" id="filter-include-routine" onchange="loadLogs(1)">
-                <label class="form-check-label small fw-bold text-muted" for="filter-include-routine">
-                    Include routine reimbursement draft saves
-                </label>
+            <div class="row g-2 mt-1" id="more-filters" hidden>
+                <div class="col-md-3 col-6">
+                    <label for="filter-action-type" class="activity-label">Action</label>
+                    <select id="filter-action-type" class="form-select form-select-sm" onchange="loadLogs(1)">
+                        <option value="">All actions</option>
+                    </select>
+                </div>
+                <div class="col-md-3 col-6">
+                    <label for="filter-branch" class="activity-label">Branch</label>
+                    <select id="filter-branch" class="form-select form-select-sm" onchange="loadLogs(1)">
+                        <option value="">All branches</option>
+                    </select>
+                </div>
             </div>
         </div>
     </div>
 
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-        <div class="card-header bg-white border-bottom py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <div>
-                <h5 class="mb-0 fw-bold">
-                    <i class="fa-solid fa-list me-2 text-dark"></i>
-                    Audit Trail
-                </h5>
-                <div class="xsmall text-muted mt-1" id="result-summary" role="status" aria-live="polite">Loading logs...</div>
+        <div class="card-header bg-transparent border-bottom py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div class="small fw-bold" id="result-summary" role="status" aria-live="polite">Loading...</div>
+            <div class="form-check mb-0" id="routine-wrap" hidden>
+                <input class="form-check-input" type="checkbox" id="filter-include-routine" onchange="loadLogs(1)">
+                <label class="form-check-label small text-muted" for="filter-include-routine" id="routine-label">Show routine entries</label>
             </div>
+        </div>
 
+        <div class="activity-table-wrap">
+            <table class="table table-hover align-middle mb-0 activity-table">
+                <caption class="visually-hidden">Activity log entries</caption>
+                <thead class="table-light small text-muted sticky-top">
+                    <tr>
+                        <th scope="col" class="ps-3" style="width: 13%;">When</th>
+                        <th scope="col" style="width: 12%;">Who</th>
+                        <th scope="col" style="width: 18%;">What</th>
+                        <th scope="col">Details</th>
+                    </tr>
+                </thead>
+                <tbody id="activity-table-body"></tbody>
+            </table>
+        </div>
+
+        <div class="card-footer bg-transparent border-top d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
             <div class="d-flex align-items-center gap-2">
-                <label for="per-page" class="xsmall text-muted fw-bold text-uppercase mb-0">Rows</label>
-                <select id="per-page" class="form-select form-select-sm" style="width: 90px;" onchange="loadLogs(1)">
+                <label for="per-page" class="small text-muted mb-0">Rows</label>
+                <select id="per-page" class="form-select form-select-sm" style="width: 80px;" onchange="loadLogs(1)">
                     <option value="25">25</option>
                     <option value="50">50</option>
                     <option value="100">100</option>
                 </select>
             </div>
-        </div>
-
-        <div class="table-responsive activity-table-wrap">
-            <table class="table table-hover align-middle mb-0">
-                <caption class="visually-hidden">Activity log entries</caption>
-                <thead class="table-light text-uppercase small fw-bold text-muted sticky-top">
-                    <tr>
-                        <th scope="col" class="ps-4" style="width: 16%;">Timestamp</th>
-                        <th scope="col" style="width: 12%;">User</th>
-                        <th scope="col" style="width: 12%;">Category</th>
-                        <th scope="col" style="width: 12%;">Action</th>
-                        <th scope="col" style="width: 10%;">Severity</th>
-                        <th scope="col">Details</th>
-                    </tr>
-                </thead>
-                <tbody id="activity-table-body">
-                    <tr>
-                        <td colspan="6" class="text-center text-muted py-5">
-                            <i class="fa-solid fa-spinner fa-spin me-1"></i>Loading activity logs...
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div id="activity-mobile-list" class="activity-mobile-list"></div>
-
-        <div class="card-footer bg-white border-top d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
-            <button class="btn btn-outline-secondary btn-sm" id="prev-btn" onclick="changePage(-1)">
-                <i class="fa-solid fa-chevron-left me-1"></i>Previous
-            </button>
-
-            <div class="small text-muted fw-bold" id="page-label">Page 1 of 1</div>
-
-            <button class="btn btn-outline-secondary btn-sm" id="next-btn" onclick="changePage(1)">
-                Next<i class="fa-solid fa-chevron-right ms-1"></i>
-            </button>
+            <div class="d-flex align-items-center gap-2">
+                <span class="small text-muted fw-bold" id="page-label"></span>
+                <button class="btn btn-outline-secondary btn-sm" id="prev-btn" onclick="changePage(-1)" aria-label="Previous page">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" id="next-btn" onclick="changePage(1)" aria-label="Next page">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -218,6 +139,39 @@ let debounceTimer = null;
 let activityLoadController = null;
 let activityLoadSequence = 0;
 
+const byId = id => document.getElementById(id);
+const fmt = n => Number(n || 0).toLocaleString();
+const plural = (n, one, many = one + 's') => `${fmt(n)} ${Number(n) === 1 ? one : many}`;
+
+// Form field id -> URL / API parameter.
+const FILTER_FIELDS = {
+    'filter-q': 'q',
+    'filter-type': 'type',
+    'filter-user': 'user',
+    'filter-range': 'range',
+    'filter-start': 'start_date',
+    'filter-end': 'end_date',
+    'filter-action-type': 'action_type',
+    'filter-branch': 'branch',
+    'per-page': 'per_page'
+};
+
+const CATEGORY_ICONS = {
+    Schedule: 'fa-calendar-check', TSR: 'fa-file-signature', Reimbursement: 'fa-receipt',
+    'Travel Request': 'fa-plane-departure', 'Travel Liquidation': 'fa-file-invoice-dollar',
+    'Cash Advance': 'fa-money-check-dollar', 'Cash Advance Liquidation': 'fa-file-circle-check',
+    'Leave Request': 'fa-calendar-minus', 'Stock Inventory': 'fa-barcode',
+    Approval: 'fa-route', Accounting: 'fa-calculator', Email: 'fa-envelope',
+    Client: 'fa-hospital', Product: 'fa-boxes-stacked', Personnel: 'fa-user-gear',
+    Export: 'fa-file-export', Security: 'fa-shield-halved', System: 'fa-circle-info'
+};
+
+const CATEGORY_TONES = {
+    Approval: 'approval', Accounting: 'approval', Email: 'email',
+    Client: 'records', Product: 'records', Personnel: 'records', Export: 'records', Schedule: 'records',
+    Security: 'security', System: 'system'
+};
+
 function escapeHtml(value) {
     return String(value ?? '')
         .replaceAll('&', '&amp;')
@@ -227,207 +181,64 @@ function escapeHtml(value) {
         .replaceAll("'", '&#039;');
 }
 
-function getActivityClientName(log) {
-    if(!log) return '';
-
-    const directKeys = [
-        'client_name',
-        'client',
-        'customer_name',
-        'customer',
-        'hospital_name',
-        'medical_center',
-        'medical_center_name',
-        'scheduled_client',
-        'scheduled_to'
-    ];
-
-    for(const key of directKeys){
-        if(log[key]){
-            return String(log[key]).trim();
-        }
-    }
-
-    const details = log.details || log.metadata || log.extra || log.payload || null;
-
-    if(details && typeof details === 'object'){
-        for(const key of directKeys){
-            if(details[key]){
-                return String(details[key]).trim();
-            }
-        }
-    }
-
-    if(typeof details === 'string'){
-        try{
-            const parsed = JSON.parse(details);
-            for(const key of directKeys){
-                if(parsed && parsed[key]){
-                    return String(parsed[key]).trim();
-                }
-            }
-        }catch(err){}
-    }
-
-    return '';
+function formatDateLocal(dateObj) {
+    return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
 }
 
-function getActivityDisplayAction(log) {
-    const actionText = String((log && (log.display_action || log.action)) || '');
-    const clientName = getActivityClientName(log);
-
-    if(!clientName) return actionText;
-
-    const isScheduleCreate = String(log.type || '').toLowerCase() === 'schedule' &&
-        String(log.action_type || '').toLowerCase() === 'create';
-
-    if(!isScheduleCreate) return actionText;
-
-    if(actionText.toLowerCase().includes(clientName.toLowerCase())) return actionText;
-
-    return `${actionText} - Client: ${clientName}`;
-}
-
-function getCategoryMeta(type) {
-    const meta = {
-        Schedule: ['fa-calendar-check', 'activity-schedule'],
-        TSR: ['fa-file-signature', 'activity-tsr'],
-        Reimbursement: ['fa-receipt', 'activity-reimbursement'],
-        'Travel Request': ['fa-plane-departure', 'activity-travel-request'],
-        'Travel Liquidation': ['fa-file-invoice-dollar', 'activity-travel-liquidation'],
-        'Cash Advance': ['fa-money-check-dollar', 'activity-cash-advance'],
-        'Cash Advance Liquidation': ['fa-file-circle-check', 'activity-cash-liquidation'],
-        'Leave Request': ['fa-calendar-minus', 'activity-leave-request'],
-        Approval: ['fa-route', 'activity-approval'],
-        Accounting: ['fa-calculator', 'activity-accounting'],
-        Email: ['fa-envelope', 'activity-email'],
-        Client: ['fa-hospital', 'activity-client'],
-        Product: ['fa-boxes-stacked', 'activity-product'],
-        'Stock Inventory': ['fa-barcode', 'activity-stock-inventory'],
-        Personnel: ['fa-user-gear', 'activity-personnel'],
-        Export: ['fa-file-export', 'activity-export'],
-        Security: ['fa-shield-halved', 'activity-security'],
-        System: ['fa-circle-info', 'activity-system']
-    };
-    return meta[type] || meta.System;
-}
-
-function getActionMeta(actionType) {
-    const meta = {
-        Create: ['fa-circle-plus', 'action-create'],
-        Update: ['fa-pen-to-square', 'action-update'],
-        Move: ['fa-arrows-up-down-left-right', 'action-move'],
-        Delete: ['fa-trash-can', 'action-delete'],
-        Submit: ['fa-paper-plane', 'action-submit'],
-        Approve: ['fa-circle-check', 'action-approve'],
-        Reject: ['fa-circle-xmark', 'action-reject'],
-        Return: ['fa-reply', 'action-return'],
-        Complete: ['fa-clipboard-check', 'action-complete'],
-        Upload: ['fa-upload', 'action-upload'],
-        Download: ['fa-download', 'action-download'],
-        Export: ['fa-file-export', 'action-export'],
-        Import: ['fa-file-import', 'action-import'],
-        Email: ['fa-envelope', 'action-email'],
-        Security: ['fa-shield-halved', 'action-security'],
-        Other: ['fa-circle-info', 'action-other']
-    };
-    return meta[actionType] || meta.Other;
-}
-
-function getSeverityMeta(severity) {
-    const meta = {
-        success: ['fa-circle-check', 'severity-success', 'Success'],
-        warning: ['fa-triangle-exclamation', 'severity-warning', 'Warning'],
-        danger: ['fa-circle-exclamation', 'severity-danger', 'Failure'],
-        normal: ['fa-circle-info', 'severity-normal', 'Normal']
-    };
-    return meta[severity] || meta.normal;
-}
-
-function renderActivityMobileCards(logs){
-    const container = document.getElementById('activity-mobile-list');
-    if(!container) return;
-
-    if(!logs || !logs.length){
-        container.innerHTML = `
-            <div class="activity-mobile-empty">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <span>No activity logs match your filters.</span>
-            </div>`;
-        return;
-    }
-
-    container.innerHTML = logs.map(log => {
-        const [categoryIcon, categoryClass] = getCategoryMeta(log.type);
-        const [actionIcon, actionClass] = getActionMeta(log.action_type);
-        const [severityIcon, severityClass, severityLabel] = getSeverityMeta(log.severity);
-
-        return `
-            <div class="activity-mobile-card activity-severity-card-${escapeHtml(log.severity || 'normal')}">
-                <div class="activity-mobile-top">
-                    <div>
-                        <div class="activity-mobile-date">${escapeHtml(log.date)}</div>
-                        <div class="activity-mobile-time">${escapeHtml(log.time)}</div>
-                    </div>
-
-                    <div class="activity-mobile-badges">
-                        <span class="activity-type ${categoryClass}">
-                            <i class="fa-solid ${categoryIcon} me-1"></i>${escapeHtml(log.type)}
-                        </span>
-
-                        <span class="activity-action ${actionClass}">
-                            <i class="fa-solid ${actionIcon} me-1"></i>${escapeHtml(log.action_type || 'Other')}
-                        </span>
-                        <span class="activity-severity ${severityClass}">
-                            <i class="fa-solid ${severityIcon} me-1"></i>${escapeHtml(severityLabel)}
-                        </span>
-                    </div>
-                </div>
-
-                <div class="activity-mobile-user">
-                    <i class="fa-solid fa-user"></i>
-                    <span>${escapeHtml(log.user)}</span>
-                </div>
-
-                <div class="activity-mobile-details">
-                    ${escapeHtml(getActivityDisplayAction(log))}
-                </div>
-
-                ${log.branch ? `
-                <div class="activity-mobile-branch">
-                    <i class="fa-solid fa-location-dot"></i>
-                    <span>${escapeHtml(log.branch)}</span>
-                </div>` : ''}
-            </div>`;
-    }).join('');
+function rangeDates(range) {
+    const days = { today: 0, '7d': 6, '30d': 29 }[range];
+    if (days === undefined) return null;
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - days);
+    return [formatDateLocal(start), formatDateLocal(end)];
 }
 
 function buildQueryParams(page = 1) {
     const params = new URLSearchParams();
     params.set('page', page);
-    params.set('per_page', document.getElementById('per-page').value || '25');
-
-    const q = document.getElementById('filter-q').value.trim();
-    const type = document.getElementById('filter-type').value;
-    const actionType = document.getElementById('filter-action-type').value;
-    const user = document.getElementById('filter-user').value.trim();
-    const branch = document.getElementById('filter-branch').value;
-    const severity = document.getElementById('filter-severity').value;
-    const start = document.getElementById('filter-start').value;
-    const end = document.getElementById('filter-end').value;
-    const includeRoutine = document.getElementById('filter-include-routine').checked;
-
-    if (q) params.set('q', q);
-    if (type) params.set('type', type);
-    if (actionType) params.set('action_type', actionType);
-    if (user) params.set('user', user);
-    if (branch) params.set('branch', branch);
-    if (severity) params.set('severity', severity);
-    if (start) params.set('start_date', start);
-    if (end) params.set('end_date', end);
-    if (includeRoutine) params.set('include_routine', 'true');
-
+    Object.entries(FILTER_FIELDS).forEach(([id, key]) => {
+        const value = byId(id).value.trim();
+        if (value) params.set(key, value);
+    });
+    const range = byId('filter-range').value;
+    if (range !== 'custom') {
+        params.delete('start_date');
+        params.delete('end_date');
+        const dates = rangeDates(range);
+        if (dates) {
+            params.set('start_date', dates[0]);
+            params.set('end_date', dates[1]);
+        }
+    }
+    if (byId('filter-problems').checked) params.set('severity', 'warning_or_danger');
+    if (byId('filter-include-routine').checked) params.set('include_routine', 'true');
     return params;
+}
+
+// Keep filters in the address bar so refresh and shared links keep them.
+function saveFiltersToUrl(params) {
+    const shown = new URLSearchParams(params);
+    if (shown.get('range') && shown.get('range') !== 'custom') {
+        shown.delete('start_date');
+        shown.delete('end_date');
+    }
+    if (shown.get('page') === '1') shown.delete('page');
+    const query = shown.toString();
+    history.replaceState(null, '', query ? `?${query}` : location.pathname);
+}
+
+function readFiltersFromUrl() {
+    const params = new URLSearchParams(location.search);
+    Object.entries(FILTER_FIELDS).forEach(([id, key]) => {
+        if (params.has(key)) byId(id).value = params.get(key);
+    });
+    if (!params.has('range') && (params.has('start_date') || params.has('end_date'))) byId('filter-range').value = 'custom';
+    byId('filter-problems').checked = params.get('severity') === 'warning_or_danger';
+    byId('filter-include-routine').checked = params.get('include_routine') === 'true';
+    byId('custom-range').hidden = byId('filter-range').value !== 'custom';
+    if (params.get('action_type') || params.get('branch')) toggleMoreFilters(true);
+    return Math.max(Number(params.get('page')) || 1, 1);
 }
 
 function debouncedLoadLogs() {
@@ -435,195 +246,131 @@ function debouncedLoadLogs() {
     debounceTimer = setTimeout(() => loadLogs(1), 300);
 }
 
+function onRangeChange() {
+    byId('custom-range').hidden = byId('filter-range').value !== 'custom';
+    loadLogs(1);
+}
+
+function toggleMoreFilters(show) {
+    const panel = byId('more-filters');
+    panel.hidden = show === undefined ? !panel.hidden : !show;
+    byId('more-filters-btn').setAttribute('aria-expanded', String(!panel.hidden));
+}
+
+function populateActivitySelect(id, values) {
+    const select = byId(id);
+    const currentValue = select.value;
+    const defaultOption = select.options[0];
+    select.replaceChildren(defaultOption, ...values.map(value => new Option(value, value)));
+    select.value = currentValue;
+}
+
 async function loadFilterOptions() {
     try {
         const res = await fetch('/get_activity_filter_options');
         if (!res.ok) return;
         const data = await res.json();
-        const userList = document.getElementById('activity-user-list');
-        userList.innerHTML = "";
-        (data.users || []).forEach(user => {
-            const option = document.createElement('option');
-            option.value = user;
-            userList.appendChild(option);
-        });
-
-        populateActivitySelect('filter-type', data.categories || [], 'All Categories');
-        populateActivitySelect('filter-action-type', data.action_types || [], 'All Actions');
-        populateActivitySelect('filter-branch', data.branches || [], 'All');
+        byId('activity-user-list').replaceChildren(...(data.users || []).map(user => new Option(user, user)));
+        populateActivitySelect('filter-type', data.categories || []);
+        populateActivitySelect('filter-action-type', data.action_types || []);
+        populateActivitySelect('filter-branch', data.branches || []);
     } catch (error) {
         console.warn('Unable to load activity filter options', error);
     }
 }
 
-function populateActivitySelect(id, values, defaultLabel) {
-    const select = document.getElementById(id);
-    if (!select) return;
-    const currentValue = select.value || '';
-    select.innerHTML = `<option value="">${escapeHtml(defaultLabel)}</option>`;
-    (values || []).forEach(value => {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = value;
-        select.appendChild(option);
-    });
-    if (currentValue && Array.from(select.options).some(option => option.value === currentValue)) {
-        select.value = currentValue;
-    }
+function showTableMessage(html, extraClass = 'text-muted') {
+    byId('activity-table-body').innerHTML = `<tr class="activity-message-row"><td colspan="4" class="text-center py-5 ${extraClass}">${html}</td></tr>`;
 }
 
-function updateSummaryCards(data) {
-    const categoryCounts = data.category_counts || {};
-    const severityCounts = data.severity_counts || {};
-    const workflowCategories = [
-        'TSR',
-        'Reimbursement',
-        'Travel Request',
-        'Travel Liquidation',
-        'Cash Advance',
-        'Cash Advance Liquidation',
-        'Leave Request',
-        'Stock Inventory'
-    ];
-    const workflowTotal = workflowCategories.reduce((sum, key) => sum + Number(categoryCounts[key] || 0), 0);
-    const approvalAccountingTotal = Number(categoryCounts.Approval || 0) + Number(categoryCounts.Accounting || 0);
-    const warningTotal = Number(severityCounts.warning || 0) + Number(severityCounts.danger || 0);
-    document.getElementById('summary-total').innerText = data.total ?? 0;
-    document.getElementById('summary-workflow').innerText = workflowTotal;
-    document.getElementById('summary-approval-accounting').innerText = approvalAccountingTotal;
-    document.getElementById('summary-warning').innerText = warningTotal;
+function showLoadError(message, page) {
+    showTableMessage(`${escapeHtml(message)} <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(${page})">Retry</button>`, 'text-danger');
+    byId('result-summary').innerText = message;
+}
+
+function renderRow(log) {
+    const severity = log.severity || 'normal';
+    const tone = CATEGORY_TONES[log.type] || 'workflow';
+    const icon = CATEGORY_ICONS[log.type] || CATEGORY_ICONS.System;
+    const details = log.display_action || log.action;
+    const original = log.action && log.action !== details ? ` title="${escapeHtml(log.action)}"` : '';
+    return `
+        <tr class="small activity-log-row activity-severity-row-${escapeHtml(severity)}">
+            <td class="ps-3 text-nowrap" data-label="When">
+                <span class="text-muted">${escapeHtml(log.date)}</span>
+                <span class="fw-bold d-block">${escapeHtml(log.time)}</span>
+            </td>
+            <td data-label="Who">
+                <button type="button" class="activity-chip activity-chip-user" onclick="filterBy('filter-user', this.dataset.value)" data-value="${escapeHtml(log.user)}" title="Show only ${escapeHtml(log.user)}">${escapeHtml(log.user)}</button>
+            </td>
+            <td data-label="What">
+                <button type="button" class="activity-chip activity-tone-${tone}" onclick="filterBy('filter-type', this.dataset.value)" data-value="${escapeHtml(log.type)}" title="Show only ${escapeHtml(log.type)}">
+                    <i class="fa-solid ${icon} me-1"></i>${escapeHtml(log.type)}
+                </button>
+                <span class="text-muted ms-1">${escapeHtml(log.action_type || 'Other')}</span>
+            </td>
+            <td class="activity-details" data-label="Details"${original}>
+                ${escapeHtml(details)}
+                ${log.branch ? `<span class="activity-chip activity-chip-branch ms-1"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(log.branch)}</span>` : ''}
+            </td>
+        </tr>`;
+}
+
+function filterBy(id, value) {
+    byId(id).value = value;
+    loadLogs(1);
 }
 
 async function loadLogs(page = 1) {
-    const tbody = document.getElementById('activity-table-body');
-    const mobile = document.getElementById('activity-mobile-list');
     const requestSequence = ++activityLoadSequence;
     if (activityLoadController) activityLoadController.abort();
     activityLoadController = typeof AbortController === 'function' ? new AbortController() : null;
-    tbody.innerHTML = `
-        <tr>
-            <td colspan="6" class="text-center text-muted py-5">
-                <i class="fa-solid fa-spinner fa-spin me-1"></i>Loading activity logs...
-            </td>
-        </tr>`;
-    if (mobile) mobile.innerHTML = '';
-    document.getElementById('result-summary').innerText = 'Loading logs...';
-    document.getElementById('prev-btn').disabled = true;
-    document.getElementById('next-btn').disabled = true;
+    showTableMessage('<i class="fa-solid fa-spinner fa-spin me-1"></i>Loading...');
+    byId('result-summary').innerText = 'Loading...';
+    byId('prev-btn').disabled = true;
+    byId('next-btn').disabled = true;
 
     const params = buildQueryParams(page);
-    let res;
+    saveFiltersToUrl(params);
+    let data;
     try {
-        res = await fetch(`/get_activity_logs?${params.toString()}`, {
+        const res = await fetch(`/get_activity_logs?${params.toString()}`, {
             signal: activityLoadController ? activityLoadController.signal : undefined,
             cache: 'no-store'
         });
-    } catch (error) {
-        if (error && error.name === 'AbortError') return;
-        if (requestSequence !== activityLoadSequence) return;
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="text-center text-danger py-5">
-                    Unable to load activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(${page})">Retry</button>
-                </td>
-            </tr>`;
-        if (mobile) mobile.innerHTML = '<div class="activity-mobile-empty text-danger">Unable to load activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(' + page + ')">Retry</button></div>';
-        document.getElementById('result-summary').innerText = 'Unable to load activity logs.';
-        return;
-    }
-
-    if (requestSequence !== activityLoadSequence) return;
-
-    if (!res.ok) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="text-center text-danger py-5">
-                    Unable to load activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(${page})">Retry</button>
-                </td>
-            </tr>`;
-        if (mobile) mobile.innerHTML = '<div class="activity-mobile-empty text-danger">Unable to load activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(' + page + ')">Retry</button></div>';
-        document.getElementById('result-summary').innerText = 'Unable to load activity logs.';
-        return;
-    }
-
-    let data;
-    try {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         data = await res.json();
     } catch (error) {
-        if (requestSequence !== activityLoadSequence) return;
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="text-center text-danger py-5">
-                    Unable to read activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(${page})">Retry</button>
-                </td>
-            </tr>`;
-        if (mobile) mobile.innerHTML = '<div class="activity-mobile-empty text-danger">Unable to read activity logs. <button type="button" class="btn btn-link btn-sm" onclick="loadLogs(' + page + ')">Retry</button></div>';
-        document.getElementById('result-summary').innerText = 'Unable to read activity logs.';
+        if (error && error.name === 'AbortError') return;
+        if (requestSequence === activityLoadSequence) showLoadError('Unable to load activity logs.', page);
         return;
     }
     if (requestSequence !== activityLoadSequence) return;
+
     currentPage = data.page;
     totalPages = data.pages || 1;
-    updateSummaryCards(data);
+    const total = Number(data.total || 0);
+    const first = total ? (currentPage - 1) * data.per_page + 1 : 0;
+    const last = Math.min(currentPage * data.per_page, total);
 
-    const hiddenRoutineCount = Number(data.hidden_routine_count || 0);
-    document.getElementById('result-summary').innerText =
-        `${data.total} matching log${data.total === 1 ? '' : 's'} found`
-        + (!document.getElementById('filter-include-routine').checked && hiddenRoutineCount
-            ? ` · ${hiddenRoutineCount} routine reimbursement save${hiddenRoutineCount === 1 ? '' : 's'} hidden`
-            : '');
+    const summary = [plural(total, 'entry', 'entries')];
+    if (data.problem_count) summary.push(plural(data.problem_count, 'problem'));
+    summary.push(plural(data.user_count, 'person', 'people'));
+    byId('result-summary').innerText = summary.join(' · ');
 
-    document.getElementById('page-label').innerText = `Page ${currentPage} of ${totalPages}`;
-    document.getElementById('prev-btn').disabled = currentPage <= 1;
-    document.getElementById('next-btn').disabled = currentPage >= totalPages;
+    const hidden = Number(data.hidden_routine_count || 0);
+    byId('routine-wrap').hidden = !hidden && !byId('filter-include-routine').checked;
+    byId('routine-label').innerText = `Show ${plural(hidden, 'routine entry', 'routine entries')}`;
 
-    renderActivityMobileCards(data.logs || []);
+    byId('page-label').innerText = total ? `${fmt(first)}–${fmt(last)} of ${fmt(total)}` : '';
+    byId('prev-btn').disabled = currentPage <= 1;
+    byId('next-btn').disabled = currentPage >= totalPages;
 
     if (!data.logs.length) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="6" class="text-center text-muted py-5">
-                    <i class="fa-solid fa-magnifying-glass me-1"></i>No activity logs match your filters.
-                </td>
-            </tr>`;
+        showTableMessage('<i class="fa-solid fa-magnifying-glass me-1"></i>No activity matches these filters.');
         return;
     }
-
-    tbody.innerHTML = "";
-    data.logs.forEach(log => {
-        const [categoryIcon, categoryClass] = getCategoryMeta(log.type);
-        const [actionIcon, actionClass] = getActionMeta(log.action_type);
-        const [severityIcon, severityClass, severityLabel] = getSeverityMeta(log.severity);
-        tbody.innerHTML += `
-            <tr class="small activity-log-row activity-severity-row-${escapeHtml(log.severity || 'normal')}">
-                <td class="ps-4 font-monospace text-muted">
-                    ${escapeHtml(log.date)}
-                    <span class="fw-bold text-dark d-block">${escapeHtml(log.time)}</span>
-                </td>
-                <td>
-                    <span class="badge bg-light text-dark border">${escapeHtml(log.user)}</span>
-                </td>
-                <td>
-                    <span class="activity-type ${categoryClass}">
-                        <i class="fa-solid ${categoryIcon} me-1"></i>${escapeHtml(log.type)}
-                    </span>
-                </td>
-                <td>
-                    <span class="activity-action ${actionClass}">
-                        <i class="fa-solid ${actionIcon} me-1"></i>${escapeHtml(log.action_type || 'Other')}
-                    </span>
-                </td>
-                <td>
-                    <span class="activity-severity ${severityClass}">
-                        <i class="fa-solid ${severityIcon} me-1"></i>${escapeHtml(severityLabel)}
-                    </span>
-                </td>
-                <td class="text-muted activity-action-cell" title="${escapeHtml(getActivityDisplayAction(log))}">
-                    ${escapeHtml(getActivityDisplayAction(log))}
-                    ${log.branch ? `<span class="branch-chip ms-2"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(log.branch)}</span>` : ''}
-                </td>
-            </tr>`;
-    });
+    byId('activity-table-body').innerHTML = data.logs.map(renderRow).join('');
 }
 
 function changePage(direction) {
@@ -633,348 +380,70 @@ function changePage(direction) {
 }
 
 function resetFilters() {
-    document.getElementById('filter-q').value = "";
-    document.getElementById('filter-type').value = "";
-    document.getElementById('filter-action-type').value = "";
-    document.getElementById('filter-user').value = "";
-    document.getElementById('filter-branch').value = "";
-    document.getElementById('filter-severity').value = "";
-    document.getElementById('filter-start').value = "";
-    document.getElementById('filter-end').value = "";
-    document.getElementById('filter-include-routine').checked = false;
-    document.getElementById('per-page').value = "25";
-    loadLogs(1);
-}
-
-function formatDateLocal(dateObj) {
-    const y = dateObj.getFullYear();
-    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const d = String(dateObj.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
-function setQuickRange(mode) {
-    const today = new Date();
-    let start = new Date(today);
-
-    if (mode === '7d') {
-        start.setDate(today.getDate() - 6);
-    } else if (mode === '30d') {
-        start.setDate(today.getDate() - 29);
-    }
-
-    document.getElementById('filter-start').value = formatDateLocal(start);
-    document.getElementById('filter-end').value = formatDateLocal(today);
-    loadLogs(1);
-}
-
-function clearActivityWorkflowFilters() {
-    document.getElementById('filter-q').value = "";
-    document.getElementById('filter-type').value = "";
-    document.getElementById('filter-action-type').value = "";
-    document.getElementById('filter-severity').value = "";
-}
-
-function setCategoryQuick(category) {
-    clearActivityWorkflowFilters();
-    document.getElementById('filter-type').value = category;
-    loadLogs(1);
-}
-
-function setActionQuick(actionType) {
-    clearActivityWorkflowFilters();
-    document.getElementById('filter-action-type').value = actionType;
-    loadLogs(1);
-}
-
-function setSearchQuick(searchText) {
-    clearActivityWorkflowFilters();
-    document.getElementById('filter-q').value = searchText;
-    loadLogs(1);
-}
-
-function setSeverityQuick(severity) {
-    clearActivityWorkflowFilters();
-    document.getElementById('filter-severity').value = severity;
+    Object.keys(FILTER_FIELDS).forEach(id => { byId(id).value = ''; });
+    byId('per-page').value = '25';
+    byId('filter-problems').checked = false;
+    byId('filter-include-routine').checked = false;
+    byId('custom-range').hidden = true;
     loadLogs(1);
 }
 
 function exportLogs() {
     const params = buildQueryParams(currentPage);
-    params.delete('page');
-    params.delete('per_page');
+    ['page', 'per_page', 'range'].forEach(key => params.delete(key));
     window.location.href = `/export_activity_logs?${params.toString()}`;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
     await loadFilterOptions();
-    loadLogs(1);
+    loadLogs(readFiltersFromUrl());
 });
 </script>
 
 <style>
-.rounded-4 { border-radius: 1rem !important; }
-.xsmall { font-size: 0.65rem; }
-.activity-table-wrap { max-height: 620px; overflow-y: auto; }
+.activity-label { display: block; font-size: 0.75rem; font-weight: 700; color: var(--bs-secondary-color); margin-bottom: 0.2rem; }
+.activity-table-wrap { max-height: 640px; overflow-y: auto; }
+.activity-table th { font-weight: 700; }
 
-.activity-summary-card {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: #fff;
-    padding: 16px;
-    min-height: 86px;
-}
-
-.activity-summary-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 14px;
+.activity-chip {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    font-size: 1.05rem;
-}
-
-.quick-filter {
-    border: 1px solid rgba(var(--app-primary-rgb), 0.08);
-    color: #4b5563;
-}
-
-.quick-filter:hover {
-    color: var(--app-primary-text);
-    background: #eef6ff;
-}
-
-.activity-type,
-.activity-action,
-.activity-severity {
-    display: inline-flex;
-    align-items: center;
+    border: 0;
     border-radius: 999px;
-    padding: 4px 8px;
-    font-size: 0.68rem;
-    font-weight: 800;
-    line-height: 1;
-    white-space: nowrap;
-}
-
-.activity-schedule { background: #e7f1ff; color: #0d6efd; }
-.activity-tsr { background: #e0f2fe; color: #0369a1; }
-.activity-reimbursement { background: #dcfce7; color: #166534; }
-.activity-travel-request { background: #ede9fe; color: #6d28d9; }
-.activity-travel-liquidation { background: #fef3c7; color: #92400e; }
-.activity-cash-advance { background: #ccfbf1; color: #0f766e; }
-.activity-cash-liquidation { background: #fae8ff; color: #a21caf; }
-.activity-leave-request { background: #ede9fe; color: #6d28d9; }
-.activity-approval { background: #fce7f3; color: #be185d; }
-.activity-accounting { background: #e2e8f0; color: #334155; }
-.activity-email { background: #e0f7fa; color: #087990; }
-.activity-client { background: #e9f8ef; color: #198754; }
-.activity-product { background: #fff6db; color: #946200; }
-.activity-stock-inventory { background: #fef3c7; color: #92400e; }
-.activity-personnel { background: #f1f3f5; color: #343a40; }
-.activity-export { background: #f3e8ff; color: #7e22ce; }
-.activity-security { background: #ffe8e8; color: #dc3545; }
-.activity-system { background: #eef2ff; color: #4f46e5; }
-
-.action-create { background: #dcfce7; color: #166534; }
-.action-update { background: #dbeafe; color: #1d4ed8; }
-.action-move { background: #ede9fe; color: #6d28d9; }
-.action-delete { background: #fee2e2; color: #991b1b; }
-.action-submit { background: #e0f2fe; color: #0369a1; }
-.action-approve { background: #dcfce7; color: #166534; }
-.action-reject { background: #fee2e2; color: #991b1b; }
-.action-return { background: #fef3c7; color: #92400e; }
-.action-complete { background: #d1fae5; color: #047857; }
-.action-upload { background: #cffafe; color: #0e7490; }
-.action-download { background: #e0e7ff; color: #4338ca; }
-.action-export { background: #f3e8ff; color: #7e22ce; }
-.action-import { background: #ffedd5; color: #9a3412; }
-.action-email { background: #cffafe; color: #0e7490; }
-.action-security { background: #ffe8e8; color: #dc3545; }
-.action-other { background: #f1f3f5; color: #343a40; }
-
-.severity-success { background: #dcfce7; color: #166534; }
-.severity-warning { background: #fef3c7; color: #92400e; }
-.severity-danger { background: #fee2e2; color: #991b1b; }
-.severity-normal { background: #f1f5f9; color: #475569; }
-
-.activity-log-row.activity-severity-row-warning,
-.activity-mobile-card.activity-severity-card-warning {
-    box-shadow: inset 4px 0 0 #f59e0b;
-}
-
-.activity-log-row.activity-severity-row-danger,
-.activity-mobile-card.activity-severity-card-danger {
-    box-shadow: inset 4px 0 0 #dc2626;
-}
-
-.branch-chip {
-    display: inline-flex;
-    align-items: center;
-    border-radius: 999px;
-    background: #f8f9fa;
-    color: #495057;
-    border: 1px solid #e9ecef;
-    padding: 2px 7px;
-    font-size: 0.62rem;
-    font-weight: 800;
-    white-space: nowrap;
-}
-
-.activity-action-cell {
-    max-width: 620px;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    line-height: 1.35;
-}
-
-.table-hover tbody tr:hover {
-    background-color: #f8f9ff;
-}
-
-/* MOBILE ACTIVITY LOGS UPGRADE */
-.activity-mobile-list {
-    display: none;
-    padding: 1rem;
-    background: #f8fafc;
-}
-
-.activity-mobile-card {
-    border: 1px solid #e2e8f0;
-    background: #fff;
-    border-radius: 1rem;
-    padding: 0.95rem;
-    margin-bottom: 0.8rem;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
-}
-
-.activity-mobile-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 0.75rem;
-    margin-bottom: 0.7rem;
-}
-
-.activity-mobile-date {
-    color: var(--app-primary-text);
-    font-size: 0.74rem;
-    font-weight: 900;
-}
-
-.activity-mobile-time {
-    color: #0f172a;
-    font-size: 0.84rem;
-    font-weight: 900;
-}
-
-.activity-mobile-badges {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    align-items: flex-end;
-}
-
-.activity-mobile-user,
-.activity-mobile-branch {
-    display: grid;
-    grid-template-columns: 1rem 1fr;
-    gap: 0.45rem;
-    color: #475569;
-    font-size: 0.76rem;
-    font-weight: 800;
-    margin-bottom: 0.6rem;
-}
-
-.activity-mobile-details {
-    color: #334155;
-    font-size: 0.8rem;
+    padding: 4px 9px;
+    font-size: 0.7rem;
     font-weight: 700;
-    line-height: 1.4;
-    background: #f8fafc;
-    border-radius: 0.8rem;
-    padding: 0.75rem;
-    border: 1px solid #e2e8f0;
-    margin-bottom: 0.6rem;
-    overflow-wrap: anywhere;
+    line-height: 1.1;
+    white-space: nowrap;
+    background: #f1f5f9;
+    color: #334155;
 }
+button.activity-chip:hover { filter: brightness(0.95); text-decoration: underline; }
+.activity-chip-user { background: #f8f9fa; border: 1px solid #e2e8f0; }
+.activity-chip-branch { font-size: 0.62rem; padding: 2px 7px; background: #f8f9fa; color: #495057; }
+.activity-tone-workflow { background: #e0f2fe; color: #0369a1; }
+.activity-tone-approval { background: #fce7f3; color: #be185d; }
+.activity-tone-email { background: #e0f7fa; color: #087990; }
+.activity-tone-records { background: #e9f8ef; color: #198754; }
+.activity-tone-security { background: #fee2e2; color: #b91c1c; }
+.activity-tone-system { background: #eef2ff; color: #4f46e5; }
 
-.activity-mobile-empty {
-    border: 1px dashed #cbd5e1;
-    background: #fff;
-    border-radius: 1rem;
-    padding: 1.4rem;
-    text-align: center;
-    color: #64748b;
-    font-weight: 800;
-    display: grid;
-    gap: 0.4rem;
-}
+.activity-details { overflow-wrap: anywhere; line-height: 1.35; }
+
+.activity-log-row.activity-severity-row-warning { box-shadow: inset 4px 0 0 #f59e0b; }
+.activity-log-row.activity-severity-row-danger { box-shadow: inset 4px 0 0 #dc2626; }
 
 @media (max-width: 900px) {
-    .container-fluid {
-        padding-left: 0.85rem;
-        padding-right: 0.85rem;
-    }
-
-    .container-fluid > .d-flex.justify-content-between {
-        flex-direction: column;
-        align-items: flex-start !important;
-    }
-
-    .container-fluid h2.h4 {
-        font-size: 1.1rem;
-    }
-
-    .row.g-3.mb-4 > [class*="col-"] {
-        flex: 0 0 100%;
-        max-width: 100%;
-    }
-
-    .activity-summary-card {
-        min-height: auto;
-    }
-
-    .card-body .row.g-3.align-items-end > [class*="col-"] {
-        flex: 0 0 100%;
-        max-width: 100%;
-    }
-
-    .card-body .form-control,
-    .card-body .form-select {
-        min-height: 2.6rem;
-        border-radius: 0.85rem;
-        font-weight: 700;
-    }
-
-    .quick-filter {
-        flex: 1 1 calc(50% - 0.5rem);
-        min-height: 2.5rem;
-    }
-
-    .table-responsive {
-        display: none;
-    }
-
-    .activity-mobile-list {
-        display: block;
-    }
-
-    .card-footer {
-        flex-direction: column;
-        align-items: stretch !important;
-    }
-
-    .card-footer .btn {
-        width: 100%;
-        min-height: 2.6rem;
-    }
-
-    .activity-mobile-badges {
-        align-items: flex-start;
-    }
+    .activity-page { padding-left: 0.85rem; padding-right: 0.85rem; }
+    .activity-page .form-control,
+    .activity-page .form-select { min-height: 2.75rem; }
+    .activity-page .btn-sm { min-height: 2.75rem; min-width: 2.75rem; }
+    .activity-table-wrap { max-height: none; }
+    .activity-table thead { display: none; }
+    .activity-table tr { display: block; padding: 0.75rem 1rem; border-bottom: 1px solid var(--bs-border-color); }
+    .activity-table td { display: block; border: 0; padding: 0.15rem 0 !important; }
+    .activity-table td[data-label="When"] span { display: inline !important; margin-right: 0.35rem; }
+    .activity-table .activity-message-row td { text-align: center; }
 }
 </style>
 
