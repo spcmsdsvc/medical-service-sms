@@ -1,6 +1,6 @@
 # Reimbursement Page: Bug Fixes, Quieter Messages, One Delete Action, and Less Code
 
-**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Status:** Executed — commit `0fa4d4f`; published to `origin/main` on the owner's "commit and push".
 **Finished:** 2026-10-04.
 **Execution authorized:** 2026-10-04 — the owner said "go ahead partner. do not overengineer and over check things".
 **Approved:** 2026-10-04 — the owner said "approved, keep zoom, go with your other recommendations".
