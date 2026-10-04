@@ -1,0 +1,594 @@
+{% extends "layout.html" %}
+{% block content %}
+{# Shared Travel / Cash Advance liquidation page. Each page extends this file and
+   fills the blocks; what differs comes from liq_settings (LIQUIDATION_PAGE_SETTINGS
+   in app.py) and the optional LIQ.hooks set in block page_script. #}
+<style>
+    .liq-page{max-width:1400px;margin:0 auto;padding-bottom:96px;color:var(--app-text);}
+    .liq-hero{background:linear-gradient(135deg,var(--app-primary-strong,#0f5132),var(--app-primary,#198754));color:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 10px 22px rgba(var(--app-primary-rgb,15,81,50),.16);margin-bottom:12px;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;}
+    .liq-eyebrow{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.85;}
+    .liq-hero h1{margin:2px 0 0;font-size:1.35rem;font-weight:800;}
+    .liq-hero p{margin:4px 0 0;opacity:.9;}
+    .liq-hero-side{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;}
+    .liq-hero .btn{font-weight:700;}
+    .liq-status{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 11px;font-size:.78rem;font-weight:800;background:rgba(255,255,255,.92);color:#334155;white-space:nowrap;}
+    .liq-status.is-submitted{color:#1d4ed8;}
+    .liq-status.is-approved,.liq-status.is-completed{color:#166534;}
+    .liq-status.is-returned{color:#b91c1c;}
+    .liq-status.is-accounting{color:#c2410c;}
+    .liq-panel{background:var(--app-surface);border:1px solid var(--app-border);border-radius:14px;padding:14px 16px;margin-bottom:12px;}
+    .liq-panel h2{font-size:1.05rem;font-weight:700;margin:0;}
+    .liq-panel-head{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin-bottom:10px;}
+    .liq-muted{color:var(--app-muted);font-size:.82rem;}
+    .liq-label{font-size:.72rem;color:var(--app-muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;}
+    .liq-value{font-weight:700;word-break:break-word;}
+    .liq-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px;}
+    .liq-summary > div{background:var(--app-surface);border:1px solid var(--app-border);border-radius:14px;padding:12px 16px;}
+    .liq-summary .amount{font-size:1.3rem;font-weight:800;line-height:1.2;}
+    .liq-summary .is-shimadzu .amount{color:#c2410c;}
+    .liq-summary .is-employee .amount{color:#15803d;}
+    .liq-details{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;}
+    .liq-note{border-radius:12px;padding:10px 12px;margin-top:10px;font-size:.85rem;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);}
+    .liq-banner{display:flex;gap:12px;align-items:flex-start;border-radius:14px;padding:12px 16px;margin-bottom:12px;background:var(--app-primary-soft);color:var(--app-primary-text);border:1px solid var(--app-primary-soft-border,transparent);}
+    .liq-banner.is-returned{background:rgba(249,115,22,.1);color:inherit;border-color:rgba(249,115,22,.35);}
+    .liq-banner-title{font-weight:800;}
+    .liq-reason{margin-top:8px;border-radius:10px;padding:8px 10px;background:var(--app-surface);border:1px solid rgba(249,115,22,.35);}
+    .liq-table{width:100%;border-collapse:collapse;}
+    .liq-table th{font-size:.74rem;color:var(--app-muted);text-transform:uppercase;letter-spacing:.05em;text-align:left;padding:8px 10px;border-bottom:1px solid var(--app-border);background:var(--app-surface-raised);white-space:nowrap;}
+    .liq-table td{padding:10px;border-bottom:1px solid var(--app-border);vertical-align:middle;}
+    .liq-table .num{text-align:right;white-space:nowrap;font-weight:700;}
+    .liq-codes{font-size:.8rem;color:var(--app-muted);white-space:nowrap;}
+    .liq-chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;font-size:.72rem;font-weight:700;margin:2px 4px 2px 0;text-decoration:none;}
+    .liq-chip.receipt{background:rgba(99,102,241,.12);color:inherit;}
+    .liq-chip.missing{background:rgba(245,158,11,.16);color:inherit;}
+    .liq-chip.auto{background:rgba(var(--app-primary-rgb,15,81,50),.14);color:inherit;}
+    .liq-chip-delete{border:0;background:rgba(239,68,68,.14);color:inherit;border-radius:999px;padding:3px 8px;font-size:.7rem;}
+    .liq-row-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;}
+    .liq-empty{text-align:center;padding:36px 16px;color:var(--app-muted);}
+    .liq-sub{font-size:.8rem;color:var(--app-muted);}
+    .liq-dock{position:fixed;left:var(--sidebar-width,240px);right:0;bottom:0;z-index:1030;background:var(--app-surface);border-top:1px solid var(--app-border);box-shadow:0 -8px 20px rgba(15,23,42,.08);padding:10px 16px;}
+    .liq-dock-inner{max-width:1400px;margin:0 auto;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;}
+    .liq-dock-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+    .liq-ready-btn{border:1px solid var(--app-border);background:var(--app-surface-raised);color:var(--app-text);border-radius:999px;padding:6px 12px;font-weight:700;font-size:.85rem;}
+    .liq-ready-btn.is-blocked{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.4);}
+    .liq-ready-btn.is-ready{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.4);}
+    .liq-readiness{position:fixed;right:16px;bottom:76px;z-index:1031;width:min(380px,calc(100vw - 32px));background:var(--app-surface);border:1px solid var(--app-border);border-radius:14px;padding:14px;box-shadow:0 12px 30px rgba(15,23,42,.18);}
+    .liq-readiness li{margin-bottom:6px;font-size:.88rem;}
+    .liq-readiness .blocking{color:#c2410c;}
+    .liq-toasts{position:fixed;top:76px;right:16px;z-index:1090;display:grid;gap:8px;width:min(360px,calc(100vw - 32px));}
+    .liq-toast{display:flex;gap:10px;align-items:flex-start;border-radius:12px;padding:10px 12px;background:var(--app-surface);color:var(--app-text);border:1px solid var(--app-border);border-left:4px solid #16a34a;box-shadow:0 10px 24px rgba(15,23,42,.16);font-size:.9rem;}
+    .liq-toast.is-error{border-left-color:#dc2626;}
+    .liq-toast.is-warning{border-left-color:#f59e0b;}
+    .liq-toast button{margin-left:auto;border:0;background:none;color:inherit;font-size:1.1rem;line-height:1;}
+    .liq-page .btn:focus-visible,.liq-page a:focus-visible,.liq-ready-btn:focus-visible{outline:3px solid var(--app-focus,#2563eb);outline-offset:2px;}
+    @media(max-width:992px){.liq-dock{left:0;}}
+    @media(max-width:768px){
+        .liq-summary{grid-template-columns:1fr;}
+        .liq-hero-side{justify-content:flex-start;}
+        .liq-table thead{display:none;}
+        .liq-table,.liq-table tbody,.liq-table tr,.liq-table td{display:block;width:100%;}
+        .liq-table tr{border:1px solid var(--app-border);border-radius:12px;margin:10px 0;padding:6px 4px;}
+        .liq-table td{border:0;padding:5px 10px;}
+        .liq-table td[data-label]::before{content:attr(data-label);display:block;font-size:.7rem;color:var(--app-muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;}
+        .liq-table .num{text-align:left;}
+        .liq-row-actions{justify-content:flex-start;}
+        .liq-page .btn{min-height:44px;}
+    }
+</style>
+
+<div class="liq-page" id="liq-shell" data-liquidation-id="{{ liquidation_id|default(0)|int }}">
+    <header class="liq-hero">
+        <div>
+            <div class="liq-eyebrow">{{ liq_settings.title }}</div>
+            <h1 id="liqTitle">{{ liq_settings.title }}</h1>
+            <p id="liqSubtitle">Loading…</p>
+        </div>
+        <div class="liq-hero-side">
+            <span class="liq-status" id="liqStatus"><i class="fa-solid fa-circle"></i>Loading</span>
+            <a class="btn btn-light btn-sm" id="previewTemplateTopBtn" href="/preview_{{ liq_settings.api }}_excel/{{ liquidation_id|default(0)|int }}" target="_blank" rel="noopener"><i class="fa-solid fa-eye me-1"></i>Preview Form</a>
+            <button type="button" class="btn btn-light btn-sm" id="downloadFormBtn" onclick="downloadLiquidationForm()"><i class="fa-solid fa-download me-1"></i>Download Form</button>
+            <a class="btn btn-outline-light btn-sm" href="{{ liq_settings.back_url }}"><i class="fa-solid fa-arrow-left me-1"></i>Back to My Requests</a>
+        </div>
+    </header>
+
+    <div id="liqLockBanner" class="liq-banner" role="status" hidden>
+        <i class="fa-solid fa-lock fs-5 mt-1"></i>
+        <div><div class="liq-banner-title" id="liqLockBannerTitle"></div><div id="liqLockBannerText"></div></div>
+    </div>
+
+    <div id="liqSignaturePanel" class="liq-banner is-returned" role="status" hidden>
+        <i class="fa-solid fa-signature fs-5 mt-1"></i>
+        <div>
+            <div class="liq-banner-title">Signature required</div>
+            <div>The liquidation form carries your saved signature. Add it in Settings, then continue.</div>
+            <div class="d-flex flex-wrap gap-2 mt-2">
+                <button type="button" class="btn btn-sm btn-primary" onclick="window.open('/settings','_blank','noopener')">Open Settings</button>
+                <button type="button" class="btn btn-sm btn-success" onclick="submitLiquidation()">I added my signature — continue</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="document.getElementById('liqSignaturePanel').hidden=true">Hide</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="liq-summary">
+        <div><div class="liq-label">Cash Advance</div><div class="amount" id="cashAdvance">—</div></div>
+        <div><div class="liq-label">Actual Expenses</div><div class="amount" id="actualExpenses">—</div></div>
+        <div id="balanceCard"><div class="liq-label" id="balanceLabel">Balance</div><div class="amount" id="balanceAmount">—</div></div>
+    </div>
+
+    <section class="liq-panel">
+        <div class="liq-panel-head"><h2>Details</h2></div>
+        <div class="liq-details">
+            <div><div class="liq-label">Liquidation No.</div><div class="liq-value" id="liqNo">—</div></div>
+            <div><div class="liq-label">Submitted By</div><div class="liq-value" id="requesterName">—</div></div>
+            {% block details %}{% endblock %}
+            <div><div class="liq-label">Derived Branch</div><div class="liq-value" id="derivedBranchCode">—</div><div class="liq-sub">From the request creator's Engineer profile.</div></div>
+        </div>
+        <div class="liq-note" id="branchResolutionNote" role="alert" hidden></div>
+        {% block reference %}{% endblock %}
+    </section>
+
+    {% block before_table %}{% endblock %}
+
+    <section class="liq-panel">
+        <div class="liq-panel-head">
+            <div><h2>Actual Expenses</h2><div class="liq-muted">Each change is saved immediately. Attach receipts to every row.</div></div>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-outline-danger btn-sm fw-bold" id="deleteAllReceiptsBtn" onclick="deleteAllLiquidationReceipts()" hidden><i class="fa-solid fa-trash me-1"></i>Delete All Receipts</button>
+                <button type="button" class="btn btn-success btn-sm fw-bold" id="addExpenseRowBtn" onclick="openRowModal()"><i class="fa-solid fa-plus me-1"></i>Add Expense Row</button>
+            </div>
+        </div>
+        <table class="liq-table">
+            <thead><tr><th>Date</th><th>Particulars</th><th>Codes</th><th class="num">Amount</th><th>Receipts</th><th class="num">Actions</th></tr></thead>
+            <tbody id="liqRows"><tr><td colspan="6" class="liq-empty"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
+        </table>
+    </section>
+</div>
+
+<div class="liq-dock">
+    <div class="liq-dock-inner">
+        <div class="d-flex flex-wrap gap-3 align-items-center">
+            <div><div class="liq-label" id="dockBalanceLabel">Balance</div><div class="fw-bold" id="dockBalance">—</div></div>
+            <button type="button" class="liq-ready-btn" id="liqReadyBtn" aria-expanded="false" aria-controls="liqReadiness" onclick="toggleLiquidationReadiness()">Checking…</button>
+            <span class="liq-muted" id="liqActionNote" role="status" aria-live="polite"></span>
+        </div>
+        <div class="liq-dock-actions">
+            <button type="button" class="btn btn-outline-warning fw-bold" id="clearDraftTopBtn" onclick="clearLiquidationForm()"><i class="fa-solid fa-eraser me-1"></i>Clear Form</button>
+            <button type="button" class="btn btn-warning fw-bold" id="submitLiquidationTopBtn" onclick="submitLiquidation()"><i class="fa-solid fa-paper-plane me-1"></i>Submit</button>
+        </div>
+    </div>
+</div>
+<div class="liq-readiness" id="liqReadiness" role="region" aria-label="Submission readiness" hidden>
+    <div class="d-flex justify-content-between align-items-center mb-2"><strong>Submission readiness</strong><button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleLiquidationReadiness(false)">Close</button></div>
+    <ul class="mb-0 ps-3" id="liqReadinessList"></ul>
+</div>
+<div class="liq-toasts" id="liqToasts" aria-live="polite"></div>
+
+<div class="modal fade" id="rowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title fw-bold" id="rowModalTitle">Add Expense Row</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="rowId">
+                <div class="row g-3">
+                    <div class="col-md-4"><label class="form-label fw-bold" for="rowExpenseDate">Expense Date</label><input type="date" id="rowExpenseDate" class="form-control"></div>
+                    <div class="col-md-4"><label class="form-label fw-bold" for="rowExpenseType">Expense Type</label><select id="rowExpenseType" class="form-select"></select></div>
+                    <div class="col-md-4"><label class="form-label fw-bold" for="rowAmount" id="rowAmountLabel">Amount</label><input type="number" step="0.01" min="0.01" id="rowAmount" class="form-control" placeholder="0.00"><div class="liq-sub mt-1" id="rowAmountHelp" hidden></div></div>
+                    {% block row_fields %}{% endblock %}
+                    <div class="col-12"><label class="form-label fw-bold" for="rowParticulars">Particulars</label><input id="rowParticulars" class="form-control" placeholder="Description / particulars"></div>
+                    <div class="col-md-3"><label class="form-label fw-bold" for="rowBranchCode">Branch Code</label><input id="rowBranchCode" class="form-control" readonly aria-readonly="true"></div>
+                    <div class="col-md-3"><label class="form-label fw-bold" for="rowClassCode">Class Code</label><input id="rowClassCode" class="form-control"></div>
+                    <div class="col-md-3"><label class="form-label fw-bold" for="rowDeptCode">Dept Code</label><input id="rowDeptCode" class="form-control"></div>
+                    <div class="col-md-3"><label class="form-label fw-bold" for="rowProductCode">Product Code</label><input id="rowProductCode" class="form-control"></div>
+                    <div class="col-12"><label class="form-label fw-bold" for="rowRemarks">Remarks</label><input id="rowRemarks" class="form-control" placeholder="Optional notes"></div>
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success fw-bold" id="saveRowBtn" onclick="saveRow()">Save Row</button></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="receiptModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title fw-bold">Attach Receipts</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="receiptRowId">
+                <div class="fw-bold mb-2" id="receiptRowLabel"></div>
+                <input type="file" id="receiptFile" class="form-control" accept=".pdf,.png,.jpg,.jpeg" multiple>
+                <div class="liq-sub mt-2">PDF, JPG or PNG, up to 35 MB each. You can choose several files.</div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary fw-bold" id="uploadReceiptBtn" onclick="uploadReceipts()">Upload</button></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="liqConfirmModal" tabindex="-1" aria-hidden="true" aria-labelledby="liqConfirmTitle">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title fw-bold" id="liqConfirmTitle"></h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+            <div class="modal-body" id="liqConfirmMessage"></div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn fw-bold" id="liqConfirmBtn"></button></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const LIQ = Object.assign({ hooks: {} }, {{ liq_settings|tojson }});
+const LIQUIDATION_ID = Number(document.getElementById('liq-shell').dataset.liquidationId || 0);
+let currentLiquidation = null;
+let liqBusy = false;
+
+function esc(value){ const div = document.createElement('div'); div.textContent = String(value ?? ''); return div.innerHTML; }
+function liqCurrency(){ return String(currentLiquidation?.currency_code || 'PHP').toUpperCase() === 'USD' ? 'USD' : 'PHP'; }
+function money(value, currency = liqCurrency()){ return `${currency} ` + Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function hook(name, ...args){ return typeof LIQ.hooks[name] === 'function' ? LIQ.hooks[name](...args) : undefined; }
+function liqUrl(action, id){ return `/${action.replace('*', LIQ.api)}/${encodeURIComponent(id)}`; }
+function getCSRFToken(){ return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''; }
+function rowById(id){ return (currentLiquidation?.rows || []).find(row => Number(row.id) === Number(id)); }
+function modal(id){ return bootstrap.Modal.getOrCreateInstance(document.getElementById(id)); }
+
+async function liqFetch(url, options = {}){
+    const headers = Object.assign({ 'Accept': 'application/json', 'X-CSRFToken': getCSRFToken() }, options.json ? { 'Content-Type': 'application/json' } : {});
+    const res = await fetch(url, { method: options.method || 'GET', credentials: 'same-origin', headers, body: options.json ? JSON.stringify(options.json) : options.body });
+    let data = {};
+    try { data = await res.json(); } catch (_) { data = {}; }
+    if (!res.ok || !data.success) throw new Error(data.error || data.message || 'Something went wrong. Please try again.');
+    return data;
+}
+
+function liqToast(message, tone = 'success'){
+    const box = document.createElement('div');
+    box.className = `liq-toast${tone === 'error' ? ' is-error' : tone === 'warning' ? ' is-warning' : ''}`;
+    box.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+    box.innerHTML = `<span>${esc(message)}</span><button type="button" aria-label="Close">×</button>`;
+    box.querySelector('button').onclick = () => box.remove();
+    document.getElementById('liqToasts').appendChild(box);
+    if (tone !== 'error') setTimeout(() => box.remove(), 4500);
+}
+
+function liqConfirm({ title, message, confirmLabel = 'Continue', tone = 'danger' }){
+    document.getElementById('liqConfirmTitle').textContent = title;
+    document.getElementById('liqConfirmMessage').textContent = message;
+    const btn = document.getElementById('liqConfirmBtn');
+    btn.className = `btn fw-bold btn-${tone}`;
+    btn.textContent = confirmLabel;
+    const el = document.getElementById('liqConfirmModal');
+    return new Promise(resolve => {
+        let confirmed = false;
+        btn.onclick = () => { confirmed = true; modal('liqConfirmModal').hide(); };
+        el.addEventListener('hidden.bs.modal', () => resolve(confirmed), { once: true });
+        modal('liqConfirmModal').show();
+    });
+}
+
+async function runBusy(buttonId, label, task){
+    if (liqBusy) return;
+    liqBusy = true;
+    const btn = document.getElementById(buttonId);
+    const html = btn ? btn.innerHTML : '';
+    if (btn){ btn.disabled = true; btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin me-1"></i>${esc(label)}`; }
+    try { await task(); }
+    catch (err){ liqToast(err.message || String(err), 'error'); }
+    finally { liqBusy = false; if (btn){ btn.innerHTML = html; } updateWorkflowButtons(); }
+}
+
+function statusMeta(value){
+    const s = String(value || 'Draft').trim().toLowerCase();
+    if (s === 'draft') return { label: 'Draft', cls: '', editable: true };
+    if (s.includes('return') || s.includes('reject')) return { label: s.includes('reject') ? 'Rejected' : 'Returned', cls: 'is-returned', editable: true, title: 'Returned for correction', text: 'Review the remarks, revise, then submit again.' };
+    if (s.includes('submit')) return { label: 'Submitted', cls: 'is-submitted', title: 'Submitted', text: 'Waiting for manager review. Editing is locked.' };
+    if (s.includes('approve')) return { label: 'Manager Approved', cls: 'is-approved', title: 'Approved', text: 'Approved by your manager. Editing is locked.' };
+    if (s.includes('accounting') || s.includes('process')) return { label: 'With Accounting', cls: 'is-accounting', title: 'With Accounting', text: 'Accounting is processing this liquidation. Editing is locked.' };
+    if (s.includes('complete') || s.includes('liquidated')) return { label: 'Completed', cls: 'is-completed', title: 'Completed', text: 'This liquidation is completed.' };
+    return { label: String(value), cls: 'is-submitted', title: 'Locked', text: 'This liquidation can no longer be edited.' };
+}
+function isEditable(){ return Boolean(statusMeta(currentLiquidation?.status).editable); }
+function branchCode(){ return currentLiquidation?.derived_branch_code || currentLiquidation?.branch_code || ''; }
+function canEdit(){ return isEditable() && Boolean(branchCode()); }
+
+function updateWorkflowButtons(){
+    const editable = canEdit();
+    ['submitLiquidationTopBtn', 'addExpenseRowBtn', 'clearDraftTopBtn', 'deleteAllReceiptsBtn'].forEach(id => {
+        const btn = document.getElementById(id); if (btn) btn.disabled = liqBusy || !editable;
+    });
+    document.querySelector('.liq-dock-actions').hidden = !isEditable();
+    const note = document.getElementById('liqActionNote');
+    if (!branchCode()) note.textContent = currentLiquidation?.branch_resolution_error || "Update the request creator's Engineer profile to Manila/Main, Cebu, or Davao before continuing.";
+    else note.textContent = isEditable() ? 'All changes saved.' : statusMeta(currentLiquidation?.status).text;
+}
+
+function renderBanner(liq){
+    const meta = statusMeta(liq.status);
+    const banner = document.getElementById('liqLockBanner');
+    const returned = meta.cls === 'is-returned';
+    banner.hidden = meta.editable && !returned;
+    banner.classList.toggle('is-returned', returned);
+    document.getElementById('liqLockBannerTitle').textContent = meta.title || '';
+    const text = document.getElementById('liqLockBannerText');
+    if (returned){
+        const reason = liq.return_reason || liq.approval_remarks || 'No remarks were given. Please contact your approver.';
+        const by = [liq.returned_by_name, liq.returned_at_label].filter(Boolean).join(' • ');
+        text.innerHTML = `${esc(meta.text)}<div class="liq-reason"><div class="liq-label">Remarks</div><div class="fw-bold">${esc(reason)}</div>${by ? `<div class="liq-sub mt-1">Returned by ${esc(by)}</div>` : ''}</div>`;
+    } else {
+        text.textContent = meta.text || '';
+    }
+}
+
+function renderSummary(liq){
+    document.getElementById('cashAdvance').textContent = money(liq.cash_advance_amount);
+    document.getElementById('actualExpenses').textContent = money(liq.total_actual_expenses);
+    const toShimadzu = Number(liq.due_to_shimadzu || 0), toEmployee = Number(liq.due_to_employee || 0);
+    const label = toShimadzu > 0 ? 'Return to Shimadzu' : (toEmployee > 0 ? 'Due to you' : 'Balance');
+    const amount = toShimadzu > 0 ? money(toShimadzu) : (toEmployee > 0 ? money(toEmployee) : 'Fully liquidated');
+    const card = document.getElementById('balanceCard');
+    card.classList.toggle('is-shimadzu', toShimadzu > 0);
+    card.classList.toggle('is-employee', toEmployee > 0);
+    document.getElementById('balanceLabel').textContent = label;
+    document.getElementById('balanceAmount').textContent = amount;
+    document.getElementById('dockBalanceLabel').textContent = label;
+    document.getElementById('dockBalance').textContent = amount;
+}
+
+function renderRows(rows){
+    const body = document.getElementById('liqRows');
+    const editable = canEdit();
+    if (!rows.length){
+        body.innerHTML = `<tr><td colspan="6" class="liq-empty"><i class="fa-solid fa-receipt fs-3 d-block mb-2"></i><div class="fw-bold">No expense rows yet</div><div>${editable ? 'Click Add Expense Row to add your actual expenses.' : 'This liquidation has no expense rows.'}</div></td></tr>`;
+        return;
+    }
+    body.innerHTML = rows.map(row => {
+        const id = Number(row.id) || 0;
+        const badge = hook('rowBadge', row) || null;
+        const receipts = (row.receipts || []).map(receipt => `<span class="text-nowrap"><a class="liq-chip receipt" href="${esc(receipt.preview_url || receipt.download_url || '#')}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip"></i>${esc(receipt.original_filename || 'Receipt')}</a>${editable ? `<button type="button" class="liq-chip-delete" data-receipt-id="${Number(receipt.id) || 0}" data-name="${esc(receipt.original_filename || 'receipt')}" onclick="deleteReceipt(this.dataset.receiptId, this.dataset.name)" aria-label="Delete ${esc(receipt.original_filename || 'receipt')}"><i class="fa-solid fa-trash"></i></button>` : ''}</span>`).join('');
+        const actions = editable ? `
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="openReceiptModal(${id})"><i class="fa-solid fa-paperclip me-1"></i>Receipt</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openRowModal(${id})"><i class="fa-solid fa-pen me-1"></i>Edit</button>
+            ${badge?.locked ? '' : `<button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteRow(${id})"><i class="fa-solid fa-trash me-1"></i>Delete</button>`}` : '<span class="liq-sub"><i class="fa-solid fa-lock me-1"></i>Locked</span>';
+        return `<tr>
+            <td data-label="Date">${esc(row.expense_date || '—')}</td>
+            <td data-label="Particulars"><div class="fw-bold">${esc(row.particulars || row.expense_type || 'Expense')}</div><div class="liq-sub">${esc(row.expense_type || '')}${badge ? ` <span class="liq-chip auto">${esc(badge.label)}</span>` : ''}</div>${row.remarks ? `<div class="liq-sub">${esc(row.remarks)}</div>` : ''}</td>
+            <td data-label="Codes" class="liq-codes">${esc([row.class_code, row.dept_code, row.product_code].filter(Boolean).join(' · ') || '—')}</td>
+            <td data-label="Amount" class="num">${money(row.actual_amount)}${hook('amountNote', row) || ''}</td>
+            <td data-label="Receipts">${receipts || '<span class="liq-chip missing"><i class="fa-solid fa-triangle-exclamation"></i>No receipt</span>'}</td>
+            <td data-label="Actions"><div class="liq-row-actions">${actions}</div></td>
+        </tr>`;
+    }).join('');
+}
+
+function readinessItems(){
+    const liq = currentLiquidation || {};
+    const rows = liq.rows || [];
+    const items = [];
+    if (!branchCode()) items.push({ blocking: true, text: liq.branch_resolution_error || 'Branch could not be derived from the Engineer profile.' });
+    if (!rows.length) items.push({ blocking: true, text: 'Add at least one expense row.' });
+    (hook('extraReadinessChecks', liq) || []).forEach(item => items.push(item));
+    const missing = rows.filter(row => !(row.receipts || []).length).length;
+    if (missing) items.push({ blocking: false, text: `${missing} row${missing === 1 ? ' has' : 's have'} no receipt.` });
+    items.push({ blocking: false, text: 'Your saved signature is checked when you submit.' });
+    return items;
+}
+function renderReadiness(){
+    const items = readinessItems();
+    const blocking = items.filter(item => item.blocking).length;
+    const btn = document.getElementById('liqReadyBtn');
+    btn.className = `liq-ready-btn ${blocking ? 'is-blocked' : 'is-ready'}`;
+    btn.textContent = blocking ? `${blocking} item${blocking === 1 ? '' : 's'} to fix` : 'Ready to submit';
+    document.getElementById('liqReadinessList').innerHTML = items.map(item => `<li class="${item.blocking ? 'blocking' : ''}">${item.blocking ? '<strong>Required:</strong> ' : ''}${esc(item.text)}</li>`).join('');
+}
+function toggleLiquidationReadiness(force){
+    const panel = document.getElementById('liqReadiness');
+    panel.hidden = typeof force === 'boolean' ? !force : !panel.hidden;
+    document.getElementById('liqReadyBtn').setAttribute('aria-expanded', String(!panel.hidden));
+}
+
+function renderLiquidation(liq){
+    currentLiquidation = liq || {};
+    const meta = statusMeta(liq.status);
+    document.getElementById('liqTitle').textContent = liq.liquidation_no || LIQ.title;
+    document.getElementById('liqSubtitle').textContent = [liq.travel_request_no || liq.cash_advance_no, liq.requester_name].filter(Boolean).join(' • ');
+    const status = document.getElementById('liqStatus');
+    status.className = `liq-status ${meta.cls}`;
+    status.innerHTML = `<i class="fa-solid fa-circle"></i>${esc(meta.label)}`;
+    document.getElementById('liqNo').textContent = liq.liquidation_no || '—';
+    document.getElementById('requesterName').textContent = liq.requester_name || '—';
+    const code = branchCode();
+    document.getElementById('derivedBranchCode').textContent = code ? (liq.branch_label ? `${code} — ${liq.branch_label}` : code) : 'Unresolved';
+    const branchNote = document.getElementById('branchResolutionNote');
+    branchNote.hidden = Boolean(code);
+    branchNote.textContent = liq.branch_resolution_error || '';
+    renderBanner(liq);
+    renderSummary(liq);
+    const receiptCount = (liq.rows || []).reduce((total, row) => total + (row.receipts || []).length, 0);
+    const deleteAll = document.getElementById('deleteAllReceiptsBtn');
+    deleteAll.hidden = !canEdit() || !receiptCount;
+    deleteAll.dataset.receiptCount = String(receiptCount);
+    hook('afterRender', liq);
+    renderRows(liq.rows || []);
+    renderReadiness();
+    updateWorkflowButtons();
+}
+
+async function loadLiquidation(){
+    try {
+        const data = await liqFetch(`${liqUrl('get_*', LIQUIDATION_ID)}?_=${Date.now()}`);
+        renderLiquidation(data.liquidation);
+    } catch (err){
+        document.getElementById('liqRows').innerHTML = `<tr><td colspan="6" class="liq-empty">${esc(err.message)}</td></tr>`;
+        liqToast(err.message, 'error');
+    }
+}
+
+function openRowModal(rowId = 0){
+    if (!canEdit()) return;
+    const row = Number(rowId) ? rowById(rowId) : null;
+    const select = document.getElementById('rowExpenseType');
+    const type = row?.expense_type || 'Others';
+    select.innerHTML = [...new Set([...LIQ.expense_types, type])].map(item => `<option value="${esc(item)}">${esc(item)}</option>`).join('');
+    select.value = type;
+    document.getElementById('rowId').value = row?.id || '';
+    document.getElementById('rowModalTitle').textContent = row ? 'Edit Expense Row' : 'Add Expense Row';
+    document.getElementById('rowExpenseDate').value = row?.expense_date || currentLiquidation?.departure_date || new Date().toISOString().slice(0, 10);
+    document.getElementById('rowAmount').value = row ? Number(row.source_amount || row.actual_amount || 0).toFixed(2) : '';
+    document.getElementById('rowParticulars').value = row?.particulars || '';
+    document.getElementById('rowBranchCode').value = currentLiquidation?.derived_branch_code || currentLiquidation?.branch_code || '';
+    ['class_code', 'dept_code', 'product_code'].forEach(key => {
+        const id = { class_code: 'rowClassCode', dept_code: 'rowDeptCode', product_code: 'rowProductCode' }[key];
+        document.getElementById(id).value = row?.[key] || LIQ.defaults[key] || '';
+    });
+    document.getElementById('rowRemarks').value = row?.remarks || '';
+    hook('fillRowForm', row);
+    modal('rowModal').show();
+}
+
+function saveRow(){
+    const rowId = document.getElementById('rowId').value;
+    const amount = Number(document.getElementById('rowAmount').value || 0);
+    const payload = Object.assign({
+        expense_date: document.getElementById('rowExpenseDate').value,
+        expense_type: document.getElementById('rowExpenseType').value,
+        actual_amount: amount,
+        particulars: document.getElementById('rowParticulars').value.trim(),
+        class_code: document.getElementById('rowClassCode').value.trim(),
+        dept_code: document.getElementById('rowDeptCode').value.trim(),
+        product_code: document.getElementById('rowProductCode').value.trim(),
+        remarks: document.getElementById('rowRemarks').value.trim()
+    }, hook('extraRowPayload', amount) || {});
+    if (!payload.particulars){ liqToast('Please enter the particulars.', 'warning'); document.getElementById('rowParticulars').focus(); return; }
+    if (!(amount > 0)){ liqToast('Please enter an amount greater than zero.', 'warning'); document.getElementById('rowAmount').focus(); return; }
+    runBusy('saveRowBtn', 'Saving…', async () => {
+        const data = await liqFetch(rowId ? liqUrl('save_*_row', rowId) : liqUrl('add_*_row', LIQUIDATION_ID), { method: 'POST', json: payload });
+        modal('rowModal').hide();
+        renderLiquidation(data.liquidation);
+        liqToast(rowId ? 'Row updated.' : 'Row added.');
+    });
+}
+
+async function deleteRow(rowId){
+    const row = rowById(rowId);
+    if (!row) return;
+    const count = (row.receipts || []).length;
+    const ok = await liqConfirm({ title: 'Delete expense row', message: `Delete ${row.particulars || 'this row'}${count ? ` and its ${count} receipt${count === 1 ? '' : 's'}` : ''}? Totals will be recalculated.`, confirmLabel: 'Delete Row' });
+    if (!ok) return;
+    runBusy('', '', async () => {
+        const data = await liqFetch(liqUrl('delete_*_row', rowId), { method: 'POST' });
+        renderLiquidation(data.liquidation);
+        liqToast(data.cleanup_warning ? `Row deleted. ${data.cleanup_warning}` : 'Row deleted.', data.cleanup_warning ? 'warning' : 'success');
+    });
+}
+
+function openReceiptModal(rowId){
+    const row = rowById(rowId);
+    if (!row || !canEdit()) return;
+    document.getElementById('receiptRowId').value = row.id;
+    document.getElementById('receiptRowLabel').textContent = row.particulars || 'Expense row';
+    document.getElementById('receiptFile').value = '';
+    modal('receiptModal').show();
+}
+
+function uploadReceipts(){
+    const rowId = document.getElementById('receiptRowId').value;
+    const files = Array.from(document.getElementById('receiptFile').files || []);
+    if (!files.length){ liqToast('Please choose at least one file.', 'warning'); return; }
+    const bad = files.find(file => !/\.(pdf|png|jpe?g)$/i.test(file.name || '') || file.size > 35 * 1024 * 1024);
+    if (bad){ liqToast(`${bad.name} is not a PDF, JPG or PNG under 35 MB.`, 'warning'); return; }
+    runBusy('uploadReceiptBtn', 'Uploading…', async () => {
+        let data = null;
+        for (const file of files){
+            const form = new FormData();
+            form.append('receipt', file);
+            data = await liqFetch(liqUrl('upload_*_receipt', rowId), { method: 'POST', body: form });
+        }
+        modal('receiptModal').hide();
+        renderLiquidation(data.liquidation);
+        liqToast(files.length === 1 ? 'Receipt uploaded.' : `${files.length} receipts uploaded.`);
+    });
+}
+
+async function deleteReceipt(receiptId, name){
+    const ok = await liqConfirm({ title: 'Delete receipt', message: `Delete ${name || 'this receipt'}?`, confirmLabel: 'Delete Receipt' });
+    if (!ok) return;
+    runBusy('', '', async () => {
+        const data = await liqFetch(liqUrl('delete_*_receipt', receiptId), { method: 'POST' });
+        renderLiquidation(data.liquidation);
+        liqToast('Receipt deleted.');
+    });
+}
+
+async function deleteAllLiquidationReceipts(){
+    const count = Number(document.getElementById('deleteAllReceiptsBtn').dataset.receiptCount || 0);
+    if (!count) return;
+    const ok = await liqConfirm({ title: 'Delete all receipts', message: `Permanently delete all ${count} receipt${count === 1 ? '' : 's'}? Expense rows are kept.`, confirmLabel: 'Delete All' });
+    if (!ok) return;
+    runBusy('deleteAllReceiptsBtn', 'Deleting…', async () => {
+        const data = await liqFetch(liqUrl('delete_all_*_receipts', LIQUIDATION_ID), { method: 'POST' });
+        renderLiquidation(data.liquidation);
+        liqToast(`${Number(data.deleted_count || count)} receipt(s) deleted.${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`, data.cleanup_warning ? 'warning' : 'success');
+    });
+}
+
+async function clearLiquidationForm(){
+    const ok = await liqConfirm({ title: 'Clear form', message: hook('clearMessage') || 'Remove every expense row and receipt from this liquidation? This cannot be undone.', confirmLabel: 'Clear Form' });
+    if (!ok) return;
+    runBusy('clearDraftTopBtn', 'Clearing…', async () => {
+        const data = await liqFetch(liqUrl('clear_*', LIQUIDATION_ID), { method: 'POST' });
+        renderLiquidation(data.liquidation);
+        liqToast(data.message || 'Form cleared.');
+    });
+}
+
+async function hasSavedSignature(){
+    try {
+        const res = await fetch('/get_my_signature', { credentials: 'same-origin', cache: 'no-store', headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        return Boolean(res.ok && data.has_signature);
+    } catch (_){
+        return false;
+    }
+}
+
+async function submitLiquidation(){
+    if (liqBusy || !canEdit()) return;
+    const blocking = readinessItems().filter(item => item.blocking);
+    if (blocking.length){ toggleLiquidationReadiness(true); liqToast(blocking[0].text, 'warning'); return; }
+    const panel = document.getElementById('liqSignaturePanel');
+    if (!(await hasSavedSignature())){
+        panel.hidden = false;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        liqToast('Add your signature in Settings before submitting.', 'warning');
+        return;
+    }
+    panel.hidden = true;
+    const missing = (currentLiquidation.rows || []).filter(row => !(row.receipts || []).length).length;
+    const ok = await liqConfirm({ title: 'Submit liquidation', message: `Submit this liquidation for manager review? Editing will be locked.${missing ? ` ${missing} row${missing === 1 ? ' has' : 's have'} no receipt.` : ''}`, confirmLabel: 'Submit', tone: 'warning' });
+    if (!ok) return;
+    runBusy('submitLiquidationTopBtn', 'Submitting…', async () => {
+        const data = await liqFetch(liqUrl('submit_*', LIQUIDATION_ID), { method: 'POST', json: {} });
+        renderLiquidation(data.liquidation);
+        toggleLiquidationReadiness(false);
+        liqToast('Submitted for manager approval.');
+    });
+}
+
+function downloadLiquidationForm(){
+    runBusy('downloadFormBtn', 'Preparing…', async () => {
+        const res = await fetch(liqUrl('download_*_excel', LIQUIDATION_ID), { credentials: 'same-origin' });
+        if (!res.ok){
+            let message = 'Unable to download the form.';
+            try { const data = await res.json(); message = data.error || data.message || message; } catch (_) {}
+            throw new Error(message);
+        }
+        const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(res.headers.get('Content-Disposition') || '');
+        const filename = match ? decodeURIComponent(match[1]) : `${currentLiquidation?.liquidation_no || 'liquidation'}.xlsx`;
+        const url = URL.createObjectURL(await res.blob());
+        const link = Object.assign(document.createElement('a'), { href: url, download: filename });
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        liqToast(`Downloaded ${filename}.`);
+    });
+}
+</script>
+{% block page_script %}{% endblock %}
+<script>document.addEventListener('DOMContentLoaded', loadLiquidation);</script>
+{% endblock %}

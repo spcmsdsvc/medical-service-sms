@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-04-liquidation-pages",
+      "release_date": "2026-10-04",
+      "title": "Clearer Liquidation Pages",
+      "summary": "Travel and Cash Advance liquidation now share one cleaner page, with a readiness check before submit and a Download Form button.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-04-liquidation-pages-engineers",
+          "category": "Liquidation",
+          "description": "Travel and Cash Advance liquidation look and work the same. The top shows what you owe or are owed in one figure, rows without a receipt are flagged, and a bar at the bottom shows whether you are ready to submit. Submit checks that your signature is saved in Settings. You can download the form, upload several receipts at once, and still preview the form after submitting. Per Diem and Airfare rows can be edited but no longer deleted by mistake, and Clear Form resets them to the approved amounts. Cash Advance liquidation now has Clear Form too. The pages follow your accent colour, read better in dark mode and stack neatly on phones.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-04-reimbursement-cleanup",
       "release_date": "2026-10-04",
       "title": "Smoother Reimbursement Page",

@@ -52,7 +52,6 @@ class ReimbursementPageCleanupTests(unittest.TestCase):
         self.assertNotIn('triggerReimbursementDownload', TEMPLATE)
 
     def test_release_and_cache_version(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v238-reimbursement-cleanup', APP_SOURCE)
         self.assertIn('"2026-10-04-reimbursement-cleanup"', (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
 
 

@@ -776,7 +776,6 @@
     .travel-notification-item, .travel-attachment-item, .travel-dialog,
     .travel-equipment-menu, .travel-equipment-row, .travel-participant-chip,
     .reim-mobile-card, .reim-table-wrap, .reim-sticky-xscroll,
-    .liq-kpi, .ca-liq-kpi, .trip-context-card, .reference-card,
     .approval-history-meta
 ) {
     background: var(--dark-panel) !important;
@@ -786,9 +785,7 @@
 :root[data-app-theme="dark"] :is(
     .cash-notification-title, .cash-attachment-name, .cash-request-title,
     .travel-history-title, .travel-notification-item-title, .travel-attachment-name,
-    .travel-dialog-title, .travel-visit-title, .travel-route-title,
-    .liq-value, .ca-liq-value, .trip-context-value,
-    .liq-kpi .amount, .ca-liq-kpi .amount
+    .travel-dialog-title, .travel-visit-title, .travel-route-title
 ) {
     color: var(--dark-text) !important;
 }
@@ -796,8 +793,7 @@
     .cash-notification-message, .cash-notification-time, .cash-attachment-meta, .cash-request-meta,
     .travel-history-meta, .travel-notification-item-message, .travel-notification-item-time,
     .travel-attachment-meta, .travel-hint, .travel-currency-note, .travel-amount-hint,
-    .reim-muted, .mini-help, .trip-context-muted,
-    .reference-card .ref-items, .liq-label, .ca-liq-label
+    .reim-muted, .mini-help
 ) {
     color: var(--dark-muted) !important;
 }
@@ -927,15 +923,7 @@
 ) {
     color: var(--dark-muted) !important;
 }
-:root[data-app-theme="dark"] :is(.liq-lock-banner, .ca-liq-lock-banner) {
-    background: #18395f !important;
-    color: #bfdbfe !important;
-    border-color: #315f8f !important;
-}
-:root[data-app-theme="dark"] :is(.liq-lock-banner, .ca-liq-lock-banner) .banner-title {
-    color: #bfdbfe !important;
-}
-:root[data-app-theme="dark"] :is(.return-reason-box, .travel-status.warning) {
+:root[data-app-theme="dark"] .travel-status.warning {
     background: #3a3019 !important;
     color: #fde68a !important;
     border-color: #7c6420 !important;

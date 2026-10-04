@@ -13,11 +13,8 @@ except Exception:
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP_SOURCE = (ROOT / 'app.py').read_text(encoding='utf-8')
 REIMBURSEMENT_TEMPLATE = (ROOT / 'templates' / 'reimbursement.html').read_text(encoding='utf-8')
-TRAVEL_LIQUIDATION_TEMPLATE = (
-    ROOT / 'templates' / 'travel_liquidation.html'
-).read_text(encoding='utf-8')
-CASH_ADVANCE_LIQUIDATION_TEMPLATE = (
-    ROOT / 'templates' / 'cash_advance_liquidation.html'
+LIQUIDATION_BASE_TEMPLATE = (
+    ROOT / 'templates' / '_liquidation_base.html'
 ).read_text(encoding='utf-8')
 
 
@@ -42,10 +39,9 @@ class ReimbursementLiquidationRowDeletionTests(unittest.TestCase):
         self.assertIn('Calendar schedules and package receipts will not be deleted.', REIMBURSEMENT_TEMPLATE)
 
     def test_liquidation_pages_confirm_linked_receipt_cleanup(self):
-        for template in (TRAVEL_LIQUIDATION_TEMPLATE, CASH_ADVANCE_LIQUIDATION_TEMPLATE):
-            self.assertIn('Delete Expense Row', template)
-            self.assertIn('linked receipt', template)
-            self.assertIn('cleanup_warning', template)
+        self.assertIn('Delete expense row', LIQUIDATION_BASE_TEMPLATE)
+        self.assertIn('receipt${count === 1', LIQUIDATION_BASE_TEMPLATE)
+        self.assertIn('cleanup_warning', LIQUIDATION_BASE_TEMPLATE)
 
     def test_liquidation_storage_cleanup_runs_after_database_commit(self):
         travel_start = APP_SOURCE.index('def delete_travel_liquidation_row')

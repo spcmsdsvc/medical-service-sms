@@ -1,3 +1,191 @@
+# Liquidation Pages (Travel and Cash Advance): Shared Base Template, Reimbursement Parity, Bug Fixes, and Less Code
+
+**Status:** Executed — not yet committed; waiting for the owner's "commit and push".
+**Finished:** 2026-10-04.
+**Execution authorized:** 2026-10-04 — the owner said "go ahead partner. do not overengineer and over check things".
+**Approved:** 2026-10-04 — the owner said "approved, go with your recommendations" after reviewing the proposal and the shared-template explanation.
+**Detailed:** 2026-10-04.
+
+**Where the plan and the outcome differed:**
+
+- **Tests are source-level**, per the owner's "do not over check": `tests/test_liquidation_pages.py` (10 tests) checks the server changes in the source plus the parser directly (zero amounts), and the templates as strings. No test-client tests for auto-row delete, approver notification or Cash Advance clear; the fail-first run against the old code was not made. Both pages were rendered with `render_template` in a request context, and both page scripts pass `node --check`.
+- **Clear Form on Travel** deletes every row and receipt, then calls the existing seed to re-add Per Diem/Airfare at the approved amounts (simpler than resetting rows in place; same result).
+- **Zero-amount errors** use the routes' existing `ValueError` mapping (409), not a new 400.
+- **28 alias routes removed**, not 29: `/get_my_cash_advance_liquidation` is listed in an `app.py` path-prefix list (`app.py:280`) and stays.
+- **Dark mode:** the new page uses theme tokens and translucent status tints, so `static/css/app-dark-pages.css` needed only removals (old `liq-` / `ca-liq-` / `trip-context` / `reference-card` / lock-banner / `return-reason-box` selectors), no new rules.
+- **Preview Form is a plain link** (the exchange rate already saves when changed).
+- **Line counts:** templates 1,629 → 727 (base 594, Travel 111, Cash Advance 22).
+- **Verification:** 9 liquidation-related modules, 73 tests, OK; full suite 1,505 tests, 23 failures, 3 errors, 5 skips (the baseline's non-passing set, all unrelated). No browser check was made.
+
+## Context
+
+The owner asked for a deep review of both liquidation pages — Travel Liquidation (`/travel_liquidation`, `templates/travel_liquidation.html`) and Cash Advance Liquidation (`/cash_advance_liquidation`, `templates/cash_advance_liquidation.html`) — to align them with the system, bring over every Reimbursement function that applies (liquidation is a form of reimbursement), improve the design, and remove code.
+
+The review found eleven bugs (among them deleted Per Diem/Airfare rows reappearing, a Travel preview that is disabled after submit, Travel submit notifying the wrong approver scope, and approver emails returned to the requester's browser), several Reimbursement functions missing (readiness checklist, saved-signature check, Download Form, styled messages, multi-receipt upload, bottom action bar, phone layout, accent/dark mode), and two templates that are about 80% the same code under different prefixes.
+
+Intended outcome: both pages share one base template so fixes and design land once; each page keeps only what is genuinely different; behaviour matches Reimbursement where it applies; the bugs are fixed; about 700 template lines and about 24 unused server alias routes are removed.
+
+## Decisions taken
+
+1. **Shared base template with two thin page templates** (Jinja inheritance), not one template full of `{% if %}`. `templates/_liquidation_base.html` holds layout, CSS, table, pop-ups and shared script. `templates/travel_liquidation.html` and `templates/cash_advance_liquidation.html` `{% extends %}` it and fill blocks. Page routes, URLs and template file names stay the same.
+2. **Small differences come from one settings object** (`window.LIQ`) set by each page; **page-specific rules use optional hooks** (`extraRowPayload`, `extraReadinessChecks`, `rowBadge`, `afterRender`). The shared script never checks which page it is on.
+3. **Per Diem / Airfare auto rows can be edited but not deleted.** They show an "Auto" badge and no Delete button; the server refuses to delete them.
+4. **Submit is blocked without a saved signature**, as on Reimbursement (check through `/get_my_signature`, with a link to Settings).
+5. **Rows missing a receipt are a warning, not a block** (the server does not require receipts today).
+6. **One "Clear Form" on both pages.** Travel keeps its route; Cash Advance gets a matching route. On Travel, Clear Form removes manual rows and all receipts and resets auto rows to their approved amounts.
+7. **Save Draft buttons are removed** on both pages; every action already saves. A status line says "All changes saved."
+8. **After submit the user stays on the page** (locked banner + one toast) on both pages.
+9. **No browser automation by the agent** (project rule). Verification uses the Flask test client, source checks and `node --check`; the owner checks the pages visually.
+
+## Investigation
+
+Line numbers are as of commit `48d1b2e`.
+
+**Templates.** `templates/travel_liquidation.html` is 1,104 lines (CSS `:3-59`, markup `:61-379`, script `:381-1102`). `templates/cash_advance_liquidation.html` is 525 lines (CSS `:3-48`, markup `:50-206`, script `:208-523`). Both render the same structure: hero with actions, alert, lock banner, four KPI cards, summary card, expense table (9 columns), and the pop-ups `rowModal`, `receiptModal`, `deleteReceiptModal`, `submitLiquidationModal`, `deleteModal` (Travel also `clearDraftModal`). Their scripts duplicate `esc`, `getCSRFToken`, `showLiqAlert`, `setButtonBusy`, `rowById`, `isDraftLiquidation`, `getStatusMeta`, `updateWorkflowButtons`, row/receipt/submit handlers and `deleteAllLiquidationReceipts`.
+
+**What differs between the pages (verified):**
+
+- Endpoints run in parallel: `/get_|add_|save_|delete_{travel|cash_advance}_liquidation_row…`, `/upload_…_receipt`, `/delete_…_receipt`, `/delete_all_…_receipts`, `/submit_…`, `/preview_…_excel`, `/download_…_excel`. The JSON shape is the same (`travel_liquidation_to_dict` `app.py:46559`, `cash_advance_liquidation_to_dict` `app.py:67616`; rows `:46521` / `:67576`; receipts `:46443` / `:67549`, both with `preview_url` and `download_url`).
+- Travel only: currency (`currency_code`, `usd_to_php_rate`, row `source_currency_code` / `source_amount`), the rate panel (`:105-117`) and `/save_travel_liquidation_currency_rate`; the approved reference by bucket with excluded notes (`build_travel_liquidation_reference_summary`); the trip details (period, purpose, destination); auto rows; expense types Transportation, Hotel / Accommodation, Meals, Per Diem / Travel Allowance, Plane Fare / Air Tickets, Supplies, Others; default codes CC04 / DC03 / PC18/PC22 (`app.py:46078-46080`); Clear Form.
+- Cash Advance only: reference = approved amount, request/needed date, liquidation days, purpose, payment method/reference (`cash_advance_liquidation_reference_summary`, `app.py:67597`); expense types Transportation, Meals, Supplies, Representation, Others; default codes CC04 / DC03 / PC26 (hard-coded in the template `:166-168`, `:358-360`).
+
+**Bugs (verified):**
+
+- **B1 Deleted auto rows come back.** `get_travel_liquidation_for_requester_page` (`app.py:47276-47294`) calls `travel_liquidation_seed_per_diem_airfare_rows` (`:46158`) on every load, and `/get_travel_liquidation` (`:47571`) commits. The seed adds any approved Per Diem/Airfare line with no row pointing to it (`:46202-46209`), so a row deleted through `/delete_travel_liquidation_row` (`:49251`, no auto-row guard) or `/clear_travel_liquidation` (`:40151`) is re-created on the next load. The Clear Form pop-up says it "removes all actual expense entries".
+- **B2 Travel Preview disabled after submit.** `updateWorkflowButtons` disables `previewTemplateTopBtn` when not a draft (`travel_liquidation.html:492`). Cash Advance's preview is a link and stays usable.
+- **B3 Travel submit notifies the wrong scope.** `submit_travel_liquidation` notifies `get_assigned_approvers_for_requester(liquidation.user_id, 'travel_request')` with a hard-coded legacy manager fallback (`app.py:40378-40384`). Permission (`can_user_approve_travel_liquidation`, `:11255`) and the queue (`:11274`) accept both `travel_request` and `travel_liquidation` routes, so an approver routed only for Travel Liquidation can approve but is never notified. Cash Advance uses `cash_advance_liquidation_submit_notification_approvers` (`:70724`: liquidation scope, parent scope, `all`, original approver, then the fallback).
+- **B4 Travel submit hides the branch reason.** `require_accounting_branch_code` raises `ValueError`; `submit_travel_liquidation` has only a generic `except Exception` (`:40452`) that returns 500 "Unable to submit liquidation for approval." Cash Advance returns 409 with the message (`:68522`).
+- **B5 Approver emails sent to the requester.** `submit_cash_advance_liquidation` returns `approval_notification.email_recipients` (`app.py:68519`).
+- **B6 Zero or empty amounts accepted.** `travel_liquidation_parse_row_payload` (`:48917`, also used by `cash_advance_liquidation_parse_row_payload` `:67542`) has no amount check.
+- **B7 Save Draft does nothing useful.** Cash Advance `saveDraftNotice` only shows a notice (`:229`); Travel `saveDraftTop` (`:980`) re-saves the rate and reloads.
+- **B8 Messages.** `showLiqAlert` hides every message, including errors, after 4.5 s (Travel `:437-444`, CA `:221`). Delete All Receipts uses `window.confirm` (Travel `:934`, CA `:487`). Travel redirects to the Accounting Center 650 ms after submit (`:1075-1077`); Cash Advance stays.
+- **B9 Internal text shown to users.** Eyebrows "S13C Travel Liquidation" (Travel `:65`) and "F4A5 Standalone Cash Advance Liquidation" (CA `:54`); "Standalone Cash Advance liquidation. This record is separate from Travel Request liquidation." (CA `:93`).
+- **B10 Dark mode and accent.** Fixed green hero gradient (`#064e3b,#0f766e`; Travel `:5`, CA `:5`) while Reimbursement uses `--app-primary-strong` / `--app-primary`. `static/css/app-dark-pages.css:779-801` covers only KPI, reference, trip cards, values and labels; status pills, receipt pills, receipt delete buttons, the returned banner, `.return-reason-box`, the table header (`#f8fafc`) and `card-header bg-white` have no dark rules.
+- **B11 Inconsistent labels and links.** Completed status is "Liquidated" on Travel (`:471`) and "Completed" on Cash Advance (`:226`). Travel's Back goes to `/accounting_center` (`:78`); the Accounting Center module for Travel liquidations is `liquidations` (`app.py:45566`), handled by `applyAccountingUrlParams` (`accounting_center.html:1303`). Cash Advance's Back (`/accounting_center?module=cash_advances&status=paid`) is correct and stays.
+
+**Reimbursement functions compared:** readiness checklist, saved-signature check (`reimbursement.html:8060-8130`, `/get_my_signature` `app.py:7224`), Download Form, page toast and confirm dialog (`reimToast` `:4693`, `reimConfirmDialog` `:4793`; every page has its own pair, there is no global helper), multi-file receipt upload, bottom dock with Save/Submit (`:3600-3617`), phone layout, accent header. Not applicable or excluded: date-range loading, overlap notice, worksheet zoom and focus view, bulk row selection, notifications and history panels, LPR attachment (`EMBEDDED_LPR_PARENT_MODULES = {'cash_advance', 'travel_request', 'reimbursement'}`, `app.py:72032`), recall (liquidations deliberately excluded, `tests/test_request_recall.py:32-33`, `changes.md` recall entry).
+
+**Dead or removable code (verified by search across `templates/`, `static/`, `tests/` and `app.py`):**
+
+- Travel template: `#heroTripContext` and `.trip-context` (always emptied, `:33`, `:68`, `:615`); `buildTripContext` (`:544-581`) — the dict sends only `purpose`, `request_type`, `destination`, `departure_date`, `return_date`, `requester_name`, so the participant/client/route fallbacks never match; `namesFromParticipants`, `compactNames` (`:529-543`); fallbacks `rejection_reason`, `returned_reason`, `remarks` in `getLiquidationReturnReason` (`:474-482`, not in the dict); client conversion `directRateForSource`, `officialAmountFromSource` and the computed `exchange_rate` / `actual_amount` in `collectRowPayload` (`:405-416`, `:790-810`; the server recomputes in `travel_liquidation_parse_row_payload`); calls to `saveCurrencyRateIfNeeded` before each row save, preview and submit (`:844`, `:1027`, `:1069`; the rate already saves on change, `:1088-1100`); `.form-control-sm` (unused).
+- Cash Advance template: `.balance-card`, `.balance-label`, `.balance-amount` (`:35-39`), `.form-control-sm`, `.ca-liq-action-note` once the hero is rebuilt.
+- Both: Save Draft buttons and functions.
+- `app.py`: `build_travel_liquidation_reference_summary` is called twice per dict (`:46612-46613`).
+- `app.py` alias routes with no caller (only the decorator line matches): `/clear_travel_liquidation_draft`, `/submit_travel_liquidation_for_approval`, `/get_my_travel_liquidation`, `/get_travel_liquidation_document_payload`, `/update_travel_liquidation_row`, `/create_travel_liquidation_row`, `/update_travel_liquidation_currency_rate`, `/remove_travel_liquidation_row`, `/attach_travel_liquidation_receipt`, `/remove_travel_liquidation_receipt`, `/open_travel_liquidation_receipt_compilation`, `/open_travel_liquidation_receipt`, `/get_travel_liquidation_package_manifest`, `/open_travel_liquidation_rfp`, `/inline_travel_liquidation_rfp`, `/get_my_cash_advance_liquidation`, `/create_cash_advance_liquidation_row`, `/update_cash_advance_liquidation_row`, `/remove_cash_advance_liquidation_row`, `/attach_cash_advance_liquidation_receipt`, `/remove_cash_advance_liquidation_receipt`, `/open_cash_advance_liquidation_receipt`, `/submit_cash_advance_liquidation_for_approval`, `/get_cash_advance_liquidation_package_manifest`, `/open_cash_advance_liquidation_rfp`, `/inline_cash_advance_liquidation_rfp`, `/open_cash_advance_liquidation_excel`, `/get_cash_advance_liquidation_by_cash_advance`, `/open_cash_advance_liquidation_draft`. Keep every route `templates/approvals.html` or `accounting_center.html` uses (`get_travel_liquidation_form_payload`, `open_travel_liquidation_excel`, `download_travel_liquidation_excel`, `preview_travel_liquidation_receipt_compilation`, `preview_/download_travel_liquidation_rfp`, `preview_cash_advance_liquidation_rfp`, `download_cash_advance_liquidation_excel` (used in `app.py`), `create_cash_advance_liquidation_draft`, the complete routes). Re-check each name with a search immediately before removing it.
+
+**Checked and found sound:** receipt filenames go through `secure_filename` (`app.py:49020`, `:67519`), so the inline `onclick` filename strings are fragile but not exploitable (they move to `data-` attributes anyway); ownership checks on every row/receipt/submit route; server receipt validation and 2 MB optimisation.
+
+**Tests that read these pages:** `tests/test_accounting_branch_codes.py:66-102` (`readonly aria-readonly="true"`, `Derived Branch`, `currentLiquidation?.derived_branch_code` in each template), `tests/test_accounting_attachment_management.py:44-45` (`deleteAllLiquidationReceipts` in each template), `tests/test_reimbursement_liquidation_row_deletion.py:17-20`, `tests/test_request_recall.py`, `tests/test_shared_pdf_upload_conversion.py`; also `tests/test_approval_notifications.py`, `tests/test_approval_center_wording.py`, `tests/test_email_template_settings.py`. Baseline for the first five: **42 tests, OK**. Full-suite baseline from the last plan: 1,495 tests, 23 failures, 3 errors, 5 skips.
+
+**Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v238-reimbursement-cleanup` (`app.py:27031`); latest release `2026-10-04-reimbursement-cleanup`.
+
+## Execution steps
+
+1. **Fail-first tests** — new `tests/test_liquidation_pages.py` (reuse the app/test-client setup used by `tests/test_accounting_branch_codes.py`).
+   - Test client: deleting a Travel auto row (one with `travel_request_line_id`) returns 409 and the row remains; a manual row still deletes; after Clear Form and a reload, auto rows exist at their approved amounts and manual rows and receipts are gone.
+   - Test client: Travel submit notifies an approver routed only for `travel_liquidation` (system notification row created).
+   - Test client: Travel submit with an unresolved branch returns 409 with the branch message.
+   - Test client: Cash Advance submit response has no `email_recipients`.
+   - Test client: adding a row with amount 0 or empty returns 400 on both pages.
+   - Test client: `/clear_cash_advance_liquidation/<id>` clears rows and receipts on a draft and is refused (403) once submitted.
+   - Test client: each removed alias returns 404/405.
+   - Source/render: both pages render through `_liquidation_base.html`; no `saveDraftTop`, `saveDraftNotice`, `window.confirm`, `S13C`, `F4A5`, `buildTripContext`; Travel preview is not in the locked-disable list.
+   - Run against the current code and record which fail. Done: the behavioural tests fail for the right reason.
+
+2. **Server fixes (B1, B3–B6)** — `app.py`.
+   - `delete_travel_liquidation_row`: if `row.travel_request_line_id` is set, return 409 "Per Diem and Airfare rows come from the approved Travel Request. Edit the amount instead of deleting the row."
+   - `clear_travel_liquidation`: delete only rows without `travel_request_line_id` plus all receipts; reset auto rows to `actual_amount = planned_amount` (and `source_amount` from the request line); message "Form cleared. Per Diem and Airfare were reset to the approved amounts."
+   - New helper `travel_liquidation_submit_notification_approvers(liquidation)` mirroring `cash_advance_liquidation_submit_notification_approvers`: scopes `travel_liquidation`, `travel_request`, `all`, excluding the submitter, then the existing legacy fallback; use it in `submit_travel_liquidation`.
+   - `submit_travel_liquidation`: add `except ValueError` → rollback, 409 with the message.
+   - `submit_cash_advance_liquidation`: drop `email_recipients` from the response (keep counts).
+   - `travel_liquidation_parse_row_payload`: raise `ValueError('Please enter an amount greater than zero.')` when `source_amount <= 0`; check that add/save routes for both kinds map `ValueError` to 400 (add the mapping where missing).
+   - Done: the step-1 tests for these pass.
+
+3. **Cash Advance Clear Form route** — `app.py`, beside `delete_all_cash_advance_liquidation_receipts`.
+   - `/clear_cash_advance_liquidation/<int:liquidation_id>` (POST, same decorators and access checks as the other CA routes): delete all rows and receipts (stored files through `managed_storage_delete` with the CA prefix, after commit, warnings like the delete-row route), recalculate totals, keep status, write `record_universal_approval_audit('cash_advance', …, 'liquidation_cleared', …)` and one `ActivityLog`.
+   - Done: step-1 CA clear test passes.
+
+4. **Server cleanup** — `app.py`.
+   - Remove the alias decorators listed under Investigation (decorator lines only; functions stay under their primary route).
+   - `travel_liquidation_to_dict`: build the reference summary once and reuse it for `approved_request_reference` and `reference_total`.
+   - Add constants `LIQUIDATION_PAGE_SETTINGS = {'travel': {...}, 'cash_advance': {...}}` with `api` prefix, title, expense types, default codes (reuse `TRAVEL_LIQUIDATION_DEFAULT_*`; add `CASH_ADVANCE_LIQUIDATION_DEFAULT_PRODUCT_CODE = 'PC26'`), back URL (`/accounting_center?module=liquidations` and `/accounting_center?module=cash_advances&status=paid`), completed label "Completed".
+   - `travel_liquidation_page` / `cash_advance_liquidation_page`: pass `liq_settings=LIQUIDATION_PAGE_SETTINGS[kind]`; drop the `os.path.exists` template checks (the templates are part of the repo).
+   - Done: the alias tests pass; both pages render.
+
+5. **Shared base template** — new `templates/_liquidation_base.html`.
+   - Markup: compact accent hero (eyebrow = page title, `h1` = liquidation number, subtitle = parent number · requester, status pill; actions Preview Form, Download Form, Back); toast container; lock/returned banner (reason, returned by, at); summary strip (Cash Advance · Actual · Balance with "Return to Shimadzu" / "Due to you" / "Fully liquidated"); Details card (`{% block details %}`); approved amounts (`{% block reference %}`, inside a `<details>`); `{% block before_table %}`; expense card with Delete All Receipts and Add Expense Row; table Date · Particulars (type below; badge from `rowBadge`) · Codes (Class·Dept·Product) · Amount · Receipts (amber "No receipt" chip when none) · Actions; bottom dock with Balance, readiness toggle and panel, "All changes saved" status, Clear Form, Submit; signature-required panel (Open Settings / I added my signature — continue); pop-ups row, receipt (file input `multiple`), and one confirm dialog used for delete row, delete receipt, delete all receipts, Clear Form and submit. Row form keeps `readonly aria-readonly="true"` on Branch and the "Derived Branch" label; `{% block row_fields %}` after Amount.
+   - CSS: one set of `liq-` classes; colours from theme tokens (`--app-primary`, `--app-primary-strong`, `--app-surface`, `--app-border`, `--app-text`, `--app-muted`); hero gradient as in `.reim-hero`; at ≤768 px table rows stack as cards (`td::before` labels via `data-label`), dock stays fixed, controls ≥44 px.
+   - Script: `const LIQ = Object.assign({}, window.LIQ_SETTINGS);` read from `{{ liq_settings|tojson }}` plus page values; shared helpers (`esc`, `money(value, currency)`, `liqApi(path)` building `/${verb}_${LIQ.api}_…`), `liqToast(message, tone)` (errors stay until closed, success auto-hides), `liqConfirm({title, message, confirmLabel, tone})` returning a promise, `loadLiquidation`, `renderLiquidation` (calls `afterRender` hook), row/receipt/delete/clear/submit handlers using `data-` attributes instead of inline strings, `uploadReceipts` (files one after another, one summary toast), `downloadLiquidationForm` (fetch `/download_${api}_excel/<id>`, blob save with `Content-Disposition` filename, server error shown on failure), readiness (`blocking`: no rows, branch unresolved, signature missing, plus `extraReadinessChecks()`; `warning`: rows without receipts), signature check before submit via `/get_my_signature` (same flow as Reimbursement), `updateWorkflowButtons` (Preview and Download always enabled; edit controls only for Draft/Returned/Rejected with a branch). Hooks default to no-ops: `extraRowPayload`, `extraReadinessChecks`, `rowBadge`, `afterRender`, `fillRowForm`.
+   - Keep the function name `deleteAllLiquidationReceipts` and the string `currentLiquidation?.derived_branch_code` (existing tests).
+   - Done: template compiles; extracted script passes `node --check`.
+
+6. **Travel page** — rewrite `templates/travel_liquidation.html` to `{% extends "_liquidation_base.html" %}`.
+   - `details`: Liquidation No., Travel Request, Period (`formatTravelPeriodLabel`), Purpose (`cleanPurposeLabel` of `purpose`/`request_type`), Destination, Derived Branch.
+   - `reference`: approved buckets and excluded notes (existing `renderReferenceSummary` logic).
+   - `before_table`: USD to PHP rate panel (shown when `currency_code` is USD), saved on change only.
+   - `row_fields`: Currency select and the receipt-amount label/help.
+   - `page_script`: `extraRowPayload` (source currency and source amount), `fillRowForm` (currency, source amount), `extraReadinessChecks` (USD rate needed when PHP rows exist), `rowBadge` ("Auto" for `travel_request_line_id`, and hide Delete), `afterRender` (rate panel, receipt-currency note).
+   - Done: no dead code listed under Investigation remains; the page renders through the test client.
+
+7. **Cash Advance page** — rewrite `templates/cash_advance_liquidation.html` to `{% extends "_liquidation_base.html" %}`.
+   - `details`: Liquidation No., Cash Advance, Request / Needed date, Liquidation period, Purpose, Payment reference, Derived Branch.
+   - `reference`: approved Cash Advance amount.
+   - No other blocks.
+   - Done: renders through the test client; all actions call the `cash_advance_liquidation` endpoints.
+
+8. **Dark mode** — `static/css/app-dark-pages.css`.
+   - Replace the `.liq-kpi, .ca-liq-kpi, .trip-context-card, .reference-card` / `.liq-value, .ca-liq-value…` / `.liq-label, .ca-liq-label` entries (`:779-801`) with the new base classes, and add rules for status pills, receipt chips, "No receipt" and "Auto" chips, the returned banner and reason box, table header and row cards, dock, readiness panel and confirm dialog.
+   - Done: no `ca-liq-` or `trip-context` selector remains; every new light-coloured class has a dark rule.
+
+9. **Update existing tests** that name the templates: `tests/test_accounting_branch_codes.py` (assertions now satisfied by the base template — read base + page), `tests/test_accounting_attachment_management.py` (same), `tests/test_reimbursement_liquidation_row_deletion.py` (point at the base template where the delete-row code now lives). Do not weaken what they check.
+
+10. **Release records.**
+    - Service worker `medical-service-pwa-offline-navigation-v239-liquidation-pages` (`app.py:27031`), keeping historical marker lines; update the exact version assertions.
+    - `static/changelog/releases.json` entry `2026-10-04-liquidation-pages` (or the execution date): one shared design for Travel and Cash Advance liquidation, readiness and signature check before submit, Download Form, several receipts at once, Per Diem/Airfare can no longer be deleted by mistake, clearer messages, phone layout and dark mode.
+    - `changes.md`, and this plan's status with any difference between plan and outcome.
+
+11. **Publish** only on the owner's separate "commit and push".
+
+## Deliberately excluded
+
+- **Recall for liquidations** — excluded earlier by the owner because liquidation status is tied to the parent accounting workflow.
+- **LPR attachment** — the parent Travel Request / Cash Advance carries the LPR.
+- **Bulk row selection, worksheet zoom, focus view, notifications and history panels** — liquidations have few rows; the Accounting Center and the notification bell cover status.
+- **Duplicate-receipt detection** — needs a schema change; a separate task.
+- **Concurrent editing by Travel participants** and **CSRF exemptions** — app-wide patterns.
+- **RFP preview for the requester** — an Accounting document.
+- **Per-category approved-vs-actual comparison** — rows are not mapped to reference buckets; would need a mapping rule.
+- **Moving `reimToast` / `reimConfirmDialog` into a global helper** — every page has its own pair; extracting them touches many pages.
+- **Approvals and Accounting Center liquidation views** — other pages.
+
+## Verification
+
+- Step-1 tests, with positive controls: B1, B3, B4, B5, B6, the CA clear route and the alias removals fail on the current code; record that before fixing.
+- Focused modules: `tests.test_liquidation_pages`, `test_accounting_branch_codes`, `test_accounting_attachment_management`, `test_reimbursement_liquidation_row_deletion`, `test_request_recall`, `test_shared_pdf_upload_conversion`, `test_approval_notifications`, `test_approval_center_wording`, `test_email_template_settings`, `test_changelog_workflow`, `test_changelog_coverage`; then one full-suite run quoted against 1,495 / 23 F / 3 E / 5 S.
+- Test-client checks as a requester with a linked engineer profile: both pages render; get, add, save, delete row, upload/delete receipt, delete all receipts, clear, submit, preview and download behave as before apart from the planned changes.
+- `node --check` on the extracted shared script plus each page script.
+- No browser check by the agent. The owner checks both pages on desktop and at 375 px, light and dark, with another accent: header colour; summary balance wording; auto row has no Delete; Clear Form resets auto rows; several receipts upload at once; readiness lists missing receipts as a warning; submit without signature shows the Settings panel; after submit the page locks and Preview/Download still work; a failed download shows the message on the page; console has no errors.
+
+## After implementation
+
+1. Self-review the diff: every removed ID/function is unreferenced (including `onclick` and `data-` handlers), both pages only differ in their blocks, no dark rule names a removed class, no alias still used by `approvals.html` / `accounting_center.html` was removed.
+2. Prove the new tests fail without the fixes, then pass with them.
+3. Focused modules, then the full suite, quoting counts against the baseline.
+4. Service worker bump and `releases.json` entry.
+5. `changes.md` and this plan's status, with any difference between plan and outcome.
+6. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and the loose handoff file. Commit and push only on the owner's instruction, then verify `origin/main` and Railway's deployment.
+
+## Risks
+
+- **Shared template breaks one page while fixing the other.** Both pages render in the test client and the focused tests read both; the owner's visual check covers both.
+- **Removing alias routes breaks a bookmark or an old email link.** None found in templates, static files, tests or `app.py`; primary routes are unchanged. Re-search before each removal.
+- **Auto-row delete guard surprises a user who wanted to drop Per Diem.** They can set the amount; the message explains it.
+- **Signature block stops someone mid-submit.** Same flow as Reimbursement, with a direct link to Settings.
+- **Clear Form semantics change on Travel** (auto rows reset, not removed) — matches what the seed already does on reload; the pop-up text says so.
+- **String-contract tests** on the old templates need updating; they are in the focused run.
+
+---
+
 # Reimbursement Page: Bug Fixes, Quieter Messages, One Delete Action, and Less Code
 
 **Status:** Executed — commit `0fa4d4f`; published to `origin/main` on the owner's "commit and push".

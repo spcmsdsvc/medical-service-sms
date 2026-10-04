@@ -41,8 +41,7 @@ class AccountingAttachmentManagementTests(unittest.TestCase):
             "reimbursement.html": "deleteAllReimbursementReceipts",
             "travel_request.html": "deleteAllTravelRequestAttachments",
             "cash_advance.html": "deleteAllCashAdvanceAttachments",
-            "travel_liquidation.html": "deleteAllLiquidationReceipts",
-            "cash_advance_liquidation.html": "deleteAllLiquidationReceipts",
+            "_liquidation_base.html": "deleteAllLiquidationReceipts",
         }
         for template, function_name in expectations.items():
             source = template_source(template)

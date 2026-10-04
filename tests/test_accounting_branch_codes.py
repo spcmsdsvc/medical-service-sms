@@ -63,8 +63,9 @@ class AccountingPayloadAndUIContractsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        cls.travel_template = (ROOT / 'templates' / 'travel_liquidation.html').read_text(encoding='utf-8')
-        cls.cash_template = (ROOT / 'templates' / 'cash_advance_liquidation.html').read_text(encoding='utf-8')
+        base = (ROOT / 'templates' / '_liquidation_base.html').read_text(encoding='utf-8')
+        cls.travel_template = base + (ROOT / 'templates' / 'travel_liquidation.html').read_text(encoding='utf-8')
+        cls.cash_template = base + (ROOT / 'templates' / 'cash_advance_liquidation.html').read_text(encoding='utf-8')
         cls.releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
 
     def test_legacy_client_branch_is_accepted_but_ignored(self):

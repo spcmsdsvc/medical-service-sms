@@ -27028,7 +27028,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v238-reimbursement-cleanup';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v239-liquidation-pages';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -40149,16 +40149,11 @@ def delete_all_reimbursement_receipts():
 
 
 @app.route('/clear_travel_liquidation/<int:liquidation_id>', methods=['POST'])
-@app.route('/clear_travel_liquidation_draft/<int:liquidation_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def clear_travel_liquidation(liquidation_id):
-    """S13D0: Clear all editable liquidation rows and receipts.
-
-    This supports the top-page Clear Form action. It keeps the liquidation
-    header/draft record but removes all actual expense rows and their uploaded
-    receipts, including the stored physical receipt files.
-    """
+    """Clear Form: remove every row and receipt (and stored files), then re-add
+    the approved Per Diem / Airfare rows at their approved amounts."""
     denial = require_accounting_center_access()
     if denial:
         return denial
@@ -40194,6 +40189,8 @@ def clear_travel_liquidation(liquidation_id):
             db.session.delete(row)
 
         db.session.flush()
+        db.session.expire(liquidation, ['rows'])
+        travel_liquidation_seed_per_diem_airfare_rows(liquidation, commit=False)
         travel_liquidation_recalculate_totals(liquidation)
         liquidation.status = 'Draft'
         liquidation.accounting_status = 'Draft'
@@ -40235,7 +40232,7 @@ def clear_travel_liquidation(liquidation_id):
 
         return jsonify({
             'success': True,
-            'message': 'Liquidation form cleared.',
+            'message': 'Form cleared. Per Diem and Airfare were reset to the approved amounts.',
             'deleted_rows': len(rows),
             'deleted_receipts': len(receipts),
             'deleted_files': deleted_file_count,
@@ -40251,8 +40248,25 @@ def clear_travel_liquidation(liquidation_id):
         return jsonify({'success': False, 'error': 'Unable to clear liquidation form.'}), 500
 
 
+def travel_liquidation_submit_notification_approvers(liquidation):
+    """Approvers routed for Travel Liquidation, Travel Request or all requests
+    (the same scopes the approval queue accepts), then the legacy manager."""
+    requester_id = clean_int(getattr(liquidation, 'user_id', None))
+    approvers, seen_ids = [], {requester_id, clean_int(getattr(current_user, 'id', None))}
+    for scope in ('travel_liquidation', 'travel_request', 'all'):
+        for approver in get_assigned_approvers_for_requester(requester_id, scope):
+            approver_id = clean_int(getattr(approver, 'id', None))
+            if approver_id and approver_id not in seen_ids:
+                approvers.append(approver)
+                seen_ids.add(approver_id)
+    if not approvers:
+        legacy_approver = User.query.filter(func.lower(func.trim(User.username)) == APPROVAL_CENTER_MANAGER_USERNAME).first()
+        if legacy_approver and clean_int(getattr(legacy_approver, 'id', None)) not in seen_ids:
+            approvers = [legacy_approver]
+    return approvers
+
+
 @app.route('/submit_travel_liquidation/<int:liquidation_id>', methods=['POST'])
-@app.route('/submit_travel_liquidation_for_approval/<int:liquidation_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def submit_travel_liquidation(liquidation_id):
@@ -40375,14 +40389,7 @@ def submit_travel_liquidation(liquidation_id):
             }
         )
 
-        approvers = [
-            approver for approver in get_assigned_approvers_for_requester(liquidation.user_id, 'travel_request')
-            if getattr(approver, 'id', None) != current_user.id
-        ]
-        if not approvers:
-            legacy_approver = User.query.filter(func.lower(func.trim(User.username)) == APPROVAL_CENTER_MANAGER_USERNAME).first()
-            if legacy_approver and getattr(legacy_approver, 'id', None) != current_user.id:
-                approvers = [legacy_approver]
+        approvers = travel_liquidation_submit_notification_approvers(liquidation)
 
         requester_name = (
             clean_str(getattr(getattr(liquidation, 'engineer', None), 'name', None)) or
@@ -40449,6 +40456,9 @@ def submit_travel_liquidation(liquidation_id):
             'item': accounting_center_travel_request_item_to_dict(request_rec)
         })
 
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
     except Exception as exc:
         db.session.rollback()
         print(f"[TravelLiquidation] Submit failed: {exc}", flush=True)
@@ -45514,11 +45524,7 @@ def travel_liquidation_page():
         flash('Liquidation record not found or not accessible.')
         return redirect(url_for('accounting_center_page'))
 
-    template_path = os.path.join(app.root_path, app.template_folder or 'templates', 'travel_liquidation.html')
-    if os.path.exists(template_path):
-        return render_template('travel_liquidation.html', liquidation_id=liquidation_id)
-
-    return redirect(url_for('accounting_center_page'))
+    return render_template('travel_liquidation.html', liquidation_id=liquidation_id, liq_settings=LIQUIDATION_PAGE_SETTINGS['travel'])
 
 
 # S12B2 Accounting Center permanent module/tab foundation.
@@ -46565,6 +46571,7 @@ def travel_liquidation_to_dict(liquidation, include_rows=True):
     completed_at = getattr(liquidation, 'completed_at', None)
     completed_by_user = db.session.get(User, clean_int(getattr(liquidation, 'completed_by_id', None))) if clean_int(getattr(liquidation, 'completed_by_id', None)) else None
     currency_code = normalize_travel_currency_code(getattr(request_rec, 'currency_code', None) or getattr(liquidation, 'currency_code', None) or 'PHP')
+    reference_summary = build_travel_liquidation_reference_summary(request_rec)
     can_complete_liquidation = False
     try:
         request_manage_allowed = can_current_user_manage_my_accounting_record(request_rec) if request_rec else False
@@ -46609,8 +46616,8 @@ def travel_liquidation_to_dict(liquidation, include_rows=True):
         'total_actual_expenses_label': format_travel_currency_amount(getattr(liquidation, 'total_actual_expenses', 0), currency_code),
         'due_to_shimadzu_label': format_travel_currency_amount(getattr(liquidation, 'due_to_shimadzu', 0), currency_code),
         'due_to_employee_label': format_travel_currency_amount(getattr(liquidation, 'due_to_employee', 0), currency_code),
-        'approved_request_reference': build_travel_liquidation_reference_summary(request_rec),
-        'reference_total': travel_liquidation_money(build_travel_liquidation_reference_summary(request_rec).get('total', 0)) if request_rec else 0,
+        'approved_request_reference': reference_summary,
+        'reference_total': travel_liquidation_money(reference_summary.get('total', 0)) if request_rec else 0,
         'submitted_at': liquidation.submitted_at.isoformat() if getattr(liquidation, 'submitted_at', None) else None,
         'approved_at': liquidation.approved_at.isoformat() if getattr(liquidation, 'approved_at', None) else None,
         'rejected_at': liquidation.rejected_at.isoformat() if getattr(liquidation, 'rejected_at', None) else None,
@@ -47566,7 +47573,6 @@ def get_travel_liquidation_draft_by_request(travel_request_id):
 
 
 @app.route('/get_travel_liquidation/<int:liquidation_id>')
-@app.route('/get_my_travel_liquidation/<int:liquidation_id>')
 @login_required
 def get_travel_liquidation(liquidation_id):
     """S13B: Return one Travel Liquidation draft by liquidation ID."""
@@ -47588,7 +47594,6 @@ def get_travel_liquidation(liquidation_id):
 
 
 @app.route('/get_travel_liquidation_form_payload/<int:liquidation_id>')
-@app.route('/get_travel_liquidation_document_payload/<int:liquidation_id>')
 @login_required
 def get_travel_liquidation_form_payload(liquidation_id):
     """F2A: Return mapped Liquidation Form payload for system preview/generation.
@@ -48624,7 +48629,6 @@ def build_travel_liquidation_approval_package_manifest(liquidation):
 
 
 @app.route('/get_travel_liquidation_approval_package/<int:liquidation_id>')
-@app.route('/get_travel_liquidation_package_manifest/<int:liquidation_id>')
 @login_required
 def get_travel_liquidation_approval_package(liquidation_id):
     """F3A: Return the Approval Center document package manifest."""
@@ -48831,8 +48835,6 @@ def build_travel_liquidation_rfp_template_pdf(liquidation):
 
 
 @app.route('/preview_travel_liquidation_rfp/<int:liquidation_id>')
-@app.route('/open_travel_liquidation_rfp/<int:liquidation_id>')
-@app.route('/inline_travel_liquidation_rfp/<int:liquidation_id>')
 @app.route('/download_travel_liquidation_rfp/<int:liquidation_id>')
 @login_required
 def preview_travel_liquidation_rfp(liquidation_id):
@@ -48925,6 +48927,8 @@ def travel_liquidation_parse_row_payload(payload, target_currency_code='PHP', us
     if source_amount_raw is None:
         source_amount_raw = payload.get('actual_amount') if payload.get('actual_amount') is not None else payload.get('amount')
     source_amount = travel_liquidation_money(source_amount_raw)
+    if source_amount <= 0:
+        raise ValueError('Please enter an amount greater than zero.')
     if source_currency != target_currency and target_currency == 'USD' and source_currency == 'PHP' and travel_usd_to_php_rate(usd_to_php_rate) <= 0:
         raise ValueError('Please enter the USD to PHP Rate before saving a PHP receipt row. Example: 61.13 if 1 USD = PHP 61.13.')
     exchange_rate = travel_liquidation_direct_exchange_rate(source_currency, target_currency, usd_to_php_rate, payload.get('exchange_rate'))
@@ -48938,7 +48942,7 @@ def travel_liquidation_parse_row_payload(payload, target_currency_code='PHP', us
         'class_code': (clean_str(payload.get('class_code')) or TRAVEL_LIQUIDATION_DEFAULT_CLASS_CODE)[:50],
         'dept_code': (clean_str(payload.get('dept_code')) or TRAVEL_LIQUIDATION_DEFAULT_DEPT_CODE)[:50],
         'product_code': (clean_str(payload.get('product_code')) or TRAVEL_LIQUIDATION_DEFAULT_PRODUCT_CODE)[:50],
-        'planned_amount': travel_liquidation_money(payload.get('planned_amount') if payload.get('planned_amount') is not None else payload.get('planned') if payload.get('planned') is not None else payload.get('actual_amount') if payload.get('actual_amount') is not None else payload.get('amount')),
+        'planned_amount': travel_liquidation_money(payload.get('planned_amount') if payload.get('planned_amount') is not None else source_amount),
         'actual_amount': converted_amount,
         'currency_code': target_currency,
         'source_currency_code': source_currency,
@@ -49027,7 +49031,6 @@ def travel_liquidation_secure_receipt_filename(file_obj, row_id):
 
 
 @app.route('/save_travel_liquidation_row/<int:row_id>', methods=['POST'])
-@app.route('/update_travel_liquidation_row/<int:row_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def save_travel_liquidation_row(row_id):
@@ -49107,7 +49110,6 @@ def save_travel_liquidation_row(row_id):
 
 
 @app.route('/add_travel_liquidation_row/<int:liquidation_id>', methods=['POST'])
-@app.route('/create_travel_liquidation_row/<int:liquidation_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def add_travel_liquidation_row(liquidation_id):
@@ -49199,7 +49201,6 @@ def add_travel_liquidation_row(liquidation_id):
 
 
 @app.route('/save_travel_liquidation_currency_rate/<int:liquidation_id>', methods=['POST'])
-@app.route('/update_travel_liquidation_currency_rate/<int:liquidation_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def save_travel_liquidation_currency_rate(liquidation_id):
@@ -49249,7 +49250,6 @@ def save_travel_liquidation_currency_rate(liquidation_id):
 
 
 @app.route('/delete_travel_liquidation_row/<int:row_id>', methods=['POST', 'DELETE'])
-@app.route('/remove_travel_liquidation_row/<int:row_id>', methods=['POST', 'DELETE'])
 @csrf.exempt
 @login_required
 def delete_travel_liquidation_row(row_id):
@@ -49267,6 +49267,11 @@ def delete_travel_liquidation_row(row_id):
     allowed, message = can_edit_travel_liquidation(liquidation)
     if not allowed:
         return jsonify({'success': False, 'error': message}), 403
+    if clean_int(getattr(row, 'travel_request_line_id', None)):
+        return jsonify({
+            'success': False,
+            'error': 'Per Diem and Airfare rows come from the approved Travel Request. Edit the amount instead of deleting the row.'
+        }), 409
 
     try:
         require_accounting_branch_code(liquidation, action='delete a liquidation row')
@@ -49337,7 +49342,6 @@ def delete_travel_liquidation_row(row_id):
 
 
 @app.route('/upload_travel_liquidation_receipt/<int:row_id>', methods=['POST'])
-@app.route('/attach_travel_liquidation_receipt/<int:row_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def upload_travel_liquidation_receipt(row_id):
@@ -49429,7 +49433,6 @@ def upload_travel_liquidation_receipt(row_id):
 
 
 @app.route('/delete_travel_liquidation_receipt/<int:receipt_id>', methods=['POST'])
-@app.route('/remove_travel_liquidation_receipt/<int:receipt_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def delete_travel_liquidation_receipt(receipt_id):
@@ -49574,7 +49577,6 @@ def delete_all_travel_liquidation_receipts(liquidation_id):
 
 
 @app.route('/preview_travel_liquidation_receipt_compilation/<int:liquidation_id>')
-@app.route('/open_travel_liquidation_receipt_compilation/<int:liquidation_id>')
 @login_required
 def preview_travel_liquidation_receipt_compilation(liquidation_id):
     """F3F: Preview compiled liquidation receipts as an embedded PDF only."""
@@ -49604,7 +49606,6 @@ def preview_travel_liquidation_receipt_compilation(liquidation_id):
 
 
 @app.route('/preview_travel_liquidation_receipt/<int:receipt_id>')
-@app.route('/open_travel_liquidation_receipt/<int:receipt_id>')
 @login_required
 def preview_travel_liquidation_receipt(receipt_id):
     """F3C: Preview one liquidation receipt inline for manager review."""
@@ -67775,14 +67776,45 @@ def get_or_create_cash_advance_liquidation_draft(header, actor_user=None, commit
     return draft, True
 
 
+# One source for what differs between the two liquidation pages
+# (templates/_liquidation_base.html reads it as window.LIQ_SETTINGS).
+LIQUIDATION_PAGE_SETTINGS = {
+    'travel': {
+        'kind': 'travel',
+        'api': 'travel_liquidation',
+        'title': 'Travel Liquidation',
+        'parent_label': 'Travel Request',
+        'back_url': '/accounting_center?module=liquidations',
+        'expense_types': [
+            'Transportation', 'Hotel / Accommodation', 'Meals', 'Per Diem / Travel Allowance',
+            'Plane Fare / Air Tickets', 'Supplies', 'Others',
+        ],
+        'defaults': {
+            'class_code': TRAVEL_LIQUIDATION_DEFAULT_CLASS_CODE,
+            'dept_code': TRAVEL_LIQUIDATION_DEFAULT_DEPT_CODE,
+            'product_code': TRAVEL_LIQUIDATION_DEFAULT_PRODUCT_CODE,
+        },
+    },
+    'cash_advance': {
+        'kind': 'cash_advance',
+        'api': 'cash_advance_liquidation',
+        'title': 'Cash Advance Liquidation',
+        'parent_label': 'Cash Advance',
+        'back_url': '/accounting_center?module=cash_advances&status=paid',
+        'expense_types': ['Transportation', 'Meals', 'Supplies', 'Representation', 'Others'],
+        'defaults': {
+            'class_code': TRAVEL_LIQUIDATION_DEFAULT_CLASS_CODE,
+            'dept_code': TRAVEL_LIQUIDATION_DEFAULT_DEPT_CODE,
+            'product_code': 'PC26',
+        },
+    },
+}
+
+
 @app.route('/cash_advance_liquidation')
 @login_required
 def cash_advance_liquidation_page():
-    """F4A5A hidden standalone Cash Advance Liquidation page route.
-
-    The frontend template will be added in the next phase. Until then this route
-    safely redirects back to My Requests if the template is not present.
-    """
+    """Cash Advance Liquidation page, opened from My Requests only."""
     if is_approver_only_user():
         return redirect(url_for('dashboard_page'))
     if not can_access_accounting_center(current_user):
@@ -67799,14 +67831,10 @@ def cash_advance_liquidation_page():
         flash('Cash Advance Liquidation record not found or not accessible.')
         return redirect(url_for('accounting_center_page'))
 
-    template_path = os.path.join(app.root_path, app.template_folder or 'templates', 'cash_advance_liquidation.html')
-    if os.path.exists(template_path):
-        return render_template('cash_advance_liquidation.html', liquidation_id=liquidation_id)
-    return redirect(url_for('accounting_center_page'))
+    return render_template('cash_advance_liquidation.html', liquidation_id=liquidation_id, liq_settings=LIQUIDATION_PAGE_SETTINGS['cash_advance'])
 
 
 @app.route('/create_cash_advance_liquidation_draft/<int:cash_advance_id>', methods=['POST'])
-@app.route('/open_cash_advance_liquidation_draft/<int:cash_advance_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def create_cash_advance_liquidation_draft_endpoint(cash_advance_id):
@@ -67850,7 +67878,6 @@ def create_cash_advance_liquidation_draft_endpoint(cash_advance_id):
 
 
 @app.route('/get_cash_advance_liquidation_draft/<int:cash_advance_id>')
-@app.route('/get_cash_advance_liquidation_by_cash_advance/<int:cash_advance_id>')
 @login_required
 def get_cash_advance_liquidation_draft_by_cash_advance(cash_advance_id):
     denial = require_accounting_center_access()
@@ -67906,7 +67933,6 @@ def get_cash_advance_liquidation(liquidation_id):
 
 
 @app.route('/add_cash_advance_liquidation_row/<int:liquidation_id>', methods=['POST'])
-@app.route('/create_cash_advance_liquidation_row/<int:liquidation_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def add_cash_advance_liquidation_row(liquidation_id):
@@ -67979,7 +68005,6 @@ def add_cash_advance_liquidation_row(liquidation_id):
 
 
 @app.route('/save_cash_advance_liquidation_row/<int:row_id>', methods=['POST'])
-@app.route('/update_cash_advance_liquidation_row/<int:row_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def save_cash_advance_liquidation_row(row_id):
@@ -68041,7 +68066,6 @@ def save_cash_advance_liquidation_row(row_id):
 
 
 @app.route('/delete_cash_advance_liquidation_row/<int:row_id>', methods=['POST', 'DELETE'])
-@app.route('/remove_cash_advance_liquidation_row/<int:row_id>', methods=['POST', 'DELETE'])
 @csrf.exempt
 @login_required
 def delete_cash_advance_liquidation_row(row_id):
@@ -68117,7 +68141,6 @@ def delete_cash_advance_liquidation_row(row_id):
 
 
 @app.route('/upload_cash_advance_liquidation_receipt/<int:row_id>', methods=['POST'])
-@app.route('/attach_cash_advance_liquidation_receipt/<int:row_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def upload_cash_advance_liquidation_receipt(row_id):
@@ -68196,7 +68219,6 @@ def upload_cash_advance_liquidation_receipt(row_id):
 
 
 @app.route('/delete_cash_advance_liquidation_receipt/<int:receipt_id>', methods=['POST', 'DELETE'])
-@app.route('/remove_cash_advance_liquidation_receipt/<int:receipt_id>', methods=['POST', 'DELETE'])
 @csrf.exempt
 @login_required
 def delete_cash_advance_liquidation_receipt(receipt_id):
@@ -68308,8 +68330,75 @@ def delete_all_cash_advance_liquidation_receipts(liquidation_id):
     })
 
 
+@app.route('/clear_cash_advance_liquidation/<int:liquidation_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def clear_cash_advance_liquidation(liquidation_id):
+    """Clear Form: remove every expense row and receipt from an editable draft."""
+    denial = require_accounting_center_access()
+    if denial:
+        return denial
+    ensure_cash_advance_liquidation_tables()
+    liquidation = cash_advance_liquidation_get_for_requester_page(liquidation_id=liquidation_id)
+    if not liquidation:
+        return jsonify({'success': False, 'error': 'Cash Advance Liquidation draft not found or not accessible.'}), 404
+    allowed, message = can_edit_cash_advance_liquidation(liquidation)
+    if not allowed:
+        return jsonify({'success': False, 'error': message}), 403
+
+    rows = CashAdvanceLiquidationRow.query.filter_by(liquidation_id=liquidation.id).all()
+    receipts = CashAdvanceLiquidationReceipt.query.filter_by(liquidation_id=liquidation.id).all()
+    stored_filenames = [os.path.basename(clean_str(item.stored_filename) or '') for item in receipts]
+    try:
+        require_accounting_branch_code(liquidation, action='clear a liquidation draft')
+        for receipt in receipts:
+            db.session.delete(receipt)
+        for row in rows:
+            db.session.delete(row)
+        db.session.flush()
+        cash_advance_liquidation_recalculate_totals(liquidation)
+        liquidation.updated_at = get_manila_time()
+        record_universal_approval_audit(
+            'cash_advance',
+            liquidation.cash_advance_id,
+            'liquidation_cleared',
+            actor_user=current_user,
+            status_from=liquidation.status,
+            status_to=liquidation.status,
+            remarks='Cleared liquidation draft rows and receipts.',
+            metadata={'liquidation_id': liquidation.id, 'liquidation_no': liquidation.liquidation_no, 'deleted_rows': len(rows), 'deleted_receipts': len(receipts)}
+        )
+        add_activity_log_entry(f'Cleared Cash Advance Liquidation draft: {liquidation.liquidation_no or liquidation.id}')
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[CashAdvanceLiquidation] Clear draft failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to clear the liquidation form.'}), 500
+
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(
+                STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS,
+                os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
+            )
+        except Exception as file_error:
+            cleanup_failures += 1
+            print(f'[CashAdvanceLiquidation] Clear storage cleanup failed: {file_error}', flush=True)
+    return jsonify({
+        'success': True,
+        'message': 'Form cleared.',
+        'cleanup_warning': f'{cleanup_failures} stored file(s) need administrator cleanup.' if cleanup_failures else '',
+        'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
+    })
+
+
 @app.route('/preview_cash_advance_liquidation_receipt/<int:receipt_id>')
-@app.route('/open_cash_advance_liquidation_receipt/<int:receipt_id>')
 @login_required
 def preview_cash_advance_liquidation_receipt(receipt_id):
     denial = require_accounting_center_access()
@@ -68359,7 +68448,6 @@ def download_cash_advance_liquidation_receipt(receipt_id):
 
 
 @app.route('/submit_cash_advance_liquidation/<int:liquidation_id>', methods=['POST'])
-@app.route('/submit_cash_advance_liquidation_for_approval/<int:liquidation_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def submit_cash_advance_liquidation(liquidation_id):
@@ -68516,7 +68604,6 @@ def submit_cash_advance_liquidation(liquidation_id):
                 'queued': bool(approvers),
                 'recipient_count': len(approvers),
                 'email_recipient_count': len(approver_email_addresses),
-                'email_recipients': approver_email_addresses,
                 'email': approval_email_result
             }
         })
@@ -69072,7 +69159,6 @@ def build_cash_advance_liquidation_approval_package_manifest(liquidation):
 
 
 @app.route('/get_cash_advance_liquidation_approval_package/<int:liquidation_id>')
-@app.route('/get_cash_advance_liquidation_package_manifest/<int:liquidation_id>')
 @login_required
 def get_cash_advance_liquidation_approval_package(liquidation_id):
     """Return Approval Center document package manifest for standalone CA Liquidation."""
@@ -69101,8 +69187,6 @@ def get_cash_advance_liquidation_approval_package(liquidation_id):
 
 
 @app.route('/preview_cash_advance_liquidation_rfp/<int:liquidation_id>')
-@app.route('/open_cash_advance_liquidation_rfp/<int:liquidation_id>')
-@app.route('/inline_cash_advance_liquidation_rfp/<int:liquidation_id>')
 @app.route('/download_cash_advance_liquidation_rfp/<int:liquidation_id>')
 @login_required
 def preview_cash_advance_liquidation_rfp(liquidation_id):
@@ -70107,7 +70191,6 @@ def cash_advance_liquidation_preview_html(liquidation):
 
 
 @app.route('/preview_cash_advance_liquidation_excel/<int:liquidation_id>')
-@app.route('/open_cash_advance_liquidation_excel/<int:liquidation_id>')
 @login_required
 def preview_cash_advance_liquidation_excel(liquidation_id):
     ensure_cash_advance_tables()
