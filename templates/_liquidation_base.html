@@ -39,8 +39,9 @@
     .liq-table .num{text-align:right;white-space:nowrap;font-weight:700;}
     .liq-codes{font-size:.8rem;color:var(--app-muted);white-space:nowrap;}
     .liq-chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;font-size:.72rem;font-weight:700;margin:2px 4px 2px 0;text-decoration:none;}
-    .liq-chip.receipt{background:rgba(99,102,241,.12);color:inherit;}
-    .liq-chip.missing{background:rgba(245,158,11,.16);color:inherit;}
+    .liq-receipt-list{display:grid;gap:6px;margin-top:10px;}
+    .liq-receipt-item{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;border:1px solid var(--app-border);border-radius:10px;padding:8px 10px;background:var(--app-surface-raised);}
+    .liq-receipt-item a{font-weight:700;word-break:break-all;}
     .liq-chip.auto{background:rgba(var(--app-primary-rgb,15,81,50),.14);color:inherit;}
     .liq-chip-delete{border:0;background:rgba(239,68,68,.14);color:inherit;border-radius:999px;padding:3px 8px;font-size:.7rem;}
     .liq-row-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;}
@@ -131,16 +132,27 @@
 
     <section class="liq-panel">
         <div class="liq-panel-head">
-            <div><h2>Actual Expenses</h2><div class="liq-muted">Each change is saved immediately. Attach receipts to every row.</div></div>
+            <div><h2>Actual Expenses</h2><div class="liq-muted">Each change is saved immediately.</div></div>
             <div class="d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-outline-danger btn-sm fw-bold" id="deleteAllReceiptsBtn" onclick="deleteAllLiquidationReceipts()" hidden><i class="fa-solid fa-trash me-1"></i>Delete All Receipts</button>
                 <button type="button" class="btn btn-success btn-sm fw-bold" id="addExpenseRowBtn" onclick="openRowModal()"><i class="fa-solid fa-plus me-1"></i>Add Expense Row</button>
             </div>
         </div>
         <table class="liq-table">
-            <thead><tr><th>Date</th><th>Particulars</th><th>Codes</th><th class="num">Amount</th><th>Receipts</th><th class="num">Actions</th></tr></thead>
-            <tbody id="liqRows"><tr><td colspan="6" class="liq-empty"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
+            <thead><tr><th>Date</th><th>Particulars</th><th>Codes</th><th class="num">Amount</th><th class="num">Actions</th></tr></thead>
+            <tbody id="liqRows"><tr><td colspan="5" class="liq-empty"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</td></tr></tbody>
         </table>
+    </section>
+
+    <section class="liq-panel" id="liqReceiptsPanel">
+        <div class="liq-panel-head">
+            <div><h2>Uploaded Receipts</h2><div class="liq-muted">Attach every receipt for this liquidation here. PDF, JPG or PNG, up to 35 MB each.</div></div>
+            <div class="d-flex flex-wrap gap-2">
+                <input type="file" id="receiptFile" accept=".pdf,.png,.jpg,.jpeg" multiple hidden onchange="uploadReceipts(this.files)">
+                <button type="button" class="btn btn-outline-danger btn-sm fw-bold" id="deleteAllReceiptsBtn" onclick="deleteAllLiquidationReceipts()" hidden><i class="fa-solid fa-trash me-1"></i>Delete All</button>
+                <button type="button" class="btn btn-primary btn-sm fw-bold" id="uploadReceiptBtn" onclick="document.getElementById('receiptFile').click()"><i class="fa-solid fa-upload me-1"></i>Upload Receipts</button>
+            </div>
+        </div>
+        <div class="liq-receipt-list" id="liqReceiptList"></div>
     </section>
 </div>
 
@@ -183,21 +195,6 @@
                 </div>
             </div>
             <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success fw-bold" id="saveRowBtn" onclick="saveRow()">Save Row</button></div>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="receiptModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title fw-bold">Attach Receipts</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
-            <div class="modal-body">
-                <input type="hidden" id="receiptRowId">
-                <div class="fw-bold mb-2" id="receiptRowLabel"></div>
-                <input type="file" id="receiptFile" class="form-control" accept=".pdf,.png,.jpg,.jpeg" multiple>
-                <div class="liq-sub mt-2">PDF, JPG or PNG, up to 35 MB each. You can choose several files.</div>
-            </div>
-            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary fw-bold" id="uploadReceiptBtn" onclick="uploadReceipts()">Upload</button></div>
         </div>
     </div>
 </div>
@@ -288,7 +285,7 @@ function canEdit(){ return isEditable() && Boolean(branchCode()); }
 
 function updateWorkflowButtons(){
     const editable = canEdit();
-    ['submitLiquidationTopBtn', 'addExpenseRowBtn', 'clearDraftTopBtn', 'deleteAllReceiptsBtn'].forEach(id => {
+    ['submitLiquidationTopBtn', 'addExpenseRowBtn', 'clearDraftTopBtn', 'deleteAllReceiptsBtn', 'uploadReceiptBtn'].forEach(id => {
         const btn = document.getElementById(id); if (btn) btn.disabled = liqBusy || !editable;
     });
     document.querySelector('.liq-dock-actions').hidden = !isEditable();
@@ -333,15 +330,13 @@ function renderRows(rows){
     const body = document.getElementById('liqRows');
     const editable = canEdit();
     if (!rows.length){
-        body.innerHTML = `<tr><td colspan="6" class="liq-empty"><i class="fa-solid fa-receipt fs-3 d-block mb-2"></i><div class="fw-bold">No expense rows yet</div><div>${editable ? 'Click Add Expense Row to add your actual expenses.' : 'This liquidation has no expense rows.'}</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="5" class="liq-empty"><i class="fa-solid fa-receipt fs-3 d-block mb-2"></i><div class="fw-bold">No expense rows yet</div><div>${editable ? 'Click Add Expense Row to add your actual expenses.' : 'This liquidation has no expense rows.'}</div></td></tr>`;
         return;
     }
     body.innerHTML = rows.map(row => {
         const id = Number(row.id) || 0;
         const badge = hook('rowBadge', row) || null;
-        const receipts = (row.receipts || []).map(receipt => `<span class="text-nowrap"><a class="liq-chip receipt" href="${esc(receipt.preview_url || receipt.download_url || '#')}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip"></i>${esc(receipt.original_filename || 'Receipt')}</a>${editable ? `<button type="button" class="liq-chip-delete" data-receipt-id="${Number(receipt.id) || 0}" data-name="${esc(receipt.original_filename || 'receipt')}" onclick="deleteReceipt(this.dataset.receiptId, this.dataset.name)" aria-label="Delete ${esc(receipt.original_filename || 'receipt')}"><i class="fa-solid fa-trash"></i></button>` : ''}</span>`).join('');
         const actions = editable ? `
-            <button type="button" class="btn btn-sm btn-outline-primary" onclick="openReceiptModal(${id})"><i class="fa-solid fa-paperclip me-1"></i>Receipt</button>
             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openRowModal(${id})"><i class="fa-solid fa-pen me-1"></i>Edit</button>
             ${badge?.locked ? '' : `<button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteRow(${id})"><i class="fa-solid fa-trash me-1"></i>Delete</button>`}` : '<span class="liq-sub"><i class="fa-solid fa-lock me-1"></i>Locked</span>';
         return `<tr>
@@ -349,10 +344,18 @@ function renderRows(rows){
             <td data-label="Particulars"><div class="fw-bold">${esc(row.particulars || row.expense_type || 'Expense')}</div><div class="liq-sub">${esc(row.expense_type || '')}${badge ? ` <span class="liq-chip auto">${esc(badge.label)}</span>` : ''}</div>${row.remarks ? `<div class="liq-sub">${esc(row.remarks)}</div>` : ''}</td>
             <td data-label="Codes" class="liq-codes">${esc([row.class_code, row.dept_code, row.product_code].filter(Boolean).join(' · ') || '—')}</td>
             <td data-label="Amount" class="num">${money(row.actual_amount)}${hook('amountNote', row) || ''}</td>
-            <td data-label="Receipts">${receipts || '<span class="liq-chip missing"><i class="fa-solid fa-triangle-exclamation"></i>No receipt</span>'}</td>
             <td data-label="Actions"><div class="liq-row-actions">${actions}</div></td>
         </tr>`;
     }).join('');
+}
+
+function renderReceipts(receipts){
+    const editable = canEdit();
+    document.getElementById('liqReceiptList').innerHTML = receipts.length ? receipts.map(receipt => `
+        <div class="liq-receipt-item">
+            <a href="${esc(receipt.preview_url || receipt.download_url || '#')}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip me-1"></i>${esc(receipt.original_filename || 'Receipt')}</a>
+            <span class="d-flex gap-2 align-items-center"><span class="liq-sub">${esc(receipt.created_at_label || '')}</span>${editable ? `<button type="button" class="liq-chip-delete" data-receipt-id="${Number(receipt.id) || 0}" data-name="${esc(receipt.original_filename || 'receipt')}" onclick="deleteReceipt(this.dataset.receiptId, this.dataset.name)" aria-label="Delete ${esc(receipt.original_filename || 'receipt')}"><i class="fa-solid fa-trash"></i></button>` : ''}</span>
+        </div>`).join('') : '<div class="liq-muted">No receipts uploaded yet.</div>';
 }
 
 function readinessItems(){
@@ -362,8 +365,7 @@ function readinessItems(){
     if (!branchCode()) items.push({ blocking: true, text: liq.branch_resolution_error || 'Branch could not be derived from the Engineer profile.' });
     if (!rows.length) items.push({ blocking: true, text: 'Add at least one expense row.' });
     (hook('extraReadinessChecks', liq) || []).forEach(item => items.push(item));
-    const missing = rows.filter(row => !(row.receipts || []).length).length;
-    if (missing) items.push({ blocking: false, text: `${missing} row${missing === 1 ? ' has' : 's have'} no receipt.` });
+    if (!(liq.all_receipts || []).length) items.push({ blocking: false, text: 'No receipts uploaded yet.' });
     items.push({ blocking: false, text: 'Your saved signature is checked when you submit.' });
     return items;
 }
@@ -398,12 +400,13 @@ function renderLiquidation(liq){
     branchNote.textContent = liq.branch_resolution_error || '';
     renderBanner(liq);
     renderSummary(liq);
-    const receiptCount = (liq.rows || []).reduce((total, row) => total + (row.receipts || []).length, 0);
+    const receiptCount = (liq.all_receipts || []).length;
     const deleteAll = document.getElementById('deleteAllReceiptsBtn');
     deleteAll.hidden = !canEdit() || !receiptCount;
     deleteAll.dataset.receiptCount = String(receiptCount);
     hook('afterRender', liq);
     renderRows(liq.rows || []);
+    renderReceipts(liq.all_receipts || []);
     renderReadiness();
     updateWorkflowButtons();
 }
@@ -476,30 +479,23 @@ async function deleteRow(rowId){
     });
 }
 
-function openReceiptModal(rowId){
-    const row = rowById(rowId);
-    if (!row || !canEdit()) return;
-    document.getElementById('receiptRowId').value = row.id;
-    document.getElementById('receiptRowLabel').textContent = row.particulars || 'Expense row';
+function uploadReceipts(fileList){
+    const files = Array.from(fileList || []);
     document.getElementById('receiptFile').value = '';
-    modal('receiptModal').show();
-}
-
-function uploadReceipts(){
-    const rowId = document.getElementById('receiptRowId').value;
-    const files = Array.from(document.getElementById('receiptFile').files || []);
-    if (!files.length){ liqToast('Please choose at least one file.', 'warning'); return; }
+    if (!files.length || !canEdit()) return;
     const bad = files.find(file => !/\.(pdf|png|jpe?g)$/i.test(file.name || '') || file.size > 35 * 1024 * 1024);
     if (bad){ liqToast(`${bad.name} is not a PDF, JPG or PNG under 35 MB.`, 'warning'); return; }
     runBusy('uploadReceiptBtn', 'Uploading…', async () => {
         let data = null;
-        for (const file of files){
-            const form = new FormData();
-            form.append('receipt', file);
-            data = await liqFetch(liqUrl('upload_*_receipt', rowId), { method: 'POST', body: form });
+        try {
+            for (const file of files){
+                const form = new FormData();
+                form.append('receipt', file);
+                data = await liqFetch(liqUrl('upload_*_receipts', LIQUIDATION_ID), { method: 'POST', body: form });
+            }
+        } finally {
+            if (data) renderLiquidation(data.liquidation);
         }
-        modal('receiptModal').hide();
-        renderLiquidation(data.liquidation);
         liqToast(files.length === 1 ? 'Receipt uploaded.' : `${files.length} receipts uploaded.`);
     });
 }
@@ -558,8 +554,8 @@ async function submitLiquidation(){
         return;
     }
     panel.hidden = true;
-    const missing = (currentLiquidation.rows || []).filter(row => !(row.receipts || []).length).length;
-    const ok = await liqConfirm({ title: 'Submit liquidation', message: `Submit this liquidation for manager review? Editing will be locked.${missing ? ` ${missing} row${missing === 1 ? ' has' : 's have'} no receipt.` : ''}`, confirmLabel: 'Submit', tone: 'warning' });
+    const noReceipts = !(currentLiquidation.all_receipts || []).length;
+    const ok = await liqConfirm({ title: 'Submit liquidation', message: `Submit this liquidation for manager review? Editing will be locked.${noReceipts ? ' No receipts are uploaded.' : ''}`, confirmLabel: 'Submit', tone: 'warning' });
     if (!ok) return;
     runBusy('submitLiquidationTopBtn', 'Submitting…', async () => {
         const data = await liqFetch(liqUrl('submit_*', LIQUIDATION_ID), { method: 'POST', json: {} });

@@ -27028,7 +27028,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v239-liquidation-pages';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v240-liquidation-receipts';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -46673,6 +46673,11 @@ def travel_liquidation_to_dict(liquidation, include_rows=True):
         )
         payload['rows'] = [travel_liquidation_row_to_dict(row) for row in rows]
         payload['row_count'] = len(rows)
+        payload['all_receipts'] = [
+            travel_liquidation_receipt_to_dict(receipt)
+            for receipt in TravelLiquidationReceipt.query.filter_by(liquidation_id=liquidation.id)
+            .order_by(TravelLiquidationReceipt.created_at.desc(), TravelLiquidationReceipt.id.desc()).all()
+        ]
 
     return payload
 
@@ -48407,7 +48412,7 @@ def build_travel_liquidation_receipt_compilation_pdf_bytes(liquidation):
             reimbursement_append_pdf_bytes(
                 writer,
                 travel_liquidation_receipt_divider_pdf_bytes(
-                    'ADDITIONAL LIQUIDATION RECEIPTS',
+                    'LIQUIDATION RECEIPTS',
                     [
                         ('Liquidation No.', liquidation_no),
                         ('Travel Request', request_no),
@@ -48545,7 +48550,7 @@ def build_travel_liquidation_approval_package_manifest(liquidation):
         {
             'key': 'receipt_compilation',
             'label': 'Receipt Compilation PDF',
-            'description': 'All uploaded liquidation receipts compiled in expense-row order.',
+            'description': 'All uploaded liquidation receipts compiled into one PDF.',
             'required': True,
             'available': len(receipt_items) > 0,
             'open_url': f"/preview_travel_liquidation_receipt_compilation/{liquidation_id}" if receipt_items else '',
@@ -48557,7 +48562,7 @@ def build_travel_liquidation_approval_package_manifest(liquidation):
         {
             'key': 'receipts',
             'label': 'Individual Receipts',
-            'description': 'Uploaded receipt files attached to liquidation expense rows.',
+            'description': 'Receipt files uploaded for this liquidation.',
             'required': False,
             'available': len(receipt_items) > 0,
             'open_url': '',
@@ -49341,21 +49346,20 @@ def delete_travel_liquidation_row(row_id):
         return jsonify({'success': False, 'error': 'Unable to delete liquidation row.'}), 500
 
 
-@app.route('/upload_travel_liquidation_receipt/<int:row_id>', methods=['POST'])
+@app.route('/upload_travel_liquidation_receipts/<int:liquidation_id>', methods=['POST'])
 @csrf.exempt
 @login_required
-def upload_travel_liquidation_receipt(row_id):
-    """S13C1: Attach receipt/proof file to one liquidation row."""
+def upload_travel_liquidation_receipt(liquidation_id):
+    """Upload one receipt for the whole liquidation (not linked to a row)."""
     denial = require_accounting_center_access()
     if denial:
         return denial
 
     ensure_travel_liquidation_tables()
-    row = db.session.get(TravelLiquidationRow, clean_int(row_id))
-    if not row:
-        return jsonify({'success': False, 'error': 'Liquidation row not found.'}), 404
+    liquidation = get_travel_liquidation_for_requester_page(liquidation_id=liquidation_id)
+    if not liquidation:
+        return jsonify({'success': False, 'error': 'Travel Liquidation draft not found or not accessible.'}), 404
 
-    liquidation = getattr(row, 'liquidation', None)
     allowed, message = can_edit_travel_liquidation(liquidation)
     if not allowed:
         return jsonify({'success': False, 'error': message}), 403
@@ -49369,7 +49373,7 @@ def upload_travel_liquidation_receipt(row_id):
         return jsonify({'success': False, 'error': receipt_error or 'Unsupported receipt file type.'}), 400
 
     try:
-        stored_filename, original_filename = travel_liquidation_secure_receipt_filename(file_obj, row.id)
+        stored_filename, original_filename = travel_liquidation_secure_receipt_filename(file_obj, liquidation.id)
         prepared_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename)
         stored_filename = os.path.splitext(stored_filename)[0] + f'.{stored_ext}'
         folder = travel_liquidation_receipt_folder()
@@ -49384,7 +49388,7 @@ def upload_travel_liquidation_receipt(row_id):
 
         receipt = TravelLiquidationReceipt(
             liquidation_id=liquidation.id,
-            row_id=row.id,
+            row_id=None,
             uploaded_by_id=current_user.id,
             stored_filename=stored_filename,
             original_filename=original_filename,
@@ -49406,7 +49410,6 @@ def upload_travel_liquidation_receipt(row_id):
             metadata={
                 'liquidation_id': liquidation.id,
                 'liquidation_no': liquidation.liquidation_no,
-                'row_id': row.id,
                 'receipt_filename': original_filename
             }
         )
@@ -49416,7 +49419,6 @@ def upload_travel_liquidation_receipt(row_id):
             'success': True,
             'message': 'Receipt uploaded.',
             'receipt': travel_liquidation_receipt_to_dict(receipt),
-            'row': travel_liquidation_row_to_dict(row),
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
         })
     except ValueError as exc:
@@ -67692,6 +67694,11 @@ def cash_advance_liquidation_to_dict(liquidation, include_rows=True):
             .all()
         )
         payload['rows'] = [cash_advance_liquidation_row_to_dict(row) for row in rows]
+        payload['all_receipts'] = [
+            cash_advance_liquidation_receipt_to_dict(receipt)
+            for receipt in CashAdvanceLiquidationReceipt.query.filter_by(liquidation_id=liquidation.id)
+            .order_by(CashAdvanceLiquidationReceipt.created_at.desc(), CashAdvanceLiquidationReceipt.id.desc()).all()
+        ]
     return payload
 
 
@@ -68140,19 +68147,19 @@ def delete_cash_advance_liquidation_row(row_id):
         return jsonify({'success': False, 'error': 'Unable to delete Cash Advance Liquidation row.'}), 500
 
 
-@app.route('/upload_cash_advance_liquidation_receipt/<int:row_id>', methods=['POST'])
+@app.route('/upload_cash_advance_liquidation_receipts/<int:liquidation_id>', methods=['POST'])
 @csrf.exempt
 @login_required
-def upload_cash_advance_liquidation_receipt(row_id):
+def upload_cash_advance_liquidation_receipt(liquidation_id):
+    """Upload one receipt for the whole liquidation (not linked to a row)."""
     denial = require_accounting_center_access()
     if denial:
         return denial
 
     ensure_cash_advance_liquidation_tables()
-    row = db.session.get(CashAdvanceLiquidationRow, clean_int(row_id))
-    if not row:
-        return jsonify({'success': False, 'error': 'Cash Advance Liquidation row not found.'}), 404
-    liquidation = getattr(row, 'liquidation', None)
+    liquidation = cash_advance_liquidation_get_for_requester_page(liquidation_id=liquidation_id)
+    if not liquidation:
+        return jsonify({'success': False, 'error': 'Cash Advance Liquidation draft not found or not accessible.'}), 404
     allowed, message = can_edit_cash_advance_liquidation(liquidation)
     if not allowed:
         return jsonify({'success': False, 'error': message}), 403
@@ -68163,7 +68170,7 @@ def upload_cash_advance_liquidation_receipt(row_id):
         return jsonify({'success': False, 'error': receipt_error or 'Unsupported receipt file type.'}), 400
 
     try:
-        stored_filename, original_filename = cash_advance_liquidation_secure_receipt_filename(file_obj, row.id)
+        stored_filename, original_filename = cash_advance_liquidation_secure_receipt_filename(file_obj, liquidation.id)
         prepared_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename)
         stored_filename = os.path.splitext(stored_filename)[0] + f'.{stored_ext}'
         folder = cash_advance_liquidation_receipt_folder()
@@ -68177,7 +68184,7 @@ def upload_cash_advance_liquidation_receipt(row_id):
         )
         receipt = CashAdvanceLiquidationReceipt(
             liquidation_id=liquidation.id,
-            row_id=row.id,
+            row_id=None,
             uploaded_by_id=current_user.id,
             stored_filename=stored_filename,
             original_filename=original_filename,
@@ -68195,14 +68202,13 @@ def upload_cash_advance_liquidation_receipt(row_id):
             status_from=liquidation.status,
             status_to=liquidation.status,
             remarks=f"Uploaded liquidation receipt: {original_filename}",
-            metadata={'cash_advance_id': liquidation.cash_advance_id, 'liquidation_no': liquidation.liquidation_no, 'row_id': row.id, 'receipt_filename': original_filename}
+            metadata={'cash_advance_id': liquidation.cash_advance_id, 'liquidation_no': liquidation.liquidation_no, 'receipt_filename': original_filename}
         )
         db.session.commit()
         return jsonify({
             'success': True,
             'message': 'Receipt uploaded.',
             'receipt': cash_advance_liquidation_receipt_to_dict(receipt),
-            'row': cash_advance_liquidation_row_to_dict(row),
             'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
         })
     except ValueError as exc:
@@ -69088,7 +69094,7 @@ def build_cash_advance_liquidation_approval_package_manifest(liquidation):
         {
             'key': 'receipts',
             'label': 'Individual Receipts',
-            'description': 'Uploaded receipt files attached to liquidation expense rows.',
+            'description': 'Receipt files uploaded for this liquidation.',
             'required': False,
             'available': len(receipt_items) > 0,
             'open_url': '',
@@ -70361,7 +70367,7 @@ def build_cash_advance_liquidation_receipt_compilation_pdf_bytes(liquidation):
             reimbursement_append_pdf_bytes(
                 writer,
                 travel_liquidation_receipt_divider_pdf_bytes(
-                    'ADDITIONAL CASH ADVANCE LIQUIDATION RECEIPTS',
+                    'CASH ADVANCE LIQUIDATION RECEIPTS',
                     [('Liquidation No.', liquidation_no), ('Cash Advance', cash_advance_no), ('Receipt Count', str(len(orphan_receipts)))]
                 )
             )

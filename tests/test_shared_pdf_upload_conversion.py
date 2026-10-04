@@ -307,7 +307,7 @@ class SharedPdfUploadConversionTests(unittest.TestCase):
                     patch.object(app_module, 'ensure_travel_liquidation_tables'), \
                     patch.object(app_module, 'ensure_cash_advance_liquidation_tables'), \
                     patch.object(app_module, 'validate_travel_liquidation_receipt_upload', return_value=(True, None)), \
-                    patch.object(app_module.db.session, 'get', return_value=row), \
+                    patch.object(app_module, 'get_travel_liquidation_for_requester_page', return_value=row.liquidation),                     patch.object(app_module, 'cash_advance_liquidation_get_for_requester_page', return_value=row.liquidation), \
                     patch.object(app_module, 'can_edit_travel_liquidation', return_value=(True, '')), \
                     patch.object(app_module, 'can_edit_cash_advance_liquidation', return_value=(True, '')), \
                     patch.object(app_module, 'travel_liquidation_secure_receipt_filename', return_value=('stored.pdf', 'receipt.pdf')), \
@@ -315,7 +315,7 @@ class SharedPdfUploadConversionTests(unittest.TestCase):
                     patch.object(app_module, 'reimbursement_prepare_receipt_upload_bytes', side_effect=failure), \
                     patch.object(app_module.db.session, 'rollback') as rollback, \
                     patch.object(app_module, 'managed_storage_rollback_new_file') as cleanup:
-                response = app_module.app.make_response(route(row.id))
+                response = app_module.app.make_response(route(row.liquidation.id))
             return response, rollback, cleanup
 
     def test_travel_liquidation_conversion_failure_is_http_400_and_rolls_back(self):

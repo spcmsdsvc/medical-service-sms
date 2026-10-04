@@ -3993,7 +3993,7 @@ Recipient count: ${recipientCount}` : ''),
 
     function renderLiquidationRows(rows) {
         const list = Array.isArray(rows) ? rows : [];
-        if (!list.length) return '<tr><td colspan="7" class="approval-empty">No liquidation expense rows found.</td></tr>';
+        if (!list.length) return '<tr><td colspan="6" class="approval-empty">No liquidation expense rows found.</td></tr>';
         return list.map(row => `
             <tr>
                 <td>${approvalEscape(formatExpenseDate(row.expense_date || row.date || ''))}</td>
@@ -4002,9 +4002,13 @@ Recipient count: ${recipientCount}` : ''),
                 <td>${approvalEscape([row.branch_code, row.class_code, row.dept_code, row.product_code].filter(Boolean).join(' / ') || '—')}</td>
                 <td style="text-align:right;white-space:nowrap;">${approvalEscape(formatTravelApprovalMoney(row.planned_amount || 0, row.currency_code))}</td>
                 <td style="text-align:right;font-weight:900;white-space:nowrap;">${approvalEscape(formatTravelApprovalMoney(row.actual_amount || 0, row.currency_code))}</td>
-                <td>${renderApprovalReceiptLinks(row.receipts || [])}</td>
             </tr>
         `).join('');
+    }
+
+    function renderLiquidationReceipts(receipts) {
+        const list = Array.isArray(receipts) ? receipts : [];
+        return `<div class="mt-2"><strong>Receipts (${list.length})</strong><div class="mt-1">${renderApprovalReceiptLinks(list) || '<span class="approval-muted">No receipts uploaded.</span>'}</div></div>`;
     }
 
 
@@ -4468,11 +4472,11 @@ Recipient count: ${recipientCount}` : ''),
                             <th>Codes</th>
                             <th>Reference</th>
                             <th>Actual</th>
-                            <th>Receipts</th>
                         </tr>
                     </thead>
                     <tbody>${renderLiquidationRows(data.rows || [])}</tbody>
                 </table>
+                ${renderLiquidationReceipts(data.all_receipts)}
             </div>
         `;
 
@@ -4952,11 +4956,11 @@ Recipient count: ${recipientCount}` : ''),
                             <th>Codes</th>
                             <th>Reference</th>
                             <th>Actual</th>
-                            <th>Receipts</th>
                         </tr>
                     </thead>
                     <tbody>${renderLiquidationRows(data.rows || [])}</tbody>
                 </table>
+                ${renderLiquidationReceipts(data.all_receipts)}
             </div>
         `;
 

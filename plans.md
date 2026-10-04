@@ -1,3 +1,117 @@
+# Liquidation Pages: One Receipts Section Instead of Per-Row Uploads
+
+**Status:** Executed — not yet committed; waiting for the owner's "commit and push".
+**Finished:** 2026-10-04.
+**Execution authorized:** 2026-10-04 — the owner said "go ahead partner. do not overengineer and over check things".
+**Approved:** 2026-10-04 — the owner said "approved, go with your recommendation" (Approvals option 1: one receipts list under the expense table).
+**Detailed:** 2026-10-04.
+
+**Where the plan and the outcome differed:**
+
+- **Tests are source-level** (plus the existing upload-conversion tests, now pointed at the liquidation-level routes); the fail-first run against the old code was not made.
+- **The upload button opens the file picker directly** (no pop-up), as on Reimbursement. If one file of several fails, the files already uploaded still show.
+- **Approvals** shows "Receipts (N)" under each liquidation table, with "No receipts uploaded." when empty.
+- **Verification:** 9 focused modules, 106 tests, OK; both pages render; page scripts pass `node --check`; full suite 1,506 tests, 23 failures, 3 errors, 5 skips (the baseline's non-passing set). No browser check was made.
+
+## Context
+
+After the shared liquidation page (`9faedf0`), the owner asked to change receipt uploads on both liquidation pages (Travel and Cash Advance) to work like the Reimbursement page: one upload section for the whole liquidation, with no uploads per expense row. Intended outcome: the engineer uploads all receipts in one place; the approver sees the same single list; the receipt compilation PDF and the approval package keep working; no data is moved and no schema changes.
+
+## Decisions taken
+
+1. **One "Uploaded Receipts" section** below the expense table on both pages (Upload Receipts with several files at once, Delete All Receipts, a list with view and delete per file). The per-row Receipt button, the table's Receipts column and the per-row receipt pop-up go.
+2. **New uploads are not linked to a row** (`row_id` NULL). Receipts already attached to a row stay attached, show in the same single list, and are still removed when their row is deleted. No data migration.
+3. **Approvals (option 1):** the two Approvals liquidation tables drop their per-row Receipts column and show one "Receipts" list of every receipt under the table, beside the existing Receipt Compilation PDF.
+4. **Readiness:** "N rows have no receipt" becomes "No receipts uploaded yet" — a warning, not a block (the server does not require receipts).
+5. **The per-row upload routes are replaced** by liquidation-level routes; the functions keep their names so existing callers and tests stay recognisable.
+6. **No browser automation by the agent** (project rule); the owner checks the pages visually.
+
+## Investigation
+
+Line numbers are as of commit `a54246c`.
+
+- **Schema already allows it.** `TravelLiquidationReceipt.row_id` (`app.py:2663`) and `CashAdvanceLiquidationReceipt.row_id` (`app.py:64803`) are `nullable=True`; the local tables `travel_liquidation_receipt` and `cash_advance_liquidation_receipt` have `row_id INTEGER` with no NOT NULL. Both tables are empty locally.
+- **Downstream already handles receipts without a row:**
+  - Compilation PDFs: `travel_liquidation_receipt_records_grouped_for_package` / `cash_advance_liquidation_receipt_records_grouped_for_package` return row-grouped and "orphan" receipts; `build_travel_liquidation_receipt_compilation_pdf_bytes` (`app.py:48334`) and `build_cash_advance_liquidation_receipt_compilation_pdf_bytes` (`app.py:70299`) append orphans after the rows under the divider "ADDITIONAL LIQUIDATION RECEIPTS" (`:48410`).
+  - Approval package manifests (`build_travel_liquidation_approval_package_manifest` `app.py:48476`, `build_cash_advance_liquidation_approval_package_manifest` `app.py:69059`) query receipts by `liquidation_id`, so the count and list include them. Accounting packages use the compilation PDF.
+  - Delete Receipt (`/delete_*_liquidation_receipt/<receipt_id>`) and Delete All Receipts (`/delete_all_*_liquidation_receipts/<liquidation_id>`) work by receipt or liquidation, not by row.
+- **Row-based places that miss them:**
+  - `travel_liquidation_to_dict` / `cash_advance_liquidation_to_dict` expose receipts only inside `rows[].receipts` (`travel_liquidation_row_to_dict` `app.py:46521`, `cash_advance_liquidation_row_to_dict` `app.py:67576`).
+  - `templates/approvals.html` `renderLiquidationRows` (`:3994-4009`) renders `row.receipts` in a Receipts column; it is used by the Travel detail (`renderLiquidationApprovalDetail`, table `:4462-4476`, header `:4471`) and the Cash Advance detail (`renderCashAdvanceLiquidationApprovalDetail`, table `:4946-4960`, header `:4955`). The Reimbursement table at `:5779` / `:5824` is a different renderer and is not touched.
+  - The Travel form payload (`build_travel_liquidation_form_payload`, receipts per row at `:46758`) carries row receipt counts; the Excel template does not print receipts, so it is left as is.
+- **Upload routes today:** `upload_travel_liquidation_receipt(row_id)` (`app.py:49347`, route `/upload_travel_liquidation_receipt/<int:row_id>`) and `upload_cash_advance_liquidation_receipt(row_id)` (`app.py:68146`); both look up the row, check `can_edit_*`, validate, compress through `reimbursement_prepare_receipt_upload_bytes`, write storage, create the receipt with `row_id=row.id`, audit, and roll back the stored file on failure. `travel_liquidation_secure_receipt_filename(file_obj, row_id)` / `cash_advance_liquidation_secure_receipt_filename` use the id only inside the stored filename.
+- **Page:** `templates/_liquidation_base.html` has the Receipts column, `openReceiptModal`, `uploadReceipts`, `#receiptModal`, the row "Receipt" button, the "No receipt" chip and the per-row readiness warning; `deleteReceipt` and `deleteAllLiquidationReceipts` stay.
+- **Tests touching this:** `tests/test_shared_pdf_upload_conversion.py:297-353` calls `upload_travel_liquidation_receipt` / `upload_cash_advance_liquidation_receipt` with a row and patches `db.session.get`; `tests/test_liquidation_pages.py` (`'No receipt'`, `'multiple'`, and `def upload_travel_liquidation_receipt` as a slice boundary); `tests/test_reimbursement_liquidation_row_deletion.py:48-53` (slice boundaries `def upload_*_liquidation_receipt`).
+- **Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v239-liquidation-pages`; latest release `2026-10-04-liquidation-pages`. Full-suite baseline: 1,505 tests, 23 failures, 3 errors, 5 skips.
+
+## Execution steps
+
+1. **Server upload routes** — `app.py`.
+   - `upload_travel_liquidation_receipt`: route becomes `/upload_travel_liquidation_receipts/<int:liquidation_id>`; load with `get_travel_liquidation_for_requester_page(liquidation_id=…)` (404 if none), keep `can_edit_travel_liquidation`, validation, compression, storage and rollback; create the receipt with `row_id=None`; pass `liquidation.id` to the secure-filename helper; drop `row` from the response and the audit metadata.
+   - Same for `upload_cash_advance_liquidation_receipt` → `/upload_cash_advance_liquidation_receipts/<int:liquidation_id>` with `cash_advance_liquidation_get_for_requester_page`.
+   - Done: a POST with one file to the new route stores a receipt with no row and returns the updated liquidation; the old `/upload_*_liquidation_receipt/<row_id>` routes are gone.
+
+2. **All receipts in the liquidation data** — `travel_liquidation_to_dict`, `cash_advance_liquidation_to_dict`.
+   - Add `all_receipts`: every receipt of the liquidation (row-linked and not), newest first, through the existing `*_receipt_to_dict`.
+   - Done: both payloads carry `all_receipts`; `rows[].receipts` unchanged.
+
+3. **Compilation wording** — the two compilation builders: the divider for receipts without a row reads "LIQUIDATION RECEIPTS" (they are now the normal case); the approval manifest descriptions that say receipts are "attached to liquidation expense rows" / "grouped by expense row" say "uploaded for this liquidation". Done: no other compilation behaviour changes.
+
+4. **Liquidation page** — `templates/_liquidation_base.html`.
+   - Remove the table's Receipts column (header and cell), the row Receipt button, `#receiptModal`, `openReceiptModal`, the "No receipt" chip and its CSS.
+   - Add a "Uploaded Receipts" panel below the expense table: hidden file input (`multiple`, `.pdf,.png,.jpg,.jpeg`), Upload Receipts button (disabled when not editable), Delete All Receipts (moved here from the table header), and a list rendered from `all_receipts` (file name link to `preview_url`, upload date, delete button when editable); empty state "No receipts uploaded yet."
+   - `uploadReceipts(files)`: same checks as today, posts each file to `upload_*_receipts/<liquidation id>` one after another, one summary toast.
+   - Readiness: replace the per-row warning with "No receipts uploaded yet" when `all_receipts` is empty; the submit confirm mentions it in the same case.
+   - Done: no per-row upload control remains; uploads, deletes and Delete All work from the panel on both pages.
+
+5. **Approvals** — `templates/approvals.html`.
+   - `renderLiquidationRows`: drop the Receipts cell (`colspan` 7 → 6); remove the `<th>Receipts</th>` at `:4471` and `:4955`.
+   - Under each of the two tables, render `Receipts (N)` with `renderApprovalReceiptLinks(data.all_receipts || [])` (falls back to "No receipts uploaded").
+   - Done: both liquidation approval details list every receipt once; the Reimbursement table is unchanged.
+
+6. **Tests.**
+   - `tests/test_shared_pdf_upload_conversion.py`: pass a liquidation instead of a row and patch `get_travel_liquidation_for_requester_page` / `cash_advance_liquidation_get_for_requester_page` to return it; the 400/500 and rollback assertions stay.
+   - `tests/test_liquidation_pages.py`: replace the `'No receipt'` check with the panel (`Uploaded Receipts`, `all_receipts`, `upload_*_receipts`) and assert no `openReceiptModal`, `receiptModal`, `'/upload_travel_liquidation_receipt/'` remain; add source checks that both new routes create receipts with `row_id=None`, both dicts return `all_receipts`, and `approvals.html` renders `data.all_receipts`.
+   - Slice boundaries that name `def upload_*_liquidation_receipt` keep working (names unchanged).
+   - Update the release-entry and service-worker assertions.
+
+7. **Release records.**
+   - Service worker `medical-service-pwa-offline-navigation-v240-liquidation-receipts`.
+   - `static/changelog/releases.json` entry `2026-10-04-liquidation-receipts` (engineers, category Liquidation): receipts are uploaded in one section for the whole liquidation, like Reimbursement; approvers see one list.
+   - `changes.md`, and this plan's status with any difference between plan and outcome.
+
+8. **Publish** only on the owner's separate "commit and push".
+
+## Deliberately excluded
+
+- **Moving existing row-linked receipts** to the liquidation level — they already show in the single list and in the compilation; moving them changes nothing for users.
+- **Linking a receipt to a row afterwards** — the owner asked for one section without per-row uploads.
+- **Excel form payload receipt counts per row** — the template does not print receipts.
+- **Duplicate-receipt detection** (Reimbursement has it) — needs a schema change; separate task.
+
+## Verification
+
+- Step-6 tests; the new source checks fail on the current code (no `all_receipts`, per-row route present).
+- Focused modules: `test_liquidation_pages`, `test_shared_pdf_upload_conversion`, `test_accounting_attachment_management`, `test_accounting_branch_codes`, `test_reimbursement_liquidation_row_deletion`, `test_approval_center_wording`, `test_approval_notifications`, `test_changelog_workflow`, `test_changelog_coverage`; then one full-suite run against 1,505 / 23 F / 3 E / 5 S.
+- Both pages render with `render_template`; page scripts pass `node --check`.
+- No browser check by the agent. The owner checks on both pages, desktop and phone, light and dark: upload several receipts from the panel, view and delete one, Delete All, readiness warning with no receipts, rows show no receipt controls; in Approvals, the Travel and Cash Advance liquidation details show one receipts list and the compilation PDF includes the uploads.
+
+## After implementation
+
+1. Self-review: no reference to the removed route, modal or functions remains (including `onclick`); `deleteAllLiquidationReceipts` still exists (attachment test).
+2. Focused modules, then the full suite, quoting counts against the baseline.
+3. Service worker bump and `releases.json` entry.
+4. `changes.md` and this plan's status.
+5. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file and unrelated `changes.md` entries. Commit and push only on the owner's instruction, then verify `origin/main` and Railway.
+
+## Risks
+
+- **An approver relied on seeing which row a receipt belongs to.** Old row-linked receipts keep their link in the compilation PDF; new ones are listed once. This is the owner's chosen trade-off.
+- **Bookmarked or cached clients still post to the old per-row route** — a page loaded before the deploy gets 404 on upload; the service worker bump refreshes the page.
+- **Deleting a row no longer removes the receipts uploaded for it** (they are not linked). The engineer deletes them from the panel; Delete All is there.
+
+---
+
 # Liquidation Pages (Travel and Cash Advance): Shared Base Template, Reimbursement Parity, Bug Fixes, and Less Code
 
 **Status:** Executed — commit `9faedf0`; published to `origin/main` on the owner's "commit and push".

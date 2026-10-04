@@ -64,7 +64,7 @@ class LiquidationTemplateTests(unittest.TestCase):
 
     def test_reimbursement_parity_features(self):
         for token in ('/get_my_signature', 'liqSignaturePanel', 'readinessItems', 'downloadLiquidationForm',
-                      'multiple', 'liqConfirm', 'liqToast', 'liq-dock', 'No receipt'):
+                      'multiple', 'liqConfirm', 'liqToast', 'liq-dock'):
             self.assertIn(token, BASE, token)
 
     def test_old_behaviour_and_dead_code_are_gone(self):
@@ -73,14 +73,29 @@ class LiquidationTemplateTests(unittest.TestCase):
                       'heroTripContext', 'namesFromParticipants', 'officialAmountFromSource', 'balance-card', '#064e3b'):
             self.assertNotIn(token, pages, token)
 
+    def test_one_receipts_section_without_per_row_uploads(self):
+        for token in ('Uploaded Receipts', 'all_receipts', "liqUrl('upload_*_receipts', LIQUIDATION_ID)", 'renderReceipts'):
+            self.assertIn(token, BASE, token)
+        for token in ('openReceiptModal', 'receiptModal', 'receiptRowId', 'data-label="Receipts"'):
+            self.assertNotIn(token, BASE, token)
+        for kind in ('travel', 'cash_advance'):
+            upload = block(APP_SOURCE, f'def upload_{kind}_liquidation_receipt(', '@app.route')
+            self.assertIn('row_id=None', upload)
+            self.assertIn(f"@app.route('/upload_{kind}_liquidation_receipts/<int:liquidation_id>'", APP_SOURCE)
+            self.assertNotIn(f"@app.route('/upload_{kind}_liquidation_receipt/", APP_SOURCE)
+        self.assertEqual(APP_SOURCE.count("payload['all_receipts'] = ["), 2)
+        approvals = (ROOT / 'templates' / 'approvals.html').read_text(encoding='utf-8')
+        self.assertEqual(approvals.count('${renderLiquidationReceipts(data.all_receipts)}'), 2)
+        self.assertNotIn('row.receipts', block(approvals, 'function renderLiquidationRows', 'function renderLiquidationReceipts'))
+
     def test_preview_stays_available_after_submit(self):
         buttons = block(BASE, 'function updateWorkflowButtons', '\n}')
         self.assertNotIn('previewTemplateTopBtn', buttons)
         self.assertNotIn('downloadFormBtn', buttons)
 
     def test_release_and_cache_version(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v239-liquidation-pages', APP_SOURCE)
-        self.assertIn('"2026-10-04-liquidation-pages"', (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+        self.assertIn('medical-service-pwa-offline-navigation-v240-liquidation-receipts', APP_SOURCE)
+        self.assertIn('"2026-10-04-liquidation-receipts"', (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
 
 
 if __name__ == '__main__':

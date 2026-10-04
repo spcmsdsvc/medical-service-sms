@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-04-liquidation-receipts",
+      "release_date": "2026-10-04",
+      "title": "One Place for Liquidation Receipts",
+      "summary": "Travel and Cash Advance liquidation receipts are now uploaded in one section, like Reimbursement.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-04-liquidation-receipts-engineers",
+          "category": "Liquidation",
+          "description": "Upload all receipts for a liquidation in the Uploaded Receipts section below the expense table, several files at once. Expense rows no longer have their own receipt upload. Approvers see one list of every receipt, and the receipt compilation PDF includes them all.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-04-liquidation-pages",
       "release_date": "2026-10-04",
       "title": "Clearer Liquidation Pages",
