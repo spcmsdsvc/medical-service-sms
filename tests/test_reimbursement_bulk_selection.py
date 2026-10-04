@@ -71,7 +71,7 @@ class ReimbursementBulkSelectionSourceTests(unittest.TestCase):
 
     def test_selection_is_wired_to_status_busy_submit_and_load_lifecycle(self):
         status_start = TEMPLATE.index('function applyReimbursementStatusUi()')
-        status_end = TEMPLATE.index('\n    function getReimbursementReceiptList', status_start)
+        status_end = TEMPLATE.index('\n    function renderAdditionalReimbursementReceipts', status_start)
         status_block = TEMPLATE[status_start:status_end]
         self.assertIn('syncReimbursementRowSelectionUi()', status_block)
         self.assertIn('.reim-row-select', TEMPLATE)
@@ -81,7 +81,7 @@ class ReimbursementBulkSelectionSourceTests(unittest.TestCase):
         self.assertIn('reimDeleteSelectedBtn', TEMPLATE[busy_start:busy_end])
 
         submit_start = TEMPLATE.index('function setReimbursementSubmitInputsBusy(')
-        submit_end = TEMPLATE.index('function showReimbursementDeleteDraftConfirm', submit_start)
+        submit_end = TEMPLATE.index('async function deleteReimbursementDraft', submit_start)
         self.assertIn('.reim-row-select', TEMPLATE[submit_start:submit_end])
 
         load_start = TEMPLATE.index('async function loadReimbursementRows(')

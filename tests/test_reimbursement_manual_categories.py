@@ -49,7 +49,7 @@ class ReimbursementManualCategorySourceTests(unittest.TestCase):
             'Coding',
             'Others',
         ):
-            self.assertIn(label, TEMPLATE)
+            self.assertIn(f"'{label}'", APP_SOURCE)
 
     def test_backend_keeps_mapping_reimbursement_local_and_legacy_others(self):
         self.assertIn('REIMBURSEMENT_MANUAL_CATEGORY_FIELDS', APP_SOURCE)

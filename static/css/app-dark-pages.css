@@ -796,7 +796,7 @@
     .cash-notification-message, .cash-notification-time, .cash-attachment-meta, .cash-request-meta,
     .travel-history-meta, .travel-notification-item-message, .travel-notification-item-time,
     .travel-attachment-meta, .travel-hint, .travel-currency-note, .travel-amount-hint,
-    .reim-muted, .reim-mobile-meta, .mini-help, .trip-context-muted,
+    .reim-muted, .mini-help, .trip-context-muted,
     .reference-card .ref-items, .liq-label, .ca-liq-label
 ) {
     color: var(--dark-muted) !important;

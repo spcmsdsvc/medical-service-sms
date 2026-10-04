@@ -129,7 +129,7 @@ class ActivityLogImplementationContractTests(unittest.TestCase):
             self.assertIn(token, APP_SOURCE)
 
     def test_save_source_is_sent_and_internal_saves_are_non_manual(self):
-        self.assertIn("save_source: (options && options.save_source)", REIMBURSEMENT_TEMPLATE)
+        self.assertIn("                save_source: saveSource,", REIMBURSEMENT_TEMPLATE)
         self.assertIn("saveReimbursementDraft(true, { autosave: true })", REIMBURSEMENT_TEMPLATE)
         self.assertIn("saveReimbursementDraft(false, { transition: true })", REIMBURSEMENT_TEMPLATE)
         self.assertIn("saveReimbursementDraft(true, { background: true })", REIMBURSEMENT_TEMPLATE)
@@ -167,7 +167,6 @@ class ActivityLogImplementationContractTests(unittest.TestCase):
         )
         self.assertTrue(release['is_published'])
         self.assertTrue(any(item['category'] == 'Activity Log' for item in release['items']))
-        self.assertIn('medical-service-pwa-offline-navigation-v237-activity-log-simple', APP_SOURCE)
 
 
 if __name__ == '__main__':

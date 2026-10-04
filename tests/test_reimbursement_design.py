@@ -54,7 +54,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         group_end = TEMPLATE.index('</div>', group_start)
         group = TEMPLATE[group_start:group_end]
         self.assertIn('id="reimDeleteDraftBtn"', group)
-        self.assertIn('id="reimClearBtn"', group)
+        self.assertNotIn('reimClearBtn', TEMPLATE)
         self.assertIn('.reim-btn-download {', TEMPLATE)
         self.assertIn('var(--app-surface-muted', TEMPLATE)
 
@@ -142,11 +142,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         remarks_position = mobile_block.index('<textarea class="reim-remarks"')
         self.assertLess(identity_position, expense_position)
         self.assertLess(expense_position, remarks_position)
-        for key in (
-            'representation', 'car_repair', 'toll_fee', 'gasoline', 'transpo',
-            'office_supplies', 'parking', 'per_diem', 'coding', 'others',
-        ):
-            self.assertIn(key, helper)
+        self.assertIn('reimbursementCategoryLabels', helper)
         self.assertIn('rows="3"', mobile_block)
 
     def test_history_cards_have_distinct_amount_metadata_remarks_and_actions_regions(self):
@@ -287,8 +283,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
             'reim-total-date-cell',
             'reim-total-schedule-cell',
             'reim-total-client-cell',
-            'data-total-expense="representation"',
-            'data-total-expense="others"',
+            'data-total-expense="{{ key }}"',
             'id="reimGrandTotal"',
         ):
             self.assertIn(token, footer)
@@ -490,7 +485,6 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
             'reim-dialog-backdrop',
             'reim-row-details-backdrop',
             'reimManualItemModal',
-            'reimSignatureModal',
             'window.innerWidth >= 821',
         ):
             self.assertIn(token, TEMPLATE)
@@ -522,8 +516,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
             const modalClasses = {{
                 'reim-dialog-backdrop': new Set(),
                 'reim-row-details-backdrop': new Set(),
-                'reimManualItemModal': new Set(),
-                'reimSignatureModal': new Set()
+                'reimManualItemModal': new Set()
             }};
             const elements = {{ reimFocusToggle: button, reimFocusToggleLabel: label }};
             Object.keys(modalClasses).forEach(id => {{
@@ -639,7 +632,6 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
             self.assertIn(selector, focus_css)
         self.assertIn('.reim-submit-notice.show', focus_css)
         self.assertIn('.reim-signature-required-panel.show', focus_css)
-        self.assertIn('.reim-delete-draft-panel.show', focus_css)
         self.assertIn('toggleReimbursementFocusPanel(', TEMPLATE)
         self.assertIn('closeReimbursementFocusPanel(', TEMPLATE)
 
@@ -717,7 +709,6 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         self.assertIn('id="reimFocusMorePanel"', TEMPLATE)
         self.assertIn('reimDownloadExcelBtn', TEMPLATE)
         self.assertIn('reimDeleteDraftBtn', TEMPLATE)
-        self.assertIn('reimClearBtn', TEMPLATE)
         self.assertIn('data-focus-panel="reimFocusMorePanel"', TEMPLATE)
         mobile_start = TEMPLATE.rindex('@media (max-width: 820px)')
         mobile_css = TEMPLATE[mobile_start:TEMPLATE.index('</style>', mobile_start)]
@@ -741,7 +732,6 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         self.assertIn('focusManualBtn.title = editable', TEMPLATE)
         for token in (
             'reim-submit-notice.show',
-            'reim-delete-draft-panel.show',
             'reim-signature-required-panel.show',
             'reimbursementFocusPanelPreviousFocus',
         ):

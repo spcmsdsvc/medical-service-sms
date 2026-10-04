@@ -58,7 +58,7 @@ class LPRFeatureSwitchSourceTests(unittest.TestCase):
         self.assertLess(replay, drain_guard, 'drain guard moved above idempotent replay lookup')
 
         submit_start = self.app_source.index('def submit_reimbursement():')
-        submit_end = self.app_source.index("@app.route('/download_reimbursement_form", submit_start)
+        submit_end = self.app_source.index("@app.route('/download_reimbursement_pcv", submit_start)
         submit_source = self.app_source[submit_start:submit_end]
         self.assertIn(
             'if office_field_sources and (lpr_accepting_new() or (lpr_enabled() and linked_lprs)):',

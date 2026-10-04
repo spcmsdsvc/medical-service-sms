@@ -27028,7 +27028,7 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v237-activity-log-simple';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v238-reimbursement-cleanup';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28716,6 +28716,20 @@ def timeline_page():
     )
 
 
+REIMBURSEMENT_PAGE_CATEGORIES = (
+    ('representation', 'Representation'),
+    ('car_repair', 'Car Repair'),
+    ('toll_fee', 'Toll Fee'),
+    ('gasoline', 'Gasoline'),
+    ('transpo', 'Transpo'),
+    ('office_supplies', 'Office/Field Items'),
+    ('parking', 'Parking'),
+    ('per_diem', 'Per Diem'),
+    ('coding', 'Coding'),
+    ('others', 'Others'),
+)
+
+
 @app.route('/reimbursement')
 @login_required
 def reimbursement_page():
@@ -28726,7 +28740,8 @@ def reimbursement_page():
     return render_template(
         'reimbursement.html',
         logged_in_engineer_id=(profile.id if profile else None),
-        reimbursement_can_view_all=False
+        reimbursement_can_view_all=False,
+        reimbursement_categories=REIMBURSEMENT_PAGE_CATEGORIES
     )
 
 
@@ -37985,11 +38000,9 @@ def reimbursement_manual_receipt_match_key_from_payload(row_payload):
 @app.route('/get_reimbursement_schedule_rows')
 @login_required
 def get_reimbursement_schedule_rows():
-    """Phase 6 foundation: return schedule rows for reimbursement date range.
+    """Return the current engineer's unclaimed work schedules for a date range.
 
-    Engineers and hybrid users receive their own assigned schedules by default.
-    Scheduler/admin users without an engineer profile can view all schedule rows
-    for the selected range so the page remains usable for office-side validation.
+    Accounts without a linked engineer profile receive a 400 explaining why.
     """
     try:
         start_date = reimbursement_parse_date(request.args.get('start'), 'start')
@@ -40440,90 +40453,6 @@ def submit_travel_liquidation(liquidation_id):
         db.session.rollback()
         print(f"[TravelLiquidation] Submit failed: {exc}", flush=True)
         return jsonify({'success': False, 'error': 'Unable to submit liquidation for approval.'}), 500
-
-
-
-@app.route('/clear_reimbursement_draft', methods=['POST'])
-@csrf.exempt
-@login_required
-def clear_reimbursement_draft():
-    """Clear the current user's editable reimbursement draft for a selected date range.
-
-    Removes:
-    - reimbursement rows, including manual rows
-    - row-level receipts
-    - additional/header-level receipts
-    - physical receipt files where present
-
-    Submitted/Approved reimbursements are intentionally protected.
-    """
-    payload = request.get_json(silent=True) or {}
-
-    try:
-        start_date = reimbursement_parse_date(payload.get('start') or payload.get('start_date'), 'start')
-        end_date = reimbursement_parse_date(payload.get('end') or payload.get('end_date'), 'end')
-    except ValueError as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 400
-
-    requested_header_id = clean_int(payload.get('id') or payload.get('reimbursement_id'))
-    header, err_resp, err_code = reimbursement_find_owned_header_or_404(
-        start_date,
-        end_date,
-        create=False,
-        reimbursement_id=requested_header_id
-    )
-    if err_resp:
-        # Treat missing draft as already clear so the frontend can safely reset.
-        if err_code == 404:
-            return jsonify({'success': True, 'message': 'No reimbursement draft found to clear.', 'cleared': False})
-        return err_resp, err_code
-
-    if not reimbursement_header_is_editable(header):
-        return reimbursement_edit_lock_response(header, 'cleared')
-
-    receipt_paths = []
-    try:
-        receipts = ReimbursementReceipt.query.filter_by(
-            reimbursement_id=header.id,
-            uploaded_by_id=current_user.id
-        ).all()
-
-        for receipt in receipts:
-            receipt_paths.append(os.path.join(
-                reimbursement_receipt_upload_root(),
-                os.path.basename(clean_str(receipt.stored_filename) or '')
-            ))
-            db.session.delete(receipt)
-
-        ReimbursementRow.query.filter_by(reimbursement_id=header.id).delete()
-        db.session.delete(header)
-        db.session.commit()
-
-        removed_files = 0
-        for path in receipt_paths:
-            if path:
-                try:
-                    managed_storage_delete(STORAGE_PREFIX_REIMBURSEMENTS, path)
-                    removed_files += 1
-                except Exception as file_err:
-                    print(f"[Reimbursement] Clear draft file delete skipped: {file_err}")
-
-        try:
-            log_activity(f"Cleared reimbursement draft {start_date.isoformat()} to {end_date.isoformat()}")
-        except Exception as log_err:
-            print(f"[Reimbursement] Clear draft activity log skipped: {log_err}")
-
-        return jsonify({
-            'success': True,
-            'cleared': True,
-            'files_removed': removed_files,
-            'message': 'Reimbursement draft cleared.'
-        })
-
-    except Exception as exc:
-        db.session.rollback()
-        print(f"[Reimbursement] Clear draft failed: {exc}")
-        return jsonify({'success': False, 'error': 'Unable to clear reimbursement draft.'}), 500
 
 
 
@@ -50780,8 +50709,6 @@ def submit_reimbursement():
             approver for approver in get_assigned_approvers_for_requester(current_user.id, 'reimbursement')
             if getattr(approver, 'id', None) != current_user.id
         ]
-        if not approvers and is_legacy_reimbursement_approval_user(db.session.get(User, current_user.id)):
-            approvers = []
         if not approvers:
             legacy_approver = User.query.filter(func.lower(func.trim(User.username)) == APPROVAL_CENTER_MANAGER_USERNAME).first()
             if legacy_approver and getattr(legacy_approver, 'id', None) != current_user.id:
@@ -50846,50 +50773,7 @@ def submit_reimbursement():
     except Exception as exc:
         db.session.rollback()
         print(f"[Reimbursement] Submit failed: {exc}", flush=True)
-        return jsonify({'success': False, 'error': f'Unable to submit reimbursement: {exc}'}), 500
-
-
-@app.route('/download_reimbursement_form')
-@login_required
-def download_reimbursement_form():
-    """Generate the first reimbursement output: Excel workbook matching the accounting form."""
-    header = None
-
-    try:
-        header = reimbursement_fetch_download_header_from_request()
-
-        wb = build_reimbursement_excel_workbook(header)
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-
-        engineer = db.session.get(Engineer, header.engineer_id) if header.engineer_id else None
-        filename = reimbursement_excel_filename(header, getattr(engineer, 'name', '') if engineer else '')
-
-        try:
-            log_activity(f"Downloaded reimbursement Excel form {header.start_date.isoformat()} to {header.end_date.isoformat()}")
-        except Exception as log_err:
-            print(f"[Reimbursement] Excel download log skipped: {log_err}")
-
-        return send_file(
-            output,
-            as_attachment=True,
-            download_name=filename,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-
-    except PermissionError as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 403
-    except LookupError as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 404
-    except ImportError:
-        return jsonify({'success': False, 'error': 'Excel generation dependency is not installed.'}), 500
-    except ValueError as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 400
-    except Exception as exc:
-        print(f"[Reimbursement] Excel generation failed: {exc}")
-        return jsonify({'success': False, 'error': 'Unable to generate reimbursement Excel form.'}), 500
-
+        return jsonify({'success': False, 'error': 'Unable to submit reimbursement. Please try again.'}), 500
 
 
 @app.route('/download_reimbursement_pcv')

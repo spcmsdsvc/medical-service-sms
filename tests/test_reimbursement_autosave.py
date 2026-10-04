@@ -83,7 +83,7 @@ class ReimbursementAutosaveSourceTests(unittest.TestCase):
 
     def test_submit_rechecks_latest_version_before_irreversible_request(self):
         submit_start = TEMPLATE.index('async function submitReimbursement()')
-        submit_end = TEMPLATE.index('\n    function getLoadedReimbursementDates', submit_start)
+        submit_end = TEMPLATE.index('\n    function getDateRangeValues', submit_start)
         submit_block = TEMPLATE[submit_start:submit_end]
         self.assertIn('const submitContextKey = reimbursementCurrentContext().key;', submit_block)
         self.assertIn('const submitEditVersion = reimbursementEditVersion;', submit_block)
@@ -94,7 +94,6 @@ class ReimbursementAutosaveSourceTests(unittest.TestCase):
     def test_clear_delete_and_transition_invalidate_pending_saves(self):
         for function_name in (
             'async function deleteReimbursementDraft()',
-            'async function clearReimbursementForm()',
         ):
             start = TEMPLATE.index(function_name)
             end = TEMPLATE.find('\n    async function ', start + len(function_name))

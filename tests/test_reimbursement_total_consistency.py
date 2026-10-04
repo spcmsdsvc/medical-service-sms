@@ -101,7 +101,7 @@ class ReimbursementTotalConsistencyTests(unittest.TestCase):
         self.assertIn("'reimbursement_total_summary': total_summary", APP_SOURCE)
         self.assertIn('applyReimbursementTotalSummary(payload)', REIMBURSEMENT_TEMPLATE)
         self.assertIn('Official saved total:', REIMBURSEMENT_TEMPLATE)
-        self.assertIn("tone === 'warn' ? '#b45309'", REIMBURSEMENT_TEMPLATE)
+        self.assertIn('.reim-save-status[data-tone="warn"]', REIMBURSEMENT_TEMPLATE)
         self.assertIn('loadedWarning', REIMBURSEMENT_TEMPLATE)
 
     def test_excel_materializes_totals_for_manual_items_without_recalculation(self):

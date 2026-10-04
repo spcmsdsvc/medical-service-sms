@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-04-reimbursement-cleanup",
+      "release_date": "2026-10-04",
+      "title": "Smoother Reimbursement Page",
+      "summary": "The Reimbursement page loads this month straight away, shows one clear message per action, and Delete Draft now cleans up fully.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-04-reimbursement-cleanup-engineers",
+          "category": "Reimbursement",
+          "description": "This month's schedules load when you open the page, and This Week / This Month load straight away. Autosave no longer pops up a message every time you type, and a successful submit shows one green message. Clear Form is gone: Delete Draft (under More) asks first and also removes the attached LPR. If a saved draft covers some of the dates you loaded, the page tells you and offers to open it. Failed downloads now say why on the page, and the page reads better in dark mode and follows your accent colour.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-03-activity-log-simple",
       "release_date": "2026-10-03",
       "title": "Simpler Activity Log",

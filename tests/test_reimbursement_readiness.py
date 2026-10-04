@@ -187,7 +187,7 @@ class ReimbursementReadinessSourceTests(unittest.TestCase):
         self.assertIn("if (!reimbursementReadinessTokenMatches(token)) return false;", sig_block)
         save_start = TEMPLATE.index("async function executeReimbursementSaveEntry(entry)")
         save_end = TEMPLATE.index("\n    function startReimbursementSaveEntry", save_start)
-        self.assertIn("reimbursementReadinessState.lprSavedVersion = entry.version;", TEMPLATE[save_start:save_end])
+        self.assertIn("reimbursementReadinessState.lpr = 'ready';", TEMPLATE[save_start:save_end])
 
     def test_dock_layout_reserves_space_and_respects_focus_mobile_and_print(self):
         css_start = TEMPLATE.index(".reim-action-dock {")

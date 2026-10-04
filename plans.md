@@ -1,3 +1,185 @@
+# Reimbursement Page: Bug Fixes, Quieter Messages, One Delete Action, and Less Code
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Finished:** 2026-10-04.
+**Execution authorized:** 2026-10-04 — the owner said "go ahead partner. do not overengineer and over check things".
+**Approved:** 2026-10-04 — the owner said "approved, keep zoom, go with your other recommendations".
+**Detailed:** 2026-10-04.
+
+**Where the plan and the outcome differed:**
+
+- **Tests are source-level, not test-client.** Per the owner's "do not over check", the save-source, toast, dead-code, category, submit-error and download checks are string contracts in the new `tests/test_reimbursement_page_cleanup.py` (7 tests; the first 6 failed on the old code). No test-client save/LPR-delete test was added; Delete Draft's LPR cleanup is unchanged server code.
+- **More dead state removed:** after the per-row receipt code went, `reimbursementReceiptsByShift` and `getReimbursementReceiptKey` were only ever written, so they were removed too.
+- **`scope` / `can_view_all` stay** in the schedule-rows response; only the docstring was corrected.
+- **Manual Save Draft shows a "Draft saved." message**; autosave, background and transition saves show none. A successful download says "Downloaded <filename>." in the status line.
+- **The `v237` service-worker assertion** in `tests/test_activity_log_hardening.py` was removed; the new test pins `v238`.
+- **Verification:** `templates/reimbursement.html` 9,220 → 8,325 lines; the page script passes `node --check`; the template compiles; the 15 reimbursement/activity/LPR-switch modules pass (138 tests, 3 skipped); full suite 1,495 tests, 23 failures, 3 errors, 5 skips (the baseline's non-passing set, all in unrelated modules). No browser check was made.
+
+## Context
+
+The owner asked for a deep review of the Reimbursement page (`/reimbursement`, `templates/reimbursement.html`, and the routes it calls in `app.py`) for bugs, data not captured, inconsistencies, possible improvements, removable code and simplifications. The review found ten bugs, among them autosaves being logged as manual saves, a red error message on a successful submit, a Clear Form action that leaves the linked LPR behind, and dark-mode colour gaps. It also found about 500 lines of dead script, markup and CSS, and an expense-category list written out about eight times. The intended outcome: the page behaves the same for engineers but reports results honestly with one message per action, has one delete action that cleans up fully, loads the worksheet on open, and carries noticeably less code.
+
+## Decisions taken
+
+1. **All proposed bug fixes, improvements and removals are in scope**, except removing the worksheet zoom.
+2. **Worksheet zoom (60–110%) stays.** Browser zoom scales the whole page; the worksheet zoom shrinks only the table so more columns fit while the dock and toolbar stay readable.
+3. **The unused signature pop-up is deleted.** Signing stays in Settings through the existing "Signature Required" panel and readiness action.
+4. **Clear Form is removed.** Delete Draft is the only destructive action for a draft and uses the shared confirmation dialog.
+5. **The page loads the current month on open**, and This Week / This Month load immediately.
+6. **No browser automation by the agent** (project rule). Verification uses the Flask test client, source checks and `node --check`; the owner checks the page visually.
+7. **Mobile cards stay as they are** (see Deliberately excluded).
+
+## Investigation
+
+Line numbers are as of commit `ae5c2b6`. Template: `templates/reimbursement.html` (9,220 lines: CSS `:4-3323`, markup `:3325-3820`, script `:3821-9217`).
+
+**Bugs (verified):**
+
+- **B1 Autosaves logged as manual saves.** `reimbursementCaptureSaveEntry` (`:6662-6695`) puts `save_source` on the entry object (`:6682`), not in `entry.payload` (`:6671-6679`), which is what is posted (`:6718`). The server defaults a missing value to `'manual'` (`app.py:39329`) and logs every manual save (`app.py:39572`). Confirmed locally: Kent has three "Saved reimbursement draft 2026-06-01 to 2026-06-30" rows at 08:36:43, 08:37:31 and 08:37:47 on 2026-09-25 with totals 300 → 700 → 1,700. `tests/test_activity_log_hardening.py:131-137` only checks that the source string exists, so it passes.
+- **B2 Red message on a successful submit.** After success, `submitReimbursement` calls `setReimbursementDraftStatus(message, 'ok')` (toast), `setReimbursementSubmitNotice(..., 'ok')` (toast) and `reimAlert(message)` (`:7999-8012`). `reimAlert` defaults to tone `'error'` (`:4948-4950`), so the third toast is a red "Action Needed".
+- **B3 Toast on every autosave and double toasts.** `setReimbursementDraftStatus` toasts on every `'ok'` or `'error'` tone (`:6479-6481`). Autosave success uses `'ok'` (`:6775`), so a "Success" toast appears about a second after each typing pause. Row remove/restore calls both `setReimbursementDraftStatus(successMessage, 'ok')` and `reimAlert(successMessage, 'success')` (`:7183-7184`). Loading a worksheet also toasts "… reimbursement loaded" (`:8365`).
+- **B4 Green toast when submit is blocked by a missing signature** (`:8850`).
+- **B5 Delete Draft shown for a never-saved worksheet.** `applyReimbursementStatusUi` shows it whenever rows exist (`:6017-6026`), without checking `currentReimbursementId`. The server answers 404 "Reimbursement draft was not found." (`app.py:39128`).
+- **B6 Clear Form leaves the linked LPR behind.** `/clear_reimbursement_draft` (`app.py:40446-40526`) deletes receipts, rows and the header but does not call `delete_linked_lprs_for_parent` and writes no approval audit; `/delete_reimbursement_draft` (`app.py:40530-40637`) does both (`:40587-40601`). Apart from that the two actions do the same thing. `/clear_reimbursement_draft` is only called from this page.
+- **B7 `parseReimbursementJsonResponse` is defined twice** (`:4952` and `:6547`). The later declaration wins; the first is dead.
+- **B8 Submit 500 returns the raw exception text** (`app.py:50849`).
+- **B9 Download errors show raw JSON in a new tab.** `downloadReimbursementExcel` opens `/download_reimbursement_package` through a hidden `target="_blank"` link (`:7639-7648`, `:7681`) and reports "Download started" regardless of the response.
+- **B10 Dark-mode and accent gaps from hard-coded colours:** inline `background:#f8fafc;color:#94a3b8` on read-only manual-row cells (`:5292`, `:5451`), inline status colours in `setReimbursementDraftStatus` (`:6475-6477`), and a fixed green header gradient (`:12-19`) that ignores the accent theme. The page CSS has 363 hex colours against 137 `var(--…)` uses; its dark rules live in `static/css/app-dark-pages.css` (29 `reim-` rules).
+
+**Inconsistencies:**
+
+- **I1** The header says schedules auto-load (`:3328`), but on open the page only sets this month's dates (`:9198`); This Week / This Month (`:5247-5276`) also only set dates.
+- **I2** The server rejects ranges over 63 days (`app.py:38003`, `:39345`); the page has no check, so the error appears only after Load.
+- **I3** The submit notice names "Rodito's Submitted queue" (`:8004`), although approvers are routed by Settings.
+- **I4** Drafts are found by exact start/end (`reimbursement_find_editable_header`, `app.py:37492-37510`). Loading June 1–15 while a June 1–30 draft exists opens a blank worksheet with no hint. Submit-time conflict checks (`app.py:50706-50721`) still prevent double claims.
+- **I5** The readiness panel always lists "0 rows will be excluded" (`:4015-4020`).
+- **I6** Delete Draft uses its own inline panel (`#reimDeleteDraftPanel`, `:3397-3404`, CSS `:866-895`) instead of `reimConfirmDialog`.
+
+**Dead code (verified by usage search across templates, static and tests):**
+
+- Signature pop-up never opened (`openReimbursementSignaturePrompt` has no caller): markup `#reimSignatureModal` (`:3762-3797`), script `:8601-8780` and `:8856-9013` (`getReimbursementSignatureCanvas`, `initializeReimbursementSignatureCanvas`, `updateReimbursementSignaturePreview`, `updateReimbursementSignaturePreviewFromCanvas`, `clearReimbursementSignatureCanvas`, `setReimbursementSignatureSaveStatus`, `compressReimbursementSignatureDataUrl`, `previewReimbursementSignatureUpload`, `openReimbursementSignaturePrompt`, `closeReimbursementSignaturePrompt`, `cancelReimbursementSignaturePrompt`, `canvasToBlobPromise`, `saveReimbursementSignatureAndContinue` and the five `reimbursementSignature*` variables), CSS `.reim-signature-modal … .reim-signature-note` (`:1427-1530`). Keep `fetchCurrentReimbursementSignatureStatus`, `refreshReimbursementSignatureStatus`, `ensureReimbursementSignatureBeforeSubmit` and the `#reimSignatureRequiredPanel` flow. `'reimSignatureModal'` also appears in `isReimbursementFocusDialogOpen` (`:4655`).
+- Functions with no caller: `calculateRowTotal` (`:5384`), `findSavedManualRow` (`:8101`), `getLoadedReimbursementDates` (`:8026`), `reloadCurrentReimbursementDraftOnly` (`:8115`), `renderReimbursementReceiptTools` (`:6117`), `uploadReimbursementReceipt` (`:6300`), then `getReimbursementReceiptList` (`:6085`, only used by the removed renderer).
+- `reimbursementReadinessState.lprSavedVersion` is written (`:3910`, `:6588`, `:6771`, `:7792`, `:7811`, `:7828`, `:8285`) and never read; `savedVersion` is passed to the readiness builder (`:4097`) and never read.
+- `flattenReimbursementReceiptMap` (`:6168`) is only a fallback for `all_receipts`, which `/get_reimbursement_receipts` always returns (`app.py:39790-39824`).
+- Unused CSS classes: `reim-btn-warning`, `reim-mobile-meta`, `reim-mobile-receipts`, `reim-receipt-cell`, `reim-receipt-tools`, `reim-view-control` (plus `.reim-mobile-meta` in `app-dark-pages.css:799`).
+- Server: no-op `if not approvers and is_legacy_reimbursement_approval_user(...): approvers = []` (`app.py:50783-50784`); `/download_reimbursement_form` (`app.py:50852-50891`) has no caller (the package ZIP contains the same workbook; `tests/test_lpr_feature_switch.py:61` uses it only as a slice boundary); the `get_reimbursement_schedule_rows` docstring (`app.py:37988-37993`) says admins without a profile see all rows, but the code returns 400 for them, and its constant `scope`/`can_view_all` fields are unread.
+- Category list written out about eight times: View checkboxes (`:3535-3544`), table header (`:3584-3593`), totals row (`:3608-3617`), manual-item select (`:3728-3738`), and in script `reimbursementExpenseKeys` (`:3824`), `reimbursementManualCategoryOptions` (`:3837`), the mobile `labels` map (`:5468-5479`) and `normalizeReimbursementAmounts` (`:5093`).
+
+**Things checked and found sound:** the save queue and stale-response guards, the server's replace-all row save with manual-receipt re-linking, claim-conflict checks at save and submit, ownership checks on every route, and receipt validation (client 35 MB, server optimises to 2 MB).
+
+**Tests that read this page:** `tests/test_reimbursement_autosave.py`, `_bulk_selection`, `_design`, `_liquidation_row_deletion`, `_lpr_integration`, `_manual_categories`, `_migration_lock`, `_pcv_summary`, `_range_reuse`, `_readiness`, `_total_consistency`, `_worksheet_views`, `tests/test_activity_log_hardening.py`, `tests/test_lpr_feature_switch.py`. Baseline for these 13 reimbursement/activity modules: **121 tests, OK, 3 skipped**. Full-suite baseline from the last plan: 1,488 tests, 23 failures, 3 errors, 5 skips.
+
+**Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v237-activity-log-simple` (`app.py:27031`); latest release `2026-10-03-activity-log-simple`.
+
+## Execution steps
+
+1. **Save source (B1)** — `templates/reimbursement.html` `reimbursementCaptureSaveEntry`.
+   - Compute `save_source` once and put it inside `entry.payload` (keep `entry.save_source` only if something reads it; otherwise drop it).
+   - `enqueueReimbursementSave`: when a queued entry is replaced, carry the stronger source (`manual` > `transition` > `background` > `autosave`) into `payload.save_source`.
+   - Done: an autosave posts `save_source: "autosave"`; a Save Draft click posts `"manual"`; the server writes an activity row only for a created header or a manual save.
+
+2. **One message per action (B2, B3, B4, S2)** — `setReimbursementDraftStatus`, `setReimbursementSubmitNotice` and their callers.
+   - Neither function toasts any more; they only update the status line / notice.
+   - Add explicit `reimToast` calls only where the user acted and needs a result: Save Draft click (success or error), submit (one green on success, one red on error), row remove/restore (one green), receipt upload/delete (one), delete draft (one), LPR delete (one), download failure (one red). Errors from autosave stay in the status line only.
+   - `reimAlert` stays the error helper; replace the success call at `:8012` and remove the second toast at `:7184`.
+   - Signature-blocked submit: status line in warn tone, no green toast.
+   - Done: typing produces no toasts; a successful submit produces exactly one green toast; no success path calls `reimAlert` without a tone.
+
+3. **One delete action (B5, B6, I6, R4)**.
+   - Template: remove the Clear Form button (`#reimClearBtn`), `clearReimbursementForm`, its references in `applyReimbursementStatusUi` and `setReimbursementButtonsBusy`, the `#reimDeleteDraftPanel` markup, `showReimbursementDeleteDraftConfirm` / `hideReimbursementDeleteDraftConfirm` and their CSS.
+   - Delete Draft button calls `deleteReimbursementDraft`, which first asks through `reimConfirmDialog` (danger tone, same wording as the removed panel, mentioning the attached LPR).
+   - Show Delete Draft only when `currentReimbursementId` is set and the record is editable.
+   - `app.py`: remove the `/clear_reimbursement_draft` route.
+   - Done: a never-saved worksheet shows no Delete Draft; deleting a saved draft removes rows, receipts and linked LPRs and writes the audit entry; no reference to `clear_reimbursement_draft` or `reimClearBtn` remains outside tests that assert their absence.
+
+4. **Dead code (B7, R1–R3)**.
+   - Template: delete the first `parseReimbursementJsonResponse` (`:4952-4965`); the signature pop-up markup, script and CSS listed under Investigation (and `'reimSignatureModal'` from `isReimbursementFocusDialogOpen`); the seven unused functions plus `getReimbursementReceiptList`; `lprSavedVersion` and `savedVersion`; the `flattenReimbursementReceiptMap` fallback (use `payload.all_receipts || []`); the six unused CSS classes.
+   - `static/css/app-dark-pages.css`: drop `.reim-mobile-meta` from its selector list.
+   - `app.py`: remove the no-op approver lines, the `/download_reimbursement_form` route, and correct the `get_reimbursement_schedule_rows` docstring (keep its response fields, which are harmless, or drop `scope`/`can_view_all` if no caller reads them — check `approvals.html` and `accounting_center.html` first).
+   - Done: a search for every removed name returns no hits in `templates/` and `static/`; `isReimbursementFocusDialogOpen` still lists the remaining dialogs.
+
+5. **One category list (S1)**.
+   - `app.py` `reimbursement_page`: pass `reimbursement_categories` (ordered `(key, label)` pairs: representation, car_repair, toll_fee, gasoline, transpo, office_supplies "Office/Field Items", parking, per_diem, coding, others) to the template.
+   - Template: render the View checkboxes, table header cells, totals cells and manual-item options with Jinja loops over it; in script define `const reimbursementCategories = {{ reimbursement_categories|tojson }};` and derive `reimbursementExpenseKeys`, `reimbursementManualCategoryOptions` and the mobile labels from it. `reimbursementManualCategoryFields` (legacy `parking_coding` / `others_misc` mapping) and `normalizeReimbursementAmounts` stay.
+   - Done: the rendered HTML has the same ten categories in the same order with the same `data-expense` / `data-total-expense` / `data-expense-category` attributes and labels as before.
+
+6. **Downloads (B9)** — `downloadReimbursementExcel`.
+   - Fetch `/download_reimbursement_package?…` with `credentials: 'same-origin'`; on a non-OK response read the JSON error and show it (status line + one red toast); on success save the blob through an object URL with the filename from `Content-Disposition` (fallback `reimbursement-package.zip`), then revoke the URL.
+   - Remove `triggerReimbursementDownload` if nothing else uses it.
+   - Done: a failing download shows the server's message on the page and opens no tab; a successful one saves the ZIP and then says "Downloaded".
+
+7. **Small fixes (B8, I2, I3, I5)**.
+   - `app.py` `submit_reimbursement`: the 500 response says "Unable to submit reimbursement. Please try again." (the exception stays in the server log).
+   - `loadReimbursementRows`: before fetching, if start > end or the range is over 63 days, show "Choose a range of 63 days or less." and stop (server checks stay).
+   - Submit notice: "Reimbursement #N is now in the manager's approval queue." instead of naming a person.
+   - Readiness: add the zero-value-rows advisory only when the count is above 0.
+   - Done: each message appears as stated.
+
+8. **Loading and overlapping drafts (I1, I4)**.
+   - `DOMContentLoaded`: when no `reimbursement_id` is in the URL, set this month and call `loadReimbursementRows`.
+   - `setReimbursementThisWeek` / `setReimbursementThisMonth`: after setting the dates, call `loadReimbursementRows({ skipTransition: true })` (the transition prompt has already run inside them).
+   - Header text: "Choose a date range to load your assigned schedules." (accurate whether or not it auto-loads).
+   - Keep the last history items from `loadMyReimbursementStatuses` in a variable. Add `renderReimbursementOverlapNotice()` called at the end of both `loadReimbursementRows` and `loadMyReimbursementStatuses`: if a Draft or Rejected record other than the current one has a range that overlaps the loaded range but is not identical, show one line under the worksheet heading — "You have a saved draft for MM-DD-YYYY to MM-DD-YYYY that covers some of these dates." — with an Open button calling `openReimbursementStatusRecord(id, start, end)`. Hide it otherwise. New element `#reimOverlapNotice` (`role="status"`).
+   - Done: opening the page shows this month's rows without a click; loading June 1–15 with a June 1–30 draft shows the notice and Open loads that draft.
+
+9. **Dark mode and accent (B10)**.
+   - Replace the inline styles on read-only manual-row inputs with a class (reuse `.reim-locked-field` or add `.reim-amount-inactive`) styled with theme tokens; add its dark rule to `static/css/app-dark-pages.css`.
+   - `setReimbursementDraftStatus`: drop `el.style.color`; colour comes from the existing `reim-save-status-*` classes (add a warn class if needed), with dark rules.
+   - `.reim-hero`: use the app's accent tokens (as the Colour Themes plan did for other pages) instead of the fixed green gradient.
+   - Done: no `style="background:#…` or `style.color = '#…'` remains in the page script; the header follows the accent colour.
+
+10. **Tests.**
+    - `tests/test_activity_log_hardening.py`: replace `test_save_source_is_sent_and_internal_saves_are_non_manual` with a check that `save_source` is inside the posted payload object, plus a test-client test that a save with `save_source: "autosave"` to an existing draft writes no `ActivityLog` row and a `"manual"` save writes one (reuse the app setup in `tests/test_reimbursement_autosave.py` / `tests/test_reimbursement_manual_categories.py`).
+    - New `tests/test_reimbursement_page_cleanup.py`: deleting a draft that has a linked LPR removes the LPR (test client); `/clear_reimbursement_draft` and `/download_reimbursement_form` return 404/405; the template has a single `parseReimbursementJsonResponse`, no `reimSignatureModal`, no `reimClearBtn`, no inline hex colours in `setReimbursementDraftStatus`, and `setReimbursementDraftStatus` contains no `reimToast`; the rendered page (test client) has the ten categories in order in the header, totals, View list and manual select; the submit 500 message contains no exception text.
+    - Update existing contract tests that name removed things: `tests/test_reimbursement_design.py` (`reimSignatureModal`), `tests/test_reimbursement_autosave.py:86` (slice boundary `getLoadedReimbursementDates`), `tests/test_reimbursement_bulk_selection.py:74` (boundary `getReimbursementReceiptList`), `tests/test_lpr_feature_switch.py:61` (boundary `/download_reimbursement_form`), and any assertion on `clearReimbursementForm`, `reimDeleteDraftPanel` or `lprSavedVersion` in `_autosave`, `_design`, `_manual_categories`, `_readiness`, `_worksheet_views`. Change boundaries to the next surviving function; do not weaken what they check.
+    - Update the release-entry and service-worker version assertions.
+
+11. **Release records.**
+    - Service worker `medical-service-pwa-offline-navigation-v238-reimbursement-cleanup` (`app.py:27031`), keeping the historical marker lines.
+    - `static/changelog/releases.json` entry `2026-10-04-reimbursement-cleanup` (category Reimbursement): the page loads this month on open, one clear message per action, Delete Draft also removes the attached LPR and Clear Form is gone, a notice for overlapping drafts, failed downloads explain why, better dark mode.
+    - `changes.md`, and this plan's status with any difference between plan and outcome.
+
+12. **Publish** only on the owner's separate "commit and push" instruction.
+
+## Deliberately excluded
+
+- **Worksheet zoom** — kept by the owner's decision.
+- **Rendering the table and phone cards once** — both are rendered and kept in sync; a single renderer is a large rewrite of a tested area that works today.
+- **Computing totals once per keystroke** — the readiness, totals and view filters each re-read the inputs; acceptable at current row counts, not worth the risk now.
+- **In-page signing** — the pop-up is deleted rather than wired in; signing stays in Settings.
+- **CSRF exemptions** on reimbursement routes — part of an app-wide pattern (91 exempt routes); a separate security task.
+- **Reimbursement Tracker, Approval Center and Accounting Center** reimbursement code, including the `mark_reimbursement_processing` / `mark_reimbursement_paid` aliases — other pages.
+- **Merging or blocking overlapping drafts on the server** — a notice is enough; submit already blocks double claims.
+- **Existing activity rows from autosaves** — kept (audit record); already hidden as routine entries on the Activity Log.
+
+## Verification
+
+- Tests in step 10. **Positive controls:** the save-source test-client test, the linked-LPR delete test and the toast/duplicate-function source checks fail on the current code; run them against the unfixed code first and record that they failed.
+- Focused modules: the 13 reimbursement/activity modules listed under Investigation plus `tests/test_lpr_feature_switch.py`, `tests/test_changelog_workflow.py`, `tests/test_changelog_coverage.py`, then one full-suite run quoted against 1,488 / 23 F / 3 E / 5 S.
+- Test-client checks as an engineer with a linked profile: `/reimbursement` renders; `/get_reimbursement_schedule_rows`, `/save_reimbursement_draft` (autosave and manual), `/submit_reimbursement`, `/delete_reimbursement_draft` and `/download_reimbursement_package` behave as before apart from the planned changes.
+- `node --check` on the extracted page script.
+- No browser check by the agent. The owner checks on desktop and at phone width, light and dark: the page loads this month on open; This Week / This Month load; typing shows no toasts and the status line updates; Save Draft, submit, row remove/restore show one message each; Delete Draft is hidden before the first save and asks through the dialog; the overlap notice and its Open button; a download; worksheet zoom still works; manual-row cells and the header in dark mode and with another accent.
+
+## After implementation
+
+1. Self-review the diff for removed IDs or functions still referenced (including `onclick` attributes and `isReimbursementFocusDialogOpen`) and for dark rules naming removed classes.
+2. Prove the new tests fail without the fixes, then pass with them.
+3. Focused modules, then the full suite, quoting counts against the baseline.
+4. Service worker bump and `releases.json` entry.
+5. `changes.md` and this plan's status, with any difference between plan and outcome.
+6. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/` and the loose handoff file. Commit and push only on the owner's instruction, then verify `origin/main` and Railway's deployment.
+
+## Risks
+
+- **Removing the toasts from the status helpers hides a message someone relied on.** Every caller is reviewed in step 2; errors from user actions still toast.
+- **Auto-load on open adds two requests per page visit** (schedule rows and draft). Small; it replaces the click that almost always followed.
+- **Removing `/clear_reimbursement_draft` and `/download_reimbursement_form`** breaks any bookmark or external caller. None was found in templates, static files or tests apart from slice boundaries.
+- **Category loop changes markup order or attributes.** Step 5's done check and the rendered-page test compare all ten in order.
+- **Blob download on very old browsers** — the app already relies on `fetch` and `AbortController`; object URLs are supported wherever those are.
+- **String-contract tests** on the template will need edits; they are in the focused run.
+
+---
+
 # Activity Log: TSR Filter Fix, Simpler Page, Plain Numbers, and Less Code
 
 **Status:** Executed — commit `45a1258`; published to `origin/main` on the owner's "commit and push".
