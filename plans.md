@@ -1,6 +1,6 @@
 # Liquidation Pages: One Receipts Section Instead of Per-Row Uploads
 
-**Status:** Executed — not yet committed; waiting for the owner's "commit and push".
+**Status:** Executed — commit `092c4e5`; published to `origin/main` on the owner's "commit and push".
 **Finished:** 2026-10-04.
 **Execution authorized:** 2026-10-04 — the owner said "go ahead partner. do not overengineer and over check things".
 **Approved:** 2026-10-04 — the owner said "approved, go with your recommendation" (Approvals option 1: one receipts list under the expense table).
