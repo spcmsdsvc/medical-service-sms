@@ -2390,6 +2390,16 @@ class TravelRequest(db.Model):
     health_condition = db.Column(db.String(150), nullable=True)
     special_notes = db.Column(db.Text, nullable=True)
 
+    # Training / Meeting details, stored separately so they are not cut off
+    # inside the 255-character purpose summary.
+    training_title = db.Column(db.String(200), nullable=True)
+    training_provider = db.Column(db.String(200), nullable=True)
+    training_venue = db.Column(db.String(200), nullable=True)
+    training_objective = db.Column(db.Text, nullable=True)
+    meeting_subject = db.Column(db.String(200), nullable=True)
+    meeting_with = db.Column(db.String(200), nullable=True)
+    meeting_objective = db.Column(db.Text, nullable=True)
+
     status = db.Column(db.String(40), nullable=False, default='Draft', index=True)
     accounting_status = db.Column(db.String(40), nullable=True, index=True)
 
@@ -5525,7 +5535,14 @@ def ensure_travel_request_tables():
                 'special_instruction': 'ALTER TABLE travel_request ADD COLUMN special_instruction VARCHAR(40)',
                 'account_number': 'ALTER TABLE travel_request ADD COLUMN account_number VARCHAR(100)',
                 'health_condition': 'ALTER TABLE travel_request ADD COLUMN health_condition VARCHAR(150)',
-                'special_notes': 'ALTER TABLE travel_request ADD COLUMN special_notes TEXT'
+                'special_notes': 'ALTER TABLE travel_request ADD COLUMN special_notes TEXT',
+                'training_title': 'ALTER TABLE travel_request ADD COLUMN training_title VARCHAR(200)',
+                'training_provider': 'ALTER TABLE travel_request ADD COLUMN training_provider VARCHAR(200)',
+                'training_venue': 'ALTER TABLE travel_request ADD COLUMN training_venue VARCHAR(200)',
+                'training_objective': 'ALTER TABLE travel_request ADD COLUMN training_objective TEXT',
+                'meeting_subject': 'ALTER TABLE travel_request ADD COLUMN meeting_subject VARCHAR(200)',
+                'meeting_with': 'ALTER TABLE travel_request ADD COLUMN meeting_with VARCHAR(200)',
+                'meeting_objective': 'ALTER TABLE travel_request ADD COLUMN meeting_objective TEXT'
             }
             for column_name, ddl in travel_request_column_migrations.items():
                 if column_name not in travel_request_columns:
@@ -27028,7 +27045,8 @@ def pwa_service_worker():
     # Navigation shell bump: v213 restores Calendar scrolling after closing schedule Details.
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v240-liquidation-receipts';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v240-liquidation-receipts.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v241-travel-request-page';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28754,7 +28772,8 @@ def travel_request_page():
     profile = getattr(current_user, 'engineer_profile', None)
     return render_template(
         'travel_request.html',
-        logged_in_engineer_id=(profile.id if profile else None)
+        logged_in_engineer_id=(profile.id if profile else None),
+        today=get_manila_today().isoformat()
     )
 
 
@@ -41927,21 +41946,26 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
         getattr(request_rec, 'client_name', None)
     )
     currency_code = normalize_travel_currency_code(getattr(request_rec, 'currency_code', None) or 'PHP')
+    assigned_approvers = get_assigned_approvers_for_requester(request_rec.user_id, 'travel_request')
+    assigned_approver = assigned_approvers[0] if assigned_approvers else None
+    participant_dicts = [travel_request_participant_to_dict(participant) for participant in get_travel_request_participants(request_rec)]
+    request_date = getattr(request_rec, 'submitted_at', None) or getattr(request_rec, 'created_at', None)
 
     data = {
         'id': request_rec.id,
         'request_no': request_rec.request_no or travel_request_generate_request_no(request_rec.id),
         'requester_user_id': request_rec.user_id,
         'requester_name': (clean_str(getattr(engineer, 'name', None)) or travel_request_user_display_name(requester) or getattr(requester, 'username', '') or ''),
-        'assigned_approver_user_id': getattr(get_assigned_approver_for_requester(request_rec.user_id, 'travel_request'), 'id', None),
-        'assigned_approver_name': approval_user_display_name(get_assigned_approver_for_requester(request_rec.user_id, 'travel_request')),
-        'assigned_approvers': [approval_user_to_dict(user) for user in get_assigned_approvers_for_requester(request_rec.user_id, 'travel_request')],
-        'assigned_approver_names': [approval_user_display_name(user) for user in get_assigned_approvers_for_requester(request_rec.user_id, 'travel_request')],
+        'assigned_approver_user_id': getattr(assigned_approver, 'id', None),
+        'assigned_approver_name': approval_user_display_name(assigned_approver),
+        'assigned_approvers': [approval_user_to_dict(user) for user in assigned_approvers],
+        'assigned_approver_names': [approval_user_display_name(user) for user in assigned_approvers],
         'engineer_id': request_rec.engineer_id,
         'engineer_name': getattr(engineer, 'name', '') if engineer else '',
-        'participants': [travel_request_participant_to_dict(participant) for participant in get_travel_request_participants(request_rec)],
-        'participant_names': ', '.join([travel_request_participant_to_dict(participant).get('display_name') or '' for participant in get_travel_request_participants(request_rec) if travel_request_participant_to_dict(participant).get('display_name')]),
-        'participant_count': len(get_travel_request_participants(request_rec)),
+        'participants': participant_dicts,
+        'participant_names': ', '.join([item.get('display_name') for item in participant_dicts if item.get('display_name')]),
+        'participant_count': len(participant_dicts),
+        'request_date': request_date.date().isoformat() if request_date else '',
         'request_type': request_type,
         'travel_type': request_type,
         'purpose': request_rec.purpose or '',
@@ -41960,6 +41984,13 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
         'account_number': clean_str(getattr(request_rec, 'account_number', None)),
         'health_condition': clean_str(getattr(request_rec, 'health_condition', None)),
         'special_notes': clean_str(getattr(request_rec, 'special_notes', None)),
+        'training_title': clean_str(getattr(request_rec, 'training_title', None)),
+        'training_provider': clean_str(getattr(request_rec, 'training_provider', None)),
+        'training_venue': clean_str(getattr(request_rec, 'training_venue', None)),
+        'training_objective': clean_str(getattr(request_rec, 'training_objective', None)),
+        'meeting_subject': clean_str(getattr(request_rec, 'meeting_subject', None)),
+        'meeting_with': clean_str(getattr(request_rec, 'meeting_with', None)),
+        'meeting_objective': clean_str(getattr(request_rec, 'meeting_objective', None)),
         'requested_amount_label': format_travel_currency_amount(request_rec.requested_amount, currency_code),
         'approved_amount_label': format_travel_currency_amount(request_rec.approved_amount, currency_code),
         'total_expenses_label': format_travel_currency_amount(request_rec.total_expenses, currency_code),
@@ -42085,7 +42116,7 @@ TRAVEL_AIRFARE_C_O_LABEL = 'c/o Diary Dizon/Mildred Zaide'
 
 
 def travel_request_travel_type_allows_airfare_c_o(value):
-    travel_type = clean_str(value).lower()
+    travel_type = (clean_str(value) or '').lower()
     if not travel_type:
         return False
     return any(keyword in travel_type for keyword in ('air', 'plane', 'flight', 'mixed'))
@@ -42297,6 +42328,14 @@ def save_travel_request_draft():
     if len(purpose) < 3:
         return jsonify({'success': False, 'error': 'Purpose is required.'}), 400
 
+    draft_departure = travel_request_date(payload.get('departure_date') or payload.get('start_date'))
+    draft_return = travel_request_date(payload.get('return_date') or payload.get('end_date'))
+    if draft_departure and draft_return and draft_return < draft_departure:
+        return jsonify({'success': False, 'error': 'Return date cannot be before the departure date.'}), 400
+    for line_item in (payload.get('lines') if isinstance(payload.get('lines'), list) else []):
+        if isinstance(line_item, dict) and travel_request_money(line_item.get('source_amount', line_item.get('amount'))) < 0:
+            return jsonify({'success': False, 'error': 'Amounts cannot be negative.'}), 400
+
     request_type = normalize_travel_request_type(
         payload.get('request_type') or
         payload.get('travel_type') or
@@ -42339,6 +42378,16 @@ def save_travel_request_draft():
     request_rec.account_number = (clean_str(payload.get('account_number')) or '')[:100] or None
     request_rec.health_condition = (clean_str(payload.get('health_condition')) or '')[:150] or None
     request_rec.special_notes = clean_str(payload.get('special_notes')) or None
+    is_training = request_type.lower().startswith('training')
+    is_meeting = request_type.lower() == 'meeting'
+    for field_name, enabled, max_len in (
+        ('training_title', is_training, 200), ('training_provider', is_training, 200),
+        ('training_venue', is_training, 200), ('training_objective', is_training, None),
+        ('meeting_subject', is_meeting, 200), ('meeting_with', is_meeting, 200),
+        ('meeting_objective', is_meeting, None),
+    ):
+        value = (clean_str(payload.get(field_name)) or '') if enabled else ''
+        setattr(request_rec, field_name, (value[:max_len] if max_len else value) or None)
     request_rec.updated_at = now
 
     travel_conflicts = find_travel_request_conflicts_for_user(
@@ -42550,6 +42599,13 @@ def submit_travel_request(travel_request_id):
     current_status = travel_request_normalize_status(request_rec.status)
     if current_status not in TRAVEL_REQUEST_EDITABLE_STATUSES:
         return jsonify({'success': False, 'error': f'Travel request is already {current_status}.'}), 409
+
+    if not request_rec.departure_date or not request_rec.return_date:
+        return jsonify({'success': False, 'error': 'Please set the departure and return dates before submitting.'}), 400
+    if request_rec.return_date < request_rec.departure_date:
+        return jsonify({'success': False, 'error': 'Return date cannot be before the departure date.'}), 400
+    if not (getattr(request_rec, 'routes', None) or []):
+        return jsonify({'success': False, 'error': 'Please add at least one route plan before submitting.'}), 400
 
     clean_travel_request_airfare_c_o_remarks(request_rec)
 
@@ -72104,6 +72160,11 @@ def prepare_deferred_workflow_schemas():
         ensure_cash_advance_liquidation_tables()
     except Exception as exc:
         print(f"[CashAdvanceLiquidation] WSGI startup schema preparation failed: {exc}", flush=True)
+
+    try:
+        ensure_travel_request_tables()
+    except Exception as exc:
+        print(f"[TravelRequest] WSGI startup schema preparation failed: {exc}", flush=True)
 
     try:
         ensure_lpr_tables()

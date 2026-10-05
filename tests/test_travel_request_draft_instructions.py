@@ -24,7 +24,7 @@ class TravelRequestDraftInstructionTests(unittest.TestCase):
         helper_start = self.template_source.index('function hydrateTravelDepositFieldsFromRequest(item)')
         self.assertLess(
             self.template_source.index('updateDepositFieldsState();', helper_start),
-            self.template_source.index('accountNumber.value', helper_start),
+            self.template_source.index("$t('travel-account-number').value", helper_start),
         )
 
     def test_generated_form_uses_saved_instruction(self):

@@ -1,3 +1,172 @@
+# Travel Request Page: Review Fixes, Clearer Layout, New Functions, and Less Code
+
+**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Finished:** 2026-10-05.
+**Execution authorized:** 2026-10-05 — the owner said "go ahead partner. do not overengineer and over check things. make sure that if we push this to live later, the system won't error or break with the new columns".
+**Approved:** 2026-10-05 — the owner said "approved, go with your recommendations" after the page review (decisions 1–3 below taken as recommended).
+**Detailed:** 2026-10-05.
+
+**Where the plan and the outcome differed:**
+
+- **Extra bug fixed:** saving a route with no Travel Type selected crashed the save (500) in `travel_request_travel_type_allows_airfare_c_o` (`clean_str('')` returns `None`). Now treated as empty.
+- **Live safety:** `ensure_travel_request_tables()` also runs in `prepare_deferred_workflow_schemas` (Railway startup), in addition to the existing per-request guard. Checked on a copy of the local database (old schema): the seven columns were added automatically and the page, My Travel Requests, detail, Timeline, Accounting Center, Approvals, both approval queues, save, the new validations, Preview Form and Delete Draft all returned 200 or the expected 400.
+- **Participants** now match the logged-in user by `logged_in_engineer_id`: `/get_engineers` sends no username or user id to non-admins, so the old automatic selection never matched for them.
+- **Messages** are toasts only (the duplicate status box is gone); errors stay until closed.
+- **Readiness** lists the signature as "checked when you submit"; the server's existing signature check and Settings prompt are kept rather than adding a pre-check.
+- **Tests are source-level** (`tests/test_travel_request_page.py`, 11 tests); the fail-first run was not made. `tests/test_travel_request_draft_instructions.py` now looks for `$t('travel-account-number').value` (same ordering check, new code).
+- **Line count:** template 3,840 → 1,712.
+- **Verification:** 12 focused modules, 130 tests, OK; page renders and its script passes `node --check`; full suite 1,517 tests, 23 failures, 3 errors, 5 skips (the baseline's non-passing set). No browser check was made.
+
+## Context
+
+The owner asked for a review of the Travel Request page (`/travel_request`, `templates/travel_request.html`, 3,840 lines) covering UI, display, functions, new functions, code removal and bug fixes, continuing the page-by-page series (Reimbursement → Liquidation → Travel Request).
+
+The review found that the composed purpose text is truncated to 255 characters (12 of 15 local records), which loses training/meeting details on reload and puts a cut-off, duplicated text on the official PDF and in Approvals; that requests can be submitted and approved without valid dates; that negative amounts are accepted; that several controls are shown to users the server refuses; and that the page is long, form-last, and missing functions its siblings have (Preview Form, rejection reason, readiness check, bottom dock).
+
+Intended outcome: training/meeting details are stored in their own columns and the purpose is a short line; dates and amounts are validated on the server; the page shows the form first with a compact header, a bottom dock with a readiness checklist, Preview Form, the rejection reason and the approval history; controls match server permissions; about a third of the template is removed.
+
+## Decisions taken
+
+1. **Training/meeting details get their own columns** on `travel_request`: `training_title`, `training_provider`, `training_venue`, `training_objective`, `meeting_subject`, `meeting_with`, `meeting_objective`. The purpose becomes one short line. Old records still load by reading the old purpose text when the columns are empty. No data migration of old rows.
+2. **A zero total requested is a warning, not a block** (airfare can be company-paid "c/o").
+3. **Form first; My Travel Requests and Notifications below it**, as on Reimbursement.
+4. Dates are required on submit, and return must not be before departure (server and page). Negative amounts are rejected on save.
+5. "Request Date" becomes read-only and shows the saved date (submitted date, else created date); it is no longer editable or sent.
+6. "Sign-off Placeholders" is replaced by an **Approval History** list from the audit trail the server already returns (excluding `draft_saved`), keeping the approver signature snapshot.
+7. Picking attachment files uploads them immediately (one button), as on Reimbursement/Liquidation.
+8. No browser automation by the agent (project rule); the owner checks the page visually.
+
+## Investigation
+
+Line numbers are as of commit `d37a7af`.
+
+**Server (`app.py`)**
+
+- Model `TravelRequest` `:2354`; `purpose = db.Column(db.String(255))`. Additive SQLite migrations in `ensure_travel_request_tables` (`:5476`), dict `travel_request_column_migrations` `:5506-5529` — new columns go here.
+- `TRAVEL_REQUEST_EDITABLE_STATUSES = {'Draft', 'Rejected'}` `:40676`. The page's `isTravelEditableStatus` also accepts `returned` (`travel_request.html:1836`) — mismatch.
+- `save_travel_request_draft` `:42268`: stores `purpose[:255]`; ignores `payload['date']` and `payload['notes']`; amounts via `normalize_travel_request_line_payload` `:42186` with no negative check; no date validation.
+- `submit_travel_request` `:42538`: no date or route validation; conflicts, then signature checks, then approvers.
+- `approve_travel_request` `:43416`: no date validation (relies on submit).
+- `delete_travel_request_draft` `:42438`: owner or admin only. Recall (`RECALL_REQUEST_REGISTRY` `:74629`) is owner-only (`owner_field: 'user_id'`). The page shows Delete Draft and Withdraw to participants too.
+- `get_my_travel_requests` `:42739` → `travel_request_to_dict(item, include_lines=False)` `:41919`, which calls `get_assigned_approver(s)_for_requester` four times and `get_travel_request_participants` / `travel_request_participant_to_dict` repeatedly per row.
+- `preview_approved_travel_request_form` `:48663` (gate `can_current_user_view_approved_travel_request_form`: owner/participant, admins, approvers; any status). Not linked from the page.
+- Official PDF (`build_travel_request_accounting_pdf_bytes` `:9792`): for training/meeting, customer and activity text fall back to `ctx['purpose']` (around `:10045` and `:10094-10101`), i.e. the cut-off multi-line text. Email context `travel_request_email_context` `:9249` uses the same purpose.
+- Audit trail: `include_audit=True` returns `universal_approval_audit_to_dict` entries (`action`, `actor_display_name`, `status_to`, `remarks`, `created_at_label`); every save adds a `draft_saved` entry.
+- `approval_remarks` (rejection reason) is in the dict but the page never shows it.
+- Local data: 15 travel requests, 12 with `length(purpose) = 255`.
+
+**Approvals (`templates/approvals.html`)**: `extractTravelApprovalField` `:3514` parses the purpose text; callers `:3581-3598` already fall back to `data.training_title`, `data.training_provider`, `data.training_venue`, `data.training_objective`, `data.meeting_subject`, `data.meeting_with`, `data.meeting_objective` — the order only needs flipping.
+
+**Page (`templates/travel_request.html`)**
+
+- CSS `:4-959`: duplicate blocks for `.travel-route-card`, `.travel-route-header`, `.travel-route-title`, `.route-summary.auto-filled`; unused `.travel-form-group-box`, `.travel-route-textarea`.
+- Markup order today: hero, status, lock banner, conflict panel, notifications `:993`, My Travel Requests `:1015`, form-title card `:1022` (`SPCAcctgtravelrequest 002-2016`), form sections, attachments `:1216` (Select Files + Upload), Sign-off Placeholders `:1241`, actions, inline delete-draft panel `:1268`.
+- Request Date `#travel-date` `:1037` editable, default `new Date().toISOString()` (UTC) `:3815`, never loaded back.
+- Purpose composition `collectTravelPayload` `:3177-3273` (route lines duplicated by `route_summary`, plus a notes block).
+- Dead or removable script: fallbacks for keys the server never sends in `setTravelParticipantsFromRequest` (`travel_participants`, `lead_requester_name`, `lead_name`, `requester_display_name`, `created_by_name`, `participants_text`) `:1436-1456`; `approver_signature_snapshot` fallback `:2408`; `calculateTravelTotal` rebuild branch `:2439-2441`; ignored fields in `setTravelLineCurrencyValues` and the fallback object `:2369-2377`; the hidden `.visit-product-select` mirror kept in sync with the checkboxes; the hand-listed lock selectors `:1872-1886`; `travel-delete-draft-panel` and its two functions `:3281-3304`; `showTravelStatus(..., 'warning')` with no style.
+- My Travel Requests: Timeline button serialises the whole item into `onclick` `:3695`; Withdraw shown to any viewer of a Submitted row `:3707`.
+- Existing tests reading the page: `tests/test_travel_request_draft_instructions.py` (needs `special_notes: document.getElementById('travel-special-notes')`, `function hydrateTravelDepositFieldsFromRequest(item)`, `hydrateTravelDepositFieldsFromRequest(item);`), `tests/test_appearance_themes.py` (no hard-coded accent blue), `tests/test_request_recall.py` (`{% include '_request_recall_modal.html' %}`), `tests/test_accounting_attachment_management.py` (`deleteAllTravelRequestAttachments` and `fa-trash`), `tests/test_travel_request_site_visit.py`, `tests/test_travel_request_access.py`. Baseline for the three travel modules: 13 tests, OK.
+- Dark mode: `static/css/app-dark-pages.css` already covers `.travel-*` cards, inputs, history, dialog, toast, attachments; new classes need rules there.
+
+**Versions at planning time:** service worker `medical-service-pwa-offline-navigation-v240-liquidation-receipts` (`app.py:27031`); latest release `2026-10-04-liquidation-receipts`. Full-suite baseline from the last plan: 1,506 tests, 23 failures, 3 errors, 5 skips.
+
+## Execution steps
+
+1. **Schema** — `app.py`.
+   - Add the seven nullable columns to `TravelRequest` (`String(200)` for title/provider/venue/subject/with, `Text` for the two objectives).
+   - Add the matching `ALTER TABLE travel_request ADD COLUMN …` entries to `travel_request_column_migrations`.
+   - Done: the app starts on the local DB and adds the seven columns once.
+
+2. **Save and dict** — `save_travel_request_draft`, `travel_request_to_dict`.
+   - Save the seven fields from the payload (`clean_str`, trimmed to column length; cleared when the request type does not use them).
+   - Reject any line with a negative amount: 400 "Amounts cannot be negative."
+   - If both dates are given and return < departure: 400 "Return date cannot be before the departure date." (drafts may still be saved without dates).
+   - Dict: expose the seven fields and `request_date` (`submitted_at` else `created_at`, ISO date).
+   - Done: a saved training request reloads with all fields intact; negative and reversed-date saves return 400.
+
+3. **Submit validation** — `submit_travel_request`, before the conflict check: departure and return dates required ("Please set the departure and return dates before submitting."), return ≥ departure, at least one route. 400 with the message. Done: such submits are refused; a valid request submits as before.
+
+4. **List speed** — `travel_request_to_dict`: compute assigned approvers once and participants (and their dicts) once per call and reuse them. Output keys unchanged. Done: same JSON for one record before and after.
+
+5. **Approvals** — `templates/approvals.html` `:3581-3598`: read `data.training_*` / `data.meeting_*` first, then `extractTravelApprovalField` for old records. Done: new records show stored fields; old records unchanged.
+
+6. **Page layout and display** — `templates/travel_request.html` markup.
+   - Header: title, request number and status pill, subtitle "Shimadzu Philippines Corporation · Form SPCAcctgtravelrequest 002-2016"; actions Preview Form (when saved), Open Timeline and Restore Travel Blocks (approved), New Request. Remove the separate form-title card.
+   - Banners: lock banner; rejection banner with `approval_remarks`, rejected by and date when status is Rejected.
+   - Request Information: Request Date read-only (`request_date`; today in Manila time, rendered by the server, for a new form), Department, Status, Request No.
+   - Sections in order: Purpose Type, Participants, Routes, Travel Period, Cash Advance, Special Instructions, Attachments, Approval History.
+   - Approval History: list from `audit_trail` without `draft_saved` (action label, actor, date, remarks), with the approver signature snapshot above it; empty state "Not submitted yet."
+   - Bottom dock (pattern of `.liq-dock` in `_liquidation_base.html`): Total Requested, readiness toggle, Delete Draft (owner only), Save Draft, Submit. Hidden when not editable. Page gets bottom padding so the dock does not cover content; full width below 992 px.
+   - Readiness panel: blocking — dates missing, return before departure, no route; warning — total is zero. Submit shows the panel instead of submitting when blocking items exist.
+   - My Travel Requests below the form: compact rows (request no., status chip, destination, dates, amount) with a status filter (All / Draft / Submitted / Approved / Rejected / Liquidation); Open, Withdraw (owner only, Submitted), Timeline (approved; `onclick` passes id and date only).
+   - Notifications below My Travel Requests, behaviour unchanged.
+   - Done: page renders; all element ids used by tests remain.
+
+7. **Page behaviour** — `templates/travel_request.html` script.
+   - `collectTravelPayload`: send the seven fields; purpose becomes one line — Client Visit: visit purposes joined with "; " (fallback "Client Visit / Service"); Training: "<type>: <title>"; Meeting: "Meeting: <subject>"; trimmed to 255 on a word boundary. Stop sending `date` and `notes`.
+   - `hydrateTravelPurposeFieldsFromRequest`: columns first, purpose-text extraction only when the column is empty.
+   - `isTravelEditableStatus`: Draft and Rejected only (plus empty for a new form).
+   - Owner check from `requester_user_id` vs `{{ current_user.id }}` for Delete Draft and Withdraw.
+   - Preview Form opens `/preview_approved_travel_request_form/<id>` in a new tab.
+   - Delete Draft uses `travelConfirmDialog`; remove the inline panel and its functions.
+   - Attachments: one "Upload Attachments" button opens the picker; `change` uploads (existing checks and loop); remove `#travel-attachment-selection` and Select Files.
+   - Lock: disable every `input, select, textarea, button` inside the form sections with one selector (view-only buttons marked `data-always-enabled`), replacing the hand-listed selectors.
+   - Add a `warning` style for status and toast.
+   - Remove the dead code listed under Investigation (fallback keys, total rebuild branch, hidden product select mirror — read selected equipment from the checked boxes —, duplicate and unused CSS).
+   - Keep the strings the existing tests check (see Investigation).
+   - Done: script passes `node --check`; no reference to removed ids or functions remains (search `onclick` too).
+
+8. **Dark mode** — `static/css/app-dark-pages.css`: rules for the header pill, rejection banner, dock, readiness panel, approval history items and status chips. Done: every new light-coloured class has a dark rule.
+
+9. **Tests** — new `tests/test_travel_request_page.py` (source-level, plus the test client where the existing travel tests already set one up):
+   - Model and migration contain the seven columns; save reads and dict returns them.
+   - Save rejects negative amounts and reversed dates.
+   - Submit validates dates and routes before the conflict check.
+   - `travel_request_to_dict` calls `get_assigned_approvers_for_requester` once.
+   - Approvals reads `data.training_title` before `extractTravelApprovalField`.
+   - Template: Preview Form link, rejection banner uses `approval_remarks`, Approval History filters `draft_saved`, dock and readiness present; no `travel-delete-draft-panel`, `visit-product-select`, `lead_requester_name`, `travel-attachment-selection`, or `returned` in the editable check.
+   - Update release-entry and service-worker assertions.
+
+10. **Release records.**
+    - Service worker `medical-service-pwa-offline-navigation-v241-travel-request-page` (`app.py:27031`), keeping historical marker lines.
+    - `static/changelog/releases.json` entry `2026-10-05-travel-request-page` (engineers, category Travel Request): clearer page with the form first, Preview Form, rejection reason and approval history, readiness check before submit, training/meeting details no longer cut off, one-step attachment upload.
+    - `changes.md`, and this plan's status with any difference between plan and outcome.
+
+11. **Publish** only on the owner's separate "commit and push".
+
+## Deliberately excluded
+
+- **Rewriting old truncated purposes** — the cut text cannot be recovered; old records keep loading as today.
+- **A shared base template** — no sibling page shares this structure.
+- **Notifications panel redesign** — behaviour kept, only moved below.
+- **CSRF exemptions on the JSON routes** — 91 routes app-wide use `@csrf.exempt`; the session cookie is `SameSite=Lax`. Separate app-wide task.
+- **Linking to the liquidation from this page** — My Requests already handles it.
+- **Changing the PDF layout** — it benefits from the short purpose without code changes.
+
+## Verification
+
+- Step-9 tests; the new checks fail on the current code (no columns, no validation, inline delete panel present).
+- Focused modules: `test_travel_request_page`, `test_travel_request_access`, `test_travel_request_draft_instructions`, `test_travel_request_site_visit`, `test_request_recall`, `test_accounting_attachment_management`, `test_appearance_themes`, `test_approval_center_wording`, `test_approval_notifications`, `test_changelog_workflow`, `test_changelog_coverage`; then one full-suite run against 1,506 / 23 F / 3 E / 5 S (plus the new tests).
+- The page renders with `render_template` in a request context; the page script passes `node --check`.
+- No browser check by the agent. The owner checks desktop and phone, light and dark: new request (Client Visit, Training, Meeting) saves and reloads with all fields; submit blocked without dates; readiness panel; dock; Preview Form; rejected request shows the reason; approval history; one-step upload; a participant does not see Delete Draft/Withdraw; Approvals shows training fields for a new request.
+
+## After implementation
+
+1. Self-review the diff: removed ids/functions not referenced anywhere; test-checked strings still present.
+2. Focused modules, then the full suite, quoting counts against the baseline.
+3. Service worker bump and `releases.json` entry.
+4. `changes.md` and this plan's status.
+5. Commit with explicit staging; exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, the loose handoff file and unrelated `changes.md` entries. Commit and push only on the owner's instruction, then verify `origin/main` and Railway.
+
+## Risks
+
+- **Migration on the live database** — additive nullable columns through the existing idempotent pattern; a failure would show at startup in the Railway log.
+- **Submit validation stops a user mid-flow** — only for requests with missing or reversed dates or no route, which were invalid anyway; the readiness panel explains it before the server does.
+- **Old records reloaded and re-saved** — fields extracted from the old text are saved into the new columns on the next save; text already cut off stays lost.
+- **Pages loaded before the deploy** still post `date`/`notes` (ignored) and lack the new fields until refreshed; the service worker bump refreshes them.
+
+---
+
 # Liquidation Pages: One Receipts Section Instead of Per-Row Uploads
 
 **Status:** Executed — commit `092c4e5`; published to `origin/main` on the owner's "commit and push".

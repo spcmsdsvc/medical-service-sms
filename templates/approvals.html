@@ -3578,10 +3578,10 @@ Recipient count: ${recipientCount}` : ''),
         const requestType = normalizeTravelApprovalType(data);
 
         if (isTrainingApprovalType(requestType)) {
-            const trainingTitle = extractTravelApprovalField(data, 'Training Title') || data.training_title || '';
-            const provider = extractTravelApprovalField(data, 'Conducted By') || data.training_provider || data.provider || '';
-            const venue = extractTravelApprovalField(data, 'Venue') || data.training_venue || data.venue || data.destination || '';
-            const objective = extractTravelApprovalField(data, 'Objective') || data.training_objective || data.objective || '';
+            const trainingTitle = data.training_title || extractTravelApprovalField(data, 'Training Title') || '';
+            const provider = data.training_provider || extractTravelApprovalField(data, 'Conducted By') || data.provider || '';
+            const venue = data.training_venue || extractTravelApprovalField(data, 'Venue') || data.venue || data.destination || '';
+            const objective = data.training_objective || extractTravelApprovalField(data, 'Objective') || data.objective || '';
             const html = [
                 compactInfoCard('Training / Seminar Type', requestType),
                 compactInfoCard('Training / Seminar Title', trainingTitle),
@@ -3593,9 +3593,9 @@ Recipient count: ${recipientCount}` : ''),
         }
 
         if (isMeetingApprovalType(requestType)) {
-            const subject = extractTravelApprovalField(data, 'Meeting Subject') || data.meeting_subject || data.subject || '';
-            const meetingWith = extractTravelApprovalField(data, 'Meeting With') || data.meeting_with || '';
-            const objective = extractTravelApprovalField(data, 'Objective') || data.meeting_objective || data.objective || '';
+            const subject = data.meeting_subject || extractTravelApprovalField(data, 'Meeting Subject') || data.subject || '';
+            const meetingWith = data.meeting_with || extractTravelApprovalField(data, 'Meeting With') || '';
+            const objective = data.meeting_objective || extractTravelApprovalField(data, 'Objective') || data.objective || '';
             const html = [
                 compactInfoCard('Request Type', requestType),
                 compactInfoCard('Meeting Subject', subject),

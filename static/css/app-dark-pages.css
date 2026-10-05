@@ -807,6 +807,23 @@
     color: #cfe0f5 !important;
     border-color: var(--dark-border) !important;
 }
+/* Travel Request page: banners, dock, readiness, history, toasts. */
+:root[data-app-theme="dark"] :is(.travel-banner, .travel-dock, .travel-readiness, .travel-toast, .travel-visit-card, .travel-check, .travel-purpose-type-card) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .travel-banner.rejected { background: rgba(220, 38, 38, .14) !important; color: #fecaca !important; border-color: rgba(248, 113, 113, .45) !important; }
+:root[data-app-theme="dark"] .travel-toast.success { background: rgba(22, 163, 74, .16) !important; color: #bbf7d0 !important; }
+:root[data-app-theme="dark"] .travel-toast.warning { background: rgba(217, 119, 6, .16) !important; color: #fde68a !important; }
+:root[data-app-theme="dark"] .travel-toast.error { background: rgba(220, 38, 38, .16) !important; color: #fecaca !important; }
+:root[data-app-theme="dark"] .travel-status-chip { background: var(--dark-card-hover) !important; color: var(--dark-text) !important; }
+:root[data-app-theme="dark"] .travel-status-chip.submitted { background: rgba(217, 119, 6, .2) !important; color: #fde68a !important; }
+:root[data-app-theme="dark"] .travel-status-chip.approved { background: rgba(22, 163, 74, .2) !important; color: #bbf7d0 !important; }
+:root[data-app-theme="dark"] .travel-status-chip.rejected { background: rgba(220, 38, 38, .2) !important; color: #fecaca !important; }
+:root[data-app-theme="dark"] :is(.travel-audit-item strong, .travel-dock-total) { color: var(--dark-text) !important; }
+:root[data-app-theme="dark"] :is(.travel-audit-meta, .travel-audit-remarks, .travel-empty, .travel-dock-total small) { color: var(--dark-muted) !important; }
+:root[data-app-theme="dark"] .travel-btn-danger-outline { background: transparent !important; }
 :root[data-app-theme="dark"] .approval-status-summary-card small {
     color: var(--dark-muted) !important;
 }

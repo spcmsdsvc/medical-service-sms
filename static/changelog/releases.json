@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-05-travel-request-page",
+      "release_date": "2026-10-05",
+      "title": "Clearer Travel Request Page",
+      "summary": "The Travel Request form comes first, with a readiness check before submit, Preview Form, and the approval history.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-05-travel-request-page-engineers",
+          "category": "Travel Request",
+          "description": "The form now comes first, with My Travel Requests and notifications below it. A bar at the bottom shows the total and whether you are ready to submit: departure and return dates and a route are required, and a zero total is flagged. Preview Form opens the official form for any saved request. A rejected request shows the approver's reason, and each request shows its approval history. Training and meeting details are saved in full and no longer cut off. Choosing attachment files uploads them straight away. My Travel Requests can be filtered by status.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-04-liquidation-receipts",
       "release_date": "2026-10-04",
       "title": "One Place for Liquidation Receipts",
