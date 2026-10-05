@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-05-liquidation-save-row",
+      "release_date": "2026-10-05",
+      "title": "Liquidation Rows Save Again",
+      "summary": "You can add and edit several liquidation rows without refreshing the page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-05-liquidation-save-row-engineers",
+          "category": "Liquidation",
+          "description": "On Travel and Cash Advance liquidation, Save Row stayed greyed out after the first row was saved, so the page had to be refreshed to add another. It now works for every row, and Download Form can be used more than once.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-05-signin-charcoal",
       "release_date": "2026-10-05",
       "title": "Sign-in with the Shimadzu Logo",

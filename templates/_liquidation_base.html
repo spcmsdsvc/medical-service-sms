@@ -266,7 +266,7 @@ async function runBusy(buttonId, label, task){
     if (btn){ btn.disabled = true; btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin me-1"></i>${esc(label)}`; }
     try { await task(); }
     catch (err){ liqToast(err.message || String(err), 'error'); }
-    finally { liqBusy = false; if (btn){ btn.innerHTML = html; } updateWorkflowButtons(); }
+    finally { liqBusy = false; if (btn){ btn.innerHTML = html; btn.disabled = false; } updateWorkflowButtons(); }
 }
 
 function statusMeta(value){

@@ -27071,7 +27071,8 @@ def pwa_service_worker():
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v240-liquidation-receipts.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v244-signin-charcoal';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v245-liquidation-save-row';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

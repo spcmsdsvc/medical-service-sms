@@ -88,6 +88,11 @@ class LiquidationTemplateTests(unittest.TestCase):
         self.assertEqual(approvals.count('${renderLiquidationReceipts(data.all_receipts)}'), 2)
         self.assertNotIn('row.receipts', block(approvals, 'function renderLiquidationRows', 'function renderLiquidationReceipts'))
 
+    def test_busy_buttons_are_re_enabled_after_each_action(self):
+        run_busy = block(BASE, 'async function runBusy', 'function statusMeta')
+        self.assertIn('btn.disabled = false', run_busy.split('finally')[1])
+        self.assertIn('medical-service-pwa-offline-navigation-v245-liquidation-save-row', APP_SOURCE)
+
     def test_preview_stays_available_after_submit(self):
         buttons = block(BASE, 'function updateWorkflowButtons', '\n}')
         self.assertNotIn('previewTemplateTopBtn', buttons)
