@@ -6658,7 +6658,12 @@ def ensure_changelog_tables():
             raise
 
     if not _changelog_manifest_synced:
-        sync_changelog_release_manifest()
+        try:
+            sync_changelog_release_manifest()
+        except IntegrityError:
+            # Another worker or thread inserted the same new release first. Its rows
+            # now exist, so a second pass only updates them.
+            sync_changelog_release_manifest()
         _changelog_manifest_synced = True
 
 
