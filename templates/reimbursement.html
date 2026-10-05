@@ -5805,6 +5805,33 @@ function renderReimbursementRows(rows) {
         updateReimbursementReadiness();
     }
 
+    const REIMBURSEMENT_RECEIPT_MAX_BYTES = 35 * 1024 * 1024;
+    const REIMBURSEMENT_RECEIPT_ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
+
+    function validateReimbursementReceiptFiles(files) {
+        const selected = Array.from(files || []);
+        if (!selected.length) return { ok: true, files: [] };
+
+        for (const file of selected) {
+            const name = String(file.name || '').toLowerCase();
+            const ext = name.includes('.') ? name.split('.').pop() : '';
+            if (!REIMBURSEMENT_RECEIPT_ALLOWED_EXTENSIONS.includes(ext)) {
+                return {
+                    ok: false,
+                    message: `Invalid receipt file: ${file.name || 'Unknown file'}.\nAllowed files: PDF, JPG, JPEG, PNG only.`
+                };
+            }
+            if (file.size > REIMBURSEMENT_RECEIPT_MAX_BYTES) {
+                return {
+                    ok: false,
+                    message: `Receipt file is too large: ${file.name || 'Unknown file'}.\nMaximum upload size is 35MB per file.`
+                };
+            }
+        }
+
+        return { ok: true, files: selected };
+    }
+
     function renderAdditionalReimbursementReceipts() {
         const list = document.getElementById('reimAdditionalReceiptsList');
         const btn = document.getElementById('reimAdditionalReceiptBtn');

@@ -51,6 +51,18 @@ class ReimbursementPageCleanupTests(unittest.TestCase):
         self.assertIn('URL.createObjectURL', TEMPLATE)
         self.assertNotIn('triggerReimbursementDownload', TEMPLATE)
 
+    def test_every_called_page_function_is_defined(self):
+        # A cleanup once removed validateReimbursementReceiptFiles, which broke Save Item silently.
+        script = TEMPLATE[TEMPLATE.index('<script>'):TEMPLATE.rindex('</script>')]
+        shared = ''.join(
+            path.read_text(encoding='utf-8')
+            for path in [ROOT / 'templates' / 'layout.html', *(ROOT / 'templates').glob('_*.html'), *(ROOT / 'static' / 'js').glob('*.js')]
+        )
+        called = set(re.findall(r'\b((?:[a-z]+)?[Rr]eim[A-Za-z0-9_]*)\(', script))
+        for name in sorted(called):
+            defined = re.search(rf'function\s+{name}\s*\(|window\.{name}\s*=', script + shared)
+            self.assertTrue(defined, f'{name} is called but not defined')
+
     def test_release_and_cache_version(self):
         self.assertIn('"2026-10-04-reimbursement-cleanup"', (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
 
