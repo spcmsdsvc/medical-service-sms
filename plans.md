@@ -1,6 +1,6 @@
 # Sign-in Pages: Layout G "Charcoal" with the Shimadzu Logo
 
-**Status:** Executed — not yet committed (ships with the two earlier sign-in plans on the owner's "commit and push").
+**Status:** Executed — commit `3cf1698`; published to `origin/main` on the owner's "commit and push" (Railway deployment `7761fae4-ace6-4717-bfcf-2676ca13afe6`).
 **Execution authorized:** 2026-10-05 — the owner said "go ahead. do not over engineer".
 **Finished:** 2026-10-05.
 
@@ -78,7 +78,7 @@ The Full Red sign-in page (two plans below, executed, not yet committed) reads a
 
 # Sign-in Pages: Critique Fixes (Recovery, Weak Signal, Layout, Colour, Polish)
 
-**Status:** Executed — not yet committed (ships with the Full Red work on the owner's "commit and push").
+**Status:** Executed — commit `3cf1698`; published to `origin/main` on the owner's "commit and push" (Railway deployment `7761fae4-ace6-4717-bfcf-2676ca13afe6`).
 **Execution authorized:** 2026-10-05 — the owner said "go ahead" (and later "do not overengineer").
 **Finished:** 2026-10-05.
 
@@ -171,7 +171,7 @@ The "Full Red" sign-in work (plan below, executed, not yet committed) looks righ
 
 # Signed-out Pages: "Full Red" Layout (Login, Forgot Password, Reset Password)
 
-**Status:** Executed — not yet committed (waiting for the owner's "commit and push").
+**Status:** Executed — commit `3cf1698`; published to `origin/main` on the owner's "commit and push" (Railway deployment `7761fae4-ace6-4717-bfcf-2676ca13afe6`).
 **Finished:** 2026-10-05.
 
 **Where the plan and the outcome differed:**
