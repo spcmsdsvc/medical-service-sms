@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-05
 
+- Committed only the liquidation Save Row fix (`templates/_liquidation_base.html`, `app.py` service-worker version, `static/changelog/releases.json`, `tests/test_liquidation_pages.py`, and this fix's `changes.md` entries) as `8fadb12` on `main` and pushed it to `origin/main` on the owner's "commit and push"; `origin/main` verified at `8fadb12`, and Railway production deployment `c24d5ed9-076c-49fb-90ab-6b37ebe3577a` was initializing for it. `scheduler.db`, handoffs, `.claude/`, `.impeccable/`, `PRODUCT.md`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this file were not staged. No Railway variable or manual redeploy was changed.
+
 - Fixed the liquidation page (`templates/_liquidation_base.html`, Travel and Cash Advance) after an engineer reported rows could not be added without refreshing: `runBusy` restored a button's label after each action but never re-enabled it, and `updateWorkflowButtons` only re-enables five buttons, so Save Row (row pop-up) and Download Form stayed disabled after their first use, including after a failed save. `runBusy` now re-enables the button when the action ends; `updateWorkflowButtons` still locks buttons that should stay locked. Confirmed before and after with a Node simulation of the page's own functions. Not committed, pushed, or deployed.
 - Versions: service worker `medical-service-pwa-offline-navigation-v245-liquidation-save-row` (v244 kept as a historical marker), release entry `2026-10-05-liquidation-save-row` (engineers, category Liquidation). Test: `test_busy_buttons_are_re_enabled_after_each_action` in `tests/test_liquidation_pages.py`; liquidation and changelog modules pass (56 tests). No browser check was made.
 
