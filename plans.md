@@ -1,6 +1,6 @@
 # Travel Request Page: Review Fixes, Clearer Layout, New Functions, and Less Code
 
-**Status:** Executed — not yet committed; awaiting the owner's "commit and push".
+**Status:** Executed — commit `e051e5f`; published to `origin/main` on the owner's "commit and push".
 **Finished:** 2026-10-05.
 **Execution authorized:** 2026-10-05 — the owner said "go ahead partner. do not overengineer and over check things. make sure that if we push this to live later, the system won't error or break with the new columns".
 **Approved:** 2026-10-05 — the owner said "approved, go with your recommendations" after the page review (decisions 1–3 below taken as recommended).
