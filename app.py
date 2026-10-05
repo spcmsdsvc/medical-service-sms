@@ -12851,6 +12851,23 @@ def resolve_safe_next_target(candidate):
     return target
 
 
+_signin_build_label = None
+
+
+def signin_build_label():
+    """Newest release date from releases.json, e.g. '5 Oct 2026', for the sign-in footer."""
+    global _signin_build_label
+    if _signin_build_label is None:
+        try:
+            with open(changelog_manifest_path(), encoding='utf-8') as handle:
+                releases = json.load(handle).get('releases') or []
+            newest = max(datetime.strptime(r['release_date'], '%Y-%m-%d') for r in releases if r.get('release_date'))
+            _signin_build_label = f"{newest.day} {newest.strftime('%b %Y')}"
+        except Exception:
+            _signin_build_label = ''
+    return _signin_build_label
+
+
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit('10 per minute; 60 per hour', methods=['POST'])
 def login():
@@ -12916,9 +12933,17 @@ def login():
                 response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
                 return set_pwa_login_cookie(response, user_rec)
         else:
-            flash('Invalid Credentials - Access Denied')
+            flash('Username or password is incorrect. Check caps lock and try again.')
 
-    response = Response(render_template('login.html', next_target=next_target), mimetype='text/html')
+    # A failed attempt hands the typed username back so it need not be retyped. The
+    # password is never echoed, and this POST response is never cached offline.
+    failed_username = username if request.method == 'POST' else ''
+    response = Response(render_template(
+        'login.html',
+        next_target=next_target,
+        username=failed_username,
+        build_label=signin_build_label(),
+    ), mimetype='text/html')
     # no-store is deliberately omitted so the service worker can cache the signed-out
     # login shell for offline use. must-revalidate still forces a fresh copy whenever
     # the network is available, and the page itself carries no account data.
@@ -13039,7 +13064,7 @@ def reset_password(token):
             user_rec.must_change_password = False
             db.session.commit()
             # Changing the hash invalidates this token and any old PWA restore cookie.
-            flash('Your password has been updated. Please sign in.')
+            flash('Your password has been updated. Please sign in.', 'success')
             return redirect(url_for('login'))
 
     response = Response(
@@ -27046,7 +27071,7 @@ def pwa_service_worker():
     # Navigation shell bump: v214 extends Genoray PM plans through coverage expiry.
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v240-liquidation-receipts.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v241-travel-request-page';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v244-signin-charcoal';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27060,6 +27085,11 @@ const APP_SHELL = [
   '/static/css/app-themes.css',
   '/static/css/app-dark-pages.css',
   '/static/css/app-auth.css',
+  '/static/js/app-auth.js',
+  '/static/images/brand/shimadzu-philippines-logo-white.webp',
+  '/static/fonts/fira-sans/fira-sans-400.woff2',
+  '/static/fonts/fira-sans/fira-sans-500.woff2',
+  '/static/fonts/fira-sans/fira-sans-600.woff2',
   '/static/css/app-shell.css',
   '/static/css/app-dashboard.css',
   '/static/css/app-analytics.css',

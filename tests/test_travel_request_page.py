@@ -1,6 +1,8 @@
 import pathlib
 import unittest
 
+from tests.sw_cache_version import assert_cache_version_at_least
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP_SOURCE = (ROOT / 'app.py').read_text(encoding='utf-8')
@@ -78,7 +80,7 @@ class TravelRequestPageTests(unittest.TestCase):
                 self.assertNotIn(marker, PAGE)
 
     def test_release_records(self):
-        self.assertIn("const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v241-travel-request-page'", APP_SOURCE)
+        assert_cache_version_at_least(self, 241, APP_SOURCE)
         self.assertIn('"2026-10-05-travel-request-page"', (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
 
 

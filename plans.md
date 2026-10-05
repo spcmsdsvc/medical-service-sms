@@ -1,3 +1,259 @@
+# Sign-in Pages: Layout G "Charcoal" with the Shimadzu Logo
+
+**Status:** Executed — not yet committed (ships with the two earlier sign-in plans on the owner's "commit and push").
+**Execution authorized:** 2026-10-05 — the owner said "go ahead. do not over engineer".
+**Finished:** 2026-10-05.
+
+**Where the plan and the outcome differed:**
+
+- **Single column below 820 px** replaces the earlier `(max-height: 560px)` rule; landscape phones (≤ 820 px wide) also stack. The wordmark height caps are gone with the wordmark.
+- **Fonts:** Fira Sans 400/500/600 latin woff2 from Google Fonts (`fonts.gstatic.com`, v18), 72 KB total, with `OFL.txt` from the google/fonts repository.
+- **Verification:** new charcoal test failed first, passes after; login, theme and travel-request modules 68 tests OK; full suite 24 failures, 3 errors, 5 skips (unchanged from before this plan, including the pre-existing `test_manifest_entries_cannot_be_deleted` order issue). Flask test client: all three pages show the logo; logo and font URLs return 200; failed sign-in keeps the username; `next` honoured. Detector: no findings. No browser check was made.
+**Approved:** 2026-10-05 — the owner asked whether the Full Red page was professional enough, supplied the Shimadzu Philippines logo, chose option G from three calmer mockups ("let's go with G"), and replied "approved, store the font in the app".
+**Detailed:** 2026-10-05.
+
+## Context
+
+The Full Red sign-in page (two plans below, executed, not yet committed) reads as an alarm colour in a medical setting and uses a department name as its only brand. The owner supplied the official logo (`Shimadzu Philippines Corporation`: red square with the white circle-and-cross mark, white SHIMADZU logotype and white subline, transparent background; 2000×423 webp). Three calmer mockups were built in `tmp/login-layouts/` (G charcoal, H paper, I split); the owner chose **G** (`tmp/login-layouts/g-charcoal.html`, with `calm.css`, `shared.css`, `form.js`). This plan replaces the Full Red visual layer with G on all three signed-out pages while keeping every behaviour from the critique-fix plan.
+
+## Decisions taken
+
+1. Layout G on Login, Forgot password and Reset password: charcoal page, white logo, short brand-red rule, "Medical Service" / "Scheduler & Management System" on the left; sign-in card on the right; stacked on phones with a smaller logo. Top bar keeps "Medical Service", online status and Manila time. The large MEDICAL / SERVICE wordmark is removed.
+2. Themes: light = charcoal page `#14181F` + white card; dark = black page + dark card (`--app-surface`); graphite = `#202124` page + graphite card.
+3. Colours: logo used exactly as supplied; rule `#EE3239` (logo red); button `#D9262E` (white text 4.9:1). Non-classic accents still recolour the button and rule ("follow the accent"); the logo never changes.
+4. Font: **Fira Sans**, self-hosted (owner: "store the font in the app"), on the three signed-out pages only. Download approved: Fira Sans regular, medium and semibold woff2 from Google Fonts, about 60–90 KB total, SIL Open Font License.
+5. The SHIMADZU logotype is custom lettering and is only ever used as the image, never retyped.
+
+## Investigation
+
+- Supplied logo measured with Pillow (venv): red `rgb(238, 50, 57)` = `#EE3239`; mark white; logotype and subline white on transparent (x ≥ 300 px), so it needs a dark background. Contrast: white on `#EE3239` 4.08:1 (fails small text), on `#D9262E` 4.92:1, on `#C8102E` 5.88:1.
+- Current visual layer: `templates/_auth_brand.html` (top bar, `.auth-wordmark`, `.auth-subtitle`, status and clock script), `static/css/app-auth.css` (`--login-ground`, `--login-wordmark*`, `.auth-wordmark`, height caps `min(15.5vw, 26vh)` / `min(19vw, 16vh)`, `@media (max-width: 760px), (max-height: 560px)`), templates link `app-auth.css?v=6` and `theme-color` `#c8102e` (light).
+- Tests tied to the Full Red look: `tests/test_login_page.py` `test_signed_out_pages_share_the_full_red_shell` (wordmark `aria-hidden`, `#c8102e` theme-colour, `background: var(--login-ground)`) and `test_layout_fits_short_screens_and_pages_are_landmarked` (`min(15.5vw, 26vh)`); `tests/test_appearance_themes.py` (`?v=6`, `--login-page-bg: #000000;` and `#202124;` literals — keep both declarations).
+- Offline shell list in `app.py` (`'/static/css/app-auth.css'`, `'/static/js/app-auth.js'`): logo and font files must be added so the offline login page keeps its brand.
+- `PRODUCT.md` "Brand Commitments" / "Evidence on Hand" still say no logo is in the repository.
+
+## Execution steps
+
+1. **Fail-first test:** replace `test_signed_out_pages_share_the_full_red_shell` with a G test — `_auth_brand.html` has the logo `<img>` with alt "Shimadzu Philippines Corporation" and no `auth-wordmark`; `app-auth.css` has `--login-ground: #14181f`, `@font-face` for Fira Sans pointing at `fonts/fira-sans/`, and no `.auth-wordmark`; templates use `theme-color` `#14181f` and `?v=7`; the logo and font files exist and are in the offline shell list. Update the layout test's wordmark assertion. Run once to prove it fails.
+2. **Assets:** copy the supplied logo to `static/images/brand/shimadzu-philippines-logo-white.webp` (unchanged). Download Fira Sans 400/500/600 latin woff2 into `static/fonts/fira-sans/` with the OFL licence text. Done: files present, sizes noted.
+3. **`templates/_auth_brand.html`:** top bar unchanged; replace wordmark and subtitle with a brand panel (logo image, red rule, "Medical Service" heading, "Scheduler & Management System"). The card keeps the page `<h1>`; the panel name is not a second `<h1>`.
+4. **`static/css/app-auth.css`:** `@font-face` (font-display: swap) and Fira Sans on `body.auth-page`; tokens `--login-ground` (`#14181f` light, `--login-page-bg` dark/graphite), `--login-on-ground`, `--login-rule` (`#ee3239`, accent when non-classic), `--login-button` (`#d9262e`, darkened accent when non-classic); two-column grid (brand left, card right, max 1600 px) → one column at ≤ 820 px; remove wordmark styles and height caps; card follows theme. All state styles from the critique-fix plan stay.
+5. **Templates (three pages):** `theme-color` light `#14181f` (and in the first-paint script); `app-auth.css?v=7`; login card lead "Use the username your administrator gave you.".
+6. **`app.py`:** add the logo and three font files to the offline shell list; service worker → `…-v244-signin-charcoal` (read live value first).
+7. **`PRODUCT.md`:** logo on hand (`static/images/brand/`), brand red `#EE3239` measured from the supplied logo, Fira Sans as the closest match for the subline (not confirmed official), official guide still wanted for the rest.
+8. **`releases.json`:** entry dated the commit date (everyone, Sign-in): new calmer sign-in page with the Shimadzu logo.
+
+## Deliberately excluded
+
+- Font or colour changes anywhere else in the app.
+- A dark-text logo (G only needs the white one).
+- Other brand colours, spacing or type rules — still need the official guide.
+- Any change to sign-in behaviour; every critique-fix behaviour stays.
+
+## Verification
+
+- New test fails first, passes after; login, theme and travel-request modules green; full suite before/after counts (current 1,521 tests, 24 failures, 3 errors, 5 skips; the extra failure is the pre-existing `test_manifest_entries_cannot_be_deleted` order issue).
+- Flask test client: three pages render with the logo; failed sign-in keeps the username; `next` honoured; logo and font URLs return 200.
+- Contrast computed for every theme and accent (button text, rule, top-bar text, card text).
+- Impeccable detector once. No in-app browser check unless the owner allows one.
+
+## After implementation
+
+1. Self-review the diff.
+2. Fail-first proof recorded.
+3. Full suite with before/after counts.
+4. Service worker bump read live from `app.py`.
+5. `releases.json` entry dated the commit date.
+6. Update `changes.md` and this plan's status (with differences).
+7. Commit and push only on the owner's "commit and push", together with the two earlier sign-in plans: explicit staging, including the new logo and font files; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+8. Report what was verified and what was not.
+
+## Risks
+
+- **Logo on light surfaces:** the white logotype would vanish on a light background; it is only placed on the charcoal/black/graphite page.
+- **Font download source:** Google Fonts (official distributor of Fira Sans under the OFL); files are committed with the licence.
+- **Offline first visit:** the logo and fonts are in the offline shell, so a cached login page keeps its brand; if a font is missing the stack falls back to Segoe UI.
+
+---
+
+# Sign-in Pages: Critique Fixes (Recovery, Weak Signal, Layout, Colour, Polish)
+
+**Status:** Executed — not yet committed (ships with the Full Red work on the owner's "commit and push").
+**Execution authorized:** 2026-10-05 — the owner said "go ahead" (and later "do not overengineer").
+**Finished:** 2026-10-05.
+
+**Where the plan and the outcome differed:**
+
+- **One shared script:** the button, offline, caps lock, show-password, empty-field and slow-connection logic moved from three inline copies into `static/js/app-auth.js` (added to the offline shell list in `app.py`). Templates mark the form with `data-auth-form` and their labels; tests read the strings from the shared script.
+- **Password-reset success:** "Your password has been updated" now uses the flash category `success` and shows in a neutral notice on the login page instead of the red error box (it would otherwise have marked the fields invalid).
+- **Forgot password** also got the offline banner and button disable, not only Reset.
+- **Wordmark height cap** is `26vh` (plan said 30vh): computed from the CSS, 30vh still tucked the "L" under the card on a 1366×768 laptop. Landscape phones get a smaller wordmark (`min(19vw, 16vh)`) and a centred 440 px card.
+- **Status dot** on coloured grounds is white with a soft dark ring (any green vanished on the clinical-green accent).
+- **Contrast (computed):** white on page/button ≥ 5.5:1 for every accent; secondary text 4.56–5.98:1; dark/graphite wordmark 3.9–7.4:1. The faint second wordmark line stays decorative (about 2–2.8:1), as on the light theme.
+- **Test suite:** 1,521 tests, 24 failures, 3 errors, 5 skips. The extra failure is `test_changelog_workflow.ChangelogApiTests.test_manifest_entries_cannot_be_deleted`, which passes alone and with its own module and fails only after `tests.test_calibration_report_engineer_access`, whose teardown runs `db.drop_all()` and wipes the synced release notes. The same pair fails on `HEAD` (checked in a temporary worktree), so it is pre-existing and not caused by this work; left alone on the owner's "do not overengineer". Focused modules (login, themes, travel request) 68 tests OK. Flask test client: failed sign-in keeps the username, never echoes the password, marks both fields invalid; success notice after reset; `next` still honoured; forgot and reset render with the shared script. Detector: no findings. No browser check was made.
+**Approved:** 2026-10-05 — after the `/impeccable critique` of the signed-out pages (25/40; snapshot `.impeccable/critique/2026-10-05T01-32-24Z__templates-login-html.md`), the owner chose to fix all three priority areas, keep "follow the accent" on the sign-in page, cover everything in the report, and replied "plan approved".
+**Detailed:** 2026-10-05.
+
+## Context
+
+The "Full Red" sign-in work (plan below, executed, not yet committed) looks right but is weakest at the anxious moments: a failed sign-in clears the username and shows "Invalid Credentials - Access Denied"; on a weak hospital signal the button silently flips back to SIGN IN after 12 s; on 1366×768 laptops and landscape phones the card covers the wordmark; several accent and dark-theme colour pairs fall below readable contrast; and there are keyboard, tap-size and small-text gaps. This plan fixes all findings in the critique. It builds on top of the uncommitted Full Red changes and ships with them.
+
+## Decisions taken
+
+1. Fix everything in the critique report (priority issues and minor observations), except the items under "Deliberately excluded".
+2. **Follow the accent:** a user's chosen accent still recolours the sign-in page. Contrast is fixed for every accent rather than forcing red.
+3. The failed sign-in message stays generic (does not reveal whether the username exists): "Username or password is incorrect. Check caps lock and try again."
+4. Brand colour (`#c8102e`) and the font stay until the official Shimadzu guide is available.
+
+## Investigation
+
+- Failed login: `app.py:12919` flashes "Invalid Credentials - Access Denied"; `app.py:12921` re-renders `login.html` with only `next_target`, so the typed username is lost. `templates/login.html:71` username input has no `value`. Jinja autoescapes, so echoing the username back is safe; the password is never echoed.
+- The re-render after a failed POST is not cached by the service worker (only the GET `/login` shell is), so a username in the page never reaches the offline cache. Keep it that way; do not add the username to the GET render.
+- Submit guard: `login.html:181-200` disables the button, shows SIGNING IN, and after `12000` ms silently restores SIGN IN. Same pattern in `forgot_password.html:108-115` and `reset_password.html:180-187`.
+- Offline banner `login.html:42` has `role="status"` but its text is always in the DOM and only toggled by `display`, so screen readers often do not announce it. The caps lock hint at `login.html:104` (and `reset_password.html:78`) is not live and not linked to the field.
+- Forgot password shows its neutral confirmation in `.alert-login` (red error box) at `forgot_password.html:47`. Reset password has no offline handling and shows "Passwords do not match" in amber `.hint-row`.
+- Layout: the wordmark size is width-only (`app-auth.css` `.auth-wordmark > div` `font-size: clamp(5rem, 15.5vw, 15rem)`); the single-column switch is `@media (max-width: 760px)` only.
+- Colour (computed by the design review): graphite red wordmark on `#202124` ≈ 2.7:1; the faint second line at 35 % red ≈ 1.3:1 on dark; on the purple accent, white top-bar text ≈ 4.2:1 and `#ffe3e7` ≈ 3.5:1; on clinical green `#ffe3e7` ≈ 3.8:1; on corporate blue ≈ 4.3:1; the pale status dot `#bbf7d0` disappears on green.
+- Mechanical (the detector agent read the CSS; the CLI detector could not resolve the Jinja stylesheet links, so it reported 0 findings without checking colour): `.toggle-visibility:focus-visible { outline: none }` with only a colour change; `.forgot-link` ≈ 19 px tall; `.field-label` 0.7rem (11.2 px); `.hint-row` 0.72rem (11.5 px); placeholder `--app-muted` at 0.75 opacity ≈ 3:1; disabled `.btn-signin` at `opacity: .72` ≈ 3.9:1.
+- No `<main>` landmark (`.login-shell` is a div at `login.html:35`, `forgot_password.html:33`, `reset_password.html:33`); Font Awesome `<i>` icons lack `aria-hidden`.
+- `bootstrap.bundle.min.js` is loaded but unused at `login.html:124`, `forgot_password.html:90`, `reset_password.html:115` (no Bootstrap JS components on these pages).
+- Footer `login.html:119` shows "© 2026 Medical Service" in a `.version-tag`. There is no app version constant; the newest `release_date` in `static/changelog/releases.json` is the closest real "build" fact.
+- Legacy rule `static/css/app-themes.css:212` forces every `.login-card` label to `--app-text !important` in dark mode; `app-auth.css` fights it back for `.field-label`.
+- "Medical Service" appears four times on login (top bar, wordmark, card subtitle "Medical Service account", footer).
+
+## Execution steps
+
+1. **Fail-first tests** in `tests/test_login_page.py`: (a) functional — a failed POST to `/login` (isolated DB, as in `PasswordResetTokenTests`) re-renders with the typed username in `value=` and the new message, and never echoes the password; (b) login/forgot/reset scripts contain "Still connecting" and no `12000` silent reset; (c) `app-auth.css` has a height-aware wordmark size (`vh`) and `(max-height: 560px)` in the single-column media query; (d) all three templates use `<main class="login-shell"` and none load `bootstrap.bundle`. Run once on current files to prove they fail.
+2. **`app.py` `login()`** (~`12856-12921`): on failure flash "Username or password is incorrect. Check caps lock and try again." and pass `username` to the re-render; the template sets `value="{{ username or '' }}"`. Pass `build_label` (newest `release_date` from `releases.json`, formatted "5 Oct 2026") through a small cached helper next to the route; empty if unavailable. Done: test (a) passes; existing `next` tests still pass.
+3. **`templates/login.html` — recovery and a11y.** When a flash is shown: `aria-invalid="true"` on both inputs, `aria-describedby` to the alert id, focus moves to the password field. Add "Don't know your username? Contact your administrator." Remove the card subtitle "Medical Service account". Footer: "Updated {{ build_label }}" instead of the copyright. Icons get `aria-hidden="true"`; `.login-shell` becomes `<main>`. Desktop-only autofocus on the username field when there is no error (skip on touch devices so the keyboard does not pop up).
+4. **Slow-connection handling** (login, forgot, reset scripts): at ~5 s after submit, label STILL CONNECTING plus an `aria-live="polite"` line "Slow connection. Keep this page open."; at ~20 s re-enable the button as TRY AGAIN with the line kept. Never silently revert. Empty required fields are blocked client-side with a short inline message (keep `novalidate` for custom messaging). Done: test (b) passes.
+5. **Live announcements.** Offline banner: keep `role="status"` and set its text on change instead of only toggling `display`. Caps lock hint: `aria-live="polite"` and `aria-describedby` from the password field. Reset page gets the same offline banner and button disable as login. Forgot page confirmation uses a new neutral `.notice-login` style; the reset "Passwords do not match" hint uses the error colour.
+6. **`static/css/app-auth.css` — layout.** Wordmark `font-size: clamp(5rem, min(15.5vw, 30vh), 15rem)`; single column at `@media (max-width: 760px), (max-height: 560px)`; composition capped at ~1600 px wide on very wide screens. Done: test (c) passes; at 1366×768 the card no longer covers "MEDICAL" (positions computed from the CSS).
+7. **`app-auth.css` — colour.** `--login-on-ground-muted: rgba(255,255,255,.86)`; non-red accent grounds darkened with `color-mix(in srgb, var(--login-accent) 85%, #000)` (fallback: plain accent); dark/graphite wordmark `color-mix(in srgb, var(--login-accent) 75%, #fff)` with the faint line at ~0.55 alpha; top-bar status dot readable on every ground (white with a dark ring). Done: each listed pair ≥ 4.5:1 for small text, ≥ 3:1 for the wordmark.
+8. **`app-auth.css` — polish.** `.toggle-visibility:focus-visible { outline: 2px solid var(--login-accent); outline-offset: -4px }`; field ring via `.input-shell:has(input:focus)` with `:focus-within` as fallback; `.forgot-link` padded to a 44 px tap area; `.field-label` and `.hint-row` ≥ 0.75rem; placeholder at full opacity; disabled button keeps full-contrast text (dim the background instead); new `.notice-login`.
+9. **Remove** `bootstrap.bundle.min.js` from the three templates. **`static/css/app-themes.css:212`**: drop `label` from the forced dark `.login-card` rule and remove the matching override in `app-auth.css`. Done: test (d) passes; dark labels muted, headings still `--app-text`.
+10. **Versions:** `app-auth.css?v=5` → `?v=6` (update `tests/test_appearance_themes.py`); service worker → `…-v243-signin-critique-fixes` (read the live value first); `releases.json` entry dated the commit date (everyone, category Sign-in).
+
+## Deliberately excluded
+
+- Brand font and brand colour — need the official Shimadzu guide (PRODUCT.md).
+- Bootstrap CSS and Font Awesome stylesheets — other shared styles depend on them; removing them touches more than these pages.
+- Forcing red regardless of accent — the owner chose "follow the accent".
+- Any change to rate limiting, reset tokens or account-existence behaviour.
+
+## Verification
+
+- New tests fail on current files, pass after.
+- `tests/test_login_page.py`, `tests/test_appearance_themes.py`, `tests/test_offline_resilience.py` green apart from the known offline TSR failure; full suite before/after counts (baseline 1,518 tests, 23 failures, 3 errors, 5 skips).
+- Flask test client: GET `/login`, `/forgot_password`, reset render 200; failed POST keeps the username, never echoes the password, keeps `next`.
+- Contrast pairs from step 7 computed and listed.
+- Impeccable detector once on the changed templates. No in-app browser check unless the owner allows one.
+
+## After implementation
+
+1. Self-review the diff.
+2. Fail-first proof recorded; no residue.
+3. Full suite with before/after counts.
+4. Service worker bump read live from `app.py`.
+5. `releases.json` entry dated the commit date.
+6. Update `changes.md` and this plan's status (with differences).
+7. Commit and push only on the owner's "commit and push", together with the Full Red work: explicit staging; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+8. Report what was verified and what was not.
+
+## Risks
+
+- **Echoing the username:** autoescaped, only on the failed POST response, never cached; the password is never echoed. Account-existence protections (always-run hash comparison, generic message) unchanged.
+- **Slow-connection timer:** a request that succeeds after TRY AGAIN appears could be resubmitted; signing in again with the same credentials is harmless, and the label says it is still connecting first.
+- **`:has()` and `color-mix()` support:** both have fallbacks.
+- **Removing the dark label override:** covered by the theme tests; the heading rule stays.
+
+---
+
+# Signed-out Pages: "Full Red" Layout (Login, Forgot Password, Reset Password)
+
+**Status:** Executed — not yet committed (waiting for the owner's "commit and push").
+**Finished:** 2026-10-05.
+
+**Where the plan and the outcome differed:**
+
+- **One shared partial instead of three copies:** the top bar, subtitle, wordmark, connection status and Manila clock live in a new `templates/_auth_brand.html`, included by all three pages. The connection status (`status-dot` / `status-text`) is now updated by the partial's script; the login page script keeps the offline banner and the SIGN IN disable.
+- **Extra test file touched:** `tests/test_travel_request_page.py` asserted the exact old service worker version (`v241-travel-request-page`); it now uses `assert_cache_version_at_least(self, 241, ...)`, like the other feature tests.
+- **Wordmark clipping:** the plan's `overflow: hidden` on the page would have cut off the form on short desktop windows with no scroll. The wordmark box clips itself instead (`.auth-wordmark` with an inner `div`), and the page keeps vertical scrolling.
+- **Card headings:** Forgot password and Set a new password keep their existing headings and intro copy; their key / lock-open icon tiles are removed, as on the login card.
+- **Verification:** new test failed before the change (missing partial) and passes after; login, theme, travel-request and offline modules OK except one known offline TSR failure; full suite 1,518 tests, 23 failures, 3 errors, 5 skips (baseline 1,517 with the same non-passing set, plus the new test). Flask test client: `/login` and `/forgot_password` 200, reset page renders, all expected ids, CSRF field, `?v=5` and `#c8102e` present. Impeccable detector: no findings on the changed files. No browser check was made.
+**Execution authorized:** 2026-10-05 — the owner said "go ahead".
+**Approved:** 2026-10-05 — the owner picked layout F ("let's work with F"), answered the two open decisions, and replied "approved" to the plan below.
+**Detailed:** 2026-10-05.
+
+## Context
+
+First item of the design-improvement pass. The owner reviewed six login mockups (A–F, in `tmp/login-layouts/`, never committed) and chose **F · Full red**: the whole page in Shimadzu red, a huge white MEDICAL / SERVICE wordmark running off the bottom edge, a top bar with online status and Manila time, and a white sign-in card. Reference mockup: `tmp/login-layouts/f-full-red.html` (with `shared.css` and `form.js`). The aim is a signed-out screen that carries the brand and stays as fast and field-safe as today's.
+
+## Decisions taken
+
+1. **All three signed-out pages** get the F layout: Login, Forgot password, Reset password (they already share `static/css/app-auth.css`).
+2. **Light theme:** full Shimadzu red page (`#c8102e`) with a white card.
+3. **Dark and graphite themes:** black (`#000000`) or graphite (`#202124`) page, the wordmark and the SIGN IN button in the accent red, and a dark card (`--app-surface`).
+4. **Accent override stays:** when a user has picked a non-classic accent (`data-accent-theme` other than `classic`), the page uses `--app-primary` instead of red, as today (`app-auth.css` lines 17–25).
+5. Wordmark is plain text "MEDICAL" / "SERVICE". No Shimadzu logo (none in the repo; PRODUCT.md forbids approximating it). Copy stays the current copy.
+
+## Investigation
+
+- `static/css/app-auth.css` styles all three pages (linked `?v=4` at `templates/login.html:29`, `forgot_password.html:27`, `reset_password.html:27`). It defines `--login-accent`, `--login-page-bg`, `--login-page-end`, `--login-page-glow`, and the dark/graphite overrides.
+- `tests/test_appearance_themes.py:369–377` and `:471–477` assert the literals `--login-page-bg: #202124;`, `--login-page-bg: #000000;`, and `app-auth.css') }}?v=4` in all three templates. Keep the two `--login-page-bg` declarations (they become the dark/graphite page grounds); update the `?v=4` assertions to `?v=5`.
+- `static/css/app-themes.css:211–212` forces `.login-card` surface and heading/label colour in dark mode with `!important`. Keep the `.login-card` class on the card so this keeps working; `app-auth.css` already re-mutes `.field-label` in dark mode.
+- All three templates carry `<meta name="theme-color" content="#2c3e50">` and a first-paint script that sets theme datasets and the meta colour (`login.html:7–22`). Light palette value becomes `#c8102e` so the phone status bar matches the red page; graphite/amoled values unchanged.
+- `tests/test_login_page.py` guards the mobile-safe inputs (`:61`), the password toggle button (`:71`), caps lock / offline / submit guard (`:78`), theme variables instead of hard-coded colour (`:88`), forgot/reset pages (`:96`), the `next` handling (`:258–358`) and the offline shell cache (`:115`, cache version floor 39). None of these change.
+- Service worker version lives in `app.py:27049` (`medical-service-pwa-offline-navigation-v241-travel-request-page`); `/login` and `/static/css/app-auth.css` are in the offline shell, so the bump is required.
+- Forgot/Reset use `.login-card`, `.brand-tile` (key / lock-open icons) and `.card-footer-row` (`forgot_password.html:32–80`, `reset_password.html:32–34`).
+
+## Execution steps
+
+1. **`static/css/app-auth.css` — page ground and tokens.** Light: `body.auth-page` background `var(--login-accent)` (solid, no gradient, no glow). Dark: `var(--login-page-bg)`, keeping `#000000` / `#202124`. Add `--login-on-ground` (white on red; `--app-text` on dark) and `--login-on-ground-muted` (`#ffe3e7` on red; `--app-muted` on dark). Remove `--login-page-glow` and the radial gradient. Done: each theme shows the right ground with no glow.
+2. **`app-auth.css` — layout.** New `.auth-topbar` (MEDICAL SERVICE, status chip, Manila clock; tabular numerals), `.auth-subtitle` ("Scheduler & Management System"), `.auth-wordmark` (absolute, bottom-left, `clamp(5rem,15.5vw,15rem)`, weight 800, line-height .82, tracking −.045em, second line at 20% opacity of `--login-on-ground`; dark themes: accent red at full and 35%), `.login-shell` right-aligned on desktop. ≤760px: wordmark in flow above the card at `clamp(3.6rem,19vw,6rem)`, card full width, page scrolls. Card shadow neutral (`0 24px 60px rgba(0,0,0,.28)`), no coloured glow. Keep `::selection` themed (white on red / red on dark). Done: matches the F mockup at 1440px and 375px with no horizontal scroll.
+3. **`app-auth.css` — keep every existing state.** `.input-shell`, `.toggle-visibility` (44px), `.hint-row`, `.btn-signin` (54px on phones), `.alert-login`, `.offline-banner`, `.status-dot.is-offline`, dark-mode overrides and the contrast fix for `.forgot-link` stay. Remove `.brand-tile` styling only if no template still uses it (step 4 decides). Done: no state lost.
+4. **`templates/login.html`.** Add the top bar (status chip moves here from the card footer; the existing `status-dot`/`status-text` ids keep working with `updateConnectionState`), the subtitle, and the `aria-hidden="true"` wordmark. The card header becomes "Sign in" + "Medical Service account"; the house-medical tile is dropped (the wordmark is the brand). Card footer: Forgot password? + © 2026 Medical Service. Form, CSRF token, `next` field, ids, and all scripts unchanged. Add a small Manila clock script (`toLocaleTimeString('en-GB', {timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit'})`, every 30 s). `theme-color` light value `#c8102e`. `?v=5`. Done: page renders via Flask test client with every existing id present.
+5. **`templates/forgot_password.html` and `templates/reset_password.html`.** Same shell (top bar, subtitle, wordmark), card headings stay "Forgot password" / "Reset password" with their current intro copy and forms; key / lock-open tile dropped. `theme-color` light `#c8102e`; `?v=5`. Done: both render with forms and tokens intact.
+6. **`static/css/app-themes.css`.** Confirm lines 211–212 still give the dark card the right surface and heading colour; adjust only if the new markup needs it. Done: dark card readable.
+7. **Tests.** `tests/test_appearance_themes.py`: `?v=4` → `?v=5` (two places). `tests/test_login_page.py`: one new source-level test — all three templates contain `auth-wordmark` with `aria-hidden="true"` and `auth-topbar`; `app-auth.css` has no `radial-gradient` and has the dark `--login-page-bg` values. Prove the new test fails before steps 2–5 (run once on the old files).
+8. **Service worker** bump in `app.py` (read the live value first) to `…-v242-signin-full-red`.
+9. **`static/changelog/releases.json`** entry dated the commit date: "New Sign-in Screen" — red sign-in, forgot and reset pages with the Manila time; dark themes keep a dark page.
+
+## Deliberately excluded
+
+- Shimadzu logo or brand font — not in the repo; brand-level assets must come from the official guide.
+- Any server change to sign-in, reset tokens, rate limiting or redirects — layout only.
+- "What's new" panel, timeline background, module list — other mockups, not chosen.
+- The other mockups A–E and `tmp/login-layouts/` — stay uncommitted.
+
+## Verification
+
+- New test fails on the old files, passes after.
+- `tests/test_login_page.py` and `tests/test_appearance_themes.py` green; full suite before/after counts (baseline 1,517 tests, 23 failures, 3 errors, 5 skips — the known non-passing set).
+- Flask test client: GET `/login`, `/forgot_password`, a reset page — 200, CSRF field and all script ids present.
+- Impeccable detector run once on the changed template/CSS files.
+- No in-app browser check unless the owner allows one (AGENTS.md). The owner checks 375px and desktop in light, dark and graphite.
+
+## After implementation
+
+1. Self-review the diff.
+2. Fail-first proof for the new test, restore, confirm no residue.
+3. Full suite, quoting before and after counts.
+4. Service worker bump read live from `app.py`.
+5. `releases.json` entry dated the commit date.
+6. Update `changes.md`, and this plan's status to `Executed` with its commit hash and any difference from the plan.
+7. Commit and push only on the owner's "commit and push": explicit staging, `scheduler.db`, `tmp/`, `output/`, handoffs and `.claude/` excluded; verify `origin/main` and Railway deployment.
+8. Report what was verified and what was not.
+
+## Risks
+
+- **Blast radius:** the three signed-out pages only. Security behaviour (CSRF, `next`, reset tokens) is untouched and guarded by existing tests.
+- **Offline login shell:** cached copy is replaced only after the service worker bump; forgetting it would show the old page offline. Covered by step 8.
+- **Dark-mode `!important` rules in `app-themes.css`** could fight the new card styles; step 6 checks them.
+- **Large wordmark on very short screens** (landscape phones) could crowd the card; ≤760px puts it in flow so the page scrolls instead of overlapping.
+
+---
+
 # Travel Request Page: Review Fixes, Clearer Layout, New Functions, and Less Code
 
 **Status:** Executed — commit `e051e5f`; published to `origin/main` on the owner's "commit and push".

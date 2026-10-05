@@ -23,6 +23,7 @@ class LoginSourceTests(unittest.TestCase):
         cls.forgot_source = (ROOT / 'templates' / 'forgot_password.html').read_text(encoding='utf-8')
         cls.reset_source = (ROOT / 'templates' / 'reset_password.html').read_text(encoding='utf-8')
         cls.auth_css = (ROOT / 'static' / 'css' / 'app-auth.css').read_text(encoding='utf-8')
+        cls.auth_js = (ROOT / 'static' / 'js' / 'app-auth.js').read_text(encoding='utf-8')
 
     def test_deactivated_accounts_are_reported_instead_of_failing_silently(self):
         # login_user() returns False for inactive users. The route must not ignore
@@ -76,14 +77,15 @@ class LoginSourceTests(unittest.TestCase):
         self.assertIn('aria-label="Show password"', self.login_source)
 
     def test_login_page_has_capslock_offline_and_submit_guard(self):
+        for marker in ('id="capslock-hint"', 'id="offline-banner"', 'data-auth-form', "js/app-auth.js"):
+            self.assertIn(marker, self.login_source)
+        # The behaviour itself is shared by all three signed-out pages.
         for marker in (
-            'id="capslock-hint"',
             "getModifierState('CapsLock')",
-            'id="offline-banner"',
             "window.addEventListener('offline'",
             'submitButton.disabled = true;',
         ):
-            self.assertIn(marker, self.login_source)
+            self.assertIn(marker, self.auth_js)
 
     def test_login_page_uses_theme_variables_instead_of_hardcoded_pink(self):
         self.assertNotIn('#d63384', self.login_source)
@@ -92,6 +94,48 @@ class LoginSourceTests(unittest.TestCase):
         self.assertIn('var(--app-text)', self.auth_css)
         self.assertIn('--login-accent: var(--app-primary)', self.auth_css)
         self.assertIn(':root[data-app-theme="dark"]', self.auth_css)
+
+    def test_signed_out_pages_share_the_charcoal_logo_shell(self):
+        brand = (ROOT / 'templates' / '_auth_brand.html').read_text(encoding='utf-8')
+        self.assertIn('class="auth-topbar"', brand)
+        self.assertIn('alt="Shimadzu Philippines Corporation"', brand)
+        self.assertIn("images/brand/shimadzu-philippines-logo-white.webp", brand)
+        self.assertNotIn('auth-wordmark', brand)
+        self.assertIn("timeZone: 'Asia/Manila'", brand)
+        for source in (self.login_source, self.forgot_source, self.reset_source):
+            self.assertIn("{% include '_auth_brand.html' %}", source)
+            self.assertIn('class="login-card"', source)
+            self.assertIn('<meta name="theme-color" content="#14181f">', source)
+        self.assertIn('--login-ground: #14181f;', self.auth_css)
+        self.assertIn("font-family: 'Fira Sans'", self.auth_css)
+        self.assertNotIn('auth-wordmark', self.auth_css)
+        self.assertIn('--login-page-bg: #000000;', self.auth_css)
+        self.assertIn('--login-page-bg: #202124;', self.auth_css)
+        # The brand must survive offline: logo and fonts ship with the app and are cached.
+        for asset in ('images/brand/shimadzu-philippines-logo-white.webp',
+                      'fonts/fira-sans/fira-sans-400.woff2',
+                      'fonts/fira-sans/fira-sans-500.woff2',
+                      'fonts/fira-sans/fira-sans-600.woff2'):
+            self.assertTrue((ROOT / 'static' / asset).is_file(), asset)
+            self.assertIn("'/static/" + asset + "',", self.app_source)
+
+    def test_slow_connections_are_announced_instead_of_silently_reset(self):
+        self.assertIn('STILL CONNECTING', self.auth_js)
+        self.assertIn('Slow connection. Keep this page open.', self.auth_js)
+        self.assertIn('TRY AGAIN', self.auth_js)
+        self.assertNotIn('12000', self.auth_js)
+        for source in (self.login_source, self.forgot_source, self.reset_source):
+            self.assertIn('id="form-note" aria-live="polite"', source)
+            self.assertIn("js/app-auth.js", source)
+            self.assertNotIn('}, 12000);', source)
+        self.assertIn("'/static/js/app-auth.js',", self.app_source)
+
+    def test_layout_fits_short_screens_and_pages_are_landmarked(self):
+        self.assertIn('@media (max-width: 820px)', self.auth_css)
+        for source in (self.login_source, self.forgot_source, self.reset_source):
+            self.assertIn('<main class="login-shell"', source)
+            self.assertNotIn('bootstrap.bundle', source)
+        self.assertIn('id="offline-banner"', self.reset_source)
 
     def test_forgot_password_link_and_pages_exist(self):
         self.assertIn("url_for('forgot_password')", self.login_source)
@@ -265,7 +309,7 @@ class LoginNextTargetTests(unittest.TestCase):
         self.assertIn('response = redirect(next_target)', source)
         # And the GET must hand it to the template, or a failed first attempt
         # silently drops the destination.
-        self.assertIn("render_template('login.html', next_target=next_target)", source)
+        self.assertIn("next_target=next_target,\n        username=failed_username,", source)
 
     def test_the_form_carries_next_through_a_failed_attempt(self):
         login_source = (ROOT / 'templates' / 'login.html').read_text(encoding='utf-8')
@@ -364,6 +408,19 @@ class LoginNextRoundTripTests(unittest.TestCase):
         })
         self.assertEqual(refused.status_code, 200)
         self.assertIn('value="/timeline"', refused.get_data(as_text=True))
+
+    def test_a_failed_attempt_keeps_the_username_and_never_echoes_the_password(self):
+        refused = self.app.test_client().post('/login', data={
+            'username': 'login_next_probe',
+            'password': 'wrong-password-probe-987',
+        })
+        html = refused.get_data(as_text=True)
+        self.assertEqual(refused.status_code, 200)
+        self.assertIn('value="login_next_probe"', html)
+        self.assertIn('Username or password is incorrect. Check caps lock and try again.', html)
+        self.assertIn('aria-invalid="true"', html)
+        self.assertNotIn('wrong-password-probe-987', html)
+        self.assertNotIn('Invalid Credentials', html)
 
 
 if __name__ == '__main__':

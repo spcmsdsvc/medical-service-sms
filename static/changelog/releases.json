@@ -1,6 +1,60 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-05-signin-charcoal",
+      "release_date": "2026-10-05",
+      "title": "Sign-in with the Shimadzu Logo",
+      "summary": "The sign-in, forgot password and reset password pages now show the Shimadzu logo on a calm charcoal page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-05-signin-charcoal-everyone",
+          "category": "Sign-in",
+          "description": "The sign-in pages use a charcoal background with the Shimadzu Philippines logo, a brand-red line and Medical Service beside the sign-in card, in the Fira Sans font. The logo and font are stored in the app, so the page looks the same offline. Dark and graphite themes keep a dark page, and a chosen accent colour still colours the button. Signing in works exactly as before.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-05-signin-critique-fixes",
+      "release_date": "2026-10-05",
+      "title": "Friendlier Sign-in",
+      "summary": "Sign-in keeps your username after a mistake, tells you when the connection is slow, and is easier to read and use.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-05-signin-critique-fixes-everyone",
+          "category": "Sign-in",
+          "description": "After a wrong password your username stays filled in and the cursor goes to the password, with a clear message to check caps lock. On a slow connection the button says Still connecting instead of quietly resetting, and Try again appears after 20 seconds. Empty fields are pointed out before sending. The page fits laptops and landscape phones without covering the name, text is readable on every theme and accent colour, links are easier to tap, and screen readers announce the offline notice and caps lock. Forgot password and reset password work the same way, and a successful reset shows a confirmation instead of an error.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-05-signin-full-red",
+      "release_date": "2026-10-05",
+      "title": "New Sign-in Screen",
+      "summary": "The sign-in, forgot password and reset password pages have a new red Medical Service look.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-05-signin-full-red-everyone",
+          "category": "Sign-in",
+          "description": "The sign-in page is now Shimadzu red with a large Medical Service name, and the top bar shows whether you are online and the time in Manila. Forgot password and reset password match it. Dark and graphite themes keep a dark page with red highlights, and a chosen accent colour still applies. Signing in works exactly as before.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-05-travel-request-page",
       "release_date": "2026-10-05",
       "title": "Clearer Travel Request Page",

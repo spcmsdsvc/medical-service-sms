@@ -209,7 +209,7 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary-text); }
 :root[data-app-theme="dark"] .dropdown-item:focus { background: var(--app-surface-raised); color: var(--app-text); }
 :root[data-app-theme="dark"] .btn-close { filter: invert(1) grayscale(1) brightness(1.8); }
 :root[data-app-theme="dark"] .login-card { background: var(--app-surface) !important; color: var(--app-text); border-color: var(--app-border); }
-:root[data-app-theme="dark"] .login-card :is(h1,h2,h3,h4,h5,h6,label) { color: var(--app-text) !important; }
+:root[data-app-theme="dark"] .login-card :is(h1,h2,h3,h4,h5,h6) { color: var(--app-text) !important; }
 :root[data-app-theme="dark"] .shadow-sm,
 :root[data-app-theme="dark"] .shadow { box-shadow: var(--app-shadow) !important; }
 

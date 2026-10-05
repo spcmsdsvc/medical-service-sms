@@ -1,0 +1,43 @@
+{# Brand shell shared by the signed-out pages (login, forgot password, reset password).
+   Styled by static/css/app-auth.css. Owns the connection status and the Manila clock. #}
+<header class="auth-topbar">
+    <span class="auth-topbar-name">MEDICAL SERVICE</span>
+    <div class="status-chip">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Online</span>
+        <span aria-hidden="true">&middot;</span>
+        <time id="auth-clock">Manila</time>
+    </div>
+</header>
+<section class="auth-brand">
+    <img class="auth-logo" src="{{ url_for('static', filename='images/brand/shimadzu-philippines-logo-white.webp') }}"
+         alt="Shimadzu Philippines Corporation" width="2000" height="423">
+    <div class="auth-rule" aria-hidden="true"></div>
+    <p class="auth-product">Medical Service</p>
+    <p class="auth-subtitle">Scheduler &amp; Management System</p>
+</section>
+<script>
+(function () {
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const clock = document.getElementById('auth-clock');
+
+    function updateStatus() {
+        const online = navigator.onLine !== false;
+        statusDot.classList.toggle('is-offline', !online);
+        statusText.textContent = online ? 'Online' : 'Offline';
+    }
+
+    function updateClock() {
+        clock.textContent = new Date().toLocaleTimeString('en-GB', {
+            timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit'
+        }) + ' Manila';
+    }
+
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    updateStatus();
+    updateClock();
+    setInterval(updateClock, 30000);
+})();
+</script>

@@ -374,7 +374,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in sources:
             self.assertIn("filename='css/app-themes.css') }}?v=22", source)
-            self.assertIn("filename='css/app-auth.css') }}?v=4", source)
+            self.assertIn("filename='css/app-auth.css') }}?v=7", source)
 
     def test_graphite_release_and_cache_marker_are_current(self):
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
@@ -480,7 +480,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in auth:
             self.assertIn("filename='css/app-themes.css') }}?v=22", source)
-            self.assertIn("filename='css/app-auth.css') }}?v=4", source)
+            self.assertIn("filename='css/app-auth.css') }}?v=7", source)
 
     def test_amoled_dark_page_layer_does_not_restore_navy_neutrals(self):
         dark_css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')

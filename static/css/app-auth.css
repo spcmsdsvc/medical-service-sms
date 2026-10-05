@@ -1,16 +1,46 @@
 /* Shared styling for the signed-out pages: login, forgot password, reset password.
    Kept in one file so a dark-mode or accent fix lands on all three at once.
-   Depends on the variables defined in app-themes.css. */
+   Depends on the variables defined in app-themes.css. Brand markup (top bar, logo
+   panel) comes from templates/_auth_brand.html. */
 
-/* These pages carry the Shimadzu brand tone by default. When a user has explicitly
-   chosen an accent theme, that choice wins so the sign-in screen matches the app
-   they are about to enter. */
+/* Fira Sans, self-hosted so the sign-in page keeps its type offline (SIL OFL,
+   static/fonts/fira-sans/OFL.txt). Closest free match to the logo's subline. */
+@font-face {
+    font-family: 'Fira Sans';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../fonts/fira-sans/fira-sans-400.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Fira Sans';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../fonts/fira-sans/fira-sans-500.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Fira Sans';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('../fonts/fira-sans/fira-sans-600.woff2') format('woff2');
+}
+
+/* Charcoal page with the white Shimadzu logo. Brand red comes from the supplied
+   logo (#ee3239) and is used for the rule; the button uses a deeper #d9262e so white
+   text passes AA (4.9:1). A chosen accent theme recolours the button and rule only. */
 :root {
-    --login-accent: #c8102e;
-    --login-accent-rgb: 200, 16, 46;
-    --login-page-bg: #0f172a;
-    --login-page-end: #000000;
-    --login-page-glow: rgba(200, 16, 46, 0.20);
+    --login-accent: #d9262e;
+    --login-accent-rgb: 217, 38, 46;
+    --login-rule: #ee3239;
+    --login-button: var(--login-accent);
+    --login-ground: #14181f;
+    --login-on-ground: #ffffff;
+    --login-on-ground-muted: #b9c1cf;
+    --login-edge: max(clamp(18px, 6vw, 96px), calc((100vw - 1600px) / 2));
 }
 
 :root[data-accent-theme="shimadzu-red"],
@@ -21,21 +51,38 @@
 :root[data-accent-theme="teal"] {
     --login-accent: var(--app-primary);
     --login-accent-rgb: var(--app-primary-rgb);
-    --login-page-glow: rgba(var(--app-primary-rgb), 0.20);
+    --login-rule: var(--app-primary);
+}
+
+/* Lighter accents are darkened slightly on the button so white text stays readable. */
+@supports (color: color-mix(in srgb, red 50%, black)) {
+    :root[data-accent-theme="clinical-green"],
+    :root[data-accent-theme="corporate-blue"],
+    :root[data-accent-theme="purple"],
+    :root[data-accent-theme="pink"],
+    :root[data-accent-theme="teal"] {
+        --login-button: color-mix(in srgb, var(--login-accent) 85%, #000000);
+    }
 }
 
 :root[data-app-theme="dark"] {
     --login-page-bg: #000000;
-    --login-page-end: #000000;
+    --login-ground: var(--login-page-bg);
+    --login-on-ground: var(--app-text);
+    --login-on-ground-muted: var(--app-muted);
 }
 
 :root[data-app-theme="dark"][data-app-palette="graphite"] {
     --login-page-bg: #202124;
-    --login-page-end: #191a1d;
 }
 
 .auth-page * {
     -webkit-tap-highlight-color: transparent;
+}
+
+.auth-page ::selection {
+    background: rgba(var(--login-accent-rgb), 0.45);
+    color: #ffffff;
 }
 
 html,
@@ -43,73 +90,118 @@ body.auth-page {
     min-height: 100%;
 }
 
+/* Grid: top bar across, brand panel left, sign-in card right. */
 body.auth-page {
-    background:
-        radial-gradient(circle at top left, var(--login-page-glow), transparent 38%),
-        linear-gradient(135deg, var(--login-page-bg) 0%, var(--login-page-end) 100%) !important;
+    background: var(--login-ground) !important;
+    color: var(--login-on-ground);
     min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 0;
-    padding:
-        max(20px, env(safe-area-inset-top))
-        18px
-        max(20px, env(safe-area-inset-bottom))
-        18px;
+    font-family: 'Fira Sans', 'Segoe UI', system-ui, sans-serif;
+    display: grid;
+    grid-template-columns: 1fr minmax(0, 420px);
+    grid-template-rows: auto 1fr;
+    column-gap: clamp(32px, 6vw, 96px);
+    padding: 0 var(--login-edge);
     overflow-x: hidden;
 }
 
-.login-shell {
-    width: 100%;
+/* Top bar: product name, connection status, Manila time. */
+.auth-topbar {
+    grid-column: 1 / -1;
     display: flex;
-    justify-content: center;
     align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: max(18px, env(safe-area-inset-top)) 0 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 0.85rem;
+    color: var(--login-on-ground-muted);
+}
+
+.auth-topbar-name {
+    font-weight: 600;
+    color: var(--login-on-ground);
+}
+
+.auth-topbar .status-chip {
+    color: var(--login-on-ground-muted);
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.auth-brand {
+    align-self: center;
+    padding: 40px 0;
+}
+
+.auth-logo {
+    display: block;
+    width: min(440px, 100%);
+    height: auto;
+}
+
+.auth-rule {
+    width: 56px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--login-rule);
+    margin: 36px 0 22px;
+}
+
+.auth-product {
+    margin: 0;
+    font-size: clamp(1.8rem, 3vw, 2.6rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--login-on-ground);
+}
+
+.auth-subtitle {
+    margin: 10px 0 0;
+    font-size: 1.05rem;
+    color: var(--login-on-ground-muted);
+}
+
+.login-shell {
+    align-self: center;
+    padding: 40px 0 max(24px, env(safe-area-inset-bottom));
 }
 
 .login-card {
     width: 100%;
-    max-width: 400px;
-    padding: 34px 32px;
+    padding: 32px 30px 22px;
     background: var(--app-surface);
     color: var(--app-text);
-    border-radius: 20px;
+    border-radius: 16px;
     border: 1px solid var(--app-border);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-    animation: loginFade 0.35s ease;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    animation: loginFade 0.45s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes loginFade {
-    from { opacity: 0; transform: translateY(10px); }
+    from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
-.brand-tile {
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-    background: var(--login-accent);
-    color: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.55rem;
-    margin: 0 auto 12px;
+@media (prefers-reduced-motion: reduce) {
+    .login-card { animation: none; }
+}
+
+.card-heading {
+    margin-bottom: 22px;
 }
 
 .brand-title {
-    font-size: 1.2rem;
-    font-weight: 700;
+    font-size: 1.35rem;
+    font-weight: 600;
     color: var(--app-text);
-    letter-spacing: 0.02em;
     margin: 0;
 }
 
 .brand-subtitle {
-    font-size: 0.78rem;
+    font-size: 0.84rem;
     color: var(--app-muted);
-    margin: 2px 0 0;
+    margin: 4px 0 0;
 }
 
 .auth-intro {
@@ -120,20 +212,13 @@ body.auth-page {
 }
 
 .field-label {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--app-muted);
     margin-bottom: 6px;
     display: block;
-}
-
-/* app-themes.css forces every label inside .login-card to --app-text !important in
-   dark mode. That predates this page and flattens the label/value hierarchy, so the
-   field labels reclaim the muted tone with a more specific rule. */
-:root[data-app-theme="dark"] .login-card .field-label {
-    color: var(--app-muted) !important;
 }
 
 .input-shell {
@@ -151,6 +236,19 @@ body.auth-page {
 .input-shell:focus-within {
     border-color: var(--login-accent);
     box-shadow: 0 0 0 3px rgba(var(--login-accent-rgb), 0.18);
+}
+
+/* Where :has() is supported, the field ring follows the input only, so keyboard users
+   can tell the input from the show-password button. */
+@supports selector(:has(*)) {
+    .input-shell:focus-within:not(:has(input:focus)) {
+        border-color: var(--app-border);
+        box-shadow: none;
+    }
+}
+
+.input-shell:has(input[aria-invalid="true"]) {
+    border-color: #dc3545;
 }
 
 .input-shell > i.field-icon {
@@ -174,7 +272,7 @@ body.auth-page {
 .input-shell input::placeholder {
     color: var(--app-muted);
     font-weight: 400;
-    opacity: 0.75;
+    opacity: 1;
 }
 
 /* A real button so it can never submit the form and stays keyboard reachable.
@@ -195,17 +293,21 @@ body.auth-page {
     cursor: pointer;
 }
 
-.toggle-visibility:hover,
+.toggle-visibility:hover {
+    color: var(--app-text);
+}
+
 .toggle-visibility:focus-visible {
     color: var(--app-text);
-    outline: none;
+    outline: 2px solid var(--login-accent);
+    outline-offset: -4px;
 }
 
 .hint-row {
     display: none;
     align-items: center;
     gap: 6px;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     color: #b45309;
     margin-top: 7px;
 }
@@ -218,12 +320,20 @@ body.auth-page {
     color: #fbbf24;
 }
 
+.hint-row.hint-error {
+    color: #b02a37;
+}
+
+:root[data-app-theme="dark"] .hint-row.hint-error {
+    color: #f5a3ab;
+}
+
 .btn-signin {
     width: 100%;
     min-height: 50px;
     border: none;
     border-radius: 12px;
-    background: var(--login-accent);
+    background: var(--login-button);
     color: #ffffff;
     font-size: 0.92rem;
     font-weight: 700;
@@ -241,19 +351,23 @@ body.auth-page {
     transform: translateY(-1px);
 }
 
+/* Busy and offline states keep full-contrast text; only the colour is muted. */
 .btn-signin:disabled {
-    opacity: 0.72;
+    filter: saturate(0.45);
     cursor: not-allowed;
     transform: none;
 }
 
 .forgot-link {
-    display: block;
-    text-align: center;
-    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    font-size: 0.85rem;
     color: var(--login-accent);
     text-decoration: none;
-    margin-top: 14px;
+    text-underline-offset: 3px;
+    margin-top: 6px;
 }
 
 .forgot-link:hover {
@@ -291,6 +405,40 @@ body.auth-page {
     color: #f5a3ab;
 }
 
+/* Neutral notices: the forgot-password confirmation and "password updated". */
+.notice-login {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    font-size: 0.8rem;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    background: var(--app-surface-raised);
+    border: 1px solid var(--app-border);
+    color: var(--app-text);
+}
+
+/* Inline messages from the form script: empty fields, slow connection. */
+.form-note {
+    min-height: 0;
+    margin: 10px 0 0;
+    font-size: 0.8rem;
+    color: var(--app-muted);
+    text-align: center;
+}
+
+.form-note:empty {
+    display: none;
+}
+
+.auth-help {
+    margin: 2px 0 0;
+    font-size: 0.78rem;
+    color: var(--app-muted);
+    text-align: center;
+}
+
 .offline-banner {
     display: none;
     align-items: center;
@@ -316,17 +464,17 @@ body.auth-page {
 .card-footer-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     border-top: 1px solid var(--app-border);
-    margin-top: 20px;
-    padding-top: 13px;
+    margin-top: 18px;
+    padding-top: 12px;
 }
 
 .status-chip {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     color: var(--app-muted);
 }
 
@@ -338,29 +486,55 @@ body.auth-page {
     flex: 0 0 auto;
 }
 
-.status-dot.is-offline {
+.auth-topbar .status-dot {
+    background: #4ade80;
+}
+
+.status-dot.is-offline,
+.auth-topbar .status-dot.is-offline {
     background: #f59e0b;
 }
 
 .version-tag {
-    font-size: 0.68rem;
+    font-size: 0.75rem;
     color: var(--app-muted);
 }
 
-@media (max-width: 768px) {
+/* Phones and narrow windows: one column, smaller logo, form right below it. */
+@media (max-width: 820px) {
     body.auth-page {
-        align-items: stretch;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto 1fr;
+        padding: 0 16px;
+    }
+
+    .auth-brand {
+        padding: 26px 0 0;
+    }
+
+    .auth-logo {
+        width: min(300px, 80%);
+    }
+
+    .auth-rule {
+        margin: 20px 0 14px;
+    }
+
+    .auth-product {
+        font-size: 1.5rem;
+    }
+
+    .auth-subtitle {
+        font-size: 0.95rem;
     }
 
     .login-shell {
-        align-items: center;
-        min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+        align-self: start;
+        padding: 22px 0 max(18px, env(safe-area-inset-bottom));
     }
 
     .login-card {
-        max-width: 100%;
-        padding: 26px 22px;
-        border-radius: 20px;
+        padding: 24px 20px 18px;
     }
 
     .input-shell {
@@ -374,22 +548,15 @@ body.auth-page {
 }
 
 @media (max-width: 420px) {
-    body.auth-page {
-        padding-left: 14px;
-        padding-right: 14px;
+    .auth-topbar {
+        font-size: 0.75rem;
     }
 
-    .login-card {
-        padding: 22px 18px;
-    }
-
-    .brand-tile {
-        width: 46px;
-        height: 46px;
-        font-size: 1.35rem;
+    .auth-topbar .status-chip {
+        font-size: 0.75rem;
     }
 
     .brand-title {
-        font-size: 1.05rem;
+        font-size: 1.15rem;
     }
 }
