@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-06
 
+- Committed only the Medical Centers table package (`app.py`, `templates/clients.html`, `tests/test_tsr_autosave_client_groups.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `415e04e` on `main` and pushed it to `origin/main` on the owner's "commit and push"; `origin/main` verified at `415e04e`, and the Railway production deployment (GitHub deployment `6877855317`) succeeded. No schema change. `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`, and the loose handoff file were not staged. No Railway variable or manual redeploy was changed.
+
 - Executed the plan **Medical Centers Table: Stacked Contact Details** on the owner's go-ahead; not committed, pushed, or deployed.
 - Medical Centers desktop table (`templates/clients.html`): the Designation, Phone and Email columns are merged into the Main Contact cell (name in bold with "+ More" when there are more contacts, then designation, tap-to-call phone and mailto email as small lines), so the table has 6 columns (Name, Address, Group, Main Contact, Equipment, Actions) and Edit/Delete/View sit close again. Loading/empty/error rows use `colspan="6"`. `CLIENT_SORT_KEYS` is now name/address/contact, so a saved designation or phone sort falls back to unsorted; `getClientSortValue` unchanged. Mobile cards, View pop-up, search and all functions/ids unchanged.
 - Versions: service worker `medical-service-pwa-offline-navigation-v252-medical-center-table` (v251 kept as a historical marker); release entry `2026-10-06-medical-center-table` (admins and engineers, category Medical Center).
