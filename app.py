@@ -27082,7 +27082,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v240-liquidation-receipts.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v246-personnel-deactivate';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v247-personnel-form-fixes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -61832,6 +61833,50 @@ def engineer_with_initials(initials, exclude_id=None):
     return query.order_by(Engineer.id.asc()).first()
 
 
+def unique_username_for(name_val):
+    """First name, then full name, then full name + 2, 3, ... -- unique ignoring case,
+    because sign-in looks usernames up case-insensitively."""
+    def taken(candidate):
+        return User.query.filter(func.lower(User.username) == candidate.lower()).first() is not None
+
+    first_name = name_val.split()[0].lower()
+    full_name = name_val.replace(" ", "").lower()
+    for candidate in (first_name, full_name):
+        if not taken(candidate):
+            return candidate
+    suffix = 2
+    while taken(f'{full_name}{suffix}'):
+        suffix += 1
+    return f'{full_name}{suffix}'
+
+
+def engineer_with_employee_id(employee_id, exclude_id=None):
+    """Return the Engineer holding this Employee ID, compared trimmed and ignoring case."""
+    key = (clean_str(employee_id) or '').lower()
+    if not key:
+        return None
+    query = Engineer.query.filter(func.lower(func.trim(Engineer.employee_id)) == key)
+    if exclude_id:
+        query = query.filter(Engineer.id != exclude_id)
+    return query.first()
+
+
+PERSONNEL_PHONE_PATTERN = re.compile(r'^\+?[0-9 ()\-]+$')
+PERSONNEL_EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+
+def personnel_contact_error(phone, email, old_phone=None, old_email=None):
+    """Check a new or changed phone/email; unchanged saved values are left alone."""
+    if phone and phone != (old_phone or None):
+        digits = sum(ch.isdigit() for ch in phone)
+        if not PERSONNEL_PHONE_PATTERN.match(phone) or not 7 <= digits <= 15:
+            return 'Mobile number looks incomplete. Use digits only, e.g. 0917 123 4567.'
+    if email and email != (old_email or None):
+        if not PERSONNEL_EMAIL_PATTERN.match(email):
+            return 'Email address is not valid.'
+    return None
+
+
 @app.route('/add_engineer', methods=['POST'])
 @login_required
 def add_engineer():
@@ -61879,8 +61924,13 @@ def add_engineer():
     if not name_val:
         return jsonify({'message': 'Required field missing: Name is mandatory.'}), 400
 
-    if staff_type == 'engineer' and Engineer.query.filter_by(employee_id=emp_id).first():
+    if staff_type == 'engineer' and engineer_with_employee_id(emp_id):
         return jsonify({'message': f'Error: Employee ID {emp_id} is already taken.'}), 400
+
+    if staff_type == 'engineer':
+        contact_error = personnel_contact_error(clean_str(p.get('phone')), clean_str(p.get('email')))
+        if contact_error:
+            return jsonify({'message': contact_error}), 400
 
     if staff_type == 'engineer':
         initials_holder = engineer_with_initials(initials)
@@ -61892,9 +61942,7 @@ def add_engineer():
                 )
             }), 400
 
-    first_name = name_val.split()[0].lower()
-    if User.query.filter_by(username=first_name).first():
-        first_name = name_val.replace(" ", "").lower()
+    first_name = unique_username_for(name_val)
 
     permission_payload = dict(p)
     if staff_type == 'hr':
@@ -62005,8 +62053,12 @@ def update_engineer(id):
         if not my_profile or my_profile.id != eng.id:
             return denied('Engineers can edit only their own contact information.')
 
-        eng.phone = clean_str(p.get('phone'))
-        eng.email = clean_str(p.get('email'))
+        new_phone, new_email = clean_str(p.get('phone')), clean_str(p.get('email'))
+        contact_error = personnel_contact_error(new_phone, new_email, eng.phone, eng.email)
+        if contact_error:
+            return jsonify({'message': contact_error}), 400
+        eng.phone = new_phone
+        eng.email = new_email
 
         db.session.commit()
         log_activity(f"Updated own contact info: {eng.name}")
@@ -62016,8 +62068,14 @@ def update_engineer(id):
         return jsonify({'message': 'Denied'}), 403
 
     new_eid = clean_str(p.get('employee_id'))
-    if new_eid != eng.employee_id and Engineer.query.filter_by(employee_id=new_eid).first():
+    if engineer_with_employee_id(new_eid, exclude_id=eng.id):
         return jsonify({'message': 'Employee ID already taken.'}), 400
+
+    contact_error = personnel_contact_error(
+        clean_str(p.get('phone')), clean_str(p.get('email')), eng.phone, eng.email
+    )
+    if contact_error:
+        return jsonify({'message': contact_error}), 400
 
     name_val = clean_str(p.get('name'))
     initials = clean_str(p.get('initials'))

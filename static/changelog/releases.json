@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-personnel-form-fixes",
+      "release_date": "2026-10-06",
+      "title": "Personnel Form Fixes",
+      "summary": "Adding and editing personnel is more reliable and its messages are clearer.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-personnel-form-fixes-admins",
+          "category": "Personnel",
+          "description": "Adding two people with the same name no longer fails; the second gets a numbered username shown in the credentials pop-up. Employee IDs are checked ignoring case and spaces. The Edit form always shows Branch, Employee ID and Initials, and editing a name no longer changes the saved initials. Save cannot be sent twice, and the message now says whether an account was created or a record was updated.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-06-personnel-form-fixes-engineers",
+          "category": "Personnel",
+          "description": "When you update your own mobile number or email, an incomplete number or invalid email is pointed out before saving, and you see a confirmation when it is saved.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-personnel-deactivate",
       "release_date": "2026-10-06",
       "title": "Personnel: Deactivate Instead of Delete",

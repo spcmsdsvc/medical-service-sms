@@ -222,7 +222,7 @@
             
             <div class="modal-footer border-0 p-4 pt-0">
                 <button class="btn btn-light btn-sm px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
-                <button class="btn btn-success btn-sm px-4 fw-bold shadow-sm" onclick="saveEngineer()">
+                <button type="button" id="eng-save-btn" class="btn btn-success btn-sm px-4 fw-bold shadow-sm" onclick="saveEngineer()">
                     <i class="fa-solid fa-floppy-disk me-1"></i>Save Personnel Record
                 </button>
             </div>
@@ -686,12 +686,15 @@
      * UI HELPER: Generates initials automatically.
      */
     function autoInitials() { 
+        // Only suggest initials for a new person; saved initials appear on TSR forms.
+        if(document.getElementById('edit-eng-db-id').value) return;
         const name = document.getElementById('e-name').value; 
         document.getElementById('e-initials').value = name.split(' ')
             .filter(w => w.length > 0)
             .map(w => w[0])
             .join('')
-            .toUpperCase(); 
+            .toUpperCase()
+            .slice(0, 5); 
     }
 
     /**
@@ -726,6 +729,10 @@
 
         document.getElementById('staff-type-wrap')?.classList.add('d-none');
         document.getElementById('new-staff-permissions')?.classList.add('d-none');
+        // An earlier HR/Approver add may have hidden these engineer-only fields.
+        ['staff-company-branch-wrap', 'staff-employee-id-wrap', 'staff-initials-wrap'].forEach(id => {
+            document.getElementById(id)?.classList.remove('d-none');
+        });
 
         document.getElementById('modal-title').innerText = contactOnly ? "Update My Contact Information" : "Modify Personnel Record"; 
         document.getElementById('edit-eng-db-id').value = dbId; 
@@ -785,16 +792,26 @@
         const url = dbId ? `/update_engineer/${dbId}` : '/add_engineer';
         const method = dbId ? 'PUT' : 'POST';
 
-        const res = await fetch(url, { 
-            method: method, 
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCSRFToken()
-            }, 
-            body: JSON.stringify(data) 
-        });
-
-        const respData = await res.json().catch(() => ({}));
+        const saveBtn = document.getElementById('eng-save-btn');
+        if(saveBtn?.disabled) return;
+        if(saveBtn) saveBtn.disabled = true;
+        let res;
+        let respData = {};
+        try {
+            res = await fetch(url, { 
+                method: method, 
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                }, 
+                body: JSON.stringify(data) 
+            });
+            respData = await res.json().catch(() => ({}));
+        } catch (err) {
+            return engineerAlert("Could not reach the server. Try again.");
+        } finally {
+            if(saveBtn) saveBtn.disabled = false;
+        }
 
         if (res.ok) { 
             engModal.hide(); 
@@ -812,10 +829,14 @@
                 credModal.show();
             }
 
-            if(respData.message) engineerToast(respData.message, 'success', 'Account Created');
+            if(respData.temp_password){
+                engineerToast(respData.message || 'Account created.', 'success', 'Account Created');
+            }else{
+                engineerToast(isSelfContactUpdate ? 'Your contact details were updated.' : 'Personnel record updated.', 'success', 'Saved');
+            }
 
         } else {
-            engineerAlert(respData.message || "Database Error: Ensure the Employee ID is unique.");
+            engineerAlert(respData.message || "Could not save. Please try again.");
         }
     }
 

@@ -37,6 +37,80 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Personnel Batch 2: Add/Edit Form Fixes
+
+**Status:** Executed (not yet committed) — owner said "go ahead" on 2026-10-06.
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- Also added `engineer_with_employee_id()` (shared trimmed, case-insensitive lookup for add and update). Contact checks on add apply to the Engineer staff type only (HR/Approver accounts store no phone or email).
+- Fail-first: the 4 new tests failed on the unchanged code (the username test with the real `IntegrityError`). After: `tests.test_staff_creation` + `tests.test_admin_capabilities` 30 tests OK; full suite 1,535 tests, 24 failures, 3 errors, 5 skips (baseline counts, unrelated modules).
+- Flask test client on a copy of `scheduler.db`: admin edit of the engineer whose saved phone is `0917`, unchanged, returns 200; setting `0917` on another engineer returns 400 with the mobile-number message; the page renders `id="eng-save-btn"`. No browser check.
+**Approved:** 2026-10-06 — the owner asked to "plan batch 2" after Batch 1 was published and replied "yes, approved".
+**Detailed:** 2026-10-06.
+
+## Context
+
+Batch 2 of the four-batch Personnel page scan (Batch 1, Protect History, is below and published as `a6d8571`). It fixes the Add/Edit personnel form: a possible 500 error on username collisions, hidden fields in Edit, initials overwritten while editing a name, misleading messages, double submission, and missing phone/email/Employee ID checks.
+
+## Decisions taken
+
+1. Usernames are generated uniquely (case-insensitive); existing usernames are never changed.
+2. Employee ID duplicates are compared trimmed and case-insensitive.
+3. Phone and email are validated **only when the value changed** (blank always allowed), so existing short or odd values do not block edits.
+4. Initials are auto-filled only when adding, capped at 5 letters.
+5. No data migration.
+
+## Investigation
+
+- `add_engineer` (`app.py` ~61837): username = first name lowered; if `User.query.filter_by(username=...)` (case-sensitive) finds it, full name without spaces; no further fallback → `IntegrityError` (500) on a third collision (`User.username` unique, ~1715). Sign-in lookup `find_user_by_username` (~7446) is case-insensitive, so case-variant usernames are ambiguous.
+- Employee ID uniqueness: `Engineer.query.filter_by(employee_id=...)` exact match in `add_engineer` (~61882) and `update_engineer` (~62019). Local data: no trimmed/case-insensitive duplicates.
+- Local phone values include `0917`, `09178`, `0925`, and some `None`; emails are all `x@y.z` or empty — hence validate-on-change only.
+- `update_engineer` self path (engineer editing own contact) saves phone/email with no checks.
+- `templates/engineers.html`: `openEditModal` (~720) hides staff-type/permissions but never removes `d-none` from `staff-company-branch-wrap`, `staff-employee-id-wrap`, `staff-initials-wrap` (set by `syncStaffTypePermissionControls` for HR/Approver adds). `autoInitials` (~688) runs on every name keystroke, in Edit too, with no cap (programmatic `.value` ignores `maxlength`). `saveEngineer` (~746): toast title always "Account Created" (~815); fallback error "Database Error: Ensure the Employee ID is unique." (~818); Save button (~225) has no id and no busy guard; a `fetch` rejection is unhandled.
+- Lesson from the liquidation Save Row bug (2026-10-05): a busy guard must re-enable the button in `finally`.
+
+## Execution steps
+
+1. **Unique username** — `app.py`, new `unique_username_for(name_val)`: candidates first name lowered, full name without spaces lowered, then full name + `2`, `3`, …; each checked with `func.lower(User.username) == candidate`. `add_engineer` uses it. Done: a third "Mark Santos" gets `marksantos2`, no 500.
+2. **Employee ID** — `add_engineer` and `update_engineer`: `emp_id` already `clean_str`-stripped; duplicate check becomes `func.lower(func.trim(Engineer.employee_id)) == emp_id.lower()` (update excludes `eng.id`). Done: `" 18-185"` / `"18-185".upper()` variants refused.
+3. **Contact checks** — `app.py`, new `personnel_contact_error(phone, email, old_phone=None, old_email=None)` returning a message or `None`: phone (when non-blank and changed) must match `^\+?[0-9 ()\-]+$` with 7–15 digits → "Mobile number looks incomplete. Use digits only, e.g. 0917 123 4567."; email (when non-blank and changed) must match `^[^@\s]+@[^@\s]+\.[^@\s]+$` → "Email address is not valid.". Called in `add_engineer` (engineer staff type), admin `update_engineer`, and the self-contact path; returns 400. Done: unchanged `0917` still saves; a new `0917` is refused.
+4. **Edit fields visible** — `openEditModal`: remove `d-none` from the three wraps. Done: Add → HR → Cancel → Edit engineer shows Branch, Employee ID, Initials.
+5. **Initials** — `autoInitials`: return early when `edit-eng-db-id` has a value; `.slice(0, 5)`. Done: editing a name in Edit leaves initials unchanged.
+6. **Save guard** — Save button gets `id="eng-save-btn"`; `saveEngineer` disables it before `fetch` and re-enables it in `finally`; `fetch` wrapped in `try/catch` → `engineerAlert("Could not reach the server. Try again.")`. Done: double click sends one request; button usable after success, failure, and network error.
+7. **Messages** — `saveEngineer`: "Account Created" toast only when `temp_password` is present; admin edit → title "Saved", "Personnel record updated."; self edit → "Saved", "Your contact details were updated."; fallback error "Could not save. Please try again.".
+8. **Tests** — `tests/test_staff_creation.py`: three same-name adds give three distinct usernames (and a case variant of an existing username is not reused); Employee ID duplicate by case/space refused on add and update; bad new phone/email refused on add, admin edit and self edit; unchanged existing short phone still saves; source checks: `id="eng-save-btn"`, `finally` in `saveEngineer`, `openEditModal` clears the wraps' `d-none`, `autoInitials` checks `edit-eng-db-id`. Each must fail on the unchanged code first.
+
+## Deliberately excluded
+
+- Renaming existing usernames or cleaning existing contact data — no migration.
+- Regional-admin branch limits (Batch 4); desktop search/list changes (Batch 3).
+- Client-side duplicate checks — the server is the single source of truth and its messages are shown.
+
+## Verification
+
+- New tests fail first, then pass.
+- Focused modules: `tests.test_staff_creation`, `tests.test_admin_capabilities`.
+- Flask test client on a temporary copy of `scheduler.db`: admin edit of an engineer whose saved phone is `0917` without changing it succeeds; changing it to `0917` on another person is refused.
+- No browser automation (AGENTS.md). Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+
+## After implementation
+
+1. Self-review; confirm every function the page calls is still defined.
+2. Fail-first proof recorded here.
+3. Service worker bump (read the current `CACHE_VERSION` live; keep the old one as a historical marker).
+4. `releases.json` entry dated the commit date, audiences admins and engineers.
+5. Update `changes.md` and this plan's status.
+6. Commit and push only on the owner's "commit and push": explicit staging; never `scheduler.db` or unrelated dirty files; verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- An unusual but valid number could be refused; the 7–15 digit range is loose and the message explains the format. Blast radius: only new or changed values.
+- Username suffixes (`marksantos2`) are shown in the credentials pop-up, so admins see the actual username to hand over.
+
+---
+
 # Personnel Batch 1: Protect History (Deactivate, Safe Delete, Account Status)
 
 **Status:** Executed — commit `a6d8571`; published to `origin/main` on the owner's "commit and push" (Railway deployment `28b2da40-c14e-4d32-b00b-92cdd0d769dd`).

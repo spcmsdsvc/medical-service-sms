@@ -511,7 +511,95 @@ class StaffCreationTests(unittest.TestCase):
         self.assertIsNone(row['account_active'])
 
 
+    def test_same_name_adds_get_distinct_case_insensitive_usernames(self):
+        tag = uuid.uuid4().hex[:6]
+        client = self._client_for(self.superadmin_id)
+        with self.app.app_context():
+            # A case variant of the first name is already taken.
+            taken = app_module.User(
+                username=f'Twin{tag}'.upper(),
+                password=app_module.generate_password_hash('test-password'),
+                role='engineer',
+            )
+            app_module.db.session.add(taken)
+            app_module.db.session.commit()
+            self.created_user_ids.append(taken.id)
+
+        usernames = []
+        for index in range(3):
+            response = client.post('/add_engineer', json=self._payload(
+                f'Twin{tag} Santos',
+                employee_id=f'TWIN-{tag}-{index}',
+                initials=f'T{tag[:3]}{index}'.upper(),
+            ))
+            self.assertEqual(response.status_code, 200, response.get_json())
+            self._remember_created_account(response)
+            usernames.append(response.get_json()['username'].lower())
+        self.assertEqual(len(set(usernames)), 3)
+        self.assertNotIn(f'twin{tag}', usernames)
+
+    def test_employee_id_duplicates_ignore_case_and_spaces(self):
+        client = self._client_for(self.superadmin_id)
+        tag = uuid.uuid4().hex[:6]
+        first = client.post('/add_engineer', json=self._payload(
+            f'Idcheck{tag} One', employee_id=f'ab-{tag}', initials=f'I{tag[:3]}A'.upper()))
+        self.assertEqual(first.status_code, 200, first.get_json())
+        self._remember_created_account(first)
+
+        duplicate = client.post('/add_engineer', json=self._payload(
+            f'Idcheck{tag} Two', employee_id=f' AB-{tag.upper()} ', initials=f'I{tag[:3]}B'.upper()))
+        self.assertEqual(duplicate.status_code, 400)
+
+        other_id, _ = self._make_engineer(f'Idcheck{tag} Three')
+        with self.app.app_context():
+            other = app_module.db.session.get(app_module.Engineer, other_id)
+            payload = {'employee_id': f'AB-{tag.upper()}', 'name': other.name, 'initials': other.initials}
+        self.assertEqual(client.put(f'/update_engineer/{other_id}', json=payload).status_code, 400)
+
+    def test_contact_checks_apply_only_to_changed_values(self):
+        client = self._client_for(self.superadmin_id)
+        tag = uuid.uuid4().hex[:6]
+        bad_phone = client.post('/add_engineer', json=self._payload(
+            f'Contact{tag} Bad', employee_id=f'CB-{tag}', phone='0917'))
+        self.assertEqual(bad_phone.status_code, 400)
+        self.assertIn('Mobile number', bad_phone.get_json()['message'])
+        bad_email = client.post('/add_engineer', json=self._payload(
+            f'Contact{tag} Bad', employee_id=f'CB-{tag}', email='not-an-email'))
+        self.assertEqual(bad_email.status_code, 400)
+
+        engineer_id, user_id = self._make_engineer(f'Contact{tag} Legacy')
+        with self.app.app_context():
+            engineer = app_module.db.session.get(app_module.Engineer, engineer_id)
+            engineer.phone = '0917'
+            app_module.db.session.commit()
+            payload = {
+                'employee_id': engineer.employee_id, 'name': engineer.name,
+                'initials': engineer.initials, 'phone': '0917', 'email': '', 'branch': 'Cebu',
+            }
+        # Unchanged legacy phone still saves.
+        self.assertEqual(client.put(f'/update_engineer/{engineer_id}', json=payload).status_code, 200)
+        # A changed bad email is refused for the admin and for the engineer's own edit.
+        self.assertEqual(
+            client.put(f'/update_engineer/{engineer_id}', json=dict(payload, email='bad@')).status_code, 400)
+        own = self._client_for(user_id)
+        self.assertEqual(
+            own.put(f'/update_engineer/{engineer_id}', json={'phone': '12', 'email': ''}).status_code, 400)
+        self.assertEqual(
+            own.put(f'/update_engineer/{engineer_id}', json={'phone': '0917 123 4567', 'email': ''}).status_code, 200)
+
+
 class StaffCreationSourceTests(unittest.TestCase):
+    def test_personnel_form_guards_save_and_keeps_edit_fields(self):
+        template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
+        self.assertIn('id="eng-save-btn"', template)
+        save_body = template.split('async function saveEngineer()', 1)[1].split('async function deleteEngineer', 1)[0]
+        self.assertIn('finally', save_body)
+        edit_body = template.split('function openEditModal(dbId)', 1)[1].split('async function saveEngineer', 1)[0]
+        self.assertIn("classList.remove('d-none')", edit_body)
+        initials_body = template.split('function autoInitials()', 1)[1].split('function openAddModal', 1)[0]
+        self.assertIn('edit-eng-db-id', initials_body)
+        self.assertIn('.slice(0, 5)', initials_body)
+
     def test_personnel_page_offers_deactivate_and_account_status(self):
         template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
         for expected in (
