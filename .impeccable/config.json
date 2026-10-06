@@ -1,0 +1,24 @@
+{
+  "hook": {
+    "enabled": true,
+    "limits": {
+      "maxFindings": 5,
+      "maxChars": 8000
+    }
+  },
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "templates/dashboard.html"
+        ],
+        "createdAt": "2026-10-05T08:10:15.134Z",
+        "reason": "user confirmed: owner asked to keep the live dashboard design unchanged (2026-10-05), including the What's New banner's left accent border"
+      }
+    ]
+  }
+}
