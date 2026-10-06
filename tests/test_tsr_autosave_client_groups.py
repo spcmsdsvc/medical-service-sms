@@ -440,6 +440,16 @@ class MedicalCenterSpeedAndUiTests(unittest.TestCase):
         self.assertNotIn('colspan="9"', page)
         self.assertIn("const CLIENT_SORT_KEYS = ['name', 'address', 'contact'];", page)
 
+    def test_layout_polish(self):
+        page = self.page()
+        self.assertIn('@media (max-width: 1199.98px)', page)
+        self.assertNotIn('btn-outline-warning', page)
+        for placeholder in ("'No designation'", "'No phone'", "'No email'", "'No primary contact'"):
+            self.assertNotIn(placeholder, page)
+        self.assertNotIn('fw-bold fs-5">${escapeHtml(c.name)}', page)
+        self.assertIn('client-mobile-view', page)
+        self.assertIn('.table-responsive { display: block !important; }', page)
+
     def test_every_called_page_function_is_defined(self):
         import re
         page = self.page()

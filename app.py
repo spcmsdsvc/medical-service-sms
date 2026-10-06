@@ -27087,8 +27087,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v251-medical-center-ui.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v252-medical-center-table';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v252-medical-center-table.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v253-medical-center-layout';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

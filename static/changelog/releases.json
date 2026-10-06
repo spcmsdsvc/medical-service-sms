@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-medical-center-layout",
+      "release_date": "2026-10-06",
+      "title": "Medical Centers Layout Polish",
+      "summary": "The Medical Centers page fits laptops, tablets and phones better.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-medical-center-layout-all",
+          "category": "Medical Center",
+          "description": "On screens narrower than 1200 px the Medical Centers list shows cards (two per row on tablets and small laptops) instead of a table that had to scroll sideways. Cards are shorter: one line when no contacts are saved, the equipment count, and Edit, Delete and View side by side. The Edit buttons are easier to read, long names wrap less, the phone header buttons fit neatly with Add on top, the search box lines up with the title, and the View pop-up no longer repeats the name. Printing always uses the table.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-medical-center-table",
       "release_date": "2026-10-06",
       "title": "Medical Centers Table Fits Better",

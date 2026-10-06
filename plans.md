@@ -37,6 +37,85 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Medical Centers Layout Polish
+
+**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- **Phone gutter stays 28 px, not ≈16 px.** It comes from the app-wide phone rule in `static/css/app-shell.css` (`.container-fluid` and `.main-content` each get `--mobile-safe-padding` with `!important`), which every page shares. Overriding it only here would make this page edge-to-edge unlike all others, so the page now follows the shell standard (down from 44 px). The page rule that tried to zero `.container-fluid` padding was removed as dead CSS.
+- **Column sizing added to step 3.** With only `min-width: 200px` on Name, the Address column was squeezed at 1280 px (first row 137 px) and the table still overflowed at 1200 px. Added: Main Contact `max-width: 220px` with `overflow-wrap: anywhere`, Equipment and Actions shrink to content (`width: 1%; white-space: nowrap`). Average row height at 1280 px fell from 85 to 73 px and 1200 px no longer overflows.
+- **Header buttons (step 5) changed to Add full width on top + Import / Export / Print in one row.** The planned `minmax(140px)` 2×2 grid cut off "+ Add Medical Center". On phones the button icons are hidden, padding is 0.4rem, and the font is 0.85rem via `.container-fluid .btn-group > .btn.btn-sm` (the shell's `button:not(...)` rule forces 0.95rem with `!important`). A lone Print (non-admins) fills the row (`:only-of-type`).
+- **Also fixed:** the equipment pop-up's Edit button used the same unreadable `btn-outline-warning`; it is now `btn-outline-primary`. The space between the Group picker and the first card was reduced (`.client-mobile-list` margin-top 0 below 1200 px).
+- Fail-first: `test_layout_polish` failed on the unchanged code (no 1199.98px rule). After: `tests.test_tsr_autosave_client_groups` 26 tests OK; rendered script passes `node --check`. Full suite 1,559 tests, 24 failures, 3 errors, 5 skips — the same 27 failing tests by name as before.
+- Browser re-check (owner-approved; local server on a copy of `scheduler.db`, local test admin and engineer created only in that copy): 375 px — cards, 1 per row, actions in one row, header Add on top + three in a row with no text overflow, search aligned with the title; 768 px — 1 card per row; 1024 px — 2 cards per row; 1200 / 1280 / 1440 px — table with no overflow, average row height 82 / 73 / 69 px; no sideways page scroll at any width; Edit button blue; engineer: Print only (full width), cards show Edit Contacts · View; no console errors. Test server stopped and viewport reset afterwards.
+**Approved:** 2026-10-06 — after a browser check of the Medical Centers page (owner-requested, local server on a database copy), the owner asked to "plan all eight as one batch", replied "yes, approved", and explicitly allowed the browser re-check for verification.
+**Detailed:** 2026-10-06.
+
+## Context
+
+The owner-requested browser check of `/clients_page` (local server on a copy of `scheduler.db`, test admin created only in that copy) found eight layout problems: on desktop the 6-column table still overflows below ~1200 px, the Edit button is unreadable, and names wrap onto 3–4 lines; on phones the gutters waste 44 px a side, the header buttons are oversized and uneven, the search row is out of line, and cards for medical centers without contacts are mostly "No …" filler; the View pop-up repeats the name. All are in `templates/clients.html`.
+
+## Decisions taken
+
+1. All eight fixes in one batch (owner).
+2. Below 1200 px the page shows cards (two per row from 769 to 1199 px, one per row on phones) instead of the table.
+3. Browser re-check is allowed for verification of this batch (owner, explicit).
+
+## Investigation
+
+1. Table/cards switch only at `@media (max-width: 768px)`; measured at 1024 px: table 820 px in a 657 px wrapper (sideways scroll, actions cut off). At 1280 px: no overflow (table 913 = wrapper 913); at 1440 px: no overflow.
+2. Table Edit button `btn-outline-warning` = `rgb(255,193,7)` on white (≈1.6:1 contrast).
+3. Name column 156 px at 1280 px (rows 89 px tall; 137 px at 1024) while Main Contact is 251 px and mostly "-".
+4. Phone: `.container-fluid > .card { padding: 1rem !important }` (old ≤768 rule) beats the Batch 4 `.client-page-card { padding: 0 !important }`; with `.container-fluid` padding 0.85rem the content sits 44 px from each edge (content 287 px on a 375 px screen).
+5. Phone header buttons use `.container-fluid .btn-group { grid-template-columns: repeat(3, …) }`; four admin buttons leave "+ Add Medical Center" alone on a second row (button group 163 px tall).
+6. The old ≤768 rule `.row.g-2.mb-4.no-print { margin: 0; padding: .85rem !important }` still matches the search row and puts the search box 14 px in from the title (58 vs 44 px). `.container-fluid h2.h4` is stale — the title is now `h1.h4`.
+7. `renderClientMobileCards` prints "No primary contact / No designation / No phone / No email" plus a full-width `client-mobile-view-contact` button labelled with `getClientContactSummary` ("No contacts saved"); `.client-mobile-actions` uses `minmax(130px, 1fr)`, so Edit/Delete stack in the narrow card; no equipment count. A no-contact card is 499 px tall. Local data: only 12 of 147 medical centers have a non-empty contact (131 of 146 contact rows are empty).
+8. `viewContacts` prints `<div class="fw-bold fs-5">${escapeHtml(c.name)}</div>` in the body under the header that already shows the name.
+- Side finding: `@media print` hides `.client-mobile-list`; where the table is also hidden by width, a print could be empty.
+- No console errors on load, search, View or Edit.
+
+## Execution steps
+
+1. **Cards below 1200 px** — new `@media (max-width: 1199.98px)`: `.table-responsive { display: none }`, `.client-mobile-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap }`, card `margin-bottom: 0`; at ≤768 px one column. Remove the table/cards switch from the ≤768 block. `@media print`: `.table-responsive { display: block !important }` and cards hidden.
+2. **Edit contrast** — table Edit button `btn-outline-warning` → `btn-outline-primary`.
+3. **Name width** — first table column (`th`, `td`) `min-width: 200px`. Done: no sideways scroll at 1200, 1280, 1440 px.
+4. **Phone gutters** — at ≤768 px `.container-fluid` and `.container-fluid > .client-page-card` padding 0 (specificity matching the old rule), so content sits ≈16 px from the screen edge.
+5. **Header buttons** — at ≤768 px `.container-fluid .btn-group { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) }`, buttons `white-space: nowrap` with the icon inline: a 2×2 grid; non-admins (Print only) get one full-width button.
+6. **Search alignment** — delete the stale `.row.g-2.mb-4.no-print` margin/padding override (keep the input sizing); `.container-fluid h2.h4` → `h1.h4`. Done: search box left edge equals the title's.
+7. **Phone/tablet cards** (`renderClientMobileCards`) — with contacts: bold contact name, then only the non-empty designation/phone/email lines, and `getClientContactSummary` ("N contacts saved") when there is more than one; without contacts: one muted "No contacts saved" line. Add "N equipment" (`product_count`). Remove the summary button. Actions in one row (`repeat(auto-fit, minmax(80px, 1fr))`): admins Edit · Delete · View; engineers Edit Contacts · View; others View. Delete styled quieter than Edit. All function names kept.
+8. **View pop-up** — remove the repeated bold name from the body; address, group and the Export Excel / Print buttons stay.
+9. **Tests** — source checks in `MedicalCenterSpeedAndUiTests` (`tests/test_tsr_autosave_client_groups.py`): `max-width: 1199.98px` rule present; no `btn-outline-warning`; no "No designation"/"No phone"/"No email" placeholders; no `fw-bold fs-5">${escapeHtml(c.name)}`; print rule shows the table. Run on the unchanged code first and record that they fail.
+
+## Deliberately excluded
+
+- **Cleaning the 131 empty contact rows** — a data decision.
+- **Merging duplicate medical centers** — own plan later.
+- **Edit pop-up Export Excel and stacked footer on phones** — they work.
+
+## Verification
+
+- New tests fail on the unchanged code, pass after; `tests.test_tsr_autosave_client_groups` OK; `node --check` on the rendered script.
+- Full suite fails the same 27 tests by name as before.
+- **Browser re-check (owner-approved):** local server on a database copy (`.claude/launch.json` `medical-center-check`), measured with page scripts at 375, 768, 1024, 1200, 1280 and 1440 px: no sideways scroll; phone gutter ≈16 px; search box aligned with the title; card actions in one row; table at ≥1200 px with no overflow; no console errors. Stop the test server afterwards.
+
+## After implementation
+
+1. Self-review; confirm every function the page calls is still defined.
+2. Fail-first proof and browser measurements recorded in this plan.
+3. Service worker bump to `medical-service-pwa-offline-navigation-v253-medical-center-layout` (keep v252 as the historical marker).
+4. `releases.json` entry `2026-10-06-medical-center-layout` (admins and engineers, category Medical Center).
+5. Update `changes.md` and this plan's status.
+6. Commit and push only on the owner's "commit and push": explicit staging; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- **Laptops under 1200 px wide see cards instead of the table** — same information and actions.
+- Safety net: template-only change, no backend or schema change; reverting the commit restores the current layout.
+
+---
+
 # Medical Centers Table: Stacked Contact Details
 
 **Status:** Executed — commit `415e04e`; published to `origin/main` on the owner's "commit and push" (Railway deployment succeeded, GitHub deployment `6877855317`).

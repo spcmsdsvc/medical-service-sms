@@ -477,7 +477,7 @@ function openProductModal(id){
                     <button class="btn btn-sm btn-outline-primary" onclick="window.location.href='/products_page'">
                         Open Full Page
                     </button>
-                    ${canEditProducts ? `<button class="btn btn-sm btn-outline-warning" onclick="editProduct(${clientJsArg(p.serial_number)})">
+                    ${canEditProducts ? `<button class="btn btn-sm btn-outline-primary" onclick="editProduct(${clientJsArg(p.serial_number)})">
                         Edit
                     </button>` : ''}
                 </div>
@@ -974,6 +974,27 @@ function renderClientMobileCards(data){
                 </button>`
             : '';
 
+        const viewAction = `
+                <button class="client-mobile-btn client-mobile-view" onclick="viewContacts(${c.id})">
+                    <i class="fa-solid fa-eye"></i>View
+                </button>`;
+
+        const contactCount = countContactsForClient(c);
+        const contactBox = contactCount
+            ? `
+                    <div class="client-mobile-contact-title">
+                        <i class="fa-solid fa-user-tie"></i>
+                        <span>${escapeHtml(contact.name || 'Contact')}</span>
+                    </div>
+                    <div class="client-mobile-contact-lines">
+                        ${contact.designation ? `<span>${escapeHtml(contact.designation)}</span>` : ''}
+                        ${contact.phone ? `<span>${escapeHtml(contact.phone)}</span>` : ''}
+                        ${contact.email ? `<span>${escapeHtml(contact.email)}</span>` : ''}
+                        ${contactCount > 1 ? `<span class="client-mobile-contact-more">${escapeHtml(contactSummary)}</span>` : ''}
+                    </div>`
+            : `<div class="client-mobile-contact-empty">No contacts saved</div>`;
+        const equipmentCount = Number(c.product_count || 0);
+
         const contactEditAction = (!isAdminUser && canManageClientContacts)
             ? `
                 <button class="client-mobile-btn client-mobile-edit" onclick="openEditModal(${c.id})">
@@ -994,6 +1015,10 @@ function renderClientMobileCards(data){
                             <i class="fa-solid fa-layer-group"></i>
                             <span>${escapeHtml(c.group_name || 'No group')}</span>
                         </div>
+                        <div class="client-mobile-address">
+                            <i class="fa-solid fa-boxes-stacked"></i>
+                            <span>${equipmentCount} equipment</span>
+                        </div>
                     </div>
                     <div class="client-mobile-icon-actions">
                         ${phoneAction}
@@ -1002,22 +1027,10 @@ function renderClientMobileCards(data){
                     </div>
                 </div>
 
-                <div class="client-mobile-contact-box">
-                    <div class="client-mobile-contact-title">
-                        <i class="fa-solid fa-user-tie"></i>
-                        <span>${escapeHtml(contact.name || 'No primary contact')}</span>
-                    </div>
-                    <div class="client-mobile-contact-lines">
-                        <span>${escapeHtml(contact.designation || 'No designation')}</span>
-                        <span>${escapeHtml(contact.phone || 'No phone')}</span>
-                        <span>${escapeHtml(contact.email || 'No email')}</span>
-                    </div>
-                    <button class="client-mobile-view-contact" onclick="viewContacts(${c.id})">
-                        <i class="fa-solid fa-address-book"></i>${escapeHtml(contactSummary)}
-                    </button>
+                <div class="client-mobile-contact-box">${contactBox}
                 </div>
 
-                ${(adminActions || contactEditAction) ? `<div class="client-mobile-actions">${adminActions}${contactEditAction}</div>` : ''}
+                <div class="client-mobile-actions">${adminActions}${contactEditAction}${viewAction}</div>
             </div>`;
     }).join('');
 }
@@ -1084,7 +1097,7 @@ ${escapeHtml(c.name)}
                 <div class="btn-group">
 
                     ${isAdminUser ? `
-<button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${c.id})">Edit</button>
+<button class="btn btn-sm btn-outline-primary" onclick="openEditModal(${c.id})">Edit</button>
 <button class="btn btn-sm btn-outline-danger" onclick="deleteClient(${c.id})">Delete</button>
 ` : ''}
 
@@ -1109,7 +1122,6 @@ async function viewContacts(id){
     let html = `
     <div class="p-3 border-bottom d-flex justify-content-between align-items-start">
         <div>
-            <div class="fw-bold fs-5">${escapeHtml(c.name)}</div>
             <div class="text-muted small">${escapeHtml(c.address || "No address provided")}</div>
             <div class="text-muted small"><strong>Group:</strong> ${escapeHtml(c.group_name || 'No group')}</div>
         </div>
@@ -1506,6 +1518,8 @@ function applyFilters(){
         .client-mobile-list {
             display: none !important;
         }
+
+        .table-responsive { display: block !important; }
     }
 
     /* MOBILE CLIENTS PAGE UPGRADE */
@@ -1613,21 +1627,19 @@ function applyFilters(){
         overflow-wrap: anywhere;
     }
 
-    .client-mobile-view-contact {
-        margin-top: 0.65rem;
-        border: none;
-        background: #fff;
+    .client-mobile-contact-empty {
+        color: #64748b;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .client-mobile-contact-more {
         color: var(--app-primary-text);
-        border-radius: 0.75rem;
-        padding: 0.55rem 0.7rem;
-        font-size: 0.72rem;
-        font-weight: 900;
-        width: 100%;
     }
 
     .client-mobile-actions {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
         gap: 0.55rem;
         margin-top: 0.85rem;
     }
@@ -1650,8 +1662,58 @@ function applyFilters(){
     }
 
     .client-mobile-delete {
-        background: #fee2e2;
+        background: transparent;
         color: #b91c1c;
+        border: 1px solid #fecaca !important;
+    }
+
+    .client-mobile-view {
+        background: #fff;
+        color: #0f172a;
+        border: 1px solid #cbd5e1 !important;
+    }
+
+    #client-table-body td:first-child,
+    .table-responsive thead th:first-child {
+        min-width: 200px;
+    }
+
+    #client-table-body td:nth-child(4) {
+        max-width: 220px;
+        overflow-wrap: anywhere;
+    }
+
+    .table-responsive thead th:nth-child(5),
+    .table-responsive thead th:nth-child(6),
+    #client-table-body td:nth-child(5),
+    #client-table-body td:nth-child(6) {
+        width: 1%;
+        white-space: nowrap;
+    }
+
+    /* Below 1200px the 6-column table no longer fits next to the sidebar. */
+    @media (max-width: 1199.98px) {
+        .table-responsive {
+            display: none;
+        }
+
+        .client-mobile-list {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .client-mobile-list {
+            margin-top: 0;
+        }
+
+        .client-mobile-list .client-mobile-card {
+            margin-bottom: 0;
+        }
+
+        .client-mobile-list .client-mobile-empty {
+            grid-column: 1 / -1;
+        }
     }
 
     .client-mobile-empty {
@@ -1690,14 +1752,13 @@ function applyFilters(){
             border-radius: 20px;
         }
 
-        .container-fluid {
-            padding-left: 0.85rem;
-            padding-right: 0.85rem;
+        .client-mobile-list {
+            grid-template-columns: 1fr;
         }
 
-        .container-fluid > .card {
-            padding: 1rem !important;
-            border-radius: 1.1rem;
+        .container-fluid > .client-page-card {
+            padding: 0 !important;
+            border-radius: 0;
         }
 
         .container-fluid > .card > .d-flex.justify-content-between {
@@ -1706,7 +1767,7 @@ function applyFilters(){
             gap: 0.85rem;
         }
 
-        .container-fluid h2.h4 {
+        .container-fluid h1.h4 {
             font-size: 1.12rem;
             line-height: 1.25;
         }
@@ -1722,15 +1783,26 @@ function applyFilters(){
             border-radius: 0.8rem !important;
             margin-left: 0 !important;
             min-height: 2.45rem;
-            font-size: 0.75rem;
+            padding-left: 0.4rem;
+            padding-right: 0.4rem;
             font-weight: 900;
+            white-space: nowrap;
         }
 
-        .row.g-2.mb-4.no-print {
-            margin-left: 0;
-            margin-right: 0;
-            padding: 0.85rem !important;
-            border-radius: 1rem !important;
+        /* Beats the shell's mobile button size (button:not(...) x3) so "Import CSV" fits a third of the row. */
+        .container-fluid .btn-group > .btn.btn-sm {
+            font-size: 0.85rem !important;
+        }
+
+        .container-fluid .btn-group .btn i {
+            display: none;
+        }
+
+        /* Add on its own full-width row; a lone Print (non-admins) also fills the row. */
+        .container-fluid .btn-group .btn-primary,
+        .container-fluid .btn-group .btn:only-of-type {
+            grid-column: 1 / -1;
+            order: -1;
         }
 
         .row.g-2.mb-4.no-print [class*="col-md-"] {
@@ -1741,14 +1813,6 @@ function applyFilters(){
             min-height: 2.55rem;
             border-radius: 0.85rem;
             font-weight: 700;
-        }
-
-        .table-responsive {
-            display: none;
-        }
-
-        .client-mobile-list {
-            display: block;
         }
 
         .directory-count-footer {
