@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-personnel-directory-tools",
+      "release_date": "2026-10-06",
+      "title": "Personnel Search and Account Tools",
+      "summary": "Search and filter Personnel on any screen, and reset passwords from the directory.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-personnel-directory-tools-admins",
+          "category": "Personnel",
+          "description": "Personnel can be searched and filtered by branch on desktop too, with a headcount per branch, clickable phone and email, and a clear message when nothing matches or the list cannot load. Admins can reset a password from the directory; the person must change it at next sign-in (also when reset from Settings). The new-password pop-up stays open until Done. Each engineer shows No signature when none is saved, and the CSV export adds Username, Role, Account Status and Signature. The regional admin now manages Cebu and Davao personnel only, as with schedules.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-personnel-form-fixes",
       "release_date": "2026-10-06",
       "title": "Personnel Form Fixes",

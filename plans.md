@@ -37,6 +37,93 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Personnel Batches 3 & 4: Directory Usability and Account Tools
+
+**Status:** Executed (not yet committed) — owner said "go ahead" on 2026-10-06.
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- The regional-admin rule lives in `can_reset_password_for_user` (reset, deactivate, delete, admin `change_password`) plus new `personnel_branch_denial` (add, edit, and delete of an engineer with no login); the message is the constant `REGIONAL_PERSONNEL_DENIAL`. On the page, `canEditEngineerContact` returns `canManageEngineerBranch` for admins, so Manila rows are "Read Only" for the regional admin.
+- The table row markup moved into `buildEngineerTableRow(e)` (called by `renderEngineerDirectory`); `loadEngineers` only fetches. The toolbar moved above the table. The "No signature" badge shows only for engineer-role logins. The Reset button sits beside Deactivate (desktop icon, mobile "Reset").
+- Fail-first: the 5 new tests failed on the unchanged code. After: `tests.test_staff_creation`, `tests.test_admin_capabilities`, `tests.test_hr_schedule_viewer` 45 tests OK; page script passes `node --check` and every inline handler is defined; full suite 1,540 tests, 24 failures, 3 errors, 5 skips (baseline counts, unrelated modules).
+- Flask test client on a copy of `scheduler.db`: the regional admin is refused a Manila engineer's reset (403, "You can manage Cebu and Davao personnel only.") and allowed a Cebu engineer's (sets `must_change_password`); superadmin can reset Manila; export header has the ten columns; Personnel page renders for both. No browser check.
+**Approved:** 2026-10-06 — the owner asked to "plan batch 3 and include batch 4 also", chose "Limit to Cebu/Davao" for regional admin and "Force change" after a password reset, and replied "yes, approved".
+**Detailed:** 2026-10-06.
+
+## Context
+
+The last two batches of the Personnel page scan (Batch 1 `a6d8571` and Batch 2 `351f6a2` are below, published). Batch 3: the desktop directory has no search, filter, count, empty or error state, and its contact text is ~10px. Batch 4: account tools — a dismissable one-time password pop-up, no password reset, signature status or account columns on Personnel, and a regional admin who can act on Manila personnel although schedules already limit them to Cebu/Davao.
+
+## Decisions taken
+
+1. Regional admin is limited to Cebu/Davao personnel for add, edit, deactivate, delete and password reset (owner: "Limit to Cebu/Davao").
+2. A password reset forces a change at next sign-in, including resets from Settings (owner: "Force change"). Admin-typed passwords via `change_password` are unchanged.
+3. One toolbar (the existing mobile one) serves desktop and mobile.
+4. Print shows the currently filtered table (intended).
+
+## Investigation
+
+- `templates/engineers.html`: `engineer-mobile-toolbar` / `engineer-mobile-list` hidden above 768px; table rebuilt with `body.innerHTML +=` in `loadEngineers` (~614) with no `res.ok` check, no catch, no empty state; contact lines use `.xsmall` (0.65rem); `engineerEscape` and `escapeHtml` duplicate; `regionalAllowedBranches` (~342) unused; `credModal` has no close button/footer; `copyText` uses `document.execCommand('copy')`.
+- `app.py`: `REGIONAL_ADMIN_BRANCHES = {'Cebu', 'Davao'}` (~8053) already restricts regional-admin schedule actions (~11747, ~11778); Personnel routes do not use it. `can_reset_password_for_user` (~11675) guards `reset_user_password`, `change_password`, and Batch 1's `personnel_account_change_denial` (deactivate/delete). `reset_user_password` returns `new_pw` and does not set `must_change_password`; new accounts set it (~61971). `/export_engineers` writes 6 columns; `tests/test_admin_capabilities.py:290` only checks status 200. `Engineer.signature_data` holds the saved signature.
+
+## Execution steps
+
+1. **One directory renderer** — `engineers.html`: the toolbar shows at every width (remove its `display: none` outside the mobile query; keep card list mobile-only, table desktop-only). New `renderEngineerDirectory()` renders the table and cards from `getFilteredEngineersForMobile()`, building each list as one string; the toolbar's `oninput`/`onchange` call it; `loadEngineers` calls it after fetching. `renderEngineerMobileCards` stays defined. Done: typing filters both layouts.
+2. **Headcount** — element `#engineer-directory-count` above the list: "24 personnel · Manila 14 · Cebu 6 · Davao 4"; with a filter, "Showing 5 of 24".
+3. **Table empty state** — a full-width row "No personnel match your search.".
+4. **Contact text** — table contact lines use `small` instead of `.xsmall`; phone and email render as `tel:` / `mailto:` links when present.
+5. **Load errors** — `loadEngineers` wraps the fetch in `try/catch`, checks `res.ok`; on failure shows a table row and mobile message "Could not load personnel. Refresh to try again." and an error toast.
+6. **Escape helper** — `engineerEscape(value)` returns `escapeHtml(value)`; both names kept.
+7. **Regional branch limit** —
+   - `can_reset_password_for_user`: in the regional-admin branch, deny when the target user's engineer profile has a branch outside `REGIONAL_ADMIN_BRANCHES` ("You can manage Cebu and Davao personnel only."). Covers reset, deactivate, delete (and admin `change_password`).
+   - New `personnel_branch_denial(*branches)` → message when `is_regional_admin_user()` and any given branch is not in `REGIONAL_ADMIN_BRANCHES`. `add_engineer` (Engineer type: new branch) and admin `update_engineer` (current and new branch) return 403 with it. Engineers without a branch count as outside.
+   - Page: `canManageEngineerBranch(e)` (true unless regional admin and branch not in `regionalAllowedBranches`) gates Edit/Deactivate/Delete/Reset for regional admin (rows otherwise "Read Only"); in the form, Manila is disabled for regional admin.
+   Done: Kevin sees Manila rows read-only and the server refuses Manila actions.
+8. **Reset password** — `/get_engineers` admin rows add `username`. `reset_user_password` sets `target_user.must_change_password = True`. Page: Reset button (key icon) beside Deactivate when the person has a login and the user is superadmin/regional admin (and branch allowed); `resetEngineerPassword(dbId)` confirms, POSTs `/reset_user_password/<user_id>`, then shows `credModal` with the username, the new password and the note "Temporary password. They must change it at next sign-in."; server refusal message shown in a toast.
+9. **Password pop-up** — `credModal` gets `data-bs-backdrop="static"`, `data-bs-keyboard="false"` and a footer "Done" button (`data-bs-dismiss="modal"`); `copyText(id)` uses `navigator.clipboard.writeText` when available, falling back to `execCommand`.
+10. **Signature status** — admin rows add `has_signature` (`bool(e.signature_data)`); `engineerAccountBadge` adds a "No signature" badge when false (engineer logins only).
+11. **CSV export** — `/export_engineers` appends Username, Role, Account Status (Active/Inactive/No login), Signature (Yes/No) after the existing six columns.
+12. **Tests** — `tests/test_staff_creation.py`:
+    - regional admin: add/edit/deactivate/delete/reset refused (403) for a Manila engineer, allowed for a Cebu engineer;
+    - reset sets `must_change_password`;
+    - `/get_engineers` returns `username` and `has_signature` for admins and not for an engineer;
+    - export header includes the four new columns after the original six;
+    - source: `renderEngineerDirectory`, `engineer-directory-count`, the empty and load-error messages, `data-bs-backdrop="static"` on `credModal`, `resetEngineerPassword`, `canManageEngineerBranch`.
+    Each must fail on the unchanged code first.
+
+## Deliberately excluded
+
+- Merging the table and card action builders — different layouts; risk outweighs the gain.
+- One shared branch-list constant — three short lists that rarely change.
+- Forcing a change after admin-typed passwords (`change_password`) — owner chose reset only.
+- Regional-admin limits on Settings pages beyond what `can_reset_password_for_user` already guards.
+
+## Verification
+
+- New tests fail first, then pass.
+- Focused modules: `tests.test_staff_creation`, `tests.test_admin_capabilities`, `tests.test_hr_schedule_viewer` (reads `/get_engineers`).
+- Flask test client on a temporary copy of `scheduler.db` as superadmin and as the regional admin: Manila actions refused for the regional admin, allowed for superadmin; reset returns a password and sets the forced change; export downloads with the new columns; page renders.
+- No browser automation (AGENTS.md). Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+
+## After implementation
+
+1. Self-review; confirm every function the page calls is still defined.
+2. Fail-first proof recorded here.
+3. Service worker bump (read the current `CACHE_VERSION` live; keep the old one as a historical marker).
+4. `releases.json` entry dated the commit date, audience admins.
+5. Update `changes.md` and this plan's status.
+6. Commit and push only on the owner's "commit and push": explicit staging; never `scheduler.db` or unrelated dirty files; verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- The regional admin loses Manila Personnel actions — intended; superadmins unaffected.
+- Reset forcing a change also applies in Settings — the person sets a new password once.
+- `username` is now returned to personnel admins — they already see it when creating accounts.
+- Safety net: no schema change; reverting the commit restores previous behaviour.
+
+---
+
 # Personnel Batch 2: Add/Edit Form Fixes
 
 **Status:** Executed — commit `351f6a2`; published to `origin/main` on the owner's "commit and push" (Railway deployment `a7377513-0206-42e1-9724-f8ae5899194e`).

@@ -8051,6 +8051,7 @@ PROTECTED_PASSWORD_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME}
 REGIONAL_ADMIN_USERNAME = 'kevin'
 REGIONAL_ADMIN_EMPLOYEE_ID = '15-148'
 REGIONAL_ADMIN_BRANCHES = {'Cebu', 'Davao'}
+REGIONAL_PERSONNEL_DENIAL = 'You can manage Cebu and Davao personnel only.'
 FRANCIS_USERNAME = 'francis'
 
 # --- APPROVAL CENTER ACCESS POLICY ---
@@ -11697,6 +11698,10 @@ def can_reset_password_for_user(target_user, actor=None):
     if is_regional_admin_user(actor):
         if target_role in {'superadmin', 'regional_admin'}:
             return False, 'You are not allowed to change this password.'
+        # Like schedules, a regional admin manages Cebu and Davao personnel only.
+        target_profile = Engineer.query.filter_by(user_id=target_user.id).first()
+        if target_profile and target_profile.branch not in REGIONAL_ADMIN_BRANCHES:
+            return False, REGIONAL_PERSONNEL_DENIAL
         return True, None
 
     # Schedulers cannot change passwords of superadmins or engineers.
@@ -27083,7 +27088,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v247-personnel-form-fixes';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v247-personnel-form-fixes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v248-personnel-directory-tools';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -32955,6 +32961,8 @@ def get_engineers():
                 'display_role': get_display_role(account) if account else None,
                 'user_id': account.id if account else None,
                 'account_active': bool(account.is_active) if account else None,
+                'username': account.username if account else None,
+                'has_signature': bool(e.signature_data),
             })
 
         results.append(row)
@@ -53529,9 +53537,20 @@ def export_engineers():
     if not can_administer_personnel(): return denied()
     engineers = Engineer.query.order_by(Engineer.name).all()
     output = io.StringIO(); writer = csv.writer(output)
-    writer.writerow(['Emp ID', 'Engineer Name', 'Shorthand Initials', 'Branch', 'Phone', 'Email'])
+    writer.writerow([
+        'Emp ID', 'Engineer Name', 'Shorthand Initials', 'Branch', 'Phone', 'Email',
+        'Username', 'Role', 'Account Status', 'Signature',
+    ])
     for e in engineers:
-        writer.writerow([e.employee_id, e.name, e.initials, e.branch, e.phone, e.email])
+        account = db.session.get(User, e.user_id) if e.user_id else None
+        status = 'No login' if not account else ('Active' if account.is_active else 'Inactive')
+        writer.writerow([
+            e.employee_id, e.name, e.initials, e.branch, e.phone, e.email,
+            account.username if account else '',
+            get_display_role(account) if account else '',
+            status,
+            'Yes' if e.signature_data else 'No',
+        ])
     output.seek(0)
     log_activity("Exported the Personnel Directory")
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-disposition": "attachment; filename=technicians_list.csv"})
@@ -61928,6 +61947,9 @@ def add_engineer():
         return jsonify({'message': f'Error: Employee ID {emp_id} is already taken.'}), 400
 
     if staff_type == 'engineer':
+        branch_denial = personnel_branch_denial(clean_str(p.get('branch')))
+        if branch_denial:
+            return denied(branch_denial)
         contact_error = personnel_contact_error(clean_str(p.get('phone')), clean_str(p.get('email')))
         if contact_error:
             return jsonify({'message': contact_error}), 400
@@ -62067,6 +62089,10 @@ def update_engineer(id):
     if not can_administer_personnel():
         return jsonify({'message': 'Denied'}), 403
 
+    branch_denial = personnel_branch_denial(eng.branch, clean_str(p.get('branch')))
+    if branch_denial:
+        return denied(branch_denial)
+
     new_eid = clean_str(p.get('employee_id'))
     if engineer_with_employee_id(new_eid, exclude_id=eng.id):
         return jsonify({'message': 'Employee ID already taken.'}), 400
@@ -62143,6 +62169,13 @@ def engineer_linked_record_counts(engineer):
     return counts
 
 
+def personnel_branch_denial(*branches):
+    """A regional admin may only add or edit personnel in Cebu and Davao."""
+    if is_regional_admin_user() and any(branch not in REGIONAL_ADMIN_BRANCHES for branch in branches):
+        return REGIONAL_PERSONNEL_DENIAL
+    return None
+
+
 def personnel_account_change_denial(user_acc):
     """Why the current user may not deactivate or delete this login, or None if they may."""
     if not user_acc:
@@ -62151,6 +62184,8 @@ def personnel_account_change_denial(user_acc):
         return 'You cannot deactivate or delete your own account.'
     allowed, reason = can_reset_password_for_user(user_acc)
     if not allowed:
+        if reason == REGIONAL_PERSONNEL_DENIAL:
+            return reason
         return 'This account is protected and cannot be deactivated or deleted here.'
     return None
 
@@ -62184,7 +62219,10 @@ def delete_engineer(id):
     if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
     eng = db.session.get(Engineer, id)
     if eng:
-        denial = personnel_account_change_denial(db.session.get(User, eng.user_id) if eng.user_id else None)
+        denial = (
+            personnel_account_change_denial(db.session.get(User, eng.user_id) if eng.user_id else None)
+            or personnel_branch_denial(eng.branch)
+        )
         if denial:
             return denied(denial)
         found = [f'{count} {label}' for label, count in engineer_linked_record_counts(eng).items() if count]
@@ -62223,6 +62261,7 @@ def reset_user_password(user_id):
 
     new_pw = ''.join(secrets.choice(string.ascii_letters + string.digits) for i in range(8))
     target_user.password = generate_password_hash(new_pw)
+    target_user.must_change_password = True
     db.session.commit()
     log_activity(f"Reset password for user: {target_user.username}")
     return jsonify({'new_pw': new_pw})

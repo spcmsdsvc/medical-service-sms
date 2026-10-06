@@ -588,7 +588,82 @@ class StaffCreationTests(unittest.TestCase):
             own.put(f'/update_engineer/{engineer_id}', json={'phone': '0917 123 4567', 'email': ''}).status_code, 200)
 
 
+    def _set_branch(self, engineer_id, branch):
+        with self.app.app_context():
+            engineer = app_module.db.session.get(app_module.Engineer, engineer_id)
+            engineer.branch = branch
+            app_module.db.session.commit()
+            return {
+                'employee_id': engineer.employee_id, 'name': engineer.name,
+                'initials': engineer.initials, 'phone': '', 'email': '', 'branch': branch,
+            }
+
+    def test_regional_admin_is_limited_to_cebu_and_davao_personnel(self):
+        regional = self._client_for(self.regional_admin_id)
+        manila_id, manila_user = self._make_engineer('Manila Person')
+        manila_payload = self._set_branch(manila_id, 'Manila')
+        cebu_id, cebu_user = self._make_engineer('Cebu Person')
+        cebu_payload = self._set_branch(cebu_id, 'Cebu')
+
+        self.assertEqual(regional.put(f'/update_engineer/{manila_id}', json=manila_payload).status_code, 403)
+        self.assertEqual(regional.post(f'/set_engineer_active/{manila_id}', json={'active': False}).status_code, 403)
+        self.assertEqual(regional.post(f'/reset_user_password/{manila_user}').status_code, 403)
+        self.assertEqual(regional.delete(f'/delete_engineer/{manila_id}').status_code, 403)
+        # Moving a Cebu person to Manila is refused too.
+        self.assertEqual(
+            regional.put(f'/update_engineer/{cebu_id}', json=dict(cebu_payload, branch='Manila')).status_code, 403)
+        tag = uuid.uuid4().hex[:6]
+        self.assertEqual(regional.post('/add_engineer', json=self._payload(
+            f'Newmanila{tag} Person', employee_id=f'NM-{tag}', branch='Manila')).status_code, 403)
+
+        self.assertEqual(regional.put(f'/update_engineer/{cebu_id}', json=cebu_payload).status_code, 200)
+        self.assertEqual(regional.post(f'/reset_user_password/{cebu_user}').status_code, 200)
+        self.assertEqual(regional.post(f'/set_engineer_active/{cebu_id}', json={'active': False}).status_code, 200)
+
+    def test_password_reset_forces_a_change(self):
+        _, user_id = self._make_engineer('Reset Person')
+        response = self._client_for(self.superadmin_id).post(f'/reset_user_password/{user_id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json().get('new_pw'))
+        with self.app.app_context():
+            self.assertTrue(app_module.db.session.get(app_module.User, user_id).must_change_password)
+
+    def test_directory_returns_username_and_signature_for_admins_only(self):
+        engineer_id, user_id = self._make_engineer('Signature Person')
+        rows = self._client_for(self.superadmin_id).get('/get_engineers').get_json()
+        row = next(item for item in rows if item['id'] == engineer_id)
+        self.assertTrue(row['username'])
+        self.assertFalse(row['has_signature'])
+
+        own_rows = self._client_for(user_id).get('/get_engineers').get_json()
+        own_row = next(item for item in own_rows if item['id'] == engineer_id)
+        self.assertNotIn('username', own_row)
+        self.assertNotIn('has_signature', own_row)
+
+    def test_export_adds_account_columns_after_the_original_six(self):
+        response = self._client_for(self.superadmin_id).get('/export_engineers')
+        self.assertEqual(response.status_code, 200)
+        header = response.get_data(as_text=True).splitlines()[0].split(',')
+        self.assertEqual(header[:6], ['Emp ID', 'Engineer Name', 'Shorthand Initials', 'Branch', 'Phone', 'Email'])
+        self.assertEqual(header[6:], ['Username', 'Role', 'Account Status', 'Signature'])
+
+
 class StaffCreationSourceTests(unittest.TestCase):
+    def test_personnel_directory_and_account_tools_in_page(self):
+        template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
+        for expected in (
+            'function renderEngineerDirectory(',
+            'id="engineer-directory-count"',
+            'No personnel match your search.',
+            'Could not load personnel. Refresh to try again.',
+            'function resetEngineerPassword(',
+            'function canManageEngineerBranch(',
+            'function renderEngineerMobileCards(',
+        ):
+            self.assertIn(expected, template)
+        cred_modal = template.split('id="credModal"', 1)[1].split('>', 1)[0]
+        self.assertIn('data-bs-backdrop="static"', cred_modal)
+
     def test_personnel_form_guards_save_and_keeps_edit_fields(self):
         template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
         self.assertIn('id="eng-save-btn"', template)

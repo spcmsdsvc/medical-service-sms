@@ -75,6 +75,21 @@
         </div>
         {% endif %}
 
+        <!-- SEARCH AND FILTER (desktop and mobile) -->
+        <div class="engineer-mobile-toolbar no-print">
+            <div class="engineer-mobile-search-wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="search" id="engineer-mobile-search" placeholder="Search engineer, ID, branch, email..." aria-label="Search personnel" oninput="renderEngineerDirectory()">
+            </div>
+            <select id="engineer-mobile-branch-filter" aria-label="Filter by branch" onchange="renderEngineerDirectory()">
+                <option value="">All Branches</option>
+                <option value="Manila">Manila</option>
+                <option value="Cebu">Cebu</option>
+                <option value="Davao">Davao</option>
+            </select>
+        </div>
+        <div id="engineer-directory-count" class="engineer-directory-count no-print" aria-live="polite"></div>
+
         <!-- PERSONNEL TABLE -->
         <div class="table-responsive">
             <table class="table table-hover align-middle">
@@ -95,18 +110,6 @@
         </div>
 
         <!-- MOBILE ENGINEER DIRECTORY -->
-        <div class="engineer-mobile-toolbar no-print">
-            <div class="engineer-mobile-search-wrap">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="search" id="engineer-mobile-search" placeholder="Search engineer, ID, branch, email..." oninput="renderEngineerMobileCards()">
-            </div>
-            <select id="engineer-mobile-branch-filter" onchange="renderEngineerMobileCards()">
-                <option value="">All Branches</option>
-                <option value="Manila">Manila</option>
-                <option value="Cebu">Cebu</option>
-                <option value="Davao">Davao</option>
-            </select>
-        </div>
         <div id="engineer-mobile-list" class="engineer-mobile-list no-print"></div>
 
     </div>
@@ -233,9 +236,7 @@
 
 <script>
     function engineerEscape(value){
-        return String(value || '').replace(/[&<>"']/g, function(match){
-            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[match];
-        });
+        return escapeHtml(value || '');
     }
 
     function engineerToast(message, tone='error', title=''){
@@ -344,12 +345,22 @@
     const loggedInEngineerEmail = "{{ current_user.engineer_profile.email|lower if current_user.engineer_profile and current_user.engineer_profile.email else '' }}";
 
     document.addEventListener('DOMContentLoaded', () => { 
-        engModal = new bootstrap.Modal(document.getElementById('engModal')); 
+        engModal = new bootstrap.Modal(document.getElementById('engModal'));
+        if(isRegionalAdmin){
+            const manilaOption = document.querySelector('#e-branch option[value="Manila"]');
+            if(manilaOption) manilaOption.disabled = true;
+        } 
         loadEngineers(); 
     });
 
+    function canManageEngineerBranch(engineer){
+        // Like schedules, the regional admin manages Cebu and Davao personnel only.
+        if(!isRegionalAdmin) return true;
+        return Boolean(engineer) && regionalAllowedBranches.includes(engineer.branch);
+    }
+
     function canEditEngineerContact(engineer){
-        if(canAdministerPersonnel) return true;
+        if(canAdministerPersonnel) return canManageEngineerBranch(engineer);
         if(isSuperAdmin || isRegionalAdmin) return true;
 
         if(isEngineer && engineer){
@@ -510,7 +521,10 @@
         if(!canAdministerPersonnel) return '';
         if(!e.user_id) return '<span class="badge bg-light text-muted border ms-1">No login</span>';
         if(e.account_active === false) return '<span class="badge bg-secondary ms-1">Inactive</span>';
-        return e.display_role ? `<span class="badge bg-light text-dark border ms-1">${escapeHtml(e.display_role)}</span>` : '';
+        const roleBadge = e.display_role ? `<span class="badge bg-light text-dark border ms-1">${escapeHtml(e.display_role)}</span>` : '';
+        const signatureBadge = e.has_signature === false && e.account_role === 'engineer'
+            ? '<span class="badge bg-warning-subtle text-warning-emphasis border ms-1">No signature</span>' : '';
+        return roleBadge + signatureBadge;
     }
 
     function canChangeEngineerAccount(e){
@@ -518,7 +532,11 @@
     }
 
     function getEngineerActionButtons(e){
-        if (canAdministerPersonnel) {
+        if (canAdministerPersonnel && canManageEngineerBranch(e)) {
+            const resetMarkup = canChangeEngineerAccount(e) ? `
+                    <button class="engineer-mobile-btn engineer-mobile-toggle" onclick="resetEngineerPassword(${e.id})">
+                        <i class="fa-solid fa-key"></i>Reset
+                    </button>` : '';
             const toggleMarkup = canChangeEngineerAccount(e) ? `
                     <button class="engineer-mobile-btn engineer-mobile-toggle" onclick="setEngineerActive(${e.id}, ${e.account_active === false})">
                         <i class="fa-solid fa-${e.account_active === false ? 'user-check' : 'user-slash'}"></i>${e.account_active === false ? 'Activate' : 'Deactivate'}
@@ -533,6 +551,7 @@
                         <i class="fa-solid fa-pen"></i>Edit
                     </button>
                     ${toggleMarkup}
+                    ${resetMarkup}
                     ${deleteMarkup}
                 </div>`;
         }
@@ -625,63 +644,98 @@
         }).join('');
     }
 
-    /**
-     * MASTER DATA LOADER
-     * Updated v5.2.1: Now renders the manual Employee ID.
-     */
-    async function loadEngineers() {
-        const res = await fetch('/get_engineers');
-        const data = await res.json();
-        engineersData = data;
+    function buildEngineerTableRow(e) {
+        let actions = "";
 
-        const body = document.getElementById('eng-table-body'); 
-        body.innerHTML = "";
+        if (canAdministerPersonnel && canManageEngineerBranch(e)) {
+            const toggleLabel = e.account_active === false ? 'Activate login' : 'Deactivate login';
+            const toggleMarkup = canChangeEngineerAccount(e) ? `
+                        <button class="btn btn-sm btn-outline-secondary" onclick="setEngineerActive(${e.id}, ${e.account_active === false})" title="${toggleLabel}" aria-label="${toggleLabel}"><i class="fa-solid fa-${e.account_active === false ? 'user-check' : 'user-slash'}"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="resetEngineerPassword(${e.id})" title="Reset password" aria-label="Reset password"><i class="fa-solid fa-key"></i></button>` : '';
+            const deleteMarkup = (isSuperAdmin || isRegionalAdmin) ? `
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteEngineer(${e.id})" title="Delete" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>` : '';
+            actions = `
+                <td class="text-end no-print">
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${e.id})" title="Edit" aria-label="Edit"><i class="fa-solid fa-pen"></i></button>
+                        ${toggleMarkup}
+                        ${deleteMarkup}
+                    </div>
+                </td>`;
+        } else if (canEditEngineerContact(e)) {
+            actions = `
+                <td class="text-end no-print">
+                    <button class="btn btn-sm btn-outline-primary" onclick="openEditModal(${e.id})">
+                        <i class="fa-solid fa-address-card me-1"></i>Edit Contact
+                    </button>
+                </td>`;
+        } else {
+            actions = `<td class="text-end no-print"><span class="text-muted small italic">Read Only</span></td>`;
+        }
 
-        data.forEach(e => {
-            let actions = "";
+        const phone = e.phone ? `<a href="tel:${escapeHtml(e.phone)}" class="text-reset">${escapeHtml(e.phone)}</a>` : '-';
+        const email = e.email ? `<a href="mailto:${escapeHtml(e.email)}" class="text-reset">${escapeHtml(e.email)}</a>` : '-';
 
-            // Version 5.3 Security Guards
-            if (canAdministerPersonnel) {
-                const toggleMarkup = canChangeEngineerAccount(e) ? `
-                            <button class="btn btn-sm btn-outline-secondary" onclick="setEngineerActive(${e.id}, ${e.account_active === false})" title="${e.account_active === false ? 'Activate login' : 'Deactivate login'}" aria-label="${e.account_active === false ? 'Activate login' : 'Deactivate login'}"><i class="fa-solid fa-${e.account_active === false ? 'user-check' : 'user-slash'}"></i></button>` : '';
-                const deleteMarkup = (isSuperAdmin || isRegionalAdmin) ? `
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteEngineer(${e.id})" title="Delete" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>` : '';
-                actions = `
-                    <td class="text-end no-print">
-                        <div class="btn-group">
-                            <button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${e.id})"><i class="fa-solid fa-pen"></i></button>
-                            ${toggleMarkup}
-                            ${deleteMarkup}
-                        </div>
-                    </td>`;
-            } else if (canEditEngineerContact(e)) {
-                actions = `
-                    <td class="text-end no-print">
-                        <button class="btn btn-sm btn-outline-primary" onclick="openEditModal(${e.id})">
-                            <i class="fa-solid fa-address-card me-1"></i>Edit Contact
-                        </button>
-                    </td>`;
-            } else {
-                actions = `<td class="text-end no-print"><span class="text-muted xsmall italic">Read Only</span></td>`;
+        return `
+            <tr>
+                <td class="font-monospace fw-bold text-dark">${escapeHtml(e.employee_id)}</td>
+                <td><span class="badge border text-dark bg-light">${escapeHtml(e.branch || 'Manila')}</span></td>
+                <td><strong>${escapeHtml(e.name)}</strong>${engineerAccountBadge(e)}</td>
+                <td><span class="text-muted small">${escapeHtml(e.initials)}</span></td>
+                <td>
+                    <div class="small text-muted"><i class="fa-solid fa-phone me-1"></i>${phone}</div>
+                    <div class="small text-muted"><i class="fa-solid fa-envelope me-1"></i>${email}</div>
+                </td>
+                ${actions}
+            </tr>`;
+    }
+
+    function renderEngineerDirectory() {
+        const filtered = getFilteredEngineersForMobile();
+        const all = engineersData || [];
+
+        const body = document.getElementById('eng-table-body');
+        if(body){
+            body.innerHTML = filtered.length
+                ? filtered.map(buildEngineerTableRow).join('')
+                : `<tr><td colspan="6" class="text-center text-muted py-4">No personnel match your search.</td></tr>`;
+        }
+
+        const count = document.getElementById('engineer-directory-count');
+        if(count){
+            if(filtered.length !== all.length){
+                count.textContent = `Showing ${filtered.length} of ${all.length}`;
+            }else{
+                const byBranch = ['Manila', 'Cebu', 'Davao']
+                    .map(branch => `${branch} ${all.filter(e => (e.branch || 'Manila') === branch).length}`);
+                count.textContent = `${all.length} personnel · ${byBranch.join(' · ')}`;
             }
-
-            body.innerHTML += `
-                <tr>
-                    <td class="font-monospace fw-bold text-dark">${escapeHtml(e.employee_id)}</td>
-                    <td><span class="badge border text-dark bg-light">${escapeHtml(e.branch || 'Manila')}</span></td>
-                    <td><strong>${escapeHtml(e.name)}</strong>${engineerAccountBadge(e)}</td>
-                    <td><span class="text-muted small">${escapeHtml(e.initials)}</span></td>
-                    <td>
-                        <div class="xsmall text-muted"><i class="fa-solid fa-phone me-1"></i>${escapeHtml(e.phone || '-')}</div>
-                        <div class="xsmall text-muted"><i class="fa-solid fa-envelope me-1"></i>${escapeHtml(e.email || '-')}</div>
-                    </td>
-                    ${actions}
-                </tr>`;
-        });
+        }
 
         renderEngineerMobileCards();
     }
-    
+
+    /**
+     * MASTER DATA LOADER
+     */
+    async function loadEngineers() {
+        try {
+            const res = await fetch('/get_engineers');
+            if(!res.ok) throw new Error(`/get_engineers returned ${res.status}`);
+            engineersData = await res.json();
+        } catch (err) {
+            const message = 'Could not load personnel. Refresh to try again.';
+            const body = document.getElementById('eng-table-body');
+            if(body) body.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${message}</td></tr>`;
+            const list = document.getElementById('engineer-mobile-list');
+            if(list) list.innerHTML = `<div class="engineer-mobile-empty"><i class="fa-solid fa-triangle-exclamation"></i><span>${message}</span></div>`;
+            engineerAlert(message);
+            return;
+        }
+
+        renderEngineerDirectory();
+    }
+
     /**
      * UI HELPER: Generates initials automatically.
      */
@@ -903,6 +957,40 @@
             engineerAlert(respData.message || "Action failed on server.");
         }
     }
+
+    /**
+     * ACCOUNT TOOLS: Issue a temporary password the person must change at next sign-in.
+     */
+    async function resetEngineerPassword(dbId) {
+        const eng = engineersData.find(x => x.id == dbId);
+        if(!(isSuperAdmin || isRegionalAdmin) || !eng?.user_id) return;
+
+        const confirmed = await engineerConfirmDialog({
+            title: 'Reset Password?',
+            message: `${eng.name} will get a new temporary password and must change it at next sign-in.`,
+            confirmText: 'Reset Password',
+            icon: 'key'
+        });
+        if(!confirmed) return;
+
+        const res = await fetch(`/reset_user_password/${eng.user_id}`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCSRFToken() }
+        }).catch(() => null);
+        const respData = res ? await res.json().catch(() => ({})) : {};
+        if(!res || !res.ok || !respData.new_pw){
+            return engineerAlert(respData.message || "Could not reset the password. Try again.");
+        }
+
+        const accountNote = document.getElementById('cred-account-note');
+        if(accountNote){
+            accountNote.textContent = 'Temporary password. They must change it at next sign-in.';
+            accountNote.className = 'alert alert-info small mb-3';
+        }
+        document.getElementById('cred-username').value = eng.username || '';
+        document.getElementById('cred-password').value = respData.new_pw;
+        new bootstrap.Modal(document.getElementById('credModal')).show();
+    }
 </script>
 
 <style>
@@ -1070,15 +1158,22 @@
     .rounded-4 { border-radius: 1rem !important; }
 
     /* MOBILE ENGINEERS PAGE UPGRADE */
-    .engineer-mobile-toolbar,
     .engineer-mobile-list {
         display: none;
     }
 
     .engineer-mobile-toolbar {
+        display: flex;
         gap: 0.65rem;
-        margin-top: 1rem;
-        margin-bottom: 1rem;
+        max-width: 40rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .engineer-directory-count {
+        color: #64748b;
+        font-size: 0.8rem;
+        font-weight: 700;
+        margin-bottom: 0.75rem;
     }
 
     .engineer-mobile-search-wrap {
@@ -1346,10 +1441,6 @@
             display: none;
         }
 
-        .engineer-mobile-toolbar {
-            display: flex;
-        }
-
         .engineer-mobile-list {
             display: block;
         }
@@ -1377,7 +1468,7 @@
 </style>
 
 <!-- TEMP PASSWORD MODAL -->
-<div class="modal fade no-print" id="credModal" tabindex="-1">
+<div class="modal fade no-print" id="credModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
@@ -1393,6 +1484,10 @@
 <b>Password:</b> <input id="cred-password" class="form-control d-inline w-auto" readonly>
 <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyText('cred-password')">Copy</button>
 </div>
+            </div>
+            <div class="modal-footer">
+                <span class="small text-muted me-auto">This password is shown only once.</span>
+                <button type="button" class="btn btn-success btn-sm px-4 fw-bold" data-bs-dismiss="modal">Done</button>
             </div>
         </div>
     </div>
@@ -1412,14 +1507,22 @@ function copyText(id){
 
     if(!input) return;
 
-    input.select();
-    input.setSelectionRange(0, 99999);
+    const copied = () => new bootstrap.Toast(document.getElementById('copyToast')).show();
+    const fallback = () => {
+        input.select();
+        input.setSelectionRange(0, 99999);
+        try {
+            document.execCommand("copy");
+            copied();
+        } catch (err) {
+            engineerAlert("Copy failed");
+        }
+    };
 
-    try {
-        document.execCommand("copy");
-        new bootstrap.Toast(document.getElementById('copyToast')).show();
-    } catch (err) {
-        engineerAlert("Copy failed");
+    if(navigator.clipboard && window.isSecureContext){
+        navigator.clipboard.writeText(input.value).then(copied, fallback);
+    } else {
+        fallback();
     }
 }
 </script>
