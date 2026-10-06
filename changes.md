@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-06
 
+- Committed only the Medical Center Batch 1 package (`app.py`, `templates/clients.html`, `tests/test_purchase_orders.py`, `tests/test_tsr_autosave_client_groups.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `75f11a1` on `main` and pushed it to `origin/main` on the owner's "commit and push"; `origin/main` verified at `75f11a1`, and Railway production deployment (GitHub deployment `6876455824`) was building it. No schema change. `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`, and the loose handoff file were not staged. No Railway variable or manual redeploy was changed.
+
 - Executed the plan **Medical Center Batch 1: Protect Data and Fix Import** on the owner's go-ahead; not committed, pushed, or deployed.
 - Medical Center delete (`app.py` `delete_client`, new `client_linked_record_counts`): refused with 409 and the counts ("<name> has 34 schedules and 1 equipment. It cannot be deleted.") when the medical center has schedules, equipment, P.O.s, travel visits, Genoray items or Vieworks items. Previously delete blanked the client on its schedules and equipment, deleted its P.O.s, and left contacts and other rows pointing at a deleted client. An unlinked medical center is deleted together with its `Contact` rows; a missing id now returns 404 instead of success.
 - Add/Edit (`add_client`, admin path of `update_client`): a blank company name returns 400 "Company name is required." instead of a 500.

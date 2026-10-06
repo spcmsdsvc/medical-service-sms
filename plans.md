@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Medical Center Batch 1: Protect Data and Fix Import
 
-**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Status:** Executed — commit `75f11a1`; published to `origin/main` on the owner's "commit and push" (Railway build in progress, GitHub deployment `6876455824`).
 **Finished:** 2026-10-06.
 
 **Where the plan and the outcome differed:**
