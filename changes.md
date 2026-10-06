@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-06
 
+- Committed only the Medical Center Batch 2 package (`app.py`, `templates/clients.html`, `tests/test_tsr_autosave_client_groups.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `1ef8f24` on `main` and pushed it to `origin/main` on the owner's "commit and push"; `origin/main` verified at `1ef8f24`, and the Railway production deployment (GitHub deployment `6876653600`) succeeded. No schema change. `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`, and the loose handoff file were not staged. No Railway variable or manual redeploy was changed.
+
 - Executed the plan **Medical Center Batch 2: Permissions and Safety** on the owner's go-ahead; not committed, pushed, or deployed.
 - Medical Center page (`templates/clients.html`): every saved value inserted as HTML is now escaped (autocomplete, duplicate warning, View pop-up name/address, product pop-up and product list), and product serials passed to `openProductModal`/`editProduct` go through new `clientJsArg` (stored-XSS fix). Export (CSV) and the Edit pop-up Export Excel are rendered only for superadmin/regional admin, the View pop-up Export Excel only when `isAdminUser`, and the product Edit button only when new `canEditProducts` is true (`clients_page` passes `can_edit_products_inventory()`). Print unchanged. All existing functions and ids kept.
 - Engineer contact edits (`app.py` `apply_client_contacts_without_deleting_existing`, `allow_delete=False`): rows keep their pop-up position, so a blanked row leaves its saved contact in place; previously contacts A, B, C with A blanked were saved as B, C, C. Admin path unchanged.
