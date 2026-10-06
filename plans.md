@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Medical Center Batches 3 & 4: Speed, Code Cuts and UI
 
-**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Status:** Executed — commit `558031d`; published to `origin/main` on the owner's "commit and push" (Railway deployment succeeded, GitHub deployment `6877650579`).
 **Finished:** 2026-10-06.
 
 **Where the plan and the outcome differed:**
