@@ -17,7 +17,8 @@
 - **Write it detailed, and write it to be executed.** Prose alone is not enough. Every plan
   carries numbered execution steps that can be worked through one at a time, each naming the
   files and functions it touches and what "done" looks like — plus what happens *after* the
-  code is written: self-review, proving the tests fail without the fix, the full suite, browser
+  code is written: self-review, proving the tests fail without the fix, the focused tests (full suite only
+  before publishing), browser
   verification, the service worker bump, `releases.json`, the journals, and the commit
   checklist. The required structure is in `plans.md` under "How to use this file".
 - Keep the `Status` line current — `Approved — awaiting go-ahead`, `In progress`, `Executed`

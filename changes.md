@@ -7,6 +7,7 @@ codex changes - 2026-10-06
 - `AGENTS.md` Mandatory Change Log: agents now read only the newest dated section of `changes.md` before a change (older sections only when the task needs them), instead of the whole file (~950 KB), to cut token use. Documentation only; no app change.
 - Archived old history to cut token use: `changes.md` sections from 2026-09-30 and earlier moved unchanged to new `changes-archive.md` (`changes.md` 956 KB → 103 KB); `plans.md` now starts with "How to use this file" followed by the six newest plans, and all older plans (including six September plans still marked "In progress") moved unchanged to new `plans-archive.md` (`plans.md` 2.4 MB → 99 KB). `AGENTS.md` points to both archives. Documentation only; no app change.
 - Lowered the Impeccable design hook limits in `.impeccable/config.json` (`maxFindings` 5 → 3, `maxChars` 8000 → 3000) so UI edits add fewer tokens. Development tooling only; no app change.
+- Plan checklist (`AGENTS.md` Approved Plans, `plans.md` "Required structure" Verification row): run the focused test modules for what changed, and the full suite only once before publishing, instead of the full suite on every plan step. Documentation only; no app change.
 
 codex changes - 2026-10-05
 

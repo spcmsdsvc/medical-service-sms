@@ -33,7 +33,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **Investigation** | What was verified in the code, with `file:line`. Findings that changed the approach belong here, including anything that turned out **not** to be true. |
 | **Execution steps** | **Numbered tasks, in order**, each naming the files and functions it touches and what "done" looks like. Small enough to finish and check one at a time. |
 | **Deliberately excluded** | What is out of scope and the reason, so it reads as a decision rather than an oversight. |
-| **Verification** | Tests to add, each with the positive control that proves it can fail; the browser sequence; the standing bar (375 px, tap targets, console, suite count). |
+| **Verification** | Tests to add, each with the positive control that proves it can fail; the browser sequence; the standing bar (375 px, tap targets, console). Run the focused test modules for what changed; run the full suite only once, before publishing. |
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
