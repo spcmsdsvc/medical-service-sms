@@ -29,9 +29,9 @@
                 <button class="btn btn-outline-primary btn-sm" id="client-import-btn" onclick="document.getElementById('csv-file').click()">
                     <i class="fa-solid fa-file-import me-1"></i>Import CSV
                 </button>
+                <button class="btn btn-outline-success btn-sm" onclick="window.location.href='/export_clients'">Export</button>
                 {% endif %}
 
-                <button class="btn btn-outline-success btn-sm" onclick="window.location.href='/export_clients'">Export</button>
                 <button class="btn btn-outline-dark btn-sm" onclick="window.print()">Print</button>
 
                 {% if current_user.role in ['superadmin', 'regional_admin'] %}
@@ -149,7 +149,9 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-<button class="btn btn-outline-success btn-sm" onclick="exportClientExcel()">Export Excel</button>
+                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                <button class="btn btn-outline-success btn-sm" onclick="exportClientExcel()">Export Excel</button>
+                {% endif %}
                 <button class="btn btn-success btn-sm px-4" id="client-save-btn" onclick="saveClient()">Save Client</button>
             </div>
         </div>
@@ -339,7 +341,7 @@ async function autoCompleteClient(){
         filteredData.forEach(item=>{
             const el = document.createElement('a');
             el.className = 'list-group-item list-group-item-action';
-            el.innerHTML = `<b>${item.name}</b><br><small>${item.address || ''} • ${Math.round((item.score || 0) * 100)}% match</small>`;
+            el.innerHTML = `<b>${escapeHtml(item.name)}</b><br><small>${escapeHtml(item.address || '')} • ${Math.round((item.score || 0) * 100)}% match</small>`;
             el.onclick = ()=>{
                 document.getElementById('c-name').value = item.name;
                 document.getElementById('c-address').value = item.address;
@@ -408,7 +410,7 @@ async function liveDuplicateCheck(){
 
         if(data.match && String(data.id) !== String(editingClientId)){
             warn.style.display = 'block';
-            warn.innerHTML = `⚠ Possible duplicate:<br><b>${data.name}</b> (${data.address || 'No address'})`;
+            warn.innerHTML = `⚠ Possible duplicate:<br><b>${escapeHtml(data.name)}</b> (${escapeHtml(data.address || 'No address')})`;
         } else {
             warn.style.display = 'none';
         }
@@ -423,6 +425,7 @@ const authUsernameVal = "{{ current_user.username|lower }}";
 const schedulerUsernames = ['diary', 'hanna'];
 
 const isAdminUser = ['superadmin', 'regional_admin'].includes(authRoleVal);
+const canEditProducts = {{ 'true' if can_edit_products else 'false' }};
 const isSchedulerUser = authRoleVal === 'scheduler' || schedulerUsernames.includes(authUsernameVal);
 const isEngineerUser = authRoleVal === 'engineer';
 const canManageClientContacts = isAdminUser || isEngineerUser || isSchedulerUser;
@@ -545,26 +548,26 @@ function openProductModal(id){
             <div class="p-2">
 
                 <div class="d-flex justify-content-between align-items-start mb-2">
-                    <div class="fw-bold fs-5">${p.name || '-'}</div>
+                    <div class="fw-bold fs-5">${escapeHtml(p.name || '-')}</div>
                     ${badge}
                 </div>
 
                 <div class="text-muted small mb-3">
-                    Serial Number: ${p.serial_number || '-'}
+                    Serial Number: ${escapeHtml(p.serial_number || '-')}
                 </div>
 
                 <hr>
 
                 <div class="mb-2">
-                    <strong>Client:</strong> ${p.client_name || '-'}
+                    <strong>Client:</strong> ${escapeHtml(p.client_name || '-')}
                 </div>
 
                 <div class="mb-2">
-                    <strong>Start Date:</strong> ${p.start_warranty || '-'}
+                    <strong>Start Date:</strong> ${escapeHtml(p.start_warranty || '-')}
                 </div>
 
                 <div class="mb-3">
-                    <strong>End Date:</strong> ${p.end_warranty || '-'}
+                    <strong>End Date:</strong> ${escapeHtml(p.end_warranty || '-')}
                 </div>
 
                 <div class="mb-3">
@@ -575,9 +578,9 @@ function openProductModal(id){
                     <button class="btn btn-sm btn-outline-primary" onclick="window.location.href='/products_page'">
                         Open Full Page
                     </button>
-                    <button class="btn btn-sm btn-outline-warning" onclick="editProduct('${p.serial_number}')">
+                    ${canEditProducts ? `<button class="btn btn-sm btn-outline-warning" onclick="editProduct(${clientJsArg(p.serial_number)})">
                         Edit
-                    </button>
+                    </button>` : ''}
                 </div>
 
             </div>
@@ -906,6 +909,11 @@ function escapeHtml(value){
         .replaceAll("'", '&#039;');
 }
 
+// Safe string argument for inline onclick handlers.
+function clientJsArg(value){
+    return escapeHtml(JSON.stringify(String(value ?? '')));
+}
+
 function getPrimaryClientContact(c){
     let i = 1;
     while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
@@ -1195,12 +1203,12 @@ async function viewContacts(id){
     let html = `
     <div class="p-3 border-bottom d-flex justify-content-between align-items-start">
         <div>
-            <div class="fw-bold fs-5">${c.name}</div>
-            <div class="text-muted small">${c.address || "No address provided"}</div>
+            <div class="fw-bold fs-5">${escapeHtml(c.name)}</div>
+            <div class="text-muted small">${escapeHtml(c.address || "No address provided")}</div>
             <div class="text-muted small"><strong>Group:</strong> ${escapeHtml(c.group_name || 'No group')}</div>
         </div>
         <div class="d-flex gap-2">
-            <button class="btn btn-sm btn-outline-success" onclick="window.open('/export_client_excel/${c.id}')">Export Excel</button>
+            ${isAdminUser ? `<button class="btn btn-sm btn-outline-success" onclick="window.open('/export_client_excel/${c.id}')">Export Excel</button>` : ''}
             <button class="btn btn-sm btn-outline-dark" onclick="printClientReport()">Print</button>
         </div>
     </div>
@@ -1258,9 +1266,9 @@ async function viewContacts(id){
             const status = p.computed_status || 'No Expiry Set - No Contract';
 
             html += `
-            <div class="list-group-item p-2" style="cursor:pointer" onclick="openProductModal('${p.serial_number}')">
-                <div class="fw-bold text-dark">${p.name || '-'}</div>
-                <div class="small"><strong>Serial Number:</strong> ${p.serial_number || '-'}</div>
+            <div class="list-group-item p-2" style="cursor:pointer" onclick="openProductModal(${clientJsArg(p.serial_number)})">
+                <div class="fw-bold text-dark">${escapeHtml(p.name || '-')}</div>
+                <div class="small"><strong>Serial Number:</strong> ${escapeHtml(p.serial_number || '-')}</div>
                 <div class="small"><strong>Status:</strong> ${escapeHtml(status)}</div>
             </div>`;
         });

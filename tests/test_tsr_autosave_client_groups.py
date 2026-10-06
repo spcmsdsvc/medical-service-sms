@@ -274,8 +274,8 @@ class MedicalCenterProtectDataTests(unittest.TestCase):
         with self.isolated_database() as clients:
             created = clients['admin'].post('/add_client', json={
                 'name': 'Round Trip', 'address': 'Davao', 'group_name': 'East',
-                'cp1': 'Ana', 'cd1': 'Head Nurse', 'cn1': '0917', 'ce1': 'ana@example.com',
-                'cp2': 'Ben', 'cd2': 'Biomed', 'cn2': '0918', 'ce2': 'ben@example.com',
+                'cp1': 'Ana', 'cd1': 'Head Nurse', 'cn1': '0917 111 1111', 'ce1': 'ana@example.com',
+                'cp2': 'Ben', 'cd2': 'Biomed', 'cn2': '0918 222 2222', 'ce2': 'ben@example.com',
             })
             self.assertEqual(created.status_code, 200)
             exported = clients['admin'].get('/export_clients').get_data(as_text=True)
@@ -307,6 +307,79 @@ class MedicalCenterProtectDataTests(unittest.TestCase):
         self.assertIn('Medical center deleted.', page)
         self.assertIn('Please enter the company name.', page)
         self.assertIn('Only possible when it has no schedules, equipment or P.O.s.', page)
+
+
+@unittest.skipIf(app_module is None, f'app import failed: {APP_IMPORT_ERROR}')
+class MedicalCenterSafetyTests(unittest.TestCase):
+    """Medical Center Batch 2: escaping, admin-only buttons, contact safety."""
+
+    isolated_database = ClientGroupRouteTests.isolated_database
+
+    def _client_with_contacts(self, rows):
+        with app_module.app.app_context():
+            record = app_module.Client(name='Safety Client', address='Addr')
+            app_module.db.session.add(record)
+            app_module.db.session.flush()
+            for name, phone, email in rows:
+                app_module.db.session.add(app_module.Contact(client_id=record.id, name=name, phone=phone, email=email))
+            app_module.db.session.commit()
+            return record.id
+
+    def _contacts(self, client_id):
+        with app_module.app.app_context():
+            return [(c.name, c.phone, c.email) for c in
+                    app_module.Contact.query.filter_by(client_id=client_id).order_by(app_module.Contact.id).all()]
+
+    def test_engineer_blank_row_keeps_every_contact(self):
+        with self.isolated_database() as clients:
+            rows = [('Ana', '0917 111 1111', None), ('Ben', '0917 222 2222', None), ('Cy', '0917 333 3333', None)]
+            client_id = self._client_with_contacts(rows)
+            response = clients['engineer'].put(f'/update_client/{client_id}', json={
+                'name': 'Safety Client', 'address': 'Addr',
+                'cp1': '', 'cd1': '', 'cn1': '', 'ce1': '',
+                'cp2': 'Ben', 'cd2': '', 'cn2': '0917 222 2222', 'ce2': '',
+                'cp3': 'Cy', 'cd3': '', 'cn3': '0917 333 3333', 'ce3': '',
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(self._contacts(client_id), rows)
+
+    def test_invalid_new_phone_or_email_is_refused(self):
+        with self.isolated_database() as clients:
+            added = clients['admin'].post('/add_client', json={'name': 'New Center', 'address': 'A', 'cp1': 'Ana', 'cn1': '12'})
+            self.assertEqual(added.status_code, 400)
+            self.assertIn('Contact 1: phone number is not valid', added.get_json()['message'])
+            client_id = self._client_with_contacts([('Ana', '0917 111 1111', None)])
+            for role in ('admin', 'engineer'):
+                bad = clients[role].put(f'/update_client/{client_id}', json={
+                    'name': 'Safety Client', 'address': 'Addr',
+                    'cp1': 'Ana', 'cn1': '0917 111 1111', 'cp2': 'Ben', 'ce2': 'not-an-email',
+                })
+                self.assertEqual(bad.status_code, 400, role)
+                self.assertIn('Contact 2: email address is not valid', bad.get_json()['message'])
+
+    def test_unchanged_saved_value_is_still_accepted(self):
+        with self.isolated_database() as clients:
+            client_id = self._client_with_contacts([('Ana', '8123 loc 205', 'old-format')])
+            response = clients['admin'].put(f'/update_client/{client_id}', json={
+                'name': 'Safety Client', 'address': 'Addr', 'cp1': 'Ana', 'cn1': '8123 loc 205', 'ce1': 'old-format',
+            })
+            self.assertEqual(response.status_code, 200)
+
+    def test_export_buttons_are_admin_only(self):
+        with self.isolated_database() as clients:
+            self.assertIn("/export_clients", clients['admin'].get('/clients_page').get_data(as_text=True))
+            engineer_page = clients['engineer'].get('/clients_page').get_data(as_text=True)
+            self.assertNotIn("/export_clients", engineer_page)
+            self.assertIn('const canEditProducts', engineer_page)
+
+    def test_page_escapes_saved_text(self):
+        import re
+        page = (ROOT / 'templates' / 'clients.html').read_text(encoding='utf-8')
+        for raw in ('${c.name}', '${c.address ||', '${p.name ||', '${p.serial_number ||', '${p.client_name ||',
+                    '${item.name}', '${item.address ||', '${data.name}', '${data.address ||'):
+            self.assertNotIn(raw, page)
+        self.assertIsNone(re.search(r"\('\$\{p\.serial_number\}'\)", page))
+        self.assertIn('function clientJsArg(', page)
 
 
 if __name__ == '__main__':

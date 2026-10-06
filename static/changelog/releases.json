@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-medical-center-safety",
+      "release_date": "2026-10-06",
+      "title": "Medical Center Safety Fixes",
+      "summary": "Contact edits are safer and contact numbers and emails are checked.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-medical-center-safety-all",
+          "category": "Medical Center",
+          "description": "Clearing a contact row while editing contacts no longer moves or loses the other saved contacts. A new or changed contact phone number or email is checked when saving, and the message says which contact to fix; numbers already saved are not affected. Export buttons are shown only to admins, who can use them, and product Edit only to people who can edit products. Names and addresses are always shown as plain text.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-medical-center-protect-data",
       "release_date": "2026-10-06",
       "title": "Medical Center Delete and Import Fixes",

@@ -27088,8 +27088,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v248-personnel-directory-tools.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v249-medical-center-protect-data';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v249-medical-center-protect-data.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v250-medical-center-safety';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28878,7 +28878,7 @@ def clients_page():
     """ Medical Center directory - Restricted access handled in HTML templates """
     if is_approver_only_user():
         return redirect(url_for('dashboard_page'))
-    return render_template('clients.html')
+    return render_template('clients.html', can_edit_products=can_edit_products_inventory())
 
 
 @app.route('/products_page')
@@ -53837,6 +53837,7 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
 
     existing_contacts = Contact.query.filter_by(client_id=client_id).order_by(Contact.id.asc()).all()
     submitted_rows = []
+    positional_rows = []  # one entry per modal row; None for a fully blank row
 
     i = 1
     while f'cp{i}' in payload or f'cn{i}' in payload or f'ce{i}' in payload or f'cd{i}' in payload:
@@ -53847,6 +53848,9 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
 
         if name or designation or phone or email:
             submitted_rows.append((name, phone, email, designation))
+            positional_rows.append((name, phone, email, designation))
+        else:
+            positional_rows.append(None)
         i += 1
 
     if allow_delete:
@@ -53856,6 +53860,7 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
         # a middle contact is removed.
         Contact.query.filter_by(client_id=client_id).delete(synchronize_session=False)
 
+        merged_rows = submitted_rows[:]
         for name, phone, email, designation in submitted_rows:
             db.session.add(Contact(
                 client_id=client_id,
@@ -53866,10 +53871,18 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
             ))
     else:
         # Engineer-safe path: preserve omitted old rows so accidental mobile
-        # edits do not erase existing client contacts.
-        for idx, (name, phone, email, designation) in enumerate(submitted_rows):
-            if idx < len(existing_contacts):
-                contact = existing_contacts[idx]
+        # edits do not erase existing client contacts. Rows keep their modal
+        # position, so a blanked row leaves its saved contact in place instead
+        # of shifting later contacts onto it.
+        merged_rows = []
+        for idx, row in enumerate(positional_rows):
+            contact = existing_contacts[idx] if idx < len(existing_contacts) else None
+            if row is None:
+                if contact:
+                    merged_rows.append((contact.name, contact.phone, contact.email, getattr(contact, 'designation', None)))
+                continue
+            name, phone, email, designation = row
+            if contact:
                 contact.name = name
                 contact.designation = designation
                 contact.phone = phone
@@ -53882,10 +53895,8 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
                     phone=phone,
                     email=email
                 ))
-
-    merged_rows = submitted_rows[:]
-    if not allow_delete and len(existing_contacts) > len(submitted_rows):
-        for contact in existing_contacts[len(submitted_rows):]:
+            merged_rows.append(row)
+        for contact in existing_contacts[len(positional_rows):]:
             merged_rows.append((
                 contact.name,
                 contact.phone,
@@ -53918,6 +53929,27 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
     return len(submitted_rows)
 
 
+def client_contact_error(payload, client_id=None):
+    """Check new or changed contact phones/emails; values already saved on the client pass."""
+    saved_phones, saved_emails = set(), set()
+    if client_id:
+        for contact in Contact.query.filter_by(client_id=client_id).all():
+            saved_phones.add(contact.phone)
+            saved_emails.add(contact.email)
+    i = 1
+    while f'cp{i}' in payload or f'cn{i}' in payload or f'ce{i}' in payload or f'cd{i}' in payload:
+        phone = clean_str(payload.get(f'cn{i}'))
+        email = clean_str(payload.get(f'ce{i}'))
+        if phone and phone not in saved_phones:
+            digits = sum(ch.isdigit() for ch in phone)
+            if not PERSONNEL_PHONE_PATTERN.match(phone) or not 7 <= digits <= 15:
+                return f'Contact {i}: phone number is not valid. Use digits, e.g. 0917 123 4567.'
+        if email and email not in saved_emails and not PERSONNEL_EMAIL_PATTERN.match(email):
+            return f'Contact {i}: email address is not valid.'
+        i += 1
+    return None
+
+
 # --- CLIENT MANAGEMENT CORE ACTIONS ---
 
 @app.route('/add_client', methods=['POST'])
@@ -53931,6 +53963,9 @@ def add_client():
     name = clean_str(payload.get('name')); addr = clean_str(payload.get('address'))
     if not name:
         return jsonify({'message': 'Company name is required.'}), 400
+    contact_error = client_contact_error(payload)
+    if contact_error:
+        return jsonify({'message': contact_error}), 400
     group_name = clean_str(payload.get('group_name')) or None
 
     if not payload.get('force'):
@@ -53981,6 +54016,11 @@ def update_client(id):
     client_rec = db.session.get(Client, id)
     if not client_rec:
         return jsonify({'message': 'Not Found'}), 404
+
+    ensure_contact_designation_column()
+    contact_error = client_contact_error(payload, client_id=id)
+    if contact_error:
+        return jsonify({'message': contact_error}), 400
 
     contact_only_role = (
         can_engineer_manage_client_contacts() or

@@ -37,9 +37,92 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Medical Center Batch 2: Permissions and Safety
+
+**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- `update_client` runs the contact check right after the not-found check, before the role branches, so both the engineer and admin paths are covered by one call.
+- The Batch 1 round-trip test used 4-digit sample phones (`0917`, `0918`) that the new check correctly refuses; its sample data now uses full numbers.
+- Fail-first: 4 of the 5 new tests failed on the unchanged code (engineer blank row lost contact A and duplicated C; no 400 for a bad phone/email; engineer page had `/export_clients`; unescaped `${c.name}`). The fifth (unchanged saved value still accepted) passed before and after by design — it guards against the new check blocking saved data.
+- After: `tests.test_tsr_autosave_client_groups` all OK; `tests.test_purchase_orders` only its 11 known pre-existing failures. Full suite 1,552 tests, 24 failures, 3 errors, 5 skips — same as the baseline. Rendered page script passes `node --check`.
+- Flask test client on a copy of `scheduler.db`: page 200 for admin and engineer (Export only for admin); all 147 real medical centers re-saved unchanged by an admin with no refusal; an engineer saving a 3-contact client with contact 1 blanked kept all 3 contacts. No browser check was made.
+**Approved:** 2026-10-06 — the owner asked to "plan batch 2" after Batch 1 was published, and replied "yes, approved".
+**Detailed:** 2026-10-06.
+
+## Context
+
+The Medical Center page scan found that saved text — client names and addresses (from admin edits, Timeline quick-add and CSV import) and product names — is inserted into the page unescaped in several places (stored-XSS risk). Buttons for admin-only actions are shown to everyone, so other users hit a 403 "Denied" response. Engineers, who may not delete contacts, can still lose one by blanking it: later contacts shift into its place. Contact phone and email are never checked. This is batch 2 of 4 (1: protect data — published as `75f11a1`; 3: speed and code cuts; 4: UI and merge).
+
+**Correction to the scan (#8):** the "manager" and "scheduler" accounts (`rodito`, `robert`, `diary`, `hanna`, `hannah`) all have role `superadmin`, so they already have full admin access to the page; no account has role `manager` or `scheduler`. There is no access gap. The page's hard-coded scheduler usernames are only redundant code and move to Batch 3.
+
+## Decisions taken
+
+1. Escape every database value inserted into the page; values passed to `onclick` handlers become safe JavaScript strings.
+2. Export (CSV) and both Export Excel buttons are shown to admins only; the product Edit button only to users who can edit products (`can_edit_products_inventory`). Print stays for everyone.
+3. For engineers (no contact delete), a fully blanked contact row keeps the saved contact in place; nothing shifts.
+4. Contact phone and email are checked on Add and Edit with the Personnel rules, for **new or changed** values only, so saved data is never blocked (all 146 local contacts already pass).
+
+## Investigation
+
+- Unescaped values in `templates/clients.html`: autocomplete `item.name`/`item.address` (~342); duplicate warning `data.name`/`data.address` (~411); product pop-up `p.name`, `p.serial_number`, `p.client_name`, dates, and `editProduct('${p.serial_number}')` (~544–581); `viewContacts` header `c.name`/`c.address` (~1192); product list `p.name`/`p.serial_number` and `openProductModal('${p.serial_number}')` (~1255). Table, mobile cards and toasts are already escaped.
+- `export_clients` and `export_client_excel` require `is_admin_authorized` and return `denied()` (403 JSON). Their buttons: header Export (~34), Edit pop-up Export Excel (~152; engineers can open this pop-up for contacts), View pop-up Export Excel (~1197).
+- `update_product` is gated by `can_edit_products_inventory()`; the page's product Edit button only navigates to `/products_page?edit=<serial>`.
+- `apply_client_contacts_without_deleting_existing` (`app.py` ~53821; `allow_delete=False` for engineers) drops blank rows before matching by position: contacts A, B, C with A blanked become B, C, C (A lost, C duplicated).
+- `personnel_contact_error`, `PERSONNEL_PHONE_PATTERN`, `PERSONNEL_EMAIL_PATTERN` (`app.py` ~61908) can be reused; local DB: 146 contacts, 0 phones or emails failing the patterns.
+- Users by role locally: superadmin 6, regional_admin 1, engineer 21, staff 3, approver 1.
+
+## Execution steps
+
+1. **Escaping** — `templates/clients.html`: new `clientJsArg(value)` returning `escapeHtml(JSON.stringify(String(value ?? '')))` for `onclick` arguments; wrap every value listed above in `escapeHtml(...)`; `openProductModal(${clientJsArg(serial)})` and `editProduct(${clientJsArg(serial)})`. Done: no database value is inserted unescaped; function names unchanged.
+2. **Permission flags** — `app.py` `clients_page` passes `can_edit_products=can_edit_products_inventory()`; page adds `const canEditProducts`. Header Export button moves inside the existing admin Jinja condition; Edit pop-up Export Excel gets the same condition; View pop-up Export Excel only when `isAdminUser`; product Edit button only when `canEditProducts`. Done: an engineer's page has no Export link; admins see everything as before.
+3. **Engineer blank row** — `apply_client_contacts_without_deleting_existing`, `allow_delete=False` path: keep each submitted row's position; a fully blank row at an existing index leaves that contact unchanged; later rows do not shift. Admin path (`allow_delete=True`) unchanged. Done: an engineer blanking contact 1 keeps A, B, C.
+4. **Contact checks** — new `client_contact_error(payload, client_id=None)` next to that helper; called by `add_client` and both paths of `update_client` before any write. Checks each submitted `cn{i}`/`ce{i}` against the Personnel patterns (phone 7–15 digits), skipping values already saved on that client's contacts. Returns 400 with e.g. "Contact 2: phone number is not valid. Use digits, e.g. 0917 123 4567." / "Contact 2: email address is not valid." The page already shows the server message.
+5. **Tests** — new class in `tests/test_tsr_autosave_client_groups.py` reusing `ClientGroupRouteTests.isolated_database`:
+   - engineer blank row keeps all contacts;
+   - invalid new phone/email → 400 on add and update (admin and engineer);
+   - an unchanged saved value that does not fit the pattern is still accepted;
+   - `/clients_page` for an engineer has no `/export_clients` button; for an admin it does;
+   - source check: no unescaped `${c.name}`, `${p.name}`, `${item.name}`, `${data.name}`, and no `'${p.serial_number}'` in `onclick`.
+   Run each on the unchanged code first and record that it fails.
+
+## Deliberately excluded
+
+- **Manager access (#8)** — not a real gap (see correction).
+- **Removing the hard-coded scheduler usernames, duplicate checks, contact-loop helper** — Batch 3.
+- **Contact checks in CSV import** — one bad cell would refuse the whole file; separate decision.
+- **UI, nested cards, heading levels** — Batch 4.
+
+## Verification
+
+- New tests fail on the unchanged code, pass after.
+- Focused modules: `tests.test_tsr_autosave_client_groups`, `tests.test_purchase_orders` (11 known pre-existing failures).
+- Flask test client on a temporary copy of `scheduler.db`: page renders for admin and engineer; an engineer save with contact 1 blanked keeps all contacts; re-saving a real client unchanged is accepted.
+- No browser automation (AGENTS.md).
+- Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined.
+2. Fail-first proof recorded in this plan.
+3. Service worker bump to `medical-service-pwa-offline-navigation-v250-medical-center-safety` (read the current value live; keep v249 as the historical marker).
+4. `releases.json` entry `2026-10-06-medical-center-safety` (audiences admins and engineers, category Medical Center).
+5. Update `changes.md` and this plan's status, with any differences from the plan.
+6. Commit and push only on the owner's "commit and push": explicit staging; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- **A real phone outside the pattern** (e.g. with "loc. 205") is refused when entered new; saved values are never blocked and the message says what is allowed.
+- **Engineers lose Export buttons** that never worked for them.
+- Safety net: no schema change; reverting the commit restores the previous behaviour.
+
+---
+
 # Medical Center Batch 1: Protect Data and Fix Import
 
-**Status:** Executed — commit `75f11a1`; published to `origin/main` on the owner's "commit and push" (Railway build in progress, GitHub deployment `6876455824`).
+**Status:** Executed — commit `75f11a1`; published to `origin/main` on the owner's "commit and push" (Railway deployed the follow-up docs commit `6333bad`, which superseded this build; status success).
 **Finished:** 2026-10-06.
 
 **Where the plan and the outcome differed:**
