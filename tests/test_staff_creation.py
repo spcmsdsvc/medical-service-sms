@@ -67,6 +67,19 @@ class StaffCreationTests(unittest.TestCase):
             cls.regional_admin_id = cls.regional_admin.id
             cls.regional_profile_id = cls.regional_profile.id
 
+            cls.scheduler = app_module.User.query.filter_by(username='diary').first()
+            if not cls.scheduler:
+                cls.scheduler = app_module.User(
+                    username='diary',
+                    password=app_module.generate_password_hash('test-password'),
+                    role='superadmin',
+                    is_active=True,
+                )
+                app_module.db.session.add(cls.scheduler)
+                app_module.db.session.commit()
+                cls.owned_base_user_ids.append(cls.scheduler.id)
+            cls.scheduler_id = cls.scheduler.id
+
     @classmethod
     def tearDownClass(cls):
         with cls.app.app_context():
@@ -648,7 +661,54 @@ class StaffCreationTests(unittest.TestCase):
         self.assertEqual(header[6:], ['Username', 'Role', 'Account Status', 'Signature'])
 
 
+    def test_scheduler_can_deactivate_and_delete_engineers_but_not_admins(self):
+        scheduler = self._client_for(self.scheduler_id)
+        engineer_id, user_id = self._make_engineer('Scheduler Managed')
+        self.assertEqual(
+            scheduler.post(f'/set_engineer_active/{engineer_id}', json={'active': False}).status_code, 200)
+        self.assertEqual(
+            scheduler.post(f'/set_engineer_active/{engineer_id}', json={'active': True}).status_code, 200)
+        # Reset policy is unchanged: schedulers cannot reset engineers' passwords.
+        self.assertEqual(scheduler.post(f'/reset_user_password/{user_id}').status_code, 403)
+        self.assertEqual(scheduler.delete(f'/delete_engineer/{engineer_id}').status_code, 200)
+
+        with self.app.app_context():
+            admin_user = app_module.User(
+                username=f'manageradmin{uuid.uuid4().hex[:6]}',
+                password=app_module.generate_password_hash('test-password'),
+                role='superadmin',
+            )
+            app_module.db.session.add(admin_user)
+            app_module.db.session.flush()
+            self.created_user_ids.append(admin_user.id)
+            admin_profile = app_module.Engineer(
+                user_id=admin_user.id,
+                employee_id=f'ADM-{uuid.uuid4().hex[:8]}',
+                name='Admin Profile',
+                initials=f'Q{uuid.uuid4().hex[:4]}'.upper(),
+            )
+            app_module.db.session.add(admin_profile)
+            app_module.db.session.commit()
+            admin_profile_id = admin_profile.id
+            self.created_engineer_ids.append(admin_profile_id)
+        response = scheduler.post(f'/set_engineer_active/{admin_profile_id}', json={'active': False})
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('Only a manager', response.get_json()['message'])
+
+
 class StaffCreationSourceTests(unittest.TestCase):
+    def test_personnel_fix_batch_in_page(self):
+        template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
+        for expected in (
+            'const isScheduler =',
+            'function canResetEngineerPassword(',
+            'repeat(auto-fit, minmax(7rem, 1fr))',
+            'flex: 0 0 9rem',
+            'Loading personnel',
+            "Changes apply to this person's record.",
+        ):
+            self.assertIn(expected, template)
+
     def test_personnel_directory_and_account_tools_in_page(self):
         template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
         for expected in (

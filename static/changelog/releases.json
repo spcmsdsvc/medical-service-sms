@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-personnel-fix-batch",
+      "release_date": "2026-10-06",
+      "title": "Personnel Fixes",
+      "summary": "Schedulers can deactivate engineers again, and Personnel works better on phones.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-personnel-fix-batch-admins",
+          "category": "Personnel",
+          "description": "Schedulers can again deactivate, reactivate and delete engineers, and Personnel only shows the buttons you are allowed to use; a refusal now says the real reason. On phones the card buttons wrap instead of overlapping and the search box has room. The list shows Loading personnel while it loads, and the Edit form no longer mentions a new temporary password.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-medical-center-merge",
       "release_date": "2026-10-06",
       "title": "Merge Duplicate Medical Centers",

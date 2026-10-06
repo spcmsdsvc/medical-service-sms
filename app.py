@@ -27088,7 +27088,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v253-medical-center-layout.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v254-medical-center-merge';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v254-medical-center-merge.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v255-personnel-fix-batch';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -62495,11 +62496,17 @@ def personnel_account_change_denial(user_acc):
         return None
     if user_acc.id == getattr(current_user, 'id', None):
         return 'You cannot deactivate or delete your own account.'
-    allowed, reason = can_reset_password_for_user(user_acc)
-    if not allowed:
-        if reason == REGIONAL_PERSONNEL_DENIAL:
-            return reason
-        return 'This account is protected and cannot be deactivated or deleted here.'
+    # Not the password-reset policy: that one also stops schedulers touching engineers,
+    # and schedulers have always been able to remove engineers here.
+    if _username_of(user_acc) in PROTECTED_PASSWORD_USERNAMES:
+        return 'This account is protected.'
+    limited_admin = is_scheduler_user() or is_regional_admin_user()
+    if limited_admin and (getattr(user_acc, 'role', '') or '').strip().lower() in {'superadmin', 'regional_admin'}:
+        return 'Only a manager can deactivate or delete an admin account.'
+    if is_regional_admin_user():
+        profile = Engineer.query.filter_by(user_id=user_acc.id).first()
+        if profile and profile.branch not in REGIONAL_ADMIN_BRANCHES:
+            return REGIONAL_PERSONNEL_DENIAL
     return None
 
 

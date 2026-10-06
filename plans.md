@@ -37,6 +37,87 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Personnel Fix Batch: Audit Findings (Scheduler Access, Mobile Layout, Loading, Edit Note)
+
+**Status:** Executed (not yet committed) — owner said "go ahead" on 2026-10-06.
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- Also added `canDeleteEngineer(e)` so Delete is hidden where the server would refuse (admin targets for schedulers/regional admin, own row); people with no login keep Delete.
+- The branch picker also keeps `max-width: 9rem` next to the new `flex: 0 0 9rem; width: 9rem`. At 375 px the search box is 133 px and the picker 144 px; the picker's "All Branches" label is cut to "All Branche" by the global 16 px mobile font (cosmetic; options read in full when opened).
+- Fail-first: both new tests failed on the unchanged code. After: `tests.test_staff_creation` + `tests.test_admin_capabilities` 37 tests OK; page script `node --check` OK, all handlers defined; full suite 1,567 tests, 24 failures, 3 errors, 5 skips (baseline counts; the count grew from the parallel Medical Center work).
+- Browser (built-in, local server on a database copy, session `hanna` = scheduler): "Loading personnel…" before data; engineer rows show Deactivate and Delete but no Reset, admin rows show no account buttons; Deactivate then Activate on an engineer succeed with toasts and the Inactive badge; Edit note "Changes apply to this person's record.", Add keeps the Auto-Account note; at 375 px card buttons wrap two per row with no clipping and no horizontal scroll. The three 403 console entries were left over from the earlier audit run (this server run logged no 403). Copy and temporary launch entry removed.
+**Approved:** 2026-10-06 — after a browser audit of the published Personnel batches, the owner asked to "plan the fix batch" and replied "yes, approved".
+**Detailed:** 2026-10-06.
+
+## Context
+
+A browser check of `/engineers_page` on a copy of the database (session: `hanna`, a scheduler-type superadmin; 375 px and desktop) after Personnel Batches 1–4 (`a6d8571`, `351f6a2`, `e55ac2e`; plans further down this file) found:
+
+1. **High** — schedulers (`diary`, `hanna`) can no longer deactivate or delete engineers; buttons show, every action returns 403 "This account is protected…". Before Batch 1, `delete_engineer` allowed all of `is_admin_authorized()`, and Settings still lets superadmin-role accounts deactivate.
+2. **Medium** — Reset is shown to schedulers but always fails ("Schedulers cannot change passwords of superadmins or engineers.").
+3. **Medium** — mobile card actions (Edit, Deactivate, Reset, Delete) are squeezed into one row at 375 px and overlap.
+4. **Medium** — mobile search box collapses to ~50 px beside a ~225 px branch picker (pre-existing).
+5. **Low** — no loading indicator; the first load showed an empty table for ~6 s.
+6. **Low** — Edit form shows the "Auto-Account: a temporary password will be generated…" note.
+
+Verified fine in the same check: desktop list, headcount, badges, search/filter/empty state, Edit fields and initials, Save toast and re-enabled button, add with suffixed username, static credentials pop-up with Done, no JS errors.
+
+## Decisions taken
+
+1. Deactivate/delete get their own rule; password reset keeps `can_reset_password_for_user` unchanged.
+2. Schedulers regain deactivate/delete for engineers (not for admin accounts).
+3. Buttons are hidden where the server would refuse.
+4. The global `app-shell.css` mobile rule is not changed.
+
+## Investigation
+
+- `is_scheduler_user()` (`app.py` ~11490): role `superadmin` and username in `SCHEDULER_USERNAMES = {'diary', 'hanna'}` (~8046). `can_reset_password_for_user` (~11675): schedulers refused targets with role `superadmin` or `engineer`; regional admin refused `superadmin`/`regional_admin` and (Batch 4) targets outside Cebu/Davao.
+- `personnel_account_change_denial` (Batch 1, next to `delete_engineer`) calls `can_reset_password_for_user` and maps every non-regional refusal to "This account is protected and cannot be deactivated or deleted here." — the cause of finding 1.
+- Template context already has `nav_is_scheduler` (`app.py` ~1486).
+- `templates/engineers.html`: `.engineer-mobile-actions` uses `grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr)` (Batch 1); `canChangeEngineerAccount(e)` = `(isSuperAdmin || isRegionalAdmin) && e.user_id`, used for Deactivate and Reset in `buildEngineerTableRow` and `getEngineerActionButtons`; the Auto-Account note is set by `setEngineerModalContactOnlyMode(false)`, which both `openAddModal` and `openEditModal` call; `eng-table-body` and `engineer-mobile-list` start empty.
+- `static/css/app-shell.css` ~820–826 (mobile media query): `input, select, textarea { … max-width: 100% !important; }` overrides `#engineer-mobile-branch-filter { max-width: 9rem }`; `width` / `flex-basis` are not overridden.
+- Another session is publishing Medical Center work on `main` in parallel; this plan touches only Personnel code, and staging must stay explicit.
+
+## Execution steps
+
+1. **Server rule** — `app.py` `personnel_account_change_denial(user_acc)` no longer calls `can_reset_password_for_user`. In order: no account → `None`; own account → "You cannot deactivate or delete your own account."; username in `PROTECTED_PASSWORD_USERNAMES` → "This account is protected."; target role in `{'superadmin', 'regional_admin'}` and (`is_scheduler_user()` or `is_regional_admin_user()`) → "Only a manager can deactivate or delete an admin account."; regional admin and the target's engineer profile branch not in `REGIONAL_ADMIN_BRANCHES` → `REGIONAL_PERSONNEL_DENIAL`. Done: scheduler deactivates/deletes an engineer; refusals name the real reason.
+2. **Page gates** — `engineers.html`: `const isScheduler = {{ 'true' if nav_is_scheduler else 'false' }};`. `canChangeEngineerAccount(e)` additionally returns false for the logged-in user's own row (`String(e.id) === loggedInEngineerId`) and, when `isScheduler || isRegionalAdmin`, for `e.account_role` in `superadmin`/`regional_admin`. New `canResetEngineerPassword(e)` = `canChangeEngineerAccount(e) && !(isScheduler && e.account_role === 'engineer')`; the Reset buttons in `buildEngineerTableRow` and `getEngineerActionButtons` use it (the desktop Deactivate and Reset buttons are split so each has its own condition).
+3. **Mobile actions** — `.engineer-mobile-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: 0.55rem; }` (replaces the auto-flow column rule).
+4. **Mobile search** — `#engineer-mobile-branch-filter` adds `flex: 0 0 9rem; width: 9rem;`.
+5. **Loading** — initial markup: `eng-table-body` holds `<tr><td colspan="6" class="text-center text-muted py-4">Loading personnel…</td></tr>`; `engineer-mobile-list` holds an `.engineer-mobile-empty` "Loading personnel…". Rendering already replaces both.
+6. **Edit note** — `openEditModal`, when not contact-only, sets `#engineer-modal-info` to `alert alert-info` with "Changes apply to this person's record."; `openAddModal` keeps the Auto-Account note.
+7. **Tests** — `tests/test_staff_creation.py`: fixture adds a scheduler user (`diary`, role `superadmin`, created only if missing and cleaned up if created). New tests: scheduler deactivates, reactivates, and deletes (no records) an engineer; scheduler refused (403, "Only a manager…") deactivating a profile linked to a superadmin login; scheduler's reset of an engineer still 403; source checks for `isScheduler`, `function canResetEngineerPassword(`, `repeat(auto-fit, minmax(7rem, 1fr))`, `flex: 0 0 9rem`, `Loading personnel`, "Changes apply to this person's record.". Each must fail on the unchanged code first; existing Batch 1/4 guard tests must still pass.
+
+## Deliberately excluded
+
+- Changing the reset policy for schedulers — existing Settings policy.
+- Changing the global `app-shell.css` mobile rule — shared by other pages.
+- Signing in as other accounts in the browser — would require signing out the existing local session.
+
+## Verification
+
+- New tests fail first, then pass. Focused modules: `tests.test_staff_creation`, `tests.test_admin_capabilities`.
+- Browser on a temporary database copy (built-in browser, existing local session), desktop and 375 px: card buttons wrap two per row without overlap, search box usable, loading row visible before data, Edit note text, scheduler deactivate/activate of a test engineer succeeds, Reset hidden for the scheduler on engineer rows, no console errors. Clean up the copy and the temporary launch entry afterwards.
+- Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+
+## After implementation
+
+1. Self-review; confirm every function the page calls is still defined (`node --check` on the page script).
+2. Fail-first proof recorded here.
+3. Service worker bump (read the current `CACHE_VERSION` live; keep the old one as a historical marker).
+4. `releases.json` entry dated the commit date, audience admins.
+5. Update `changes.md` and this plan's status.
+6. Commit and push only on the owner's "commit and push": explicit staging; never `scheduler.db` or unrelated dirty files; verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- Schedulers regain deactivate/delete for engineers — matches their pre-Batch-1 delete ability and Settings; delete is still refused for anyone with history.
+- Blast radius: Personnel page and the two Personnel account routes only; no schema change.
+
+---
+
 # Merge Duplicate Medical Centers + Find Duplicates
 
 **Status:** Executed — commit `89546cf`; published to `origin/main` on the owner's "commit and push" (Railway deployment succeeded, GitHub deployment `6882416289`).

@@ -105,12 +105,15 @@
                 </thead>
                 <tbody id="eng-table-body">
                     <!-- Rows populated via loadEngineers() -->
+                    <tr><td colspan="6" class="text-center text-muted py-4">Loading personnel…</td></tr>
                 </tbody>
             </table>
         </div>
 
         <!-- MOBILE ENGINEER DIRECTORY -->
-        <div id="engineer-mobile-list" class="engineer-mobile-list no-print"></div>
+        <div id="engineer-mobile-list" class="engineer-mobile-list no-print">
+            <div class="engineer-mobile-empty"><span>Loading personnel…</span></div>
+        </div>
 
     </div>
 </div>
@@ -338,6 +341,7 @@
     const authRole = "{{ current_user.role }}";
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
+    const isScheduler = {{ 'true' if nav_is_scheduler else 'false' }};
     const isEngineer = authRole === "engineer";
     const canAdministerPersonnel = {{ 'true' if nav_can_administer_personnel else 'false' }};
     const regionalAllowedBranches = ["Cebu", "Davao"];
@@ -528,12 +532,25 @@
     }
 
     function canChangeEngineerAccount(e){
-        return (isSuperAdmin || isRegionalAdmin) && Boolean(e.user_id);
+        if(!(isSuperAdmin || isRegionalAdmin) || !e.user_id) return false;
+        if(loggedInEngineerId && String(e.id) === String(loggedInEngineerId)) return false;
+        // Schedulers and the regional admin cannot deactivate or delete admin accounts.
+        if((isScheduler || isRegionalAdmin) && ['superadmin', 'regional_admin'].includes(e.account_role)) return false;
+        return true;
+    }
+
+    function canResetEngineerPassword(e){
+        // Schedulers cannot reset engineers' passwords (same rule as Settings).
+        return canChangeEngineerAccount(e) && !(isScheduler && e.account_role === 'engineer');
+    }
+
+    function canDeleteEngineer(e){
+        return (isSuperAdmin || isRegionalAdmin) && (!e.user_id || canChangeEngineerAccount(e));
     }
 
     function getEngineerActionButtons(e){
         if (canAdministerPersonnel && canManageEngineerBranch(e)) {
-            const resetMarkup = canChangeEngineerAccount(e) ? `
+            const resetMarkup = canResetEngineerPassword(e) ? `
                     <button class="engineer-mobile-btn engineer-mobile-toggle" onclick="resetEngineerPassword(${e.id})">
                         <i class="fa-solid fa-key"></i>Reset
                     </button>` : '';
@@ -541,7 +558,7 @@
                     <button class="engineer-mobile-btn engineer-mobile-toggle" onclick="setEngineerActive(${e.id}, ${e.account_active === false})">
                         <i class="fa-solid fa-${e.account_active === false ? 'user-check' : 'user-slash'}"></i>${e.account_active === false ? 'Activate' : 'Deactivate'}
                     </button>` : '';
-            const deleteMarkup = (isSuperAdmin || isRegionalAdmin) ? `
+            const deleteMarkup = canDeleteEngineer(e) ? `
                     <button class="engineer-mobile-btn engineer-mobile-delete" onclick="deleteEngineer(${e.id})">
                         <i class="fa-solid fa-trash"></i>Delete
                     </button>` : '';
@@ -650,15 +667,17 @@
         if (canAdministerPersonnel && canManageEngineerBranch(e)) {
             const toggleLabel = e.account_active === false ? 'Activate login' : 'Deactivate login';
             const toggleMarkup = canChangeEngineerAccount(e) ? `
-                        <button class="btn btn-sm btn-outline-secondary" onclick="setEngineerActive(${e.id}, ${e.account_active === false})" title="${toggleLabel}" aria-label="${toggleLabel}"><i class="fa-solid fa-${e.account_active === false ? 'user-check' : 'user-slash'}"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="setEngineerActive(${e.id}, ${e.account_active === false})" title="${toggleLabel}" aria-label="${toggleLabel}"><i class="fa-solid fa-${e.account_active === false ? 'user-check' : 'user-slash'}"></i></button>` : '';
+            const resetTableMarkup = canResetEngineerPassword(e) ? `
                         <button class="btn btn-sm btn-outline-secondary" onclick="resetEngineerPassword(${e.id})" title="Reset password" aria-label="Reset password"><i class="fa-solid fa-key"></i></button>` : '';
-            const deleteMarkup = (isSuperAdmin || isRegionalAdmin) ? `
+            const deleteMarkup = canDeleteEngineer(e) ? `
                         <button class="btn btn-sm btn-outline-danger" onclick="deleteEngineer(${e.id})" title="Delete" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>` : '';
             actions = `
                 <td class="text-end no-print">
                     <div class="btn-group">
                         <button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${e.id})" title="Edit" aria-label="Edit"><i class="fa-solid fa-pen"></i></button>
                         ${toggleMarkup}
+                        ${resetTableMarkup}
                         ${deleteMarkup}
                     </div>
                 </td>`;
@@ -788,7 +807,12 @@
             document.getElementById(id)?.classList.remove('d-none');
         });
 
-        document.getElementById('modal-title').innerText = contactOnly ? "Update My Contact Information" : "Modify Personnel Record"; 
+        document.getElementById('modal-title').innerText = contactOnly ? "Update My Contact Information" : "Modify Personnel Record";
+        const infoBox = document.getElementById('engineer-modal-info');
+        if(infoBox && !contactOnly){
+            infoBox.className = 'alert alert-info border-0 small py-2 mb-0';
+            infoBox.innerHTML = "<i class='fa-solid fa-circle-info me-2'></i>Changes apply to this person's record.";
+        } 
         document.getElementById('edit-eng-db-id').value = dbId; 
 
         document.getElementById('e-emp-id').value = eng.employee_id;
@@ -1208,6 +1232,9 @@
     }
 
     #engineer-mobile-branch-filter {
+        /* width and flex-basis: the global mobile rule forces max-width: 100% on selects. */
+        flex: 0 0 9rem;
+        width: 9rem;
         max-width: 9rem;
         padding: 0.75rem 0.85rem;
     }
@@ -1327,8 +1354,7 @@
 
     .engineer-mobile-actions {
         display: grid;
-        grid-auto-flow: column;
-        grid-auto-columns: minmax(0, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
         gap: 0.55rem;
         margin-top: 0.9rem;
     }
