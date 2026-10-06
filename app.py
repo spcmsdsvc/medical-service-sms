@@ -86,7 +86,7 @@ from sqlalchemy import (
     event,
     literal,
 )
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from sqlalchemy.orm import joinedload, selectinload, Session as SqlAlchemySession
 
@@ -7430,7 +7430,11 @@ def similarity(a,b):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    user = db.session.get(User, int(user_id))
+    # A deactivated account loses an existing session too, not only new sign-ins.
+    if user and not bool(getattr(user, 'is_active', True)):
+        return None
+    return user
 
 
 # Constant-shape hash compared against when a username does not exist, so that a
@@ -27077,7 +27081,8 @@ def pwa_service_worker():
     # Navigation shell bump: v220 repairs complete Calibration Report values in linked certificates.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v240-liquidation-receipts.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v245-liquidation-save-row';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v246-personnel-deactivate';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -32941,24 +32946,14 @@ def get_engineers():
 
         if include_account_metadata and not hr_view:
             # Cross-reference engineer ID with user database (Hard Link v5.4)
+            # Only the real link counts; matching by first name attached the wrong login.
             account = db.session.get(User, e.user_id) if e.user_id else None
-            if not account:
-                fname = e.name.split()[0].lower()
-                account = User.query.filter_by(username=fname).first()
-
-                # Do not let the special regional admin account attach by loose first-name match
-                # to another technician named Kevin.
-                if (
-                    account and
-                    account.username == REGIONAL_ADMIN_USERNAME and
-                    e.employee_id != REGIONAL_ADMIN_EMPLOYEE_ID
-                ):
-                    account = None
 
             row.update({
                 'account_role': account.role if account else None,
                 'display_role': get_display_role(account) if account else None,
-                'user_id': account.id if account else None
+                'user_id': account.id if account else None,
+                'account_active': bool(account.is_active) if account else None,
             })
 
         results.append(row)
@@ -62049,13 +62044,95 @@ def update_engineer(id):
     return jsonify({'status': 'success'})
 
 
+def engineer_linked_record_counts(engineer):
+    """Count the history rows that point at this engineer, as {label: count}.
+
+    Deleting an Engineer cascades to their shifts and leaves every other row below with
+    a dangling engineer_id, so a non-zero count means "deactivate, do not delete".
+    Some of these tables are created lazily; a table that does not exist yet has no rows.
+    """
+    shift_ids = set()
+    counts = {}
+
+    def safe(query_fn):
+        try:
+            return query_fn()
+        except OperationalError:
+            db.session.rollback()
+            return None
+
+    for rows in (
+        safe(lambda: db.session.query(Shift.id).filter(
+            or_(Shift.engineer_id == engineer.id, Shift.override_engineer_id == engineer.id)
+        ).all()),
+        safe(lambda: db.session.query(ShiftEngineer.shift_id).filter(
+            ShiftEngineer.engineer_id == engineer.id
+        ).all()),
+    ):
+        shift_ids.update(row[0] for row in (rows or []))
+    counts['schedules'] = len(shift_ids)
+
+    for label, model in (
+        ('reimbursement tracker entries', ReimbursementTrackerEntry),
+        ('reimbursements', ReimbursementHeader),
+        ('travel requests', TravelRequest),
+        ('travel request participations', TravelRequestParticipant),
+        ('travel liquidations', TravelLiquidationHeader),
+        ('cash advance liquidations', CashAdvanceLiquidationHeader),
+        ('stock movements', StockInventoryMovement),
+    ):
+        counts[label] = safe(lambda: model.query.filter(model.engineer_id == engineer.id).count()) or 0
+    return counts
+
+
+def personnel_account_change_denial(user_acc):
+    """Why the current user may not deactivate or delete this login, or None if they may."""
+    if not user_acc:
+        return None
+    if user_acc.id == getattr(current_user, 'id', None):
+        return 'You cannot deactivate or delete your own account.'
+    allowed, reason = can_reset_password_for_user(user_acc)
+    if not allowed:
+        return 'This account is protected and cannot be deactivated or deleted here.'
+    return None
+
+
+@app.route('/set_engineer_active/<int:id>', methods=['POST'])
+@login_required
+def set_engineer_active(id):
+    """Deactivate or reactivate a person's login while keeping their history."""
+    if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
+    eng = db.session.get(Engineer, id)
+    if not eng:
+        return jsonify({'message': 'Not Found'}), 404
+    user_acc = db.session.get(User, eng.user_id) if eng.user_id else None
+    if not user_acc:
+        return jsonify({'message': 'This person has no login to deactivate.'}), 400
+    denial = personnel_account_change_denial(user_acc)
+    if denial:
+        return denied(denial)
+
+    p = request.get_json(silent=True) or {}
+    user_acc.is_active = parse_bool_flag(p.get('active'), default=False)
+    db.session.commit()
+    log_activity(f"{'Reactivated' if user_acc.is_active else 'Deactivated'} personnel: {eng.name}")
+    return jsonify({'status': 'success', 'account_active': bool(user_acc.is_active)})
+
+
 @app.route('/delete_engineer/<int:id>', methods=['DELETE'])
 @login_required
 def delete_engineer(id):
-    """ Deletes engineer and associated system account. """
+    """ Deletes an engineer with no history, and their system account. """
     if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
     eng = db.session.get(Engineer, id)
     if eng:
+        denial = personnel_account_change_denial(db.session.get(User, eng.user_id) if eng.user_id else None)
+        if denial:
+            return denied(denial)
+        found = [f'{count} {label}' for label, count in engineer_linked_record_counts(eng).items() if count]
+        if found:
+            listed = found[0] if len(found) == 1 else ', '.join(found[:-1]) + ' and ' + found[-1]
+            return jsonify({'message': f'{eng.name} has {listed}. Deactivate instead.'}), 409
         name = eng.name
         # Delete linked account
         user_acc = db.session.get(User, eng.user_id) if eng.user_id else None

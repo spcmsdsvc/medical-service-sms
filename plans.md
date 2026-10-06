@@ -37,6 +37,101 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Personnel Batch 1: Protect History (Deactivate, Safe Delete, Account Status)
+
+**Status:** Executed (not yet committed) — owner said "go ahead" on 2026-10-06.
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- Tests were added to the existing `StaffCreationTests` class (to reuse its fixtures) and `StaffCreationSourceTests`, not a new class. The login-refused case was already covered by existing code; the test checks that an existing session is logged out and restored.
+- Also added `personnel_account_change_denial()` (shared self/protected guard for delete and deactivate) and gave the mobile action row equal-width columns for any number of buttons (it was a fixed two-column grid).
+- Fail-first: the 6 new behaviour/source tests failed on the unchanged code; "delete without records" passed before and after. After: focused modules (staff creation, admin capabilities, HR schedule viewer, liquidation, changelog) 93 tests OK. Full suite 1,531 tests, 24 failures, 3 errors, 5 skips — same counts as the baseline, all in unrelated modules.
+- Flask test client on a copy of `scheduler.db`: page renders with the new functions; 27 directory rows, all linked with an account status; deleting an engineer with 24 schedules is refused with "… has 24 schedules. Deactivate instead."; deactivate redirects that engineer's session (302), activate restores it (200). No browser check was made.
+**Approved:** 2026-10-06 — the owner reviewed the Personnel page scan, asked for the findings in batches, asked to "plan batch 1", and replied "yes, approved".
+**Detailed:** 2026-10-06.
+
+## Context
+
+A read-only scan of the Personnel page (`templates/engineers.html`, `/engineers_page`) found that **Delete permanently destroys schedule history**: `Engineer.shifts` uses `cascade="all, delete-orphan"`, so deleting an engineer deletes every shift where they are the primary engineer — including multi-engineer jobs, which then vanish for the other engineers too — while reimbursement, travel, liquidation and stock rows keep a dangling `engineer_id` (SQLite does not enforce foreign keys). The confirmation only mentions the login account. The same scan found the directory links accounts by first name when `user_id` is empty, which can attach the wrong login. This batch replaces destructive removal with deactivation, guards hard delete, and shows each person's account status. It is batch 1 of 4 (2: Add/Edit form fixes; 3: desktop list usability; 4: account tools) and is first because it is the only one that can lose data.
+
+## Decisions taken
+
+1. **Deactivate** = set the linked `User.is_active` to False (the same flag Settings already uses). No new column on `Engineer`.
+2. Hard **Delete** stays, but only for a person with **no linked records**; otherwise it is refused with the counts and "Deactivate instead".
+3. Who may deactivate/delete: the same people who see Delete today (`is_admin_authorized()`: superadmin, regional admin), never their own account, and never a login protected under the password-reset policy (`can_reset_password_for_user`).
+4. A deactivated user who is already signed in is signed out on their next request.
+5. The first-name account fallback in `/get_engineers` is removed; only `Engineer.user_id` links an account.
+6. Deactivated engineers remain visible in calendar pickers and the weekly grid (see Deliberately excluded).
+
+## Investigation
+
+- Cascade: `Engineer.shifts` relationship with `cascade="all, delete-orphan"`, `foreign_keys='Shift.engineer_id'` (`app.py` class `Engineer`, ~line 2014).
+- Tables holding `engineer_id` (verified by `db.ForeignKey('engineer.id')`): `ReimbursementTrackerEntry` (~2198), `ReimbursementHeader` (~2257), `TravelRequest` (~2365), `TravelRequestParticipant` (~2471), `TravelLiquidationHeader` (~2589), `StockInventoryMovement` (~3458), `ShiftEngineer` (~3514), `Shift.engineer_id` (~3530, not null) and `Shift.override_engineer_id` (~3567), `CashAdvanceLiquidationHeader` (~64820).
+- `delete_engineer` (`app.py` ~62052): gated by `is_admin_authorized()`, deletes the linked `User` and the `Engineer` with no record or protected-account check — a regional admin could delete an admin's or superadmin's engineer profile and their login.
+- `User.is_active` (~1728) already exists and is set by Settings (`settings_update_approval_user`, ~29843, superadmin only). Login (~12897), the PWA remember cookie (~7509) and forgot-password (~13010) already refuse inactive accounts.
+- **Not** enforced: `load_user` (~7432) returns the user regardless of `is_active`, and Flask-Login's `login_required` does not check it, so an existing session survives deactivation. This also affects Settings today.
+- `can_reset_password_for_user` (~11675) protects `PROTECTED_PASSWORD_USERNAMES`, and a regional admin cannot target `superadmin`/`regional_admin` roles — the policy to reuse.
+- `/get_engineers` (~32907): admin rows include `account_role`, `display_role`, `user_id`, but the page never displays them; the first-name fallback is at ~32948 (with a special case for `REGIONAL_ADMIN_USERNAME`).
+- Local `scheduler.db` copy: 27 engineers, all with `user_id` set, none inactive — removing the fallback changes nothing locally. Production may differ; an unlinked engineer would show "No login".
+- Page: action buttons are built twice, in `loadEngineers()` (table) and `getEngineerActionButtons()` (mobile); delete is `deleteEngineer(dbId)` with `engineerConfirmDialog`. Existing tests for this area: `tests/test_staff_creation.py`, `tests/test_admin_capabilities.py`, `tests/test_hr_schedule_viewer.py`.
+
+## Execution steps
+
+1. **Record counter** — `app.py`, new `engineer_linked_record_counts(engineer)` next to `delete_engineer`. Returns an ordered dict label → count for: schedules (`Shift.engineer_id`, `Shift.override_engineer_id`, `ShiftEngineer`, counted as distinct shifts), reimbursement tracker entries, reimbursements, travel requests (owner + participant), travel liquidations, cash advance liquidations, stock movements. Done: returns zeros for a new engineer and the right count after a shift is added.
+2. **Safe delete** — `delete_engineer`: after loading the engineer, refuse with 403 when the linked user is the current user or `can_reset_password_for_user(user)` denies; refuse with 409 and a message naming the non-zero counts ("Juan Dela Cruz has 42 schedules and 3 reimbursements. Deactivate instead.") when any count > 0. Otherwise unchanged. Done: no shift is ever deleted through this route.
+3. **Deactivate route** — `app.py`, new `POST /set_engineer_active/<int:id>`, JSON `{active: bool}`, CSRF as other routes. Requires `is_admin_authorized()`; 404 for a missing engineer; 400 "This person has no login to deactivate." when `user_id` is empty; the same self/protected guard as step 2. Sets `user.is_active`, commits, `log_activity("Deactivated personnel: <name>")` / `"Reactivated personnel: <name>"`, returns `{status, account_active}`. Done: route works for an engineer login and refuses the guarded cases.
+4. **Session lock-out** — `load_user`: return `None` when the user exists but `is_active` is False. Done: an inactive user's next request redirects to login.
+5. **Directory data** — `/get_engineers`: delete the first-name fallback block; link only by `user_id`. Add `account_active` (bool or `None` when no login) to the admin metadata. Done: an unlinked engineer returns `user_id: None`, `account_active: None`.
+6. **Page** — `templates/engineers.html`:
+   - one helper `engineerAccountBadge(e)` used by both the table (in the Full Name cell) and the mobile card: "No login", "Inactive", or the `display_role`; only when `canAdministerPersonnel` (metadata is admin-only).
+   - a Deactivate / Activate button beside Delete for `isSuperAdmin || isRegionalAdmin` (hidden when there is no login), calling new `setEngineerActive(dbId, active)` with a confirm dialog, then `loadEngineers()` and a success toast.
+   - `deleteEngineer`: confirmation text becomes "Delete this person permanently? Only possible when they have no schedules or forms; otherwise deactivate them." and a failed response shows the server's `message` instead of "Action failed on server."
+   - Keep every existing function, id and handler (`openEditModal`, `deleteEngineer`, `saveEngineer`, `renderEngineerMobileCards`, etc.).
+   Done: badges and buttons render on desktop and mobile layouts; existing Edit/Add/Export/Print still work.
+7. **Tests** — `tests/test_staff_creation.py` (new test class):
+   - delete refused (409) for an engineer with a shift; the shift and engineer still exist;
+   - delete succeeds for an engineer with no records;
+   - deactivate → login refused and an already signed-in client is redirected to login on its next request; activate → login works again;
+   - cannot deactivate or delete own account or a protected account (regional admin vs superadmin);
+   - `/get_engineers` does not link an account by first name;
+   - page source contains `setEngineerActive` and the badge helper.
+   Run each new test against the unchanged code first and record that it fails.
+
+## Deliberately excluded
+
+- **Hiding deactivated engineers from calendar pickers / weekly grid** — the grid draws rows per engineer, so hiding them could hide their past shifts; needs its own decision.
+- **Backfilling dangling `engineer_id` rows** left by past deletes — not known to exist; out of scope.
+- **Regional-admin branch limits** (batch 4) and **Add/Edit form fixes** (batch 2).
+- **Superadmin-only restriction for deactivate** — kept equal to today's Delete access so no one loses an ability.
+
+## Verification
+
+- New tests fail on the unchanged code, pass after.
+- Focused modules: `tests.test_staff_creation`, `tests.test_admin_capabilities`, `tests.test_hr_schedule_viewer`.
+- Flask test client on a temporary copy of the database: `/engineers_page` renders for superadmin and engineer; `/get_engineers` returns `account_active`; deactivate/activate/delete responses as specified.
+- No browser automation (AGENTS.md); ask the owner if a browser check becomes necessary.
+- Full suite once before publishing, compared with the current baseline (24 failures, 3 errors, 5 skips).
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined.
+2. Fail-first proof recorded in this plan.
+3. Service worker bump (read the current `CACHE_VERSION` live from `app.py`; keep the old one as a historical marker).
+4. `releases.json` entry dated the commit date, audience admins ("Personnel: Deactivate instead of Delete").
+5. Update `changes.md` and this plan's status, with any differences from the plan.
+6. Commit and push only on the owner's "commit and push": explicit staging; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+7. Report what was verified and what was not.
+
+## Risks
+
+- **Unlinked engineers in production** show "No login" after step 5 instead of a guessed account; no data changes; fix by linking in Settings.
+- **Step 4 signs out** anyone already deactivated who still has a session — intended. Blast radius: inactive accounts only.
+- **Delete now refuses most real engineers** — intended; Deactivate is the replacement.
+- Safety net: no schema change, no data migration; reverting the commit restores previous behaviour.
+
+---
+
 # Sign-in Pages: Layout G "Charcoal" with the Shimadzu Logo
 
 **Status:** Executed — commit `3cf1698`; published to `origin/main` on the owner's "commit and push" (Railway deployment `7761fae4-ace6-4717-bfcf-2676ca13afe6`).

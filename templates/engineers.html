@@ -505,8 +505,24 @@
             .replaceAll("'", '&#039;');
     }
 
+    function engineerAccountBadge(e){
+        // Account metadata is only sent to personnel admins.
+        if(!canAdministerPersonnel) return '';
+        if(!e.user_id) return '<span class="badge bg-light text-muted border ms-1">No login</span>';
+        if(e.account_active === false) return '<span class="badge bg-secondary ms-1">Inactive</span>';
+        return e.display_role ? `<span class="badge bg-light text-dark border ms-1">${escapeHtml(e.display_role)}</span>` : '';
+    }
+
+    function canChangeEngineerAccount(e){
+        return (isSuperAdmin || isRegionalAdmin) && Boolean(e.user_id);
+    }
+
     function getEngineerActionButtons(e){
         if (canAdministerPersonnel) {
+            const toggleMarkup = canChangeEngineerAccount(e) ? `
+                    <button class="engineer-mobile-btn engineer-mobile-toggle" onclick="setEngineerActive(${e.id}, ${e.account_active === false})">
+                        <i class="fa-solid fa-${e.account_active === false ? 'user-check' : 'user-slash'}"></i>${e.account_active === false ? 'Activate' : 'Deactivate'}
+                    </button>` : '';
             const deleteMarkup = (isSuperAdmin || isRegionalAdmin) ? `
                     <button class="engineer-mobile-btn engineer-mobile-delete" onclick="deleteEngineer(${e.id})">
                         <i class="fa-solid fa-trash"></i>Delete
@@ -516,6 +532,7 @@
                     <button class="engineer-mobile-btn engineer-mobile-edit" onclick="openEditModal(${e.id})">
                         <i class="fa-solid fa-pen"></i>Edit
                     </button>
+                    ${toggleMarkup}
                     ${deleteMarkup}
                 </div>`;
         }
@@ -589,6 +606,7 @@
                             <div class="engineer-mobile-subline">
                                 <span class="engineer-mobile-id">${escapeHtml(e.employee_id || 'No ID')}</span>
                                 <span class="engineer-mobile-branch">${escapeHtml(branch)}</span>
+                                ${engineerAccountBadge(e)}
                             </div>
                         </div>
                         <div class="engineer-mobile-icon-actions">
@@ -624,12 +642,15 @@
 
             // Version 5.3 Security Guards
             if (canAdministerPersonnel) {
+                const toggleMarkup = canChangeEngineerAccount(e) ? `
+                            <button class="btn btn-sm btn-outline-secondary" onclick="setEngineerActive(${e.id}, ${e.account_active === false})" title="${e.account_active === false ? 'Activate login' : 'Deactivate login'}" aria-label="${e.account_active === false ? 'Activate login' : 'Deactivate login'}"><i class="fa-solid fa-${e.account_active === false ? 'user-check' : 'user-slash'}"></i></button>` : '';
                 const deleteMarkup = (isSuperAdmin || isRegionalAdmin) ? `
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteEngineer(${e.id})"><i class="fa-solid fa-trash"></i></button>` : '';
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteEngineer(${e.id})" title="Delete" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>` : '';
                 actions = `
                     <td class="text-end no-print">
                         <div class="btn-group">
                             <button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${e.id})"><i class="fa-solid fa-pen"></i></button>
+                            ${toggleMarkup}
                             ${deleteMarkup}
                         </div>
                     </td>`;
@@ -648,7 +669,7 @@
                 <tr>
                     <td class="font-monospace fw-bold text-dark">${escapeHtml(e.employee_id)}</td>
                     <td><span class="badge border text-dark bg-light">${escapeHtml(e.branch || 'Manila')}</span></td>
-                    <td><strong>${escapeHtml(e.name)}</strong></td>
+                    <td><strong>${escapeHtml(e.name)}</strong>${engineerAccountBadge(e)}</td>
                     <td><span class="text-muted small">${escapeHtml(e.initials)}</span></td>
                     <td>
                         <div class="xsmall text-muted"><i class="fa-solid fa-phone me-1"></i>${escapeHtml(e.phone || '-')}</div>
@@ -806,7 +827,7 @@
 
         const shouldDelete = await engineerConfirmDialog({
             title: 'Delete Engineer?',
-            message: 'Permanently remove this engineer? This will also delete their system login account.',
+            message: 'Delete this person and their login permanently? This is only possible when they have no schedules or forms; otherwise deactivate them.',
             confirmText: 'Delete Engineer',
             cancelText: 'Cancel',
             tone: 'danger',
@@ -819,8 +840,47 @@
                 headers: { 'X-CSRFToken': getCSRFToken() } // SECURITY TOKEN ADDED
             }); 
             if(res.ok) loadEngineers(); 
-            else engineerAlert("Action failed on server.");
+            else {
+                const respData = await res.json().catch(() => ({}));
+                engineerAlert(respData.message || "Action failed on server.");
+            }
         } 
+    }
+
+    /**
+     * ACCOUNT STATUS: Deactivate keeps the person's history and blocks their login.
+     */
+    async function setEngineerActive(dbId, active) {
+        if(!(isSuperAdmin || isRegionalAdmin)) return;
+        const eng = engineersData.find(x => x.id == dbId);
+        const name = eng?.name || 'this person';
+
+        const confirmed = await engineerConfirmDialog(active ? {
+            title: 'Activate Login?',
+            message: `${name} will be able to sign in again.`,
+            confirmText: 'Activate',
+            icon: 'user-check'
+        } : {
+            title: 'Deactivate Login?',
+            message: `${name} will be signed out and can no longer sign in. Their schedules and forms are kept.`,
+            confirmText: 'Deactivate',
+            tone: 'danger',
+            icon: 'user-slash'
+        });
+        if(!confirmed) return;
+
+        const res = await fetch(`/set_engineer_active/${dbId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+            body: JSON.stringify({ active: Boolean(active) })
+        });
+        const respData = await res.json().catch(() => ({}));
+        if(res.ok){
+            loadEngineers();
+            engineerToast(`${name} ${active ? 'can sign in again' : 'is deactivated'}.`, 'success', active ? 'Activated' : 'Deactivated');
+        } else {
+            engineerAlert(respData.message || "Action failed on server.");
+        }
     }
 </script>
 
@@ -1151,7 +1211,8 @@
 
     .engineer-mobile-actions {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
         gap: 0.55rem;
         margin-top: 0.9rem;
     }
@@ -1171,6 +1232,11 @@
     .engineer-mobile-edit {
         background: var(--app-primary);
         color: #fff;
+    }
+
+    .engineer-mobile-toggle {
+        background: #f1f5f9;
+        color: #334155;
     }
 
     .engineer-mobile-delete {

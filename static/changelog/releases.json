@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-personnel-deactivate",
+      "release_date": "2026-10-06",
+      "title": "Personnel: Deactivate Instead of Delete",
+      "summary": "Deactivate someone's login without losing their schedules and forms.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-personnel-deactivate-admins",
+          "category": "Personnel",
+          "description": "Personnel now has a Deactivate button that blocks a person's login, signs them out, and keeps all their schedules and forms; Activate undoes it. Delete only works for someone with no schedules or forms. Each person shows their role, Inactive, or No login.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-05-liquidation-save-row",
       "release_date": "2026-10-05",
       "title": "Liquidation Rows Save Again",

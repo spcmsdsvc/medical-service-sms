@@ -377,8 +377,152 @@ class StaffCreationTests(unittest.TestCase):
         self.assertEqual(nameless_response.status_code, 400)
         self.assertIn('Name', nameless_response.get_json()['message'])
 
+    def _make_engineer(self, name, with_login=True):
+        """Create an engineer (and optionally a login) directly; returns (engineer_id, user_id)."""
+        tag = uuid.uuid4().hex[:8]
+        with self.app.app_context():
+            user = None
+            if with_login:
+                user = app_module.User(
+                    username=f'person{tag}',
+                    password=app_module.generate_password_hash('test-password'),
+                    role='engineer',
+                    is_active=True,
+                )
+                app_module.db.session.add(user)
+                app_module.db.session.flush()
+                self.created_user_ids.append(user.id)
+            engineer = app_module.Engineer(
+                user_id=user.id if user else None,
+                employee_id=f'PH-{tag}',
+                name=name,
+                initials=f'X{tag[:4]}'.upper(),
+                branch='Manila',
+            )
+            app_module.db.session.add(engineer)
+            app_module.db.session.commit()
+            self.created_engineer_ids.append(engineer.id)
+            return engineer.id, (user.id if user else None)
+
+    def test_delete_is_refused_when_the_engineer_has_schedules(self):
+        engineer_id, _ = self._make_engineer('History Keeper')
+        with self.app.app_context():
+            start = app_module.datetime(2026, 1, 5, 8, 0)
+            shift = app_module.Shift(
+                title='History visit',
+                start_time=start,
+                end_time=start + app_module.timedelta(hours=2),
+                engineer_id=engineer_id,
+            )
+            app_module.db.session.add(shift)
+            app_module.db.session.commit()
+            shift_id = shift.id
+
+        response = self._client_for(self.superadmin_id).delete(f'/delete_engineer/{engineer_id}')
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('Deactivate instead', response.get_json()['message'])
+        with self.app.app_context():
+            self.assertIsNotNone(app_module.db.session.get(app_module.Shift, shift_id))
+            self.assertIsNotNone(app_module.db.session.get(app_module.Engineer, engineer_id))
+            app_module.db.session.delete(app_module.db.session.get(app_module.Shift, shift_id))
+            app_module.db.session.commit()
+
+    def test_delete_still_works_without_records(self):
+        engineer_id, user_id = self._make_engineer('Clean Slate')
+        response = self._client_for(self.superadmin_id).delete(f'/delete_engineer/{engineer_id}')
+        self.assertEqual(response.status_code, 200)
+        with self.app.app_context():
+            self.assertIsNone(app_module.db.session.get(app_module.Engineer, engineer_id))
+            self.assertIsNone(app_module.db.session.get(app_module.User, user_id))
+
+    def test_deactivate_signs_the_person_out_and_activate_restores_access(self):
+        engineer_id, user_id = self._make_engineer('Leaving Soon')
+        engineer_client = self._client_for(user_id)
+        self.assertEqual(engineer_client.get('/get_engineers').status_code, 200)
+
+        admin = self._client_for(self.superadmin_id)
+        response = admin.post(f'/set_engineer_active/{engineer_id}', json={'active': False})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()['account_active'])
+        with self.app.app_context():
+            self.assertFalse(app_module.db.session.get(app_module.User, user_id).is_active)
+
+        # The existing session no longer counts as signed in.
+        self.assertNotEqual(engineer_client.get('/get_engineers').status_code, 200)
+
+        response = admin.post(f'/set_engineer_active/{engineer_id}', json={'active': True})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['account_active'])
+        self.assertEqual(self._client_for(user_id).get('/get_engineers').status_code, 200)
+
+    def test_cannot_deactivate_or_delete_own_or_protected_logins(self):
+        regional = self._client_for(self.regional_admin_id)
+        # Regional admin's own profile.
+        self.assertEqual(
+            regional.post(f'/set_engineer_active/{self.regional_profile_id}', json={'active': False}).status_code,
+            403,
+        )
+        self.assertEqual(regional.delete(f'/delete_engineer/{self.regional_profile_id}').status_code, 403)
+
+        # A profile linked to the protected superadmin login.
+        with self.app.app_context():
+            protected = app_module.Engineer(
+                user_id=self.superadmin_id,
+                employee_id=f'PROT-{uuid.uuid4().hex[:8]}',
+                name='Protected Profile',
+                initials=f'P{uuid.uuid4().hex[:4]}'.upper(),
+            )
+            app_module.db.session.add(protected)
+            app_module.db.session.commit()
+            protected_id = protected.id
+            self.created_engineer_ids.append(protected_id)
+        self.assertEqual(
+            regional.post(f'/set_engineer_active/{protected_id}', json={'active': False}).status_code,
+            403,
+        )
+        self.assertEqual(regional.delete(f'/delete_engineer/{protected_id}').status_code, 403)
+        with self.app.app_context():
+            self.assertTrue(app_module.db.session.get(app_module.User, self.superadmin_id).is_active)
+            self.assertIsNotNone(app_module.db.session.get(app_module.User, self.superadmin_id))
+
+    def test_deactivate_needs_a_login(self):
+        engineer_id, _ = self._make_engineer('No Login Person', with_login=False)
+        response = self._client_for(self.superadmin_id).post(
+            f'/set_engineer_active/{engineer_id}', json={'active': False}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_directory_does_not_link_accounts_by_first_name(self):
+        tag = uuid.uuid4().hex[:8]
+        with self.app.app_context():
+            user = app_module.User(
+                username=f'namesake{tag}',
+                password=app_module.generate_password_hash('test-password'),
+                role='engineer',
+            )
+            app_module.db.session.add(user)
+            app_module.db.session.commit()
+            self.created_user_ids.append(user.id)
+        engineer_id, _ = self._make_engineer(f'Namesake{tag} Unlinked', with_login=False)
+
+        rows = self._client_for(self.superadmin_id).get('/get_engineers').get_json()
+        row = next(item for item in rows if item['id'] == engineer_id)
+        self.assertIsNone(row['user_id'])
+        self.assertIsNone(row['account_active'])
+
 
 class StaffCreationSourceTests(unittest.TestCase):
+    def test_personnel_page_offers_deactivate_and_account_status(self):
+        template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
+        for expected in (
+            'function setEngineerActive(',
+            'function engineerAccountBadge(',
+            'function deleteEngineer(',
+            'function openEditModal(',
+            'function saveEngineer(',
+        ):
+            self.assertIn(expected, template)
+
     def test_template_and_manifest_expose_the_new_staff_flow(self):
         template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
         releases = (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8')
