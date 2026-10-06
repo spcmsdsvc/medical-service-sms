@@ -37,6 +37,9 @@
                 {% if current_user.role in ['superadmin', 'regional_admin'] %}
                 <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">+ Add Medical Center</button>
                 {% endif %}
+                {% if can_merge_clients %}
+                <button class="btn btn-outline-secondary btn-sm client-find-dup-btn" onclick="openClientDuplicatesModal()">Find duplicates</button>
+                {% endif %}
             </div>
         </div>
 
@@ -160,12 +163,58 @@
                 {% if current_user.role in ['superadmin', 'regional_admin'] %}
                 <button class="btn btn-outline-success btn-sm" onclick="exportClientExcel()">Export Excel</button>
                 {% endif %}
+                {% if can_merge_clients %}
+                <button class="btn btn-outline-danger btn-sm d-none" id="client-merge-open-btn" onclick="openClientMergeModal(Number(document.getElementById('edit-client-id').value))">Merge into…</button>
+                {% endif %}
                 <button class="btn btn-success btn-sm px-4" id="client-save-btn" onclick="saveClient()">Save</button>
             </div>
         </div>
     </div>
 </div>
 
+
+<!-- FIND DUPLICATES MODAL -->
+<div class="modal fade no-print" id="clientDuplicatesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Possible duplicates</h2>
+                <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-3">Suggestions only. Choose which medical center to keep; you will see a preview before anything changes.</p>
+                <div id="client-duplicates-list"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MERGE MODAL -->
+<div class="modal fade no-print" id="clientMergeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Merge medical centers</h2>
+                <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small fw-bold text-muted">Merge away (will be removed)</div>
+                <div class="fw-bold mb-3" id="client-merge-source"></div>
+                <label class="small fw-bold" for="client-merge-search">Keep this medical center</label>
+                <input type="search" id="client-merge-search" class="form-control form-control-sm mb-2" placeholder="Search name or address" oninput="renderClientMergeTargets()">
+                <select id="client-merge-target" class="form-select form-select-sm" size="6" onchange="loadClientMergePreview()"></select>
+                <div id="client-merge-preview" class="client-merge-preview mt-3"></div>
+                <div class="alert alert-warning small py-2 mt-3 mb-0">
+                    <i class="fa-solid fa-triangle-exclamation me-1"></i>This cannot be undone. The merged-away medical center will be removed and everything it has moves to the one you keep.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-danger btn-sm px-4" id="client-merge-confirm-btn" onclick="confirmClientMerge()" disabled>Merge</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 
@@ -334,6 +383,8 @@ const authRoleVal = "{{ current_user.role }}";
 
 const isAdminUser = ['superadmin', 'regional_admin'].includes(authRoleVal);
 const canEditProducts = {{ 'true' if can_edit_products else 'false' }};
+const canMergeClients = {{ 'true' if can_merge_clients else 'false' }};
+let clientMergeState = { sourceId: null };
 const isEngineerUser = authRoleVal === 'engineer';
 const canManageClientContacts = isAdminUser || isEngineerUser;
 const canDeleteClientContactRows = isAdminUser;
@@ -668,6 +719,7 @@ function openAddModal(){
     hideDuplicateWarning();
     setClientModalContactOnlyMode(false);
     document.getElementById('modal-title').innerText = "Add Medical Center";
+    document.getElementById('client-merge-open-btn')?.classList.add('d-none');
     document.getElementById('edit-client-id').value = "";
     document.getElementById('c-name').value = "";
     document.getElementById('c-address').value = "";
@@ -686,6 +738,7 @@ function openEditModal(id){
     setClientModalContactOnlyMode(contactOnly);
 
     document.getElementById('modal-title').innerText = contactOnly ? "Edit Contacts" : "Edit Medical Center";
+    document.getElementById('client-merge-open-btn')?.classList.toggle('d-none', !canMergeClients);
     document.getElementById('edit-client-id').value = id;
     document.getElementById('c-name').value = c.name;
     document.getElementById('c-address').value = c.address;
@@ -1273,6 +1326,141 @@ function clientHasDesignationMatch(c, designationFilter){
     return getClientContacts(c).some(contact => contact.designation.toLowerCase().includes(designationFilter));
 }
 
+function showClientModalAfterOthers(modalId){
+    const open = document.querySelector('.modal.show');
+    const show = () => bootstrap.Modal.getOrCreateInstance(document.getElementById(modalId)).show();
+    if(open && open.id !== modalId){
+        open.addEventListener('hidden.bs.modal', show, { once: true });
+        bootstrap.Modal.getOrCreateInstance(open).hide();
+    } else {
+        show();
+    }
+}
+
+function openClientDuplicatesModal(){
+    if(!canMergeClients) return;
+    showClientModalAfterOthers('clientDuplicatesModal');
+    loadClientDuplicatePairs();
+}
+
+function clientDuplicateSide(side, keepId, mergeId){
+    return `
+        <div class="client-dup-side">
+            <div class="fw-bold">${escapeHtml(side.name)}</div>
+            <div class="small text-muted">${escapeHtml(side.address || 'No address')}</div>
+            <div class="small text-muted">${Number(side.schedules || 0)} schedules · ${Number(side.equipment || 0)} equipment</div>
+            <button class="btn btn-outline-primary btn-sm mt-2" onclick="openClientMergeModal(${mergeId}, ${keepId})">Keep this one</button>
+        </div>`;
+}
+
+async function loadClientDuplicatePairs(){
+    const list = document.getElementById('client-duplicates-list');
+    list.innerHTML = '<div class="text-muted py-3 text-center">Looking for duplicates…</div>';
+    try {
+        const res = await fetch('/client_duplicate_pairs', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if(!res.ok) throw new Error(data.message || 'Could not load duplicates.');
+        const pairs = data.pairs || [];
+        if(!pairs.length){
+            list.innerHTML = '<div class="text-muted py-3 text-center">No likely duplicates found.</div>';
+            return;
+        }
+        list.innerHTML = pairs.map(pair => `
+            <div class="client-dup-pair">
+                <span class="badge bg-light text-dark border mb-2">${escapeHtml(pair.reason)}</span>
+                <div class="client-dup-sides">
+                    ${clientDuplicateSide(pair.a, pair.a.id, pair.b.id)}
+                    ${clientDuplicateSide(pair.b, pair.b.id, pair.a.id)}
+                </div>
+            </div>`).join('');
+    } catch(err) {
+        list.innerHTML = `<div class="text-danger py-3 text-center">${escapeHtml(err.message || 'Could not load duplicates.')}</div>`;
+    }
+}
+
+function openClientMergeModal(sourceId, targetId = null){
+    if(!canMergeClients) return;
+    const source = clientsData.find(c => c.id === Number(sourceId));
+    if(!source) return;
+    clientMergeState = { sourceId: source.id };
+    document.getElementById('client-merge-source').textContent = `${source.name}${source.address ? ' · ' + source.address : ''}`;
+    document.getElementById('client-merge-search').value = '';
+    document.getElementById('client-merge-target').innerHTML = '';
+    renderClientMergeTargets(targetId);
+    showClientModalAfterOthers('clientMergeModal');
+    loadClientMergePreview();
+}
+
+function renderClientMergeTargets(selectedId = null){
+    const select = document.getElementById('client-merge-target');
+    const keep = selectedId || Number(select.value) || null;
+    const search = (document.getElementById('client-merge-search').value || '').trim().toLowerCase();
+    const options = clientsData
+        .filter(c => c.id !== clientMergeState.sourceId)
+        .filter(c => !search || [c.name, c.address].join(' ').toLowerCase().includes(search) || c.id === keep);
+    select.innerHTML = options.map(c =>
+        `<option value="${c.id}">${escapeHtml(c.name)}${c.address ? ' · ' + escapeHtml(c.address) : ''}</option>`
+    ).join('');
+    if(keep && options.some(c => c.id === keep)) select.value = String(keep);
+}
+
+async function loadClientMergePreview(){
+    const box = document.getElementById('client-merge-preview');
+    const btn = document.getElementById('client-merge-confirm-btn');
+    const targetId = Number(document.getElementById('client-merge-target').value) || null;
+    btn.disabled = true;
+    if(!targetId){
+        box.innerHTML = '<div class="text-muted small">Choose the medical center to keep.</div>';
+        return;
+    }
+    box.innerHTML = '<div class="text-muted small">Loading preview…</div>';
+    try {
+        const res = await fetch(`/client_merge_preview?source=${clientMergeState.sourceId}&target=${targetId}`, { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if(!res.ok) throw new Error(data.message || 'Could not load the preview.');
+        const moved = Object.entries(data.counts || {}).filter(([, n]) => n).map(([label, n]) => `${n} ${label}${n === 1 || label === 'equipment' ? '' : 's'}`);
+        if(data.pm_history) moved.push(`${data.pm_history} PM history record${data.pm_history === 1 ? '' : 's'}`);
+        box.innerHTML = `
+            <div class="small"><strong>Keep:</strong> ${escapeHtml(data.target.name)}</div>
+            <div class="small"><strong>Moves over:</strong> ${escapeHtml(moved.join(', ') || 'no linked records')}</div>
+            <div class="small"><strong>Contacts:</strong> ${Number(data.contacts_added)} added, ${Number(data.contacts_skipped)} skipped as repeats</div>
+            ${data.po_clashes && data.po_clashes.length
+                ? `<div class="alert alert-danger small py-2 mt-2 mb-0">Both have P.O. ${escapeHtml(data.po_clashes.join(', '))}. Change one P.O. number first.</div>`
+                : ''}`;
+        btn.disabled = Boolean(data.po_clashes && data.po_clashes.length);
+    } catch(err) {
+        box.innerHTML = `<div class="text-danger small">${escapeHtml(err.message || 'Could not load the preview.')}</div>`;
+    }
+}
+
+async function confirmClientMerge(){
+    const btn = document.getElementById('client-merge-confirm-btn');
+    const targetId = Number(document.getElementById('client-merge-target').value) || null;
+    if(!targetId || btn.disabled) return;
+    btn.disabled = true;
+    try {
+        const res = await fetch('/merge_client', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+            body: JSON.stringify({ source_id: clientMergeState.sourceId, target_id: targetId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if(!res.ok){
+            clientAlert(data.message || 'Merge failed. Nothing was changed.');
+            loadClientMergePreview();
+            return;
+        }
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('clientMergeModal')).hide();
+        await loadClients({ preserveFilters: true });
+        const kept = clientsData.find(c => c.id === targetId);
+        clientToast(`Merged into ${kept ? kept.name : 'the kept medical center'}.`, 'success');
+        if(kept) setTimeout(() => viewContacts(targetId), 350);
+    } catch(err) {
+        clientAlert('Could not reach the server. Try again.');
+        btn.disabled = false;
+    }
+}
+
 function applyFilters(){
     const filters = getActiveClientFilters();
     const search = filters.search.trim().toLowerCase();
@@ -1511,6 +1699,27 @@ function applyFilters(){
         line-height: 1.25;
         text-align: center;
         white-space: nowrap;
+    }
+
+    .client-dup-pair {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.9rem;
+        padding: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .client-dup-sides {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 0.75rem;
+    }
+
+    .client-dup-side {
+        overflow-wrap: anywhere;
+    }
+
+    #client-merge-target option {
+        white-space: normal;
     }
 
     @media print {
@@ -1803,6 +2012,10 @@ function applyFilters(){
         .container-fluid .btn-group .btn:only-of-type {
             grid-column: 1 / -1;
             order: -1;
+        }
+
+        .container-fluid .btn-group .client-find-dup-btn {
+            grid-column: 1 / -1;
         }
 
         .row.g-2.mb-4.no-print [class*="col-md-"] {

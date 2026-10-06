@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-medical-center-merge",
+      "release_date": "2026-10-06",
+      "title": "Merge Duplicate Medical Centers",
+      "summary": "Superadmins can find and merge duplicate medical centers.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-medical-center-merge-admins",
+          "category": "Medical Center",
+          "description": "Superadmins can merge a duplicate medical center into the one to keep: its schedules, equipment, P.O.s, travel visits, Genoray and Vieworks items and contacts move over (repeated contacts are skipped), PM history follows, and the duplicate is removed. A preview shows exactly what will move before anything changes, and a merge is refused when both have a P.O. with the same number. Merging cannot be undone and is recorded in Activity. Find duplicates suggests likely pairs; it never merges by itself. Use Merge into... in the Edit window for any other pair.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-medical-center-layout",
       "release_date": "2026-10-06",
       "title": "Medical Centers Layout Polish",

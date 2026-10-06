@@ -27087,8 +27087,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v252-medical-center-table.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v253-medical-center-layout';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v253-medical-center-layout.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v254-medical-center-merge';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28876,7 +28876,11 @@ def clients_page():
     """ Medical Center directory - Restricted access handled in HTML templates """
     if is_approver_only_user():
         return redirect(url_for('dashboard_page'))
-    return render_template('clients.html', can_edit_products=can_edit_products_inventory())
+    return render_template(
+        'clients.html',
+        can_edit_products=can_edit_products_inventory(),
+        can_merge_clients=is_superadmin_user(),
+    )
 
 
 @app.route('/products_page')
@@ -54093,6 +54097,266 @@ def client_linked_record_counts(client):
         'Genoray item': GenorayItem.query.filter_by(client_id=client.id).count(),
         'Vieworks item': VieworksItem.query.filter_by(client_id=client.id).count(),
     }
+
+
+# --- MERGE DUPLICATE MEDICAL CENTERS ---
+
+# Tables whose client_id moves from the merged-away medical center to the kept one.
+CLIENT_MERGE_MODELS = (Shift, Product, PurchaseOrder, TravelRequestRouteVisit, GenorayItem, VieworksItem)
+
+
+def client_contact_merge_plan(source_id, target_id):
+    """Split the source's contacts into ones to add and exact repeats to skip.
+
+    A repeat has the same email, or the same name and phone, as a contact already
+    on the target (or one added earlier in this merge).
+    """
+    def key_parts(contact):
+        email = (clean_str(contact.email) or '').lower()
+        name = (clean_str(contact.name) or '').lower()
+        phone = re.sub(r'\D', '', clean_str(contact.phone) or '')
+        return email, (name, phone) if name and phone else None
+
+    seen_emails, seen_name_phones = set(), set()
+    for contact in Contact.query.filter_by(client_id=target_id).all():
+        email, name_phone = key_parts(contact)
+        if email:
+            seen_emails.add(email)
+        if name_phone:
+            seen_name_phones.add(name_phone)
+
+    to_add, skipped = [], []
+    for contact in Contact.query.filter_by(client_id=source_id).order_by(Contact.id.asc()).all():
+        email, name_phone = key_parts(contact)
+        if not (contact.name or contact.phone or contact.email or contact.designation):
+            continue
+        if (email and email in seen_emails) or (name_phone and name_phone in seen_name_phones):
+            skipped.append(contact)
+            continue
+        if email:
+            seen_emails.add(email)
+        if name_phone:
+            seen_name_phones.add(name_phone)
+        to_add.append(contact)
+    return to_add, skipped
+
+
+def client_pm_snapshot_visits(client_id):
+    """Completed PM visits whose history snapshot names this medical center."""
+    visits = []
+    candidates = InventoryPmVisit.query.filter(InventoryPmVisit.completion_snapshot_json.like('%client_id%')).all()
+    for visit in candidates:
+        snapshot = inventory_pm_load_completion_snapshot(visit)
+        if snapshot and clean_int(snapshot.get('client_id')) == client_id:
+            visits.append((visit, snapshot))
+    return visits
+
+
+def rewrite_pm_snapshot_client_ids(source_id, target_id):
+    """Point PM history at the kept medical center so it shows no false owner warning."""
+    visits = client_pm_snapshot_visits(source_id)
+    for visit, snapshot in visits:
+        snapshot['client_id'] = target_id
+        visit.completion_snapshot_json = json.dumps(snapshot, ensure_ascii=False)
+    return len(visits)
+
+
+def client_merge_po_clashes(source_id, target_id):
+    """P.O. numbers present on both medical centers (they must stay unique per center)."""
+    target_numbers = {
+        normalize_purchase_order_number(po.po_number).casefold()
+        for po in PurchaseOrder.query.filter_by(client_id=target_id).all()
+    }
+    return sorted({
+        normalize_purchase_order_number(po.po_number)
+        for po in PurchaseOrder.query.filter_by(client_id=source_id).all()
+        if normalize_purchase_order_number(po.po_number).casefold() in target_numbers
+    })
+
+
+def client_merge_preview(source, target):
+    to_add, skipped = client_contact_merge_plan(source.id, target.id)
+    return {
+        'source': {'id': source.id, 'name': source.name, 'address': source.address},
+        'target': {'id': target.id, 'name': target.name, 'address': target.address},
+        'counts': client_linked_record_counts(source),
+        'pm_history': len(client_pm_snapshot_visits(source.id)),
+        'contacts_added': len(to_add),
+        'contacts_skipped': len(skipped),
+        'po_clashes': client_merge_po_clashes(source.id, target.id),
+    }
+
+
+def load_client_merge_pair(source_id, target_id):
+    """Return (source, target, error_response)."""
+    source_id, target_id = clean_int(source_id), clean_int(target_id)
+    if not source_id or not target_id or source_id == target_id:
+        return None, None, (jsonify({'message': 'Choose two different medical centers.'}), 400)
+    source = db.session.get(Client, source_id)
+    target = db.session.get(Client, target_id)
+    if not source or not target:
+        return None, None, (jsonify({'message': 'Medical center not found.'}), 404)
+    return source, target, None
+
+
+@app.route('/client_merge_preview')
+@login_required
+def client_merge_preview_route():
+    if not is_superadmin_user():
+        return jsonify({'message': 'Only superadmins can merge medical centers.'}), 403
+    ensure_contact_designation_column()
+    source, target, error = load_client_merge_pair(request.args.get('source'), request.args.get('target'))
+    if error:
+        return error
+    return jsonify(client_merge_preview(source, target))
+
+
+@app.route('/merge_client', methods=['POST'])
+@login_required
+def merge_client():
+    """Move everything from a duplicate medical center onto the kept one, then remove it."""
+    if not is_superadmin_user():
+        return jsonify({'message': 'Only superadmins can merge medical centers.'}), 403
+    ensure_client_group_column()
+    ensure_contact_designation_column()
+    payload = request.get_json(silent=True) or {}
+    source, target, error = load_client_merge_pair(payload.get('source_id'), payload.get('target_id'))
+    if error:
+        return error
+    clashes = client_merge_po_clashes(source.id, target.id)
+    if clashes:
+        return jsonify({
+            'message': f"Both medical centers have P.O. {', '.join(clashes)}. Change one P.O. number first.",
+            'po_clashes': clashes,
+        }), 409
+
+    source_id, target_id = source.id, target.id
+    source_name, target_name = source.name, target.name
+    try:
+        moved = client_linked_record_counts(source)
+        to_add, skipped = client_contact_merge_plan(source_id, target_id)
+        for contact in to_add:
+            db.session.add(Contact(
+                client_id=target_id, name=contact.name, designation=contact.designation,
+                phone=contact.phone, email=contact.email,
+            ))
+        for model in CLIENT_MERGE_MODELS:
+            model.query.filter_by(client_id=source_id).update({'client_id': target_id}, synchronize_session=False)
+        Contact.query.filter_by(client_id=source_id).delete(synchronize_session=False)
+        db.session.flush()
+        # Bulk updates bypass the session; reload so deleting the source cannot
+        # act on stale relationship collections (P.O.s cascade on delete).
+        db.session.expire_all()
+
+        source = db.session.get(Client, source_id)
+        target = db.session.get(Client, target_id)
+        if not clean_str(target.group_name) and clean_str(source.group_name):
+            target.group_name = source.group_name
+        kept_contacts = Contact.query.filter_by(client_id=target_id).order_by(Contact.id.asc()).limit(3).all()
+        for index in range(3):
+            contact = kept_contacts[index] if index < len(kept_contacts) else None
+            setattr(target, f'contact_person_{index + 1}', contact.name if contact else None)
+            setattr(target, f'contact_number_{index + 1}', contact.phone if contact else None)
+            setattr(target, f'email_address_{index + 1}', contact.email if contact else None)
+        pm_rewritten = rewrite_pm_snapshot_client_ids(source_id, target_id)
+
+        remaining = {label: count for label, count in client_linked_record_counts(source).items() if count}
+        if remaining or Contact.query.filter_by(client_id=source_id).count():
+            raise RuntimeError(f'Records still point at the merged medical center: {remaining}')
+        db.session.delete(source)
+
+        summary = ', '.join(f'{count} {label}' for label, count in moved.items() if count) or 'no linked records'
+        add_activity_log_entry(
+            f'Merged medical center "{source_name}" (#{source_id}) into "{target_name}" (#{target_id}): '
+            f'{summary}; {len(to_add)} contacts added, {len(skipped)} repeats skipped; '
+            f'{pm_rewritten} PM history records updated'
+        )
+        db.session.commit()
+    except Exception as merge_error:
+        db.session.rollback()
+        print(f'[CLIENT-MERGE] Failed #{source_id} -> #{target_id}: {merge_error}', flush=True)
+        return jsonify({'message': 'Merge failed. Nothing was changed.'}), 500
+
+    return jsonify({'status': 'success', 'target_id': target_id, 'moved': moved})
+
+
+def find_client_duplicate_pairs():
+    """Suggest likely duplicate medical centers (never merges anything).
+
+    Strict on purpose: chains and branches ("ACE ... Cebu" / "ACE ... Sariaya") and
+    look-alike names ("Our Lady of Grace" / "Our Lady of Peace") are not paired.
+    """
+    clients = Client.query.order_by(Client.name).all()
+
+    def plain(name):
+        return normalize_client_name_for_matching(re.sub(r'\(.*?\)', ' ', name or ''))
+
+    def one_word_typo(words_a, words_b):
+        if len(words_a) != len(words_b):
+            return False
+        diffs = [(a, b) for a, b in zip(words_a, words_b) if a != b]
+        if len(diffs) != 1:
+            return False
+        a, b = diffs[0]
+        allowed = 2 if min(len(a), len(b)) >= 7 else 1
+        if abs(len(a) - len(b)) > allowed:
+            return False
+        previous = list(range(len(b) + 1))
+        for i, char_a in enumerate(a, 1):
+            current = [i]
+            for j, char_b in enumerate(b, 1):
+                current.append(min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (char_a != char_b)))
+            previous = current
+        return previous[-1] <= allowed
+
+    names = {c.id: plain(c.name) for c in clients}
+    strong = {c.id: set(client_name_strong_tokens(c.name)) for c in clients}
+    word_counts = {}
+    for tokens in strong.values():
+        for token in tokens:
+            word_counts[token] = word_counts.get(token, 0) + 1
+    common = {token for token, count in word_counts.items() if count >= 3}
+
+    equipment = dict(db.session.query(Product.client_id, db.func.count(Product.serial_number)).group_by(Product.client_id).all())
+    schedules = dict(db.session.query(Shift.client_id, db.func.count(Shift.id)).group_by(Shift.client_id).all())
+
+    reason_order = ['Same name', 'One name contains the other', 'Spelling differs by one word', 'Same distinguishing words']
+    pairs = []
+    for index, a in enumerate(clients):
+        for b in clients[index + 1:]:
+            name_a, name_b = names[a.id], names[b.id]
+            if not name_a or not name_b:
+                continue
+            reason = None
+            shorter, longer = sorted((name_a, name_b), key=len)
+            if name_a == name_b:
+                reason = reason_order[0]
+            elif len(shorter.split()) >= 2 and f' {shorter} ' in f' {longer} ':
+                reason = reason_order[1]
+            elif one_word_typo(name_a.split(), name_b.split()):
+                reason = reason_order[2]
+            else:
+                rare_a, rare_b = strong[a.id] - common, strong[b.id] - common
+                if len(rare_a) >= 2 and rare_a == rare_b:
+                    reason = reason_order[3]
+            if reason:
+                pairs.append({
+                    'reason': reason,
+                    'a': {'id': a.id, 'name': a.name, 'address': a.address,
+                          'equipment': equipment.get(a.id, 0), 'schedules': schedules.get(a.id, 0)},
+                    'b': {'id': b.id, 'name': b.name, 'address': b.address,
+                          'equipment': equipment.get(b.id, 0), 'schedules': schedules.get(b.id, 0)},
+                })
+    pairs.sort(key=lambda pair: reason_order.index(pair['reason']))
+    return pairs
+
+
+@app.route('/client_duplicate_pairs')
+@login_required
+def client_duplicate_pairs():
+    if not is_superadmin_user():
+        return jsonify({'message': 'Only superadmins can merge medical centers.'}), 403
+    return jsonify({'pairs': find_client_duplicate_pairs()})
 
 
 def normalize_purchase_order_number(value):

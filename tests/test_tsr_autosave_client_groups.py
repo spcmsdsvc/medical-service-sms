@@ -461,5 +461,166 @@ class MedicalCenterSpeedAndUiTests(unittest.TestCase):
             self.assertTrue(re.search(rf'function\s+{name}\s*\(|window\.{name}\s*=', page + shared), f'{name} is called but not defined')
 
 
+@unittest.skipIf(app_module is None, f'app import failed: {APP_IMPORT_ERROR}')
+class MedicalCenterMergeTests(unittest.TestCase):
+    """Merge duplicate medical centers and Find duplicates."""
+
+    isolated_database = ClientGroupRouteTests.isolated_database
+
+    def _center(self, name, address='Addr', group=None, contacts=()):
+        with app_module.app.app_context():
+            record = app_module.Client(name=name, address=address, group_name=group)
+            app_module.db.session.add(record)
+            app_module.db.session.flush()
+            for contact_name, phone, email in contacts:
+                app_module.db.session.add(app_module.Contact(client_id=record.id, name=contact_name, phone=phone, email=email))
+            app_module.db.session.commit()
+            return record.id
+
+    def _linked_source(self, source_id):
+        """Give the source one of every linked record; return their keys."""
+        from datetime import date, datetime
+        db = app_module.db
+        with app_module.app.app_context():
+            engineer = app_module.Engineer(employee_id='MRG-1', name='Merge Eng', initials='ME')
+            db.session.add(engineer)
+            db.session.flush()
+            shift = app_module.Shift(title='PM', start_time=datetime(2026, 9, 1, 8), end_time=datetime(2026, 9, 1, 17),
+                                     engineer_id=engineer.id, client_id=source_id)
+            db.session.add(shift)
+            db.session.add(app_module.Product(serial_number='MRG-SN-1', name='CT', client_id=source_id))
+            db.session.flush()
+            po = app_module.PurchaseOrder(client_id=source_id, po_number='PO-SRC-1', po_date=date(2026, 9, 1), po_type='single')
+            db.session.add(po)
+            db.session.flush()
+            db.session.add(app_module.PurchaseOrderMachine(purchase_order_id=po.id, product_serial='MRG-SN-1', position=0))
+            visit = app_module.TravelRequestRouteVisit(route_id=1, travel_request_id=1, client_id=source_id, client_name='Old Name')
+            db.session.add(visit)
+            db.session.add(app_module.GenorayItem(serial_number='MRG-GEN-1', name='Genoray X', client_id=source_id))
+            pm = app_module.InventoryPmVisit(brand='genoray', equipment_serial='MRG-GEN-1', target_date=date(2026, 9, 1),
+                                             completed_at=datetime(2026, 9, 1, 17), shift_id=shift.id,
+                                             completion_snapshot_json=json.dumps({'client_id': source_id, 'client_name': 'Old Name'}))
+            db.session.add(pm)
+            db.session.commit()
+            return {'shift': shift.id, 'po': po.id, 'visit': visit.id, 'pm': pm.id}
+
+    def test_merge_moves_everything_and_removes_source(self):
+        with self.isolated_database() as clients:
+            target = self._center('Kept Center', group=None, contacts=[('Ana', '0917 111 1111', 'ana@example.com')])
+            source = self._center('Kept Centre', group='North', contacts=[
+                ('Ana Again', '0917 999 9999', 'ANA@example.com'),   # same email -> skipped
+                ('Ben', '0917 222 2222', 'ben@example.com'),           # new -> added
+            ])
+            keys = self._linked_source(source)
+
+            preview = clients['admin'].get(f'/client_merge_preview?source={source}&target={target}')
+            self.assertEqual(preview.status_code, 200, preview.get_json())
+            preview = preview.get_json()
+            self.assertEqual(preview['po_clashes'], [])
+            self.assertEqual((preview['contacts_added'], preview['contacts_skipped']), (1, 1))
+
+            merged = clients['admin'].post('/merge_client', json={'source_id': source, 'target_id': target})
+            self.assertEqual(merged.status_code, 200, merged.get_json())
+            app = app_module
+            with app_module.app.app_context():
+                self.assertIsNone(app.db.session.get(app.Client, source))
+                self.assertEqual(app.db.session.get(app.Shift, keys['shift']).client_id, target)
+                self.assertEqual(app.db.session.get(app.Product, 'MRG-SN-1').client_id, target)
+                self.assertEqual(app.db.session.get(app.PurchaseOrder, keys['po']).client_id, target)
+                self.assertEqual(app.db.session.get(app.TravelRequestRouteVisit, keys['visit']).client_id, target)
+                self.assertEqual(app.db.session.get(app.TravelRequestRouteVisit, keys['visit']).client_name, 'Old Name')
+                self.assertEqual(app.db.session.get(app.GenorayItem, 'MRG-GEN-1').client_id, target)
+                contacts = [c.name for c in app.Contact.query.filter_by(client_id=target).order_by(app.Contact.id)]
+                self.assertEqual(contacts, ['Ana', 'Ben'])
+                self.assertEqual(app.Contact.query.filter_by(client_id=source).count(), 0)
+                kept = app.db.session.get(app.Client, target)
+                self.assertEqual((kept.group_name, kept.contact_person_2), ('North', 'Ben'))
+                pm = app.db.session.get(app.InventoryPmVisit, keys['pm'])
+                self.assertEqual(json.loads(pm.completion_snapshot_json)['client_id'], target)
+                with app_module.app.test_request_context():
+                    self.assertFalse(app.inventory_pm_visit_to_dict(pm)['owner_mismatch'])
+                moved = preview['counts']
+                self.assertEqual((moved['schedule'], moved['equipment'], moved['P.O.'], moved['travel visit'], moved['Genoray item']), (1, 1, 1, 1, 1))
+                self.assertTrue(app.ActivityLog.query.filter(app.ActivityLog.action.like('Merged medical center%')).count())
+
+    def test_po_clash_blocks_merge_and_changes_nothing(self):
+        from datetime import date
+        with self.isolated_database() as clients:
+            target = self._center('Clash Target')
+            source = self._center('Clash Source')
+            with app_module.app.app_context():
+                for client_id in (target, source):
+                    app_module.db.session.add(app_module.PurchaseOrder(client_id=client_id, po_number='po-77', po_date=date(2026, 9, 1), po_type='single'))
+                app_module.db.session.commit()
+            preview = clients['admin'].get(f'/client_merge_preview?source={source}&target={target}').get_json()
+            self.assertEqual(preview['po_clashes'], ['po-77'])
+            response = clients['admin'].post('/merge_client', json={'source_id': source, 'target_id': target})
+            self.assertEqual(response.status_code, 409)
+            with app_module.app.app_context():
+                self.assertIsNotNone(app_module.db.session.get(app_module.Client, source))
+                self.assertEqual(app_module.PurchaseOrder.query.filter_by(client_id=source).count(), 1)
+
+    def test_merge_refusals(self):
+        with self.isolated_database() as clients:
+            target = self._center('Refuse Target')
+            source = self._center('Refuse Source')
+            self.assertEqual(clients['engineer'].post('/merge_client', json={'source_id': source, 'target_id': target}).status_code, 403)
+            self.assertEqual(clients['engineer'].get(f'/client_merge_preview?source={source}&target={target}').status_code, 403)
+            self.assertEqual(clients['engineer'].get('/client_duplicate_pairs').status_code, 403)
+            # HR-only accounts are turned away earlier by the app's HR guard (redirect).
+            self.assertIn(clients['hr'].post('/merge_client', json={'source_id': source, 'target_id': target}).status_code, (302, 403))
+            with app_module.app.app_context():
+                self.assertIsNotNone(app_module.db.session.get(app_module.Client, source))
+            self.assertEqual(clients['admin'].post('/merge_client', json={'source_id': source, 'target_id': source}).status_code, 400)
+            self.assertEqual(clients['admin'].post('/merge_client', json={'source_id': 99999, 'target_id': target}).status_code, 404)
+
+    def test_failed_merge_rolls_back(self):
+        from unittest import mock
+        with self.isolated_database() as clients:
+            target = self._center('Rollback Target')
+            source = self._center('Rollback Source')
+            keys = self._linked_source(source)
+            with mock.patch.object(app_module, 'rewrite_pm_snapshot_client_ids', side_effect=RuntimeError('boom')):
+                response = clients['admin'].post('/merge_client', json={'source_id': source, 'target_id': target})
+            self.assertEqual(response.status_code, 500)
+            self.assertIn('Nothing was changed', response.get_json()['message'])
+            with app_module.app.app_context():
+                app_module.db.session.expire_all()
+                self.assertIsNotNone(app_module.db.session.get(app_module.Client, source))
+                self.assertEqual(app_module.db.session.get(app_module.Shift, keys['shift']).client_id, source)
+                self.assertEqual(app_module.db.session.get(app_module.Product, 'MRG-SN-1').client_id, source)
+
+    def test_duplicate_pairs(self):
+        with self.isolated_database() as clients:
+            names = [
+                'Accura-Tech Diagnostic Laboratory', 'Acura-Tech Diagnostic Laboratory',          # typo
+                'Holy Name University Medical Center Inc.', 'Holy Name University',             # contains
+                'Bay Clinic (BC)', 'Bay Clinic',                                                 # same name
+                'Allied Care Experts (ACE) Medical Center - Cebu', 'Allied Care Experts (ACE) Medical Center - Sariaya',
+                'Allied Care Experts (ACE) Medical Center - Legazpi',
+                "St. Luke's Medical Center - BGC", "St. Luke's Medical Center - QC",
+                'Our Lady of Grace Hospital', 'Our Lady of Peace Hospital', 'Our Lady of the Pillar Hospital',
+            ]
+            for index, name in enumerate(names):
+                self._center(name, address=f'Address {index}')
+            response = clients['admin'].get('/client_duplicate_pairs')
+            self.assertEqual(response.status_code, 200)
+            pairs = {frozenset((p['a']['name'], p['b']['name'])) for p in response.get_json()['pairs']}
+            self.assertIn(frozenset(names[0:2]), pairs)
+            self.assertIn(frozenset(names[2:4]), pairs)
+            self.assertIn(frozenset(names[4:6]), pairs)
+            self.assertNotIn(frozenset(names[6:8]), pairs)
+            self.assertNotIn(frozenset(names[9:11]), pairs)
+            self.assertNotIn(frozenset(names[11:13]), pairs)
+
+    def test_page_merge_functions(self):
+        page = (ROOT / 'templates' / 'clients.html').read_text(encoding='utf-8')
+        for fn in ('openClientDuplicatesModal', 'loadClientDuplicatePairs', 'openClientMergeModal',
+                   'loadClientMergePreview', 'confirmClientMerge'):
+            self.assertIn(f'function {fn}(', page)
+        self.assertIn('id="clientMergeModal"', page)
+        self.assertIn('This cannot be undone.', page)
+
+
 if __name__ == '__main__':
     unittest.main()

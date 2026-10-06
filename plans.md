@@ -37,6 +37,106 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Merge Duplicate Medical Centers + Find Duplicates
+
+**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- Pair buttons say **"Keep this one"** under each side instead of "Keep left" / "Keep right" (clearer when the two sides stack on a phone).
+- The page flag comes from the server (`clients_page` passes `can_merge_clients=is_superadmin_user()`), because a superadmin also needs an approved username; the role alone is not enough.
+- Merge internals: contacts to add are created as new rows on the target and all source contact rows are deleted (keeps the target's order); the `client_id` moves use bulk updates followed by `db.session.expire_all()` before the source is deleted, so stale relationship collections (P.O. cascade) cannot act on moved rows. Activity entry is written with `add_activity_log_entry` inside the same transaction.
+- Browser check found one bug, fixed: the merge pop-up's target list kept the previous merge's selection even when it did not match the search; the list is now cleared each time the pop-up opens.
+- Test notes: the HR-only test account is turned away by the app's existing HR guard with a redirect (302) before reaching the routes — still a refusal; the PM owner check runs inside a request context because it builds URLs.
+- Fail-first: all 6 new tests failed on the unchanged code (routes 404, missing helper, page functions absent). After: `tests.test_tsr_autosave_client_groups` 32 tests OK. Full suite 1,565 tests, 24 failures, 3 errors, 5 skips — the same 27 failing tests by name as before (the 13 failures in the PM/Genoray/Vieworks/P.O. modules run together are among them).
+- Flask test client on copies of `scheduler.db`: Find duplicates returned the 3 expected pairs in ≈245 ms; merging "Bureau of Quarantine - Davao" into "Bureau of Quarantine" succeeded (no linked records) with an Activity entry; merging the two busiest medical centers (on a throwaway copy) moved 34 schedules and 1 equipment, the target's counts added up exactly, nothing pointed at the removed one, and Timeline, Reports, Analytics, P.O. Details, Products, Genoray and Vieworks pages and `/get_clients`, `/get_products` still loaded.
+- Browser check (owner-approved; local server on a scratch copy; a generated test password set on the `hanna` scheduler account in that copy only, plus a test pair "Zz Test Hospital Merge" / "… Annex" with one contact): Find duplicates listed the 3 real pairs and the test pair; Keep this one → preview ("1 added, 0 skipped") → Merge → "Merged into Zz Test Hospital Merge.", the Annex gone, its contact on the kept one, View opened; Edit → Merge into… with search works; at 375 px both pop-ups fit (10–365 px) with no sideways scroll; no console errors. Screenshots could not be taken (the app window was minimised); layout was verified by measurement. Test server stopped and viewport reset.
+**Approved:** 2026-10-06 — the owner asked to plan merging "carefully because it will alter many things", chose superadmin-only, block on P.O. number clash, and add contacts skipping exact repeats; then asked to add a "Find duplicates" button; replied "yes, approved" and explicitly allowed the browser check.
+**Detailed:** 2026-10-06.
+
+## Context
+
+Since Medical Center Batch 1 (`75f11a1`), Delete refuses any medical center with history, so a duplicate entry cannot be removed. Merge moves everything from the duplicate (**source**) onto the one kept (**target**) and then removes the source. It touches schedules, equipment, P.O.s, travel and PM history, so it must be all-or-nothing and cannot be undone. A **Find duplicates** button suggests likely pairs; it never merges by itself.
+
+## Decisions taken
+
+1. Superadmins only (`is_superadmin_user`; includes the scheduler and manager accounts) (owner).
+2. If both medical centers have a P.O. with the same number (normalized as in `find_purchase_order_duplicate`), the merge is refused with the clashing numbers (owner).
+3. The source's contacts are appended to the target, skipping a contact with the same email, or the same name and phone, as one already saved (owner).
+4. The target keeps its name, address and group; it takes the source's group only if it has none.
+5. Find duplicates only suggests; every merge needs the preview and an explicit confirm (owner).
+6. No undo; the Activity log records exactly what moved.
+
+## Investigation
+
+What points at a medical center (verified in `app.py` and on a copy of `scheduler.db`; local tables with a `client_id` column: contact, product, shift, travel_request_route_visit, purchase_order, genoray_item, vieworks_item):
+
+| Where | Today | On merge |
+|---|---|---|
+| `Shift.client_id` (~3531) | source | → target |
+| `Product.client_id` (~2695) | source | → target |
+| `PurchaseOrder.client_id` (~2086, backref cascade) | source | → target; `PurchaseOrderMachine` rows follow their products, so the "machines belong to this client" rule stays true |
+| `TravelRequestRouteVisit.client_id` (~2534) | source | → target; its `client_name` text kept as history |
+| `GenorayItem` / `VieworksItem.client_id` (~2743 / ~2772) | source | → target; parent-product owner check (~63702) stays consistent |
+| `Contact.client_id` (~2245) | source rows | appended to target skipping repeats; target's legacy `contact_person_n` / `contact_number_n` / `email_address_n` refreshed from its first three contacts |
+| `InventoryPmVisit.completion_snapshot_json` (~2834) | stores `client_id`; `inventory_pm_visit_to_dict` (~4878) flags `owner_mismatch` when it differs from the equipment owner | rewrite `client_id` source → target in each snapshot |
+| `Client.group_name` | — | target keeps its own; empty → source's |
+| Source `Client` | — | deleted only when `client_linked_record_counts` is all zero and no `Contact` remains |
+
+- Follows automatically: calibration certificates (`CalibrationCertificateApproval.shift_id`), P.O. machines, Analytics/Reports (live from `client_id`), `User.tsr_client_remembered_cc_json` (one flat list per user).
+- Left untouched (history/fallback): `client_name` text columns on `reimbursement_row`, `travel_request`, `travel_request_route_visit`, `tsr_draft`, `online_tsr_submission`, `tsr_knowledge_entry`; `client_id` inside `online_tsr_submission` (34 local), `tsr_draft` (8) and `tsr_draft_version` (10) payloads — the app resolves the medical center from the schedule first (`resolve_client_for_tsr_contact` ~15243, `save_tsr_payload_contact_to_medical_center` ~15568) and a stale id falls through; offline TSR drafts are keyed by schedule id.
+- P.O. numbers are unique per medical center only in code (`find_purchase_order_duplicate` ~54547), hence decision 2.
+- Find duplicates: the existing `client_duplicate_match_score` (~7680) is unused and too loose — on 147 local medical centers it flags 72 pairs, 54 at score 1.0, nearly all different hospitals sharing a city or a common word ("Davao Doctors Hospital" / "Davao Regional Medical Center", "Our Lady of Grace" / "Our Lady of Peace"). A prototype of the rule in step 1 gave 3 real suggestions (Holy Name University Medical Center / Holy Name University; Bureau of Quarantine / Bureau of Quarantine - Davao; Northern Mindanao Medical Center / Mindanao Medical Center) in ≈250 ms and caught three planted typo duplicates (Acura/Accura, Sera/Serra, "Cebu Inc."). Words in ≥3 names count as common (locally: ace, allied, care, cebu, davao, del, district, experts, foundation, heart, jose, lady, our, polyclinic), so chains and branches are not paired.
+
+## Execution steps
+
+1. **Pair rule** — `app.py`, new `find_client_duplicate_pairs()` reusing `normalize_client_name_for_matching` and `client_name_strong_tokens`; names compared with parenthesised text removed. Suggest a pair when any holds: (a) **same name** — normalized names equal; (b) **one contains the other** — the shorter has ≥2 words and appears whole inside the longer; (c) **typo** — same word count, exactly one word differs, and that word is 1 letter off (2 letters if it has ≥7 letters); (d) **same distinguishing words** — ≥2 non-common strong words and identical sets. Each pair: both ids, names, addresses, equipment and schedule counts, reason; sorted by reason (same name first). Done: local data gives the 3 pairs above; planted typos found; branch and look-alike pairs not suggested.
+2. **Duplicates route** — `GET /client_duplicate_pairs`, superadmin only (403 otherwise); computed on request only.
+3. **Preview** — `client_merge_preview(source, target)` + `GET /client_merge_preview?source=&target=`, superadmin only; 400 source = target, 404 missing. Returns counts that would move (per table, incl. PM snapshots), contacts to add / skip, and clashing P.O. numbers.
+4. **Merge** — `POST /merge_client {source_id, target_id}`, superadmin only, CSRF, one transaction: refuse 409 on P.O. clash → move all `client_id`s → merge contacts and refresh legacy fields → rewrite PM snapshots → fill group if empty → assert nothing points at source → delete source → commit → Activity log "Merged medical center "<source>" (#id) into "<target>" (#id): N schedules, N equipment, …". Any exception rolls back and returns "Nothing was changed."
+5. **Page** — `templates/clients.html`, superadmins only (`const isSuperAdminUser`):
+   - **Find duplicates** header button → pop-up listing pairs (names, addresses, counts, reason in plain words) with **Keep left** / **Keep right**, each opening the merge preview with source and target set; empty: "No likely duplicates found."
+   - **Merge into…** in the Edit pop-up footer → same merge pop-up (`#clientMergeModal`) with a searchable target list (excluding the source).
+   - Merge pop-up: preview with counts, skipped contacts, and "This cannot be undone. <source> will be removed."; **Merge** disabled until the preview loads without a P.O. clash; a clash lists the numbers.
+   - Success: "Merged into <target>.", reload the list (and the duplicates list if open), open the target in View.
+   - New functions `openClientDuplicatesModal`, `loadClientDuplicatePairs`, `openClientMergeModal`, `loadClientMergePreview`, `confirmClientMerge`; existing functions and ids kept.
+6. **Tests** — new class in `tests/test_tsr_autosave_client_groups.py` (isolated DB): merge moves schedule, equipment, P.O. + machine, travel visit, Genoray item and deletes the source; contacts repeat skipped / new added / legacy fields updated; PM snapshot rewritten and no owner mismatch; P.O. clash 409 with nothing changed; regional admin and engineer 403; source = target 400; missing 404; forced mid-merge failure rolls back; preview counts equal what merge moves; pairs found for same name / contains / one-letter typo / same distinguishing words; branches ("ACE … Cebu" / "ACE … Sariaya", "St. Luke's … BGC" / "… QC") and look-alikes ("Our Lady of Grace" / "… Peace") not paired; non-superadmin 403 on duplicates; source checks for the new functions plus the existing "every called function is defined" test. Run each on the unchanged code first and record that it fails.
+
+## Deliberately excluded
+
+- **Undo** — Activity log records what moved.
+- **"Not a duplicate" dismissal** — needs a new table; strict rules keep the list short; can be added later.
+- **Rewriting historical `client_name` text and TSR payload ids** — reasons above.
+- **Merging more than two at once**; **regional admin access** (owner).
+- **Changing `client_duplicate_match_score`** — stays unused and untouched.
+
+## Verification
+
+- New tests fail on the unchanged code, pass after.
+- Focused modules: `tests.test_tsr_autosave_client_groups`, `tests.test_purchase_orders` (11 known pre-existing failures), Genoray/Vieworks PM test modules.
+- Flask test client on a copy of `scheduler.db`: Find duplicates returns the 3 expected pairs; merging "Bureau of Quarantine - Davao" into "Bureau of Quarantine" moves the previewed counts; Timeline, Reports, P.O. Details, Genoray and Vieworks pages still load.
+- Full suite fails the same 27 tests by name as before.
+- **Browser check (owner-approved):** the duplicates and merge pop-ups at 375 px and desktop width on the local server with a database copy; no console errors.
+
+## After implementation
+
+1. Self-review; confirm every function the page calls is still defined.
+2. Fail-first proof recorded in this plan.
+3. Service worker bump to `medical-service-pwa-offline-navigation-v254-medical-center-merge` (keep v253 as the historical marker).
+4. `releases.json` entry `2026-10-06-medical-center-merge` (audience admins, category Medical Center).
+5. Update `changes.md` and this plan's status.
+6. Commit and push only on the owner's "commit and push": explicit staging; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- **Merging the wrong pair** — irreversible; mitigated by the required preview, "cannot be undone" text, superadmin-only access and the Activity log.
+- **A missed suggestion** — Find duplicates is a helper; Merge into… works for any pair.
+- **A link this investigation missed** — the merge asserts nothing points at the source before deleting it and refuses otherwise.
+- Safety net: no schema change; data-only changes inside one transaction.
+
+---
+
 # Medical Centers Layout Polish
 
 **Status:** Executed — commit `71a21b0`; published to `origin/main` on the owner's "commit and push" (Railway deployment succeeded, GitHub deployment `6878353353`).
