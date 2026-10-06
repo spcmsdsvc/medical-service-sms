@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Personnel Batches 3 & 4: Directory Usability and Account Tools
 
-**Status:** Executed (not yet committed) — owner said "go ahead" on 2026-10-06.
+**Status:** Executed — commit `e55ac2e`; published to `origin/main` on the owner's "commit and push" (Railway deployment `38b82086-1907-45a9-9658-ee9238923dbb`).
 **Finished:** 2026-10-06.
 
 **Where the plan and the outcome differed:**
