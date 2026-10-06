@@ -2,8 +2,8 @@
   "hook": {
     "enabled": true,
     "limits": {
-      "maxFindings": 5,
-      "maxChars": 8000
+      "maxFindings": 3,
+      "maxChars": 3000
     }
   },
   "detector": {
