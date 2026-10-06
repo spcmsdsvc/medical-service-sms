@@ -1,5 +1,9 @@
 # Project Change Log
 
+codex changes - 2026-10-06
+
+- `AGENTS.md`: added two project rules. "Protect Existing Functions": page, feature, and UI changes must not remove or rename functions, constants, ids, or handlers still in use, and the changed page's existing actions must still work (prompted by the Reimbursement Save Item and liquidation Save Row regressions). "Keep It Simple": no over-engineering and no over-verification. Documentation only; no app change.
+
 codex changes - 2026-10-05
 
 - Committed only the changelog race fix (`app.py`, `tests/test_changelog_sync_race.py`, and this fix's `changes.md` entries) as `061def5` on `main` and pushed it to `origin/main` on the owner's "commit and push"; `origin/main` verified at `061def5`, and Railway production deployment `8bbfbed1-7ebb-47ae-abe8-42dea5fd15b0` was initializing for it. The earlier Reimbursement Save Item fix is live (deployment `d0440ccc-f267-4328-b36f-cbd41a16d3e5` succeeded). `scheduler.db`, handoffs, `.claude/`, `.impeccable/`, `PRODUCT.md`, `output/`, `tmp/`, the loose handoff file, and unrelated pre-existing entries in this file were not staged. No Railway variable or manual redeploy was changed.

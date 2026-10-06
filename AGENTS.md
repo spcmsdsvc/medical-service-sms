@@ -54,6 +54,21 @@
 - If browser verification becomes essential, stop and ask the owner before using it. Do not infer
   permission from an approved implementation plan or from a previous browser test.
 
+## Protect Existing Functions
+
+- When improving a page, adding a feature, or changing UI, existing functions must keep working.
+  Do not remove or rename any function, constant, element id, or handler that other code still
+  uses. The 2026-10-04 cleanup broke Reimbursement Save Item this way, and a shared helper
+  change broke liquidation Save Row.
+- Before finishing, check that every function the changed page calls is still defined and that
+  its existing buttons and actions (save, add, upload, submit, download) still work.
+
+## Keep It Simple
+
+- Do not over-engineer. Make the smallest change that solves the request, with no extra layers,
+  options, or refactors that were not asked for.
+- Do not over-verify. Run the focused tests for what changed; skip repeated or redundant checks.
+
 ## Mandatory Change Log
 
 - Before performing any request that will add, edit, delete, rename, move, generate, or otherwise modify project files or system behavior, read `changes.md` in full.
