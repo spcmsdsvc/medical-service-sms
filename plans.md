@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Personnel Batch 1: Protect History (Deactivate, Safe Delete, Account Status)
 
-**Status:** Executed (not yet committed) — owner said "go ahead" on 2026-10-06.
+**Status:** Executed — commit `a6d8571`; published to `origin/main` on the owner's "commit and push" (Railway deployment `28b2da40-c14e-4d32-b00b-92cdd0d769dd`).
 **Finished:** 2026-10-06.
 
 **Where the plan and the outcome differed:**

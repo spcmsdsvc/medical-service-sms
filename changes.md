@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-06
 
+- Committed only the Personnel Batch 1 package (`app.py`, `templates/engineers.html`, `tests/test_staff_creation.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `a6d8571` on `main` and pushed it to `origin/main` on the owner's "commit and push"; `origin/main` verified at `a6d8571`, and Railway production deployment `28b2da40-c14e-4d32-b00b-92cdd0d769dd` was building it. No schema change. `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`, and the loose handoff file were not staged. No Railway variable or manual redeploy was changed.
+
 - Executed the plan **Personnel Batch 1: Protect History** on the owner's go-ahead; not committed, pushed, or deployed.
 - Personnel delete (`app.py` `delete_engineer`): now refused (409, "<name> has N schedules … Deactivate instead.") when the person has any schedules (primary, override, or team member), reimbursement tracker entries, reimbursements, travel requests or participations, travel or cash advance liquidations, or stock movements (new `engineer_linked_record_counts`). Previously the `Engineer.shifts` cascade deleted their shifts, including multi-engineer jobs. Delete is also refused (403) for your own login or a login protected by the password-reset policy (new `personnel_account_change_denial`, reusing `can_reset_password_for_user`), so a regional admin can no longer delete a superadmin's or their own profile and login.
 - New `POST /set_engineer_active/<id>` (superadmin and regional admin, same guards): sets the linked `User.is_active` and logs "Deactivated/Reactivated personnel" in Activity; 400 when the person has no login.
