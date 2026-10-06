@@ -188,5 +188,126 @@ class ClientGroupRouteTests(unittest.TestCase):
                 self.assertEqual(record.name, 'Protected Group Client')
 
 
+@unittest.skipIf(app_module is None, f'app import failed: {APP_IMPORT_ERROR}')
+class MedicalCenterProtectDataTests(unittest.TestCase):
+    """Medical Center Batch 1: safe delete, blank names, and CSV round trip."""
+
+    isolated_database = ClientGroupRouteTests.isolated_database
+
+    def _add_client(self, name='Linked Client', **contacts):
+        with app_module.app.app_context():
+            record = app_module.Client(name=name, address='Addr', group_name=contacts.pop('group', None))
+            app_module.db.session.add(record)
+            app_module.db.session.flush()
+            for contact_name in contacts.pop('contact_names', []):
+                app_module.db.session.add(app_module.Contact(client_id=record.id, name=contact_name))
+            app_module.db.session.commit()
+            return record.id
+
+    def _import(self, client, text):
+        import io
+        return client.post('/import_clients', data={'file': (io.BytesIO(text.encode('utf-8')), 'clients.csv')},
+                           content_type='multipart/form-data')
+
+    def test_delete_refused_with_schedule_equipment_or_po(self):
+        from datetime import date, datetime
+        with self.isolated_database() as clients:
+            with_shift = self._add_client('Has Schedule')
+            with_product = self._add_client('Has Equipment')
+            with_po = self._add_client('Has PO')
+            with app_module.app.app_context():
+                engineer = app_module.Engineer(employee_id='MC-1', name='Eng One', initials='EO')
+                app_module.db.session.add(engineer)
+                app_module.db.session.flush()
+                shift = app_module.Shift(title='PM', start_time=datetime(2026, 10, 1, 8), end_time=datetime(2026, 10, 1, 17),
+                                         engineer_id=engineer.id, client_id=with_shift)
+                app_module.db.session.add(shift)
+                app_module.db.session.add(app_module.Product(serial_number='MC-SN-1', name='CT', client_id=with_product))
+                app_module.db.session.add(app_module.PurchaseOrder(client_id=with_po, po_number='MC-PO-1',
+                                                                   po_date=date(2026, 10, 1), po_type='single'))
+                app_module.db.session.commit()
+                shift_id = shift.id
+
+            for client_id, word in ((with_shift, 'schedule'), (with_product, 'equipment'), (with_po, 'P.O.')):
+                response = clients['admin'].delete(f'/delete_client/{client_id}')
+                self.assertEqual(response.status_code, 409, word)
+                self.assertIn(word, response.get_json()['message'])
+
+            with app_module.app.app_context():
+                self.assertEqual(app_module.db.session.get(app_module.Shift, shift_id).client_id, with_shift)
+                self.assertEqual(app_module.db.session.get(app_module.Product, 'MC-SN-1').client_id, with_product)
+                self.assertEqual(app_module.PurchaseOrder.query.filter_by(client_id=with_po).count(), 1)
+                for client_id in (with_shift, with_product, with_po):
+                    self.assertIsNotNone(app_module.db.session.get(app_module.Client, client_id))
+
+    def test_delete_unlinked_removes_contacts_and_missing_is_404(self):
+        with self.isolated_database() as clients:
+            client_id = self._add_client('Unlinked', contact_names=['Ana', 'Ben'])
+            self.assertEqual(clients['admin'].delete(f'/delete_client/{client_id}').status_code, 200)
+            with app_module.app.app_context():
+                self.assertIsNone(app_module.db.session.get(app_module.Client, client_id))
+                self.assertEqual(app_module.Contact.query.filter_by(client_id=client_id).count(), 0)
+            self.assertEqual(clients['admin'].delete(f'/delete_client/{client_id}').status_code, 404)
+
+    def test_blank_name_is_400_on_add_and_update(self):
+        with self.isolated_database() as clients:
+            added = clients['admin'].post('/add_client', json={'name': '  ', 'address': 'A'})
+            self.assertEqual(added.status_code, 400)
+            self.assertEqual(added.get_json()['message'], 'Company name is required.')
+            client_id = self._add_client('Named')
+            updated = clients['admin'].put(f'/update_client/{client_id}', json={'name': '', 'address': 'A'})
+            self.assertEqual(updated.status_code, 400)
+
+    def test_import_with_designation_and_group(self):
+        with self.isolated_database() as clients:
+            response = self._import(clients['admin'],
+                'Name,Address,Group,Contact 1 Name,Contact 1 Designation,Contact 1 Phone,Contact 1 Email\n'
+                'Imported Center,Cebu,South,Ana,Head Nurse,0917 000 0000,ana@example.com\n')
+            self.assertEqual(response.status_code, 200, response.get_json())
+            with app_module.app.app_context():
+                record = app_module.Client.query.filter_by(name='Imported Center').one()
+                self.assertEqual(record.group_name, 'South')
+                contact = app_module.Contact.query.filter_by(client_id=record.id).one()
+                self.assertEqual((contact.name, contact.designation), ('Ana', 'Head Nurse'))
+
+    def test_export_import_round_trip_is_unchanged(self):
+        with self.isolated_database() as clients:
+            created = clients['admin'].post('/add_client', json={
+                'name': 'Round Trip', 'address': 'Davao', 'group_name': 'East',
+                'cp1': 'Ana', 'cd1': 'Head Nurse', 'cn1': '0917', 'ce1': 'ana@example.com',
+                'cp2': 'Ben', 'cd2': 'Biomed', 'cn2': '0918', 'ce2': 'ben@example.com',
+            })
+            self.assertEqual(created.status_code, 200)
+            exported = clients['admin'].get('/export_clients').get_data(as_text=True)
+            self.assertIn('Group', exported.splitlines()[0])
+            self.assertIn('Contact 1 Designation', exported.splitlines()[0])
+
+            def snapshot():
+                with app_module.app.app_context():
+                    record = app_module.Client.query.filter_by(name='Round Trip').one()
+                    rows = app_module.Contact.query.filter_by(client_id=record.id).order_by(app_module.Contact.id).all()
+                    return (record.address, record.group_name,
+                            [(c.name, c.designation, c.phone, c.email) for c in rows])
+
+            before = snapshot()
+            response = self._import(clients['admin'], exported)
+            self.assertEqual(response.status_code, 200, response.get_json())
+            self.assertEqual(snapshot(), before)
+
+    def test_import_row_without_contacts_keeps_existing_contacts(self):
+        with self.isolated_database() as clients:
+            client_id = self._add_client('Keep Contacts', contact_names=['Ana'])
+            response = self._import(clients['admin'], 'Name,Address\nKeep Contacts,Addr\n')
+            self.assertEqual(response.status_code, 200, response.get_json())
+            with app_module.app.app_context():
+                self.assertEqual(app_module.Contact.query.filter_by(client_id=client_id).count(), 1)
+
+    def test_page_handles_delete_refusal_and_blank_name(self):
+        page = (ROOT / 'templates' / 'clients.html').read_text(encoding='utf-8')
+        self.assertIn('Medical center deleted.', page)
+        self.assertIn('Please enter the company name.', page)
+        self.assertIn('Only possible when it has no schedules, equipment or P.O.s.', page)
+
+
 if __name__ == '__main__':
     unittest.main()

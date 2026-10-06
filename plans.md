@@ -37,6 +37,105 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Medical Center Batch 1: Protect Data and Fix Import
+
+**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- The new test class `MedicalCenterProtectDataTests` reuses `ClientGroupRouteTests.isolated_database` by assignment rather than subclassing, so the two existing tests do not run twice.
+- The P.O. test was renamed `test_client_delete_is_refused_while_purchase_orders_exist`; the kept client is added to `created_client_ids` so the class teardown still removes it.
+- Export → import on a copy of the real database leaves all data the same except normalisation in 6 of 147 records: blank addresses/phones stored as `""` become empty (`NULL`), and one completely empty contact row is dropped. No real values change.
+- Fail-first: all 7 new tests failed on the unchanged code (200 instead of 409 for delete, contacts left behind, 500 for a blank name, `NameError` on import, no Group column in export, contacts wiped by a contact-less row, page text missing). After: focused modules `tests.test_tsr_autosave_client_groups` + `tests.test_purchase_orders` — all new tests pass; the 11 `test_purchase_orders` failures are pre-existing (identical on the unchanged code). `test_changelog_workflow.test_manifest_entries_cannot_be_deleted` fails only when run after `test_tsr_autosave_client_groups`, also on the unchanged code (existing test-order issue). Full suite 1,547 tests, 24 failures, 3 errors, 5 skips — same as the baseline.
+- Flask test client on a copy of `scheduler.db`: `/clients_page` 200; deleting the client with the most schedules refused with "… has 34 schedules and 1 equipment. It cannot be deleted."; blank add 400; export header `Name,Address,Group,Contact 1 Name,Contact 1 Designation,…`; import of that export 200 (147 updated). No browser check was made.
+**Approved:** 2026-10-06 — the owner reviewed the Medical Center page scan (`/clients_page`), asked to "plan batch 1", chose "refuse Delete on any linked record", and replied "yes, approved".
+**Detailed:** 2026-10-06.
+
+## Context
+
+A read-only scan of the Medical Center page (`templates/clients.html`, `/clients_page`) found that **Delete damages other records**: schedules lose their client, equipment is unlinked, P.O.s are deleted along with the client, and contacts, travel visits and Genoray/Vieworks items keep pointing at a deleted client (one orphan contact already exists in the local database). **Import CSV fails for every row with a contact** (`NameError`), and Export leaves out Group and Designation, so an export → import round trip would erase them once Import works. A blank company name causes a 500 on Add and Edit. This is batch 1 of 4 (2: permissions and safety; 3: speed and code cuts; 4: UI and merge) and goes first because it is the only one that loses data.
+
+## Decisions taken
+
+1. Delete is **refused when the medical center has any linked record**: schedules, equipment, P.O.s, travel visits, Genoray items, Vieworks items. The message names the counts. P.O.s are no longer deleted with the client (the earlier P.O. cascade existed so Delete would not crash, not as a business rule — `plans-archive.md` P.O. plan).
+2. A medical center with no linked records can still be deleted; its `Contact` rows are deleted with it (no orphans).
+3. Deleting a missing medical center returns 404 instead of success.
+
+## Investigation
+
+- `delete_client` (`app.py` ~54036): admin-only, no linked-record check, ignores a missing id (returns success).
+- Tables with `client_id` → `client.id`: `PurchaseOrder` (~2087, backref `purchase_orders` with `cascade='all, delete-orphan'`, so P.O.s and their machine rows are deleted), `Contact` (~2246, no relationship → orphaned), `TravelRequestRouteVisit` (~2535, dangling), `Product` (~2696, `Client.products` default cascade → set NULL), `GenorayItem` (~2744, dangling), `VieworksItem` (~2773, dangling), `Shift` (~3532, `Client.shifts` → set NULL). No raw-SQL tables reference `client_id`.
+- `import_clients` (`app.py` ~64347): `designation=c_designation` (~64417) is never defined (introduced in `37cceea` "add designation client"), so any contact row raises `NameError`, caught by the generic handler → rollback and "Import failed: name 'c_designation' is not defined". On a matched client (`check_for_duplicate_client`) it deletes all contacts even when the row carries none. It ignores Group. Column lookup is via `csv_get(row, *names)` (~64289).
+- `export_clients` (~53498): columns `Name, Address`, then `Contact {i} Name/Phone/Email`; no Group or Designation; one `Contact` query per client.
+- `Client.name` is `nullable=False`; `add_client` (~53922) and the admin path of `update_client` (~53967) do not reject a blank name → `IntegrityError` → 500.
+- Page: `deleteClient` (`templates/clients.html` ~1272) ignores the response; `saveClient` (~797) has no name check.
+- Local `scheduler.db`: 147 clients, 146 contacts (1 orphan), 352 schedules and 101 products linked, 0 P.O.s.
+- Tests: `tests/test_purchase_orders.py::test_client_delete_cascades_purchase_orders_without_touching_other_client` expects Delete to remove the P.O.s — it must change. `tests/test_tsr_autosave_client_groups.py::ClientGroupRouteTests.isolated_database` provides an isolated DB with admin/engineer/HR clients to reuse.
+
+## Execution steps
+
+1. **Record counter** — `app.py`, new `client_linked_record_counts(client)` next to `delete_client`: ordered label → count for schedules (`Shift.client_id`), equipment (`Product.client_id`), P.O.s (`PurchaseOrder.client_id`), travel visits (`TravelRequestRouteVisit.client_id`), Genoray items, Vieworks items. Done: zeros for a new client, correct count after adding a shift.
+2. **Safe delete** — `delete_client`: 404 `{'message': 'Medical center not found.'}` when missing; 409 with a message naming the non-zero counts ("<name> has 24 schedules and 3 equipment. It cannot be deleted.") when any count > 0; otherwise delete its `Contact` rows, then the client, `log_activity` as today, return success. Done: no shift, product or P.O. is ever changed or removed by this route.
+3. **Blank name** — `add_client` and the admin path of `update_client`: return 400 `{'message': 'Company name is required.'}` when the cleaned name is empty, before any other work. Done: no 500 for a blank name.
+4. **Import fix** — `import_clients`:
+   - per contact read designation from `CD{i}`, `Contact {i} Designation`, `Designation {i}`; single-contact fallback `Designation`; carry it in `contact_rows` (removes the `NameError`);
+   - when the CSV header has `Group` or `Group Name`, set `group_name` from it (blank clears); without the column, leave the group unchanged; call `ensure_client_group_column()` / `ensure_contact_designation_column()` first;
+   - on a matched client, delete and replace contacts **only when the row has at least one contact**.
+   Done: a file produced by Export imports with no changes to the data.
+5. **Export fix** — `export_clients`: columns `Name, Address, Group`, then per contact `Contact {i} Name, Contact {i} Designation, Contact {i} Phone, Contact {i} Email`; load all contacts in one query grouped by `client_id` (ordered by id). Done: every new header is one Import reads.
+6. **Page** — `templates/clients.html`:
+   - `deleteClient`: check `res.ok`; on failure `clientAlert(server message)`; on success `clientToast('Medical center deleted.', 'success')` and `loadClients({ preserveFilters: true })`; network error → "Could not reach the server. Try again.";
+   - confirm text: "Delete this medical center permanently? Only possible when it has no schedules, equipment or P.O.s.";
+   - `saveClient` (admin): if Company Name is blank, `clientAlert('Please enter the company name.')` and stop before any request (busy state reset by the existing `finally`).
+   - Keep every existing function, id and handler.
+   Done: Delete, Add, Edit, Import, Export, Print, View still work.
+7. **Tests** — new class in `tests/test_tsr_autosave_client_groups.py` reusing `isolated_database` (or a subclass of `ClientGroupRouteTests`):
+   - delete refused (409) with a schedule — shift still has its `client_id`; with equipment; with a P.O.;
+   - delete of a client with no links succeeds and removes its contacts;
+   - delete of a missing id → 404;
+   - blank name → 400 on add and update;
+   - import with contacts, designation and group succeeds;
+   - export → import round trip leaves name, address, group and contacts (incl. designation) unchanged;
+   - import row without contacts keeps existing contacts;
+   - page source contains the new Delete message handling and the name check.
+   Update the P.O. cascade test to expect 409 with the client and P.O. kept (rename accordingly). Run every new test on the unchanged code first and record that it fails.
+
+## Deliberately excluded
+
+- **Merge duplicate medical centers** — the long-term replacement for Delete; Batch 4.
+- **Cleaning up orphan contacts** from past deletes — one known locally; separate decision.
+- **Escaping, admin-only buttons, manager access, engineer contact position fix, contact checks** — Batch 2.
+- **Duplicate-check consolidation, contact helper, lighter `/get_clients` and View, dead `/get_clients_summary` call** — Batch 3.
+- **UI changes** (single search, columns, naming) — Batch 4.
+
+## Verification
+
+- New tests fail on the unchanged code, pass after.
+- Focused modules: `tests.test_tsr_autosave_client_groups`, `tests.test_purchase_orders`.
+- Flask test client on a temporary copy of `scheduler.db`: `/clients_page` renders; deleting a real client with schedules is refused with counts; export → import round trip works.
+- No browser automation (AGENTS.md); ask the owner if a browser check becomes necessary.
+- Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined.
+2. Fail-first proof recorded in this plan.
+3. Service worker bump to `medical-service-pwa-offline-navigation-v249-medical-center-protect-data` (read the current `CACHE_VERSION` live from `app.py`; keep v248 as a historical marker).
+4. `releases.json` entry `2026-10-06-medical-center-protect-data` (audience admins, category Medical Center): Delete is refused when a medical center has records; Import CSV works again; Export includes Group and Designation.
+5. Update `changes.md` and this plan's status, with any differences from the plan.
+6. Commit and push only on the owner's "commit and push": explicit staging; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+7. Report what was verified and what was not.
+
+## Risks
+
+- **Delete refuses most real medical centers** — intended; the message explains why.
+- **Import now sets Group** when the CSV has a Group column — older CSVs without it are unaffected.
+- **Changed export columns** — anyone with a script reading the old columns by position would see Group and Designation inserted; the app's own Import reads both layouts.
+- Safety net: no schema change, no data migration; reverting the commit restores the previous behaviour.
+
+---
+
 # Personnel Batches 3 & 4: Directory Usability and Account Tools
 
 **Status:** Executed — commit `e55ac2e`; published to `origin/main` on the owner's "commit and push" (Railway deployment `38b82086-1907-45a9-9658-ee9238923dbb`).

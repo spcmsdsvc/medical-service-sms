@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-medical-center-protect-data",
+      "release_date": "2026-10-06",
+      "title": "Medical Center Delete and Import Fixes",
+      "summary": "Medical centers with history can no longer be deleted, and Import CSV works again.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-medical-center-protect-data-admins",
+          "category": "Medical Center",
+          "description": "Deleting a medical center is refused when it has schedules, equipment, P.O.s or other records, with a message saying how many, so its history is no longer lost. Import CSV works again and reads Group and contact Designation; a row without contacts keeps the saved contacts. Export now includes Group and each contact's Designation, so an exported file can be imported back unchanged. A blank company name shows a clear message instead of an error.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-personnel-directory-tools",
       "release_date": "2026-10-06",
       "title": "Personnel Search and Account Tools",

@@ -805,6 +805,12 @@ async function saveClient(){
         const name = document.getElementById('c-name').value;
         const address = document.getElementById('c-address').value;
 
+        if(isAdminUser && !name.trim()){
+            clientAlert('Please enter the company name.');
+            document.getElementById('c-name').focus();
+            return;
+        }
+
         if(isAdminUser){
             const check = await fetch(`/check_client_duplicate?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}&exclude_id=${encodeURIComponent(id || '')}`);
             const checkData = await check.json();
@@ -1274,19 +1280,29 @@ async function deleteClient(id){
 
     const shouldDelete = await clientConfirmDialog({
         title: 'Delete Client?',
-        message: 'Are you sure you want to delete this client? This action cannot be undone.',
+        message: 'Delete this medical center permanently? Only possible when it has no schedules, equipment or P.O.s.',
         confirmText: 'Delete Client',
         cancelText: 'Cancel',
         tone: 'danger',
         icon: 'trash'
     });
 
-    if(shouldDelete){
-        await fetch(`/delete_client/${id}`, {
+    if(!shouldDelete) return;
+
+    try {
+        const res = await fetch(`/delete_client/${id}`, {
             method: 'DELETE',
             headers: {'X-CSRFToken': getCSRFToken()}
         });
-        loadClients();
+        if(!res.ok){
+            const err = await res.json().catch(()=>({}));
+            clientAlert(err.message || 'Could not delete the medical center.');
+            return;
+        }
+        clientToast('Medical center deleted.', 'success');
+        await loadClients({ preserveFilters: true });
+    } catch(err) {
+        clientAlert('Could not reach the server. Try again.');
     }
 }
 

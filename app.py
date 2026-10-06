@@ -27088,8 +27088,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v247-personnel-form-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v248-personnel-directory-tools';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v248-personnel-directory-tools.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v249-medical-center-protect-data';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -53500,29 +53500,30 @@ def export_analytics_summary():
 def export_clients():
     """Full customer database CSV dump using dynamic Contact rows."""
     if not is_admin_authorized(): return denied()
+    ensure_client_group_column()
+    ensure_contact_designation_column()
     clients = Client.query.order_by(Client.name).all()
 
-    max_contacts = 0
     client_contacts = {}
-    for c in clients:
-        contacts = Contact.query.filter_by(client_id=c.id).all()
-        client_contacts[c.id] = contacts
-        max_contacts = max(max_contacts, len(contacts))
+    for contact in Contact.query.order_by(Contact.id.asc()).all():
+        client_contacts.setdefault(contact.client_id, []).append(contact)
+    max_contacts = max((len(client_contacts.get(c.id, [])) for c in clients), default=0)
 
     output = io.StringIO()
     writer = csv.writer(output)
 
-    headers = ['Name', 'Address']
+    headers = ['Name', 'Address', 'Group']
     for i in range(1, max_contacts + 1):
-        headers.extend([f'Contact {i} Name', f'Contact {i} Phone', f'Contact {i} Email'])
+        headers.extend([f'Contact {i} Name', f'Contact {i} Designation', f'Contact {i} Phone', f'Contact {i} Email'])
     writer.writerow(headers)
 
     for c in clients:
-        row = [c.name, c.address]
-        for contact in client_contacts.get(c.id, []):
-            row.extend([contact.name or '', contact.phone or '', contact.email or ''])
-        for _ in range(max_contacts - len(client_contacts.get(c.id, []))):
-            row.extend(['', '', ''])
+        contacts = client_contacts.get(c.id, [])
+        row = [c.name, c.address, c.group_name or '']
+        for contact in contacts:
+            row.extend([contact.name or '', contact.designation or '', contact.phone or '', contact.email or ''])
+        for _ in range(max_contacts - len(contacts)):
+            row.extend(['', '', '', ''])
         writer.writerow(row)
 
     output.seek(0)
@@ -53928,6 +53929,8 @@ def add_client():
     ensure_contact_designation_column()
     payload = request.get_json()
     name = clean_str(payload.get('name')); addr = clean_str(payload.get('address'))
+    if not name:
+        return jsonify({'message': 'Company name is required.'}), 400
     group_name = clean_str(payload.get('group_name')) or None
 
     if not payload.get('force'):
@@ -54005,6 +54008,8 @@ def update_client(id):
 
     new_name = clean_str(payload.get('name'))
     new_address = clean_str(payload.get('address'))
+    if not new_name:
+        return jsonify({'message': 'Company name is required.'}), 400
     collision = check_for_duplicate_client(new_name, new_address, exclude_id=id)
     if collision:
         return jsonify({
@@ -54039,11 +54044,31 @@ def delete_client(id):
     """ Hospital removal logic. Access: Admin Levels. """
     if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
     target = db.session.get(Client, id)
-    if target:
-        name = target.name
-        db.session.delete(target); db.session.commit()
-        log_activity(f"Permanently removed Client: {name}")
+    if not target:
+        return jsonify({'message': 'Medical center not found.'}), 404
+    linked = [
+        f"{count} {label}{'' if count == 1 or label == 'equipment' else 's'}"
+        for label, count in client_linked_record_counts(target).items() if count
+    ]
+    if linked:
+        return jsonify({'message': f"{target.name} has {' and '.join(linked)}. It cannot be deleted."}), 409
+    name = target.name
+    Contact.query.filter_by(client_id=target.id).delete(synchronize_session=False)
+    db.session.delete(target); db.session.commit()
+    log_activity(f"Permanently removed Client: {name}")
     return jsonify({'status': 'success'})
+
+
+def client_linked_record_counts(client):
+    """Records that would lose their medical center if it were deleted."""
+    return {
+        'schedule': Shift.query.filter_by(client_id=client.id).count(),
+        'equipment': Product.query.filter_by(client_id=client.id).count(),
+        'P.O.': PurchaseOrder.query.filter_by(client_id=client.id).count(),
+        'travel visit': TravelRequestRouteVisit.query.filter_by(client_id=client.id).count(),
+        'Genoray item': GenorayItem.query.filter_by(client_id=client.id).count(),
+        'Vieworks item': VieworksItem.query.filter_by(client_id=client.id).count(),
+    }
 
 
 def normalize_purchase_order_number(value):
@@ -64364,6 +64389,11 @@ def import_clients():
         if not reader.fieldnames:
             return jsonify({'message': 'CSV file is empty or missing headers.'}), 400
 
+        ensure_client_group_column()
+        ensure_contact_designation_column()
+        normalized_headers = {str(h or '').strip().lower() for h in reader.fieldnames}
+        has_group_column = bool(normalized_headers & {'group', 'group name'})
+
         created_count = 0
         updated_count = 0
         skipped_count = 0
@@ -64376,13 +64406,37 @@ def import_clients():
                 skipped_count += 1
                 continue
 
+            contact_rows = []
+
+            # Flexible multi-contact import:
+            # CP1/CN1/CE1, Contact 1 Name/Phone/Email, Contact Person 1, etc.
+            for idx in range(1, 31):
+                c_name = clean_str(csv_get(row, f'CP{idx}', f'Contact {idx} Name', f'Contact {idx}', f'Contact Person {idx}'))
+                c_designation = clean_str(csv_get(row, f'CD{idx}', f'Contact {idx} Designation', f'Designation {idx}'))
+                c_phone = clean_str(csv_get(row, f'CN{idx}', f'Contact {idx} Phone', f'Contact {idx} Number', f'Phone {idx}'))
+                c_email = clean_str(csv_get(row, f'CE{idx}', f'Contact {idx} Email', f'Email {idx}'))
+
+                if c_name or c_designation or c_phone or c_email:
+                    contact_rows.append((c_name, c_phone, c_email, c_designation))
+
+            # Simple one-contact CSV fallback.
+            if not contact_rows:
+                c_name = clean_str(csv_get(row, 'Contact Name', 'Contact Person', 'Main Contact'))
+                c_designation = clean_str(csv_get(row, 'Designation'))
+                c_phone = clean_str(csv_get(row, 'Phone', 'Contact Phone', 'Contact Number', 'Mobile'))
+                c_email = clean_str(csv_get(row, 'Email', 'Contact Email'))
+                if c_name or c_designation or c_phone or c_email:
+                    contact_rows.append((c_name, c_phone, c_email, c_designation))
+
             existing = check_for_duplicate_client(name, address)
 
             if existing:
                 client_rec = existing
                 client_rec.name = name
                 client_rec.address = address
-                Contact.query.filter_by(client_id=client_rec.id).delete()
+                # A row without contacts must not wipe the saved contacts.
+                if contact_rows:
+                    Contact.query.filter_by(client_id=client_rec.id).delete()
                 updated_count += 1
             else:
                 client_rec = Client(name=name, address=address)
@@ -64390,27 +64444,13 @@ def import_clients():
                 db.session.flush()
                 created_count += 1
 
-            contact_rows = []
+            if has_group_column:
+                client_rec.group_name = clean_str(csv_get(row, 'Group', 'Group Name')) or None
 
-            # Flexible multi-contact import:
-            # CP1/CN1/CE1, Contact 1 Name/Phone/Email, Contact Person 1, etc.
-            for idx in range(1, 31):
-                c_name = clean_str(csv_get(row, f'CP{idx}', f'Contact {idx} Name', f'Contact {idx}', f'Contact Person {idx}'))
-                c_phone = clean_str(csv_get(row, f'CN{idx}', f'Contact {idx} Phone', f'Contact {idx} Number', f'Phone {idx}'))
-                c_email = clean_str(csv_get(row, f'CE{idx}', f'Contact {idx} Email', f'Email {idx}'))
-
-                if c_name or c_phone or c_email:
-                    contact_rows.append((c_name, c_phone, c_email))
-
-            # Simple one-contact CSV fallback.
             if not contact_rows:
-                c_name = clean_str(csv_get(row, 'Contact Name', 'Contact Person', 'Main Contact'))
-                c_phone = clean_str(csv_get(row, 'Phone', 'Contact Phone', 'Contact Number', 'Mobile'))
-                c_email = clean_str(csv_get(row, 'Email', 'Contact Email'))
-                if c_name or c_phone or c_email:
-                    contact_rows.append((c_name, c_phone, c_email))
+                continue
 
-            for c_name, c_phone, c_email in contact_rows:
+            for c_name, c_phone, c_email, c_designation in contact_rows:
                 db.session.add(Contact(
                     client_id=client_rec.id,
                     name=c_name,

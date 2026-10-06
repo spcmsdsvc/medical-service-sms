@@ -878,7 +878,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertIn("row.po_type === 'semi_annual'", page)
         self.assertIn("row.po_type === 'quarterly'", page)
 
-    def test_client_delete_cascades_purchase_orders_without_touching_other_client(self):
+    def test_client_delete_is_refused_while_purchase_orders_exist(self):
         client = self._client_for(self.po_user_id)
         with self.app.app_context():
             delete_target = app_module.Client(
@@ -899,6 +899,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             ))
             app_module.db.session.commit()
         self.created_product_serials.append(cascade_serial)
+        self.created_client_ids.append(delete_target_id)
         first = client.post('/add_purchase_order', json={
             'client_id': delete_target_id,
             'product_serial': cascade_serial,
@@ -919,11 +920,12 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
 
         superadmin = self._client_for(self.superadmin_id)
         deleted = superadmin.delete(f'/delete_client/{delete_target_id}')
-        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.status_code, 409)
+        self.assertIn('1 P.O.', deleted.get_json()['message'])
 
         with self.app.app_context():
-            self.assertIsNone(app_module.db.session.get(app_module.Client, delete_target_id))
-            self.assertFalse(app_module.PurchaseOrder.query.filter_by(client_id=delete_target_id).first())
+            self.assertIsNotNone(app_module.db.session.get(app_module.Client, delete_target_id))
+            self.assertTrue(app_module.PurchaseOrder.query.filter_by(client_id=delete_target_id).first())
             survivor = app_module.PurchaseOrder.query.filter_by(client_id=self.client_two_id).first()
             self.assertIsNotNone(survivor)
 
