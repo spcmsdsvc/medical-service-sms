@@ -71,7 +71,7 @@
 
 ## Mandatory Change Log
 
-- Before performing any request that will add, edit, delete, rename, move, generate, or otherwise modify project files or system behavior, read `changes.md` in full.
+- Before performing any request that will add, edit, delete, rename, move, generate, or otherwise modify project files or system behavior, read the newest dated section of `changes.md`. Read older sections only when the task needs that history. Entries from 2026-09-30 and earlier are in `changes-archive.md`; older plans are in `plans-archive.md`.
 - After making any project or system change, update `changes.md` during the same task. Do this every time, without waiting for a reminder.
 - Use this format:
 
