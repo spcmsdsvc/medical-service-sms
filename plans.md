@@ -37,6 +37,98 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Medical Center Batches 3 & 4: Speed, Code Cuts and UI
+
+**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- The page edits were applied as whole-function replacements by name, so untouched functions stay byte-identical. Removed: `clientEscape`, `autoCompleteClient`, `hideClientAutocomplete`, `showImportToast`, the `#auto-box` click handler, the `#importToast` markup, `clientSummary`, `schedulerUsernames`, `isSchedulerUser`, `authUsernameVal`. Added: `getClientContacts`, `getClientProducts`, `clearClientFilters`, `refreshClientGroupFilterOptions`, `renderClientLoadError`.
+- The product pop-up title also became "Equipment Details", and the View section "Equipment / Products" became "Equipment", to match the new column.
+- `clients.html` went from 1,880 to 1,788 lines (net removal is smaller than the scan's 150–200 estimate because the UI additions add lines back); `app.py` net −16 lines.
+- Fail-first: 4 of the 5 new tests failed on the unchanged code (no `product_count`; `/search_clients` 200; duplicated loop and dead code present; no new search/states/wording). The fifth (every called function is defined) passed before and after by design.
+- After: `tests.test_tsr_autosave_client_groups` 24 tests OK. Full suite 1,557 tests, 24 failures, 3 errors, 5 skips — same as the baseline. Rendered page script passes `node --check` for admin and engineer.
+- Flask test client on a copy of `scheduler.db`: `/get_clients` output identical to the previous code for all 147 medical centers apart from the new `product_count` (101 products); Add 200, Edit 200, duplicate Add 409, Export → Import 200, Delete 200. The design detector reports `nested-cards` and `skipped-heading` on the previous page and 0 findings on the new one. No browser check was made — table columns and the 375 px card layout still need a visual look.
+**Approved:** 2026-10-06 — the owner asked to "plan batch 3 and include batch 4", chose "merge in a separate plan later" and "one search box + Group picker", and replied "yes, approved".
+**Detailed:** 2026-10-06.
+
+## Context
+
+The Medical Center page (`templates/clients.html`, `/clients_page`) carries duplicated code — the contact loop copied 9 times, two notification systems, the same duplicate check four times per save, a fetch of a route that does not exist (`/get_clients_summary`), and hard-coded scheduler usernames. It is slower than needed: `/get_clients` runs one contact query per client and every View click downloads the whole product list (89 KB locally). The UI has four search boxes, no email or equipment column on desktop, no loading/empty/error state on desktop, "Client" wording where the app says "Medical Center", wrong View arrows, unlabelled contact inputs, and two design-hook findings (nested cards, skipped headings). Batches 1 (`75f11a1`) and 2 (`1ef8f24`) are published.
+
+## Decisions taken
+
+1. Merging duplicate medical centers is **out** — a separate plan later (owner).
+2. One search box over name, address, contact name, designation, phone and email, plus a Group dropdown built from existing groups (owner).
+3. Every function name, id and handler that other code still uses is kept; only code nothing else calls is removed.
+4. The TSR contact repair on page load stays (27 ms locally, bounded to the last 150 TSRs).
+
+## Investigation
+
+- Measured on a local DB copy: `/get_clients` 141 ms / 15 KB; `/get_products` 132 ms / 89 KB; `repair_recent_online_tsr_contacts_for_medical_centers` 27 ms over 34 submissions.
+- `/search_clients` (`app.py` ~53688) is only called by `autoCompleteClient`; it is also listed in `PERFORMANCE_LOG_PATHS` (~1383) and the service worker network-first list (~27518).
+- No test references `autoCompleteClient`, `showImportToast`, `importToast`, `get_clients_summary`, `schedulerUsernames`, `isSchedulerUser`, the `s-name`/`s-addr`/`s-designation` ids, `clientEscape`, or "Client Management".
+- The scheduler/manager accounts are superadmins (Batch 2 correction), so `isAdminUser` already covers them; no user has role `scheduler`.
+- `add_client` duplicate 409 returns `existing_id` only; `update_client` returns `existing_id`, `existing_name`, `existing_address`.
+- No `h1` in `layout.html` or the page; page title `h2`, confirm dialog `h3`, pop-up titles `h5`.
+- The contact loop pattern appears in `countContactsForClient`, `getPrimaryClientContact`, `clientHasDesignationMatch`, `renderTable`, `openEditModal`, `viewContacts` (plus the `hasMore` loop).
+
+## Execution steps
+
+**Batch 3 — speed and code cuts**
+
+1. **Contact helper** — new `getClientContacts(c)` → `[{name, designation, phone, email}]`; `countContactsForClient`, `getPrimaryClientContact`, `clientHasDesignationMatch`, `renderTable` ("+ More"), `openEditModal`, `viewContacts` use it (names kept). Done: no `while(c[\`cp${i}\`]…)` loop remains.
+2. **One escape helper** — `clientToast` uses `escapeHtml`; remove `clientEscape`.
+3. **One notification system** — import results use `clientToast`; remove the `#importToast` markup and `showImportToast`; `buildImportSummary` returns plain text.
+4. **One duplicate check** — remove `autoCompleteClient`, `hideClientAutocomplete` (and its calls), the `#auto-box` outside-click handler, the `oninput` calls to it, and the `/search_clients` route plus its `PERFORMANCE_LOG_PATHS` and service-worker entries. `liveDuplicateCheck` keeps the typing warning. `saveClient` drops its pre-save fetch and shows the existing "Duplicate Client Found → Open Existing" dialog from the server's 409; `add_client`'s 409 adds `existing_name`, `existing_address`.
+5. **Dead code** — remove the `/get_clients_summary` fetch and `clientSummary` (footer total uses `clientsData.length`); remove `schedulerUsernames`, `isSchedulerUser`, `authUsernameVal`; `canManageClientContacts = isAdminUser || isEngineerUser`, `canDeleteClientContactRows = isAdminUser`.
+6. **Speed** — `/get_clients`: all contacts in one query grouped by client; add `product_count` from one grouped query (HR-only shape unchanged). `renderTable` builds its HTML once. New `getClientProducts()` fetches `/get_products` once per page load (reset in `loadClients`); `viewContacts` and `openProductModal` use it.
+
+**Batch 4 — UI**
+
+7. **Search** — replace the four boxes with `#s-search` ("Search name, address, contact, phone or email") and the `#s-group` dropdown ("All groups" + existing groups, filled in `loadClients`); `applyFilters`, `getActiveClientFilters`, `restoreClientFilters`, `updateClientCountFooter` rewritten under the same names; a "Clear" button when a filter is active.
+8. **Desktop table** — Email column (`mailto:`), Phone as `tel:` link, Equipment column (`product_count`). Table body shows "Loading medical centers…" first, then "No medical centers match your search." or "Could not load medical centers. Refresh to try again." (`loadClients` checks `res.ok`).
+9. **Wording** — user-facing "Client" → "Medical Center" on this page: title "Medical Centers", "+ Add Medical Center", pop-up titles, Save button, delete dialog title, mobile empty message. Internal names unchanged.
+10. **View pop-up** — contacts with tap-to-call and tap-to-email links; when no equipment: "No equipment linked · Add on Products page" linking to `/products_page`; section arrows start as ▼.
+11. **Accessibility and design findings** — contact inputs get `aria-label`s ("Contact 1 name", …); headings: page title `h1 class="h4"` (same look), confirm dialog `h2`, pop-up titles `h2 class="modal-title h5"`; flatten nesting: count footer becomes a top-border row instead of a bordered box, and on ≤768 px the outer card loses its background and shadow.
+12. **Tests** — new class in `tests/test_tsr_autosave_client_groups.py`: `/get_clients` returns `product_count`; `/search_clients` → 404; `add_client` 409 includes `existing_name`/`existing_address`; source checks (no `while(c[\`cp${i}\`]`, no `get_clients_summary`, `schedulerUsernames`, `autoCompleteClient`, `importToast`; has `getClientContacts`, `#s-search`, the loading/empty/error texts, "Medical Centers"); every function the page calls is defined (as the Reimbursement test does). Run each on the unchanged code first and record that it fails.
+
+## Deliberately excluded
+
+- **Merge duplicates** — owner's decision; own plan later.
+- **TSR contact repair on load** — cheap and bounded.
+- **Renaming internal ids, routes or functions** — "client" stays in code.
+- **Contact checks in CSV import** — separate decision (from Batch 2).
+
+## Verification
+
+- New tests fail on the unchanged code, pass after.
+- Focused modules: `tests.test_tsr_autosave_client_groups`, `tests.test_purchase_orders` (11 known pre-existing failures).
+- Flask test client on a temporary copy of `scheduler.db`: page renders for admin and engineer; `/get_clients` returns the same clients and contacts as before plus `product_count`; Add, Edit, Delete, Import, Export still work.
+- `node --check` on the rendered page script.
+- The design hook no longer reports nested cards or skipped headings.
+- No browser automation (AGENTS.md). The visual layout (table columns, cards at 375 px) is only confirmable in a browser — ask the owner rather than open one.
+- Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined.
+2. Fail-first proof recorded in this plan.
+3. Service worker bump to `medical-service-pwa-offline-navigation-v251-medical-center-ui` (read the current value live; keep v250 as the historical marker).
+4. `releases.json` entry `2026-10-06-medical-center-ui` (audiences admins and engineers, category Medical Center).
+5. Update `changes.md` and this plan's status, with any differences from the plan.
+6. Commit and push only on the owner's "commit and push": explicit staging; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- **Users lose the separate Name/Address/Designation boxes** — the single search covers all of them.
+- **Autocomplete suggestions disappear** — they only ever suggested exact duplicates, which the duplicate warning still shows.
+- **Wider table** with Email and Equipment — the table already scrolls sideways; phones use the cards.
+- Safety net: no schema change; reverting the commit restores the previous page.
+
+---
+
 # Medical Center Batch 2: Permissions and Safety
 
 **Status:** Executed — commit `1ef8f24`; published to `origin/main` on the owner's "commit and push" (Railway deployment succeeded, GitHub deployment `6876653600`).

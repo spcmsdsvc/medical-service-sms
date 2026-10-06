@@ -382,5 +382,64 @@ class MedicalCenterSafetyTests(unittest.TestCase):
         self.assertIn('function clientJsArg(', page)
 
 
+@unittest.skipIf(app_module is None, f'app import failed: {APP_IMPORT_ERROR}')
+class MedicalCenterSpeedAndUiTests(unittest.TestCase):
+    """Medical Center Batches 3 & 4: code cuts, faster loading, UI."""
+
+    isolated_database = ClientGroupRouteTests.isolated_database
+
+    def page(self):
+        return (ROOT / 'templates' / 'clients.html').read_text(encoding='utf-8')
+
+    def test_get_clients_returns_product_count(self):
+        with self.isolated_database() as clients:
+            with app_module.app.app_context():
+                record = app_module.Client(name='Counted', address='A')
+                app_module.db.session.add(record)
+                app_module.db.session.flush()
+                app_module.db.session.add(app_module.Product(serial_number='UI-SN-1', name='CT', client_id=record.id))
+                app_module.db.session.add(app_module.Contact(client_id=record.id, name='Ana', email='ana@example.com'))
+                app_module.db.session.commit()
+                client_id = record.id
+            row = next(r for r in clients['admin'].get('/get_clients').get_json() if r['id'] == client_id)
+            self.assertEqual(row['product_count'], 1)
+            self.assertEqual(row['cp1'], 'Ana')
+
+    def test_search_route_removed_and_duplicate_409_has_details(self):
+        with self.isolated_database() as clients:
+            self.assertEqual(clients['admin'].get('/search_clients?q=x').status_code, 404)
+            clients['admin'].post('/add_client', json={'name': 'Twin', 'address': 'Same'})
+            duplicate = clients['admin'].post('/add_client', json={'name': 'Twin', 'address': 'Same'})
+            self.assertEqual(duplicate.status_code, 409)
+            body = duplicate.get_json()
+            self.assertEqual((body['existing_name'], body['existing_address']), ('Twin', 'Same'))
+
+    def test_dead_and_duplicated_code_removed(self):
+        page = self.page()
+        self.assertNotIn('while(c[`cp${i}`]', page)
+        for gone in ('get_clients_summary', 'schedulerUsernames', 'autoCompleteClient', 'importToast', 'function clientEscape'):
+            self.assertNotIn(gone, page)
+        self.assertIn('function getClientContacts(', page)
+        self.assertIn('function getClientProducts(', page)
+
+    def test_ui_search_states_and_wording(self):
+        page = self.page()
+        for text in ('id="s-search"', '<select id="s-group"', 'Loading medical centers…',
+                     'No medical centers match your search.', 'Could not load medical centers. Refresh to try again.',
+                     'Medical Centers</h1>', '+ Add Medical Center', 'aria-label="Contact ${contactCount} name"'):
+            self.assertIn(text, page)
+        self.assertNotIn('<h5', page)
+
+    def test_every_called_page_function_is_defined(self):
+        import re
+        page = self.page()
+        script = page[page.index('<script>'):page.rindex('</script>')]
+        shared = ''.join(p.read_text(encoding='utf-8') for p in [ROOT / 'templates' / 'layout.html', *(ROOT / 'static' / 'js').glob('*.js')])
+        called = set(re.findall(r'on(?:click|input|change)="([A-Za-z_]\w*)\(', page))
+        called |= set(re.findall(r'\b(\w*[Cc]lient\w*)\(', script))
+        for name in sorted(called):
+            self.assertTrue(re.search(rf'function\s+{name}\s*\(|window\.{name}\s*=', page + shared), f'{name} is called but not defined')
+
+
 if __name__ == '__main__':
     unittest.main()

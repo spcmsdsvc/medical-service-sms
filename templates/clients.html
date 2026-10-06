@@ -9,7 +9,7 @@
             <div class="client-confirm-header">
                 <div id="client-confirm-icon" class="client-confirm-icon"><i class="fa-solid fa-circle-question"></i></div>
                 <div>
-                    <h3 id="client-confirm-title" class="client-confirm-title">Confirm Action</h3>
+                    <h2 id="client-confirm-title" class="client-confirm-title">Confirm Action</h2>
                     <div id="client-confirm-message" class="client-confirm-message"></div>
                 </div>
             </div>
@@ -20,9 +20,9 @@
         </div>
     </div>
 
-    <div class="card shadow-sm border-0 p-4 bg-white">
+    <div class="card shadow-sm border-0 p-4 bg-white client-page-card">
         <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-            <h2 class="h4 mb-0"><i class="fa-solid fa-handshake me-2 text-success"></i>Client Management</h2>
+            <h1 class="h4 mb-0"><i class="fa-solid fa-hospital me-2 text-success"></i>Medical Centers</h1>
             <div class="btn-group">
                 {% if current_user.role in ['superadmin', 'regional_admin'] %}
                 <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
@@ -35,16 +35,25 @@
                 <button class="btn btn-outline-dark btn-sm" onclick="window.print()">Print</button>
 
                 {% if current_user.role in ['superadmin', 'regional_admin'] %}
-                <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">+ Add New Client</button>
+                <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">+ Add Medical Center</button>
                 {% endif %}
             </div>
         </div>
 
-        <div class="row g-2 mb-4 no-print bg-light p-3 rounded">
-            <div class="col-md-4"><label class="small fw-bold">SEARCH NAME</label><input type="text" id="s-name" class="form-control form-control-sm" oninput="applyFilters()"></div>
-            <div class="col-md-4"><label class="small fw-bold">SEARCH ADDRESS</label><input type="text" id="s-addr" class="form-control form-control-sm" oninput="applyFilters()"></div>
-            <div class="col-md-2"><label class="small fw-bold">SEARCH GROUP</label><input type="text" id="s-group" class="form-control form-control-sm" oninput="applyFilters()"></div>
-            <div class="col-md-2"><label class="small fw-bold">SEARCH DESIGNATION</label><input type="text" id="s-designation" class="form-control form-control-sm" oninput="applyFilters()"></div>
+        <div class="row g-2 mb-4 no-print align-items-end">
+            <div class="col-md-8">
+                <label class="small fw-bold" for="s-search">Search</label>
+                <input type="search" id="s-search" class="form-control form-control-sm" placeholder="Search name, address, contact, phone or email" oninput="applyFilters()">
+            </div>
+            <div class="col-md-3">
+                <label class="small fw-bold" for="s-group">Group</label>
+                <select id="s-group" class="form-select form-select-sm" onchange="applyFilters()">
+                    <option value="">All groups</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="button" id="client-filter-clear" class="btn btn-outline-secondary btn-sm w-100 d-none" onclick="clearClientFilters()">Clear</button>
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -57,16 +66,18 @@
                         <th><button type="button" class="client-sort-btn" data-sort-key="contact" onclick="setClientSort('contact')">Main Contact <span class="client-sort-indicator" data-sort-indicator="contact">↕</span></button></th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="designation" onclick="setClientSort('designation')">Designation <span class="client-sort-indicator" data-sort-indicator="designation">↕</span></button></th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="phone" onclick="setClientSort('phone')">Phone <span class="client-sort-indicator" data-sort-indicator="phone">↕</span></button></th>
+                        <th>Email</th>
+                        <th class="text-center">Equipment</th>
                         <th class="no-print text-end">Actions</th>
                     </tr>
                 </thead>
-                <tbody id="client-table-body"></tbody>
+                <tbody id="client-table-body"><tr><td colspan="9" class="text-center text-muted py-4">Loading medical centers…</td></tr></tbody>
             </table>
         </div>
 
         <div id="client-mobile-list" class="client-mobile-list no-print"></div>
 
-        <div class="directory-count-footer no-print mt-3 p-3 rounded-3 bg-light border d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div class="directory-count-footer no-print mt-3 pt-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
             <div>
                 <div class="small text-muted text-uppercase fw-bold">Directory Count</div>
                 <div class="fw-bold text-dark" id="client-count-label">Showing 0 of 0 medical centers</div>
@@ -90,7 +101,7 @@
     <div class="modal-dialog">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-dark text-white">
-                <h5 class="mb-0" id="view-client-name">Contact Details</h5>
+                <h2 class="modal-title h5 mb-0" id="view-client-name">Medical Center Details</h2>
                 <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-0" id="view-details-content"></div>
@@ -104,7 +115,7 @@
     <div class="modal-dialog">
         <div class="modal-content shadow-lg border-0">
             <div class="modal-header bg-success text-white">
-                <h5 class="modal-title">Product Details</h5>
+                <h2 class="modal-title h5">Equipment Details</h2>
                 <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="product-view-content"></div>
@@ -117,14 +128,14 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="modal-title">Client Details</h5>
+                <h2 class="modal-title h5" id="modal-title">Medical Center Details</h2>
                 <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="edit-client-id">
                 <div class="row">
-                    <div class="col-md-6 mb-3"><label class="small fw-bold">Company Name</label><input type="text" id="c-name" class="form-control" oninput="liveDuplicateCheck(); autoCompleteClient()"></div>
-                    <div class="col-md-6 mb-3"><label class="small fw-bold">Office Address</label><input type="text" id="c-address" class="form-control" oninput="liveDuplicateCheck(); autoCompleteClient()"></div>
+                    <div class="col-md-6 mb-3"><label class="small fw-bold">Company Name</label><input type="text" id="c-name" class="form-control" oninput="liveDuplicateCheck()"></div>
+                    <div class="col-md-6 mb-3"><label class="small fw-bold">Office Address</label><input type="text" id="c-address" class="form-control" oninput="liveDuplicateCheck()"></div>
                     <div class="col-md-6 mb-3">
                         <label class="small fw-bold" for="c-group">Group</label>
                         <select id="c-group" class="form-select" onchange="syncClientGroupPicker()">
@@ -140,7 +151,7 @@
                 <hr>
                 <div class="alert alert-warning border-0 small py-2 d-none" id="client-contact-only-note">
                     <i class="fa-solid fa-user-lock me-1"></i>
-                    Contact-only access: you may add/edit contact rows. Client name/address/group remain restricted.
+                    Contact-only access: you may add and edit contacts. Name, address and group can only be changed by an admin.
                 </div>
 
                 <div id="contacts-container"></div>
@@ -152,31 +163,14 @@
                 {% if current_user.role in ['superadmin', 'regional_admin'] %}
                 <button class="btn btn-outline-success btn-sm" onclick="exportClientExcel()">Export Excel</button>
                 {% endif %}
-                <button class="btn btn-success btn-sm px-4" id="client-save-btn" onclick="saveClient()">Save Client</button>
+                <button class="btn btn-success btn-sm px-4" id="client-save-btn" onclick="saveClient()">Save</button>
             </div>
         </div>
     </div>
 </div>
 
 
-<!-- IMPORT RESULT TOAST -->
-<div class="toast-container position-fixed bottom-0 end-0 p-3 no-print" style="z-index: 3000;">
-    <div id="importToast" class="toast border-0 shadow-lg" role="alert">
-        <div id="importToastHeader" class="toast-header text-white bg-success">
-            <i id="importToastIcon" class="fa-solid fa-circle-check me-2"></i>
-            <strong class="me-auto" id="importToastTitle">Import Complete</strong>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-        </div>
-        <div class="toast-body bg-white" id="importToastBody"></div>
-    </div>
-</div>
-
 <script>
-function clientEscape(value){
-    return String(value || '').replace(/[&<>"']/g, function(match){
-        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[match];
-    });
-}
 
 function clientToast(message, tone='error', title=''){
     const stack = document.getElementById('client-alert-stack');
@@ -195,8 +189,8 @@ function clientToast(message, tone='error', title=''){
     toast.innerHTML = `
         <div class="client-alert-icon"><i class="fa-solid fa-${icon}"></i></div>
         <div>
-            <div class="client-alert-title">${clientEscape(title || fallbackTitle)}</div>
-            <div class="client-alert-message">${clientEscape(message)}</div>
+            <div class="client-alert-title">${escapeHtml(title || fallbackTitle)}</div>
+            <div class="client-alert-message">${escapeHtml(message)}</div>
         </div>
         <button type="button" class="client-alert-close" aria-label="Close notice">×</button>
     `;
@@ -269,20 +263,12 @@ function clientConfirmDialog(options={}){
     });
 }
 
-let clientModalInstance, viewModalInstance, clientsData = [], clientSummary = { total_clients: 0, total_contacts: 0, clients_with_contacts: 0 };
+let clientModalInstance, viewModalInstance, clientsData = [];
+let clientProductsPromise = null;
 let clientSortState = { key: '', direction: 'asc' };
 const CLIENT_SORT_STORAGE_KEY = 'medicalServiceClientSortV1';
 const CLIENT_SORT_KEYS = ['name', 'address', 'contact', 'designation', 'phone'];
 
-let autoTimer;
-
-function hideClientAutocomplete(){
-    const box = document.getElementById('auto-box');
-    if(box){
-        box.innerHTML = "";
-        box.style.display = 'none';
-    }
-}
 
 function hideDuplicateWarning(){
     const warn = document.getElementById('dup-warning');
@@ -297,82 +283,9 @@ function getEditingClientId(){
     return field ? String(field.value || '').trim() : '';
 }
 
-async function autoCompleteClient(){
-    clearTimeout(autoTimer);
-    autoTimer = setTimeout(async ()=>{
-        const editingClientId = getEditingClientId();
-
-        // Do not show duplicate suggestions while editing an existing client.
-        // This prevents the current client from being suggested against itself.
-        if(editingClientId){
-            hideClientAutocomplete();
-            return;
-        }
-
-        const name = document.getElementById('c-name').value;
-        const address = document.getElementById('c-address').value;
-
-        if(!name){
-            hideClientAutocomplete();
-            return;
-        }
-
-        const res = await fetch(`/search_clients?q=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}&exclude_id=${encodeURIComponent(editingClientId)}`);
-        const data = await res.json();
-
-        let box = document.getElementById('auto-box');
-
-        if(!box){
-            box = document.createElement('div');
-            box.id = 'auto-box';
-            box.className = 'list-group position-absolute w-100 shadow';
-            document.getElementById('c-name').parentElement.appendChild(box);
-        }
-
-        box.innerHTML = "";
-
-        const filteredData = (data || []).filter(item => String(item.id) !== String(editingClientId));
-
-        if(filteredData.length === 0){
-            box.style.display = 'none';
-            return;
-        }
-
-        filteredData.forEach(item=>{
-            const el = document.createElement('a');
-            el.className = 'list-group-item list-group-item-action';
-            el.innerHTML = `<b>${escapeHtml(item.name)}</b><br><small>${escapeHtml(item.address || '')} • ${Math.round((item.score || 0) * 100)}% match</small>`;
-            el.onclick = ()=>{
-                document.getElementById('c-name').value = item.name;
-                document.getElementById('c-address').value = item.address;
-                box.style.display = 'none';
-            };
-            box.appendChild(el);
-        });
-
-        box.style.display = 'block';
-
-    },300);
-}
 
 
 
-// FIX: hide autocomplete when clicking outside
-document.addEventListener('click', function(e){
-    const box = document.getElementById('auto-box');
-    const inputName = document.getElementById('c-name');
-    const inputAddr = document.getElementById('c-address');
-
-    if(!box) return;
-
-    if(
-        !box.contains(e.target) &&
-        e.target !== inputName &&
-        e.target !== inputAddr
-    ){
-        box.style.display = 'none';
-    }
-});
 
 let duplicateTimer;
 
@@ -421,45 +334,26 @@ async function liveDuplicateCheck(){
 let contactCount = 0;
 
 const authRoleVal = "{{ current_user.role }}";
-const authUsernameVal = "{{ current_user.username|lower }}";
-const schedulerUsernames = ['diary', 'hanna'];
 
 const isAdminUser = ['superadmin', 'regional_admin'].includes(authRoleVal);
 const canEditProducts = {{ 'true' if can_edit_products else 'false' }};
-const isSchedulerUser = authRoleVal === 'scheduler' || schedulerUsernames.includes(authUsernameVal);
 const isEngineerUser = authRoleVal === 'engineer';
-const canManageClientContacts = isAdminUser || isEngineerUser || isSchedulerUser;
-const canDeleteClientContactRows = isAdminUser || isSchedulerUser;
+const canManageClientContacts = isAdminUser || isEngineerUser;
+const canDeleteClientContactRows = isAdminUser;
 
 function isContactOnlyClientEdit(){
     return canManageClientContacts && !isAdminUser;
 }
 
 
-function showImportToast(type, title, message){
-    const header = document.getElementById('importToastHeader');
-    const icon = document.getElementById('importToastIcon');
-    const titleEl = document.getElementById('importToastTitle');
-    const bodyEl = document.getElementById('importToastBody');
-
-    header.className = `toast-header text-white ${type === 'success' ? 'bg-success' : 'bg-danger'}`;
-    icon.className = `fa-solid ${type === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation'} me-2`;
-    titleEl.innerText = title;
-    bodyEl.innerHTML = message;
-
-    new bootstrap.Toast(document.getElementById('importToast'), { delay: 6000 }).show();
-}
 
 function buildImportSummary(data){
     if(!data) return "Import finished.";
 
     const parts = [];
-    if(typeof data.created !== 'undefined') parts.push(`<strong>${data.created}</strong> created`);
-    if(typeof data.updated !== 'undefined') parts.push(`<strong>${data.updated}</strong> updated`);
-    if(typeof data.skipped !== 'undefined') parts.push(`<strong>${data.skipped}</strong> skipped`);
-    if(typeof data.unresolved_owners !== 'undefined' && data.unresolved_owners > 0) {
-        parts.push(`<strong>${data.unresolved_owners}</strong> unmatched owner(s)`);
-    }
+    if(typeof data.created !== 'undefined') parts.push(`${data.created} created`);
+    if(typeof data.updated !== 'undefined') parts.push(`${data.updated} updated`);
+    if(typeof data.skipped !== 'undefined') parts.push(`${data.skipped} skipped`);
 
     return parts.length ? parts.join(" • ") : (data.message || "Import finished.");
 }
@@ -471,7 +365,7 @@ async function handleImport(input){
 
     const file = input.files[0];
     if(!file.name.toLowerCase().endsWith('.csv')){
-        showImportToast('error', 'Invalid File', 'Please choose a valid CSV file.');
+        clientToast('Please choose a valid CSV file.', 'error', 'Invalid File');
         input.value = "";
         return;
     }
@@ -498,16 +392,12 @@ async function handleImport(input){
 
         if(res.ok){
             await loadClients();
-            showImportToast(
-                'success',
-                'Client Import Complete',
-                `${buildImportSummary(data)}<div class="small text-muted mt-1">${data.message || ''}</div>`
-            );
+            clientToast(buildImportSummary(data), 'success', 'Import Complete');
         }else{
-            showImportToast('error', 'Client Import Failed', data.message || 'Import failed. Please check your CSV file.');
+            clientToast(data.message || 'Import failed. Please check your CSV file.', 'error', 'Import Failed');
         }
     } catch(err) {
-        showImportToast('error', 'Client Import Failed', 'Network or server error during import.');
+        clientToast('Could not reach the server. Try again.', 'error', 'Import Failed');
     } finally {
         if(importBtn){
             importBtn.disabled = false;
@@ -528,9 +418,21 @@ document.addEventListener('DOMContentLoaded', () => {
     loadClients(); 
 });
 
+function getClientProducts(){
+    if(!clientProductsPromise){
+        clientProductsPromise = fetch('/get_products')
+            .then(res => res.ok ? res.json() : [])
+            .catch(() => [])
+            .then(products => {
+                if(!Array.isArray(products) || !products.length) clientProductsPromise = null;
+                return Array.isArray(products) ? products : [];
+            });
+    }
+    return clientProductsPromise;
+}
+
 function openProductModal(id){
-    fetch('/get_products')
-    .then(res=>res.json())
+    getClientProducts()
     .then(products=>{
         const p = products.find(x=>x.serial_number == id);
 
@@ -650,19 +552,32 @@ function setClientSaveBusy(isBusy){
 
 function getActiveClientFilters(){
     return {
-        name: document.getElementById('s-name')?.value || '',
-        address: document.getElementById('s-addr')?.value || '',
-        group: document.getElementById('s-group')?.value || '',
-        designation: document.getElementById('s-designation')?.value || ''
+        search: document.getElementById('s-search')?.value || '',
+        group: document.getElementById('s-group')?.value || ''
     };
 }
 
 function restoreClientFilters(filters){
     if(!filters) return;
-    if(document.getElementById('s-name')) document.getElementById('s-name').value = filters.name || '';
-    if(document.getElementById('s-addr')) document.getElementById('s-addr').value = filters.address || '';
-    if(document.getElementById('s-group')) document.getElementById('s-group').value = filters.group || '';
-    if(document.getElementById('s-designation')) document.getElementById('s-designation').value = filters.designation || '';
+    const search = document.getElementById('s-search');
+    const group = document.getElementById('s-group');
+    if(search) search.value = filters.search || '';
+    if(group) group.value = filters.group || '';
+}
+
+function clearClientFilters(){
+    restoreClientFilters({ search: '', group: '' });
+    applyFilters();
+}
+
+function refreshClientGroupFilterOptions(){
+    const select = document.getElementById('s-group');
+    if(!select) return;
+    const current = select.value;
+    const groups = getExistingClientGroups();
+    select.innerHTML = '<option value="">All groups</option>' +
+        groups.map(group => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`).join('');
+    select.value = groups.includes(current) ? current : '';
 }
 
 const CLIENT_GROUP_ADD_NEW_VALUE = '__add_new_group__';
@@ -743,20 +658,19 @@ function addContact(name="", phone="", email="", designation=""){
             ${removeButton}
         </div>
         <div class="row mt-2 g-2">
-            <div class="col-md-3"><input class="form-control form-control-sm cp" placeholder="Name" value="${escapeHtml(name)}"></div>
-            <div class="col-md-3"><input class="form-control form-control-sm cd" placeholder="Designation" value="${escapeHtml(designation)}"></div>
-            <div class="col-md-3"><input class="form-control form-control-sm cn" placeholder="Phone" value="${escapeHtml(phone)}"></div>
-            <div class="col-md-3"><input class="form-control form-control-sm ce" placeholder="Email" value="${escapeHtml(email)}"></div>
+            <div class="col-md-3"><input class="form-control form-control-sm cp" placeholder="Name" aria-label="Contact ${contactCount} name" value="${escapeHtml(name)}"></div>
+            <div class="col-md-3"><input class="form-control form-control-sm cd" placeholder="Designation" aria-label="Contact ${contactCount} designation" value="${escapeHtml(designation)}"></div>
+            <div class="col-md-3"><input class="form-control form-control-sm cn" placeholder="Phone" aria-label="Contact ${contactCount} phone" value="${escapeHtml(phone)}"></div>
+            <div class="col-md-3"><input class="form-control form-control-sm ce" placeholder="Email" aria-label="Contact ${contactCount} email" value="${escapeHtml(email)}"></div>
         </div>`;
     document.getElementById('contacts-container').appendChild(div);
 }
 
 function openAddModal(){
     if(!isAdminUser) return;
-    hideClientAutocomplete();
     hideDuplicateWarning();
     setClientModalContactOnlyMode(false);
-    document.getElementById('modal-title').innerText = "Add New Client";
+    document.getElementById('modal-title').innerText = "Add Medical Center";
     document.getElementById('edit-client-id').value = "";
     document.getElementById('c-name').value = "";
     document.getElementById('c-address').value = "";
@@ -769,13 +683,12 @@ function openAddModal(){
 
 function openEditModal(id){
     if(!canManageClientContacts) return;
-    hideClientAutocomplete();
     hideDuplicateWarning();
     const c = clientsData.find(x => x.id === id);
     const contactOnly = isContactOnlyClientEdit();
     setClientModalContactOnlyMode(contactOnly);
 
-    document.getElementById('modal-title').innerText = contactOnly ? "Edit Client Contacts" : "Modify Client";
+    document.getElementById('modal-title').innerText = contactOnly ? "Edit Contacts" : "Edit Medical Center";
     document.getElementById('edit-client-id').value = id;
     document.getElementById('c-name').value = c.name;
     document.getElementById('c-address').value = c.address;
@@ -784,11 +697,7 @@ function openEditModal(id){
     document.getElementById('contacts-container').innerHTML = "";
     contactCount = 0;
 
-    let i = 1;
-    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
-        addContact(c[`cp${i}`], c[`cn${i}`], c[`ce${i}`], c[`cd${i}`]);
-        i++;
-    }
+    getClientContacts(c).forEach(contact => addContact(contact.name, contact.phone, contact.email, contact.designation));
 
     if(contactCount === 0) addContact();
 
@@ -812,30 +721,6 @@ async function saveClient(){
             clientAlert('Please enter the company name.');
             document.getElementById('c-name').focus();
             return;
-        }
-
-        if(isAdminUser){
-            const check = await fetch(`/check_client_duplicate?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}&exclude_id=${encodeURIComponent(id || '')}`);
-            const checkData = await check.json();
-
-            if(checkData.match && String(checkData.id) !== String(id || '')){
-
-                const openExisting = await clientConfirmDialog({
-                    title: 'Duplicate Client Found',
-                    message: `Duplicate found:\n\n${checkData.name} (${checkData.address || 'No address'})\n\nOpen existing client?`,
-                    confirmText: 'Open Existing',
-                    cancelText: 'Cancel',
-                    tone: 'warning',
-                    icon: 'triangle-exclamation'
-                });
-
-                if(openExisting){
-                    await loadClients({ preserveFilters: true, filters: activeFilters });
-                    openEditModal(checkData.id);
-                }
-
-                return;
-            }
         }
 
         let data = { name, address };
@@ -867,10 +752,25 @@ async function saveClient(){
             clientModalInstance.hide();
         } else {
             const err = await res.json().catch(()=>({}));
-            clientAlert(err.message || "Error saving client");
+            if(res.status === 409 && err.existing_id){
+                const openExisting = await clientConfirmDialog({
+                    title: 'Duplicate Medical Center Found',
+                    message: `Duplicate found:\n\n${err.existing_name || ''} (${err.existing_address || 'No address'})\n\nOpen the existing one?`,
+                    confirmText: 'Open Existing',
+                    cancelText: 'Cancel',
+                    tone: 'warning',
+                    icon: 'triangle-exclamation'
+                });
+                if(openExisting){
+                    await loadClients({ preserveFilters: true, filters: activeFilters });
+                    openEditModal(err.existing_id);
+                }
+                return;
+            }
+            clientAlert(err.message || "Could not save. Please try again.");
         }
     } catch(err) {
-        clientAlert("Network or server error while saving client.");
+        clientAlert("Could not reach the server. Try again.");
     } finally {
         setClientSaveBusy(false);
     }
@@ -879,24 +779,35 @@ async function saveClient(){
 
 
 
-async function loadClients(options = {}) { 
+async function loadClients(options = {}) {
     const filters = options.filters || (options.preserveFilters ? getActiveClientFilters() : null);
+    clientProductsPromise = null;
 
-    const [res, summaryRes] = await Promise.all([
-        fetch('/get_clients', { cache: 'no-store' }),
-        fetch('/get_clients_summary', { cache: 'no-store' })
-    ]);
+    try {
+        const res = await fetch('/get_clients', { cache: 'no-store' });
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        clientsData = await res.json();
+    } catch(err) {
+        clientsData = [];
+        renderClientLoadError();
+        return;
+    }
 
-    clientsData = await res.json(); 
-    clientSummary = await summaryRes.json().catch(() => ({ total_clients: clientsData.length, total_contacts: 0, clients_with_contacts: 0 }));
     refreshClientGroupOptions(document.getElementById('c-group')?.value || '');
+    refreshClientGroupFilterOptions();
 
     if(options.preserveFilters){
         restoreClientFilters(filters);
-        applyFilters();
-    }else{
-        renderTable(sortClientRows(clientsData));
     }
+    applyFilters();
+}
+
+function renderClientLoadError(){
+    const message = 'Could not load medical centers. Refresh to try again.';
+    const body = document.getElementById('client-table-body');
+    if(body) body.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-4">${message}</td></tr>`;
+    const mobile = document.getElementById('client-mobile-list');
+    if(mobile) mobile.innerHTML = `<div class="client-mobile-empty"><i class="fa-solid fa-triangle-exclamation"></i><span>${message}</span></div>`;
 }
 
 
@@ -914,19 +825,21 @@ function clientJsArg(value){
     return escapeHtml(JSON.stringify(String(value ?? '')));
 }
 
-function getPrimaryClientContact(c){
-    let i = 1;
-    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
-        const name = c[`cp${i}`] || '';
-        const designation = c[`cd${i}`] || '';
-        const phone = c[`cn${i}`] || '';
-        const email = c[`ce${i}`] || '';
-        if(name || designation || phone || email){
-            return { name, designation, phone, email };
-        }
-        i++;
+function getClientContacts(c){
+    const contacts = [];
+    for(let i = 1; c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]; i++){
+        contacts.push({
+            name: c[`cp${i}`] || '',
+            designation: c[`cd${i}`] || '',
+            phone: c[`cn${i}`] || '',
+            email: c[`ce${i}`] || ''
+        });
     }
-    return { name: '', designation: '', phone: '', email: '' };
+    return contacts;
+}
+
+function getPrimaryClientContact(c){
+    return getClientContacts(c)[0] || { name: '', designation: '', phone: '', email: '' };
 }
 
 function getClientSortValue(client, key){
@@ -1034,7 +947,7 @@ function renderClientMobileCards(data){
         container.innerHTML = `
             <div class="client-mobile-empty">
                 <i class="fa-solid fa-hospital-user"></i>
-                <span>No clients match your filter.</span>
+                <span>No medical centers match your search.</span>
             </div>`;
         return;
     }
@@ -1075,7 +988,7 @@ function renderClientMobileCards(data){
             <div class="client-mobile-card">
                 <div class="client-mobile-card-top">
                     <div class="client-mobile-main">
-                        <div class="client-mobile-name" onclick="viewContacts(${c.id})">${escapeHtml(c.name || 'Unnamed Client')}</div>
+                        <div class="client-mobile-name" onclick="viewContacts(${c.id})">${escapeHtml(c.name || 'Unnamed medical center')}</div>
                         <div class="client-mobile-address">
                             <i class="fa-solid fa-location-dot"></i>
                             <span>${escapeHtml(c.address || 'No address saved')}</span>
@@ -1113,56 +1026,53 @@ function renderClientMobileCards(data){
 }
 
 function countContactsForClient(c){
-    let count = 0;
-    let i = 1;
-    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
-        count++;
-        i++;
-    }
-    return count;
+    return getClientContacts(c).length;
 }
 
 function updateClientCountFooter(filteredData){
-    const total = clientSummary.total_clients || clientsData.length || 0;
+    const total = clientsData.length;
     const shown = filteredData.length;
     const filteredContacts = filteredData.reduce((sum, c) => sum + countContactsForClient(c), 0);
-
-    const nameFilter = document.getElementById('s-name')?.value.trim();
-    const addrFilter = document.getElementById('s-addr')?.value.trim();
-    const groupFilter = document.getElementById('s-group')?.value.trim();
-    const designationFilter = document.getElementById('s-designation')?.value.trim();
-    const hasFilter = Boolean(nameFilter || addrFilter || groupFilter || designationFilter);
+    const filters = getActiveClientFilters();
+    const hasFilter = Boolean(filters.search.trim() || filters.group);
 
     const label = document.getElementById('client-count-label');
     const contacts = document.getElementById('client-contact-count');
     const state = document.getElementById('client-filter-state');
+    const clear = document.getElementById('client-filter-clear');
 
     if(label) label.innerText = `Showing ${shown} of ${total} medical centers`;
     if(contacts) contacts.innerText = `${filteredContacts} contact${filteredContacts === 1 ? '' : 's'} in current view`;
     if(state) state.innerText = hasFilter ? 'Filtered results' : 'No active filter';
+    if(clear) clear.classList.toggle('d-none', !hasFilter);
 }
 
 
 function renderTable(data) {
-    const body = document.getElementById('client-table-body'); 
-    body.innerHTML = "";
+    const body = document.getElementById('client-table-body');
     updateClientSortIndicators();
     updateClientCountFooter(data);
     renderClientMobileCards(data);
 
-    data.forEach(c => {
-        let hasMore = false;
-        let i = 2;
-        while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
-            hasMore = true;
-            i++;
-        }
+    if(!data.length){
+        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No medical centers match your search.</td></tr>';
+        return;
+    }
 
-        const contactDisplay = hasMore 
-            ? `<span class="text-primary text-decoration-underline" style="cursor:pointer" onclick="viewContacts(${c.id})">${escapeHtml(c.cp1 || '-')} <span class="badge bg-info ms-1" style="font-size:10px">+ More</span></span>` 
-            : escapeHtml(c.cp1 || '-');
+    body.innerHTML = data.map(c => {
+        const contact = getPrimaryClientContact(c);
+        const hasMore = countContactsForClient(c) > 1;
+        const contactDisplay = hasMore
+            ? `<span class="text-primary text-decoration-underline" style="cursor:pointer" onclick="viewContacts(${c.id})">${escapeHtml(contact.name || '-')} <span class="badge bg-info ms-1" style="font-size:10px">+ More</span></span>`
+            : escapeHtml(contact.name || '-');
+        const phone = contact.phone
+            ? `<a href="tel:${escapeHtml(contact.phone)}">${escapeHtml(contact.phone)}</a>`
+            : '-';
+        const email = contact.email
+            ? `<a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a>`
+            : '-';
 
-        body.innerHTML += `
+        return `
         <tr>
             <td>
 <span class="fw-semibold text-primary" style="cursor:pointer;" onclick="viewContacts(${c.id})">
@@ -1172,8 +1082,10 @@ ${escapeHtml(c.name)}
             <td><small>${escapeHtml(c.address || '-')}</small></td>
             <td>${escapeHtml(c.group_name || '-')}</td>
             <td>${contactDisplay}</td>
-            <td>${escapeHtml(c.cd1 || '-')}</td>
-            <td>${escapeHtml(c.cn1 || '-')}</td>
+            <td>${escapeHtml(contact.designation || '-')}</td>
+            <td>${phone}</td>
+            <td><small>${email}</small></td>
+            <td class="text-center">${Number(c.product_count || 0)}</td>
             <td class="text-end no-print">
                 <div class="btn-group">
 
@@ -1190,7 +1102,7 @@ ${escapeHtml(c.name)}
                 </div>
             </td>
         </tr>`;
-    });
+    }).join('');
 }
 
 
@@ -1215,30 +1127,29 @@ async function viewContacts(id){
     `;
 
     // CONTACTS SECTION
-    let i = 1;
     let hasContacts = false;
 
     html += `
     <div class="p-2">
         <div class="fw-bold text-primary mb-2" style="cursor:pointer" onclick="toggleSection('contacts-sec', this)">
-            ▶ Contacts
+            ▼ Contacts
         </div>
         <div id="contacts-sec">
     `;
 
-    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+    getClientContacts(c).forEach((contact, index) => {
         hasContacts = true;
-
+        const phone = contact.phone ? `<a href="tel:${escapeHtml(contact.phone)}">${escapeHtml(contact.phone)}</a>` : '-';
+        const email = contact.email ? `<a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a>` : '-';
         html += `
-        <div class="list-group-item p-2" style="cursor:pointer" >
-            <div class="fw-semibold small mb-1">Contact ${i}</div>
-            <div class="small"><strong>Name:</strong> ${escapeHtml(c[`cp${i}`] || '-')}</div>
-            <div class="small"><strong>Designation:</strong> ${escapeHtml(c[`cd${i}`] || '-')}</div>
-            <div class="small"><strong>Phone:</strong> ${escapeHtml(c[`cn${i}`] || '-')}</div>
-            <div class="small"><strong>Email:</strong> ${escapeHtml(c[`ce${i}`] || '-')}</div>
+        <div class="list-group-item p-2">
+            <div class="fw-semibold small mb-1">Contact ${index + 1}</div>
+            <div class="small"><strong>Name:</strong> ${escapeHtml(contact.name || '-')}</div>
+            <div class="small"><strong>Designation:</strong> ${escapeHtml(contact.designation || '-')}</div>
+            <div class="small"><strong>Phone:</strong> ${phone}</div>
+            <div class="small"><strong>Email:</strong> ${email}</div>
         </div>`;
-        i++;
-    }
+    });
 
     if(!hasContacts){
         html += `<div class="text-muted text-center p-3">No contacts available</div>`;
@@ -1247,20 +1158,19 @@ async function viewContacts(id){
     html += `</div></div>`;
 
     // PRODUCTS
-    const res = await fetch('/get_products');
-    const products = await res.json();
+    const products = await getClientProducts();
     const clientProducts = products.filter(p => p.client_id === id);
 
     html += `
     <div class="p-2 border-top">
         <div class="fw-bold text-success mb-2" style="cursor:pointer" onclick="toggleSection('products-sec', this)">
-            ▶ Equipment / Products
+            ▼ Equipment
         </div>
         <div id="products-sec">
     `;
 
     if(clientProducts.length === 0){
-        html += `<div class="text-muted text-center p-3">No products linked</div>`;
+        html += `<div class="text-muted text-center p-3">No equipment linked · <a href="/products_page">Add on Products page</a></div>`;
     } else {
         clientProducts.forEach(p=>{
             const status = p.computed_status || 'No Expiry Set - No Contract';
@@ -1287,9 +1197,9 @@ async function deleteClient(id){
     if(!isAdminUser) return;
 
     const shouldDelete = await clientConfirmDialog({
-        title: 'Delete Client?',
+        title: 'Delete Medical Center?',
         message: 'Delete this medical center permanently? Only possible when it has no schedules, equipment or P.O.s.',
-        confirmText: 'Delete Client',
+        confirmText: 'Delete',
         cancelText: 'Cancel',
         tone: 'danger',
         icon: 'trash'
@@ -1317,7 +1227,7 @@ async function deleteClient(id){
 function exportClientExcel(){
     const id = document.getElementById('edit-client-id').value;
     if(!id){
-        clientAlert("Please save client first before exporting.");
+        clientAlert("Save the medical center first, then export.");
         return;
     }
     window.open(`/export_client_excel/${id}`);
@@ -1330,7 +1240,7 @@ function printClientReport(){
     win.document.write(`
         <html>
         <head>
-            <title>Client Report</title>
+            <title>Medical Center Report</title>
             <style>
                 body{font-family:Arial;font-size:12px;padding:20px;}
                 .fw-bold{font-weight:bold;}
@@ -1354,30 +1264,22 @@ function editProduct(id){
 
 function clientHasDesignationMatch(c, designationFilter){
     if(!designationFilter) return true;
-
-    let i = 1;
-    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
-        if((c[`cd${i}`] || "").toLowerCase().includes(designationFilter)){
-            return true;
-        }
-        i++;
-    }
-
-    return false;
+    return getClientContacts(c).some(contact => contact.designation.toLowerCase().includes(designationFilter));
 }
 
 function applyFilters(){
-    const nameFilter = document.getElementById('s-name').value.toLowerCase();
-    const addrFilter = document.getElementById('s-addr').value.toLowerCase();
-    const groupFilter = (document.getElementById('s-group')?.value || '').toLowerCase();
-    const designationFilter = (document.getElementById('s-designation')?.value || '').toLowerCase();
+    const filters = getActiveClientFilters();
+    const search = filters.search.trim().toLowerCase();
+    const group = filters.group.toLowerCase();
 
     const filtered = clientsData.filter(c => {
-        const nameMatch = (c.name || "").toLowerCase().includes(nameFilter);
-        const addrMatch = (c.address || "").toLowerCase().includes(addrFilter);
-        const groupMatch = (c.group_name || "").toLowerCase().includes(groupFilter);
-        const designationMatch = clientHasDesignationMatch(c, designationFilter);
-        return nameMatch && addrMatch && groupMatch && designationMatch;
+        if(group && (c.group_name || '').toLowerCase() !== group) return false;
+        if(!search) return true;
+        const text = [c.name, c.address, c.group_name]
+            .concat(...getClientContacts(c).map(ct => [ct.name, ct.designation, ct.phone, ct.email]))
+            .join(' ')
+            .toLowerCase();
+        return text.includes(search);
     });
 
     renderTable(sortClientRows(filtered));
@@ -1771,6 +1673,12 @@ function applyFilters(){
     }
 
     @media (max-width: 768px) {
+        .client-page-card {
+            background: transparent !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+        }
+
         .client-alert-stack {
             top: 12px;
             left: 10px;

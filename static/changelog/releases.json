@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-medical-center-ui",
+      "release_date": "2026-10-06",
+      "title": "Medical Centers Page Refresh",
+      "summary": "One search box, more columns and faster loading on the Medical Centers page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-medical-center-ui-all",
+          "category": "Medical Center",
+          "description": "The Medical Centers page has one search box that finds a medical center by name, address, contact, designation, phone or email, plus a Group picker and a Clear button. The desktop list adds Email and Equipment columns, and phone numbers and emails can be tapped to call or write. The page shows a message while loading, when nothing matches, or when the list cannot load. Contact details in View can be tapped too, and View opens faster. Wording now says Medical Center throughout.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-medical-center-safety",
       "release_date": "2026-10-06",
       "title": "Medical Center Safety Fixes",

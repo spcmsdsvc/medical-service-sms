@@ -1380,7 +1380,6 @@ def should_log_performance_path(path):
     monitored_prefixes = (
         '/preview_tsr_archive',
         '/download_tsr_archive',
-        '/search_clients',
         '/search_products',
         '/export_'
     )
@@ -27088,8 +27087,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v244-signin-charcoal.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v245-liquidation-save-row.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v249-medical-center-protect-data.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v250-medical-center-safety';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v250-medical-center-safety.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v251-medical-center-ui';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27514,8 +27513,7 @@ self.addEventListener('fetch', event => {
       url.pathname.startsWith('/api/') ||
       url.pathname.startsWith('/preview_tsr_archive') ||
       url.pathname.startsWith('/download_tsr_archive') ||
-      url.pathname === '/search_products' ||
-      url.pathname === '/search_clients'
+      url.pathname === '/search_products'
   )) {
     event.respondWith(networkFirst(request));
     return;
@@ -32990,6 +32988,15 @@ def get_clients():
 
     clients = Client.query.order_by(Client.name).all()
     results = []
+    contacts_by_client = {}
+    for ct in Contact.query.order_by(Contact.id.asc()).all():
+        contacts_by_client.setdefault(ct.client_id, []).append(ct)
+    product_counts = dict(
+        db.session.query(Product.client_id, db.func.count(Product.serial_number))
+        .filter(Product.client_id.isnot(None))
+        .group_by(Product.client_id)
+        .all()
+    )
 
     def add_client_contact_row(rows, seen, name='', phone='', email='', designation=''):
         name = clean_str(name)
@@ -33037,7 +33044,7 @@ def get_clients():
         merged_contacts = []
         seen_contacts = set()
 
-        contacts = Contact.query.filter_by(client_id=c.id).order_by(Contact.id.asc()).all()
+        contacts = contacts_by_client.get(c.id, [])
 
         if contacts:
             # D2B fix:
@@ -33080,6 +33087,7 @@ def get_clients():
             'name': c.name,
             'address': c.address,
             'group_name': clean_str(getattr(c, 'group_name', None)) or None,
+            'product_count': product_counts.get(c.id, 0),
         }
         for idx, contact_values in enumerate(merged_contacts, start=1):
             name, phone, email, designation = contact_values
@@ -53686,36 +53694,6 @@ def check_client_duplicate():
     return jsonify({'match': False})
 
 
-@app.route('/search_clients')
-@login_required
-def search_clients():
-    q = request.args.get('q', '').strip()
-    addr = request.args.get('address', '').strip()
-    exclude_id = clean_int(request.args.get('exclude_id'))
-
-    if not q:
-        return jsonify([])
-
-    results = []
-    for c in Client.query.all():
-        if exclude_id and c.id == exclude_id:
-            continue
-
-        if (
-            normalize_client_exact_duplicate_value(q) == normalize_client_exact_duplicate_value(c.name) and
-            normalize_client_exact_duplicate_value(addr) == normalize_client_exact_duplicate_value(c.address)
-        ):
-            results.append({
-                'id': c.id,
-                'name': c.name,
-                'address': c.address,
-                'score': 1.0,
-                'reasons': ['exact-name-address']
-            })
-
-    results = sorted(results, key=lambda x: x['score'], reverse=True)[:5]
-    return jsonify(results)
-
 # --- CLIENT EXCEL EXPORT ---
 from openpyxl import Workbook
 
@@ -53971,7 +53949,13 @@ def add_client():
     if not payload.get('force'):
         collision = check_for_duplicate_client(name, addr)
         if collision:
-            return jsonify({'status': 'conflict', 'message': f'Duplicate Found: "{collision.name}"', 'existing_id': collision.id}), 409
+            return jsonify({
+                'status': 'conflict',
+                'message': f'Duplicate Found: "{collision.name}"',
+                'existing_id': collision.id,
+                'existing_name': collision.name,
+                'existing_address': collision.address
+            }), 409
 
     new_hospital = Client(
         name=name, address=addr, group_name=group_name,
