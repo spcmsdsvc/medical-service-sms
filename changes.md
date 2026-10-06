@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-06
 
+- Committed only the Personnel Batch 2 package (`app.py`, `templates/engineers.html`, `tests/test_staff_creation.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `351f6a2` on `main` and pushed it to `origin/main` on the owner's "commit and push"; `origin/main` verified at `351f6a2`, and Railway production deployment `a7377513-0206-42e1-9724-f8ae5899194e` was building it. Batch 1 is live (deployment `242bce29-d420-418a-8f42-2e7a535f2a0d`, commit `5b3db57`, succeeded). No schema change. `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`, and the loose handoff file were not staged. No Railway variable or manual redeploy was changed.
+
 - Executed the plan **Personnel Batch 2: Add/Edit Form Fixes** on the owner's go-ahead; not committed, pushed, or deployed.
 - Add personnel (`app.py` `add_engineer`, new `unique_username_for`): usernames are first name, then full name, then full name + 2, 3, …, checked ignoring case (sign-in is case-insensitive). A third same-name person previously caused a 500 (`UNIQUE constraint failed`). Existing usernames unchanged.
 - Employee ID (`add_engineer`, `update_engineer`, new `engineer_with_employee_id`): duplicates are compared trimmed and ignoring case.

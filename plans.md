@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Personnel Batch 2: Add/Edit Form Fixes
 
-**Status:** Executed (not yet committed) — owner said "go ahead" on 2026-10-06.
+**Status:** Executed — commit `351f6a2`; published to `origin/main` on the owner's "commit and push" (Railway deployment `a7377513-0206-42e1-9724-f8ae5899194e`).
 **Finished:** 2026-10-06.
 
 **Where the plan and the outcome differed:**
