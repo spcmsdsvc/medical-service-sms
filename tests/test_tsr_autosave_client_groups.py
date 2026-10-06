@@ -430,6 +430,16 @@ class MedicalCenterSpeedAndUiTests(unittest.TestCase):
             self.assertIn(text, page)
         self.assertNotIn('<h5', page)
 
+    def test_table_has_six_columns_with_stacked_contact(self):
+        page = self.page()
+        head = page[page.index('<thead class="table-dark">'):page.index('</thead>')]
+        import re
+        self.assertEqual(len(re.findall(r'<th[\s>]', head)), 6)
+        self.assertNotIn('data-sort-key="phone"', page)
+        self.assertNotIn('data-sort-key="designation"', page)
+        self.assertNotIn('colspan="9"', page)
+        self.assertIn("const CLIENT_SORT_KEYS = ['name', 'address', 'contact'];", page)
+
     def test_every_called_page_function_is_defined(self):
         import re
         page = self.page()

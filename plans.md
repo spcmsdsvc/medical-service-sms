@@ -37,6 +37,70 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Medical Centers Table: Stacked Contact Details
+
+**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Finished:** 2026-10-06.
+
+**Where the plan and the outcome differed:**
+
+- Nothing material. The test counts header cells with `<th[\s>]` so `<thead>` is not counted.
+- Fail-first: the new test failed on the unchanged code ("9 != 6"). After: `tests.test_tsr_autosave_client_groups` 25 tests OK; rendered page script passes `node --check` for admin and engineer; page 200 for both on a copy of `scheduler.db`. Full suite 1,558 tests, 24 failures, 3 errors, 5 skips — the same 27 failing tests by name as before this change. No browser check was made; the owner confirms the look once live.
+**Approved:** 2026-10-06 — the owner reported that the action buttons sit too far right after Batch 4, chose "Stack contact info" over pinning the Actions column or moving it first, and replied "yes, approved".
+**Detailed:** 2026-10-06.
+
+## Context
+
+Batch 4 (`558031d`) added Email and Equipment columns to the Medical Centers desktop table, taking it to 9 columns (Name, Address, Group, Main Contact, Designation, Phone, Email, Equipment, Actions), so Edit / Delete / View sit far to the right and need sideways scrolling.
+
+## Decisions taken
+
+1. Merge Main Contact, Designation, Phone and Email into one **Main Contact** cell; the table becomes 6 columns: Name, Address, Group, Main Contact, Equipment, Actions (owner).
+2. Sorting by designation and phone is dropped; sorting by contact name stays. Search still finds designation and phone.
+
+## Investigation
+
+- `templates/clients.html`: header cells with sort buttons `data-sort-key` name/address/contact/designation/phone, plain Group, Email, Equipment and Actions headers; `renderTable` builds the 9 cells; `colspan="9"` appears in the initial tbody loading row, `renderTable` empty row and `renderClientLoadError`.
+- `CLIENT_SORT_KEYS = ['name', 'address', 'contact', 'designation', 'phone']`; `restoreClientSortPreference` ignores keys not in the list; `getClientSortValue` maps all keys.
+- Mobile cards (`renderClientMobileCards`) and the View pop-up already show contact details stacked and are not affected.
+
+## Execution steps
+
+1. **Header** — remove the Designation, Phone and Email `<th>`; Main Contact keeps its sort button. Done: 6 header cells.
+2. **`renderTable`** — the Main Contact cell shows the name in bold (with "+ More" when there are more contacts), then the designation as a small muted line, a `tel:` phone link and a `mailto:` email link as small lines; only lines with a value; "-" when there is no contact. Equipment and Actions cells unchanged.
+3. **Message rows** — `colspan="9"` → `colspan="6"` in the initial loading row, the empty row and `renderClientLoadError`.
+4. **Sorting** — remove `designation` and `phone` from `CLIENT_SORT_KEYS` so a saved sort on either falls back to unsorted; `getClientSortValue` unchanged.
+5. **Unchanged** — mobile cards, View pop-up, search, and every function and id still in use.
+6. **Test** — source check in `MedicalCenterSpeedAndUiTests` (`tests/test_tsr_autosave_client_groups.py`): 6 `<th>` in the table header, no `data-sort-key="phone"`/`"designation"`, no `colspan="9"`. Run on the unchanged code first and record that it fails.
+
+## Deliberately excluded
+
+- **Pinning the Actions column** and **moving Actions first** — not chosen.
+- **Icon-only action buttons** — not requested.
+
+## Verification
+
+- New test fails on the unchanged code, passes after; `tests.test_tsr_autosave_client_groups` OK.
+- `node --check` on the rendered page script; page renders for admin and engineer on a copy of `scheduler.db`.
+- Full suite fails the same 27 tests by name as before.
+- No browser automation (AGENTS.md); the final look is for the owner to confirm once live.
+
+## After implementation
+
+1. Self-review; confirm every function the page calls is still defined.
+2. Fail-first proof recorded in this plan.
+3. Service worker bump to `medical-service-pwa-offline-navigation-v252-medical-center-table` (keep v251 as the historical marker).
+4. `releases.json` entry `2026-10-06-medical-center-table` (admins and engineers, category Medical Center).
+5. Update `changes.md` and this plan's status.
+6. Commit and push only on the owner's "commit and push": explicit staging; `scheduler.db`, `tmp/`, `output/`, handoffs, `.claude/`, `.impeccable/` excluded; verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- Sorting by designation or phone is no longer available — search still finds both.
+- Safety net: template-only change, no backend or schema change; reverting the commit restores the 9-column table.
+
+---
+
 # Medical Center Batches 3 & 4: Speed, Code Cuts and UI
 
 **Status:** Executed — commit `558031d`; published to `origin/main` on the owner's "commit and push" (Railway deployment succeeded, GitHub deployment `6877650579`).

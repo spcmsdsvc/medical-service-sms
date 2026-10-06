@@ -64,14 +64,11 @@
                         <th><button type="button" class="client-sort-btn" data-sort-key="address" onclick="setClientSort('address')">Address <span class="client-sort-indicator" data-sort-indicator="address">↕</span></button></th>
                         <th>Group</th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="contact" onclick="setClientSort('contact')">Main Contact <span class="client-sort-indicator" data-sort-indicator="contact">↕</span></button></th>
-                        <th><button type="button" class="client-sort-btn" data-sort-key="designation" onclick="setClientSort('designation')">Designation <span class="client-sort-indicator" data-sort-indicator="designation">↕</span></button></th>
-                        <th><button type="button" class="client-sort-btn" data-sort-key="phone" onclick="setClientSort('phone')">Phone <span class="client-sort-indicator" data-sort-indicator="phone">↕</span></button></th>
-                        <th>Email</th>
                         <th class="text-center">Equipment</th>
                         <th class="no-print text-end">Actions</th>
                     </tr>
                 </thead>
-                <tbody id="client-table-body"><tr><td colspan="9" class="text-center text-muted py-4">Loading medical centers…</td></tr></tbody>
+                <tbody id="client-table-body"><tr><td colspan="6" class="text-center text-muted py-4">Loading medical centers…</td></tr></tbody>
             </table>
         </div>
 
@@ -267,7 +264,7 @@ let clientModalInstance, viewModalInstance, clientsData = [];
 let clientProductsPromise = null;
 let clientSortState = { key: '', direction: 'asc' };
 const CLIENT_SORT_STORAGE_KEY = 'medicalServiceClientSortV1';
-const CLIENT_SORT_KEYS = ['name', 'address', 'contact', 'designation', 'phone'];
+const CLIENT_SORT_KEYS = ['name', 'address', 'contact'];
 
 
 function hideDuplicateWarning(){
@@ -805,7 +802,7 @@ async function loadClients(options = {}) {
 function renderClientLoadError(){
     const message = 'Could not load medical centers. Refresh to try again.';
     const body = document.getElementById('client-table-body');
-    if(body) body.innerHTML = `<tr><td colspan="9" class="text-center text-danger py-4">${message}</td></tr>`;
+    if(body) body.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${message}</td></tr>`;
     const mobile = document.getElementById('client-mobile-list');
     if(mobile) mobile.innerHTML = `<div class="client-mobile-empty"><i class="fa-solid fa-triangle-exclamation"></i><span>${message}</span></div>`;
 }
@@ -1055,22 +1052,22 @@ function renderTable(data) {
     renderClientMobileCards(data);
 
     if(!data.length){
-        body.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">No medical centers match your search.</td></tr>';
+        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No medical centers match your search.</td></tr>';
         return;
     }
 
     body.innerHTML = data.map(c => {
         const contact = getPrimaryClientContact(c);
         const hasMore = countContactsForClient(c) > 1;
-        const contactDisplay = hasMore
-            ? `<span class="text-primary text-decoration-underline" style="cursor:pointer" onclick="viewContacts(${c.id})">${escapeHtml(contact.name || '-')} <span class="badge bg-info ms-1" style="font-size:10px">+ More</span></span>`
-            : escapeHtml(contact.name || '-');
-        const phone = contact.phone
-            ? `<a href="tel:${escapeHtml(contact.phone)}">${escapeHtml(contact.phone)}</a>`
-            : '-';
-        const email = contact.email
-            ? `<a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a>`
-            : '-';
+        const contactName = hasMore
+            ? `<span class="fw-semibold text-primary text-decoration-underline" style="cursor:pointer" onclick="viewContacts(${c.id})">${escapeHtml(contact.name || '-')} <span class="badge bg-info ms-1" style="font-size:10px">+ More</span></span>`
+            : `<span class="fw-semibold">${escapeHtml(contact.name || '-')}</span>`;
+        const contactLines = [
+            contact.designation ? `<div class="small text-muted">${escapeHtml(contact.designation)}</div>` : '',
+            contact.phone ? `<div class="small"><a href="tel:${escapeHtml(contact.phone)}">${escapeHtml(contact.phone)}</a></div>` : '',
+            contact.email ? `<div class="small"><a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a></div>` : ''
+        ].join('');
+        const contactDisplay = (contact.name || contactLines) ? `${contactName}${contactLines}` : '-';
 
         return `
         <tr>
@@ -1082,9 +1079,6 @@ ${escapeHtml(c.name)}
             <td><small>${escapeHtml(c.address || '-')}</small></td>
             <td>${escapeHtml(c.group_name || '-')}</td>
             <td>${contactDisplay}</td>
-            <td>${escapeHtml(contact.designation || '-')}</td>
-            <td>${phone}</td>
-            <td><small>${email}</small></td>
             <td class="text-center">${Number(c.product_count || 0)}</td>
             <td class="text-end no-print">
                 <div class="btn-group">

@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-06-medical-center-table",
+      "release_date": "2026-10-06",
+      "title": "Medical Centers Table Fits Better",
+      "summary": "The Medical Centers list is narrower, so Edit, Delete and View are easy to reach.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-06-medical-center-table-all",
+          "category": "Medical Center",
+          "description": "On desktop, the main contact's name, designation, phone and email now sit together in one Main Contact column, so the list has six columns and the Edit, Delete and View buttons are close by again. Phone numbers and emails can still be tapped. Sorting by designation or phone was removed; search still finds both.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-medical-center-ui",
       "release_date": "2026-10-06",
       "title": "Medical Centers Page Refresh",
