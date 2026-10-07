@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Product Inventory Batch 2: Desktop Table Fit and Compact Phone Cards
 
-**Status:** Executed — not yet committed (published together with Batch 1 on the owner's "commit and push").
+**Status:** Executed — commit `6eab0c7` (Batches 1 and 2 published together to `origin/main` on the owner's "commit and push").
 **Finished:** 2026-10-07.
 
 **Where the plan and the outcome differed:**
@@ -133,7 +133,7 @@ Measured in the browser at 1440 × 900 (sidebar open; table wrapper 1073 px) and
 
 # Product Inventory Batch 1: Safety and Correctness Fixes
 
-**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Status:** Executed — commit `6eab0c7` (Batches 1 and 2 published together to `origin/main` on the owner's "commit and push").
 **Finished:** 2026-10-07.
 
 **Where the plan and the outcome differed:**
