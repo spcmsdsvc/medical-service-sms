@@ -534,7 +534,7 @@ class GenorayInventoryTests(unittest.TestCase):
         source = (ROOT / "app.py").read_text(encoding="utf-8")
         self.assertIn("inventory_mode", template)
         for marker in (
-            "'/api/genoray/items'", "'/api/genoray/summary'", "'/genoray/import'", "'/genoray/export'",
+            "'/api/genoray/items'", "'/genoray/import'", "'/genoray/export'",
             "medicalServiceGenoraySortV1", "medicalServiceGenorayFreezeV1",
             "function renderProductCalibrationDocumentLinks(product, mobile = false)",
             "if(summary.calibration_report_preview_url)", "if(summary.certificate_preview_url)",
@@ -543,6 +543,8 @@ class GenorayInventoryTests(unittest.TestCase):
             "bsidField.disabled = isGenorayInventory", "responseData.item || responseData",
         ):
             self.assertIn(marker, template)
+        # The summary route stays; the inventory page no longer calls it (Product Inventory Batch 3).
+        self.assertIn("/api/genoray/summary", source)
         self.assertIn("nav_can_access_genoray_inventory", source)
         self.assertIn("allocate_genoray_bsid", source)
         self.assertIn("genoray_bsid_counter", source)

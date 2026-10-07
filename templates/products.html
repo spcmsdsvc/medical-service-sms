@@ -7,7 +7,6 @@
 {% set inventory_label = 'Vieworks' if is_vieworks_inventory else ('Genoray' if is_genoray_inventory else 'Product') %}
 {% set inventory_plural = 'Vieworks items' if is_vieworks_inventory else ('Genoray items' if is_genoray_inventory else 'products') %}
 {% set inventory_api_url = '/api/vieworks/items' if is_vieworks_inventory else ('/api/genoray/items' if is_genoray_inventory else '/get_products') %}
-{% set inventory_summary_url = '/api/vieworks/summary' if is_vieworks_inventory else ('/api/genoray/summary' if is_genoray_inventory else '/get_products_summary') %}
 {% set inventory_import_url = '/vieworks/import' if is_vieworks_inventory else ('/genoray/import' if is_genoray_inventory else '/import_products') %}
 {% set inventory_export_url = '/vieworks/export' if is_vieworks_inventory else ('/genoray/export' if is_genoray_inventory else '/export_products') %}
 {% set inventory_pm_base_url = '/vieworks/pm' if is_vieworks_inventory else ('/genoray/pm' if is_genoray_inventory else '') %}
@@ -327,12 +326,6 @@
 </div>
 
 <script>
-    function productEscape(value){
-        return String(value || '').replace(/[&<>"']/g, function(match){
-            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[match];
-        });
-    }
-
     function productToast(message, tone='error', title=''){
         const stack = document.getElementById('product-alert-stack');
         if(!stack || !message) return;
@@ -350,8 +343,8 @@
         toast.innerHTML = `
             <div class="product-alert-icon"><i class="fa-solid fa-${icon}"></i></div>
             <div>
-                <div class="product-alert-title">${productEscape(title || fallbackTitle)}</div>
-                <div class="product-alert-message">${productEscape(message)}</div>
+                <div class="product-alert-title">${escapeHtml(title || fallbackTitle)}</div>
+                <div class="product-alert-message">${escapeHtml(message)}</div>
             </div>
             <button type="button" class="product-alert-close" aria-label="Close notice">×</button>
         `;
@@ -362,10 +355,6 @@
         setTimeout(() => {
             if(toast && toast.parentNode) toast.remove();
         }, normalizedTone === 'error' || normalizedTone === 'danger' ? 6500 : 4200);
-    }
-
-    function productAlert(message, tone='error'){
-        productToast(message, tone);
     }
 
     function productConfirmDialog(options={}){
@@ -430,17 +419,6 @@
     let vieworksData = [];
     let masterClients = [];
     let nameCounts = {}; // Detects duplicate names in the medical database
-    let productSummary = {
-        total_products: 0,
-        active_warranty: 0,
-        expired_warranty: 0,
-        na_warranty: 0,
-        expired_under_contract: 0,
-        expired_no_contract: 0,
-        no_expiry_under_contract: 0,
-        no_expiry_no_contract: 0,
-        linked_products: 0
-    };
     let productSortState = { key: '', direction: 'asc' };
     const inventoryMode = {{ inventory_mode|tojson }};
     const isGenorayInventory = inventoryMode === 'genoray';
@@ -450,9 +428,7 @@
     const inventoryNoun = isVieworksInventory ? 'Vieworks item' : (isGenorayInventory ? 'Genoray item' : 'product');
     const inventoryPlural = isVieworksInventory ? 'Vieworks items' : (isGenorayInventory ? 'Genoray items' : 'products');
     const inventoryItemsUrl = {{ inventory_api_url|tojson }};
-    const inventorySummaryUrl = {{ inventory_summary_url|tojson }};
     const inventoryImportUrl = {{ inventory_import_url|tojson }};
-    const inventoryExportUrl = {{ inventory_export_url|tojson }};
     const inventoryPMBaseUrl = {{ inventory_pm_base_url|tojson }};
     const PRODUCT_SORT_STORAGE_KEY = isVieworksInventory
         ? 'medicalServiceVieworksSortV1'
@@ -951,8 +927,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         restoreProductFreezePreference();
         restoreProductColumnWidths();
         setupProductColumnResizers();
-        await loadProductNameCatalog();
-        await loadData(); 
+        await Promise.all([loadProductNameCatalog(), loadData()]);
         setupAutocomplete();
         setupVieworksLinkControls();
         const nameInput = document.getElementById('p-name');
@@ -1051,20 +1026,18 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         if(!hadExistingData) renderProductRequestState('loading');
 
         try {
-            const [resP, resC, summaryRes] = await Promise.all([
+            const [resP, resC] = await Promise.all([
                 fetch(freshUrl(inventoryItemsUrl), { cache: 'no-store' }),
-                fetch(freshUrl('/get_clients'), { cache: 'no-store' }),
-                fetch(freshUrl(inventorySummaryUrl), { cache: 'no-store' })
+                fetch(freshUrl('/get_clients?fields=basic'), { cache: 'no-store' }),
+                loadVieworksLinkOptions()
             ]);
 
-            if(!resP.ok || !resC.ok || !summaryRes.ok){
+            if(!resP.ok || !resC.ok){
                 throw new Error(`${inventoryNoun} inventory request failed`);
             }
 
             productsData = await resP.json();
             masterClients = await resC.json();
-            productSummary = await summaryRes.json().catch(() => ({ total_products: productsData.length, active_warranty: 0, expired_warranty: 0, na_warranty: 0, linked_products: 0 }));
-            await loadVieworksLinkOptions();
             productDataLoaded = true;
 
             // Count occurrences of each client name to resolve naming conflicts
@@ -1077,7 +1050,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         } catch(error) {
             console.error(`[${inventoryMode}] Unable to load inventory`, error);
             if(hadExistingData){
-                productAlert(`Unable to refresh ${inventoryNoun} inventory. The existing list is still shown.`);
+                productToast(`Unable to refresh ${inventoryNoun} inventory. The existing list is still shown.`);
             }else{
                 renderProductRequestState('error');
             }
@@ -1117,7 +1090,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         select.innerHTML = eligible.map(item => {
             const serial = String(item.serial_number || '');
             const label = `${item.name || 'Vieworks item'} — ${serial}${item.bsid ? ` (${item.bsid})` : ''}`;
-            return `<option value="${productEscape(serial)}" ${selected.has(serial) ? 'selected' : ''}>${productEscape(label)}</option>`;
+            return `<option value="${escapeHtml(serial)}" ${selected.has(serial) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
         }).join('');
         select.disabled = !checkbox.checked || !eligible.length;
         if(help){
@@ -1135,7 +1108,6 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
             if(select) select.disabled = !checkbox.checked || !select.options.length;
             refreshVieworksLinkOptions(currentLinkedVieworksSerials());
         });
-        document.getElementById('p-cli-id')?.addEventListener('change', () => refreshVieworksLinkOptions(currentLinkedVieworksSerials()));
     }
 
     /**
@@ -1266,7 +1238,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
     }
 
     function updateProductCountFooter(filteredData){
-        const total = productSummary.total_products || productsData.length || 0;
+        const total = productsData.length;
         const shown = filteredData.length;
 
         const counts = filteredData.reduce((acc, p) => {
@@ -1375,16 +1347,6 @@ function renderProductMobileCards(data){
     const container = document.getElementById('product-mobile-list');
     if(!container) return;
 
-    if(!data.length){
-        container.innerHTML = `
-            <div class="product-mobile-empty">
-                <i class="fa-solid fa-box-open"></i>
-                <span>${productFiltersAreActive() ? `No ${inventoryPlural.toLowerCase()} match your filters.` : `No ${inventoryPlural.toLowerCase()} available.`}</span>
-                ${productFiltersAreActive() ? '<button type="button" class="product-state-action" onclick="clearProductFilters()">Clear Filters</button>' : ''}
-            </div>`;
-        return;
-    }
-
     container.innerHTML = data.map(p => {
         const status = p.computed_status || getProductWarrantyStatus(p);
         const owner = p.client_name || 'No owner';
@@ -1485,8 +1447,8 @@ function productCalibrationStatusClass(summary){
 function renderProductCalibrationBadge(product){
     const summary = product?.calibration_summary || {};
     const status = summary.status || 'No calibration record';
-    return `<div class="product-calibration-summary ${productCalibrationStatusClass(summary)}" aria-label="${productEscape(status)}">
-        <span class="product-calibration-badge">${productEscape(status)}</span>
+    return `<div class="product-calibration-summary ${productCalibrationStatusClass(summary)}" aria-label="${escapeHtml(status)}">
+        <span class="product-calibration-badge">${escapeHtml(status)}</span>
     </div>`;
 }
 
@@ -1508,34 +1470,34 @@ function renderProductHistory(data){
     (asset.linked_vieworks || []).forEach(item => linked.push({ ...item, source: 'vieworks' }));
     if(asset.linked_product) linked.push({ ...asset.linked_product, source: 'product' });
     const linkedHtml = linked.length
-        ? `<div class="product-history-linked-list">${linked.map(item => `<button type="button" class="btn btn-link btn-sm p-0 me-3" onclick="openProductHistory(${productJsArg(item.serial_number || '')}, ${productJsArg(item.source || 'product')})"><i class="fa-solid fa-link me-1" aria-hidden="true"></i>${productEscape(item.name || item.serial_number || 'Linked item')} (${productEscape(item.serial_number || '')})</button>`).join('')}</div>`
+        ? `<div class="product-history-linked-list">${linked.map(item => `<button type="button" class="btn btn-link btn-sm p-0 me-3" onclick="openProductHistory(${productJsArg(item.serial_number || '')}, ${productJsArg(item.source || 'product')})"><i class="fa-solid fa-link me-1" aria-hidden="true"></i>${escapeHtml(item.name || item.serial_number || 'Linked item')} (${escapeHtml(item.serial_number || '')})</button>`).join('')}</div>`
         : '<span class="text-muted">None</span>';
     const visitsHtml = visits.length ? visits.map(visit => {
         const engineers = (visit.engineers || []).map(person => person.name).filter(Boolean).join(', ') || 'Unassigned';
         const parts = Array.isArray(visit.parts_supplied) ? visit.parts_supplied : [];
         const partsHtml = parts.length
-            ? `<ul class="mb-2">${parts.map(part => `<li>${productEscape(part.item || part.description || 'Part')} ${part.number ? `<span class="text-muted">(${productEscape(part.number)})</span>` : ''}${part.qty ? ` × ${productEscape(part.qty)}` : ''}${part.dr ? ` <span class="text-muted">DR ${productEscape(part.dr)}</span>` : ''}</li>`).join('')}</ul>`
+            ? `<ul class="mb-2">${parts.map(part => `<li>${escapeHtml(part.item || part.description || 'Part')} ${part.number ? `<span class="text-muted">(${escapeHtml(part.number)})</span>` : ''}${part.qty ? ` × ${escapeHtml(part.qty)}` : ''}${part.dr ? ` <span class="text-muted">DR ${escapeHtml(part.dr)}</span>` : ''}</li>`).join('')}</ul>`
             : '<span class="text-muted">None recorded</span>';
         const artifacts = (visit.artifacts || []).map(file => {
             const href = file.preview_url || file.download_url || '';
             const label = `${file.category || 'Attachment'}: ${file.name || file.filename || 'file'}`;
             return href
-                ? `<a href="${productEscape(href)}" target="_blank" rel="noopener" class="badge text-bg-light border me-1 mb-1">${productEscape(label)}</a>`
-                : `<span class="badge text-bg-light border me-1 mb-1">${productEscape(label)}</span>`;
+                ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="badge text-bg-light border me-1 mb-1">${escapeHtml(label)}</a>`
+                : `<span class="badge text-bg-light border me-1 mb-1">${escapeHtml(label)}</span>`;
         }).join('') || '<span class="text-muted">None</span>';
         return `<article class="product-history-visit border rounded-3 p-3 mb-3">
             <div class="d-flex flex-wrap justify-content-between gap-2">
-                <strong>${productEscape(visit.task || visit.title || 'Service visit')}</strong>
-                <span class="badge text-bg-secondary">${productEscape(visit.status || 'Recorded')}</span>
+                <strong>${escapeHtml(visit.task || visit.title || 'Service visit')}</strong>
+                <span class="badge text-bg-secondary">${escapeHtml(visit.status || 'Recorded')}</span>
             </div>
-            <div class="small text-muted mt-1">${productEscape(visit.start_date || visit.date || '')}${visit.end_date && visit.end_date !== visit.start_date ? ` – ${productEscape(visit.end_date)}` : ''} · ${productEscape(visit.client_name || 'N/A')}</div>
-            <div class="small mt-2"><strong>Engineers:</strong> ${productEscape(engineers)}</div>
+            <div class="small text-muted mt-1">${escapeHtml(visit.start_date || visit.date || '')}${visit.end_date && visit.end_date !== visit.start_date ? ` – ${escapeHtml(visit.end_date)}` : ''} · ${escapeHtml(visit.client_name || 'N/A')}</div>
+            <div class="small mt-2"><strong>Engineers:</strong> ${escapeHtml(engineers)}</div>
             <div class="small mt-2"><strong>Parts Supplied:</strong> ${partsHtml}</div>
             <div class="small mt-2"><strong>Artifacts:</strong><div class="mt-1">${artifacts}</div></div>
         </article>`;
     }).join('') : '<div class="product-history-state text-muted">No service visits recorded for this asset.</div>';
     const pmHtml = pmHistory.length
-        ? `<div class="mt-3"><h6>Preventive Maintenance</h6>${pmHistory.map(row => `<div class="small border-bottom py-2"><strong>${productEscape(row.target_date || '')}</strong> · ${productEscape(row.status || '')}${row.cadence ? ` · ${productEscape(row.cadence)}` : ''}</div>`).join('')}</div>`
+        ? `<div class="mt-3"><h6>Preventive Maintenance</h6>${pmHistory.map(row => `<div class="small border-bottom py-2"><strong>${escapeHtml(row.target_date || '')}</strong> · ${escapeHtml(row.status || '')}${row.cadence ? ` · ${escapeHtml(row.cadence)}` : ''}</div>`).join('')}</div>`
         : '';
     const calibrationHtml = `<section class="product-calibration-history mt-3" aria-labelledby="product-calibration-history-title">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -1544,31 +1506,31 @@ function renderProductHistory(data){
         </div>
         ${calibrations.length ? calibrations.map(row => {
             const links = [];
-            if(row.calibration_report_preview_url) links.push(`<a href="${productEscape(row.calibration_report_preview_url)}" target="_blank" rel="noopener">Calibration report</a>`);
-            if(row.certificate_preview_url) links.push(`<a href="${productEscape(row.certificate_preview_url)}" target="_blank" rel="noopener">Signed certificate</a>`);
+            if(row.calibration_report_preview_url) links.push(`<a href="${escapeHtml(row.calibration_report_preview_url)}" target="_blank" rel="noopener">Calibration report</a>`);
+            if(row.certificate_preview_url) links.push(`<a href="${escapeHtml(row.certificate_preview_url)}" target="_blank" rel="noopener">Signed certificate</a>`);
             const approvalInfo = [
-                row.approval_id ? `Approval ${productEscape(row.approval_id)}` : '',
-                row.revision_no ? `Revision ${productEscape(row.revision_no)}` : '',
-                row.approved_at ? `Approved ${productEscape(row.approved_at)}` : '',
-                row.approver_name ? `By ${productEscape(row.approver_name)}` : ''
+                row.approval_id ? `Approval ${escapeHtml(row.approval_id)}` : '',
+                row.revision_no ? `Revision ${escapeHtml(row.revision_no)}` : '',
+                row.approved_at ? `Approved ${escapeHtml(row.approved_at)}` : '',
+                row.approver_name ? `By ${escapeHtml(row.approver_name)}` : ''
             ].filter(Boolean).join(' · ');
             return `<article class="product-calibration-history-record border rounded-3 p-3 mb-2">
                 <div class="d-flex flex-wrap justify-content-between gap-2">
-                    <strong>${productEscape(row.status || 'Calibration record')}</strong>
-                    <span class="small text-muted">${productEscape(row['calibration_' + 'date'] || 'Date not recorded')}</span>
+                    <strong>${escapeHtml(row.status || 'Calibration record')}</strong>
+                    <span class="small text-muted">${escapeHtml(row['calibration_' + 'date'] || 'Date not recorded')}</span>
                 </div>
-                <div class="small mt-1"><strong>Valid through:</strong> ${productEscape(row.valid_until || 'Not available')}</div>
-                <div class="small mt-1"><strong>Calibrated by:</strong> ${productEscape(row.calibrated_by || row.report_recorded_calibrator || 'Not recorded')}</div>
-                <div class="small mt-1"><strong>Certificate:</strong> ${productEscape(row['certificate_' + 'number'] || 'Not recorded')}</div>
+                <div class="small mt-1"><strong>Valid through:</strong> ${escapeHtml(row.valid_until || 'Not available')}</div>
+                <div class="small mt-1"><strong>Calibrated by:</strong> ${escapeHtml(row.calibrated_by || row.report_recorded_calibrator || 'Not recorded')}</div>
+                <div class="small mt-1"><strong>Certificate:</strong> ${escapeHtml(row['certificate_' + 'number'] || 'Not recorded')}</div>
                 ${approvalInfo ? `<div class="small mt-1"><strong>Approval:</strong> ${approvalInfo}</div>` : ''}
                 ${links.length ? `<div class="small mt-2 d-flex flex-wrap gap-2">${links.map(link => `<span class="badge text-bg-light border">${link}</span>`).join('')}</div>` : ''}
             </article>`;
         }).join('') : '<div class="product-history-state text-muted">No approved calibration records found.</div>'}
     </section>`;
     return `<div class="product-history-asset mb-3">
-        <div class="d-flex flex-wrap justify-content-between gap-2"><div><h6 class="mb-1">${productEscape(asset.name || 'Inventory item')}</h6><div class="small text-muted">${productEscape(asset.source_label || '')} · S/N ${productEscape(asset.serial_number || '')} · BSID ${productEscape(asset.bsid || 'Not assigned')}</div></div><span class="badge text-bg-light border align-self-start">${productEscape(asset.computed_status || '')}</span></div>
-        <div class="small mt-2"><strong>Client:</strong> ${productEscape(asset.client_name || 'N/A')}</div>
-        <div class="small mt-1"><strong>Coverage:</strong> ${productEscape(coverageLabel)} · ${productEscape(coverageDates)}</div>
+        <div class="d-flex flex-wrap justify-content-between gap-2"><div><h6 class="mb-1">${escapeHtml(asset.name || 'Inventory item')}</h6><div class="small text-muted">${escapeHtml(asset.source_label || '')} · S/N ${escapeHtml(asset.serial_number || '')} · BSID ${escapeHtml(asset.bsid || 'Not assigned')}</div></div><span class="badge text-bg-light border align-self-start">${escapeHtml(asset.computed_status || '')}</span></div>
+        <div class="small mt-2"><strong>Client:</strong> ${escapeHtml(asset.client_name || 'N/A')}</div>
+        <div class="small mt-1"><strong>Coverage:</strong> ${escapeHtml(coverageLabel)} · ${escapeHtml(coverageDates)}</div>
         <div class="small mt-2"><strong>Linked equipment:</strong> ${linkedHtml}</div>
     </div><hr>${calibrationHtml}${visitsHtml}${pmHtml}`;
 }
@@ -1593,7 +1555,7 @@ async function openProductHistory(serial, source=inventoryMode){
         body.innerHTML = renderProductHistory(data);
     }catch(error){
         console.error('[Products] Unable to load service history', error);
-        body.innerHTML = `<div class="product-history-state text-danger"><i class="fa-solid fa-triangle-exclamation me-2"></i>${productEscape(error.message || 'Unable to load service history.')}</div>`;
+        body.innerHTML = `<div class="product-history-state text-danger"><i class="fa-solid fa-triangle-exclamation me-2"></i>${escapeHtml(error.message || 'Unable to load service history.')}</div>`;
     }
 }
 
@@ -1860,7 +1822,6 @@ function renderTable(data) {
             productsData.push(updatedProduct);
         }
 
-        productSummary.total_products = productsData.length;
         applyFilters();
     }
 
@@ -1896,7 +1857,7 @@ function openAddModal() {
     function openEditModal(sn) { 
         const p = productsData.find(x => x.serial_number === sn); 
         if(!p){
-            return productAlert(isStandaloneInventory
+            return productToast(isStandaloneInventory
                 ? `${inventoryLabel} item record was not found. Please refresh and try again.`
                 : "Product record was not found. Please refresh and try again.");
         }
@@ -1974,7 +1935,7 @@ function openAddModal() {
             data.with_vieworks_canon = Boolean(linkCheckbox?.checked);
             data.linked_vieworks_serials = linkedSerials;
             if(data.with_vieworks_canon && !linkedSerials.length){
-                return productAlert('Select at least one Vieworks/Canon item when the option is enabled.');
+                return productToast('Select at least one Vieworks/Canon item when the option is enabled.');
             }
         }
         
@@ -1986,29 +1947,29 @@ function openAddModal() {
         if(!isStandaloneInventory){
             syncProductNameCatalogSelection();
             data.product_name_id = document.getElementById('p-name-id').value || '';
-            if(!data.product_name_id) return productAlert('Validation Error: Select a standard Product Name from the list before saving.');
+            if(!data.product_name_id) return productToast('Validation Error: Select a standard Product Name from the list before saving.');
         }
 
         if (data.bsid.length > 40) {
-            return productAlert("Validation Error: BSID must be 40 characters or fewer.");
+            return productToast("Validation Error: BSID must be 40 characters or fewer.");
         }
 
         if (!data.serial_number) {
-            return productAlert("Validation Error: Serial number is required.");
+            return productToast("Validation Error: Serial number is required.");
         }
 
         if (!data.name) {
-            return productAlert("Validation Error: Product name is required.");
+            return productToast("Validation Error: Product name is required.");
         }
 
         const existingInventoryItem = editSN ? productsData.find(item => item.serial_number === editSN) : null;
         const previousClientId = existingInventoryItem?.client_id;
         if (isStandaloneInventory && editSN && existingInventoryItem?.bsid && !data.bsid) {
-            return productAlert("Validation Error: BSID cannot be cleared once it has been assigned.");
+            return productToast("Validation Error: BSID cannot be cleared once it has been assigned.");
         }
 
         if (!data.client_id && !isStandaloneInventory) {
-            return productAlert("Validation Error: Please select a medical center from the autocomplete list.");
+            return productToast("Validation Error: Please select a medical center from the autocomplete list.");
         }
 
         if (editSN && data.serial_number !== editSN) {
@@ -2065,11 +2026,11 @@ function openAddModal() {
                     }
                 }
             } else {
-                productAlert("Database Error: " + productResponseMessage(res, responseData, "Action failed"));
+                productToast("Database Error: " + productResponseMessage(res, responseData, "Action failed"));
             }
         } catch (error) {
             console.error('[Products] Unable to save product', error);
-            productAlert(`Unable to save the ${inventoryNoun}. Please check your connection and try again.`);
+            productToast(`Unable to save the ${inventoryNoun}. Please check your connection and try again.`);
         }
     }
 
@@ -2079,7 +2040,7 @@ function openAddModal() {
 
         const product = productsData.find(item => item.serial_number === s);
         if(!product){
-            return productAlert(`${inventoryNoun} record was not found. Please refresh and try again.`);
+            return productToast(`${inventoryNoun} record was not found. Please refresh and try again.`);
         }
 
         const confirmation = await productConfirmDialog({
@@ -2107,13 +2068,16 @@ function openAddModal() {
             const responseData = await productResponseData(res);
 
             if (res.ok) {
-                await loadData();
+                productsData = productsData.filter(item => item.serial_number !== s);
+                applyFilters();
+                // A deleted product frees its linked Vieworks items.
+                loadVieworksLinkOptions();
             } else {
-                productAlert(productResponseMessage(res, responseData, 'Deletion failed on server'));
+                productToast(productResponseMessage(res, responseData, 'Deletion failed on server'));
             }
         } catch (error) {
             console.error(`[${inventoryMode}] Unable to delete inventory item`, error);
-            productAlert(`Unable to delete the ${inventoryNoun}. Please check your connection and try again.`);
+            productToast(`Unable to delete the ${inventoryNoun}. Please check your connection and try again.`);
         }
     }
 </script>

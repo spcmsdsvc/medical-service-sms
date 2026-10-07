@@ -37,6 +37,148 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Product Inventory Batch 4: Code Cleanup
+
+**Status:** Executed — not yet committed (to be published together with Batch 3).
+**Finished:** 2026-10-07.
+
+**Where the plan and the outcome differed:**
+
+- Step 5: the `openAddModal` BSID line was **not** simplified — `tests/test_genoray_inventory.py` pins `bsidField.disabled = isGenorayInventory` as a template marker; changing a test for a cosmetic one-liner was not worth it. `inventoryExportUrl` was removed as planned.
+- Steps 1–4 done as planned: 45 `productEscape` → `escapeHtml`, 15 `productAlert` → `productToast`, unreachable phone empty block and the `#p-cli-id` `change` listener removed. A script scan found no call to an undefined function; `node --check` OK.
+- Fail-first: all 3 tests in `tests/test_product_inventory_batch4.py` failed before the cleanup; after, they pass with the batch 1–3 files and the inventory modules.
+- Browser (same session as Batch 3): validation toast "Select at least one Vieworks/Canon item…" with title "Action Needed"; Service History renders; filtering to nothing shows "No products match your filters." with Clear Filters on desktop and at 375 px; picking an owner lists that center's Vieworks items; `/vieworks` Add has BSID disabled; no console errors.
+**Approved:** 2026-10-07 — the owner asked to "plan batch 3 and 4"; Batches 3 and 4 publish together in one push.
+**Detailed:** 2026-10-07.
+
+## Context
+
+The Product Inventory scan listed leftover code in `templates/products.html` that can be removed without changing behaviour. Batch 4 runs **after** Batch 3 (it touches the same functions) and ships in the same push. Nothing the user sees changes.
+
+## Decisions taken
+
+1. Only remove code proven unused or exactly duplicated; no renames of functions other code calls, no new abstractions.
+2. Keep every API field and endpoint (see Deliberately excluded).
+3. No release-note item for this batch (invisible); it shares Batch 3's service-worker bump.
+
+## Investigation
+
+Counts are occurrences in `templates/products.html` after Batch 2.
+
+1. **Two escape helpers.** `productEscape` (`:330`, `String(value || '')`, 45 occurrences) and `escapeHtml` (~`:1290`, `String(value ?? '')`, 27). Same five characters escaped (`'` as `&#39;` vs `&#039;`, equivalent). Only difference: `productEscape(0)` gives `''`, `escapeHtml(0)` gives `'0'` — every `productEscape` call passes text or uses its own `|| 'fallback'`, so the only visible effect would be a literal `0` (e.g., a part quantity of 0) showing as "0" instead of nothing, which is more correct. No test references `productEscape`.
+2. **`productAlert(message, tone)`** (`:367`) only calls `productToast(message, tone)`; 15 call sites; `productToast`'s default tone is the same `'error'`. No test references it.
+3. **Unreachable empty state.** `renderProductMobileCards` starts with an `if(!data.length)` block, but its only caller `renderTable` returns earlier through `renderProductRequestState('empty')` when `data` is empty.
+4. **Listener that never fires.** `setupVieworksLinkControls` adds a `change` listener to the hidden `#p-cli-id`; code sets `.value` directly, which never fires `change`. The autocomplete already calls `refreshVieworksLinkOptions` itself.
+5. **Unused constant.** `inventoryExportUrl` is defined and never read (the Export button uses the Jinja URL directly).
+6. **Double assignment** in `openAddModal`: `bsidField.disabled = isGenorayInventory; if(isVieworksInventory) bsidField.disabled = true;` equals `bsidField.disabled = isStandaloneInventory;`.
+7. Checked and **kept**: every CSS class in the page `<style>` is used (the one apparent orphan, `product-table-state-error`, is built as `product-table-state-${state}`); `productResponseData` (3 uses, tiny, kept to avoid churn).
+
+## Execution steps
+
+1. Replace every `productEscape(` with `escapeHtml(` and delete `productEscape`. Done: `grep productEscape` finds nothing; History modal, toasts, Vieworks link options and calibration badges render the same text.
+2. Replace every `productAlert(` with `productToast(` and delete `productAlert`. Done: validation and error toasts still appear with the same title/tone.
+3. Delete the `if(!data.length){…}` block at the top of `renderProductMobileCards`. Done: empty and filtered-empty phone states still come from `renderProductRequestState`.
+4. Delete the `#p-cli-id` `change` listener line in `setupVieworksLinkControls`. Done: picking an owner still refreshes Vieworks options (autocomplete click calls it).
+5. Delete `inventoryExportUrl`; simplify the `openAddModal` BSID line to `bsidField.disabled = isStandaloneInventory;`.
+6. **Tests** — `tests/test_product_inventory_batch4.py` (source-level): no `productEscape`, no `productAlert`, no `inventoryExportUrl`, `renderProductMobileCards` has no `product-mobile-empty`, `setupVieworksLinkControls` has no `p-cli-id`. Each fails before the change. Update any existing assertion that pins a removed name (none found by `grep -rn "productEscape\|productAlert\|inventoryExportUrl" tests/`).
+7. `changes.md`; this plan's status. Service worker and release entry are Batch 3's.
+
+## Deliberately excluded
+
+- **`calibration_certificate` in `/get_products`** — this page does not read it, but `tests/test_product_calibration_certificate.py` (lines ~200–295) pins it as the endpoint contract and other pages call `/get_products`; removing it is an API change, not a cleanup.
+- **`/get_products_summary`, `/api/genoray/summary`, `/api/vieworks/summary` endpoints** — Batch 3 stops this page calling them; the routes stay (cheap; removing routes is out of scope).
+- **`productResponseData`, legacy comments ("v5.4.2", "SECURITY TOKEN ADDED")** — harmless; churn without benefit.
+
+## Verification
+
+- Fail-first for the new test file; focused modules: batch 1–4 files, `test_product_calibration_certificate`, `test_product_vieworks_links_history`, `test_product_table_column_resize`, `test_product_inventory_mutations`; `node --check` on the page script.
+- Browser (shared with Batch 3, same session): trigger a validation toast (Save with no serial), an error toast, open Service History with parts/artifacts, filter to no results on phone and desktop, pick an owner and see Vieworks options refresh, Add on `/vieworks` (BSID disabled), no console errors.
+
+## After implementation
+
+1. Self-review the diff: every removed name has zero remaining references; every function the page calls is still defined.
+2. Record fail-first proof and browser results here; `changes.md`; status `Executed — not yet committed`.
+3. Publish together with Batch 3 (see Batch 3 "After implementation").
+
+## Risks
+
+- **A missed call site** of a removed helper → `ReferenceError` on that action. Safety net: source test forbids the names anywhere; `node --check` does not catch it, so the browser sequence exercises toasts, history and filters.
+- Blast radius: `templates/products.html` only (Product, Genoray, Vieworks pages).
+
+# Product Inventory Batch 3: Faster Page Load
+
+**Status:** Executed — not yet committed (to be published together with Batch 4).
+**Finished:** 2026-10-07.
+
+**Where the plan and the outcome differed:**
+
+- `get_clients?fields=basic` returns `name or ''` (the page lower-cases names); full rows always include `product_count`/`group_name`, so the route test checks `product_count` rather than `contacts` (contacts are flattened into `cp1…` keys only when present).
+- `product_vieworks_link_payload_map` loads all link rows and all Vieworks items once (with owners joined) and filters in Python; same item shape and case-insensitive fallback as `product_vieworks_linked_items`.
+- `deleteProduct` also refreshes the Vieworks options after a delete (a deleted product frees its links) — verified in the browser.
+- `tests/test_genoray_inventory.py` pinned `'/api/genoray/summary'` as a template marker; it now asserts the route still exists in `app.py` instead (the page no longer calls it). `tests/test_vieworks_inventory.py` checks that marker against `app.py` already, unchanged.
+- Fail-first: all 4 tests in `tests/test_product_inventory_batch3.py` failed on the unchanged code (`/get_products` went from 100 to 106 SQL statements when 3 products with Vieworks links were added); after, the count is flat and the payload equals `product_vieworks_link_payload` per product.
+- Browser (built-in, local server on a copy of `scheduler.db`; engineer `kent` on `localhost`, and the copy's superadmin `hanna` with a generated test password set only in the copy, signed in on `127.0.0.1` so the local session was untouched; signed out, copy and launch entry removed):
+  - Load: the catalog, `/get_products`, `/get_clients?fields=basic` and `/api/vieworks/items` all start within 5 ms of each other (~806 ms after navigation) and finish by ~1,490 ms, i.e. data ready ~0.68 s after DOM ready (was ~1.24 s with the waterfall). No summary request. Client list 11 KB (full list 18 KB). Single-request server times on this machine were noisy (~0.1–0.4 s each) and are not claimed as a gain.
+  - Footer "Showing 102 of 102" after Add, "101 of 101" after Delete; Delete sent only `DELETE /delete_product/ZZB3ADD` and `GET /api/vieworks/items`, removed the row, and freed its Vieworks link.
+  - `?edit=MPF16817600` auto-opens Edit with the legacy-name placeholder after both loads.
+  - `/vieworks` and `/genoray` load without a summary or catalog request; footers correct. No console errors.
+- Full suite before the combined Batch 3 + 4 publish: 24 failures, 3 errors, 5 skips — the same failing tests by name as the pre-Batch-1 baseline.
+**Approved:** 2026-10-07 — the owner asked to "plan batch 3 and 4"; Batches 3 and 4 publish together in one push.
+**Detailed:** 2026-10-07.
+
+## Context
+
+The browser check of `/products_page` (local copy, 101 products) showed the data requests running one after another: the Product Name list (~0.46 s) finishes before the three main requests start, and the Vieworks list waits for those, so the table appears ~1.4 s after the page loads. The page also downloads more than it needs and the server makes one query per product for owners and Vieworks links. Batch 4 (cleanup) follows in the same push.
+
+## Decisions taken
+
+1. Same data on screen; only fewer/smaller/parallel requests and fewer server queries.
+2. `/get_clients` keeps its current response for every existing caller; the light form is opt-in by query parameter.
+3. One service-worker bump (`v259`) and one release item for Batches 3 + 4.
+
+## Investigation
+
+1. **Waterfall** (`templates/products.html`): `DOMContentLoaded` does `await loadProductNameCatalog(); await loadData();` (~`:935`). `loadData` (`:1026`) runs items, `/get_clients` and the summary in `Promise.all`, then `await loadVieworksLinkOptions()` afterwards. Nothing in `loadData`'s rendering needs the catalog; only the `?edit=` auto-open (`openEditModal` → `setProductNameForEdit`) does, and it runs after both.
+2. **Summary request is redundant here.** `productSummary` is read only for `total_products` (`updateProductCountFooter`), which equals `productsData.length`; the footer chips are already counted client-side. The summary routes (`app.py` `get_products_summary` ~33333 and the Genoray/Vieworks equivalents) each load every row again.
+3. **`/get_clients` is heavy** (`app.py` ~32976): runs `repair_recent_online_tsr_contacts_for_medical_centers()` (a write path) on every call, loads all `Contact` rows, product counts and contact payloads. This page uses only `id`, `name`, `address` (`masterClients`, `nameCounts`, autocomplete, `openEditModal`). Other callers (`clients.html`, `timeline.html`, `travel_request.html`, …) need the full shape.
+4. **Per-row queries in `/get_products`** (`app.py` ~33282): `p.owner.name` lazy-loads the `Client` per product (`Client.products` backref `owner`, `lazy=True`, `app.py:2057`); `product_vieworks_link_payload(p.serial_number)` (`:3124`) runs a link query plus `db.session.get(VieworksItem, …)` and owner loads per product (`product_vieworks_linked_items`, `:3103`). Calibration lookups are already batched (`latest_approved_calibration_certificates_for_products`, `latest_approved_calibration_approvals_for_equipment`).
+5. **Delete reloads everything.** `deleteProduct` calls `await loadData()` after success (4 requests); Save already updates the one row via `updateProductListAfterSave`.
+
+## Execution steps
+
+1. **Parallel start**: in `DOMContentLoaded`, `await Promise.all([loadProductNameCatalog(), loadData()]);` (rest unchanged). In `loadData`, run `loadVieworksLinkOptions()` inside the same `Promise.all` as the other requests (it already no-ops on Genoray/Vieworks pages). Done: in the network panel all data requests start within a few ms of each other.
+2. **Drop the summary request**: `loadData` no longer fetches `inventorySummaryUrl`; `updateProductCountFooter` uses `productsData.length`; remove `productSummary`, `inventorySummaryUrl` (JS const and Jinja `inventory_summary_url`) and the `productSummary.total_products = …` line in `updateProductListAfterSave`. Done: footer "Showing X of Y" correct after load, filter, add and delete.
+3. **Light client list**: `get_clients` — when `request.args.get('fields') == 'basic'`, return `[{'id', 'name', 'address'}]` ordered by name right after the HR-schedule-only branch, **before** the contact repair. The page fetches `/get_clients?fields=basic`. Done: response has only those keys; other callers' responses are byte-for-byte unchanged (test compares a no-parameter call before/after keys).
+4. **Batch owners and Vieworks links in `/get_products`**: `Product.query.options(db.joinedload(Product.owner))`; new helper `product_vieworks_link_payload_map(serials)` next to `product_vieworks_link_payload` — one query for all `ProductVieworksLink` rows, one for the referenced `VieworksItem`s (with owner joined), same case-insensitive fallback as `product_vieworks_linked_items`, same per-item dict shape; `get_products` uses the map. `product_vieworks_link_payload` stays for its other callers. Done: query count for `/get_products` no longer grows with the number of products (measured with SQLAlchemy `before_cursor_execute` in the test).
+5. **Delete updates in place**: on success, remove the row from `productsData` and call `applyFilters()` (non-standalone pages also `loadVieworksLinkOptions()` since a deleted product frees its links). Done: deleting on the copy removes the row and the count drops by one with no other requests.
+6. **Tests** — `tests/test_product_inventory_batch3.py`: source checks (no `inventorySummaryUrl`/`productSummary`; `Promise.all([loadProductNameCatalog(), loadData()])`; `/get_clients?fields=basic`; `deleteProduct` has no `loadData()`); route tests — `/get_clients?fields=basic` returns exactly `id,name,address`; `/get_clients` without the parameter still returns `contacts`; `/get_products` returns the same JSON for a fixture with 2 owners and a Vieworks link as `product_vieworks_link_payload` would, and its SQL statement count with 3 products equals the count with 6. Fail-first for each (the query-count test must fail on the current code).
+7. **Release bookkeeping**: service worker `v259-product-inventory-speed` (v258 kept as marker); `releases.json` entry `2026-10-07-product-inventory-speed` (admins, engineers; Inventory): "Product, Genoray and Vieworks inventory open faster." Use the actual date of execution if later. `changes.md`; this plan's status.
+
+## Deliberately excluded
+
+- **Caching or pagination** of `/get_products` — not needed at ~100 rows.
+- **Changing `/get_clients` default output or the contact repair** — other pages depend on it; the repair's placement is a separate question.
+- **Calibration batching** — already batched.
+- **Removing the summary routes** — kept for safety; just not called by this page.
+
+## Verification
+
+- Fail-first, then focused modules: batch 1–4 files, `test_product_inventory_mutations`, `test_product_vieworks_links_history`, `test_product_calibration_certificate`, `test_operational_equipment_workflows`, tests that call `/get_clients` (`grep -l "get_clients" tests/`), `test_changelog_coverage`, `test_sw_cache_version`. Full suite once before the Batch 3 + 4 publish, compared by test name with the baseline (24 failures, 3 errors, 5 skips).
+- Browser (built-in, local server on a copy of `scheduler.db`, restart after template edits, viewport set explicitly): network timing for `/products_page` before/after (start times and when the table renders), footer counts, owner autocomplete (incl. duplicate-name address hint), Vieworks link options, add/edit/delete (delete needs an admin session — create a test admin on the copy only, remove afterwards), `?edit=<serial>` auto-open, `/genoray` and `/vieworks` load; no console errors. Remove the copy, test account and launch entry; reset the viewport.
+
+## After implementation
+
+1. Self-review: every function the page calls is defined; other `/get_clients` and `/get_products` callers untouched (Medical Centers, Calendar/timeline, Travel Request, dashboard).
+2. Record fail-first proof, timings and browser results here; `changes.md`; status `Executed — not yet committed`.
+3. After Batch 4 is also executed, on the owner's "commit and push": full suite once; stage explicit files only (`templates/products.html`, `app.py`, `static/changelog/releases.json`, the new batch test files, any updated test, `plans.md`, `changes.md`); never `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`. Push once; confirm `origin/main` only (owner confirms the Railway deploy).
+
+## Risks
+
+- **`joinedload` on a backref** or the link map returning a different shape → the JSON-equality test and the Vieworks history tests catch it.
+- **Light `/get_clients` used where contacts are needed** → only `products.html` opts in.
+- **Parallel catalog load** races the `?edit=` auto-open → it runs after both promises resolve.
+- Blast radius: `templates/products.html` (three inventory pages), two read-only routes in `app.py`, service worker, release note; no schema change.
+
 # Product Inventory Batch 2: Desktop Table Fit and Compact Phone Cards
 
 **Status:** Executed — commit `6eab0c7` (Batches 1 and 2 published together to `origin/main` on the owner's "commit and push").

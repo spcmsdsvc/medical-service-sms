@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-07-product-inventory-speed",
+      "release_date": "2026-10-07",
+      "title": "Faster Inventory Pages",
+      "summary": "Product, Genoray and Vieworks inventory open faster.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-07-product-inventory-speed-all",
+          "category": "Inventory",
+          "description": "Product, Genoray and Vieworks inventory now load their lists at the same time and download less, so the table appears sooner. Deleting an item removes just that row instead of reloading the whole page.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-07-product-inventory-fixes",
       "release_date": "2026-10-07",
       "title": "Product Inventory Fixes",

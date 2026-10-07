@@ -3136,6 +3136,36 @@ def product_vieworks_link_payload(product_serial):
     return payload
 
 
+def product_vieworks_link_payload_map(product_serials):
+    """Batch form of product_vieworks_link_payload for many products (same item shape)."""
+    ensure_product_vieworks_link_table()
+    wanted = {clean_str(serial) or '' for serial in product_serials}
+    links = [
+        row for row in ProductVieworksLink.query.order_by(ProductVieworksLink.vieworks_serial.asc()).all()
+        if row.product_serial in wanted
+    ]
+    items_by_serial = {}
+    items_by_folded = {}
+    if links:
+        for item in VieworksItem.query.options(joinedload(VieworksItem.owner)).all():
+            items_by_serial[item.serial_number] = item
+            items_by_folded.setdefault((item.serial_number or '').casefold(), item)
+    payload = {}
+    for row in links:
+        item = items_by_serial.get(row.vieworks_serial) or items_by_folded.get((row.vieworks_serial or '').casefold())
+        if not item:
+            continue
+        owner = getattr(item, 'owner', None)
+        payload.setdefault(row.product_serial, []).append({
+            'serial_number': clean_str(getattr(item, 'serial_number', None)) or '',
+            'name': clean_str(getattr(item, 'name', None)) or '',
+            'bsid': normalize_vieworks_bsid(getattr(item, 'bsid', None)),
+            'client_id': clean_int(getattr(item, 'client_id', None)),
+            'client_name': clean_str(getattr(owner, 'name', None)) or 'N/A',
+        })
+    return payload
+
+
 def product_vieworks_parent_payload(vieworks_serial):
     """Serialize the regular Product parent for one Vieworks serial."""
     links = product_vieworks_linked_items(vieworks_serial=vieworks_serial)
@@ -27092,7 +27122,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v255-personnel-fix-batch.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v256-reimbursement-pc-code.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v257-reimbursement-print-ready.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v258-product-inventory-fixes-layout';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v258-product-inventory-fixes-layout.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v259-product-inventory-speed';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -32988,6 +33019,13 @@ def get_clients():
             for client in Client.query.order_by(Client.name).all()
         ])
 
+    # Inventory owner pickers only need identity; skip contacts and the contact repair.
+    if request.args.get('fields') == 'basic':
+        return jsonify([
+            {'id': client.id, 'name': client.name or '', 'address': client.address}
+            for client in Client.query.order_by(Client.name).all()
+        ])
+
     try:
         repair_recent_online_tsr_contacts_for_medical_centers()
     except Exception as contact_repair_error:
@@ -33292,7 +33330,8 @@ def get_products():
         return jsonify([])
     if (clean_str(request.args.get('operational')) or '').lower() in {'1', 'true', 'yes'}:
         return jsonify(operational_equipment_rows())
-    products = Product.query.all()
+    products = Product.query.options(joinedload(Product.owner)).all()
+    linked_vieworks_by_serial = product_vieworks_link_payload_map(p.serial_number for p in products)
     certificate_approvals = (
         latest_approved_calibration_certificates_for_products(products)
         if can_access_products_page()
@@ -33306,7 +33345,7 @@ def get_products():
     results = []
 
     for p in products:
-        linked_vieworks = product_vieworks_link_payload(p.serial_number)
+        linked_vieworks = linked_vieworks_by_serial.get(p.serial_number, [])
         results.append({
             'serial_number': p.serial_number,
             'name': p.name,
