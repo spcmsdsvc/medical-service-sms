@@ -30,6 +30,9 @@ class ProductInventoryLayoutTests(unittest.TestCase):
         self.assertNotIn("p.bsid || 'Not assigned'", cards)
         self.assertNotIn('.product-mobile-date-box', TEMPLATE)
 
+    def test_headers_never_break_inside_words(self):
+        self.assertIn('.product-table-wrap thead th {\n        overflow-wrap: normal;', TEMPLATE)
+
     def test_phone_card_wrapper_uses_shell_gutter(self):
         self.assertIn('.container-fluid > .card {\n            padding: 0 !important;', TEMPLATE)
 

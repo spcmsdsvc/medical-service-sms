@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-07-product-inventory-headers",
+      "release_date": "2026-10-07",
+      "title": "Inventory Table Headers Fixed",
+      "summary": "Start Date and End Date headers no longer split inside words.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-07-product-inventory-headers-all",
+          "category": "Inventory",
+          "description": "On Product, Genoray and Vieworks inventory, the Start Date and End Date column headers now wrap between words instead of breaking letters onto separate lines.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-07-product-inventory-speed",
       "release_date": "2026-10-07",
       "title": "Faster Inventory Pages",

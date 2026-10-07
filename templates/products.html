@@ -2450,6 +2450,11 @@ function openAddModal() {
         overflow-wrap: anywhere;
     }
 
+    /* Headers wrap only between words ("Start / Date"), never inside one. */
+    .product-table-wrap thead th {
+        overflow-wrap: normal;
+    }
+
     .product-table-wrap :is(th, td):nth-child(1),
     .product-table-wrap :is(th, td):nth-child(3),
     .product-table-wrap :is(th, td):nth-child(4),

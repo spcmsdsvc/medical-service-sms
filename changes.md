@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-07
 
+- Fixed a Batch 2 layout regression on Product/Genoray/Vieworks inventory (`templates/products.html`): the Start/End Date headers, allowed to wrap in Batch 2, broke inside words ("St / art / Da / te") because table cells use `overflow-wrap: anywhere`. Header cells now use `overflow-wrap: normal`, so headers wrap only between words ("Start / Date"). Browser check on a database copy (1366 / 1440 / 1920 px, dark theme): date headers on two lines, table still fits at 1440 px (1073 / 1073; 3 px over only while a date column is sorted and shows "Newest"). Test `test_headers_never_break_inside_words` added to `tests/test_product_inventory_batch2.py` (failed before the fix). Service worker `v260-product-inventory-headers` (v259 kept as marker); release entry `2026-10-07-product-inventory-headers` (admins, engineers; Inventory).
+
 - Committed only the Product Inventory Batch 3 + 4 package (`templates/products.html`, `app.py`, `static/changelog/releases.json`, `tests/test_product_inventory_batch3.py`, `tests/test_product_inventory_batch4.py`, `tests/test_genoray_inventory.py`, `plans.md`, `changes.md`) as `9669649` on `main` and pushed it to `origin/main` with this record on the owner's "commit and push" (one deploy for both batches). Full suite before publishing: 24 failures, 3 errors, 5 skips — same failing tests by name as the baseline. No schema change. `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`, and the loose handoff file were not staged. No Railway variable or manual redeploy was changed.
 
 - Executed **Product Inventory Batch 3: Faster Page Load** and **Batch 4: Code Cleanup** on the owner's go-ahead; not committed, pushed, or deployed (to be published together).
