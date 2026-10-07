@@ -154,7 +154,7 @@
     .travel-notification-badge { min-width: 22px; padding: 2px 8px; border-radius: 999px; background: #dc2626; color: #fff; font-size: .74rem; font-weight: 950; }
     .travel-notification-close { width: 32px; height: 32px; border: 0; border-radius: 999px; background: #e2e8f0; color: #475569; font-weight: 950; cursor: pointer; }
 
-    .travel-dock { position: fixed; left: var(--sidebar-width, 240px); right: 0; bottom: 0; z-index: 1030; background: var(--app-surface, #fff); border-top: 1px solid var(--app-border, #e2e8f0); box-shadow: 0 -8px 20px rgba(15,23,42,.08); padding: 10px 16px; }
+    .travel-dock { position: fixed; left: var(--shell-offset, var(--sidebar-width, 240px)); right: 0; bottom: 0; z-index: 1030; background: var(--app-surface, #fff); border-top: 1px solid var(--app-border, #e2e8f0); box-shadow: 0 -8px 20px rgba(15,23,42,.08); padding: 10px 16px; }
     .travel-dock[hidden] { display: none; }
     .travel-dock-inner { max-width: 1220px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
     .travel-dock-total { font-weight: 950; color: var(--app-primary-text); font-size: 1.05rem; }

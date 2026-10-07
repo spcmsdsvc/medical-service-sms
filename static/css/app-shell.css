@@ -14,7 +14,7 @@
     --sidebar-width-max: 360px;
     --sidebar-width-step: 20px;
     --sidebar-width-default: 240px;
-    --sidebar-row-height: 46px;
+    --sidebar-row-height: 44px;
     --sidebar-subrow-height: 38px;
     --mobile-safe-top: env(safe-area-inset-top);
     --mobile-safe-bottom: env(safe-area-inset-bottom);
@@ -197,7 +197,7 @@ body.sidebar-resizing .main-content {
 .sidebar-group-label {
     padding: 12px 20px 5px;
     font-size: 0.64rem;
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.11em;
     text-transform: uppercase;
     color: var(--sidebar-text-dim);
@@ -224,9 +224,8 @@ body.sidebar-resizing .main-content {
     color: var(--sidebar-text);
     background: transparent;
     border: 0;
-    border-bottom: 1px solid var(--sidebar-divider);
     font-size: 0.9rem;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1.2;
     letter-spacing: 0.01em;
     text-align: left;
@@ -278,9 +277,14 @@ body.sidebar-resizing .main-content {
 }
 
 /* Active state. border-left-color is also set by app-themes.css with !important,
-   which is why the old hardcoded pink here was dead code. */
+   which is why the old hardcoded pink here was dead code. Only the current page
+   carries the accent rail; its open parent group just brightens, so the sidebar
+   never shows two rails at once (the rail view restores it on the parent icon). */
+.sidebar-section-toggle.active {
+    color: var(--sidebar-text-strong);
+}
+
 .sidebar a.active,
-.sidebar-section-toggle.active,
 .sidebar-calendar-main.active {
     color: var(--sidebar-text-strong);
     background: var(--sidebar-active-bg);
@@ -298,16 +302,10 @@ body.sidebar-resizing .main-content {
     border-bottom: 0;
 }
 
-.sidebar-calendar-row .sidebar-calendar-main {
-    border-bottom: 1px solid var(--sidebar-divider);
-}
-
 .sidebar-calendar-arrow {
     width: 46px;
     min-height: var(--sidebar-row-height);
     border: 0;
-    border-left: 1px solid var(--sidebar-divider);
-    border-bottom: 1px solid var(--sidebar-divider);
     background: transparent;
     color: var(--sidebar-text);
     display: inline-flex;
@@ -343,14 +341,13 @@ body.sidebar-resizing .main-content {
 
 .sidebar-subnav {
     background: var(--sidebar-subnav-bg);
-    border-bottom: 1px solid var(--sidebar-divider);
 }
 
 .sidebar-subnav a {
     min-height: var(--sidebar-subrow-height);
     padding: 0 20px 0 48px;
     font-size: 0.84rem;
-    font-weight: 700;
+    font-weight: 500;
     border-bottom: 0;
     color: var(--sidebar-text);
 }
@@ -434,10 +431,16 @@ body.sidebar-resizing .main-content {
     color: var(--sidebar-text-dim);
 }
 
-.sidebar-logout {
+/* `.sidebar .sidebar-logout` outranks the generic `.sidebar a` row rule, which
+   otherwise stretched this icon button to full width and squeezed the
+   username in the footer to 0px. */
+.sidebar .sidebar-logout {
     width: 34px;
     min-width: 34px;
+    min-height: 34px;
     height: 34px;
+    padding: 0;
+    border-bottom: 0;
     border-radius: 8px;
     display: inline-flex;
     align-items: center;
@@ -448,8 +451,8 @@ body.sidebar-resizing .main-content {
     transition: background-color 0.16s ease, color 0.16s ease;
 }
 
-.sidebar-logout:hover,
-.sidebar-logout:focus-visible {
+.sidebar .sidebar-logout:hover,
+.sidebar .sidebar-logout:focus-visible {
     background: rgba(232, 163, 61, 0.16);
     color: #ffd45f;
 }
@@ -466,28 +469,120 @@ body.sidebar-resizing .main-content {
     outline: none;
 }
 
-/* The head preference attribute is available before the body controller runs,
-   so a saved desktop collapse state does not flash expanded on navigation. */
+/* --- Desktop icon rail (collapsed) and peek -------------------------------
+   Collapsed is a 64px icon rail, the default. Hovering, focusing or tapping it
+   adds body.sidebar-peek, which slides the full sidebar over the page without
+   moving the content. The head script sets html[data-sidebar-collapsed] before
+   paint, so the rail never flashes open on navigation. Fixed page docks follow
+   --shell-offset (rail, pinned width, or 0 on mobile). */
+
+:root {
+    --sidebar-rail-width: 64px;
+    --shell-offset: var(--sidebar-width);
+}
+
 @media (min-width: 993px) {
+    html[data-sidebar-collapsed="true"] {
+        --shell-offset: var(--sidebar-rail-width);
+    }
+
     html[data-sidebar-collapsed="true"] .sidebar {
-        width: 0;
+        width: var(--sidebar-rail-width);
     }
 
     html[data-sidebar-collapsed="true"] .main-content {
-        margin-left: 0;
+        margin-left: var(--sidebar-rail-width);
     }
 
-    html[data-sidebar-collapsed="true"] #show-sidebar-btn {
-        display: inline-block !important;
+    /* The rail replaces the old in-page "show navigation" button on desktop. */
+    #show-sidebar-btn {
+        display: none !important;
+    }
+
+    body.sidebar-collapsed.sidebar-peek .sidebar {
+        width: var(--sidebar-width);
+        box-shadow: 0 16px 48px rgba(15, 23, 42, 0.28);
+    }
+
+    /* Rail only (not peeking): icons, separators, dots and initials. */
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-header h5,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-header .appearance-header-button,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-header .changelog-header-button,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-resize-handle,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-arrow,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-calendar-arrow,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-subnav,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-user-meta,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-logout {
+        display: none !important;
+    }
+
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-header {
+        justify-content: center;
+        padding: 16px 0;
+    }
+
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar a,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-toggle,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-calendar-main {
+        position: relative;
+        justify-content: center;
+        padding: 0;
+    }
+
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar a > span,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-toggle > span,
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-calendar-main > span {
+        display: none;
+    }
+
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-toggle.active {
+        background: var(--sidebar-active-bg);
+        border-left: 3px solid var(--app-primary);
+    }
+
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-calendar-row {
+        grid-template-columns: 1fr;
+    }
+
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-group-label {
+        height: 1px;
+        margin: 8px 14px;
+        padding: 0;
+        overflow: hidden;
+        font-size: 0;
+        background: var(--sidebar-divider);
+    }
+
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-count-badge.show {
+        position: absolute;
+        top: 10px;
+        left: calc(50% + 6px);
+        width: 8px;
+        min-width: 8px;
+        height: 8px;
+        padding: 0;
+        font-size: 0;
+    }
+
+    body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-user {
+        justify-content: center;
+        padding-left: 0;
+        padding-right: 0;
     }
 }
 
-body.sidebar-collapsed .sidebar {
-    width: 0;
+@media (prefers-reduced-motion: reduce) {
+    .sidebar,
+    .main-content {
+        transition: none !important;
+    }
 }
 
-body.sidebar-collapsed .main-content {
-    margin-left: 0;
+@media (max-width: 992px) {
+    :root {
+        --shell-offset: 0px;
+    }
 }
 
 .card {
