@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-07-reimbursement-pc-code",
+      "release_date": "2026-10-07",
+      "title": "PC Code in Reimbursement Remarks",
+      "summary": "Pick a PC code under Remarks; client visits need one before submitting.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-07-reimbursement-pc-code-engineers",
+          "category": "Reimbursement",
+          "description": "Each Remarks / Purpose box has a PC code list (PC18 RA - R/F to PC24 SMIP MFG, and PC26 Admin). Picking one adds just the code to the end of your remarks, for example \"Angeles Medical Center - PC18\". Rows for a medical center visit with an amount need a PC code before you can submit; other rows can have one too.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-06-personnel-fix-batch",
       "release_date": "2026-10-06",
       "title": "Personnel Fixes",

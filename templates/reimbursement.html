@@ -291,6 +291,23 @@
         min-height: 72px;
     }
 
+    .reim-pc-code {
+        box-sizing: border-box;
+        display: block;
+        width: 100%;
+        min-height: 40px;
+        margin-top: 6px;
+        border: 1px solid var(--app-border, #dbe3ea);
+        border-radius: 8px;
+        padding: 7px 10px;
+        background: var(--app-surface, #ffffff);
+        color: var(--app-text, #172033);
+    }
+
+    .reim-pc-code.is-missing {
+        border: 2px solid #dc3545;
+    }
+
     .reim-empty {
         text-align: center;
         padding: 32px;
@@ -3742,6 +3759,17 @@
             });
         }
 
+        const missingPcRows = editable ? includedRows.filter(function(row) { return row.pc_code_missing; }).length : 0;
+        if (missingPcRows > 0) {
+            blockers.push({
+                id: 'pc-code',
+                title: 'PC code',
+                detail: `${missingPcRows} client-visit row${missingPcRows === 1 ? ' needs' : 's need'} a PC code in Remarks.`,
+                action: 'focusMissingReimbursementPcCode',
+                actionLabel: 'Add PC code'
+            });
+        }
+
         if (editable && (unsaved || saveState !== 'saved')) {
             blockers.push({
                 id: 'save',
@@ -5127,6 +5155,97 @@
         applyReimbursementWorksheetView();
     }
 
+    // Profit-centre codes appended to the end of Remarks. Keep in step with
+    // REIMBURSEMENT_PC_CODES in app.py (submit refuses client visits without one).
+    const REIMBURSEMENT_PC_CODES = [
+        { code: 'PC18', label: 'RA - R/F', group: 'Medical' },
+        { code: 'PC19', label: 'RK - R/F FPD', group: 'Medical' },
+        { code: 'PC20', label: 'RB - CVS', group: 'Medical' },
+        { code: 'PC21', label: 'RL - CVS FPD', group: 'Medical' },
+        { code: 'PC22', label: 'RC - RAD', group: 'Medical' },
+        { code: 'PC23', label: 'RP - PARTS', group: 'Medical' },
+        { code: 'PC24', label: 'SMIP MFG', group: 'Medical' },
+        { code: 'PC26', label: 'Admin', group: 'Admin' }
+    ];
+    const REIMBURSEMENT_PC_CODE_ALTERNATION = REIMBURSEMENT_PC_CODES.map(function(item) { return item.code; }).join('|');
+
+    function getReimbursementPcCode(text) {
+        const matches = String(text || '').match(new RegExp(`\\b(${REIMBURSEMENT_PC_CODE_ALTERNATION})\\b`, 'gi'));
+        return matches ? matches[matches.length - 1].toUpperCase() : '';
+    }
+
+    function applyReimbursementPcCode(text, code) {
+        const base = String(text || '')
+            .replace(new RegExp(`\\s*-?\\s*\\b(${REIMBURSEMENT_PC_CODE_ALTERNATION})\\b`, 'gi'), '')
+            .trim();
+        if (!code) return base;
+        return base ? `${base} - ${code}` : code;
+    }
+
+    function reimbursementRowNeedsPcCode(row) {
+        return !!row && !row.manual && !!String(row.client || '').trim();
+    }
+
+    function buildReimbursementPcCodeSelect(row, rowKey) {
+        const selected = getReimbursementPcCode(row.remarks);
+        const required = reimbursementRowNeedsPcCode(row);
+        const groups = ['Medical', 'Admin'].map(function(group) {
+            const options = REIMBURSEMENT_PC_CODES.filter(function(item) { return item.group === group; }).map(function(item) {
+                return `<option value="${item.code}" ${item.code === selected ? 'selected' : ''}>${item.code} - ${reimEscape(item.label)}</option>`;
+            }).join('');
+            return `<optgroup label="${group}">${options}</optgroup>`;
+        }).join('');
+        return `<select class="reim-pc-code" data-row-key="${reimEscape(rowKey)}" onchange="handleReimbursementPcCodeChange(this)" aria-label="PC code${required ? ' (required)' : ''}"><option value="">${required ? 'PC code (required)' : 'PC code'}</option>${groups}</select>`;
+    }
+
+    function syncReimbursementPcCodeSelects(rowKey, text) {
+        if (!rowKey) return;
+        const code = getReimbursementPcCode(text);
+        document.querySelectorAll(`.reim-pc-code[data-row-key="${CSS.escape(rowKey)}"]`).forEach(function(select) {
+            select.value = code;
+            if (code) select.classList.remove('is-missing');
+        });
+    }
+
+    function handleReimbursementPcCodeChange(select) {
+        if (!select) return;
+        const rowKey = select.dataset.rowKey;
+        const remarks = rowKey
+            ? (document.querySelector(`${getActiveReimbursementRemarksSelector()}[data-row-key="${CSS.escape(rowKey)}"]`)
+                || document.querySelector(`.reim-remarks[data-row-key="${CSS.escape(rowKey)}"]`))
+            : null;
+        if (!remarks || !reimbursementIsEditable()) {
+            syncReimbursementPcCodeSelects(rowKey, remarks ? remarks.value : '');
+            applyReimbursementStatusUi();
+            return;
+        }
+        remarks.value = applyReimbursementPcCode(remarks.value, select.value);
+        handleReimbursementRemarksInput(remarks);
+    }
+
+    function focusMissingReimbursementPcCode() {
+        const missingKeys = collectReimbursementRowsForSave()
+            .filter(function(row) { return row.pc_code_missing && getReimbursementPayloadRowTotal(row) > 0; })
+            .map(function(row) { return String(row.shift_id); });
+        if (!missingKeys.length) return;
+        missingKeys.forEach(function(rowKey) {
+            document.querySelectorAll(`.reim-pc-code[data-row-key="${CSS.escape(rowKey)}"]`).forEach(function(select) {
+                select.classList.add('is-missing');
+            });
+        });
+        const mobileVisible = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+        const scope = mobileVisible ? '#reimMobileList' : '#reimTableBody';
+        if (mobileVisible) {
+            const toggle = document.querySelector(`#reimMobileList .reim-mobile-card:not(.is-expanded) .reim-mobile-card-toggle[data-row-key="${CSS.escape(missingKeys[0])}"]`);
+            if (toggle) toggleReimbursementMobileCard(toggle);
+        }
+        const select = document.querySelector(`${scope} .reim-pc-code[data-row-key="${CSS.escape(missingKeys[0])}"]`);
+        closeReimbursementReadiness();
+        if (!select) return;
+        try { select.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (error) { select.scrollIntoView(); }
+        select.focus();
+    }
+
     function handleReimbursementRemarksInput(input) {
         if (!input) return;
         if (!reimbursementIsEditable()) {
@@ -5140,8 +5259,10 @@
                     peer.value = input.value;
                 }
             });
+            syncReimbursementPcCodeSelects(rowKey, input.value);
         }
         markReimbursementDirty();
+        updateReimbursementReadiness();
     }
 
     function recalculateReimbursementTotals() {
@@ -5425,7 +5546,7 @@ function renderReimbursementRows(rows) {
                     </td>
                     ${buildExpenseInputs(row)}
                     <td class="reim-total-cell">₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></td>
-                    <td><textarea class="reim-remarks" rows="3" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)">${reimEscape(row.remarks || '')}</textarea></td>
+                    <td><textarea class="reim-remarks" rows="3" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)">${reimEscape(row.remarks || '')}</textarea>${buildReimbursementPcCodeSelect(row, rowKey)}</td>
                 </tr>
             `;
         }).join('') + '<tr id="reimViewEmptyDesktop" style="display:none"><td colspan="15" class="reim-empty"></td></tr>';
@@ -5463,6 +5584,7 @@ function renderReimbursementRows(rows) {
                         ${buildMobileExpenseInputs(row)}
                         <div style="margin-top:10px;">
                             <textarea class="reim-remarks" rows="3" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)" placeholder="Purpose / remarks">${reimEscape(row.remarks || '')}</textarea>
+                            ${buildReimbursementPcCodeSelect(row, rowKey)}
                         </div>
                         <div class="reim-mobile-row-actions">
                             <button type="button" class="reim-row-delete-btn" data-row-key="${reimEscape(rowKey)}" onclick="removeReimbursementRow(this.dataset.rowKey)" title="Delete row" aria-label="Delete ${reimEscape(row.task || 'reimbursement row')}"><i class="fa-solid fa-trash"></i></button>
@@ -5764,7 +5886,7 @@ function renderReimbursementRows(rows) {
                 input.title = '';
             }
         });
-        document.querySelectorAll('.reim-manual-category').forEach(function(select) {
+        document.querySelectorAll('.reim-manual-category, .reim-pc-code').forEach(function(select) {
             select.disabled = !editable;
             select.classList.toggle('reim-locked-field', !editable);
             select.title = editable ? '' : (lifecycle.lock_reason || `This reimbursement is ${status} and locked.`);
@@ -6667,10 +6789,12 @@ function renderReimbursementRows(rows) {
                     remarks: remarksInput ? remarksInput.value.trim() : (originalRow.remarks || '')
                 });
             } else {
+                const remarksValue = remarksInput ? remarksInput.value.trim() : '';
                 rows.push({
                     shift_id: Number(shiftId || rowKey),
                     amounts,
-                    remarks: remarksInput ? remarksInput.value.trim() : ''
+                    remarks: remarksValue,
+                    pc_code_missing: reimbursementRowNeedsPcCode(originalRow) && !getReimbursementPcCode(remarksValue)
                 });
             }
         });
@@ -7407,6 +7531,17 @@ async function saveReimbursementDraft(silent, options) {
         if (claimRowCount <= 0) {
             const msg = 'No reimbursement amount to submit. Please enter at least one reimbursement amount.';
             setReimbursementSubmitNotice(msg, 'warn');
+            reimAlert(msg);
+            return;
+        }
+
+        const missingPcCount = rowsForSubmit.filter(function(row) {
+            return row.pc_code_missing && getReimbursementPayloadRowTotal(row) > 0;
+        }).length;
+        if (missingPcCount > 0) {
+            const msg = `${missingPcCount} client-visit row${missingPcCount === 1 ? ' needs' : 's need'} a PC code in Remarks before submitting.`;
+            setReimbursementSubmitNotice(msg, 'warn');
+            focusMissingReimbursementPcCode();
             reimAlert(msg);
             return;
         }

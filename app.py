@@ -27089,7 +27089,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v246-personnel-deactivate.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v253-medical-center-layout.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v254-medical-center-merge.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v255-personnel-fix-batch';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v255-personnel-fix-batch.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v256-reimbursement-pc-code';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -35663,6 +35664,22 @@ def reimbursement_row_has_claim_amount(row):
         reimbursement_money_value(getattr(row, field, 0)) > 0
         for field in REIMBURSEMENT_EXPENSE_FIELDS
     )
+
+
+# Profit-centre codes engineers add at the end of reimbursement remarks.
+# Keep in step with REIMBURSEMENT_PC_CODES in templates/reimbursement.html.
+REIMBURSEMENT_PC_CODES = ('PC18', 'PC19', 'PC20', 'PC21', 'PC22', 'PC23', 'PC24', 'PC26')
+REIMBURSEMENT_PC_CODE_RE = re.compile(r'\b(' + '|'.join(REIMBURSEMENT_PC_CODES) + r')\b', re.IGNORECASE)
+
+
+def reimbursement_rows_missing_pc_code(claim_rows):
+    """Client-visit rows (schedule + medical center) being claimed without a PC code."""
+    return [
+        row for row in (claim_rows or [])
+        if getattr(row, 'shift_id', None)
+        and clean_str(getattr(row, 'client_name', None))
+        and not REIMBURSEMENT_PC_CODE_RE.search(getattr(row, 'remarks', None) or '')
+    ]
 
 
 def reimbursement_prune_zero_rows_for_submit(header, saved_rows):
@@ -50742,6 +50759,17 @@ def submit_reimbursement():
                 'error': 'No reimbursement amount to submit. Please enter at least one reimbursement amount.',
                 'excluded_zero_rows': 0,
                 'rows_submitted': 0
+            }), 400
+
+        missing_pc_rows = reimbursement_rows_missing_pc_code(claim_rows)
+        if missing_pc_rows:
+            missing_dates = sorted({row.row_date.strftime('%m-%d-%Y') for row in missing_pc_rows if row.row_date})
+            return jsonify({
+                'success': False,
+                'pc_code_required': True,
+                'missing_dates': missing_dates,
+                'error': 'PC code is required in Remarks for client-visit rows'
+                         + (f": {', '.join(missing_dates)}." if missing_dates else '.')
             }), 400
 
         reimbursement_lock_claim_schedules(claim_rows)

@@ -37,6 +37,103 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Reimbursement: PC Code in Remarks (Required for Client Visits)
+
+**Status:** Executed — not committed; awaiting the owner's "commit and push".
+**Finished:** 2026-10-07.
+
+**Where the plan and the outcome differed:**
+
+- Step 5: instead of the readiness model calling the PC helpers, `collectReimbursementRowsForSave()` sets `pc_code_missing` per schedule row (needs a code and has none), and the readiness model and Submit only count `pc_code_missing` rows with an amount. Keeps `buildReimbursementReadinessSnapshot` self-contained (its node test extracts it alone). `save_reimbursement_draft` ignores the extra key.
+- Lock: the select follows the existing `.reim-manual-category` lock (`disabled` + `reim-locked-field`) in `applyReimbursementStatusUi` rather than a CSS-only rule.
+- The server helper is `reimbursement_rows_missing_pc_code(claim_rows)`; the check runs right before `reimbursement_lock_claim_schedules`.
+- Fail-first: the three target tests in `tests/test_reimbursement_pc_code.py` failed on the unchanged code; the two "still allowed" route tests passed (positive control that the harness submits). After: the new file + `test_reimbursement_readiness` + `test_reimbursement_design` + `test_changelog_coverage` + `test_lpr_feature_switch` 71 tests OK; page script `node --check` OK; full suite 1,572 tests, 24 failures, 3 errors, 5 skips (baseline counts).
+- Browser (built-in, local server on a database copy, engineer `kent`, June 2026 draft): required label only on medical-center rows; PC18 appended, PC20 replaced it, blank removed it; typing "- pc21" by hand set the select to PC21; desktop and mobile boxes stayed in sync; an amount on a DDH row with no code showed the "PC code" item and the draft still auto-saved; Submit stopped with "1 client-visit row needs a PC code in Remarks before submitting.", scrolled to the row and outlined only that select; picking PC18 cleared the item and the outline; at 375 px the select is 273 × 44 px with no horizontal scroll; locked lifecycle disables the selects; no console errors. Copy, test login and temporary launch entry removed.
+**Approved:** 2026-10-07 — the owner asked for a PC code dropdown in the Remarks field, answered the two open rules, and replied "approved".
+**Detailed:** 2026-10-07.
+
+## Context
+
+Accounting needs every reimbursement row tagged with a profit-centre (PC) code. The owner supplied the code list (two scans) and asked for a dropdown on the Reimbursement page's Remarks / Purpose field. The dropdown shows "PC18 - RA - R/F", but selecting it writes only `PC18`, placed at the end of the remarks text inside the same field — e.g. "Angeles Medical Center bla bla bla - PC18". The code is required on client-visit rows and optional on every other row.
+
+## Decisions taken
+
+1. **Code list** (single source of truth in the page script), grouped:
+   - Medical: `PC18` RA - R/F · `PC19` RK - R/F FPD · `PC20` RB - CVS · `PC21` RL - CVS FPD · `PC22` RC - RAD · `PC23` RP - PARTS · `PC24` SMIP MFG
+   - Admin: `PC26` Admin
+2. **Storage:** the code lives in the existing `remarks` text — no new column, no migration. Format: `<remarks> - PCxx`; when remarks are empty, just `PCxx`.
+3. **"Client visit" = a schedule row with a medical center.** A row needs a code when it is a schedule row (not manual), has a client/medical center, and has a claim amount > 0. Manual items and schedule rows with no medical center (In Office, Leave, Training, Travel, Traveling to Client, etc.) may carry a code but are never blocked.
+4. **Enforced on Submit only.** Save Draft keeps working without codes. Zero-amount rows are ignored (they are excluded from submission anyway).
+
+## Investigation
+
+- Remarks textarea, desktop: `templates/reimbursement.html` ~5428 (`renderReimbursementRows`, last `<td>`); mobile card: ~5465. Both carry `data-row-key` and call `handleReimbursementRemarksInput(this)` (~5130), which mirrors the value to the peer box and calls `markReimbursementDirty()`.
+- `collectReimbursementRowsForSave()` (~6635) reads remarks via `getActiveReimbursementRemarksSelector()` (~5105) and sends `remarks` per row; schedule rows send `shift_id`, manual rows `manual: true`. Nothing else needs to change for the code to be saved.
+- Locking: `.reim-remarks` is styled read-only by `.reim-page.reim-locked` (~1974) and amount/remarks fields are not `disabled` on purpose (~5754 comment). The new select must follow the same lock (handlers already bail when `!reimbursementIsEditable()`).
+- Schedule rows have no "client visit" flag. `Shift` has only `title`/`client_id`. `reimbursement_shift_row()` (`app.py` ~35279) gives `client`; saved rows store it as `ReimbursementRow.client_name` (`app.py` ~38013). Local DB (read-only query): 557 schedules, 352 with a client; In Office, Leave, Holiday, Training, TRAVEL and Traveling to Client titles never have a client; PM, Installation, Technical Checkup, Site Visit, Corrective always do.
+- Readiness panel ("N items need attention"): `buildReimbursementReadinessSnapshot(options)` (~3704) builds `blockers`; its caller (~3868) passes `rows` from `collectReimbursementRowsForSave()`. `tests/test_reimbursement_readiness.py` extracts this function and runs it in node — the new blocker can be tested the same way.
+- `submitReimbursement()` (page ~7371) saves the draft first, then posts to `/submit_reimbursement` (`app.py` ~50669), which loads `saved_rows` and filters `claim_rows` with `reimbursement_row_has_claim_amount`. The server check goes right after `claim_rows` is computed.
+- Remarks already flow to the Excel (`reimbursement_excel_row_remarks`, ~35910) and PCV, so the code appears there with no change.
+- Browser check (owner-requested, local server on a database copy, engineer `kent`, June 2026 draft, 20 rows): Remarks column header reads "Purpose" in the current view; the textarea is ~372 × 82 px at 1024 px wide, with room for a select beneath it. The copy and temporary launch entry were removed afterwards.
+
+## Execution steps
+
+1. **Code list + helpers** (`templates/reimbursement.html`, page script near the remarks handlers ~5105):
+   - `REIMBURSEMENT_PC_CODES` — array of `{ code, label, group }` from Decision 1.
+   - `REIMBURSEMENT_PC_CODE_PATTERN` — matches any listed code as a whole word (`\bPC(18|19|20|21|22|23|24|26)\b`, case-insensitive), built from the list.
+   - `getReimbursementPcCode(text)` → the last listed code found, upper-cased, or `''`.
+   - `applyReimbursementPcCode(text, code)` → removes every listed code plus its leading ` - ` separator, trims, then appends ` - CODE` (or just `CODE` when the remaining text is empty); empty `code` only removes.
+   - `reimbursementRowNeedsPcCode(row)` → `!row.manual && !!String(row.client || '').trim()`.
+   - Done: helpers defined once; no change to existing functions.
+2. **Dropdown markup** (`renderReimbursementRows`, desktop ~5428 and mobile ~5465): add `buildReimbursementPcCodeSelect(row, rowKey)` returning `<select class="reim-pc-code" data-row-key=… onchange="handleReimbursementPcCodeChange(this)" aria-label="PC code">` with a blank option ("PC code" / "PC code (required)" when `reimbursementRowNeedsPcCode`), `<optgroup label="Medical">` / `<optgroup label="Admin">`, option text `PC18 - RA - R/F`, value `PC18`, pre-selected from `getReimbursementPcCode(row.remarks)`. Place it directly under each textarea. Done: every row (desktop + mobile) shows the select with the right preselection after load.
+3. **Handlers:**
+   - New `handleReimbursementPcCodeChange(select)`: bail like the remarks handler when not editable; find the active remarks box for the row key, set `value = applyReimbursementPcCode(value, select.value)`, then call the existing `handleReimbursementRemarksInput(box)` (mirrors + marks dirty); sync all `.reim-pc-code` peers for the row; refresh readiness.
+   - Extend `handleReimbursementRemarksInput` (keep name/signature): after mirroring, set every `.reim-pc-code[data-row-key]` for that row to `getReimbursementPcCode(input.value)`.
+   - Done: select ↔ text stay in sync both ways, desktop ↔ mobile stay in sync.
+4. **CSS** (page `<style>`): `.reim-pc-code` full width of the remarks cell, small margin-top, same font/border as `.reim-remarks`; `.reim-pc-code.is-missing` red border; add `.reim-pc-code` to the existing `.reim-page.reim-locked .reim-remarks` rule (~1974) so it locks the same way (plus `pointer-events: none`). Tap target ≥ 40 px on mobile.
+5. **Readiness blocker:**
+   - In `collectReimbursementRowsForSave()` schedule rows also carry `needs_pc_code: reimbursementRowNeedsPcCode(originalRow)` (the server ignores unknown keys — verify in `save_reimbursement_draft`; if not ignored, compute it in the readiness caller instead).
+   - In `buildReimbursementReadinessSnapshot`, when `editable`, count `includedRows` with `needs_pc_code && !getReimbursementPcCode(remarks)`; if > 0 push blocker `{ id: 'pc-code', title: 'PC code', detail: 'N client-visit row(s) need a PC code in Remarks.', action: 'focusMissingReimbursementPcCode', actionLabel: 'Add PC code' }`.
+   - New `focusMissingReimbursementPcCode()`: scrolls to/focuses the first missing select (expanding the mobile card when on mobile) and adds `.is-missing` to all missing selects.
+   - In `submitReimbursement()`, after the existing claim-row check, stop with the same message via `setReimbursementSubmitNotice` + `reimAlert` when any included row is missing a code (before the LPR/signature dialogs).
+   - Done: panel shows the item; Submit stops with a clear message; Save Draft unaffected.
+6. **Server check** (`app.py`):
+   - Constant `REIMBURSEMENT_PC_CODES = ('PC18','PC19','PC20','PC21','PC22','PC23','PC24','PC26')` and helper `reimbursement_remarks_pc_code(remarks)` (same whole-word rule).
+   - In `submit_reimbursement`, after `claim_rows`: `missing = [r for r in claim_rows if r.shift_id and clean_str(r.client_name) and not reimbursement_remarks_pc_code(r.remarks)]`; if any, return 400 `{success: False, pc_code_required: True, missing_dates: [...], error: 'PC code is required in Remarks for client-visit rows: <dates>.'}` before any status change.
+   - Done: submit refused without codes, accepted with them; nothing else in the route changed.
+7. **Release bookkeeping:** service worker `CACHE_VERSION` bump (read live; keep the old one as a historical marker); `static/changelog/releases.json` entry `2026-10-07-reimbursement-pc-code` (audience engineers + admins, category Reimbursement); `changes.md`; this plan's status.
+
+## Deliberately excluded
+
+- No new database column or migration — the owner wants the code inside the remarks text.
+- No requirement on manual rows or schedules without a medical center (Decision 3).
+- No block on Save Draft (Decision 4).
+- No changes to approver, accounting, tracker, Excel, PCV or RFP screens/outputs — they already show remarks.
+- No back-filling of codes into existing drafts or submitted reimbursements.
+
+## Verification
+
+- **Tests** (`tests/test_reimbursement_design.py` or a new `tests/test_reimbursement_pc_code.py`), each run once against the unchanged code first to prove it fails:
+  - Server: draft with a client schedule row + amount and no code → submit 400 `pc_code_required`, status still Draft; with `… - PC18` → submit succeeds; client row with zero amount and no code → not blocking; no-client schedule row and manual row without code → not blocking.
+  - Page (node, like `test_reimbursement_readiness.py`): `applyReimbursementPcCode` appends, replaces, removes, handles empty text; `getReimbursementPcCode` finds it; readiness snapshot has the `pc-code` blocker only when a needed code is missing.
+  - Source check: every new handler named in markup is defined; existing `handleReimbursementRemarksInput`, `collectReimbursementRowsForSave`, `saveReimbursementDraft`, `submitReimbursement` still defined; `node --check` on the page script.
+- Focused modules: the new/changed test file + `tests.test_reimbursement_readiness` + `tests.test_reimbursement_design`. Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+- **Browser** (built-in, local server on a database copy, engineer login on the copy; desktop and 375 px): pick PC18 → text ends "- PC18"; change to PC20 → replaced, not duplicated; blank → removed; type a code by hand → select follows; desktop and mobile in sync; Save Draft works with missing codes; panel shows "PC code" and its button jumps to the row; Submit blocked until filled; locked (submitted) record shows the select read-only; no console errors; no horizontal scroll at 375 px. Remove the copy and temporary launch entry afterwards.
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined and Save Item / Save Draft / Submit / upload / download buttons still work.
+2. Record the fail-first proof here.
+3. Service worker bump and `releases.json` entry (step 7).
+4. Update `changes.md` and this plan's status (`Executed` + commit).
+5. Commit and push only on the owner's "commit and push": explicit staging of `app.py`, `templates/reimbursement.html`, the test file(s), service worker file, `static/changelog/releases.json`, `plans.md`, `changes.md`; never `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`. Verify `git ls-remote origin refs/heads/main` and the Railway deployment.
+
+## Risks
+
+- Drafts already open with client rows and no code will be blocked at Submit — intended; the panel and message say exactly what to add.
+- An engineer could type a code mid-text and edit after it; detection is "any listed code anywhere", so it still counts — the select re-appends at the end when used.
+- Blast radius: Reimbursement page and `submit_reimbursement` only; no schema change. Safety net: server check is a single early return, easy to revert.
+
 # Personnel Fix Batch: Audit Findings (Scheduler Access, Mobile Layout, Loading, Edit Note)
 
 **Status:** Executed — commit `86a24a5`; published to `origin/main` on the owner's "commit and push" (Railway deployment `5c845f87-ad62-418a-8943-517d788ccc52`).
