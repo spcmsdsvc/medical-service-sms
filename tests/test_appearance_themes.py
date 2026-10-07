@@ -162,7 +162,8 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('app-dark-pages.css', layout)
         self.assertGreater(layout.index('app-dark-pages.css'), layout.index('{% block content %}'))
         self.assertIn('app-appearance.js', layout)
-        self.assertEqual(layout.count('onclick="window.appAppearance && window.appAppearance.toggleQuick()"'), 2)
+        # Phone top bar, sidebar header, and the rail's account flyout.
+        self.assertEqual(layout.count('onclick="window.appAppearance && window.appAppearance.toggleQuick()"'), 3)
         self.assertIn('data-appearance-mode="system"', settings)
         self.assertIn('data-appearance-accent="shimadzu-red"', settings)
         self.assertIn("app-theme-changed", runtime)

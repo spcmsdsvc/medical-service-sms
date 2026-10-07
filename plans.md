@@ -37,9 +37,115 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Sidebar Group Flyouts (Icon Rail)
+
+**Status:** Executed — committed to sandbox `design/playground` on 2026-10-08 (owner chose "keep + fix keyboard" after the re-critique). Owner said "go" on 2026-10-07.
+
+**Re-critique (2026-10-08, `.impeccable/critique/2026-10-07T23-35-12Z__templates-layout-html.md`, 21/40, was 25/40):** most of the drop is deeper phone and keyboard checking of issues that predate this plan (phone drawer covered by the top bar and page docks, weak focus rings). One regression is from this plan: decision 3 (focus opens the flyout) puts every flyout link in the Tab order, about 17 stops for 7 rail icons, where the old collapsed groups kept their links out of it. The owner chose to keep the flyouts and fix the keyboard path next with `harden` (open on Enter/Space/ArrowRight, closed flyouts out of the Tab order, stronger focus rings); that reverses decision 3 and is a follow-up, not part of this commit.
+
+**Outcome (2026-10-07):** all 5 steps done. Where the plan and the outcome differed:
+
+- `app-shell.css` cache version is `?v=9`, not `?v=8`: the browser kept serving the cached v8 during testing.
+- Browser check found two issues, both fixed: (1) moving from an open flyout straight onto a single-link icon showed no name label (the label waited for the flyout's close delay); `showTip` now closes any flyout first. (2) In the account flyout, What's New inherited the amber `.has-unread` colour and sat beside the amber Log out; the row is now plain text and the badge alone signals unread.
+- One more existing test changed: `tests/test_appearance_themes.py` counted 2 Appearance buttons; the account flyout makes 3.
+- The phone-wide button rule (`button:not(...)`, min-height 44px, radius 12px) now also excludes `.sidebar-user-avatar`, so the avatar stays a 32px circle in the drawer.
+- Fail-first: `test_rail_group_flyouts_replace_the_peek`, `test_quiet_rows_and_one_active_signal`, the `?v=` pin and the Appearance count all fail on the committed files; 73 tests OK across `test_layout_sidebar`, `test_appearance_themes`, `test_offline_api_status`, `test_dark_mode_readability`.
+- Browser (DB copy, temporary account removed; Admin is username-locked so it was not visible to the test account, and the bottom clamp was tested on Records at 1366×500 instead): Records flyout with Inventory subheading (265px), staying open while the cursor moves into it and closing after leaving; Calendar flyout with Calendar + Create TSR; Dashboard name label; account flyout with name, role, Appearance, What's New (badge) and Log out; focus opens, Escape closes and returns focus, touch tap opens without Bootstrap expanding the group inline, tap outside closes, touch tap on Calendar opens the flyout instead of navigating; at 1366×500 the panel moves up (top 227, bottom 492); pinned is 240px with name and logout inline, no flyout parts, avatar disabled, groups expand inline; 375px drawer unchanged with a 32px avatar; light and dark themes; no console errors.
+**Approved:** 2026-10-07: the owner said "confirm" to the Impeccable `shape` brief, then answered two follow-up questions raised by the investigation (Calendar flyout, avatar flyout). Under the two-step rule this records approval only; execution needs a separate "go" / "execute" / "start".
+**Detailed:** 2026-10-07.
+**Branch:** sandbox `design/playground` only. Nothing goes to `main` until a separate "commit and push".
+
+## Context
+
+The desktop icon rail (plan below, live on `main` as `7e92a57`) opens the full sidebar as an overlay "peek" whenever the pointer enters the rail. Reaching a link inside a group then takes three steps: hover, click the group, click the link. This plan replaces the peek with per-icon flyouts, the pattern Gmail and VS Code use, so a group link is two steps away (hover, click) and the page is never covered by the whole sidebar. It is item P1 from the post-rail critique.
+
+## Decisions taken
+
+1. **Flyouts replace the peek.** In the rail, hovering a group icon opens a small panel beside it with the group name and its links. Hovering a single-link icon shows its name in a label. The full-sidebar peek (`body.sidebar-peek`, `initSidebarPeek`) is removed.
+2. **Touch:** tapping a group icon opens its flyout; tapping a link navigates; tapping outside closes it.
+3. **Keyboard:** Tab onto a group icon opens its flyout; Tab continues into its links; Escape closes it and returns focus to the icon.
+4. **Records → Inventory:** one panel; Records links, then a small "Inventory" subheading with its links below (no second-level flyout).
+5. **Calendar:** treated as a small group: its flyout shows Calendar and Create TSR. Clicking the Calendar icon with a mouse still opens Calendar.
+6. **Avatar flyout:** the initials at the bottom open a flyout with the username and role, Appearance, What's New and Log out (all hidden in the rail today and reachable only through the peek).
+7. **Look:** flyouts use the sidebar's own dark surface, sidebar row styles and the current-page marker, so they read as part of the rail.
+8. **Unchanged:** the pinned sidebar, the pin control, resize, the phone drawer, every link, role check and badge.
+
+## Investigation
+
+1. **Peek code:** `initSidebarPeek()` in `templates/layout.html:535-590` (open 150ms / close 300ms delays, `focusin`/`focusout`, touch first-tap capture, outside `pointerdown`, Escape, a `MutationObserver` ending the peek on pin or mobile). CSS: `body.sidebar-collapsed.sidebar-peek .sidebar` (`static/css/app-shell.css:509-512`), and every rail rule is written as `body.sidebar-collapsed:not(.sidebar-peek) …` (`app-shell.css:515-586`). No other file uses `sidebar-peek` besides `tests/test_layout_sidebar.py` (lines 184-208).
+2. **Groups are Bootstrap collapses:** `.sidebar-section-toggle` buttons with `data-bs-toggle="collapse"` and a following `.sidebar-subnav` (`layout.html:220-238` Field Operations, `260-275` Reports & Insights, `283-342` Records/Resources with the nested Inventory toggle and `.sidebar-subnav-nested` at `304-332`, `346-361` Admin). Each subnav sits **directly after** its trigger in source order, so Tab already flows from the icon into the links: the flyout can reuse these existing elements instead of duplicating markup.
+3. **Calendar** is a split row: link `.sidebar-calendar-main` plus `.sidebar-calendar-arrow` collapse button, subnav `#calendar-sidebar-section` holding only Create TSR (`layout.html:191-212`). In the rail the arrow and subnav are hidden, so Create TSR is unreachable without the peek.
+4. **Header and footer in the rail:** the appearance button, What's New bell, title and resize handle (`layout.html:97-133`) and the username/role and logout (`layout.html:372-389`) are `display:none` in the rail (`app-shell.css:515-525`). The avatar is a `<span aria-hidden="true">` (`layout.html:373`), so it cannot take focus today.
+5. **Copies stay in sync for free:** the What's New badge script uses `querySelectorAll('.changelog-header-badge')` (`layout.html:719`) and `static/js/app-appearance.js:47-50` updates every `.appearance-header-icon` / `.appearance-header-button`, so a second Appearance button and bell inside the avatar flyout update automatically.
+6. **Positioning:** `.sidebar` is `position: fixed; overflow: hidden` with no `transform` (`app-shell.css:100-113`) and `.sidebar-nav` scrolls (`overflow-y: auto`, `:180`). A child with `position: fixed` escapes both clips, so a flyout can be the existing subnav set to `position: fixed`, `left: var(--sidebar-rail-width)`, with `top` set by JS from the trigger's `getBoundingClientRect()`. Desktop sidebar `z-index: 1045` (`:489`) already sits above sticky headers and below modal backdrops.
+7. **Versions on this branch:** `app-shell.css?v=7`; service worker marker `v262-site-visit-optional-task` (`app.py:27142`). `main` is already at `v263`, so the publish bump for this plan is `v264`.
+
+## Execution steps
+
+1. **Markup (`templates/layout.html`).**
+   - Add a `<div class="sidebar-flyout-title" aria-hidden="true">` as the first child of each group subnav: Field Operations, Reports & Insights, Records/Resources (same Jinja expression as its label), Admin; and "Inventory" as the first child of `#inventory-sidebar-section`.
+   - In `#calendar-sidebar-section`, add a "Calendar" flyout title and `{{ nav_link('/timeline', 'fa-calendar-days', 'Calendar', extra_class='sidebar-flyout-only') }}` before Create TSR.
+   - Footer: the avatar `<span>` becomes `<button type="button" class="sidebar-user-avatar" aria-label="Account" aria-expanded="false" aria-controls="sidebar-user-flyout">`; wrap `.sidebar-user-meta`, a new Appearance button (same `onclick` and classes as the header one), a new What's New link (same condition `not stock_inventory_only_user and not hr_schedule_only_user`, same classes and badge span) and the existing `.sidebar-logout` in `<div id="sidebar-user-flyout" class="sidebar-user-flyout">`. Keep every existing class and id.
+   - Add one `<div id="sidebar-rail-tip" class="sidebar-rail-tip" aria-hidden="true"></div>` inside `#sidebar` for single-link name labels.
+   - Done: the pinned sidebar renders exactly as before (titles, the flyout-only Calendar link, the extra Appearance/What's New and the tip are hidden outside the rail); render tests per role still pass.
+2. **CSS (`static/css/app-shell.css`).** Delete the peek rules (`.sidebar-peek` width/shadow) and rewrite the rail selectors as `body.sidebar-collapsed .sidebar …`. Rail additions:
+   - `.sidebar-subnav.is-flyout-open` and `.sidebar-user-flyout.is-flyout-open`: `display: block !important; position: fixed; left: var(--sidebar-rail-width); min-width: 220px; max-height: calc(100vh - 16px); overflow-y: auto`, sidebar background, rounded right corners, soft shadow; inside it labels are visible again (undo the visually-hidden span rule) and rows are left-aligned with normal padding.
+   - Inside a flyout: `.sidebar-flyout-title` shows as a small uppercase label (group-label style); the nested Inventory toggle button is hidden and `.sidebar-subnav-nested` is forced visible, so Inventory reads as a subheading.
+   - Outside the rail: `.sidebar-flyout-title`, `.sidebar-flyout-only`, the avatar flyout's Appearance/What's New copies and `.sidebar-rail-tip` are `display: none`; the pinned footer keeps its current look (meta + logout inline).
+   - `.sidebar-rail-tip.is-visible`: fixed, beside the rail, small dark label, `pointer-events: none`.
+   - Reduced motion: no flyout transition. Bump `app-shell.css?v=7` → `?v=8` in `layout.html`.
+   - Done: no `sidebar-peek` string remains in CSS; pinned and phone drawer styles unchanged.
+3. **Controller (`templates/layout.html`).** Replace `initSidebarPeek()` with `initSidebarFlyouts()`:
+   - Triggers: each `.sidebar-section-toggle` that is not `.sidebar-subnav-toggle` (panel = its `aria-controls` element), `.sidebar-calendar-row` (panel `#calendar-sidebar-section`), and the avatar button (panel `#sidebar-user-flyout`). One flyout open at a time.
+   - `isRail()` as today. `open(trigger)`: add `is-flyout-open`, set `aria-expanded="true"` on the trigger, set `top` to the trigger's top, clamped so the panel's bottom stays 8px inside the viewport. `close()`: remove the class and restore the trigger's `aria-expanded` to the Bootstrap state (`panel.classList.contains('show')`; `false` for the avatar).
+   - Mouse: `pointerenter` on a trigger opens immediately (cancels any pending close); `pointerleave` from trigger or panel schedules a close after 300ms; entering the panel cancels it.
+   - Keyboard: `focusin` on a trigger opens; `focusout` closes when focus leaves both trigger and panel; Escape closes and focuses the trigger.
+   - Clicks in the rail (capture phase): a click on a group toggle opens/toggles its flyout and stops Bootstrap's collapse; a touch tap on the Calendar link or the avatar opens the flyout instead of navigating (a mouse click on Calendar still navigates).
+   - Outside `pointerdown`, `.sidebar-nav` scroll and window resize close the flyout. As today, a `MutationObserver` closes it when pinning or entering the mobile layout.
+   - Single links in the rail (`.sidebar-nav > a`): `pointerenter`/`focus` shows `#sidebar-rail-tip` with the link's label beside it; leave/blur hides it.
+   - The avatar button is `disabled` outside the rail (the footer is fully shown there), so the pinned Tab order is unchanged.
+   - Done: hover, tap and Tab each open the right panel; Escape returns focus; no Bootstrap collapse state changes while in the rail.
+4. **Tests (`tests/test_layout_sidebar.py`).** Update the three peek tests (`test_icon_rail_peek_and_docks_follow_the_shell_offset`, `test_rail_labels_stay_named_and_peek_sits_above_sticky_headers`, `test_quiet_rows_and_one_active_signal`) to the new selectors, keeping their dock, z-index, accessible-name and active-signal intent. New `test_rail_group_flyouts_replace_the_peek`: no `sidebar-peek` in the template or CSS; `initSidebarFlyouts` defined; a `sidebar-flyout-title` in each group subnav and in the nested Inventory; the flyout-only Calendar link; the avatar is a button controlling `#sidebar-user-flyout`, which holds Log out, Appearance and What's New; `?v=8` pin. Done: the new and changed checks fail on the current files and pass after.
+5. **DESIGN.md.** Layout (line ~154) and Navigation (line ~203): replace the peek description with group flyouts, the name label on single links, and the avatar flyout.
+
+## Deliberately excluded
+
+- **Phone menu (P2)** and **lighter header (P3):** separate items in the course.
+- **Regrouping or renaming menu items:** this plan keeps every link, label and role check.
+- **Duplicating group links into new markup:** the flyout reuses each existing subnav, so links, `aria-current` and permissions keep one source.
+- **The Reimbursement dock overlap:** its dock (z-index 1200) can still cover the bottom of a tall flyout on that page; a known limit carried over from the rail plan.
+
+## Verification
+
+- **Focused tests:** `tests.test_layout_sidebar`, `tests.test_appearance_themes`, `tests.test_offline_api_status`, `tests.test_dark_mode_readability`. Positive control: run the new/changed checks against the committed files first and record that they fail.
+- **Browser** (local server on a copy of `scheduler.db`, temporary superadmin, cleaned up after), 1366×768:
+  - Dashboard: hover each group icon → its flyout beside the icon with title and links; move the cursor diagonally from icon to panel without it closing; current page marked; clicking a link navigates.
+  - Records: Inventory shows as a subheading with its links; Admin's flyout stays inside the viewport (also at 1366×600).
+  - Calendar: hover → Calendar + Create TSR; a mouse click on the icon opens Calendar.
+  - Single link (Dashboard): the name label shows on hover and focus.
+  - Avatar: hover/Tab → username, role, Appearance (switches theme), What's New (badge matches the header), Log out link present.
+  - Keyboard: Tab onto Field Operations opens it, Tab reaches Travel Request, Escape closes and focus returns to the icon.
+  - Touch (emulated): tapping a group icon opens the flyout, tapping outside closes it.
+  - Pinned: identical to before (groups expand inline, resize works, no avatar button in the Tab order). Light and dark appearance.
+  - 375px: phone drawer unchanged. Console: no new errors.
+
+## After implementation
+
+1. Self-review the diff: no orphaned peek code; every id other code references (`sidebar`, `sidebar-toggle-desktop`, `show-sidebar-btn`, `sidebar-resize-handle`, nav badge ids, `.changelog-header-badge`) still present; the existing buttons (pin, resize, appearance, What's New, logout) still work.
+2. Re-run `/impeccable:impeccable critique templates/layout.html` and compare with the last 25/40.
+3. Record fail-first proof, browser results and any plan/outcome difference under this plan; update `changes.md`; set Status to `Executed — not yet committed`.
+4. Commit to `design/playground` only on "commit to playground". Before any publish: service worker marker `v264-…`, a `static/changelog/releases.json` entry (all roles, category "App"), the full suite once, then push to `origin/main` only on "commit and push". Never stage `scheduler.db`, handoffs, `changes-archive.md`, `.claude/`, `.impeccable/`, `output/`, `tmp/`.
+
+## Risks
+
+- **Every page changes:** the shell wraps the whole app. Safety net: the sandbox branch, the browser sequence, the pinned-mode check.
+- **The hover gap closes the flyout** when moving from icon to panel: the panel sits flush against the rail, and the 300ms close delay is cancelled on entering the panel.
+- **Bootstrap collapse fighting the flyout:** clicks in the rail are intercepted in the capture phase, and the flyout uses its own class, not `.show`, so returning to pinned shows each group exactly as it was.
+- **The disabled avatar in pinned mode** could look clickable: keep the existing avatar look with `cursor: default`.
+
 # Desktop Icon Rail Sidebar (App Shell)
 
-**Status:** Executed — not yet committed (sandbox `design/playground`). Owner said "okay go" on 2026-10-07 and picked **dark** at step 8.
+**Status:** Executed — sandbox `design/playground` commits `664ced5` and `1463447`; published to `main` as `7e92a57`. Owner said "okay go" on 2026-10-07 and picked **dark** at step 8.
 **Approved:** 2026-10-07 — the owner said "approved" to the Impeccable `shape` brief. Under the two-step rule this records approval only; execution needs a separate instruction ("go", "execute", "start").
 **Detailed:** 2026-10-07.
 **Branch:** sandbox `design/playground` only. Nothing goes to `main` until a separate "commit and push".

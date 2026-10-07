@@ -178,21 +178,18 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=7", self.layout)
+        self.assertIn("app-shell.css') }}?v=9", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
-    def test_icon_rail_peek_and_docks_follow_the_shell_offset(self):
+    def test_icon_rail_and_docks_follow_the_shell_offset(self):
         self.assertIn('--sidebar-rail-width: 64px;', self.shell_css)
         self.assertIn('html[data-sidebar-collapsed="true"] {\n        --shell-offset: var(--sidebar-rail-width);', self.shell_css)
-        self.assertIn('body.sidebar-collapsed.sidebar-peek .sidebar {\n        width: var(--sidebar-width);', self.shell_css)
-        self.assertIn('(function initSidebarPeek()', self.layout)
-        self.assertIn("event.key === 'Escape' && isPeeking()", self.layout)
         for name in ('reimbursement.html', 'travel_request.html', '_liquidation_base.html'):
             page = (ROOT / 'templates' / name).read_text(encoding='utf-8')
             self.assertIn('left: var(--shell-offset, var(--sidebar-width, 240px))', page, name)
             self.assertNotIn('left: var(--sidebar-width, 240px)', page, name)
 
-    def test_rail_labels_stay_named_and_peek_sits_above_sticky_headers(self):
+    def test_rail_labels_stay_named_and_flyouts_sit_above_sticky_headers(self):
         rail_labels = self.shell_css.split('.sidebar .sidebar-calendar-main > span {', 1)[1].split('}', 1)[0]
         self.assertNotIn('display: none', rail_labels)
         self.assertIn('clip: rect(0 0 0 0);', rail_labels)
@@ -205,7 +202,25 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('--sidebar-row-height: 44px;', self.shell_css)
         parent = self.shell_css.split('.sidebar-section-toggle.active {', 1)[1].split('}', 1)[0]
         self.assertNotIn('border-left', parent)
-        self.assertIn('body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-toggle.active {', self.shell_css)
+        self.assertIn('body.sidebar-collapsed .sidebar .sidebar-section-toggle.active {', self.shell_css)
+
+    def test_rail_group_flyouts_replace_the_peek(self):
+        self.assertNotIn('sidebar-peek', self.layout)
+        self.assertNotIn('sidebar-peek', self.shell_css)
+        self.assertIn('(function initSidebarFlyouts()', self.layout)
+        self.assertIn('.sidebar-subnav.is-flyout-open', self.shell_css)
+        # Each group's own subnav is the flyout, titled; Inventory is a subheading.
+        for section in ('calendar', 'field-operations', 'reports-insights', 'records', 'inventory', 'admin'):
+            opening = self.layout.split(f'<div id="{section}-sidebar-section"', 1)[1].split('\n', 2)[1]
+            self.assertIn('class="sidebar-flyout-title"', opening, section)
+        self.assertIn("nav_link('/timeline', 'fa-calendar-days', 'Calendar', extra_class='sidebar-flyout-only')", self.layout)
+        self.assertIn('.is-flyout-open .sidebar-subnav-nested {\n        display: block !important;', self.shell_css)
+        # The avatar opens an account flyout holding the tools the rail hides.
+        self.assertIn('class="sidebar-user-avatar"\n                    aria-label="Account"', self.layout)
+        account = self.layout.split('<div id="sidebar-user-flyout"', 1)[1].split('</div>', 1)[0]
+        for part in ('sidebar-user-meta', 'appearance-header-button', 'changelog-header-button', 'href="/logout"'):
+            self.assertIn(part, account)
+        self.assertIn('id="sidebar-rail-tip"', self.layout)
 
     def test_footer_logout_stays_an_icon_beside_the_username(self):
         css = (ROOT / 'static' / 'css' / 'app-shell.css').read_text(encoding='utf-8')

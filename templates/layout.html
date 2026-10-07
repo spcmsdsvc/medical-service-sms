@@ -52,7 +52,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=22">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=7">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=9">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -145,6 +145,8 @@
             </a>
         {%- endmacro %}
 
+        <div id="sidebar-rail-tip" class="sidebar-rail-tip" aria-hidden="true"></div>
+
         <nav class="sidebar-nav" aria-label="Main">
             {# Access flags come from inject_navigation_access() in app.py, which calls the
                same helpers the routes guard themselves with. Do not reintroduce inline
@@ -208,6 +210,8 @@
                     </button>
                 </div>
                 <div id="calendar-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path == '/offline-tsr' }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Calendar</div>
+                    {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar', extra_class='sidebar-flyout-only') }}
                     {{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}
                 </div>
             {% endif %}
@@ -230,6 +234,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
                 <div id="field-operations-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in field_ops_paths }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Field Operations</div>
                     {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
                     {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
                     {{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}
@@ -270,6 +275,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
                 <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Reports &amp; Insights</div>
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
                     {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
                 </div>
@@ -293,6 +299,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
                 <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">{{ 'Records' if is_inventory_management_user else 'Resources' }}</div>
                     {% if can_access_calibration_center %}
                         {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
                     {% endif %}
@@ -314,6 +321,7 @@
                             <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                         </button>
                         <div id="inventory-sidebar-section" class="collapse sidebar-subnav sidebar-subnav-nested {{ 'show' if request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) }}">
+                            <div class="sidebar-flyout-title" aria-hidden="true">Inventory</div>
                             {% if can_access_genoray_inventory or can_access_vieworks_inventory %}
                                 {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
                             {% endif %}
@@ -356,6 +364,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
                 <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Admin</div>
                     {{ nav_link('/activity_page', 'fa-clock-rotate-left', 'Activity Logs') }}
                     {{ nav_link('/settings', 'fa-gear', 'System Settings') }}
                 </div>
@@ -370,7 +379,15 @@
 
         {% if current_user.is_authenticated %}
         <div class="sidebar-user">
-            <span class="sidebar-user-avatar" aria-hidden="true">{{ current_user.username[:2]|upper }}</span>
+            {#- The avatar opens the account flyout in the desktop icon rail; it is
+                disabled elsewhere because the footer is fully shown there. -#}
+            <button type="button"
+                    class="sidebar-user-avatar"
+                    aria-label="Account"
+                    aria-expanded="false"
+                    aria-controls="sidebar-user-flyout"
+                    disabled>{{ current_user.username[:2]|upper }}</button>
+            <div id="sidebar-user-flyout" class="sidebar-user-flyout">
             <span class="sidebar-user-meta">
                 <span class="sidebar-user-name">{{ current_user.username }}</span>
                 <span class="sidebar-user-role">
@@ -383,9 +400,25 @@
                     {%- else -%}Staff{%- endif -%}
                 </span>
             </span>
+            {#- Rail-only copies of the header tools; app-appearance.js and the What's
+                New badge script update every copy by class. -#}
+            <button type="button" class="appearance-header-button sidebar-flyout-only" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
+                <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
+                <span>Appearance</span>
+            </button>
+            {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
+               class="changelog-header-button sidebar-flyout-only {{ 'active' if request.path == '/whats_new' }}"
+               aria-label="What's New"
+               title="What's New">
+                <i class="fa-solid fa-bell" aria-hidden="true"></i>
+                <span>What's New</span>
+                <span class="changelog-header-badge" aria-hidden="true"></span>
+            </a>{% endif %}
             <a href="/logout" class="sidebar-logout" aria-label="Log out" title="Log out">
                 <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+                <span class="sidebar-flyout-only">Log out</span>
             </a>
+            </div>
         </div>
         {% endif %}
     </div>
@@ -445,7 +478,7 @@
         // A closed mobile drawer must not keep its links in the Tab order; inert
         // removes them from focus and from screen readers until it opens. On
         // desktop the sidebar is never hidden: collapsed is the icon rail, whose
-        // icons stay reachable (focusing one opens the peek).
+        // icons stay reachable (focusing a group icon opens its flyout).
         function syncSidebarInert() {
             const sidebar = document.getElementById('sidebar');
             if (!sidebar) return;
@@ -532,60 +565,176 @@
         // the live body/control state as soon as the shell exists.
         syncSidebarVisibilityForViewport();
 
-        // Icon rail peek: hovering, focusing or tapping the collapsed rail slides the
-        // full sidebar over the page (no layout shift); leaving it or Escape tucks it back.
-        (function initSidebarPeek() {
+        // Icon rail flyouts: hovering, focusing or tapping a group icon (or Calendar,
+        // or the avatar) opens that group's own subnav beside the rail; single links
+        // show their name in a label. Leaving, Escape or a tap outside closes it.
+        (function initSidebarFlyouts() {
             const sidebar = document.getElementById('sidebar');
             if (!sidebar) return;
-            const OPEN_DELAY = 150;
+            const nav = sidebar.querySelector('.sidebar-nav');
+            const tip = document.getElementById('sidebar-rail-tip');
+            const avatar = sidebar.querySelector('.sidebar-user-avatar');
             const CLOSE_DELAY = 300;
-            let timer = null;
+            let current = null;
+            let closeTimer = null;
             let lastPointerType = 'mouse';
+            let openAtPointerDown = false;
+            let suppressFocusOpen = false;
 
             const isRail = () => !isMobileNavigationViewport()
                 && document.body.classList.contains('sidebar-collapsed');
-            const isPeeking = () => document.body.classList.contains('sidebar-peek');
 
-            function setPeek(open) {
-                clearTimeout(timer);
-                document.body.classList.toggle('sidebar-peek', open && isRail());
-            }
-
-            function schedulePeek(open, delay) {
-                clearTimeout(timer);
-                timer = setTimeout(() => setPeek(open), delay);
-            }
-
-            sidebar.addEventListener('pointerdown', event => { lastPointerType = event.pointerType || 'mouse'; });
-            sidebar.addEventListener('pointerenter', event => {
-                if (event.pointerType === 'mouse' && isRail()) schedulePeek(true, OPEN_DELAY);
-            });
-            sidebar.addEventListener('pointerleave', event => {
-                if (event.pointerType === 'mouse' && !sidebar.contains(document.activeElement)) {
-                    schedulePeek(false, CLOSE_DELAY);
+            const flyouts = [];
+            if (nav) {
+                nav.querySelectorAll(':scope > .sidebar-section-toggle').forEach(toggle => {
+                    const panel = document.getElementById(toggle.getAttribute('aria-controls'));
+                    if (panel) flyouts.push({ trigger: toggle, panel, ariaEl: toggle, focusEl: toggle });
+                });
+                const calendarRow = nav.querySelector('.sidebar-calendar-row');
+                const calendarPanel = document.getElementById('calendar-sidebar-section');
+                if (calendarRow && calendarPanel) {
+                    flyouts.push({
+                        trigger: calendarRow,
+                        panel: calendarPanel,
+                        ariaEl: calendarRow.querySelector('.sidebar-calendar-arrow'),
+                        focusEl: calendarRow.querySelector('.sidebar-calendar-main'),
+                    });
                 }
+            }
+            const userPanel = document.getElementById('sidebar-user-flyout');
+            if (avatar && userPanel) {
+                flyouts.push({ trigger: avatar, panel: userPanel, ariaEl: avatar, focusEl: avatar, account: true });
+            }
+
+            function hideTip() {
+                if (tip) tip.classList.remove('is-visible');
+            }
+
+            function close() {
+                clearTimeout(closeTimer);
+                if (!current) return;
+                const { panel, ariaEl, account } = current;
+                panel.classList.remove('is-flyout-open');
+                panel.style.top = '';
+                if (ariaEl) {
+                    ariaEl.setAttribute('aria-expanded', !account && panel.classList.contains('show') ? 'true' : 'false');
+                }
+                current = null;
+            }
+
+            function open(flyout) {
+                clearTimeout(closeTimer);
+                if (!isRail() || current === flyout) return;
+                close();
+                hideTip();
+                current = flyout;
+                const { trigger, panel, ariaEl, account } = flyout;
+                panel.classList.add('is-flyout-open');
+                if (ariaEl) ariaEl.setAttribute('aria-expanded', 'true');
+                if (!account) {
+                    // Line up with the icon, but never run off the bottom of the screen.
+                    const top = Math.min(trigger.getBoundingClientRect().top, window.innerHeight - panel.offsetHeight - 8);
+                    panel.style.top = `${Math.max(8, top)}px`;
+                }
+            }
+
+            function scheduleClose() {
+                clearTimeout(closeTimer);
+                closeTimer = setTimeout(close, CLOSE_DELAY);
+            }
+
+            const flyoutFor = node => flyouts.find(f => f.trigger.contains(node) || f.panel.contains(node));
+
+            flyouts.forEach(flyout => {
+                [flyout.trigger, flyout.panel].forEach(part => {
+                    part.addEventListener('pointerenter', event => {
+                        if (event.pointerType !== 'mouse') return;
+                        if (current === flyout) clearTimeout(closeTimer);
+                        else if (part === flyout.trigger) open(flyout);
+                    });
+                    part.addEventListener('pointerleave', event => {
+                        if (event.pointerType === 'mouse' && current === flyout) scheduleClose();
+                    });
+                });
             });
-            sidebar.addEventListener('focusin', () => { if (isRail()) setPeek(true); });
+
+            sidebar.addEventListener('pointerdown', event => {
+                lastPointerType = event.pointerType || 'mouse';
+                const flyout = flyoutFor(event.target);
+                openAtPointerDown = !!flyout && current === flyout;
+            });
+
+            sidebar.addEventListener('focusin', event => {
+                if (suppressFocusOpen || !isRail()) return;
+                const flyout = flyoutFor(event.target);
+                if (flyout) open(flyout);
+                else close();
+            });
+
             sidebar.addEventListener('focusout', event => {
-                if (!sidebar.contains(event.relatedTarget) && !sidebar.matches(':hover')) setPeek(false);
-            });
-            // A tap on the rail opens the peek instead of following the link the
-            // finger happened to land on; the next tap acts normally.
-            sidebar.addEventListener('click', event => {
-                if (lastPointerType === 'touch' && isRail() && !isPeeking()) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setPeek(true);
+                if (current && !(current.trigger.contains(event.relatedTarget) || current.panel.contains(event.relatedTarget))) {
+                    close();
                 }
+            });
+
+            // In the rail a group icon opens its flyout instead of Bootstrap's inline
+            // collapse; a touch tap on Calendar or the avatar opens it instead of
+            // navigating. A mouse click or Enter on Calendar still opens Calendar.
+            sidebar.addEventListener('click', event => {
+                if (!isRail()) return;
+                const flyout = flyouts.find(f => f.trigger.contains(event.target));
+                if (!flyout) return;
+                const isMouseClick = event.detail > 0 && lastPointerType === 'mouse';
+                const isCalendarLink = flyout.focusEl && flyout.focusEl.tagName === 'A';
+                if (isCalendarLink && (isMouseClick || event.detail === 0 || openAtPointerDown)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const wasOpen = event.detail === 0 ? current === flyout : openAtPointerDown;
+                if (wasOpen && !isMouseClick) close();
+                else open(flyout);
             }, true);
+
             document.addEventListener('pointerdown', event => {
-                if (isPeeking() && !sidebar.contains(event.target)) setPeek(false);
+                if (current && !current.trigger.contains(event.target) && !current.panel.contains(event.target)) close();
             });
             document.addEventListener('keydown', event => {
-                if (event.key === 'Escape' && isPeeking()) setPeek(false);
+                if (event.key !== 'Escape' || !current) return;
+                const target = current.focusEl;
+                close();
+                suppressFocusOpen = true;
+                if (target) target.focus();
+                suppressFocusOpen = false;
             });
-            // Pinning or crossing into the mobile layout ends any peek.
-            new MutationObserver(() => { if (!isRail()) setPeek(false); })
+            if (nav) nav.addEventListener('scroll', () => { close(); hideTip(); }, { passive: true });
+            window.addEventListener('resize', () => { close(); hideTip(); });
+
+            // Single links: their name in a label beside the icon.
+            if (nav && tip) {
+                const showTip = link => {
+                    if (!isRail()) return;
+                    close();
+                    const label = link.querySelector('span');
+                    const rect = link.getBoundingClientRect();
+                    tip.textContent = label ? label.textContent.trim() : '';
+                    tip.style.top = `${rect.top + rect.height / 2}px`;
+                    tip.classList.add('is-visible');
+                };
+                nav.querySelectorAll(':scope > a').forEach(link => {
+                    link.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') showTip(link); });
+                    link.addEventListener('pointerleave', hideTip);
+                    link.addEventListener('focus', () => showTip(link));
+                    link.addEventListener('blur', hideTip);
+                });
+            }
+
+            // The avatar only has a job in the rail. Pinning or crossing into the
+            // mobile layout closes any flyout.
+            function syncRailState() {
+                if (avatar) avatar.disabled = !isRail();
+                if (!isRail()) { close(); hideTip(); }
+            }
+            syncRailState();
+            new MutationObserver(syncRailState)
                 .observe(document.body, { attributes: true, attributeFilter: ['class'] });
         })();
 

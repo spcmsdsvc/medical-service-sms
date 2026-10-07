@@ -151,7 +151,7 @@ A cool, low-chroma neutral system with one user-selectable accent; colour signal
 
 ## Layout
 
-On desktop (≥993px) the navigation is a 64px icon rail by default beside a fluid main area using Bootstrap's grid and containers; hovering, focusing or tapping the rail peeks the full 240px sidebar over the page without moving it, and pinning keeps it open and pushing the page (user-resizable 200–360px in 20px steps, pinned only). Fixed page docks follow `--shell-offset` (rail, pinned width, or 0 on phones). Rows in the sidebar are 44px (sub-rows 38px). Density is high on desktop: tables carry most data, with frozen columns and a horizontal-scroll hint that appears only when the table actually overflows.
+On desktop (≥993px) the navigation is a 64px icon rail by default beside a fluid main area using Bootstrap's grid and containers; hovering, focusing or tapping a group icon opens that group's links in a flyout beside the rail without moving the page, and pinning keeps it open and pushing the page (user-resizable 200–360px in 20px steps, pinned only). Fixed page docks follow `--shell-offset` (rail, pinned width, or 0 on phones). Rows in the sidebar are 44px (sub-rows 38px). Density is high on desktop: tables carry most data, with frozen columns and a horizontal-scroll hint that appears only when the table actually overflows.
 
 Breakpoints follow Bootstrap: the main collapse happens at 768px, with further adjustments at 992, 640, 576 and 420px. At ≤768px the shell switches to a mobile nav, tables become stacked cards (16px radius), page panels drop their padding so cards sit on the shell gutter, and all tappable controls are at least 44px tall. Safe-area insets are respected top and bottom.
 
@@ -200,7 +200,7 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 
 ### Navigation
 - **Sidebar:** Logbook Slate body (kept dark, owner choice 2026-10-07), Midnight Slate 72px header with the appearance button; rows have a 22px icon, label truncating with ellipsis, `sidebar-text` colour, weight 600 (sub-rows 500), and no divider between rows.
-- **Icon rail (desktop default):** 64px; icons only, group labels become thin separators, badge counts become 8px dots, the footer shows initials. Peek on hover/focus/tap overlays the full sidebar with a soft shadow; Escape closes; the ☰ control pins or collapses.
+- **Icon rail (desktop default):** 64px; icons only, group labels become thin separators, badge counts become 8px dots, the footer shows initials. Hover, focus or tap a group icon (or Calendar) for a flyout with the group name and its links (Records shows Inventory as a subheading); single links show a name label; the initials open an account flyout with name, role, Appearance, What's New and Log out. Flyouts use the sidebar surface with a soft offset shadow; Escape or a tap outside closes; the ☰ control pins or collapses.
 - **Hover:** faint white wash (7%), text turns white.
 - **Active:** white text, 16% accent wash, 3px accent left rail on the current page only; its open parent group just brightens. In the rail, the parent group icon carries the rail when its child page is active.
 - **Focus-visible:** 2px accent outline inset.
