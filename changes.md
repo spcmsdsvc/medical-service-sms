@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-07
 
+- Committed only the Product Inventory Batch 3 + 4 package (`templates/products.html`, `app.py`, `static/changelog/releases.json`, `tests/test_product_inventory_batch3.py`, `tests/test_product_inventory_batch4.py`, `tests/test_genoray_inventory.py`, `plans.md`, `changes.md`) as `9669649` on `main` and pushed it to `origin/main` with this record on the owner's "commit and push" (one deploy for both batches). Full suite before publishing: 24 failures, 3 errors, 5 skips — same failing tests by name as the baseline. No schema change. `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`, and the loose handoff file were not staged. No Railway variable or manual redeploy was changed.
+
 - Executed **Product Inventory Batch 3: Faster Page Load** and **Batch 4: Code Cleanup** on the owner's go-ahead; not committed, pushed, or deployed (to be published together).
 - Batch 3, `templates/products.html`: the Product Name list, items, clients and Vieworks list now load in one `Promise.all`; the page no longer requests `/get_products_summary` / `/api/genoray/summary` / `/api/vieworks/summary` (routes unchanged) and counts from the loaded rows; it asks for `/get_clients?fields=basic`; Delete removes the row in place and refreshes Vieworks link options instead of reloading all data.
 - Batch 3, `app.py`: `get_clients` returns only `id`, `name`, `address` for `?fields=basic` (before the contact repair; default response unchanged for all other callers); `get_products` joins owners and uses new `product_vieworks_link_payload_map` so its query count no longer grows per product (`product_vieworks_link_payload` kept for other callers).

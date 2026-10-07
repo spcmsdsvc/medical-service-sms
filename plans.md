@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Product Inventory Batch 4: Code Cleanup
 
-**Status:** Executed — not yet committed (to be published together with Batch 3).
+**Status:** Executed — commit `9669649` (Batches 3 and 4 published together to `origin/main` on the owner's "commit and push").
 **Finished:** 2026-10-07.
 
 **Where the plan and the outcome differed:**
@@ -107,7 +107,7 @@ Counts are occurrences in `templates/products.html` after Batch 2.
 
 # Product Inventory Batch 3: Faster Page Load
 
-**Status:** Executed — not yet committed (to be published together with Batch 4).
+**Status:** Executed — commit `9669649` (Batches 3 and 4 published together to `origin/main` on the owner's "commit and push").
 **Finished:** 2026-10-07.
 
 **Where the plan and the outcome differed:**
