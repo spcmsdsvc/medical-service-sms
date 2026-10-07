@@ -43,18 +43,32 @@
                 <!-- BULK DATA IMPORT - Updated v5.4.2 to include Regional Admin -->
                 {% if product_can_delete %}
                 <input type="file" id="prod-csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
-                <button type="button" class="btn btn-outline-primary btn-sm" id="product-import-btn" title="Import {{ inventory_plural }}" aria-label="Import {{ inventory_plural }}" onclick="document.getElementById('prod-csv-file').click()">
+                <button type="button" class="btn btn-outline-primary btn-sm product-header-action" id="product-import-btn" title="Import {{ inventory_plural }}" aria-label="Import {{ inventory_plural }}" onclick="document.getElementById('prod-csv-file').click()">
                     <i class="fa-solid fa-file-import me-1"></i>Import
                 </button>
                 {% endif %}
                 
-                <button type="button" class="btn btn-outline-success btn-sm" title="Export {{ inventory_plural }}" aria-label="Export {{ inventory_plural }}" onclick="window.location.href='{{ inventory_export_url }}'">
+                <button type="button" class="btn btn-outline-success btn-sm product-header-action" title="Export {{ inventory_plural }}" aria-label="Export {{ inventory_plural }}" onclick="window.location.href='{{ inventory_export_url }}'">
                     <i class="fa-solid fa-file-excel me-1"></i>Export
                 </button>
-                <button type="button" class="btn btn-outline-dark btn-sm" title="Print {{ inventory_label }} inventory" aria-label="Print {{ inventory_label }} inventory" onclick="window.print()">
+                <button type="button" class="btn btn-outline-dark btn-sm product-header-action" title="Print {{ inventory_label }} inventory" aria-label="Print {{ inventory_label }} inventory" onclick="window.print()">
                     <i class="fa-solid fa-print me-1"></i>Print
                 </button>
-                
+
+                <!-- Phones: Import / Export / Print collapse into one menu -->
+                <div class="dropdown product-more-actions">
+                    <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle w-100" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fa-solid fa-ellipsis me-1" aria-hidden="true"></i>More
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        {% if product_can_delete %}
+                        <li><button type="button" class="dropdown-item" onclick="document.getElementById('prod-csv-file').click()"><i class="fa-solid fa-file-import me-2" aria-hidden="true"></i>Import {{ inventory_plural }}</button></li>
+                        {% endif %}
+                        <li><a class="dropdown-item" href="{{ inventory_export_url }}"><i class="fa-solid fa-file-excel me-2" aria-hidden="true"></i>Export {{ inventory_plural }}</a></li>
+                        <li><button type="button" class="dropdown-item" onclick="window.print()"><i class="fa-solid fa-print me-2" aria-hidden="true"></i>Print inventory</button></li>
+                    </ul>
+                </div>
+
                 {% if product_can_edit %}
                 <button type="button" class="btn btn-success btn-sm ms-2" title="{% if is_vieworks_inventory %}Add Vieworks item{% elif is_genoray_inventory %}Add Genoray item{% else %}Add product{% endif %}" aria-label="{% if is_vieworks_inventory %}Add Vieworks item{% elif is_genoray_inventory %}Add Genoray item{% else %}Add product{% endif %}" onclick="openAddModal()">
                     <i class="fa-solid fa-plus me-1"></i>{% if is_vieworks_inventory %}Add Vieworks Item{% elif is_genoray_inventory %}Add Genoray Item{% else %}Add Product{% endif %}
@@ -70,30 +84,26 @@
         </div>
 
         <!-- Search and Filter Controls -->
-        <div class="row g-2 mb-4 no-print bg-light p-3 rounded align-items-end shadow-sm">
-            
-            <div class="col-md-4">
-                <label class="small fw-bold text-muted text-uppercase">Search Equipment</label>
-                <input type="text" id="search-text" class="form-control form-control-sm" oninput="applyFilters()" placeholder="S/N or Product Name">
+        <div id="product-filter-panel" class="row g-2 mb-4 no-print bg-light p-3 rounded align-items-end shadow-sm product-filter-panel">
+
+            <div class="col-md-6">
+                <label for="search-text" class="small fw-bold text-muted text-uppercase product-search-label">Search Equipment</label>
+                <div class="product-search-row">
+                    <input type="text" id="search-text" class="form-control form-control-sm" oninput="applyFilters()" placeholder="S/N or Product Name">
+                    <!-- Phones only: reveals the Client filter -->
+                    <button type="button" id="product-filter-toggle" class="btn btn-outline-secondary product-filter-toggle" aria-expanded="false" aria-controls="product-client-filter" onclick="toggleProductFilterPanel()">
+                        <i class="fa-solid fa-sliders" aria-hidden="true"></i>Filters<span id="product-filter-toggle-count" class="product-filter-toggle-count" hidden>1</span>
+                    </button>
+                </div>
             </div>
-            
-            <div class="col-md-4">
-                <label class="small fw-bold text-muted text-uppercase">Filter by Client</label>
+
+            <div class="col-md-6 product-client-filter" id="product-client-filter">
+                <label for="filter-cli-search" class="small fw-bold text-muted text-uppercase">Filter by Client</label>
                 <input type="text" id="filter-cli-search" class="form-control form-control-sm" oninput="applyFilters()" placeholder="Medical Center Name">
             </div>
-            
-            <div class="col-md-4">
-                <label class="small fw-bold text-muted text-uppercase">{{ inventory_label }} Status</label>
-                <select id="filter-status" class="form-select form-select-sm" onchange="applyFilters()">
-                    <option value="">All Statuses</option>
-                    <option value="Under Warranty">Active Warranty</option>
-                    <option value="Under Contract">Under Contract</option>
-                    <option value="Expired - Under Contract">Expired - Under Contract</option>
-                    <option value="Expired - No Contract">Expired - No Contract</option>
-                    <option value="No Expiry Set - Under Contract">No Expiry Set - Under Contract</option>
-                    <option value="No Expiry Set - No Contract">No Expiry Set - No Contract</option>
-                </select>
-            </div>
+
+            <!-- Status filter value; set by the status chips below the filter panel. -->
+            <input type="hidden" id="filter-status" value="">
 
             <div class="col-12 product-filter-footer">
                 <div class="product-filter-tools">
@@ -120,8 +130,11 @@
                     <i class="fa-solid fa-filter-circle-xmark me-1" aria-hidden="true"></i>Clear Filters
                 </button>
             </div>
-            
+
         </div>
+
+        <!-- Status chips: per-status counts that also filter the table -->
+        <div id="product-status-chips" class="product-status-chips no-print" role="group" aria-label="Filter by {{ inventory_label }} status"></div>
 
         <!-- Inventory Table -->
         <div class="product-table-scroll-hint no-print" role="note">
@@ -169,28 +182,6 @@
             <div>
                 <div class="small text-muted text-uppercase fw-bold">Inventory Count</div>
                 <div class="fw-bold text-dark" id="product-count-label">Showing 0 of 0 {{ inventory_plural }}</div>
-            </div>
-            <div class="d-flex flex-wrap gap-2">
-                <span class="count-chip bg-white border text-success">
-                    <i class="fa-solid fa-shield-halved me-1"></i>
-                    <span id="product-active-count">0 active</span>
-                </span>
-                <span class="count-chip bg-white border text-warning-emphasis">
-                    <i class="fa-solid fa-file-shield me-1"></i>
-                    <span id="product-expired-contract-count">0 expired + contract</span>
-                </span>
-                <span class="count-chip bg-white border text-danger">
-                    <i class="fa-solid fa-file-circle-xmark me-1"></i>
-                    <span id="product-expired-no-contract-count">0 expired + no contract</span>
-                </span>
-                <span class="count-chip bg-white border text-secondary">
-                    <i class="fa-solid fa-circle-question me-1"></i>
-                    <span id="product-no-expiry-count">0 no expiry</span>
-                </span>
-                <span class="count-chip bg-white border text-primary">
-                    <i class="fa-solid fa-filter me-1"></i>
-                    <span id="product-filter-state">No active filter</span>
-                </span>
             </div>
         </div>
     </div>
@@ -1240,26 +1231,11 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
     function updateProductCountFooter(filteredData){
         const total = productsData.length;
         const shown = filteredData.length;
-
-        const counts = filteredData.reduce((acc, p) => {
-            const status = p.computed_status || getProductWarrantyStatus(p);
-            if(status === "Under Warranty" || status === "Under Contract") acc.active++;
-            else if(status === "Expired - Under Contract") acc.expiredContract++;
-            else if(status === "Expired - No Contract") acc.expiredNoContract++;
-            else acc.noExpiry++;
-            return acc;
-        }, { active: 0, expiredContract: 0, expiredNoContract: 0, noExpiry: 0 });
-
         const hasFilter = productFiltersAreActive();
 
         const label = document.getElementById('product-count-label');
         const summary = document.getElementById('product-results-summary');
         const clearFilters = document.getElementById('product-clear-filters');
-        const active = document.getElementById('product-active-count');
-        const expiredContract = document.getElementById('product-expired-contract-count');
-        const expiredNoContract = document.getElementById('product-expired-no-contract-count');
-        const noExpiry = document.getElementById('product-no-expiry-count');
-        const state = document.getElementById('product-filter-state');
 
         if(label) label.innerText = `Showing ${shown} of ${total} ${inventoryPlural.toLowerCase()}`;
         if(summary){
@@ -1270,11 +1246,74 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
                 : `Showing ${shown} of ${total} ${inventoryPlural.toLowerCase()}`;
         }
         if(clearFilters) clearFilters.disabled = !hasFilter;
-        if(active) active.innerText = `${counts.active} active`;
-        if(expiredContract) expiredContract.innerText = `${counts.expiredContract} expired + contract`;
-        if(expiredNoContract) expiredNoContract.innerText = `${counts.expiredNoContract} expired + no contract`;
-        if(noExpiry) noExpiry.innerText = `${counts.noExpiry} no expiry`;
-        if(state) state.innerText = hasFilter ? 'Filtered results' : 'No active filter';
+        const toggleCount = document.getElementById('product-filter-toggle-count');
+        if(toggleCount) toggleCount.hidden = !document.getElementById('filter-cli-search')?.value.trim();
+        renderProductStatusChips();
+    }
+
+    function toggleProductFilterPanel(){
+        const panel = document.getElementById('product-filter-panel');
+        const toggle = document.getElementById('product-filter-toggle');
+        if(!panel || !toggle) return;
+        const open = panel.classList.toggle('is-filters-open');
+        toggle.setAttribute('aria-expanded', String(open));
+        if(open) document.getElementById('filter-cli-search')?.focus();
+    }
+
+    // The pinned filter panel sits just under the sticky mobile top bar.
+    function syncProductStickyOffset(){
+        const nav = document.querySelector('.mobile-nav');
+        const offset = nav && getComputedStyle(nav).display !== 'none' ? nav.offsetHeight : 0;
+        document.documentElement.style.setProperty('--product-sticky-top', `${offset}px`);
+    }
+    window.addEventListener('resize', syncProductStickyOffset);
+    document.addEventListener('DOMContentLoaded', syncProductStickyOffset);
+
+    const PRODUCT_STATUS_FILTERS = [
+        { value: 'Under Warranty', tone: 'success' },
+        { value: 'Under Contract', tone: 'warning' },
+        { value: 'Expired - Under Contract', tone: 'warning' },
+        { value: 'Expired - No Contract', tone: 'danger' },
+        { value: 'No Expiry Set - Under Contract', tone: 'muted' },
+        { value: 'No Expiry Set - No Contract', tone: 'muted' }
+    ];
+
+    // Counts ignore the status filter itself, so each chip shows what clicking it returns.
+    function renderProductStatusChips(){
+        const container = document.getElementById('product-status-chips');
+        if(!container) return;
+        if(!productDataLoaded || !productsData.length){
+            container.innerHTML = '';
+            return;
+        }
+
+        const selected = document.getElementById('filter-status')?.value || '';
+        const base = productsData.filter(productMatchesTextFilters);
+        const counts = base.reduce((acc, p) => {
+            const status = p.computed_status || getProductWarrantyStatus(p);
+            acc[status] = (acc[status] || 0) + 1;
+            return acc;
+        }, {});
+
+        const chip = (value, label, count, tone) => `
+            <button type="button" class="product-status-chip" aria-pressed="${value === selected}" onclick="setProductStatusFilter(${productJsArg(value)})">
+                ${tone ? `<span class="product-status-dot is-${tone}" aria-hidden="true"></span>` : ''}
+                <span>${escapeHtml(label)}</span>
+                <span class="product-status-chip-count">${count}</span>
+            </button>`;
+
+        container.innerHTML = chip('', 'All', base.length, '') + PRODUCT_STATUS_FILTERS
+            .filter(f => counts[f.value] || f.value === selected)
+            .map(f => chip(f.value, f.value, counts[f.value] || 0, f.tone))
+            .join('');
+    }
+
+    function setProductStatusFilter(value){
+        const field = document.getElementById('filter-status');
+        if(!field) return;
+        // Clicking the active chip again returns to All.
+        field.value = field.value === value ? '' : value;
+        applyFilters();
     }
 
 
@@ -1343,11 +1382,36 @@ function getWarrantyBadgeClass(status){
     return 'product-mobile-badge-na';
 }
 
+const PRODUCT_MOBILE_PAGE_SIZE = 20;
+let productMobileVisible = PRODUCT_MOBILE_PAGE_SIZE;
+let productMobileListKey = '';
+let productMobileData = [];
+
+// Phones render cards in pages of 20; a new search, filter or sort starts again at page one.
 function renderProductMobileCards(data){
     const container = document.getElementById('product-mobile-list');
     if(!container) return;
 
-    container.innerHTML = data.map(p => {
+    const listKey = [
+        document.getElementById('search-text')?.value,
+        document.getElementById('filter-cli-search')?.value,
+        document.getElementById('filter-status')?.value,
+        JSON.stringify(productSortState)
+    ].join('|');
+    if(listKey !== productMobileListKey){
+        productMobileListKey = listKey;
+        productMobileVisible = PRODUCT_MOBILE_PAGE_SIZE;
+    }
+    productMobileData = data;
+
+    const remaining = data.length - productMobileVisible;
+    const nextCount = Math.min(PRODUCT_MOBILE_PAGE_SIZE, remaining);
+    const showMore = remaining > 0 ? `
+        <button type="button" class="product-mobile-more" onclick="showMoreProductMobileCards()">
+            Show ${nextCount} more <span>· ${remaining} left</span>
+        </button>` : '';
+
+    container.innerHTML = data.slice(0, productMobileVisible).map(p => {
         const status = p.computed_status || getProductWarrantyStatus(p);
         const owner = p.client_name || 'No owner';
         const meta = [];
@@ -1402,7 +1466,15 @@ function renderProductMobileCards(data){
                     ${actions}
                 </div>
             </div>`;
-    }).join('');
+    }).join('') + showMore;
+}
+
+function showMoreProductMobileCards(){
+    const firstNew = productMobileVisible;
+    productMobileVisible += PRODUCT_MOBILE_PAGE_SIZE;
+    renderProductMobileCards(productMobileData);
+    // Keep keyboard and screen-reader users at the first newly shown card.
+    document.querySelectorAll('#product-mobile-list .product-mobile-card')[firstNew]?.focus();
 }
 
 function renderProductCalibrationDocumentLinks(product, mobile = false){
@@ -1767,14 +1839,18 @@ function renderTable(data) {
 
     // --- GRID FILTERING LOGIC ---
 
-    function applyFilters() { 
+    function productMatchesTextFilters(p){
         const sTxt = document.getElementById('search-text').value.toLowerCase();
         const cFilt = document.getElementById('filter-cli-search').value.toLowerCase();
-        const sFilt = document.getElementById('filter-status').value; 
-        
-        const filtered = productsData.filter(p => 
-            (p.name.toLowerCase().includes(sTxt) || p.serial_number.toLowerCase().includes(sTxt) || String(p.room || '').toLowerCase().includes(sTxt) || String(p.bsid || '').toLowerCase().includes(sTxt)) &&
-            p.client_name.toLowerCase().includes(cFilt) && 
+        return (p.name.toLowerCase().includes(sTxt) || p.serial_number.toLowerCase().includes(sTxt) || String(p.room || '').toLowerCase().includes(sTxt) || String(p.bsid || '').toLowerCase().includes(sTxt)) &&
+            p.client_name.toLowerCase().includes(cFilt);
+    }
+
+    function applyFilters() {
+        const sFilt = document.getElementById('filter-status').value;
+
+        const filtered = productsData.filter(p =>
+            productMatchesTextFilters(p) &&
             (sFilt === "" || (p.computed_status || getProductWarrantyStatus(p)) === sFilt)
         );
         
@@ -2400,14 +2476,89 @@ function openAddModal() {
         opacity: 0.55;
     }
 
-    .count-chip {
+    .product-search-row {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .product-filter-toggle,
+    .product-more-actions {
+        display: none;
+    }
+
+    .product-status-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        min-height: 2.25rem;
+        margin: -0.75rem 0 1rem;
+    }
+
+    .product-status-chips:empty {
+        display: none;
+    }
+
+    .product-status-chip {
         display: inline-flex;
         align-items: center;
+        gap: 0.5rem;
+        min-height: 2.25rem;
+        padding: 0.25rem 0.375rem 0.25rem 0.75rem;
+        border: 1px solid var(--app-border);
         border-radius: 999px;
-        padding: 6px 10px;
-        font-size: 0.78rem;
-        font-weight: 700;
+        background: var(--app-surface);
+        color: var(--app-text);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        line-height: 1;
         white-space: nowrap;
+        cursor: pointer;
+        transition: background-color 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out;
+    }
+
+    .product-status-chip:hover {
+        border-color: var(--app-primary-soft-border);
+        background: var(--app-surface-raised);
+    }
+
+    .product-status-chip:focus-visible {
+        outline: 2px solid var(--app-primary);
+        outline-offset: 2px;
+    }
+
+    .product-status-chip[aria-pressed="true"] {
+        border-color: var(--app-primary);
+        background: var(--app-primary-soft);
+        color: var(--app-primary-text);
+    }
+
+    .product-status-dot {
+        flex: none;
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+    }
+
+    .product-status-dot.is-success { background: var(--bs-success); }
+    .product-status-dot.is-warning { background: var(--bs-warning); }
+    .product-status-dot.is-danger { background: var(--bs-danger); }
+    .product-status-dot.is-muted { background: var(--bs-secondary); }
+
+    .product-status-chip-count {
+        min-width: 1.5rem;
+        padding: 0.25rem 0.375rem;
+        border-radius: 999px;
+        background: var(--app-surface-raised);
+        color: var(--app-muted);
+        font-size: 0.75rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+    }
+
+    .product-status-chip[aria-pressed="true"] .product-status-chip-count {
+        background: var(--app-primary-strong);
+        color: #fff;
     }
 
     .product-contract-control {
@@ -3139,16 +3290,32 @@ function openAddModal() {
         .container-fluid .btn-group {
             width: 100%;
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(0, 1fr);
             gap: 0.5rem;
         }
 
         .container-fluid .btn-group .btn {
             border-radius: 0.8rem !important;
             margin-left: 0 !important;
-            min-height: 2.45rem;
+            min-height: 2.75rem;
             font-size: 0.75rem;
             font-weight: 900;
+        }
+
+        .container-fluid .btn-group .product-header-action {
+            display: none;
+        }
+
+        .product-more-actions {
+            display: block;
+        }
+
+        .product-more-actions .dropdown-item {
+            display: flex;
+            align-items: center;
+            min-height: 2.75rem;
+            font-weight: 700;
         }
 
         .row.g-2.mb-4.no-print {
@@ -3158,24 +3325,89 @@ function openAddModal() {
             border-radius: 1rem !important;
         }
 
-        .row.g-2.mb-4.no-print .col-md-4 {
-            margin-bottom: 0.55rem;
+        /* Search stays reachable while scrolling the cards. The shell clips
+           mobile cards (overflow: hidden) and pulls rows out by 6px; both
+           would break sticky positioning and shift the page sideways. */
+        .container-fluid > .card {
+            overflow: visible !important;
+        }
+
+        .product-filter-panel {
+            position: sticky;
+            top: var(--product-sticky-top, 0px);
+            z-index: 20;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+            background-color: var(--app-surface-raised) !important;
+        }
+
+        .product-search-label {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        .product-filter-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex: none;
+            min-height: 2.75rem;
+            border-radius: 0.85rem;
+            font-size: 0.8125rem;
+            font-weight: 700;
+        }
+
+        .product-filter-toggle[aria-expanded="true"] {
+            border-color: var(--app-primary);
+            background: var(--app-primary-soft);
+            color: var(--app-primary-text);
+        }
+
+        .product-filter-toggle-count {
+            min-width: 1.1rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 999px;
+            background: var(--app-primary-strong);
+            color: #fff;
+            font-size: 0.7rem;
+            line-height: 1.2;
+            text-align: center;
+        }
+
+        .product-client-filter {
+            display: none;
+        }
+
+        .product-filter-panel.is-filters-open .product-client-filter {
+            display: block;
+            margin-top: 0.55rem;
+        }
+
+        .product-status-chips {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            margin: -0.75rem 0 0.85rem;
+            padding-bottom: 0.25rem;
+            scrollbar-width: none;
+        }
+
+        .product-status-chip {
+            min-height: 2.75rem;
         }
 
         .row.g-2.mb-4.no-print input,
         .row.g-2.mb-4.no-print select {
-            min-height: 2.55rem;
+            min-height: 2.75rem;
             border-radius: 0.85rem;
             font-weight: 700;
         }
 
         .product-filter-footer {
-            align-items: stretch;
-            flex-direction: column;
-        }
-
-        .product-filter-tools {
-            width: 100%;
+            margin-top: 0.55rem;
         }
 
         .product-freeze-control {
@@ -3188,7 +3420,24 @@ function openAddModal() {
         }
 
         .product-filter-footer .btn {
+            min-height: 2.75rem;
+            border-radius: 0.85rem;
+            white-space: nowrap;
+        }
+
+        .product-mobile-more {
             width: 100%;
+            min-height: 2.75rem;
+            border: 1px solid var(--app-border);
+            border-radius: 1rem;
+            background: var(--app-surface);
+            color: var(--app-primary-text);
+            font-weight: 700;
+        }
+
+        .product-mobile-more span {
+            color: var(--app-muted);
+            font-weight: 600;
         }
 
         .table-responsive {

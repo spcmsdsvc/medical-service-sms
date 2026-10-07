@@ -48,9 +48,25 @@ class ProductInventoryTemplateTests(unittest.TestCase):
         self.assertNotIn('innerHTML = `<strong>', body)
         self.assertIn('textContent = displayName', body)
 
-    def test_active_count_icon_exists_in_free_font_awesome(self):
+    def test_status_chips_sit_above_table_and_filter(self):
         self.assertNotIn('fa-shield-check', TEMPLATE)
-        self.assertIn('fa-shield-halved', TEMPLATE)
+        self.assertLess(TEMPLATE.index('id="product-status-chips"'), TEMPLATE.index('id="product-table-wrap"'))
+        self.assertIn('<input type="hidden" id="filter-status" value="">', TEMPLATE)
+        chips = function_body('renderProductStatusChips')
+        self.assertIn('productsData.filter(productMatchesTextFilters)', chips)
+        self.assertIn('aria-pressed', chips)
+        self.assertIn('field.value === value ? \'\' : value', function_body('setProductStatusFilter'))
+
+    def test_phone_toolbar_and_paged_cards(self):
+        self.assertIn('id="product-filter-toggle"', TEMPLATE)
+        self.assertIn('aria-controls="product-client-filter"', TEMPLATE)
+        self.assertIn('class="dropdown product-more-actions"', TEMPLATE)
+        self.assertEqual(TEMPLATE.count('product-header-action'), 4)  # Import, Export, Print + CSS rule
+        self.assertIn('const PRODUCT_MOBILE_PAGE_SIZE = 20;', TEMPLATE)
+        cards = function_body('renderProductMobileCards')
+        self.assertIn('data.slice(0, productMobileVisible)', cards)
+        self.assertIn('productMobileVisible = PRODUCT_MOBILE_PAGE_SIZE', cards)
+        self.assertIn('.focus()', function_body('showMoreProductMobileCards'))
 
     def test_save_refreshes_vieworks_options_and_warns_about_po_owner(self):
         self.assertIn('async function loadVieworksLinkOptions(', TEMPLATE)
