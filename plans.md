@@ -37,6 +37,88 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Reimbursement Package: Print-Ready Excel, Signature Placement, LPR Text
+
+**Status:** Executed — not committed; awaiting the owner's "commit and push".
+**Finished:** 2026-10-07.
+
+**Where the plan and the outcome differed:**
+
+- Step 4 also fixes the **travel liquidation RFP** (`build_travel_liquidation_rfp_template_pdf`), which used the same template and the same misplaced box; both RFP builders now pass `REIMBURSEMENT_RFP_APPROVAL_STAMP_BOX = (135, 496, 123, 49)` with `force_fallback=True`. Rendered with a real approver signature: signature on the APPROVED BY line, nothing beside NOTED BY.
+- Step 5: the box height is `23 + (field top − (box_y + 20)) / SIGNATURE_STAMP_SCALE`, because the overlay lets the signature grow to 1.5× its area; the overlay itself is unchanged. The PCV signature is now a little smaller (it must fit below the label).
+- Step 6: the `_nudge_widget_down` was removed for `AMOUNTRow*` on both the field and its kid widgets.
+- Step 7: pypdf's auto-size shrinks text well below what fits, so `lpr_fit_long_field_values` uses three tiers: fits one line at 10 pt → untouched (template auto-size, as before); else the largest one-line size from 9 to 6.5 pt; else two lines at 6/5.5/5 pt with the multiline flag; longer still → untouched. The 13.9 pt LPR rows physically limit two-line text to about 6 pt. Applied on the first page and continuation pages.
+- Excel row height helper uses integer ceiling (no `math` import in `app.py`).
+- Found, not fixed (out of scope, offered as a separate task): the travel liquidation RFP "Covering" text overflows its field and loses the trip dates; pypdf warns "→" is outside the form font encoding.
+- Fail-first: all 8 tests in `tests/test_reimbursement_print_ready.py` failed on the unchanged code. After: those 8 + `test_lpr_workflow` + `test_reimbursement_total_consistency` + `test_changelog_coverage` pass except `test_lpr_workflow.test_standalone_lpr_creation_is_single_flight_and_idempotent` (403 from `/save_lpr`, untouched; one of the baseline failures). Full suite 1,580 tests, 24 failures, 3 errors, 5 skips (baseline counts).
+- Render check (scratch database copy; packages for reimbursements 1, 2, 3, 8; LPRs with 3 and 10 items, short and long text; approved travel liquidations 1 and 2): Excel is A4 landscape (842×595) with "Page 1 of 2", every Work Details line visible, header words whole; RFP stamp in the APPROVED BY row with name/title/date under the line beside the form code; PCV signature below the label, amounts level with their items; LPR long "Intended for" on two readable lines, the equipment line single-line, continuation page the same, short LPR unchanged.
+**Approved:** 2026-10-07 — the owner asked for the emailed approved Excel to be print-ready, then asked to check every other generated file for bugs and cut-off data; reviewed the findings, chose A4 for the Excel, and replied "approved".
+**Detailed:** 2026-10-07.
+
+## Context
+
+When a reimbursement is approved, the engineer and accounting get the package ZIP (`build_reimbursement_package_zip_bytes`, `app.py` ~10818; also Download Package, `app.py` ~51005): the reimbursement Excel, PCV PDF, RFP PDF, All Receipts PDF and any linked LPR PDFs. The owner reports the Excel arrives "raw" with cut-off data and wants every file to be ready to print as-is.
+
+## Decisions taken
+
+1. Fix findings 1–5 below; items marked "note only" stay as they are.
+2. Excel paper size: **A4** landscape, one page wide, as many pages tall as needed.
+3. All 10 expense columns stay in the Excel (fixed accounting format), even when empty.
+4. PCV/RFP form fields are not flattened — accounting may still type PCV NO. and account fields.
+
+## Investigation
+
+Method: on a scratch copy of `scheduler.db`, built the package for reimbursements 1, 2, 3 (approved, one with a 16-page receipt PDF) and 8 (18-row draft), plus a throwaway LPR with long text; converted the Excel to PDF with LibreOffice and rendered every PDF page with PyMuPDF. Scratch copy removed afterwards.
+
+1. **Excel — High.** `build_reimbursement_excel_workbook` (`app.py` ~35955) sets every data row to a fixed 36 pt (`ws.row_dimensions[row_idx].height = 36`). Excel does not auto-fit rows with an explicit height, so Work Details (3–4 lines: client / task / equipment + serial) and Remarks are clipped on screen and on paper — the serial number line was already hidden in the sample. No `paperSize` (falls back to Letter), no footer/page numbers, not centred; "Representation" breaks mid-word at width 15 after fit-to-width scaling. A scratch prototype (computed row heights, A4, centred, page footer, retuned widths) printed with nothing cut off.
+2. **RFP — High.** `reimbursement_stamp_approval_signature(writer, header, field_name='APPROVED BY', fallback_box=[44.65, 535.0, 213.85, 56.0])` (`app.py` ~37537). The RFP template's `APPROVED BY` field rect is `[45, 557, 258, 571]`, i.e. one row **above** its "APPROVED BY:" label (label at y 538–550; NOTED BY label at 576–589; lines at about y 596, 558, 519). The stamp box `[x1, y1-22, w, 56]` = y 535–591 puts the approver's signature beside **NOTED BY** and the name/title/date on top of the "APPROVED BY:" label.
+3. **PCV — Medium.** PCV template `APPROVED BY` field `[360, 309, 442, 330]`, label at y 330–341. Same stamp box (y 287–343) lets the signature rise to y ~340, over the "APPROVED BY:" label. Name/title/date below the line are fine.
+4. **PCV amounts — Low.** `reimbursement_apply_pcv_field_formatting` (`app.py` ~36473) applies `_nudge_widget_down` (−3 pt) to `AMOUNTRow*` as well as header underline fields, so amounts sit ~3 pt lower than their particulars and touch the row line.
+5. **LPR — Medium.** `lpr_fill_pdf_bytes` (`app.py` ~73634) fills the official `forms/LPR FORM.pdf`; the template's auto-size fields shrink long "Intended for" text to ~4 pt and long item descriptions to ~6 pt (unreadable when printed). `lpr_fill_pdf_bytes` is shared by every LPR parent (reimbursement, travel request, cash advance — 9 call sites).
+- Verified fine: all amounts, totals and amount-in-words; filled PCV/RFP fields carry appearance streams (9/9 each), so every viewer shows them; receipts are passed through as uploaded.
+- Note only (not fixed): "AMOUNT PAID//REC'D" is a typo in the official RFP template; PCV/RFP/Excel "Date" is the generation date (the approval day for the emailed package, the download day for a later Download Package); the receipts file name uses `YYYYMMDD` while others use `MMDDYYYY`.
+- Correction recorded: the PCV template is Letter (612×792) and the RFP is 8.5×13 (612×936), not A4 as first stated; the owner chose A4 for the Excel anyway.
+
+## Execution steps
+
+1. **Excel row heights** (`app.py`, next to `build_reimbursement_excel_workbook`): new `reimbursement_excel_row_height(texts_and_widths)` — for each wrapped text cell, lines = sum over `\n`-split segments of `ceil(len(segment) / chars_per_line)` where `chars_per_line ≈ column width × 1.1` (Calibri/Arial 10); height = `max(18, lines × 13 + 5)`. In the builder, replace the fixed `height = 36` loop with this helper using Work Details (col 12) and Remarks (col 13). Done: no data row has a fixed 36 pt height; a 4-line Work Details row is ≥ 57 pt.
+2. **Excel layout**: data cells `Font(size=10)`, top-aligned, wrap on Work Details/Remarks (amount cells keep right alignment — note the existing `range(2, 12)` loop overwrites alignment without wrap; keep that for amounts). Widths: Date 11, Representation 13, Car Repair 10, Toll Fee 9, Gasoline 10, Transpo 10, Office/Field Items 11, Parking 9, Per Diem 10, Parking Coding 10, Others / Misc 11, Work Details 40, Remarks 34 (tune by render so no header word breaks). Done: header labels whole in the rendered PDF.
+3. **Excel page setup**: `ws.page_setup.paperSize = ws.PAPERSIZE_A4`; keep landscape, `fitToWidth = 1`, `fitToHeight = 0`, print titles `$6:$6`, print area; add `ws.print_options.horizontalCentered = True`, footer `Page &P of &N`, margins left/right 0.3", top 0.5", bottom 0.6". Done: LibreOffice PDF is A4 landscape (842×595) with page numbers.
+4. **RFP stamp**: in `build_reimbursement_rfp_template_pdf`, pass a measured box inside the APPROVED BY row, right of the label (approximately x 118–258, signature resting on the y ≈ 519 line, name/title/date just below it), with `force_fallback=True` so the misplaced template field rect is not used. Adjust the box from renders until: nothing in the NOTED BY row, nothing over the "APPROVED BY:" label or the "SPCAcctngRFP004-2016" footer. Done: rendered RFP shows signature + name block only in the APPROVED BY row.
+5. **PCV stamp**: in `reimbursement_stamp_approval_signature`, when using the field rect, cap the box top at the field top (`y2`, the label's bottom) — box `[x1, y1 − 22, field_width, (y2 − (y1 − 22))]` — so the signature cannot rise into the label. Only the PCV uses this path (RFP moves to its own box in step 4). Done: rendered PCV signature sits between label and name, not over the label.
+6. **PCV amounts**: in `reimbursement_apply_pcv_field_formatting`, stop nudging `AMOUNTRow*` widgets (keep the nudge for header underline fields). Done: amounts line up with their particulars in the render.
+7. **LPR text**: in `lpr_fill_pdf_bytes` (first page and continuation pages), for "Intended for", "Equipment" and the `ITEM  DESCRIPTION*` fields set a fixed font (not auto-size) and multiline; pre-wrap the value with `\n` to the field width at that size (two lines at ~6.5 pt for the ~12 pt rows; drop to a 5.5 pt floor only if two lines are not enough). Implementation must confirm with pypdf 6.16.1 that the generated appearance honours `\n` and the fixed size; if it does not, draw these values in the existing overlay step instead of via the field. Done: rendered test LPR shows readable two-line text; short values look as before.
+8. **Tests** (new `tests/test_reimbursement_print_ready.py`): Excel — a row with long Work Details/Remarks gets a height > 36 and A4/landscape/fitToWidth=1/footer set; RFP — the approval overlay's drawn signature lies inside the APPROVED BY row band (check the box passed to the overlay, or mock `reimbursement_approval_signature_overlay_pdf` and assert the box y-range is below the NOTED BY label and right of the APPROVED BY label); PCV — box top ≤ field top; PCV formatting — `AMOUNTRow1` rect unchanged after formatting; LPR — long "Intended for" value is wrapped and its field `/DA` is not size 0. Each must fail on the current code.
+9. **Release bookkeeping**: service worker bump (read live; keep the old one as a historical marker); `releases.json` entry `2026-10-07-reimbursement-print-ready` (engineers + admins + approvers, category Reimbursement); `changes.md`; this plan's status.
+
+## Deliberately excluded
+
+- RFP template typo, generated-date behaviour, receipts file name format (note only, owner agreed).
+- Flattening PCV/RFP fields (accounting may still fill PCV NO. and account fields).
+- Hiding empty expense columns in the Excel (fixed accounting format).
+- PCV/RFP template files themselves are not edited.
+- Approver, accounting, travel and cash-advance screens are not changed (LPR text fix reaches them through the shared builder only).
+
+## Verification
+
+- Fail-first for every new test, then focused modules: the new test file + `tests.test_lpr_feature_switch` + LPR tests (`grep -l lpr_fill_pdf_bytes tests/`) + reimbursement PCV/RFP/Excel tests (`grep -l "build_reimbursement_excel_workbook\|pcv\|rfp" tests/`). Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+- Render check (no browser needed — files, not pages): on a scratch database copy, rebuild packages for reimbursements 1, 2, 3 and 8 and a throwaway long-text LPR (and an 9+ item LPR for the continuation page); Excel → PDF via LibreOffice; render all PDFs with PyMuPDF and inspect: nothing clipped, A4 landscape with page numbers, header words whole, RFP/PCV stamps in their own rows, PCV amounts aligned, LPR text readable. Remove the copy afterwards.
+
+## After implementation
+
+1. Self-review the diff; confirm every changed builder is still called with the same signature (`build_reimbursement_excel_workbook`, `build_reimbursement_pcv_template_pdf`, `build_reimbursement_rfp_template_pdf`, `reimbursement_stamp_approval_signature`, `lpr_fill_pdf_bytes`) and Download Package / approval email / LPR downloads still produce files.
+2. Record fail-first proof and render results here.
+3. Service worker bump and `releases.json` (step 9).
+4. Update `changes.md` and this plan's status.
+5. Commit and push only on the owner's "commit and push": explicit staging; never `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`. Verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- Signature placement has been retuned several times (S12A3B, S12A4G/H); a fixed RFP box depends on the current template — mitigated by render checks and by keeping the PCV on its field rect.
+- The LPR change touches every LPR (travel, cash advance, reimbursement) — render each with short and long text; short values must look unchanged.
+- Row height is an estimate (Excel has no autofit for generated files); err on the generous side so text is never clipped.
+- Blast radius: generated documents only; no schema, route or UI change.
+
 # Reimbursement: PC Code in Remarks (Required for Client Visits)
 
 **Status:** Executed — commit `ccee353`; published to `origin/main` on the owner's "commit and push" (Railway GitHub deployment `6898927230` succeeded).

@@ -27090,7 +27090,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v253-medical-center-layout.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v254-medical-center-merge.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v255-personnel-fix-batch.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v256-reimbursement-pc-code';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v256-reimbursement-pc-code.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v257-reimbursement-print-ready';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -35952,6 +35953,21 @@ def reimbursement_excel_filename(header, engineer_name=''):
     return f"Reimbursement_{safe_name}_{period}.xlsx"
 
 
+def reimbursement_excel_row_height(cells):
+    """Row height (pt) that shows every wrapped line of the given (text, column width) cells.
+
+    Excel does not auto-fit rows in generated files, so a fixed height clips long
+    Work Details/Remarks. Estimate the wrapped line count (size 10 font) and size
+    the row to it, erring on the generous side.
+    """
+    lines = 1
+    for text, width in cells:
+        chars_per_line = max(1, int(width * 1.1) - 1)
+        segments = str(text or '').split('\n')
+        lines = max(lines, sum(max(1, -(-len(segment) // chars_per_line)) for segment in segments))
+    return max(18, lines * 13 + 5)
+
+
 def build_reimbursement_excel_workbook(header):
     """Generate the SPC reimbursement Excel file matching the sample layout."""
     from openpyxl import Workbook
@@ -36044,6 +36060,7 @@ def build_reimbursement_excel_workbook(header):
         for col in range(1, max_col + 1):
             c = ws.cell(idx, col)
             c.border = border
+            c.font = Font(size=10)
             c.alignment = Alignment(vertical='top', wrap_text=True)
         for col in range(2, 12):
             ws.cell(idx, col).alignment = Alignment(horizontal='right', vertical='top')
@@ -36084,8 +36101,8 @@ def build_reimbursement_excel_workbook(header):
             ws.cell(row_idx, col).border = border
 
     widths = {
-        1: 13, 2: 15, 3: 13, 4: 12, 5: 12, 6: 12,
-        7: 16, 8: 12, 9: 12, 10: 15, 11: 14, 12: 38, 13: 32
+        1: 11, 2: 15, 3: 10, 4: 9, 5: 10, 6: 10,
+        7: 11, 8: 9, 9: 10, 10: 10, 11: 10, 12: 40, 13: 34
     }
     for col, width in widths.items():
         ws.column_dimensions[get_column_letter(col)].width = width
@@ -36094,19 +36111,27 @@ def build_reimbursement_excel_workbook(header):
     ws.row_dimensions[2].height = 22
     ws.row_dimensions[header_row].height = 32
     for row_idx in range(start_data_row, max(start_data_row, last_data_row) + 1):
-        ws.row_dimensions[row_idx].height = 36
+        ws.row_dimensions[row_idx].height = reimbursement_excel_row_height([
+            (ws.cell(row_idx, 12).value, widths[12]),
+            (ws.cell(row_idx, 13).value, widths[13]),
+        ])
 
     ws.freeze_panes = 'B7'
     ws.sheet_view.showGridLines = False
     ws.print_title_rows = f'${header_row}:${header_row}'
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_margins.left = 0.25
-    ws.page_margins.right = 0.25
+    ws.print_options.horizontalCentered = True
+    ws.oddFooter.center.text = 'Page &P of &N'
+    ws.oddFooter.center.size = 8
+    ws.page_margins.left = 0.3
+    ws.page_margins.right = 0.3
     ws.page_margins.top = 0.5
-    ws.page_margins.bottom = 0.5
+    ws.page_margins.bottom = 0.6
+    ws.page_margins.footer = 0.3
     ws.print_area = f'A1:M{grand_row}'
 
     return wb
@@ -36476,8 +36501,9 @@ def reimbursement_apply_pcv_field_formatting(writer):
     Current PCV UI rule:
     - paid-to/engineer name is uppercased before fill
     - visible filled values are centered on their underlines
-    - value widgets are nudged slightly downward so text sits closer to the line
-      without touching it
+    - header underline values are nudged slightly downward so text sits closer to
+      the line without touching it; table amounts are not, so they line up with
+      their particulars
     - Particulars stay left-aligned/multiline for readability
     """
     try:
@@ -36584,7 +36610,7 @@ def reimbursement_apply_pcv_field_formatting(writer):
                 except Exception:
                     pass
 
-                if is_header_underline_field or is_amount_row:
+                if is_header_underline_field:
                     _nudge_widget_down(field)
 
             try:
@@ -36599,7 +36625,6 @@ def reimbursement_apply_pcv_field_formatting(writer):
                             existing_flags = int(kid_obj.get('/Ff', field.get('/Ff', 0)) or 0)
                             kid_obj.update({NameObject('/Ff'): NumberObject(existing_flags | 4096)})
                         elif is_amount_row:
-                            _nudge_widget_down(kid_obj)
                             kid_obj.update({
                                 NameObject('/DA'): TextStringObject(f'/Helv {AMOUNT_ROW_FONT_SIZE} Tf 0 g'),
                                 NameObject('/Q'): NumberObject(1),
@@ -37289,6 +37314,12 @@ def reimbursement_approval_signature_overlay_pdf(header, page_width, page_height
     buffer.seek(0)
     return buffer.getvalue()
 
+# RFP template: its APPROVED BY field sits one row too high (beside NOTED BY), so the
+# stamp uses this measured box instead -- right of the "APPROVED BY:" label (ends x~129),
+# signature on the row's line (y~519, row top y~557), name/title/date just below it.
+REIMBURSEMENT_RFP_APPROVAL_STAMP_BOX = (135.0, 496.0, 123.0, 49.0)
+
+
 def reimbursement_stamp_approval_signature(writer, header, field_name='APPROVED BY', fallback_box=None, force_fallback=False):
     """Merge approver signature block onto the first page of a generated PDF.
 
@@ -37317,7 +37348,12 @@ def reimbursement_stamp_approval_signature(writer, header, field_name='APPROVED 
             # Moderate offset: lower than the template field, but not as low as S12A4G.
             # This avoids cutting through the line while keeping the stamp inside
             # the official APPROVED BY area.
-            box = [x1, max(y1 - 22.0, 8.0), field_width, 56.0]
+            box_y = max(y1 - 22.0, 8.0)
+            # The field top is the bottom of the printed "APPROVED BY:" label. The overlay
+            # starts the signature 20 pt above box_y and lets it grow to
+            # SIGNATURE_STAMP_SCALE x its area, so size the box to stop it at the label.
+            signature_room = max(y2 - (box_y + 20.0), 10.0)
+            box = [x1, box_y, field_width, 23.0 + signature_room / SIGNATURE_STAMP_SCALE]
         else:
             box = fallback_box or [page_width - 175.0, 34.0, 135.0, 60.0]
 
@@ -37538,8 +37574,8 @@ def build_reimbursement_rfp_template_pdf(header):
         writer,
         header,
         field_name='APPROVED BY',
-        fallback_box=[44.65, 535.0, 213.85, 56.0],
-        force_fallback=False
+        fallback_box=REIMBURSEMENT_RFP_APPROVAL_STAMP_BOX,
+        force_fallback=True
     )
 
     output = io.BytesIO()
@@ -48952,8 +48988,8 @@ def build_travel_liquidation_rfp_template_pdf(liquidation):
         writer,
         liquidation,
         field_name='APPROVED BY',
-        fallback_box=[44.65, 535.0, 213.85, 56.0],
-        force_fallback=False
+        fallback_box=REIMBURSEMENT_RFP_APPROVAL_STAMP_BOX,
+        force_fallback=True
     )
 
     output = io.BytesIO()
@@ -73631,6 +73667,66 @@ def lpr_page_marker_page(lpr_no, item_start, item_end, page_number, page_total, 
         raise RuntimeError(f'Unable to generate LPR page marker: {marker_error}') from marker_error
 
 
+LPR_SINGLE_LINE_SIZES = (9.0, 8.0, 7.5, 7.0, 6.5)
+LPR_WRAP_FIELD_SIZES = (6.0, 5.5, 5.0)
+
+
+def lpr_wrap_text(text, width, font_size):
+    """Greedy word wrap of text to a Helvetica line width (pt)."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    lines, current = [], ''
+    for word in str(text).split():
+        candidate = f'{current} {word}'.strip()
+        if current and stringWidth(candidate, 'Helvetica', font_size) > width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
+def lpr_fit_long_field_values(page, values):
+    """Keep long LPR text readable instead of letting the template auto-shrink it.
+
+    The template's fields auto-size (``0 Tf``), and pypdf shrinks a long "Intended
+    for" or item description far below what fits (~4 pt). Text that fits one line
+    at 10 pt keeps the template's auto-size, as before. Longer text gets the largest
+    LPR_SINGLE_LINE_SIZES size that fits one line, else is wrapped to two lines at
+    the largest LPR_WRAP_FIELD_SIZES size that fits. Text too long even for that
+    keeps the auto-size so nothing is lost.
+    """
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from pypdf.generic import NameObject, NumberObject, TextStringObject
+
+    for annot_ref in page.get('/Annots') or []:
+        annot = annot_ref.get_object()
+        name = str(annot.get('/T') or '')
+        if not (name in ('Intended for', 'Equipment') or name.startswith('ITEM  DESCRIPTION')):
+            continue
+        text = ' '.join(str(values.get(name) or '').split())
+        rect = annot.get('/Rect')
+        if not text or not rect:
+            continue
+        width = float(rect[2]) - float(rect[0]) - 4.0
+        if stringWidth(text, 'Helvetica', 10) <= width:
+            continue
+        single = next((size for size in LPR_SINGLE_LINE_SIZES if stringWidth(text, 'Helvetica', size) <= width), None)
+        if single:
+            annot[NameObject('/DA')] = TextStringObject(f'/Helv {single:g} Tf 0 g')
+            values[name] = text
+            continue
+        for size in LPR_WRAP_FIELD_SIZES:
+            lines = lpr_wrap_text(text, width, size)
+            if len(lines) <= 2:
+                annot[NameObject('/DA')] = TextStringObject(f'/Helv {size:g} Tf 0 g')
+                annot[NameObject('/Ff')] = NumberObject(int(annot.get('/Ff', 0) or 0) | 4096)
+                values[name] = '\n'.join(lines)
+                break
+
+
 def lpr_fill_pdf_bytes(header, approved_by_user=None):
     """Fill the official LPR AcroForm, cloning it for every eight-item page."""
     try:
@@ -73649,6 +73745,7 @@ def lpr_fill_pdf_bytes(header, approved_by_user=None):
     marker_lpr_no = header.lpr_no or f'LPR-{header.id}'
     first_page_values = dict(values)
     first_page_values.update(lpr_form_item_values(items[:8]))
+    lpr_fit_long_field_values(writer.pages[0], first_page_values)
     writer.update_page_form_field_values(
         writer.pages[0], first_page_values, auto_regenerate=False
     )
@@ -73667,6 +73764,7 @@ def lpr_fill_pdf_bytes(header, approved_by_user=None):
         continuation_writer.clone_document_from_reader(continuation_reader)
         continuation_values = dict(values)
         continuation_values.update(lpr_form_item_values(chunk))
+        lpr_fit_long_field_values(continuation_writer.pages[0], continuation_values)
         continuation_writer.update_page_form_field_values(
             continuation_writer.pages[0], continuation_values,
             auto_regenerate=False, flatten=True

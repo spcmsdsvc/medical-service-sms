@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-07-reimbursement-print-ready",
+      "release_date": "2026-10-07",
+      "title": "Print-Ready Reimbursement Files",
+      "summary": "The approved reimbursement Excel, PCV, RFP and LPR now print cleanly.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-07-reimbursement-print-ready-all",
+          "category": "Reimbursement",
+          "description": "The reimbursement Excel no longer cuts off Work Details or Remarks: rows grow to fit, and it prints on A4 landscape, one page wide, with page numbers. On the RFP the approver's signature now sits on the Approved By line instead of beside Noted By, and on the PCV it no longer covers the Approved By label; PCV amounts line up with their items. Long LPR descriptions and Intended For text stay readable instead of shrinking to a tiny font.",
+          "audiences": [
+            "engineers",
+            "admins",
+            "approvers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-07-reimbursement-pc-code",
       "release_date": "2026-10-07",
       "title": "PC Code in Reimbursement Remarks",
