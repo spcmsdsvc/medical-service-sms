@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-07
 
+- Committed only the Reimbursement Print-Ready package (`app.py`, `tests/test_reimbursement_print_ready.py`, `static/changelog/releases.json`, `plans.md`, and this package's `changes.md` entries) as `46e98dd` on `main` and pushed it to `origin/main` on the owner's "commit and push"; `origin/main` verified at `46e98dd`, and the Railway production deployment (GitHub deployment `6899349510`) succeeded. No schema change. `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`, and the loose handoff file were not staged. No Railway variable or manual redeploy was changed.
+
 - Executed the plan **Reimbursement Package: Print-Ready Excel, Signature Placement, LPR Text** on the owner's go-ahead; not committed, pushed, or deployed.
 - Reimbursement Excel (`app.py` `build_reimbursement_excel_workbook`, new `reimbursement_excel_row_height`): data rows sized from the wrapped Work Details/Remarks text instead of a fixed 36 pt (Excel does not auto-fit generated rows, so text was clipped); data font size 10; column widths retuned so headers do not break mid-word; A4 landscape, one page wide, horizontally centred, footer "Page X of Y", tighter margins. Columns, data and totals unchanged. Used by the approval email package and Download Package.
 - RFP approval stamp: new `REIMBURSEMENT_RFP_APPROVAL_STAMP_BOX`; `build_reimbursement_rfp_template_pdf` and `build_travel_liquidation_rfp_template_pdf` now stamp with it (`force_fallback=True`) because the template's APPROVED BY field sits one row too high — the approver signature had landed beside NOTED BY and the name block over the APPROVED BY label.

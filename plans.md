@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Reimbursement Package: Print-Ready Excel, Signature Placement, LPR Text
 
-**Status:** Executed — not committed; awaiting the owner's "commit and push".
+**Status:** Executed — commit `46e98dd`; published to `origin/main` on the owner's "commit and push" (Railway GitHub deployment `6899349510` succeeded).
 **Finished:** 2026-10-07.
 
 **Where the plan and the outcome differed:**
