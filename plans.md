@@ -37,6 +37,91 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Medical Center Visit - Site Visit Schedule Type
+
+**Status:** Executed — published to `origin/main` on the owner's "commit and push" (commit: see `git log`, "feat(calendar): Medical Center Visit - Site Visit schedule type").
+**Approved:** 2026-10-07 — the owner said "approved, write it to plans.md". Under the two-step rule this records approval only; execution needs a separate instruction.
+**Execution authorized:** 2026-10-07 — the owner said "go ahead. do not over engineer".
+**Detailed:** 2026-10-07. **Finished:** 2026-10-07.
+
+**Where the plan and the outcome differed:**
+
+- Step 2: the "serialized `tsr_without_equipment_allowed`" check became a browser check instead of a unit test (the serializers call the same gate the unit tests cover). Fail-first: 4 of 5 new tests failed before the change (the "plain visit stays blocked" control passed, as expected); all 5 pass after.
+- Step 6: also covered the mobile Duplicate Schedule path (`getMobileDuplicateSchedulePayload`), which now keeps Site Visit as the category.
+- Step 8: the TSR page already strips billing tags from the task (`stripScheduleBillingTags`, `offline_tsr.html`) and the TSR filename does the same (`app.py` filename context). `[Site Visit]` was added to both regexes; nothing else needed.
+- Browser (local copy of `scheduler.db`, engineer `kent` with the Francis switch off): the option lists under Medical Center Visit; Site Visit hides Equipment and keeps client/flags; saved title `Courtesy call [Site Visit]` with empty product; the card shows "Courtesy call" plus a "Site Visit" badge; Create TSR opens with Model/Serial blank and read-only and no raw token on the page; edit reopens as Site Visit with status/files shown; re-save keeps one token; `canCreateTSRForSchedule` is false for a product-less Work schedule and true for a Site Visit; 375 px has no horizontal scroll; no console errors. The offline queue/sync run was skipped (no over-verification): the server re-checks through the same `can_create_tsr_without_equipment_for_shift` on sync.
+- Focused modules: `test_site_visit_schedule_type` 5, `test_tsr_without_equipment` 8, `test_timeline_tsr_file_details` 14, `test_offline_tsr_pending_schedule` 30, `test_sw_cache_version` 5 — all OK. `node --check` on both pages' inline scripts OK. Full suite not run yet (before publishing only).
+
+## Context
+
+Creating a TSR for a client schedule with no product is only possible through Francis's per-account switch (`User.can_create_tsr_without_equipment`, plan "Francis-only TSRs without assigned equipment" in `plans-archive.md`, commit `7cd4388`). Other engineers also do site visits that have no equipment. The owner wants a new schedule type, **"Medical Center Visit - Site Visit"**: it needs only a client (no product/equipment selection), and Create TSR is available for it. The no-equipment rule becomes a property of the schedule instead of one account.
+
+## Decisions taken
+
+1. New option label exactly **"Medical Center Visit - Site Visit"** in the Calendar schedule-type dropdown, directly under "Medical Center Visit".
+2. A Site Visit requires a client; product/equipment is hidden and always saved empty.
+3. Create TSR is allowed on a Site Visit for whoever may normally create a TSR on that schedule (same access checks as a normal Medical Center Visit); only the equipment requirement is dropped.
+4. Francis's switch is kept unchanged (see Deliberately excluded).
+5. Encoding: a title token `[Site Visit]` (same mechanism as the billing flags), not the `schedule_type` column (see Investigation 4).
+
+## Investigation
+
+1. **Schedule type is not a stored column.** The dropdown `#f-category` (`templates/timeline.html:945`) is encoded into the title: `buildTypedScheduleTitle` (`:13605`) prefixes `In Office:` / `Traveling to Client:` / `Pull-out Parts:` / `Holiday:`; Leave uses the leave name; "Work" = has a client. Decode: `parseTypedScheduleTitle` / `NON_WORK_TYPE_PREFIXES` (`:12645`); server analytics `classify_schedule_type` (`app.py:51887`) already labels any client schedule "Site Visit".
+2. **Title tokens already round-trip through every save path.** `SITE_VISIT_FLAG_TAGS` (`timeline.html:12628`: `[Warranty]`, `[FOC]`, `[With P.O.]`, `[SC]`, `[SV]`) are appended by `applySiteVisitFlagsToTitle` (`:13742`), stripped for cards by `stripSiteVisitFlagTags` (`:12636`), shown via `renderSiteVisitFlagBadges` (`:13795`), restored on edit by `populateSiteVisitFlagsFromTitle` (`:13786`), and validated server-side by `validate_shift_billing_tags` (`app.py:56789`). Add, edit, scoped/override edits, offline queue and mobile all carry `title`.
+3. **The product-less TSR path already exists** and does everything needed (blank read-only Model/Serial, no Product/Genoray/Vieworks row created, Calibration Report unavailable, filenames without placeholders):
+   - Server: `can_create_tsr_without_equipment_for_shift` (`app.py:15881`) — single gate used by `validate_tsr_shift_equipment` (`:15910`), `get_online_tsr_missing_core_details` (`:16022`), and the per-schedule `tsr_without_equipment_allowed` serialized at `app.py:14009`, `:51604`, `:51806`. User-level `can_create_tsr_without_equipment_for_user` (`:11662`) requires username `francis`.
+   - Calendar: `canCreateTSRWithoutEquipmentForSchedule` (`timeline.html:16251`) also requires the page-level `timelineCanCreateTSRWithoutEquipment` (`:9335`, Francis only).
+   - Offline TSR: `isFrancisTSRWithoutEquipmentSchedule` (`templates/offline_tsr.html:1443`) also requires `CAN_CREATE_TSR_WITHOUT_EQUIPMENT` (`:734`, Francis only).
+4. **`Shift.schedule_type` was considered and rejected.** The column exists (`app.py:3603`, `service`/`travel`) but `/add_shift` forces `'service'` (`app.py:60779`), `update_shift` only manages travel conversion (`apply_editable_travel_block_state`, `:56844`), the form never sends it, and PM linking requires `== 'service'` (`app.py:4531`, `:4589`). Using it would mean touching every save path including offline sync.
+5. The Work save branch (`timeline.html:17701`–`17822`) sends `client_id`/`product_id` only when `categoryVal === "Work"`, requires a TSR file to mark Completed (`:17709`), and calls `validateSiteVisitBillingTags` / `applySiteVisitFlagsToTitle` (`:17741`). Other `'Work'` checks to mirror: `setTimelineClientQuickAddState` (`:9097`), `quickAddTimelineClient` (`:9215`), `toggleTaskStatusUI` (`:13966`), edit open (`:11813`–`11856`).
+6. Local `scheduler.db`: Francis (id 22) has the switch **off**; production state unknown.
+7. Service worker marker is `v260-product-inventory-headers` (`app.py:27127`).
+
+## Execution steps
+
+1. **Preflight.** Re-read `AGENTS.md`, this plan, the newest `changes.md` section, `git status`. Confirm SW marker still v260 and line refs still match. Set Status `In progress`; add a start bullet to `changes.md`. Done when protected dirty paths (`scheduler.db`, handoffs, `changes-archive.md`, `.claude/`, `.impeccable/`, `output/`, `tmp/`) are identified and left untouched.
+2. **Fail-first tests.** Create `tests/test_site_visit_schedule_type.py` (reuse the fixtures of the existing Francis TSR tests — find with `grep -l can_create_tsr_without_equipment tests/`):
+   - a non-Francis assigned engineer can submit an online TSR for a client schedule whose title contains `[Site Visit]` and has no product (`validate_tsr_shift_equipment` → `without_equipment`; no missing Equipment/Serial);
+   - the same schedule **without** the token is still blocked (`missing_equipment_assignment`);
+   - a `[Site Visit]` schedule with no client is blocked;
+   - the serialized calendar schedule carries `tsr_without_equipment_allowed: true` for a Site Visit;
+   - template markers: option text `Medical Center Visit - Site Visit` / value `SiteVisit` in `timeline.html`; `[Site Visit]` token handled; the offline TSR gate no longer depends only on `CAN_CREATE_TSR_WITHOUT_EQUIPMENT`.
+   Run against unchanged code; record that they fail. Done when failures are recorded here.
+3. **Server rule** (`app.py`). Add `SITE_VISIT_TITLE_TOKEN = '[Site Visit]'` and `is_site_visit_shift(shift)` near `can_create_tsr_without_equipment_for_shift`: True when the shift has a client id, no `product_id`, and the token is in `shift.title`. Make `can_create_tsr_without_equipment_for_shift` return True for `is_site_visit_shift(shift)` before the Francis check (normal TSR access checks elsewhere are untouched). Done when the step-2 server tests pass and the Francis tests still pass.
+4. **Dropdown and form** (`timeline.html`). Add `<option value="SiteVisit">Medical Center Visit - Site Visit</option>` after the Work option. In `toggleCategoryFields`, treat `SiteVisit` as Work (client, task, flags, status/files on edit) but hide the product field block and clear `f-prod-id`, `f-prod-source` (`product`), `f-prod-search` and the coverage/Vieworks/calibration status. Extend `toggleTaskStatusUI`, `setTimelineClientQuickAddState` and `quickAddTimelineClient` so `SiteVisit` behaves like `Work`. Done when switching Work ⇄ Site Visit shows/hides the product field and clears any chosen product.
+5. **Save** (`saveShift` branch ~`timeline.html:17701`). Introduce `const isClientVisit = categoryVal === "Work" || categoryVal === "SiteVisit";` and use it where the branch now checks `"Work"` (completed-needs-TSR check, billing tags, `client_id`). For `SiteVisit`: require a client (`timelineAlert("Please select a client for a Site Visit.")`), send empty `product_id` and `equipment_source='product'`, and append `[Site Visit]` to the title after the flags. For `Work`: strip the token. Done when saved titles carry the token only for Site Visits.
+6. **Open and display.** Add the token to the stripping in `stripSiteVisitFlagTags` (cards/edit title never show it raw) and show a "Site Visit" badge (in or beside `renderSiteVisitFlagBadges`) on schedule cards. When opening a schedule for edit (`:11813`–`11856` and the other `f-category` setters at `:9865`, `:10857`), select `SiteVisit` if the title contains the token. Done when a saved Site Visit reopens as Site Visit with clean task text and the card shows the badge.
+7. **Frontend TSR gates.** `canCreateTSRWithoutEquipmentForSchedule` (`timeline.html:16251`) and `isFrancisTSRWithoutEquipmentSchedule` (`offline_tsr.html:1443`): allow when the schedule has a client, no product, and the server sent `tsr_without_equipment_allowed === true`; keep the existing Francis path. Never allow when the server says `false`. Done when Create TSR appears on a Site Visit for a normal engineer and stays "unavailable" on a product-less Work schedule.
+8. **TSR task line.** Check whether `[Site Visit]` appears in the generated TSR's task text (existing flags like `[Warranty]` do). If it does, strip only `[Site Visit]` where the TSR prefills the task. Note the result under this plan.
+9. **Self-review.** Read the diff; confirm every function `timeline.html` and `offline_tsr.html` call is still defined (no rename/removal); `node --check` on extracted scripts; Calendar Save/Add/Upload/Create TSR still work.
+
+## Deliberately excluded
+
+- **Francis's switch and Settings toggle stay.** It still covers his existing Work schedules without a product; retiring it is a separate small change once Site Visit is in use.
+- **No `schedule_type` column change** — extra save paths and PM risk (Investigation 4).
+- **No analytics/print changes** — a client schedule is already counted as "Site Visit" (`app.py:51887`); print view keeps its status colours.
+- **No bulk re-tagging** of existing schedules and no migration.
+- **Calibration Report** stays equipment-only.
+
+## Verification
+
+- Fail-first: step-2 tests fail before steps 3–7 and pass after. Focused modules: the new file plus the existing Francis/no-equipment TSR tests, `tests/test_timeline_tsr_file_details.py`, and the offline TSR tests. Full suite only once before publishing; compare with the baseline (24 failures, 3 errors, 5 skips).
+- Browser, local server on a **copy** of `scheduler.db`, temporary non-Francis test engineer: create a Site Visit (product field hidden, badge on card) → Create TSR (Model/Serial blank, read-only) → submit; repeat via the offline TSR queue and sync; reopen the schedule (shows Site Visit); a product-less **Work** schedule still shows Create TSR unavailable; Work with a product unchanged. 375 px phone width, tap targets, no console errors. Clean up the copy, test account and launch entry afterwards.
+
+## After implementation
+
+1. Service worker `v261-site-visit-type` in `app.py` (keep the v260 marker per the existing pattern).
+2. `static/changelog/releases.json`: entry `<execution-date>-site-visit-type`, audiences admins/schedulers/engineers, category Calendar: "New schedule type Medical Center Visit - Site Visit: only a client is needed and a TSR can be created without equipment."
+3. Record fail-first proof, browser results and any plan/outcome differences here; update `changes.md`; Status `Executed — not yet committed`.
+4. Commit only the intended files (`app.py`, `templates/timeline.html`, `templates/offline_tsr.html`, `tests/test_site_visit_schedule_type.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`) — never `scheduler.db`, handoffs, `changes-archive.md`, `.claude/`, `.impeccable/`, `output/`, `tmp/`. Push to `origin/main` only on the owner's "commit and push"; then check `git ls-remote origin refs/heads/main`.
+
+## Risks
+
+- **Token visible somewhere unexpected** (TSR task line, exports) — step 8 checks the TSR; blast radius is cosmetic.
+- **A missed `'Work'` check** makes a Site Visit lose a Work behaviour (e.g., status/files on edit). Safety net: Investigation 5 lists them; the browser sequence exercises edit, status and upload.
+- **Anyone who can edit a schedule can make it a Site Visit**, enabling a product-less TSR — intended, same authority as setting billing flags; the server rechecks the saved schedule on every TSR save and offline sync.
+- Blast radius: Calendar schedule modal and cards, Create TSR eligibility, offline TSR eligibility.
+
 # Product Inventory Batch 4: Code Cleanup
 
 **Status:** Executed — commit `9669649` (Batches 3 and 4 published together to `origin/main` on the owner's "commit and push").

@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-07-site-visit-type",
+      "release_date": "2026-10-07",
+      "title": "New Schedule Type: Site Visit",
+      "summary": "Medical Center Visit - Site Visit needs only a client, and a TSR can be created without equipment.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-07-site-visit-type-calendar",
+          "category": "Calendar",
+          "description": "Calendar has a new schedule type, Medical Center Visit - Site Visit. Only a medical center is needed; no equipment is selected. Create TSR is available for it, with Model and Serial left blank. The card shows a Site Visit badge.",
+          "audiences": [
+            "admins",
+            "schedulers",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-07-product-inventory-headers",
       "release_date": "2026-10-07",
       "title": "Inventory Table Headers Fixed",

@@ -944,6 +944,7 @@
                     <label class="small fw-bold text-muted text-uppercase mb-1 d-block">📂 Schedule Type</label>
                     <select id="f-category" class="form-select shadow-none" onchange="toggleCategoryFields()">
                         <option value="Work">Medical Center Visit</option>
+                        <option value="SiteVisit">Medical Center Visit - Site Visit</option>
                         <option id="f-category-leave" value="Leave">Technical Personnel Leave</option>
                         <option value="Training">Internal Technical Training</option>
                         <option value="Office">In Office</option>
@@ -1013,7 +1014,7 @@
                     </div>
 
                     <!-- Equipment S/N Lookup -->
-                    <div class="mb-3 position-relative">
+                    <div id="equipment-field-container" class="mb-3 position-relative">
                         <label class="small fw-bold text-muted text-uppercase mb-1 d-block">🛠 Equipment / Machine</label>
                         <input type="text" id="f-prod-search" class="form-control" placeholder="Search machine serial..." autocomplete="off">
                         <input type="hidden" id="f-prod-id">
@@ -9096,7 +9097,7 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         const help = document.getElementById('timeline-client-quick-add-help');
         const category = document.getElementById('f-category')?.value || 'Work';
 
-        const shouldShow = Boolean(canQuickAddTimelineClient && category === 'Work');
+        const shouldShow = Boolean(canQuickAddTimelineClient && (category === 'Work' || category === 'SiteVisit'));
 
         if(button){
             button.classList.toggle('d-none', !shouldShow);
@@ -9213,7 +9214,7 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         }
 
         const category = document.getElementById('f-category')?.value || 'Work';
-        if(category !== 'Work'){
+        if(category !== 'Work' && category !== 'SiteVisit'){
             timelineAlert("+Add is only available for Medical Center Visit schedules.");
             return;
         }
@@ -11810,7 +11811,7 @@ async function openMobileAddSchedule(){
         const isWork = Boolean(shift?.client_id);
         const categoryInfo = parseTypedScheduleTitle(shift?.task || '');
         const categoryVal = isWork
-            ? 'Work'
+            ? (String(shift?.task || '').includes(SITE_VISIT_TITLE_TOKEN) ? 'SiteVisit' : 'Work')
             : (HR_CATEGORIES.includes(shift?.task) ? 'Leave' : (categoryInfo.category || shift?.category || 'Training'));
 
         return {
@@ -11818,7 +11819,7 @@ async function openMobileAddSchedule(){
             engineerName: rowEngineer?.name || findEngineerByIdForMobile(rowEngineer?.id)?.name || 'Engineer',
             date: day?.iso || shift?.start_date || getMobileAddScheduleDate(),
             category: categoryVal,
-            title: categoryVal === 'Work' ? (shift?.task || '') : (categoryInfo.detail || shift?.task || ''),
+            title: isWork ? (shift?.task || '') : (categoryInfo.detail || shift?.task || ''),
             clientId: isWork ? (shift?.client_id || '') : '',
             productId: isWork ? (shift?.product_id || '') : '',
             productSource: isWork ? (shift?.equipment_source || 'product') : 'product',
@@ -12625,6 +12626,8 @@ function collectMobileEngineerSchedules(){
         }
     }
 
+    // "Medical Center Visit - Site Visit": client only, no equipment; the server reads this token.
+    const SITE_VISIT_TITLE_TOKEN = '[Site Visit]';
     const SITE_VISIT_FLAG_TAGS = [
         { key: 'warranty', label: 'Warranty', token: '[Warranty]', inputId: 'f-flag-warranty', className: 'bg-success' },
         { key: 'foc', label: 'FOC', token: '[FOC]', inputId: 'f-flag-foc', className: 'bg-info text-dark' },
@@ -12634,7 +12637,7 @@ function collectMobileEngineerSchedules(){
     ];
 
     function stripSiteVisitFlagTags(title){
-        let cleanTitle = String(title || '');
+        let cleanTitle = String(title || '').replaceAll(SITE_VISIT_TITLE_TOKEN, '');
         SITE_VISIT_FLAG_TAGS.forEach(flag => {
             cleanTitle = cleanTitle.replaceAll(flag.token, '');
         });
@@ -13794,6 +13797,9 @@ function collectMobileEngineerSchedules(){
 
     function renderSiteVisitFlagBadges(title){
         const flags = getSiteVisitFlagsFromTitle(title);
+        if(String(title || '').includes(SITE_VISIT_TITLE_TOKEN)){
+            flags.unshift({ label: 'Site Visit', className: 'bg-dark' });
+        }
         if(!flags.length) return '';
 
         return `
@@ -13938,11 +13944,22 @@ if (selectedVal === "Leave") {
             renderProductVieworksStatus(null);
             renderProductCalibrationStatus(null);
         } else {
-            // Technical Site Visit (Work)
+            // Technical Site Visit (Work) / Site Visit (client only, no equipment)
             workArea.classList.remove('d-none');
             leaveArea.classList.add('d-none');
             taskArea.classList.remove('d-none');
-            updateProductInputState();
+            const isSiteVisit = selectedVal === "SiteVisit";
+            document.getElementById('equipment-field-container')?.classList.toggle('d-none', isSiteVisit);
+            if(isSiteVisit){
+                document.getElementById('f-prod-id').value = "";
+                document.getElementById('f-prod-source').value = "product";
+                document.getElementById('f-prod-search').value = "";
+                renderProductCoverageStatus(null);
+                renderProductVieworksStatus(null);
+                renderProductCalibrationStatus(null);
+            }else{
+                updateProductInputState();
+            }
             if(siteVisitFlagsArea) siteVisitFlagsArea.classList.remove('d-none');
 
             // Requirement: Status UI only revealed if modifying an existing entry
@@ -13963,7 +13980,7 @@ if (selectedVal === "Leave") {
         const currentCategory = document.getElementById('f-category').value;
 
         // Condition: Site Visits (Work) in modification mode receive technical visibility
-        if (isEditMode && currentCategory === "Work") {
+        if (isEditMode && (currentCategory === "Work" || currentCategory === "SiteVisit")) {
             sSection.classList.remove('d-none');
             fSection.classList.remove('d-none');
         } else {
@@ -15885,7 +15902,7 @@ if(shift.engineers){
             categoryDropdown.value = "Training";
             document.getElementById('f-title').value = stripSiteVisitFlagTags(shift.task);
         } else {
-            categoryDropdown.value = "Work";
+            categoryDropdown.value = String(shift.task || '').includes(SITE_VISIT_TITLE_TOKEN) ? "SiteVisit" : "Work";
             document.getElementById('f-title').value = stripSiteVisitFlagTags(shift.task);
         }
 
@@ -16255,9 +16272,9 @@ if(shift.engineers){
         const serverAllowed = !Object.prototype.hasOwnProperty.call(shift || {}, 'tsr_without_equipment_allowed') ||
             shift?.tsr_without_equipment_allowed === true;
         const source = String(shift?.equipment_source || '').trim().toLowerCase();
+        // Site Visit schedules: the server flag alone decides, for any engineer.
         return Boolean(
-            effectivePermission &&
-            serverAllowed &&
+            (shift?.tsr_without_equipment_allowed === true || (effectivePermission && serverAllowed)) &&
             shift &&
             shift.client_id &&
             !String(shift.product_id || '').trim() &&
@@ -17699,6 +17716,8 @@ async function openTSRClientEmailModal(shiftId){
         const activeStatus = document.getElementById('f-status').value;
         const reportInput = document.getElementById('f-report');
         const categoryVal = document.getElementById('f-category').value;
+        const isSiteVisit = categoryVal === "SiteVisit";
+        const isClientVisit = categoryVal === "Work" || isSiteVisit;
 
         if(!validateScheduleUploadSelection(true)){
             reportInput?.focus();
@@ -17706,7 +17725,7 @@ async function openTSRClientEmailModal(shiftId){
         }
 
         // REQUIREMENT: TSR Filename Check for 'Completed' status on SITE VISITS
-        if (activeID && categoryVal === "Work" && activeStatus === "Completed") {
+        if (activeID && isClientVisit && activeStatus === "Completed") {
             const alreadyExists = currentScheduleHasTSR;
 
             // Check current input filenames
@@ -17738,9 +17757,10 @@ async function openTSRClientEmailModal(shiftId){
             return;
         }
 
-        if (categoryVal === "Work") {
+        if (isClientVisit) {
             if(!validateSiteVisitBillingTags()) return;
             finalTitle = applySiteVisitFlagsToTitle(finalTitle);
+            if(isSiteVisit) finalTitle = `${finalTitle} ${SITE_VISIT_TITLE_TOKEN}`;
         }
 
         dataSet.append('title', finalTitle);
@@ -17808,9 +17828,14 @@ async function openTSRClientEmailModal(shiftId){
         // Keep legacy primary field synced; backend still uses the engineers list first.
         document.getElementById('f-eng-id').value = primaryEngineer;
         dataSet.append('engineer_id', primaryEngineer);
-        const clientValue = categoryVal === "Work" ? document.getElementById('f-cli-id').value : "";
+        const clientValue = isClientVisit ? document.getElementById('f-cli-id').value : "";
         const productValue = categoryVal === "Work" ? document.getElementById('f-prod-id').value : "";
         const productSource = categoryVal === "Work" ? (document.getElementById('f-prod-source')?.value || 'product') : "product";
+
+        if(isSiteVisit && !clientValue){
+            timelineAlert("Please select a client for a Site Visit.");
+            return;
+        }
 
         if(categoryVal === "Work" && productValue && !clientValue){
             timelineAlert("Please select a client before selecting a product.");

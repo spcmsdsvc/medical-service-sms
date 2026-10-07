@@ -6011,7 +6011,7 @@ def build_tsr_filename_template_context(submission=None, shift=None, tsr_number=
         product_name = first_value('tsr-equipment-model', 'product_name') or clean_str(getattr(submission, 'product_name', None)) or 'Product'
         serial_number = first_value('tsr-serial-no', 'product_id', 'serial_number') or clean_str(getattr(submission, 'serial_number', None)) or 'Serial'
     raw_task = first_value('task') or clean_str(getattr(shift, 'title', None)) or first_value('tsr-service-category-other', 'tsr-service-category') or 'Service'
-    task = re.sub(r'\[(?:Warranty|FOC|With\s*P\.?O\.?|SC|SV)\]', ' ', raw_task, flags=re.I)
+    task = re.sub(r'\[(?:Warranty|FOC|With\s*P\.?O\.?|SC|SV|Site\s*Visit)\]', ' ', raw_task, flags=re.I)
     task = re.sub(r'\s+', ' ', task).strip() or 'Service'
     service_date = _parse_tsr_filename_date(first_value('tsr-service-date', 'date_iso', 'date_label'), shift=shift)
 
@@ -15878,8 +15878,23 @@ def correct_product_from_tsr_revision(shift, payload):
     }
 
 
+SITE_VISIT_TITLE_TOKEN = '[Site Visit]'
+
+
+def is_site_visit_shift(shift):
+    """Calendar "Medical Center Visit - Site Visit": client only, no equipment."""
+    return bool(
+        shift and
+        clean_int(getattr(shift, 'client_id', None)) and
+        not clean_str(getattr(shift, 'product_id', None)) and
+        SITE_VISIT_TITLE_TOKEN in (getattr(shift, 'title', None) or '')
+    )
+
+
 def can_create_tsr_without_equipment_for_shift(shift, user=None):
-    """Return True only for an authorized Francis engineer on their client schedule."""
+    """Return True for a Site Visit, or for an authorized Francis engineer on their client schedule."""
+    if is_site_visit_shift(shift):
+        return True
     target = user or current_user
     profile = getattr(target, 'engineer_profile', None) if target else None
     assigned_ids = get_shift_assigned_engineer_ids(shift) if shift else []
@@ -27123,8 +27138,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v256-reimbursement-pc-code.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v257-reimbursement-print-ready.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v258-product-inventory-fixes-layout.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v259-product-inventory-speed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v260-product-inventory-headers';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v260-product-inventory-headers.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v261-site-visit-type';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

@@ -1442,8 +1442,9 @@ function isScheduleEquipmentAssignable(schedule){
 }
 function isFrancisTSRWithoutEquipmentSchedule(schedule){
   const source = String(schedule?.equipment_source || '').trim().toLowerCase();
+  // Site Visit schedules: the server flag alone decides, for any engineer.
   return Boolean(
-    CAN_CREATE_TSR_WITHOUT_EQUIPMENT &&
+    (schedule?.tsr_without_equipment_allowed === true || CAN_CREATE_TSR_WITHOUT_EQUIPMENT) &&
     String(schedule?.client_id || '').trim() &&
     !String(schedule?.product_id || '').trim() &&
     ['product', 'genoray', 'vieworks'].includes(source) &&
@@ -6867,7 +6868,7 @@ async function resolveQueuedAttachmentDataURL(attachment){
 
 function stripScheduleBillingTags(value){
   return String(value || '')
-    .replace(/\[(?:Warranty|FOC|With\s*P\.?O\.?|SC|SV)\]/gi, ' ')
+    .replace(/\[(?:Warranty|FOC|With\s*P\.?O\.?|SC|SV|Site\s*Visit)\]/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
