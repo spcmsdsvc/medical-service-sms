@@ -27091,7 +27091,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v254-medical-center-merge.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v255-personnel-fix-batch.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v256-reimbursement-pc-code.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v257-reimbursement-print-ready';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v257-reimbursement-print-ready.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v258-product-inventory-fixes-layout';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

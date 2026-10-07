@@ -1,6 +1,35 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-07-product-inventory-fixes",
+      "release_date": "2026-10-07",
+      "title": "Product Inventory Fixes",
+      "summary": "Inventory buttons work for every serial, and old product names are easier to replace.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-07-product-inventory-fixes-all",
+          "category": "Inventory",
+          "description": "Edit, Delete and Service History now work for serial numbers that contain an apostrophe or quote, and medical-center names show as plain text in the Owner search. When a product still has an old name that is not in the Product Name list, Edit empties the name box so the full list shows, keeps the old name in view, and Save waits until a standard name is picked. Changing a machine's owner now warns when P.O.s still name the previous owner, linked Vieworks items are no longer offered again right after a save, table rows open Service History with Enter, and the active-count icon shows again. Applies to Product, Genoray and Vieworks inventory.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-07-product-inventory-fixes-layout",
+          "category": "Inventory",
+          "description": "The inventory table now fits a 1440 px laptop screen without sideways scrolling while no item has a Room (the Room column returns as soon as one does), and the scroll hint only appears when the table really overflows. Phone cards are less than half as tall: S/N and status share the top line, and room, BSID, coverage dates and contract sit on one line, leaving out empty values.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-07-reimbursement-print-ready",
       "release_date": "2026-10-07",
       "title": "Print-Ready Reimbursement Files",

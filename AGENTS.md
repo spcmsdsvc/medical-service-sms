@@ -46,14 +46,13 @@
 
 - **Never close, archive, navigate away from, finalize, or otherwise terminate the Codex app,
   task, thread, or window while testing.** This is a non-negotiable owner instruction.
-- Do not use in-app browser automation, browser tab cleanup/finalization, or Codex app navigation
-  for this project. Prefer the Flask test client, source-level checks, local HTTP checks, and other
-  non-browser verification that leaves the Codex session untouched.
+- **Browser checks are allowed at any time without asking the owner** — for scans, plans, tests,
+  fixes, and post-publish verification. Use a local server on a copy of `scheduler.db` (never the
+  tracked database), and clean up the copy, test accounts, and temporary launch entries afterwards.
+  Never close or navigate the Codex app window itself; only the browser tabs opened for the check.
 - Never issue process commands against Codex, ChatGPT, OpenAI, or their child processes. A process
   may be stopped only when it is an explicitly identified temporary project test server, its PID
   and command line have been verified immediately beforehand, and the stop is required for cleanup.
-- If browser verification becomes essential, stop and ask the owner before using it. Do not infer
-  permission from an approved implementation plan or from a previous browser test.
 
 ## Protect Existing Functions
 

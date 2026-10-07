@@ -37,6 +37,192 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Product Inventory Batch 2: Desktop Table Fit and Compact Phone Cards
+
+**Status:** Executed — not yet committed (published together with Batch 1 on the owner's "commit and push").
+**Finished:** 2026-10-07.
+
+**Where the plan and the outcome differed:**
+
+- Step 3: hiding the Room cells alone shifted every following column's width (the `<col>` still took a slot); `.product-room-empty col.product-col-room` is `display: none` instead of `width: 0`.
+- Step 5: no width tuning was needed — at 1440 px the table is exactly the wrapper width. At 1366 px it overflows by 53 px (S/N is held at ~188 px by the "No calibration record" badge); the scrollbar and hint cover it, as planned.
+- Added (found by the browser check, same cards): phone "View Report/Certificate" links raised from 38 px to 44 px (`min-height: 2.75rem`); the phone card name was invisible in dark mode because the shared dark stylesheet styles `.product-mobile-title`, not `.product-mobile-name` — added `:root[data-app-theme="dark"] .product-mobile-name` (pre-existing on production).
+- Tests: `test_product_calibration_certificate` pinned the old 1600 px hint media query and `product-col-date { width: 7rem; }`; updated to the new rule and 6.5rem.
+- Fail-first: all 5 tests in `tests/test_product_inventory_batch2.py` failed on the Batch-1 template. After: batch 1 + 2 files, `test_product_table_column_resize`, `test_product_calibration_certificate`, `test_product_vieworks_links_history`, `test_changelog_coverage`, `test_sw_cache_version` OK; `node --check` OK. `test_product_room_catalog` passes alone; its three failures when run after the calibration/Vieworks modules also occur with the original template (shared-database seeding order), so they are not from this batch.
+- Browser (built-in, local server on a copy of `scheduler.db`, engineer `kent`; copy and launch entry removed). Note: the dev server caches templates (`FLASK_DEBUG=false`), so it was restarted after each template edit; emulated resizes in the hidden pane do not fire `resize`, so live-resize checks dispatched the event the browser normally sends.
+  - 1440 px: table 1073 / wrapper 1073 (was 1320 / 1073), headers S/N 192, Name 212, Room hidden, BSID 114, Owner 196, Start 106, End 106, Status 147; average row 75 px (was 76); scroll hint hidden. 1366 px: 1052 / 999, hint and scrollbar shown. 1920 px: 1553 / 1553, rows 68 px.
+  - Freeze through Status / BSID / Name gives correct offsets with Room hidden; Room freeze option hidden; column resize and Reset widths work; sort by End Date works.
+  - After giving one product a room on the copy, the Room column (118 px) and freeze option return; the table then overflows at 1440 px and the hint shows.
+  - 375 px: typical card 216 px (was 528), with calibration links 281 px, list 23,875 px (was ~54,000), card left edge 28 px (was 44), no sideways scroll, no tap target under 44 px; meta line e.g. "Room X-Ray 2 · 2020-06-27 – 2022-06-26 · No Contract"; Edit and History open. 768 px: cards 216 px, no sideways scroll; dark theme name readable.
+  - `/vieworks` (one item added on the copy) and `/genoray`: phone card, edit, desktop table fit (1088 / 1088), Room hidden. No console errors.
+  - Print: print CSS unchanged (mobile list, hint and scrollbar hidden; table printed); not print-previewed.
+- Full suite before the combined publish: 1,593 tests, 24 failures, 3 errors, 5 skips — the same failing tests by name as the pre-batch code (baseline run with both batches stashed). A first run showed one extra `test_purchase_orders` failure: a 429 from the shared `/login` rate limit, because the new Batch 1 route test logged in through `/login`; it now signs in through the test session instead.
+**Approved:** 2026-10-07 — the owner asked to "plan batch 2" and set the publishing rhythm: Batches 1 and 2 are published together in one "commit and push" (two batches per push from now on, to save Railway deploys).
+**Detailed:** 2026-10-07.
+
+## Context
+
+The browser check of `/products_page` (local server on a copy of `scheduler.db`, 101 products) found the desktop table does not fit even at 1440 px, and the phone list is very long. Batch 1 (safety fixes, executed, not yet committed) is in the same file; both batches go out in one push.
+
+## Decisions taken
+
+1. Batches 1 and 2 publish together: **one** service-worker bump (Batch 1's `v258`, suffix renamed) and **one** release entry with a second item. No push after Batch 2 until the owner says "commit and push".
+2. Keep all eight desktop columns, their order, sorting, freeze and resize behaviour. Only widths, wrapping and the empty-Room case change.
+3. Phone gutter follows the shell standard (`--mobile-safe-padding`, 14 px on `.main-content` and `.container-fluid`, `static/css/app-shell.css:738`), as decided for Medical Centers (`71a21b0`): drop this page's extra card padding rather than override the shell.
+4. On phone cards, empty values are left out instead of shown as filler ("Room: —", "BSID: Not assigned"). The desktop table keeps its "-" placeholders.
+
+## Investigation
+
+Measured in the browser at 1440 × 900 (sidebar open; table wrapper 1073 px) and 375 × 812.
+
+1. **Table overflow at 1440 px:** table 1320 px in a 1073 px wrapper; End Date and Status are cut off. Header widths: S/N 229, Name 208, Room 128, BSID 112, Owner 192, Start 159, End 148, Status 144. Average row height 76 px.
+2. **Why S/N is 229 px:** column 1 is `white-space: nowrap` (`templates/products.html` ~2498); in an auto-layout `width: max-content` table (~2477) the "View Report" and "View Certificate" links in `.product-serial-document-actions` (~2808, `flex-wrap: wrap`) sit side by side because the cell takes its max-content width.
+3. **Why dates are ~150 px:** columns 6–7 are `nowrap`, including the header button "Start Date ↕"/"End Date ↕" (the indicator becomes "Oldest"/"Newest" when sorted). The data is 10 characters.
+4. **Room is 128 px with no data:** `.product-col-room { width: 8rem; }` (~2487); Room is empty on all 101 local products. BSID is empty on 99 but is used (certification).
+5. **Scroll hint always shows at 769–1600 px** (`@media … max-width: 1600px { .product-table-scroll-hint { display: flex } }`, ~2802), even when nothing overflows. `updateProductTableHorizontalScroll` (`:847`) already computes `isOverflowing` for the scrollbar.
+6. **Phone cards (375 px):** card 528 px tall, list ≈ 54,000 px for 102 cards; first card starts at y = 573. `.product-mobile-top` (~2978) is a two-column flex: everything (S/N, calibration, name, room, Vieworks, BSID, owner) is squeezed into a 102 px column because the status badge takes the right side. Owner wraps to 4 lines. Dates are two bordered boxes stacked vertically (`.product-mobile-dates { grid-template-columns: 1fr }` at ≤768 px, ~3274), then a separate "No Contract" line. Card left edge at 44 px: shell 14 + `.container-fluid` (shell) + this page's `.container-fluid > .card { padding: 1rem }` (~3167).
+7. Markup source: `renderProductMobileCards` (`:1343` before Batch 1; same function after). `getWarrantyBadgeClass` is used only by it.
+8. Tests that read this CSS/markup and must keep passing: `tests/test_product_table_column_resize.py`, `tests/test_product_room_catalog.py` (Room markup), `tests/test_product_calibration_certificate.py` (identity cell / mobile links), `tests/test_product_vieworks_links_history.py`.
+
+## Execution steps
+
+1. **S/N column narrower** (`templates/products.html` CSS): `.product-identity-cell .product-serial-document-actions { flex-direction: column; align-items: flex-start; }` so the two document links stack; the calibration badge may wrap (`.product-identity-cell .product-calibration-summary { white-space: normal; }`). Done: S/N header ≤ 150 px at 1440 px with current data.
+2. **Date headers wrap, data does not**: remove columns 6–7 header buttons from `nowrap` (keep `td` nowrap); `.product-col-date { width: 6.5rem; }`. Done: Start/End headers ≤ 115 px each.
+3. **Room column hides when empty**: in `renderTable`, `table.classList.toggle('product-room-empty', !data.some(p => String(p.room || '').trim()))` based on **all loaded rows** (`productsData`, not the filtered set, so filtering never makes the column jump). CSS: `.product-room-empty :is(th, td):nth-child(3) { display: none; }` and `.product-room-empty col.product-col-room { width: 0; }`; hide the "Room" option in `#product-freeze-column` while empty (if Room was the saved freeze choice it still freezes the same number of columns). `.product-col-room { width: 5rem; }` for when Room has data. Freeze offsets already read live header widths (`applyProductFreezeColumn`), and the resize keys stay index-based on the unchanged markup. Done: with no rooms the column is absent; adding a room on the copy brings it back.
+4. **Scroll hint only when needed**: in `updateProductTableHorizontalScroll`, toggle `.is-overflowing` on `.product-table-scroll-hint` together with the scrollbar; replace the 769–1600 px media rule with `.product-table-scroll-hint.is-overflowing { display: flex; }` (still hidden on phones and in print). Done: no hint when the table fits; hint shows at widths that overflow.
+5. **Measure and tune** at 1366, 1440 and 1920 px: target **no overflow at 1440 px** (sidebar open) with the current data, row height ≤ 76 px; tune only the `.product-col-*` starting widths (name 12rem, owner 11rem are the first candidates) if still a few px over. Record the measurements.
+6. **Phone card layout** (`renderProductMobileCards` + mobile CSS): new header line `.product-mobile-head` = S/N (left) + status badge (right); below it, full width: calibration links/badge, name, Vieworks links, owner (one line where it fits), then one meta line `Room X · BSID Y · <start> – <end> · Under Contract/No Contract` built only from non-empty parts (dates show "No dates" if both are empty), then the actions row. Remove `.product-mobile-dates`, `.product-mobile-date-box`, `.product-mobile-contract` markup and their CSS (including the ≤768 px `grid-template-columns: 1fr` override). Keep every action button, its classes, sizes (≥ 44 px) and handlers from Batch 1. Done: typical card ≤ 280 px tall.
+7. **Phone gutter**: at ≤768 px, `.container-fluid > .card { padding: 0 !important; background: transparent; box-shadow: none; }` (replacing `padding: 1rem !important`), matching the Medical Centers approach. Done: card left edge = 28 px, no sideways scroll.
+8. **Tests** — extend `tests/test_product_inventory_batch1.py` or add `tests/test_product_inventory_batch2.py` (source-level): document links stack (`flex-direction: column` under `.product-identity-cell`); `product-room-empty` toggle in `renderTable` using `productsData`; scroll hint toggled with `is-overflowing` and no `max-width: 1600px` hint rule; `renderProductMobileCards` has `product-mobile-head` and no `product-mobile-date-box` / `Room: ${` / `BSID: ${escapeHtml(p.bsid || 'Not assigned')}`; the ≤768 px card rule has `padding: 0`. Each must fail on the current template. Keep the existing product test modules passing (Investigation 8), updating only assertions that pin the removed date-box markup.
+9. **Release bookkeeping (shared with Batch 1)**: rename Batch 1's service-worker suffix to `v258-product-inventory-fixes-layout` (one bump for the push; v257 stays the historical marker); add a second item to the `2026-10-07-product-inventory-fixes` release entry ("The inventory table fits wider screens without sideways scrolling when Room is unused, and phone cards are about half as tall."); `changes.md`; this plan's status.
+
+## Deliberately excluded
+
+- **Removing or merging desktop columns** (e.g., folding Room into Name) — changes sort/freeze/resize keys and saved widths; hiding Room only when it is empty everywhere covers today's data.
+- **Pagination or virtual scrolling** of phone cards — halving card height is enough for ~100 products.
+- **Request waterfall, lighter client list, per-row queries** — Batch 3. **Dead-code cuts** — Batch 4.
+- **Shell gutter change** — app-wide; out of scope (same decision as Medical Centers).
+- **Print layout** — prints the desktop table; only verified, not redesigned.
+
+## Verification
+
+- Fail-first for every new assertion, then focused modules: batch test file(s) + `test_product_table_column_resize`, `test_product_room_catalog`, `test_product_calibration_certificate`, `test_product_vieworks_links_history`, `test_product_inventory_mutations`, `test_changelog_coverage`, `test_sw_cache_version`; `node --check` on the page script. Full suite once before the combined Batch 1 + 2 publish, compared with the baseline (24 failures, 3 errors, 5 skips).
+- Browser (built-in, local server on a copy of `scheduler.db`; engineer `kent` session; viewport set explicitly because the hidden pane reports width 0):
+  - 1366 / 1440 / 1920 px: table width vs wrapper, header widths, average row height, scroll hint shown only when overflowing; sort, freeze (including "S/N", "Product Name + Actions", "Status"), column resize and Reset widths still work; Room column absent, then present after giving one product a room on the copy;
+  - 375 px and 768 px: card height, list height, first-card top, left edge 28 px, no sideways scroll, all buttons ≥ 44 px, Edit/Delete/History/PM still work; cards with and without calibration links, linked Vieworks, BSID, room, dates;
+  - `/genoray` and `/vieworks` at 1440 and 375 px;
+  - print preview layout (Print button) still shows the table;
+  - dark theme glance at both widths; no console errors.
+  - Remove the copy and the temporary launch entry; reset the viewport.
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined (`renderTable`, `renderProductMobileCards`, `getWarrantyBadgeClass`, `applyProductFreezeColumn`, `updateProductTableHorizontalScroll`, `setupProductColumnResizers`, `resetProductColumnWidths`, `setProductFreezeColumn`) and that Import, Export, Print, Add, Edit, Save, Delete, PM and Service History still work on all three inventory pages.
+2. Record fail-first proof, measurements and browser results under this plan.
+3. Service worker suffix and the second release item (step 9).
+4. Update `changes.md` and this plan's status (`Executed — not yet committed`).
+5. Wait for the owner's "commit and push", then publish Batches 1 and 2 together: run the full suite once; stage explicit files only (`templates/products.html`, `app.py`, `static/changelog/releases.json`, the batch test files, `tests/test_product_calibration_certificate.py`, `plans.md`, `changes.md`, `AGENTS.md`); never `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`. Verify `origin/main` and the Railway deployment; set both plans to `Executed` with the commit hash.
+
+## Risks
+
+- **Hiding Room shifts freeze offsets or resize handles** → offsets come from live header widths and the hidden column keeps its index; verified by freeze/resize checks with Room hidden and shown.
+- **Saved column widths** (`medicalServiceProductColumnWidthsV1`) from before may still force a wide table for users who resized → "Reset widths" clears them; widths are only restored if valid, unchanged behaviour.
+- **Phone card rewrite drops an action or link** → actions block reused unchanged; source test + browser check of every button type.
+- **Overflow target missed at 1366 px** with long owner names → target is 1440 px; the scroll hint and scrollbar still cover narrower widths.
+- Blast radius: `templates/products.html` (Product, Genoray, Vieworks pages), the service-worker suffix and the release entry; no schema or route change.
+
+# Product Inventory Batch 1: Safety and Correctness Fixes
+
+**Status:** Executed — not yet committed (awaiting the owner's "commit and push").
+**Finished:** 2026-10-07.
+
+**Where the plan and the outcome differed:**
+
+- Step 8: the forced-rename logic is a small helper `setProductNameForEdit(name)` called by `openEditModal` (and by `openAddModal` with `''` to reset), instead of inline code. Default placeholder and warning text are saved in `data-` attributes at startup so Add mode and catalog-matched names look as before. `syncProductNameCatalogSelection` keeps the warning visible while a legacy name is pending even if the field is empty.
+- Step 7: no `aria-label` on the row (it would hide the row's cell text from screen readers); `tabindex="0"`, the guarded key handler and a 2 px `:focus-visible` outline only.
+- `saveProduct`'s two identical `updateProductListAfterSave` branches were merged while adding step 6 (same behaviour).
+- Tests: `tests/test_product_calibration_certificate.py::test_products_markup_keeps_identity_actions_and_accessible_states` pinned the old `openEditModal('${serial}')` text; updated to the `productJsArg` form.
+- Fail-first: the 7 template tests in `tests/test_product_inventory_batch1.py` failed on the unchanged template; the P.O. route test passed (positive control). After: new file + `test_product_calibration_certificate` + `test_product_vieworks_links_history` + `test_product_table_column_resize` + `test_changelog_coverage` OK; page script `node --check` OK.
+- Pre-existing, not caused by this batch: `test_product_contract_status.test_product_save_stays_in_place_without_refetching_page_data` fails on the unchanged template too (expects `updateProductListAfterSave(data, editSN);`); three `test_product_room_catalog` tests fail only when run after `test_product_inventory_mutations`/`test_product_name_standardization` in one process (catalog seeding order on the shared test database), with or without the new test file. Full suite not yet run (runs once before publishing).
+- Browser (built-in, local server on a copy of `scheduler.db`, engineer `kent`; copy seeded with serial `AB'12"\X`, an HTML-named client, two Vieworks items and one P.O.; copy and launch entry removed): 1440 px — Edit, History, highlight, Enter-on-row all work for `AB'12"\X`; Enter on the Edit button opens only Edit; real Shift+Tab focus shows the 2 px outline; HTML client name shows as text, nothing executed; active-count icon renders; legacy "MobileDart Evo MX7c" opens with an empty field, placeholder and warning naming it, Save blocked, picking "MobileDart Evolution MX7c" saved; after linking VWTEST1 to that product, the second product of the same client offered only VWTEST2; a date-only edit showed only "Product updated."; an owner change showed "1 linked P.O.(s) still name the previous owner…"; Add mode reset to the default placeholder. 375 px — card Edit/History/Enter work for the tricky serial, no sideways scroll, no tap target under 44 px. Delete handler markup evaluated without error for the tricky serial (engineer has no Delete; server permission unchanged). `/vieworks` edit + history and `/genoray` add (`GN'TEST1`) + edit + history work, names untouched. No console errors.
+**Approved:** 2026-10-07 — after a source scan and a browser check of `/products_page`, the owner asked to "plan batch 1" and decided legacy names stay blocked: "don't let them save. force a rename from the product name list".
+**Detailed:** 2026-10-07.
+
+## Context
+
+A source review and a browser check of the Product Inventory page (`templates/products.html`, `/products_page`; local server on a copy of `scheduler.db`, engineer `kent`, 101 products) found two confirmed security/correctness bugs (client-name HTML runs code in the Owner autocomplete; serials containing `'` break every row button), a blank icon, stale Vieworks link options after a save, a P.O. warning the server sends but the page never shows, desktop rows that cannot be opened from the keyboard, and a legacy-name edit flow that blocks the user without showing them the list. The same template drives `/genoray` and `/vieworks`, so every fix reaches all three pages. Layout, load speed and dead-code cleanup are later batches.
+
+## Decisions taken
+
+1. **Legacy product names are not saveable.** 77 of 101 local products have names outside the Product Name catalog. Save stays blocked until a catalog name is chosen (current server rule in `update_product`, `app.py` ~62885, kept). This batch only makes the forced rename easier to complete; it does not add a "keep current name" path.
+2. Fix with the smallest change in the existing template; no new endpoints, no refactor of how rows are rendered.
+3. The page-access question (stock-inventory-only users can open `/products_page`) is **not** in this batch; it needs a separate owner decision.
+
+## Investigation
+
+Verified in code and, where noted, in the browser on a database copy (copy removed afterwards).
+
+1. **Autocomplete HTML injection — confirmed in browser.** `setupAutocomplete` (`templates/products.html:1174`) builds each result with `div.innerHTML = \`<strong>${displayName}</strong>\`` (`:1204`), where `displayName` is the client name plus address. A client named `Zz <img src=x onerror=...>` (injected into `masterClients` in the page only) executed its handler.
+2. **Apostrophe serials — confirmed in browser.** Inline handlers are built as `onclick="...openEditModal('${escapeHtml(serial)}')"`. The browser decodes `&#039;` back to `'` before running the handler, so serial `ZZTEST'01` (accepted by `/add_product`, created only in the copy) produced `openEditModal('ZZTEST'01')` → `SyntaxError`, modal never opened. Same pattern at: row Edit `:1320`, row Delete `:1327`, mobile Edit `:1375`, mobile Delete `:1382`, mobile card history click and keydown `:1388`, desktop row history `:1760`, history-modal linked-equipment buttons `:1498` (uses `productEscape` inside `'…'`, same flaw). `highlightAndScroll` (`:576`) puts the serial unescaped into `querySelector('[data-serial="…"]')`.
+3. **Blank icon — confirmed in browser.** `fa-shield-check` (`:176`) has no glyph in Font Awesome 6.4 free (`::before` content `none`). Settings already replaced it with `fa-shield-halved`.
+4. **Stale Vieworks link options.** `vieworksData` is filled only in `loadData` (`:1044-1052`). `saveProduct` (`:1941`) updates the product row in place via `updateProductListAfterSave` (`:1813`) and never refreshes `vieworksData`, so a Vieworks item just linked to product A still appears as available when editing product B of the same client; the server then rejects it (`validate_product_vieworks_links`, `app.py:3172`).
+5. **P.O. review warning not shown.** `update_product` returns `linked_purchase_order_count` on every success (`app.py` ~63107 serial-change path, ~63145 normal path) and logs "N linked P.O.(s) require a machine-owner review" when the owner changes (~63139). `saveProduct` ignores it. On the serial-change path the P.O. rows are moved automatically, so only an owner change needs a warning.
+6. **Keyboard access.** Desktop rows (`:1760`) open Service History on click only — no `tabindex`, no key handler. Mobile cards (`:1388`) already have `role="button" tabindex="0"` and Enter/Space.
+7. **Legacy name flow — confirmed in browser.** `openEditModal` (`:1878`) puts the legacy name in `#p-name`; `syncProductNameCatalogSelection` (`:524`) shows "Legacy product name — select a standard Product Name before saving."; `saveProduct` blocks with "Validation Error: Select a standard Product Name from the list before saving." Because the input still holds the legacy text, the `<datalist>` filters to that text and usually suggests nothing, so the user must first clear the field to see the list. The warning does not say which name is legacy. Server side is already enforced and tested (`tests/test_product_name_standardization.py::test_product_edit_requires_catalog_and_canonicalizes_name`).
+- Worked correctly in the browser (no change needed): loading state, filters, sort, Clear Filters, Service History, edit-save updates the row in place, engineer Delete refused (403), no sideways page scroll at 375 px, no console errors in normal use.
+
+## Execution steps
+
+1. **Safe handler arguments** (`templates/products.html`): add `function productJsArg(value){ return escapeHtml(JSON.stringify(String(value ?? ''))); }` next to `escapeHtml`. Replace every `'${escapeHtml(x)}'` / `'${productEscape(x)}'` handler argument listed in Investigation 2 with `${productJsArg(x)}` (no surrounding quotes), including the `inventoryMode` / `item.source` second arguments for consistency. Done: a serial `AB'12"\` renders handlers that open Edit, Delete confirm and History for that exact serial.
+2. **Selector escape**: in `highlightAndScroll`, use `` `[data-serial="${CSS.escape(serial)}"]` ``. Done: `?edit=AB'12` highlights without throwing.
+3. **Autocomplete text only**: in `setupAutocomplete`, build `const strong = document.createElement('strong'); strong.textContent = displayName; div.appendChild(strong);` instead of `innerHTML`. Done: a client name containing HTML shows as literal text.
+4. **Icon**: `fa-shield-check` → `fa-shield-halved` at `:176`. Done: icon visible.
+5. **Refresh Vieworks options after save**: extract the Vieworks fetch in `loadData` into `async function loadVieworksLinkOptions()` (same body: skip when `isStandaloneInventory`, fetch `/api/vieworks/items`, fall back to `[]`). `loadData` calls it as before; `saveProduct` calls it (not awaited) after a successful non-standalone save. Done: after linking item X to product A, editing product B of the same client no longer lists X.
+6. **P.O. warning**: in `saveProduct`, remember `existingInventoryItem?.client_id` before saving; on success, if not standalone, `editSN` is set, the client changed, and `responseData.linked_purchase_order_count > 0`, show `productToast('N linked P.O.(s) still name the previous owner. Review them in P.O. Details.', 'warning')` in addition to the success toast. Done: owner change on a machine with P.O.s shows the reminder; other saves do not.
+7. **Keyboard rows**: desktop row gets `tabindex="0"` and `onkeydown="if((event.key==='Enter'||event.key===' ') && event.target===this){event.preventDefault();openProductHistory(...);}"` (arguments via `productJsArg`). The `event.target===this` check stops Enter on the Edit/Delete/PM controls from also opening History. Add a visible `:focus-visible` outline for `.product-clickable-row` in the page `<style>`. Done: Tab reaches rows, Enter opens History, Enter on the Edit button opens only Edit.
+8. **Forced rename made usable** (`openEditModal`, `syncProductNameCatalogSelection`, warning element `#p-name-standardization-warning`): when the product's current name has no exact catalog match, put an empty value in `#p-name`, set its placeholder to `Pick a standard name (was: <legacy name>)`, and make the warning read `"<legacy name>" is not in the Product Name list. Pick a standard name before saving.` (text set with `textContent`). Save stays blocked exactly as today (Decision 1). Catalog-matched names behave as today. Standalone (Genoray/Vieworks) pages unchanged. Done: on a legacy product, Edit shows the empty name field with the full suggestion list on focus, the old name in the warning and placeholder; Save without a pick shows the existing validation error; picking a name saves.
+9. **Tests** — new `tests/test_product_inventory_batch1.py` (source-level, like `test_templates_expose_standardization_controls`): no handler in `products.html` matches `\('\$\{(escapeHtml|productEscape)\(`; `productJsArg` defined and used; autocomplete block has no `innerHTML = \`<strong>`; `fa-shield-check` absent; `loadVieworksLinkOptions` defined and called from `saveProduct`; `saveProduct` reads `linked_purchase_order_count`; desktop row template contains `tabindex="0"` and `event.target===this`; `highlightAndScroll` uses `CSS.escape`; `openEditModal` sets the legacy placeholder text. Plus one route test: `PUT /update_product/<serial>` changing `client_id` on a machine with a `PurchaseOrderMachine` row returns `linked_purchase_order_count >= 1` (positive control for step 6's input). Each source assertion must fail on the current template.
+10. **Release bookkeeping**: service worker `CACHE_VERSION` in `app.py` (~27094) bumped to the next number with suffix `product-inventory-fixes`, previous one kept as the historical marker comment; `static/changelog/releases.json` entry `2026-10-07-product-inventory-fixes` (audience: everyone who can open Product/Genoray/Vieworks inventory — follow existing entries for the exact audience keys; category Inventory or the existing products category); `changes.md`; this plan's status.
+
+## Deliberately excluded
+
+- **Keeping legacy names on save** — owner decision: rename is forced.
+- **Page access for stock-inventory-only users** (`products_page` does not use `can_access_products_page`) — needs an owner decision; separate.
+- **Desktop table fit, mobile card compaction** (Batch 2), **request waterfall / lighter client list / per-row queries in `/get_products`** (Batch 3), **dead-code cuts** (Batch 4) — separate batches to keep this one small and reviewable.
+- **Server-side serial character rules** — the client fix makes any serial safe to render; restricting characters could reject existing data.
+- **Bulk renaming the 77 legacy names** — Settings already has the Product Name standardization tool; using it on production is an owner/admin action, not code.
+
+## Verification
+
+- Fail-first: run `tests/test_product_inventory_batch1.py` on the unchanged template and record that the source assertions fail; the route test is a positive control and should pass before and after.
+- Focused modules after the change: the new file + `test_product_inventory_mutations`, `test_product_name_standardization`, `test_product_vieworks_links_history`, `test_product_table_column_resize`, `test_product_contract_status`, `test_product_room_catalog`, `test_product_calibration_certificate`, `test_changelog_coverage`. Full suite once before publishing, compared with the baseline (24 failures, 3 errors, 5 skips).
+- Browser (built-in, local server on a copy of `scheduler.db`, temporary `.claude/launch.json` entry; engineer `kent` session, plus an admin session on the copy for Delete):
+  - add `AB'12` in the copy → row Edit, Delete confirm, History, mobile Edit/History all open for that serial; `/products_page?edit=AB'12` highlights it;
+  - inject an HTML client name into the copy's `client` table → Owner autocomplete shows it as text, nothing executes;
+  - "active" chip icon visible;
+  - link a Vieworks item to product A, then edit product B of the same client → item not offered;
+  - change the owner of a machine with a P.O. → warning toast; change only a date → no warning;
+  - Tab to a desktop row, Enter → History; Tab to its Edit button, Enter → only Edit;
+  - Edit a legacy-name product → empty name field, old name in placeholder and warning, full list on focus; Save without picking → blocked; pick a name → saved;
+  - `/genoray` and `/vieworks` still load, add/edit/PM links work;
+  - standing bar: 375 px no sideways scroll, tap targets ≥ 44 px, no console errors from normal use.
+  - Remove the copy, test accounts and launch entry afterwards; reset viewport.
+
+## After implementation
+
+1. Self-review the diff. Confirm every function the page calls is still defined and still used by its callers (`openEditModal`, `deleteProduct`, `openProductHistory`, `saveProduct`, `loadData`, `setupAutocomplete`, `refreshVieworksLinkOptions`, `syncProductNameCatalogSelection`, `highlightAndScroll`), and that Import, Export, Print, Add, Save, Delete, PM links and Service History still work on all three inventory pages.
+2. Record fail-first proof, test counts and browser results under this plan ("Where the plan and the outcome differed").
+3. Service worker bump and `releases.json` (step 10).
+4. Update `changes.md` and set this plan's status to `Executed` with the commit hash.
+5. Commit and push only on the owner's "commit and push": explicit staging; never `scheduler.db`, `changes-archive.md`, handoffs, `.claude/`, `.impeccable/`, `output/`, `tmp/`. Verify `origin/main` and the Railway deployment.
+
+## Risks
+
+- **Handler rewrite misses a call site** → that button breaks for every serial. Safety net: the source test forbids the old pattern anywhere in the file, and the browser sequence clicks every button type on desktop and mobile.
+- **Keyboard handler double-fires** with the row's click/Edit button → `event.target===this` guard and an explicit browser check.
+- **Clearing the legacy name in the field** could confuse users who expect to see it → the old name stays visible in the placeholder and warning; nothing is saved until a catalog name is picked.
+- Blast radius: `templates/products.html` (Product, Genoray, Vieworks pages) plus the service worker version and release note; no schema or route change.
+
 # Reimbursement Package: Print-Ready Excel, Signature Placement, LPR Text
 
 **Status:** Executed — commit `46e98dd`; published to `origin/main` on the owner's "commit and push" (Railway GitHub deployment `6899349510` succeeded).

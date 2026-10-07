@@ -173,7 +173,7 @@
             </div>
             <div class="d-flex flex-wrap gap-2">
                 <span class="count-chip bg-white border text-success">
-                    <i class="fa-solid fa-shield-check me-1"></i>
+                    <i class="fa-solid fa-shield-halved me-1"></i>
                     <span id="product-active-count">0 active</span>
                 </span>
                 <span class="count-chip bg-white border text-warning-emphasis">
@@ -529,7 +529,23 @@
         const match = productNameCatalog.find(item => String(item.name || '').trim().toLowerCase() === value);
         hidden.value = match ? match.id : '';
         const warning = document.getElementById('p-name-standardization-warning');
-        if(warning) warning.classList.toggle('d-none', Boolean(match) || !value);
+        if(warning) warning.classList.toggle('d-none', Boolean(match) || !(value || input.dataset.legacyName));
+    }
+
+    // A legacy name cannot be saved: empty the field so the full list shows, and keep the old name visible.
+    function setProductNameForEdit(name){
+        const input = document.getElementById('p-name');
+        const warning = document.getElementById('p-name-standardization-warning');
+        if(!input) return;
+        const legacyName = String(name || '').trim();
+        const isLegacy = !isStandaloneInventory && Boolean(legacyName) && !productNameCatalog.some(item => String(item.name || '').trim().toLowerCase() === legacyName.toLowerCase());
+        input.value = isLegacy ? '' : (name || '');
+        input.dataset.legacyName = isLegacy ? legacyName : '';
+        input.placeholder = isLegacy ? `Pick a standard name (was: ${legacyName})` : input.dataset.defaultPlaceholder;
+        if(warning) warning.textContent = isLegacy
+            ? `"${legacyName}" is not in the Product Name list. Pick a standard name before saving.`
+            : warning.dataset.defaultText;
+        syncProductNameCatalogSelection();
     }
 
 function isProductMobileViewport(){
@@ -573,7 +589,7 @@ function getEditParam(){
 }
 
 function highlightAndScroll(serial){
-    const row = document.querySelector(`[data-serial="${serial}"]`);
+    const row = document.querySelector(`[data-serial="${CSS.escape(serial)}"]`);
     if(!row) return;
 
     row.classList.add('table-warning');
@@ -849,11 +865,13 @@ function updateProductTableHorizontalScroll(){
     const scrollContent = document.getElementById('product-table-scrollbar-content');
     const tableWrap = document.getElementById('product-table-wrap');
     const table = tableWrap?.querySelector('table');
+    const hint = document.querySelector('.product-table-scroll-hint');
     if(!scrollBar || !scrollContent || !tableWrap || !table) return;
 
     const hasRows = Boolean(table.querySelector('tbody tr[data-serial]'));
     if(!hasRows){
         scrollBar.classList.remove('is-overflowing');
+        hint?.classList.remove('is-overflowing');
         scrollBar.scrollLeft = 0;
         tableWrap.scrollLeft = 0;
         return;
@@ -864,6 +882,7 @@ function updateProductTableHorizontalScroll(){
 
     const isOverflowing = tableWrap.scrollWidth > tableWrap.clientWidth + 1;
     scrollBar.classList.toggle('is-overflowing', isOverflowing);
+    hint?.classList.toggle('is-overflowing', isOverflowing);
     if(!isOverflowing){
         scrollBar.scrollLeft = 0;
         tableWrap.scrollLeft = 0;
@@ -936,7 +955,11 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         await loadData(); 
         setupAutocomplete();
         setupVieworksLinkControls();
-        document.getElementById('p-name')?.addEventListener('input', syncProductNameCatalogSelection);
+        const nameInput = document.getElementById('p-name');
+        const nameWarning = document.getElementById('p-name-standardization-warning');
+        if(nameInput) nameInput.dataset.defaultPlaceholder = nameInput.placeholder;
+        if(nameWarning) nameWarning.dataset.defaultText = nameWarning.textContent;
+        nameInput?.addEventListener('input', syncProductNameCatalogSelection);
 
         const editId = getEditParam();
         if(editId && !isGenorayInventory && !isVieworksInventory){
@@ -1041,15 +1064,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
             productsData = await resP.json();
             masterClients = await resC.json();
             productSummary = await summaryRes.json().catch(() => ({ total_products: productsData.length, active_warranty: 0, expired_warranty: 0, na_warranty: 0, linked_products: 0 }));
-            if(!isStandaloneInventory){
-                try{
-                    const vieworksRes = await fetch(freshUrl('/api/vieworks/items'), { cache: 'no-store' });
-                    vieworksData = vieworksRes.ok ? await vieworksRes.json() : [];
-                }catch(vieworksError){
-                    vieworksData = [];
-                    console.warn('[Products] Vieworks link options unavailable', vieworksError);
-                }
-            }
+            await loadVieworksLinkOptions();
             productDataLoaded = true;
 
             // Count occurrences of each client name to resolve naming conflicts
@@ -1066,6 +1081,17 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
             }else{
                 renderProductRequestState('error');
             }
+        }
+    }
+
+    async function loadVieworksLinkOptions(){
+        if(isStandaloneInventory) return;
+        try{
+            const vieworksRes = await fetch(freshUrl('/api/vieworks/items'), { cache: 'no-store' });
+            vieworksData = vieworksRes.ok ? await vieworksRes.json() : [];
+        }catch(vieworksError){
+            vieworksData = [];
+            console.warn('[Products] Vieworks link options unavailable', vieworksError);
         }
     }
 
@@ -1201,7 +1227,9 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
                     displayName += ` (${m.address})`;
                 }
 
-                div.innerHTML = `<strong>${displayName}</strong>`;
+                const strong = document.createElement('strong');
+                strong.textContent = displayName;
+                div.appendChild(strong);
                 
                 div.onclick = () => {
                     input.value = displayName;
@@ -1287,6 +1315,10 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         .replaceAll("'", '&#039;');
 }
 
+function productJsArg(value){
+    return escapeHtml(JSON.stringify(String(value ?? '')));
+}
+
 function getProductIdentityLabel(product){
     const fallbackName = isVieworksInventory ? 'Unnamed Vieworks Item' : (isGenorayInventory ? 'Unnamed Genoray Item' : 'Unnamed Product');
     const name = String(product?.name || fallbackName).trim() || fallbackName;
@@ -1303,7 +1335,6 @@ function renderProductLinkedVieworks(product, mobile=false){
 }
 
 function renderProductRowActions(product){
-    const serial = escapeHtml(product.serial_number || '');
     const identity = escapeHtml(getProductIdentityLabel(product));
     let actions = `<div class="product-row-actions no-print" aria-label="Actions for ${identity}">`;
 
@@ -1317,14 +1348,14 @@ function renderProductRowActions(product){
 
     if(productCanEdit){
         actions += `
-            <button type="button" class="product-row-action product-row-edit" onclick="event.stopPropagation(); openEditModal('${serial}')" title="Edit ${inventoryNoun}" aria-label="Edit ${identity}" aria-controls="prodModal">
+            <button type="button" class="product-row-action product-row-edit" onclick="event.stopPropagation(); openEditModal(${productJsArg(product.serial_number)})" title="Edit ${inventoryNoun}" aria-label="Edit ${identity}" aria-controls="prodModal">
                 <i class="fa-solid fa-pen" aria-hidden="true"></i>
             </button>`;
     }
 
     if(productCanDelete){
         actions += `
-            <button type="button" class="product-row-action product-row-delete" onclick="event.stopPropagation(); deleteProduct('${serial}')" title="Delete ${inventoryNoun}" aria-label="Delete ${identity}">
+            <button type="button" class="product-row-action product-row-delete" onclick="event.stopPropagation(); deleteProduct(${productJsArg(product.serial_number)})" title="Delete ${inventoryNoun}" aria-label="Delete ${identity}">
                 <i class="fa-solid fa-trash" aria-hidden="true"></i>
             </button>`;
     }
@@ -1357,8 +1388,13 @@ function renderProductMobileCards(data){
     container.innerHTML = data.map(p => {
         const status = p.computed_status || getProductWarrantyStatus(p);
         const owner = p.client_name || 'No owner';
-        const startWarranty = p.start_warranty || 'N/A';
-        const endWarranty = p.end_warranty || 'N/A';
+        const meta = [];
+        if(String(p.room || '').trim()) meta.push(`Room ${escapeHtml(p.room)}`);
+        if(String(p.bsid || '').trim()) meta.push(`BSID ${escapeHtml(p.bsid)}`);
+        meta.push(p.start_warranty || p.end_warranty
+            ? `${escapeHtml(p.start_warranty || '?')} – ${escapeHtml(p.end_warranty || '?')}`
+            : 'No dates');
+        meta.push(p.under_contract ? 'Under Contract' : 'No Contract');
         const fallbackName = isVieworksInventory ? 'Unnamed Vieworks Item' : (isGenorayInventory ? 'Unnamed Genoray Item' : 'Unnamed Product');
 
         const identity = escapeHtml(getProductIdentityLabel(p));
@@ -1372,56 +1408,33 @@ function renderProductMobileCards(data){
         }
         if(productCanEdit){
             actions += `
-                <button type="button" class="product-mobile-btn product-mobile-edit" onclick="event.stopPropagation(); openEditModal('${escapeHtml(p.serial_number)}')" title="Edit ${inventoryNoun}" aria-label="Edit ${identity}" aria-controls="prodModal">
+                <button type="button" class="product-mobile-btn product-mobile-edit" onclick="event.stopPropagation(); openEditModal(${productJsArg(p.serial_number)})" title="Edit ${inventoryNoun}" aria-label="Edit ${identity}" aria-controls="prodModal">
                     <i class="fa-solid fa-pen" aria-hidden="true"></i>Edit
                 </button>`;
         }
 
         if(productCanDelete){
             actions += `
-                <button type="button" class="product-mobile-btn product-mobile-delete" onclick="event.stopPropagation(); deleteProduct('${escapeHtml(p.serial_number)}')" title="Delete ${inventoryNoun}" aria-label="Delete ${identity}">
+                <button type="button" class="product-mobile-btn product-mobile-delete" onclick="event.stopPropagation(); deleteProduct(${productJsArg(p.serial_number)})" title="Delete ${inventoryNoun}" aria-label="Delete ${identity}">
                     <i class="fa-solid fa-trash" aria-hidden="true"></i>Delete
                 </button>`;
         }
 
         return `
-            <div class="product-mobile-card" onclick="openProductHistory('${escapeHtml(p.serial_number)}', '${inventoryMode}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); openProductHistory('${escapeHtml(p.serial_number)}', '${inventoryMode}'); }">
-                <div class="product-mobile-top">
-                    <div class="product-mobile-main">
-                        <div class="product-mobile-sn">${escapeHtml(p.serial_number)}</div>
-                        ${renderProductCalibrationDocumentLinks(p, true)}
-                        ${renderProductCalibrationBadge(p)}
-                        <div class="product-mobile-name">${escapeHtml(p.name || fallbackName)}</div>
-                        <div class="product-mobile-sn">Room: ${escapeHtml(p.room || '—')}</div>
-                        ${renderProductLinkedVieworks(p, true)}
-                        <div class="product-mobile-sn">BSID: ${escapeHtml(p.bsid || 'Not assigned')}</div>
-                        <div class="product-mobile-owner">
-                            <i class="fa-solid fa-hospital"></i>
-                            <span>${escapeHtml(owner)}</span>
-                        </div>
-                    </div>
-
-                    <div class="product-mobile-status ${getWarrantyBadgeClass(status)}">
-                        ${escapeHtml(status)}
-                    </div>
+            <div class="product-mobile-card" onclick="openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)})" role="button" tabindex="0" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)}); }">
+                <div class="product-mobile-head">
+                    <div class="product-mobile-sn">${escapeHtml(p.serial_number)}</div>
+                    <div class="product-mobile-status ${getWarrantyBadgeClass(status)}">${escapeHtml(status)}</div>
                 </div>
-
-                <div class="product-mobile-dates">
-                    <div class="product-mobile-date-box">
-                        <label>Start Date</label>
-                        <span>${escapeHtml(startWarranty)}</span>
-                    </div>
-
-                    <div class="product-mobile-date-box">
-                        <label>End Date</label>
-                        <span>${escapeHtml(endWarranty)}</span>
-                    </div>
+                ${renderProductCalibrationDocumentLinks(p, true)}
+                ${renderProductCalibrationBadge(p)}
+                <div class="product-mobile-name">${escapeHtml(p.name || fallbackName)}</div>
+                ${renderProductLinkedVieworks(p, true)}
+                <div class="product-mobile-owner">
+                    <i class="fa-solid fa-hospital" aria-hidden="true"></i>
+                    <span>${escapeHtml(owner)}</span>
                 </div>
-
-                <div class="product-mobile-contract ${p.under_contract ? 'is-active' : ''}">
-                    <i class="fa-solid fa-file-contract"></i>
-                    ${p.under_contract ? 'Under Contract' : 'No Contract'}
-                </div>
+                <div class="product-mobile-meta">${meta.join(' · ')}</div>
 
                 <div class="product-mobile-actions">
                     ${actions}
@@ -1495,7 +1508,7 @@ function renderProductHistory(data){
     (asset.linked_vieworks || []).forEach(item => linked.push({ ...item, source: 'vieworks' }));
     if(asset.linked_product) linked.push({ ...asset.linked_product, source: 'product' });
     const linkedHtml = linked.length
-        ? `<div class="product-history-linked-list">${linked.map(item => `<button type="button" class="btn btn-link btn-sm p-0 me-3" onclick="openProductHistory('${productEscape(item.serial_number || '')}', '${productEscape(item.source || 'product')}')"><i class="fa-solid fa-link me-1" aria-hidden="true"></i>${productEscape(item.name || item.serial_number || 'Linked item')} (${productEscape(item.serial_number || '')})</button>`).join('')}</div>`
+        ? `<div class="product-history-linked-list">${linked.map(item => `<button type="button" class="btn btn-link btn-sm p-0 me-3" onclick="openProductHistory(${productJsArg(item.serial_number || '')}, ${productJsArg(item.source || 'product')})"><i class="fa-solid fa-link me-1" aria-hidden="true"></i>${productEscape(item.name || item.serial_number || 'Linked item')} (${productEscape(item.serial_number || '')})</button>`).join('')}</div>`
         : '<span class="text-muted">None</span>';
     const visitsHtml = visits.length ? visits.map(visit => {
         const engineers = (visit.engineers || []).map(person => person.name).filter(Boolean).join(', ') || 'Unassigned';
@@ -1725,6 +1738,12 @@ function renderTable(data) {
         const mobile = document.getElementById('product-mobile-list');
         updateProductSortIndicators();
 
+        // Hide Room while no loaded record has one; based on all rows so filtering never moves columns.
+        const roomEmpty = !productsData.some(p => String(p.room || '').trim());
+        document.querySelector('#product-table-wrap table')?.classList.toggle('product-room-empty', roomEmpty);
+        const roomFreezeOption = document.querySelector('#product-freeze-column option[value="room"]');
+        if(roomFreezeOption) roomFreezeOption.hidden = roomEmpty;
+
         if(!data.length){
             if(body) body.innerHTML = '';
             if(mobile) mobile.innerHTML = '';
@@ -1757,7 +1776,7 @@ function renderTable(data) {
                 const actionButtons = renderProductRowActions(p);
 
                 return `
-                    <tr data-serial="${escapeHtml(p.serial_number)}" class="product-clickable-row" onclick="openProductHistory('${escapeHtml(p.serial_number)}', '${inventoryMode}')">
+                    <tr data-serial="${escapeHtml(p.serial_number)}" class="product-clickable-row" tabindex="0" onclick="openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)})" onkeydown="if((event.key==='Enter'||event.key===' ') && event.target===this){event.preventDefault();openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)});}">
                         <td class="product-identity-cell">
                         <strong>${escapeHtml(p.serial_number)}</strong>
                         ${renderProductCalibrationDocumentLinks(p)}
@@ -1857,8 +1876,7 @@ function openAddModal() {
         
         // Reset all input fields
         document.querySelectorAll('.modal-body input').forEach(i => i.value = ""); 
-        document.getElementById('p-name-id').value = '';
-        document.getElementById('p-name-standardization-warning')?.classList.add('d-none');
+        setProductNameForEdit('');
         const bsidField = document.getElementById('p-bsid');
         if (bsidField) {
             bsidField.disabled = isGenorayInventory;
@@ -1897,9 +1915,8 @@ function openAddModal() {
         if(serialHelp) serialHelp.innerText = isStandaloneInventory
             ? "Serial number can be changed. This will create an activity log."
             : "Serial number can be changed. This will update linked schedules and create an activity log.";
-        document.getElementById('p-name').value = p.name; 
         document.getElementById('p-name-id').value = '';
-        syncProductNameCatalogSelection();
+        setProductNameForEdit(p.name);
         document.getElementById('p-room').value = p.room || '';
         document.getElementById('p-bsid').value = p.bsid || '';
         
@@ -1985,6 +2002,7 @@ function openAddModal() {
         }
 
         const existingInventoryItem = editSN ? productsData.find(item => item.serial_number === editSN) : null;
+        const previousClientId = existingInventoryItem?.client_id;
         if (isStandaloneInventory && editSN && existingInventoryItem?.bsid && !data.bsid) {
             return productAlert("Validation Error: BSID cannot be cleared once it has been assigned.");
         }
@@ -2031,11 +2049,7 @@ function openAddModal() {
                 const scrollX = window.scrollX;
                 const scrollY = window.scrollY;
                 prodModal.hide();
-                if (isStandaloneInventory) {
-                    updateProductListAfterSave(responseData.item || responseData, editSN);
-                } else {
-                    updateProductListAfterSave(responseData.item || responseData, editSN);
-                }
+                updateProductListAfterSave(responseData.item || responseData, editSN);
                 requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
                 productToast(
                     editSN
@@ -2043,6 +2057,13 @@ function openAddModal() {
                         : (isStandaloneInventory ? `${inventoryLabel} item added.` : 'Product added.'),
                     'success'
                 );
+                if (!isStandaloneInventory) {
+                    loadVieworksLinkOptions();
+                    const linkedPurchaseOrders = Number(responseData.linked_purchase_order_count) || 0;
+                    if (editSN && linkedPurchaseOrders > 0 && String(previousClientId ?? '') !== String(data.client_id ?? '')) {
+                        productToast(`${linkedPurchaseOrders} linked P.O.(s) still name the previous owner. Review them in P.O. Details.`, 'warning');
+                    }
+                }
             } else {
                 productAlert("Database Error: " + productResponseMessage(res, responseData, "Action failed"));
             }
@@ -2454,10 +2475,10 @@ function openAddModal() {
        longer identifier or label claim more room when the data needs it. */
     .product-col-serial { width: 8.25rem; }
     .product-col-name { width: 13rem; }
-    .product-col-room { width: 8rem; }
+    .product-col-room { width: 5rem; }
     .product-col-bsid { width: 5rem; min-width: 7rem; }
     .product-col-owner { width: 12rem; }
-    .product-col-date { width: 7rem; }
+    .product-col-date { width: 6.5rem; }
     .product-col-status { width: 9rem; }
 
     .product-table-wrap :is(th, td) {
@@ -2481,9 +2502,32 @@ function openAddModal() {
 
     .product-table-wrap :is(th, td):nth-child(2) .product-sort-btn,
     .product-table-wrap :is(th, td):nth-child(5) .product-sort-btn,
-    .product-table-wrap :is(th, td):nth-child(8) .product-sort-btn {
+    .product-table-wrap :is(th, td):nth-child(8) .product-sort-btn,
+    .product-table-wrap th:nth-child(6),
+    .product-table-wrap th:nth-child(7),
+    .product-table-wrap th:nth-child(6) .product-sort-btn,
+    .product-table-wrap th:nth-child(7) .product-sort-btn {
         white-space: normal;
         align-items: flex-start;
+    }
+
+    /* Room is hidden while no loaded record has one (see renderTable). */
+    .product-room-empty :is(th, td):nth-child(3) {
+        display: none;
+    }
+
+    .product-room-empty col.product-col-room {
+        display: none;
+    }
+
+    /* Stack the report/certificate links so the S/N column stays narrow. */
+    .product-identity-cell .product-serial-document-actions {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .product-identity-cell .product-calibration-summary {
+        white-space: normal;
     }
 
     .product-table-wrap :is(th, td).product-freeze-cell {
@@ -2769,10 +2813,8 @@ function openAddModal() {
         color: rgba(255, 255, 255, 0.84);
     }
 
-    @media screen and (min-width: 769px) and (max-width: 1600px) {
-        .product-table-scroll-hint {
-            display: flex;
-        }
+    .product-table-scroll-hint.is-overflowing {
+        display: flex;
     }
 
     .product-serial-document-actions {
@@ -2906,7 +2948,7 @@ function openAddModal() {
 
     @media screen and (max-width: 768px) {
         .product-serial-certificate-link-mobile {
-            min-height: 2.35rem;
+            min-height: 2.75rem;
             padding: 0.4rem 0.65rem;
             font-size: 0.74rem;
         }
@@ -2945,16 +2987,29 @@ function openAddModal() {
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
     }
 
-    .product-mobile-top {
+    .product-mobile-head {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 0.75rem;
     }
 
-    .product-mobile-main {
+    .product-mobile-head .product-mobile-sn {
+        margin-bottom: 0;
         min-width: 0;
-        flex: 1;
+        overflow-wrap: anywhere;
+    }
+
+    .product-mobile-name {
+        margin-top: 0.35rem;
+    }
+
+    .product-mobile-meta {
+        margin-top: 0.45rem;
+        color: var(--app-muted, #64748b);
+        font-size: 0.74rem;
+        font-weight: 750;
+        line-height: 1.35;
     }
 
     .product-mobile-sn {
@@ -3012,47 +3067,8 @@ function openAddModal() {
         color: #334155;
     }
 
-    .product-mobile-dates {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.65rem;
-        margin-top: 0.9rem;
-    }
-
-    .product-mobile-date-box {
-        border: 1px solid #e2e8f0;
-        background: #f8fafc;
-        border-radius: 0.9rem;
-        padding: 0.7rem;
-    }
-
-    .product-mobile-date-box label {
-        display: block;
-        color: #64748b;
-        font-size: 0.64rem;
-        font-weight: 900;
-        text-transform: uppercase;
-        margin-bottom: 0.2rem;
-    }
-
-    .product-mobile-date-box span {
-        color: #0f172a;
-        font-size: 0.76rem;
-        font-weight: 800;
-    }
-
-    .product-mobile-contract {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        margin-top: 0.7rem;
-        color: var(--app-muted, #64748b);
-        font-size: 0.74rem;
-        font-weight: 850;
-    }
-
-    .product-mobile-contract.is-active {
-        color: #b7791f;
+    :root[data-app-theme="dark"] .product-mobile-name {
+        color: var(--dark-text, #e5e7eb);
     }
 
     :root[data-app-theme="dark"] .product-mobile-badge-contract {
@@ -3135,8 +3151,9 @@ function openAddModal() {
         }
 
         .container-fluid > .card {
-            padding: 1rem !important;
-            border-radius: 1.1rem;
+            padding: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
         }
 
         .container-fluid > .card > .d-flex.justify-content-between {
@@ -3209,7 +3226,8 @@ function openAddModal() {
             display: none;
         }
 
-        .product-table-scrollbar {
+        .product-table-scrollbar,
+        .product-table-scroll-hint {
             display: none !important;
         }
 
@@ -3240,15 +3258,16 @@ function openAddModal() {
             width: 100%;
             min-height: 2.6rem;
         }
-
-        .product-mobile-dates {
-            grid-template-columns: 1fr;
-        }
     }
 
     .product-clickable-row,
     .product-mobile-card {
         cursor: pointer;
+    }
+
+    .product-clickable-row:focus-visible {
+        outline: 2px solid var(--bs-primary, #0d6efd);
+        outline-offset: -2px;
     }
 
     .product-clickable-row:hover .product-identity-cell,
