@@ -13902,6 +13902,8 @@ function collectMobileEngineerSchedules(){
                 titleField.placeholder = "Optional pull-out details, e.g. Pull-out analyzer part";
             }else if(selectedVal === "Holiday"){
                 titleField.placeholder = "Optional holiday name, e.g. Regular Holiday / Special Non-working Holiday";
+            }else if(selectedVal === "SiteVisit"){
+                titleField.placeholder = "Optional, e.g. Courtesy call / Site inspection";
             }else{
                 titleField.placeholder = "Briefly describe the task...";
             }
@@ -17752,7 +17754,8 @@ async function openTSRClientEmailModal(shiftId){
             finalTitle = "Internal Technical Training";
         }
 
-        if (!finalTitle) {
+        // Site Visit: task is optional; the [Site Visit] token keeps the saved title non-empty.
+        if (!finalTitle && !isSiteVisit) {
             timelineAlert("Please enter a task/purpose.");
             return;
         }
@@ -17760,7 +17763,7 @@ async function openTSRClientEmailModal(shiftId){
         if (isClientVisit) {
             if(!validateSiteVisitBillingTags()) return;
             finalTitle = applySiteVisitFlagsToTitle(finalTitle);
-            if(isSiteVisit) finalTitle = `${finalTitle} ${SITE_VISIT_TITLE_TOKEN}`;
+            if(isSiteVisit) finalTitle = [finalTitle, SITE_VISIT_TITLE_TOKEN].filter(Boolean).join(' ');
         }
 
         dataSet.append('title', finalTitle);

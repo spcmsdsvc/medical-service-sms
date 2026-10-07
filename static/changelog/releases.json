@@ -10,7 +10,7 @@
         {
           "item_key": "2026-10-07-site-visit-type-calendar",
           "category": "Calendar",
-          "description": "Calendar has a new schedule type, Medical Center Visit - Site Visit. Only a medical center is needed; no equipment is selected. Create TSR is available for it, with Model and Serial left blank. The card shows a Site Visit badge.",
+          "description": "Calendar has a new schedule type, Medical Center Visit - Site Visit. Only a medical center is needed; no equipment is selected. Create TSR is available for it, with Model and Serial left blank. Task / Purpose is optional. The card shows a Site Visit badge.",
           "audiences": [
             "admins",
             "schedulers",

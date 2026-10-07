@@ -25,6 +25,10 @@ class SiteVisitSourceTests(unittest.TestCase):
         self.assertIn('<option value="SiteVisit">Medical Center Visit - Site Visit</option>', self.timeline)
         self.assertIn("SITE_VISIT_TITLE_TOKEN = '[Site Visit]'", self.timeline)
 
+    def test_site_visit_task_is_optional(self):
+        self.assertIn("if (!finalTitle && !isSiteVisit) {", self.timeline)
+        self.assertIn("[finalTitle, SITE_VISIT_TITLE_TOKEN].filter(Boolean).join(' ')", self.timeline)
+
     def test_tsr_gates_trust_server_flag_for_any_engineer(self):
         timeline_gate = self.timeline.split("function canCreateTSRWithoutEquipmentForSchedule", 1)[1].split("function ", 1)[0]
         tsr_gate = self.tsr.split("function isFrancisTSRWithoutEquipmentSchedule", 1)[1].split("function ", 1)[0]
