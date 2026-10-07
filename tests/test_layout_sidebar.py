@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=6", self.layout)
+        self.assertIn("app-shell.css') }}?v=7", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_peek_and_docks_follow_the_shell_offset(self):
@@ -191,6 +191,14 @@ class SidebarSourceTests(unittest.TestCase):
             page = (ROOT / 'templates' / name).read_text(encoding='utf-8')
             self.assertIn('left: var(--shell-offset, var(--sidebar-width, 240px))', page, name)
             self.assertNotIn('left: var(--sidebar-width, 240px)', page, name)
+
+    def test_rail_labels_stay_named_and_peek_sits_above_sticky_headers(self):
+        rail_labels = self.shell_css.split('.sidebar .sidebar-calendar-main > span {', 1)[1].split('}', 1)[0]
+        self.assertNotIn('display: none', rail_labels)
+        self.assertIn('clip: rect(0 0 0 0);', rail_labels)
+        desktop = self.shell_css.split('@media (min-width: 993px) {', 1)[1]
+        self.assertIn('.sidebar {\n        z-index: 1045;', desktop.split('html[data-sidebar-collapsed="true"] {', 1)[0])
+        self.assertNotIn('<i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>', self.layout)
 
     def test_quiet_rows_and_one_active_signal(self):
         self.assertNotIn('border-bottom: 1px solid var(--sidebar-divider)', self.shell_css)

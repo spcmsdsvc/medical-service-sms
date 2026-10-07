@@ -482,6 +482,13 @@ body.sidebar-resizing .main-content {
 }
 
 @media (min-width: 993px) {
+    /* The peek overlays the page, so the sidebar must sit above Bootstrap's
+       sticky (1020) and fixed (1030) layers but below modal backdrops (1050).
+       Phones keep 1000 so the open drawer stays under the top bar's Menu button. */
+    .sidebar {
+        z-index: 1045;
+    }
+
     html[data-sidebar-collapsed="true"] {
         --shell-offset: var(--sidebar-rail-width);
     }
@@ -530,10 +537,17 @@ body.sidebar-resizing .main-content {
         padding: 0;
     }
 
+    /* Visually hidden, not display:none: the label stays the control's
+       accessible name for screen readers while only the icon shows. */
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar a > span,
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-toggle > span,
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-calendar-main > span {
-        display: none;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
     }
 
     body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-toggle.active {
