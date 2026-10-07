@@ -184,7 +184,8 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 
 ### Chips / Badges
 - **Style:** pill (999px), small label weight; status colours are semantic (Bootstrap success / warning / danger / info / secondary).
-- **Status filter chips:** a row of pill buttons above a table (Product Inventory): semantic colour dot, label and a tabular count pill; the pressed chip uses the accent soft fill and border. Counts ignore the status filter itself. On phones the row scrolls sideways and chips are 44px tall.
+- **Status filter chips:** a row of pill buttons above a table (Product Inventory): status icon, label and a tabular count pill; the pressed chip uses the accent soft fill and border. Counts ignore the status filter itself. On phones the row scrolls sideways and chips are 44px tall.
+- **Inventory status pills:** each warranty/contract status has one label, one tone and one icon, defined once (`PRODUCT_STATUS_META` in `templates/products.html`) and reused by the table, phone cards, chips, history modal and the "What do the statuses mean?" legend. Tones: Under Warranty green (shield), Under Contract cyan (signed file), Expired - Under Contract amber (file with alert), Expired - No Contract red (x-circle), No Expiry Set gray (calendar-x). Status meaning never relies on colour alone.
 
 ### Cards / Containers
 - **Corner Style:** 10px (desktop), 16px (phone cards).

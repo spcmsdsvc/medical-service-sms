@@ -57,6 +57,33 @@ class ProductInventoryTemplateTests(unittest.TestCase):
         self.assertIn('aria-pressed', chips)
         self.assertIn('field.value === value ? \'\' : value', function_body('setProductStatusFilter'))
 
+    def test_each_status_has_one_tone_icon_and_meaning_everywhere(self):
+        meta = TEMPLATE.split('const PRODUCT_STATUS_META = {', 1)[1].split('};', 1)[0]
+        for status in ('Under Warranty', 'Under Contract', 'Expired - Under Contract',
+                       'Expired - No Contract', 'No Expiry Set - Under Contract', 'No Expiry Set - No Contract'):
+            self.assertIn(f"'{status}': {{ tone:", meta)
+        self.assertIn("'Under Contract': { tone: 'contract'", meta)
+        self.assertIn("'Expired - Under Contract': { tone: 'expired-contract'", meta)
+        self.assertIn('renderProductStatusPill(status)', function_body('renderTable'))
+        self.assertIn("renderProductStatusPill(status, 'product-mobile-status')", function_body('renderProductMobileCards'))
+        self.assertIn('renderProductStatusPill(asset.computed_status', TEMPLATE)
+        self.assertIn('id="product-status-legend-list"', TEMPLATE)
+        self.assertNotIn('getWarrantyBadgeClass', TEMPLATE)
+
+    def test_rows_skip_missing_calibration_and_repeated_contract_text(self):
+        badge = function_body('renderProductCalibrationBadge')
+        self.assertIn("productCalibrationStatusClass(summary) === 'is-missing') return ''", badge)
+        self.assertNotIn('No calibration record', badge)
+        self.assertNotIn("'No Contract'", function_body('renderProductMobileCards'))
+
+    def test_polish_sort_state_scrollbar_and_history_headings(self):
+        self.assertIn("btn.closest('th')?.setAttribute('aria-sort'", function_body('updateProductSortIndicators'))
+        self.assertIn('id="product-table-scrollbar" class="product-table-scrollbar no-print" aria-hidden="true"', TEMPLATE)
+        history = function_body('renderProductHistory')
+        self.assertIn('<h6 class="mt-3">Service Visits</h6>', history)
+        self.assertNotIn("asset.name || 'Inventory item'", history)
+        self.assertNotIn('v5.4.2', TEMPLATE)
+
     def test_phone_toolbar_and_paged_cards(self):
         self.assertIn('id="product-filter-toggle"', TEMPLATE)
         self.assertIn('aria-controls="product-client-filter"', TEMPLATE)
