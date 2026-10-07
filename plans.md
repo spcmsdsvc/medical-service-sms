@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Reimbursement: PC Code in Remarks (Required for Client Visits)
 
-**Status:** Executed — not committed; awaiting the owner's "commit and push".
+**Status:** Executed — commit `ccee353`; published to `origin/main` on the owner's "commit and push" (Railway GitHub deployment `6898927230` succeeded).
 **Finished:** 2026-10-07.
 
 **Where the plan and the outcome differed:**
