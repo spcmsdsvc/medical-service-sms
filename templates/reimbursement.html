@@ -605,7 +605,7 @@
     .reim-action-dock {
         --reim-action-dock-height: 76px;
         position: fixed;
-        left: var(--sidebar-width, 240px);
+        left: var(--shell-offset, var(--sidebar-width, 240px));
         right: 0;
         bottom: 0;
         z-index: 1200;
@@ -695,7 +695,7 @@
 
     .reim-readiness-panel {
         position: fixed;
-        left: var(--sidebar-width, 240px);
+        left: var(--shell-offset, var(--sidebar-width, 240px));
         right: 0;
         bottom: 76px;
         z-index: 1199;

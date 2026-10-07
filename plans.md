@@ -37,6 +37,90 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Desktop Icon Rail Sidebar (App Shell)
+
+**Status:** Executed — published to `origin/main` on the owner's "commit and push" (sidebar work only; commit: see `git log`, "feat(shell): desktop icon rail sidebar"). Owner said "okay go" on 2026-10-07 and picked **dark** at step 8.
+**Approved:** 2026-10-07 — the owner said "approved" to the Impeccable `shape` brief. Under the two-step rule this records approval only; execution needs a separate instruction ("go", "execute", "start").
+**Detailed:** 2026-10-07.
+**Branch:** built on sandbox `design/playground`; only the sidebar files were promoted to `main` (the Product Inventory sandbox work and `DESIGN.md` stay on the playground).
+
+**Progress (2026-10-07):** all 10 steps done; step 8 comparison shown in the browser pane with a temporary in-page Dark/Light switch (no file change); owner picked dark.
+
+**Where the plan and the outcome differed so far:**
+
+- Step 1: kept the existing key `medical_service_sidebar_visibility` and state machine (`collapsed` = rail, `expanded` = pinned) instead of a new `medical_service_sidebar_mode` key; only the default flipped (no saved value, an invalid value, or blocked storage → rail). Reason: the tested visibility helpers already persist, guard storage and ignore mobile, so reusing them was the smallest change. Effect: a browser that explicitly saved `expanded` (by toggling before) opens pinned once; anyone else starts on the rail.
+- Step 4: the existing desktop toggle is the pin control (labels "Pin navigation open" / "Collapse navigation to icons"); `#show-sidebar-btn` stays in the markup for its JS references but is hidden on desktop.
+- Step 7: desktop collapsed is no longer `inert` (rail icons must stay reachable); the mobile closed-drawer rule is unchanged.
+- `app-shell.css` cache version is `?v=5` (v4 was cached by the browser during testing).
+- Step 9 (dark, quieter): row dividers removed (rows, Calendar row and arrow, subnav), row weight 700 → 600 and sub-rows 700 → 500, group labels 800 → 700, row height 46 → 44px (keeps 44px touch rows in the phone drawer, which shares these rules), the open parent group only brightens while the current page keeps the accent rail (rail view puts the rail on the parent icon). `app-shell.css` `?v=6`.
+- Phones: drawer behaviour unchanged, but it shares the quieter row styling (no dividers, lighter weight, 44px rows).
+- Fail-first: the six new or changed `test_layout_sidebar` checks fail against the committed files; 71 tests OK across `test_layout_sidebar`, `test_appearance_themes`, `test_offline_api_status`, `test_dark_mode_readability`.
+- **Post-execution re-critique** (`.impeccable/critique/2026-10-07T07-38-16Z__templates-layout-html.md`, 25/40; every issue from the first shell critique resolved) found two regressions introduced by this plan, both fixed on the owner's "fix my 2 regressions": (1) the overlay peek sat at z-index 1000, under Bootstrap sticky table headers (1020), so the Dashboard table header drew over it: desktop `.sidebar` is now 1045 (above sticky/fixed, below modal backdrops 1050; phones keep 1000 so the drawer stays under the Menu button); (2) rail labels used `display:none`, leaving Dashboard, Stock Inventory, Calendar and System Settings with no accessible name: they are now visually hidden (clip) so the label remains the name. Section toggle and arrow icons gained `aria-hidden`. `app-shell.css` `?v=7`. New test `test_rail_labels_stay_named_and_peek_sits_above_sticky_headers` (fails on the committed files); 72 shell tests OK; browser: peek on top of the sticky header at x=80/150/220, rail names present, no visible labels. Known limit: the Reimbursement action dock (z-index 1200) still covers the bottom of an open peek on that page.
+- Final browser round (DB copy, temporary account removed): rail 64px with no horizontal scroll on Dashboard, Calendar, Inventory, Approvals, Travel Request at 1366; Reimbursement docks 64px in rail and 240px pinned, Travel dock 64px; Calendar at 1024 shows Mon–Fri in rail and the peek overlays it with Field Operations expanded; 375px drawer opens at 240px, closed inert, rows 44px. Only console error: Reimbursement's "account is not linked to an engineer profile" for the test account (unrelated).
+- Browser (1366×768, DB copy; the test pane window was unfocused, so focus was dispatched directly): rail 64px with main content at 64px (Inventory width 1111 → 1287px); peek 240px over the page with main content still at 64px and labels shown; Escape closes; pinned 240px pushes the page and persists `expanded`.
+
+## Context
+
+The shell critique (`.impeccable/critique/2026-10-07T06-56-37Z__templates-layout-html.md`, 25/40) measured the desktop sidebar at a fixed 240px: 17.6% of the width at 1366px and 23% at 1024px (Inventory shows 672 of 1129px of columns at 1024). The owner hides the sidebar to see full tables and the calendar, finds it heavy ("too much going on"), and wants a modern look without losing ease of use. Hiding today is all-or-nothing (width 0, a 32px "show" button in the page flow). The two confirmed bugs from that critique (hidden links in the Tab order, username squeezed to 0px) are already fixed on the playground (`syncSidebarInert`, `.sidebar .sidebar-logout`).
+
+## Decisions taken
+
+1. **Rail by default on desktop (≥993px):** 64px strip, icons only, the current page marked on its icon, badge **dots**, user initials at the bottom.
+2. **Peek:** hovering the rail, keyboard focus entering it, or tapping it slides the full 240px sidebar **over** the page (no content shift); groups (Field Operations, Records/Resources, Reports & Insights, Calendar → Create TSR) expand inside the peek exactly as today. Leaving it (after a short delay) or Escape tucks it back. One pattern for mouse, keyboard and touch; no separate flyout menu (owner chose flyout, then accepted folding it into the peek as one behaviour).
+3. **Pinned:** a pin control keeps the full sidebar open and pushing the page, like today; resizing (200–360px) works only when pinned. The choice (rail / pinned) is remembered per browser.
+4. **Look:** lighter and quieter: no divider under every row, lighter row weight, one clear active signal. **Dark slate vs light** is not decided here: both are shown in a side-by-side comparison (Level 4 `live`, or a temporary switch on the local copy if live mode is blocked) and the owner picks before the final styling step.
+5. **Phones (<993px) unchanged** for now; bottom tab bar decided later.
+
+## Investigation
+
+1. **Collapse today:** body class `sidebar-collapsed` + `html[data-sidebar-collapsed]` set before paint by a head script (`templates/layout.html:33-42`, key `medical_service_sidebar_visibility`), applied by `applySidebarVisibility` / `toggleSidebarDesktop` (`layout.html:~450-495`); CSS sets sidebar width 0 and main margin 0 (`static/css/app-shell.css:476-497`). Breakpoint constant `SIDEBAR_DESKTOP_BREAKPOINT = 993` (`layout.html:~408`); mobile drawer is a separate state (`setMobileSidebar`).
+2. **Width variable:** `--sidebar-width` (default 240, min 200, max 360, step 20; `app-shell.css:12-16`) drives `.sidebar` width (`:102`) and `.main-content` margin (`:466`); the resize controller writes it to `document.documentElement` (`layout.html:~572`, key `medical_service_sidebar_width`).
+3. **Pages that position by the sidebar width:** fixed bottom docks use `left: var(--sidebar-width, 240px)` in `templates/reimbursement.html:608,698`, `templates/travel_request.html:157`, `templates/_liquidation_base.html:50`. They must follow the rail width (and today they appear not to follow collapse-to-0; verify during execution and fix the same way).
+4. **Nav markup:** every link goes through the `nav_link` macro (`layout.html:135-144`: icon `<i>`, label `<span>`, optional `.sidebar-count-badge`); groups are `.sidebar-section-toggle` buttons with Bootstrap collapse; Calendar is a split link + arrow (`:189-207`); group labels `.sidebar-group-label` (`:171,214,248`). Badges are filled by the pending-summary poller (`layout.html:~691`, ids `nav-badge-approvals`, `nav-badge-my-requests`; CSS `.sidebar-count-badge` `app-shell.css:368-390`).
+5. **Header and footer:** header holds the title, appearance button, What's New bell and the desktop toggle (`layout.html:94-120`, `.sidebar-header` `app-shell.css:116`); resize handle `#sidebar-resize-handle` (`layout.html:122`); footer `.sidebar-user` with avatar, name/role and logout (`layout.html:~370-388`).
+6. **Tests pinning shell behaviour:** `tests/test_layout_sidebar.py` (source checks, node runtime test of the visibility helpers, render tests per role), `tests/test_appearance_themes.py`, `tests/test_offline_api_status.py`. The runtime node test stubs `document`/`window`; new helpers must stay testable the same way.
+7. Service worker marker is `v262-site-visit-optional-task` (`app.py:27142`); `app-shell.css` is at `?v=4` (playground).
+
+## Execution steps
+
+1. **State model** (`templates/layout.html` head script + body controller): replace the collapsed/expanded preference with `rail` / `pinned` under a new key `medical_service_sidebar_mode` (default `rail`); read it before paint into `html[data-sidebar-mode]`. The old key is ignored (the owner chose rail by default, so everyone starts on rail once) and removed from storage on first load. Done: a fresh browser loads in rail with no flash; pin/unpin persists across navigation.
+2. **Rail CSS** (`static/css/app-shell.css`): `html[data-sidebar-mode="rail"]` at ≥993px sets a `--sidebar-rail-width: 64px`, sidebar width to the rail, main margin to the rail; labels, group labels, badge numbers, header title and footer name hidden in rail; icons centered with 44px hit areas; group labels become thin separators. Done: rail renders on Dashboard, Calendar, Inventory, Approvals with no overflow.
+3. **Peek** (`layout.html` controller): on pointer enter (≈150ms open delay), `focusin`, or tap on the rail, add `sidebar-peek`: full width as an overlay (`position` above content, shadow, no main-content shift); on pointer leave (≈300ms close delay), `focusout` leaving the sidebar, or Escape, remove it. `aria-expanded` on the pin control reflects pinned state; peek does not change it. Respect `prefers-reduced-motion`. Done: hover, Tab and click all reveal labels; Escape closes; page never jumps.
+4. **Pin control:** reuse `#sidebar-toggle-desktop` as Pin/Unpin (label and icon swap); remove the in-page `#show-sidebar-btn` flow button on desktop (rail replaces it) while keeping the id-safe code paths that reference it. Resize handle active only when pinned. Done: pinned behaves like today's expanded sidebar, including saved width.
+5. **Badges in rail:** when rail (not peek/pinned), `.sidebar-count-badge.show` renders as an 8px dot on the icon; the accessible count stays in the existing live text. Done: a pending approval shows a dot in rail and the number in peek.
+6. **Docks follow the visible width:** introduce `--shell-offset` (rail 64px / pinned `--sidebar-width` / mobile 0) and switch the three docks from `var(--sidebar-width, 240px)` to `var(--shell-offset, var(--sidebar-width, 240px))`. Done: the Reimbursement, Travel Request and Liquidation docks start at the rail edge and at the pinned edge.
+7. **Inert and focus:** extend `syncSidebarInert` so rail is **not** inert (icons stay reachable) and the hidden labels are not announced twice; the mobile drawer rule is unchanged. Done: Tab reaches rail icons, focus opens the peek, Shift+Tab out closes it.
+8. **Visual comparison (Level 4):** try `/impeccable live` on the local copy; if the pane blocks the live helper, add a temporary `data-sidebar-tone="dark|light"` switch on the local copy only, capture both at 1366 and 1024, and the owner picks. Remove the temporary switch after the choice.
+9. **Final styling** in the chosen tone with `quieter` / `layout`: remove per-row dividers, row weight 500–600, one active signal (accent on the icon/rail edge; no filled parent toggle), tokens only (`--app-primary`, surface/sidebar tokens; no new hardcoded accent hex).
+10. **DESIGN.md:** update Layout and Navigation (rail / peek / pinned, 64px, tone chosen) and the sidebar colour tokens if the tone changes.
+
+## Deliberately excluded
+
+- Phone navigation (drawer layering, backdrop, bottom tab bar): owner chose "decide later".
+- Ctrl+K page search and keyboard shortcuts: separate feature.
+- Renaming or regrouping menu items (Records vs Resources mismatch, 18 destinations): separate `clarify` pass; this plan keeps every link, role check and badge exactly as is.
+- Body font change (generic sans-serif): separate `typeset` decision.
+
+## Verification
+
+- **Tests** (`tests/test_layout_sidebar.py`): extend the node runtime test for mode read/write (default rail, pin persists, storage unavailable falls back to rail, mobile ignores mode), peek open/close helpers, and inert rules (rail reachable, mobile closed inert). Source checks for the head script key, `--shell-offset` in the three docks, and the rail CSS block. Positive control: each new assertion fails against the current playground files.
+- Focused modules: `test_layout_sidebar`, `test_appearance_themes`, `test_offline_api_status`, plus the dock pages' tests if any reference the dock CSS.
+- **Browser** (local server on a copy of `scheduler.db`, temporary account, cleaned up after): 1366×768 and 1024×768 on Dashboard, Calendar, Inventory, Approvals, Reimbursement (dock): rail default, hover peek over content, Tab into rail opens peek, Escape closes, pin/unpin persists across pages, resize only when pinned, badge dot vs number, docks aligned; light and dark appearance modes; 375px phone unchanged (drawer, top bar); no console errors.
+
+## After implementation
+
+1. Self-review the diff for orphaned code (the old visibility key, the in-page show button CSS) and keep every id other code references.
+2. Re-run `/impeccable critique templates/layout.html` and compare with 25/40.
+3. Record fail-first proof, browser results and plan/outcome differences here; update `changes.md`; Status `Executed — not yet committed`.
+4. Commit to `design/playground` only on "commit to playground". Before any publish: service worker `v263-…` (keep the v262 marker), `app-shell.css` `?v=` bump, `static/changelog/releases.json` entry (all roles, category "App"), full suite once, then push to `origin/main` only on "commit and push". Never stage `scheduler.db`, handoffs, `changes-archive.md`, `.claude/`, `.impeccable/`, `output/`, `tmp/`.
+
+## Risks
+
+- **Every page changes:** the shell wraps the whole app. Safety net: sandbox branch, the four-page browser sequence, and the dock check.
+- **Hover peek feels jumpy** (opens when the mouse passes by): open/close delays; pin is always available.
+- **Pages with their own fixed elements** beyond the three docks may assume 240px; grep for `240px` / `left:` fixed elements during step 6.
+- **Saved preferences reset:** everyone starts on rail once (intended by the owner); saved resize width is kept.
+
 # Medical Center Visit - Site Visit Schedule Type
 
 **Status:** Executed — published to `origin/main` on the owner's "commit and push" (commit: see `git log`, "feat(calendar): Medical Center Visit - Site Visit schedule type").

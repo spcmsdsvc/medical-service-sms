@@ -178,8 +178,41 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=3", self.layout)
+        self.assertIn("app-shell.css') }}?v=7", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
+
+    def test_icon_rail_peek_and_docks_follow_the_shell_offset(self):
+        self.assertIn('--sidebar-rail-width: 64px;', self.shell_css)
+        self.assertIn('html[data-sidebar-collapsed="true"] {\n        --shell-offset: var(--sidebar-rail-width);', self.shell_css)
+        self.assertIn('body.sidebar-collapsed.sidebar-peek .sidebar {\n        width: var(--sidebar-width);', self.shell_css)
+        self.assertIn('(function initSidebarPeek()', self.layout)
+        self.assertIn("event.key === 'Escape' && isPeeking()", self.layout)
+        for name in ('reimbursement.html', 'travel_request.html', '_liquidation_base.html'):
+            page = (ROOT / 'templates' / name).read_text(encoding='utf-8')
+            self.assertIn('left: var(--shell-offset, var(--sidebar-width, 240px))', page, name)
+            self.assertNotIn('left: var(--sidebar-width, 240px)', page, name)
+
+    def test_rail_labels_stay_named_and_peek_sits_above_sticky_headers(self):
+        rail_labels = self.shell_css.split('.sidebar .sidebar-calendar-main > span {', 1)[1].split('}', 1)[0]
+        self.assertNotIn('display: none', rail_labels)
+        self.assertIn('clip: rect(0 0 0 0);', rail_labels)
+        desktop = self.shell_css.split('@media (min-width: 993px) {', 1)[1]
+        self.assertIn('.sidebar {\n        z-index: 1045;', desktop.split('html[data-sidebar-collapsed="true"] {', 1)[0])
+        self.assertNotIn('<i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>', self.layout)
+
+    def test_quiet_rows_and_one_active_signal(self):
+        self.assertNotIn('border-bottom: 1px solid var(--sidebar-divider)', self.shell_css)
+        self.assertIn('--sidebar-row-height: 44px;', self.shell_css)
+        parent = self.shell_css.split('.sidebar-section-toggle.active {', 1)[1].split('}', 1)[0]
+        self.assertNotIn('border-left', parent)
+        self.assertIn('body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-toggle.active {', self.shell_css)
+
+    def test_footer_logout_stays_an_icon_beside_the_username(self):
+        css = (ROOT / 'static' / 'css' / 'app-shell.css').read_text(encoding='utf-8')
+        logout = css.split('.sidebar .sidebar-logout {', 1)[1].split('}', 1)[0]
+        self.assertIn('width: 34px;', logout)
+        self.assertIn('padding: 0;', logout)
+        self.assertIn('border-bottom: 0;', logout)
 
     def test_sidebar_visibility_preference_is_early_guarded_and_desktop_only(self):
         self.assertIn("medical_service_sidebar_visibility", self.layout)
@@ -190,7 +223,10 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn("function applySidebarVisibility(", self.layout)
         self.assertIn("function syncSidebarVisibilityForViewport()", self.layout)
         self.assertIn("window.innerWidth >= 993", self.layout)
-        self.assertIn("return 'expanded';", self.layout)
+        # Storage failures fall back to the icon rail; the head script treats only
+        # an explicit 'expanded' (pinned) choice as open.
+        self.assertIn("return 'collapsed';", self.layout)
+        self.assertIn("stored === 'expanded' ? 'false' : 'true'", self.layout)
         self.assertIn('catch (_) {', self.layout)
         self.assertIn('aria-expanded', self.layout)
         self.assertIn('sidebar-collapsed', self.shell_css)
@@ -268,21 +304,28 @@ class SidebarSourceTests(unittest.TestCase):
             }}
             {helpers}
 
-            assert.strictEqual(readStoredSidebarVisibility(), 'expanded');
+            // No saved choice: the 64px icon rail ('collapsed') is the default.
+            assert.strictEqual(readStoredSidebarVisibility(), 'collapsed');
             syncSidebarVisibilityForViewport();
-            assert.strictEqual(body.classList.contains('sidebar-collapsed'), false);
-            toggleSidebarDesktop();
             assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
-            assert.strictEqual(stored.get(SIDEBAR_VISIBILITY_STORAGE_KEY), 'collapsed');
+            assert.strictEqual(sidebar.inert, false, 'rail icons stay reachable');
             toggleSidebarDesktop();
             assert.strictEqual(body.classList.contains('sidebar-collapsed'), false);
             assert.strictEqual(stored.get(SIDEBAR_VISIBILITY_STORAGE_KEY), 'expanded');
+            assert.strictEqual(sidebar.inert, false);
+            toggleSidebarDesktop();
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
+            assert.strictEqual(stored.get(SIDEBAR_VISIBILITY_STORAGE_KEY), 'collapsed');
+            assert.strictEqual(sidebar.inert, false, 'rail icons stay reachable');
 
             stored.set(SIDEBAR_VISIBILITY_STORAGE_KEY, 'invalid');
             syncSidebarVisibilityForViewport();
-            assert.strictEqual(body.classList.contains('sidebar-collapsed'), false);
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
+            stored.set(SIDEBAR_VISIBILITY_STORAGE_KEY, 'expanded');
+            syncSidebarVisibilityForViewport();
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), false, 'pinned stays pinned');
             storageUnavailable = true;
-            assert.strictEqual(readStoredSidebarVisibility(), 'expanded');
+            assert.strictEqual(readStoredSidebarVisibility(), 'collapsed');
             applySidebarVisibility(true, true);
             storageUnavailable = false;
 
@@ -301,6 +344,11 @@ class SidebarSourceTests(unittest.TestCase):
             assert.strictEqual(body.classList.contains('mobile-sidebar-open'), true);
             assert.strictEqual(mobileMenuButton.attrs['aria-expanded'], 'true');
             assert.strictEqual(mobileCloseCalls, 0);
+            assert.strictEqual(sidebar.inert, false, 'open mobile drawer stays reachable');
+            sidebar.classList.remove('active');
+            syncSidebarInert();
+            assert.strictEqual(sidebar.inert, true, 'closed mobile drawer must leave the Tab order');
+            sidebar.classList.add('active');
 
             window.innerWidth = 1200;
             syncSidebarVisibilityForViewport();
@@ -310,6 +358,7 @@ class SidebarSourceTests(unittest.TestCase):
             assert.deepStrictEqual(mobileEvents, ['close']);
             assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
             assert.strictEqual(document.documentElement.dataset.sidebarCollapsed, 'true');
+            assert.strictEqual(sidebar.inert, false, 'back on desktop the rail is reachable');
         """)
         result = subprocess.run(
             ['node', '-e', node_script],

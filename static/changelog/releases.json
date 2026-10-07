@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-07-desktop-icon-rail",
+      "release_date": "2026-10-07",
+      "title": "Slimmer Desktop Sidebar",
+      "summary": "On desktop the sidebar is now a thin icon bar, giving pages more room.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-07-desktop-icon-rail-sidebar",
+          "category": "System",
+          "description": "On desktop the sidebar now starts as a thin bar of icons, so tables and the Calendar get more width. Point at the bar (or press Tab into it) to slide the full menu out over the page; move away or press Escape to tuck it back. Click the menu button at the top to keep it pinned open; your choice is remembered. The menu also looks lighter. Phones are unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-07-site-visit-type",
       "release_date": "2026-10-07",
       "title": "New Schedule Type: Site Visit",
