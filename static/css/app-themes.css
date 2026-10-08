@@ -1,3 +1,30 @@
+/* Fira Sans, self-hosted so the app keeps its type offline (SIL OFL,
+   static/fonts/fira-sans/OFL.txt). Closest free match to the logo's subline;
+   the one family for the whole app (--app-font), sign-in pages included. */
+@font-face {
+    font-family: 'Fira Sans';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../fonts/fira-sans/fira-sans-400.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Fira Sans';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../fonts/fira-sans/fira-sans-500.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Fira Sans';
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url('../fonts/fira-sans/fira-sans-600.woff2') format('woff2');
+}
+
 :root {
     --app-bg: #f4f7f6;
     --app-surface: #ffffff;
@@ -19,6 +46,8 @@
     --app-sidebar: #2c3e50;
     --app-sidebar-deep: #1a252f;
     --app-shadow: 0 8px 24px rgba(15, 23, 42, .08);
+    --app-font: 'Fira Sans', 'Segoe UI', system-ui, sans-serif;
+    --bs-body-font-family: var(--app-font);
     color-scheme: light;
 }
 

@@ -60,12 +60,17 @@ html {
 body {
     background-color: #f4f7f6;
     overflow-x: hidden;
-    font-family: sans-serif;
+    font-family: var(--app-font);
     /* Was `transition: all 0.3s`, which animated every property and caused visible
        jank when switching theme. Only the theme-driven colors need to animate. */
     transition: background-color 0.3s ease, color 0.3s ease;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+}
+
+/* Fira Sans figures are proportional by default; columns of numbers should line up. */
+table {
+    font-variant-numeric: tabular-nums;
 }
 
 body.sidebar-resizing,
@@ -123,19 +128,74 @@ body.sidebar-resizing .main-content {
 
 .sidebar-header {
     min-height: 72px;
-    padding: 16px 18px;
+    padding: 16px 14px;
     background: #1a252f;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     flex: 0 0 auto;
 }
 
-.sidebar-header h5 {
-    font-size: 1.05rem;
-    line-height: 1.15;
-    letter-spacing: 0.02em;
+/* Shimadzu mark plus the app name (sidebar) or the page name (phone top bar).
+   The mark is cropped from the white logo, never redrawn: the square spans
+   x/y 12-280 of the 2000px-wide image, so the background is scaled by
+   2000/268 and shifted by 12/268 of the mark size. */
+.shell-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.shell-brand-mark {
+    --brand-mark-size: 28px;
+    flex: 0 0 var(--brand-mark-size);
+    width: var(--brand-mark-size);
+    height: var(--brand-mark-size);
+    background: url('../images/brand/shimadzu-philippines-logo-white.webp') no-repeat;
+    background-size: calc(var(--brand-mark-size) * 2000 / 268) auto;
+    background-position: calc(var(--brand-mark-size) * -12 / 268) calc(var(--brand-mark-size) * -12 / 268);
+}
+
+.shell-brand-name {
+    min-width: 0;
+    color: #ffffff;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mobile-nav .shell-brand-mark {
+    --brand-mark-size: 24px;
+}
+
+/* The pinned header shares 240px with three buttons, so the name stacks as
+   "Medical / Service" beside the mark. Resized below 240px (212px of header
+   content), only the mark remains. */
+.sidebar-header {
+    container-type: inline-size;
+}
+
+.sidebar-header .shell-brand {
+    gap: 8px;
+}
+
+.sidebar-header .shell-brand-name {
+    font-size: 0.95rem;
+    line-height: 1.1;
+    white-space: normal;
+}
+
+@container (max-width: 211px) {
+    .sidebar-header .shell-brand-name {
+        display: none;
+    }
 }
 
 .sidebar-resize-handle {
@@ -522,7 +582,7 @@ body.sidebar-resizing .main-content {
     }
 
     /* Rail: icons, separators, dots and initials. */
-    body.sidebar-collapsed .sidebar .sidebar-header h5,
+    body.sidebar-collapsed .sidebar .sidebar-header .shell-brand-name,
     body.sidebar-collapsed .sidebar .sidebar-header .appearance-header-button,
     body.sidebar-collapsed .sidebar .sidebar-header .changelog-header-button,
     body.sidebar-collapsed .sidebar .sidebar-resize-handle,
@@ -534,9 +594,16 @@ body.sidebar-resizing .main-content {
         display: none !important;
     }
 
+    /* Rail header: the Shimadzu mark above the pin button. */
     body.sidebar-collapsed .sidebar .sidebar-header {
+        flex-direction: column;
         justify-content: center;
-        padding: 16px 0;
+        gap: 8px;
+        padding: 14px 0 10px;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-header .shell-brand {
+        flex: 0 0 auto;
     }
 
     body.sidebar-collapsed .sidebar a,
@@ -1275,11 +1342,6 @@ body.sidebar-resizing .main-content {
 .mobile-device select,
 .mobile-device textarea {
     touch-action: manipulation;
-}
-
-.mobile-device .mobile-nav h4 {
-    font-size: 1rem;
-    font-weight: 900;
 }
 
 .mobile-device .card {

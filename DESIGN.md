@@ -27,20 +27,20 @@ colors:
   dark-hairline: "#626262"
 typography:
   body:
-    fontFamily: "sans-serif"
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
     fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.5
   title:
-    fontFamily: "sans-serif"
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
     fontSize: "1.05rem"
     fontWeight: 700
   label:
-    fontFamily: "sans-serif"
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
     fontSize: "0.78rem"
     fontWeight: 600
   micro:
-    fontFamily: "sans-serif"
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
     fontSize: "0.72rem"
     fontWeight: 700
   auth:
@@ -134,11 +134,10 @@ A cool, low-chroma neutral system with one user-selectable accent; colour signal
 
 ## Typography
 
-**Body Font:** generic `sans-serif` (set on `body` in `app-shell.css`; renders as the platform default)
-**Sign-in Font:** Fira Sans, self-hosted (with Segoe UI, system-ui)
+**App Font:** Fira Sans, self-hosted (400/500/600, with Segoe UI, system-ui), one family for the whole app including sign-in, via `--app-font` in `app-themes.css` (also Bootstrap's `--bs-body-font-family`). Weights above 600 render as 600. Tables use tabular figures.
 **Document Font:** Cambria (with Times New Roman) for calibration reports and certificates
 
-**Character:** Plain and utilitarian in the app; a single humanist sans on the branded sign-in pages; a serif only where it mirrors the official printed form.
+**Character:** One humanist sans, close to the logo's subline, across app and sign-in; a serif only where it mirrors the official printed form.
 
 ### Hierarchy
 - **Title** (700, ~1.05rem): card, panel and section titles; Bootstrap headings for page titles.
@@ -199,6 +198,7 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 - **Disabled / Read-only:** `surface-raised` background, muted text, full opacity.
 
 ### Navigation
+- **Brand:** the Shimadzu mark (cropped from the white logo image by `.shell-brand-mark`, never redrawn) heads the sidebar: 28px above the pin button in the rail, beside a stacked "Medical / Service" name when pinned (mark only below 240px). The phone top bar shows the 24px mark and the current page's name; the tab title reads "Page · Medical Service". The page name is the active sidebar link's label.
 - **Sidebar:** Logbook Slate body (kept dark, owner choice 2026-10-07), Midnight Slate 72px header with the appearance button; rows have a 22px icon, label truncating with ellipsis, `sidebar-text` colour, weight 600 (sub-rows 500), and no divider between rows.
 - **Icon rail (desktop default):** 64px; icons only, group labels become thin separators, badge counts become 8px dots, the footer shows initials. Hover, focus or tap a group icon (or Calendar) for a flyout with the group name and its links (Records shows Inventory as a subheading); single links show a name label; the initials open an account flyout with name, role, Appearance, What's New and Log out. Flyouts use the sidebar surface with a soft offset shadow; Escape or a tap outside closes; the ☰ control pins or collapses.
 - **Hover:** faint white wash (7%), text turns white.
