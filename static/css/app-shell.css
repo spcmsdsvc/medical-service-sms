@@ -786,6 +786,24 @@ body.sidebar-resizing .main-content {
         outline-offset: 2px;
     }
 
+    /* In the rail, What's New lives in the account flyout, so the avatar carries
+       its unread dot; the pinned sidebar shows it on the header bell instead. */
+    body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread {
+        position: relative;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread::after {
+        content: '';
+        position: absolute;
+        top: -1px;
+        right: -1px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--shell-focus-ring);
+        box-shadow: 0 0 0 2px var(--app-sidebar);
+    }
+
     /* Name label for single links in the rail. */
     body.sidebar-collapsed .sidebar .sidebar-rail-tip.is-visible {
         display: block !important;
@@ -1080,9 +1098,9 @@ body.sidebar-resizing .main-content {
 }
 
 /* Unread updates are news, not a warning: the button stays neutral and an 8px
-   amber dot sits on its corner, like the rail's count dots. The number is in
-   the button's aria-label and title (refreshGlobalChangelogBadge); the badge
-   keeps it as hidden text. Amber was the whole button plus a heavy "67" pill. */
+   soft white dot sits on its corner. Amber is kept for OFFLINE only. The number
+   is in the button's aria-label and title (refreshGlobalChangelogBadge); the
+   badge keeps it as hidden text. */
 .changelog-header-badge {
     position: absolute;
     top: 5px;
@@ -1090,7 +1108,7 @@ body.sidebar-resizing .main-content {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #f0b429;
+    background: var(--shell-focus-ring);
     display: none;
     overflow: hidden;
     font-size: 0;
