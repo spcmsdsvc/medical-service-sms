@@ -181,8 +181,6 @@ class ShellTouchTargetTests(unittest.TestCase):
         mobile = self._mobile_foundation()
         for selector in (
             '.skip-to-content',
-            '.sidebar-header .changelog-header-button',
-            '.sidebar-header .appearance-header-button',
             '.mobile-nav .changelog-header-button',
             '.mobile-nav .appearance-header-button',
             '.toggle-btn',
@@ -197,7 +195,7 @@ class ShellTouchTargetTests(unittest.TestCase):
         which is exactly the miss a height-only rule leaves behind.
         """
         mobile = self._mobile_foundation()
-        block = mobile[mobile.index('.skip-to-content,\n    .sidebar-header .changelog-header-button'):]
+        block = mobile[mobile.index('.skip-to-content,\n    .mobile-nav .changelog-header-button'):]
         block = block[:block.index('}')]
         self.assertIn('min-width: var(--mobile-touch-height)', block)
         self.assertIn('min-height: var(--mobile-touch-height)', block)

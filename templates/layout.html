@@ -53,8 +53,8 @@
     <link rel="dns-prefetch" href="//cdnjs.cloudflare.com">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=25">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=23">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=26">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=24">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -106,19 +106,10 @@
                 <span class="shell-brand-mark" role="img" aria-label="Shimadzu"></span>
                 <h5 class="shell-brand-name m-0">Medical Service</h5>
             </div>
+            {#- Appearance and What's New live with the account in the footer (and in
+                the rail's account flyout), so the header holds only the brand and the
+                pin control. -#}
             <div class="sidebar-header-actions">
-                {% if current_user.is_authenticated %}
-                <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
-                    <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
-                </button>
-                {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
-                   class="changelog-header-button {{ 'active' if request.path == '/whats_new' }}"
-                   aria-label="What's New"
-                   title="What's New">
-                    <i class="fa-solid fa-bell" aria-hidden="true"></i>
-                    <span class="changelog-header-badge" aria-hidden="true"></span>
-                </a>{% endif %}
-                {% endif %}
                 <button type="button"
                         class="toggle-btn"
                         id="sidebar-toggle-desktop"
@@ -126,7 +117,7 @@
                         aria-label="Hide navigation"
                         aria-expanded="true"
                         aria-controls="sidebar">
-                    <i class="fa-solid fa-bars" aria-hidden="true"></i>
+                    <i class="sidebar-toggle-icon fa-solid fa-angles-left" aria-hidden="true"></i>
                 </button>
             </div>
         </div>
@@ -407,14 +398,15 @@
                     {%- else -%}{{ nav_display_role }}{%- endif -%}
                 </span>
             </span>
-            {#- Rail-only copies of the header tools; app-appearance.js and the What's
-                New badge script update every copy by class. -#}
-            <button type="button" class="appearance-header-button sidebar-flyout-only" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
+            {#- Account tools: icons beside Log out in the pinned sidebar, labelled rows
+                in the rail's account flyout. app-appearance.js and the What's New badge
+                script update every copy (these and the phone top bar's) by class. -#}
+            <button type="button" class="appearance-header-button sidebar-flyout-only sidebar-account-tool" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
                 <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
                 <span>Appearance</span>
             </button>
             {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
-               class="changelog-header-button sidebar-flyout-only {{ 'active' if request.path == '/whats_new' }}"
+               class="changelog-header-button sidebar-flyout-only sidebar-account-tool {{ 'active' if request.path == '/whats_new' }}"
                aria-label="What's New"
                title="What's New">
                 <i class="fa-solid fa-bell" aria-hidden="true"></i>
@@ -483,6 +475,11 @@
 
             if (toggle) {
                 const label = collapsed ? 'Pin navigation open' : 'Collapse navigation to icons';
+                const icon = toggle.querySelector('.sidebar-toggle-icon');
+                if (icon) {
+                    icon.classList.toggle('fa-angles-right', collapsed);
+                    icon.classList.toggle('fa-angles-left', !collapsed);
+                }
                 toggle.setAttribute('aria-expanded', expanded);
                 toggle.setAttribute('aria-label', label);
                 toggle.setAttribute('title', label);

@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=23", self.layout)
+        self.assertIn("app-shell.css') }}?v=24", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -308,7 +308,7 @@ class SidebarSourceTests(unittest.TestCase):
             const mobileMenuButton = {{ attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }};
             const controls = {{
                 sidebar,
-                'sidebar-toggle-desktop': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }},
+                'sidebar-toggle-desktop': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }}, querySelector() {{ return null; }} }},
                 'show-sidebar-btn': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }},
                 'mobile-menu-button': mobileMenuButton
             }};
@@ -497,6 +497,16 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertNotIn('#f0b429', self.shell_css)
         self.assertIn('body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread::after {', self.shell_css)
         self.assertIn("avatar.classList.toggle('has-unread', count > 0);", self.layout)
+
+    def test_pinned_header_is_brand_and_pin_only_with_account_tools_in_the_footer(self):
+        header = self.layout.split('<div class="sidebar-header">', 1)[1].split('<div id="sidebar-resize-handle"', 1)[0]
+        self.assertNotIn('appearance-header-button', header)
+        self.assertNotIn('changelog-header-button', header)
+        self.assertIn('sidebar-toggle-icon fa-solid fa-angles-left', header)
+        self.assertIn("icon.classList.toggle('fa-angles-right', collapsed);", self.layout)
+        self.assertEqual(self.layout.count('sidebar-account-tool'), 2)
+        self.assertIn('body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool {', self.shell_css)
+        self.assertNotIn('@container (max-width: 211px)', self.shell_css)
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
