@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=21", self.layout)
+        self.assertIn("app-shell.css') }}?v=22", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -467,6 +467,17 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('font-size: 0;', badge)
         # The count still reaches screen readers and the tooltip.
         self.assertIn("button.setAttribute('aria-label', accessibleLabel);", self.layout)
+
+    def test_shell_polish_offline_tag_flyout_groups_logout_and_close_button(self):
+        offline = self.shell_css.split(".offline-mode .sidebar-header::after,", 1)[1].split('}', 1)[0]
+        self.assertIn('position: absolute;', offline)
+        self.assertIn('bottom: -8px;', offline)
+        self.assertEqual(self.layout.count('role="group" aria-label="'), 6)
+        self.assertIn('role="group" aria-label="Field Operations"', self.layout)
+        self.assertNotIn('#e8a33d', self.shell_css)
+        self.assertIn('--bs-btn-hover-bg: rgba(255, 255, 255, 0.1);', self.shell_css)
+        self.assertNotIn('font-weight: 800;', self.shell_css)
+        self.assertNotIn('font-weight: 900;', self.shell_css)
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]

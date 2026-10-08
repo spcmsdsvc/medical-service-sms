@@ -441,7 +441,7 @@ body.sidebar-resizing .main-content {
     background: var(--app-primary);
     color: #ffffff;
     font-size: 0.66rem;
-    font-weight: 800;
+    font-weight: 600;
     line-height: 1;
     align-items: center;
     justify-content: center;
@@ -475,7 +475,7 @@ body.sidebar-resizing .main-content {
     align-items: center;
     justify-content: center;
     font-size: 0.74rem;
-    font-weight: 800;
+    font-weight: 600;
     flex: 0 0 auto;
 }
 
@@ -515,16 +515,17 @@ body.sidebar-resizing .main-content {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #e8a33d;
+    color: var(--sidebar-text);
     text-decoration: none;
     flex: 0 0 auto;
     transition: background-color 0.16s ease, color 0.16s ease;
 }
 
+/* Neutral like the other footer tools; amber now only means unread or offline. */
 .sidebar .sidebar-logout:hover,
 .sidebar .sidebar-logout:focus-visible {
-    background: rgba(232, 163, 61, 0.16);
-    color: #ffd45f;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
 }
 
 /* --- Collapse / main content --------------------------------------------- */
@@ -687,9 +688,9 @@ body.sidebar-resizing .main-content {
     body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-title {
         display: block !important;
         padding: 8px 16px 6px;
-        font-size: 0.64rem;
-        font-weight: 700;
-        letter-spacing: 0.11em;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--sidebar-text-dim);
         user-select: none;
@@ -907,6 +908,14 @@ body.sidebar-resizing .main-content {
 
 .mobile-nav-actions .mobile-menu-button {
     min-width: 72px;
+    /* Bootstrap's outline-light fills white on hover and press, which made
+       "Close" a white block while a finger rested on it. */
+    --bs-btn-hover-bg: rgba(255, 255, 255, 0.1);
+    --bs-btn-hover-color: #ffffff;
+    --bs-btn-hover-border-color: rgba(255, 255, 255, 0.7);
+    --bs-btn-active-bg: rgba(255, 255, 255, 0.16);
+    --bs-btn-active-color: #ffffff;
+    --bs-btn-active-border-color: #ffffff;
 }
 
 @media (max-width: 992px) {
@@ -1094,25 +1103,35 @@ body.sidebar-resizing .main-content {
 
 /* --- Offline status ------------------------------------------------------- */
 
-.offline-mode .mobile-nav::after {
-    content: 'OFFLINE';
-    margin-left: 10px;
-    font-size: .68rem;
-    font-weight: 900;
-    letter-spacing: .08em;
-    color: #facc15;
+/* The tag sits centred on the brand rule, so it never takes space from the
+   name, the page title or the header buttons (as a flex item it squeezed the
+   pinned name to 0px and was pushed off-screen on phones). Opaque, so it
+   reads over the rule and the content below. */
+.offline-mode .sidebar-header {
+    position: relative;
+    z-index: 2;
 }
 
-.offline-mode .sidebar-header::after {
+.offline-mode .sidebar-header::after,
+.offline-mode .mobile-nav::after {
     content: 'OFFLINE';
-    display: inline-block;
-    padding: 4px 8px;
+    position: absolute;
+    left: 50%;
+    bottom: -8px;
+    transform: translateX(-50%);
+    height: 16px;
+    padding: 0 7px;
+    border: 1px solid rgba(250, 204, 21, .55);
     border-radius: 999px;
-    background: rgba(250, 204, 21, .15);
+    background: #3a3410;
     color: #facc15;
+    display: inline-flex;
+    align-items: center;
     font-size: .6rem;
-    font-weight: 900;
+    font-weight: 600;
+    line-height: 1;
     letter-spacing: .08em;
+    white-space: nowrap;
 }
 
 @media (max-width: 768px) {
