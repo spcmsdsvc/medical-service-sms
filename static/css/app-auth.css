@@ -9,7 +9,7 @@
 :root {
     --login-accent: #d9262e;
     --login-accent-rgb: 217, 38, 46;
-    --login-rule: #ee3239;
+    --login-rule: var(--brand-rule);
     --login-button: var(--login-accent);
     --login-ground: #14181f;
     --login-on-ground: #ffffff;
@@ -25,7 +25,6 @@
 :root[data-accent-theme="teal"] {
     --login-accent: var(--app-primary);
     --login-accent-rgb: var(--app-primary-rgb);
-    --login-rule: var(--app-primary);
 }
 
 /* Lighter accents are darkened slightly on the button so white text stays readable. */

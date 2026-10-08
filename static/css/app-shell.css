@@ -135,6 +135,9 @@ body.sidebar-resizing .main-content {
     align-items: center;
     gap: 8px;
     flex: 0 0 auto;
+    /* The sign-in page's brand rule, carried into the app: it seals the brand
+       header off from the navigation. Inset, so the header keeps its height. */
+    box-shadow: inset 0 -2px 0 var(--brand-rule);
 }
 
 /* Shimadzu mark plus the app name (sidebar) or the page name (phone top bar).
@@ -874,7 +877,7 @@ body.sidebar-resizing .main-content {
     position: sticky;
     top: 0;
     z-index: 1001;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 -2px 0 var(--brand-rule);
 }
 
 /* Dims the page behind the open phone drawer; a tap on it is an outside click,

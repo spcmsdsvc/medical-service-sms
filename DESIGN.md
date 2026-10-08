@@ -114,7 +114,7 @@ A cool, low-chroma neutral system with one user-selectable accent; colour signal
 - **Shimadzu Accent Red** (`primary-shimadzu-red`): the "Shimadzu Red" accent option, replacing the primary everywhere when chosen. Other options: Clinical Green `#198754`, Corporate Blue `#2563eb`, Purple `#8b5cf6`, Pink `#be185d`, Teal `#0f766e`.
 
 ### Brand (sign-in only)
-- **Logo Red** (`brand-red-logo`): measured from the logo; used for the thin rule on sign-in pages, never behind text.
+- **Logo Red** (`brand-red-logo`): measured from the logo; the brand rule (`--brand-rule`): the short rule under the sign-in logo and a 2px inset rule along the bottom of the sidebar header and phone top bar. Never behind text. A chosen accent theme recolours the rule.
 - **Deep Brand Red** (`brand-red-text`): the sign-in button colour; white text passes AA on it (4.9:1).
 
 ### Neutral

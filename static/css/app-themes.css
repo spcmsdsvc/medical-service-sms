@@ -47,6 +47,9 @@
     --app-sidebar-deep: #1a252f;
     --app-shadow: 0 8px 24px rgba(15, 23, 42, .08);
     --app-font: 'Fira Sans', 'Segoe UI', system-ui, sans-serif;
+    /* The brand rule: Logo Red under the sign-in logo and along the app's shell
+       headers. A chosen accent theme recolours it, as on the sign-in pages. */
+    --brand-rule: #ee3239;
     --bs-body-font-family: var(--app-font);
     color-scheme: light;
 }
@@ -55,6 +58,11 @@
     --app-primary: #c8102e;
     --app-primary-rgb: 200, 16, 46;
     --app-focus: rgba(200, 16, 46, .25);
+}
+:is(:root[data-accent-theme="shimadzu-red"], :root[data-accent-theme="clinical-green"],
+    :root[data-accent-theme="corporate-blue"], :root[data-accent-theme="purple"],
+    :root[data-accent-theme="pink"], :root[data-accent-theme="teal"]) {
+    --brand-rule: var(--app-primary);
 }
 :root[data-accent-theme="clinical-green"], .appearance-swatch[data-accent-theme="clinical-green"] {
     --app-primary: #198754;
