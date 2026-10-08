@@ -180,11 +180,11 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=32", self.layout)
+        self.assertIn("app-shell.css') }}?v=37", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
-        self.assertIn('--sidebar-rail-width: 64px;', self.shell_css)
+        self.assertIn('--sidebar-rail-width: 72px;', self.shell_css)
         self.assertIn('html[data-sidebar-collapsed="true"] {\n        --shell-offset: var(--sidebar-rail-width);', self.shell_css)
         for name in ('reimbursement.html', 'travel_request.html', '_liquidation_base.html'):
             page = (ROOT / 'templates' / name).read_text(encoding='utf-8')
@@ -337,7 +337,7 @@ class SidebarSourceTests(unittest.TestCase):
             }}
             {helpers}
 
-            // No saved choice: the 64px icon rail ('collapsed') is the default.
+            // No saved choice: the icon rail ('collapsed') is the default.
             assert.strictEqual(readStoredSidebarVisibility(), 'collapsed');
             syncSidebarVisibilityForViewport();
             assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
@@ -417,8 +417,8 @@ class SidebarSourceTests(unittest.TestCase):
     def test_clarify_role_label_rail_dividers_and_my_requests_icon(self):
         # The account role comes from get_display_role(), the label Settings shows.
         self.assertIn("'nav_display_role': get_display_role(current_user) if authenticated else ''", self.app_source)
-        role = self.layout.split('<span class="sidebar-user-role">', 1)[1].split('</span>', 1)[0]
-        self.assertIn('{{ nav_display_role }}', role)
+        role = self.layout.split('{%- set account_role = ', 1)[1].split('%}', 1)[0]
+        self.assertIn('nav_display_role', role)
         self.assertNotIn('Staff', role)
         self.assertIn('--sidebar-rail-divider: rgba(203, 213, 225, 0.32);', self.shell_css)
         self.assertIn('background: var(--sidebar-rail-divider);', self.shell_css)
@@ -545,6 +545,27 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('data-rail-caption="Forms"', self.layout)
         self.assertIn('content: attr(data-rail-caption);', self.shell_css)
 
+    def test_critique_fixes_badge_rail_count_logout_row_and_inventory_dividers(self):
+        # The count badge keeps its own size against `.sidebar a span { flex: 1 }`.
+        self.assertIn('.sidebar a .sidebar-count-badge {\n    flex: 0 0 auto;', self.shell_css)
+        # Rail rows have room for their captions (52px), paid for by thinner dividers.
+        self.assertIn('min-height: 52px;', self.shell_css)
+        self.assertIn('.sidebar-nav > .sidebar-group-label:first-child {\n        display: none;', self.shell_css)
+        # The rail shows a one-digit count instead of a bare dot.
+        self.assertIn("entry.node.dataset.railCount = count > 9 ? '9+'", self.layout)
+        self.assertIn('content: attr(data-rail-count);', self.shell_css)
+        self.assertIn('clip: auto;\n        overflow: visible;', self.shell_css)
+        # Phones: Log out is a labelled row at the drawer's foot, not beside Close.
+        self.assertIn('<a href="/logout" class="sidebar-logout-row">', self.layout)
+        self.assertIn('.sidebar .sidebar-user .sidebar-logout {\n        display: none;', self.shell_css)
+        # Inventory: distinct brand icons, PM pages and Stock set apart.
+        nav = self.layout.split('<div id="inventory-sidebar-section"', 1)[1].split('</div>\n            {% else %}', 1)[0]
+        self.assertIn("'fa-x-ray', 'Genoray'", nav)
+        self.assertIn("'fa-tablet-screen-button', 'Vieworks'", nav)
+        self.assertEqual(nav.count('sidebar-subnav-divider'), 2)
+        # The role is never cut without an ellipsis.
+        self.assertIn('class="sidebar-user-role" title="{{ account_role }}"', self.layout)
+
     def test_sidebar_order_puts_waiting_work_first_then_work_then_manage(self):
         self.assertIn("nav_link('/clients_page', 'fa-hospital', 'Clients')", self.layout)
         self.assertNotIn("'Medical Centers'", self.layout)
@@ -559,7 +580,7 @@ class SidebarSourceTests(unittest.TestCase):
             'aria-label="New Request"',
             'aria-label="Clients"',
             'aria-label="Inventory"',
-            "{% if stock_inventory_view %}\n                        {{ nav_link('/stock_inventory'",
+            '<div class="sidebar-subnav-divider" aria-hidden="true"></div>\n                        {{ nav_link(\'/stock_inventory\'',
             '>Manage</div>',
             'aria-label="Reports"',
             'aria-label="Office"',
@@ -587,9 +608,8 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('--sidebar-subrow-height: 44px;', phone)
         self.assertIn('.sidebar .sidebar-nav a span,', phone)
         self.assertIn('overflow-wrap: anywhere;', phone)
-        logout = phone.split('.sidebar .sidebar-logout {', 1)[1].split('}', 1)[0]
-        self.assertIn('width: 44px;', logout)
-        self.assertIn('height: 44px;', logout)
+        logout = phone.split('.sidebar .sidebar-logout-row {', 1)[1].split('}', 1)[0]
+        self.assertIn('min-height: 48px;', logout)
 
     def test_phone_drawer_opens_below_the_top_bar_above_docks_with_a_backdrop(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]

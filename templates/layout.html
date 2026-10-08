@@ -38,7 +38,7 @@
         try {
             stored = localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY);
         } catch (_) {}
-        // "Collapsed" is the 64px icon rail and is the default; only an explicit
+        // "Collapsed" is the 72px icon rail and is the default; only an explicit
         // pinned choice ('expanded') opens the full sidebar.
         document.documentElement.dataset.sidebarCollapsed = stored === 'expanded' ? 'false' : 'true';
     })();
@@ -54,7 +54,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=28">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=32">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=37">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -136,7 +136,7 @@
         {#- One place that renders a nav link, so the active class and aria-current can
             never drift apart. Cash Advance previously had neither.
             The rail caption is the short name shown under a top-level icon in the
-            64px rail; CSS shows it only there. -#}
+            72px rail; CSS shows it only there. -#}
         {% macro nav_link(href, icon, label, extra_class='', badge_id='') -%}
             {%- set is_active = (request.path == href) -%}
             {%- set rail_caption = {'Create TSR': 'TSR', 'Stock Inventory': 'Stock', 'Password Settings': 'Password', 'My Requests': 'Requests', 'Service Documents': 'Documents', 'System Settings': 'Settings', 'Activity Logs': 'Activity', 'Calibration Center': 'Calibration'}.get(label, label) -%}
@@ -283,20 +283,27 @@
                 </button>
                 <div id="inventory-sidebar-section" class="collapse sidebar-subnav {{ 'show' if inventory_active }}" role="group" aria-label="Inventory">
                     <div class="sidebar-flyout-title" aria-hidden="true">Inventory</div>
+                    {#- Equipment, then its PM pages, then the company's own stock. -#}
                     {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
                     {% if can_access_genoray_inventory %}
-                        {{ nav_link('/genoray', 'fa-boxes-packing', 'Genoray') }}
-                        {% if nav_can_access_genoray_pm %}
-                            {{ nav_link('/genoray/pm', 'fa-screwdriver-wrench', 'Genoray PM') }}
-                        {% endif %}
+                        {{ nav_link('/genoray', 'fa-x-ray', 'Genoray') }}
                     {% endif %}
                     {% if can_access_vieworks_inventory %}
-                        {{ nav_link('/vieworks', 'fa-boxes-packing', 'Vieworks') }}
-                        {% if nav_can_access_vieworks_pm %}
-                            {{ nav_link('/vieworks/pm', 'fa-screwdriver-wrench', 'Vieworks PM') }}
+                        {{ nav_link('/vieworks', 'fa-tablet-screen-button', 'Vieworks') }}
+                    {% endif %}
+                    {% set show_genoray_pm = can_access_genoray_inventory and nav_can_access_genoray_pm %}
+                    {% set show_vieworks_pm = can_access_vieworks_inventory and nav_can_access_vieworks_pm %}
+                    {% if show_genoray_pm or show_vieworks_pm %}
+                        <div class="sidebar-subnav-divider" aria-hidden="true"></div>
+                        {% if show_genoray_pm %}
+                            {{ nav_link('/genoray/pm', 'fa-screwdriver-wrench', 'Genoray PM') }}
+                        {% endif %}
+                        {% if show_vieworks_pm %}
+                            {{ nav_link('/vieworks/pm', 'fa-toolbox', 'Vieworks PM') }}
                         {% endif %}
                     {% endif %}
                     {% if stock_inventory_view %}
+                        <div class="sidebar-subnav-divider" aria-hidden="true"></div>
                         {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
                     {% endif %}
                 </div>
@@ -413,11 +420,8 @@
             <div id="sidebar-user-flyout" class="sidebar-user-flyout">
             <span class="sidebar-user-meta">
                 <span class="sidebar-user-name">{{ current_user.username }}</span>
-                <span class="sidebar-user-role">
-                    {%- if hr_schedule_only_user -%}HR Schedule Viewer
-                    {%- elif stock_inventory_only_user -%}Inventory
-                    {%- else -%}{{ nav_display_role }}{%- endif -%}
-                </span>
+                {%- set account_role = 'HR Schedule Viewer' if hr_schedule_only_user else ('Inventory' if stock_inventory_only_user else nav_display_role) %}
+                <span class="sidebar-user-role" title="{{ account_role }}">{{ account_role }}</span>
             </span>
             {#- Account tools: icons beside Log out in the pinned sidebar, labelled rows
                 in the rail's account flyout. app-appearance.js and the What's New badge
@@ -440,6 +444,12 @@
             </a>
             </div>
         </div>
+        {#- Phones only: a labelled Log out at the drawer's foot, away from the
+            Close button that sits above the account row. -#}
+        <a href="/logout" class="sidebar-logout-row">
+            <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+            <span>Log out</span>
+        </a>
         {% endif %}
     </div>
     <script>
@@ -1076,6 +1086,8 @@
                 targets.forEach(entry => {
                     const count = Number(data[entry.key] || 0);
                     entry.node.textContent = count > 99 ? '99+' : String(count || '');
+                    // The icon rail has room for one digit.
+                    entry.node.dataset.railCount = count > 9 ? '9+' : String(count || '');
                     entry.node.classList.toggle('show', count > 0);
 
                     const link = entry.node.closest('a');
