@@ -162,8 +162,9 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('app-dark-pages.css', layout)
         self.assertGreater(layout.index('app-dark-pages.css'), layout.index('{% block content %}'))
         self.assertIn('app-appearance.js', layout)
-        # Phone top bar, sidebar header, and the rail's account flyout.
-        self.assertEqual(layout.count('onclick="window.appAppearance && window.appAppearance.toggleQuick()"'), 3)
+        # Phone top bar, and the account footer (an icon when pinned, a row in the
+        # rail's account flyout). The sidebar header no longer carries one.
+        self.assertEqual(layout.count('onclick="window.appAppearance && window.appAppearance.toggleQuick()"'), 2)
         self.assertIn('data-appearance-mode="system"', settings)
         self.assertIn('data-appearance-accent="shimadzu-red"', settings)
         self.assertIn("app-theme-changed", runtime)
@@ -371,11 +372,11 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn(':root[data-app-theme="dark"][data-app-palette="graphite"]', auth_css)
         self.assertIn('--login-page-bg: #202124;', auth_css)
 
-        self.assertIn("filename='css/app-themes.css') }}?v=25", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=26", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=31", layout)
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in sources:
-            self.assertIn("filename='css/app-themes.css') }}?v=25", source)
+            self.assertIn("filename='css/app-themes.css') }}?v=26", source)
             self.assertIn("filename='css/app-auth.css') }}?v=9", source)
 
     def test_graphite_release_and_cache_marker_are_current(self):
@@ -477,11 +478,11 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         ]
         self.assertIn("palette === 'amoled' ? '#000000'", runtime)
         self.assertIn('--login-page-bg: #000000;', auth_styles)
-        self.assertIn("filename='css/app-themes.css') }}?v=25", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=26", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=31", layout)
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in auth:
-            self.assertIn("filename='css/app-themes.css') }}?v=25", source)
+            self.assertIn("filename='css/app-themes.css') }}?v=26", source)
             self.assertIn("filename='css/app-auth.css') }}?v=9", source)
 
     def test_amoled_dark_page_layer_does_not_restore_navy_neutrals(self):
@@ -616,7 +617,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.receipt-pill, .reim-receipt-pill',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-themes.css') }}?v=25", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=26", layout)
 
     def test_dark_mode_covers_system_neutral_surfaces(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -658,12 +659,13 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.changelog-item',
         ):
             self.assertIn(selector, dark_css)
-        self.assertIn('.sidebar-header .appearance-header-button {', theme_css)
+        # Appearance and What's New left the sidebar header for the account footer.
+        self.assertNotIn('.sidebar-header .appearance-header-button', theme_css)
         # Shell CSS moved out of layout.html's inline <style> into app-shell.css,
         # which collapsed three overlapping generations of sidebar rules into one.
         shell_css = (ROOT / 'static' / 'css' / 'app-shell.css').read_text(encoding='utf-8')
-        self.assertIn('.sidebar-header .appearance-header-button,', shell_css)
-        self.assertIn('.sidebar-header .changelog-header-button {', shell_css)
+        self.assertNotIn('.sidebar-header .appearance-header-button', shell_css)
+        self.assertIn('body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool {', shell_css)
         self.assertIn('width: 34px;', shell_css)
         self.assertIn("css/app-shell.css", layout)
 

@@ -27192,7 +27192,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v269-vieworks-machine-link.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v271-brand-shell.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v272-product-new-vieworks.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v273-dashboard-text-fixes';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v273-dashboard-text-fixes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v274-shell-phone-menu';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

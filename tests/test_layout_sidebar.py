@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=22", self.layout)
+        self.assertIn("app-shell.css') }}?v=26", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -308,7 +308,7 @@ class SidebarSourceTests(unittest.TestCase):
             const mobileMenuButton = {{ attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }};
             const controls = {{
                 sidebar,
-                'sidebar-toggle-desktop': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }},
+                'sidebar-toggle-desktop': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }}, querySelector() {{ return null; }} }},
                 'show-sidebar-btn': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }},
                 'mobile-menu-button': mobileMenuButton
             }};
@@ -478,6 +478,42 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('--bs-btn-hover-bg: rgba(255, 255, 255, 0.1);', self.shell_css)
         self.assertNotIn('font-weight: 800;', self.shell_css)
         self.assertNotIn('font-weight: 900;', self.shell_css)
+
+    def test_phone_drawer_is_modal_and_offline_is_announced(self):
+        drawer = self.layout.split('function setPageBehindDrawerInert(on) {', 1)[1].split('function toggleSidebarMobile()', 1)[0]
+        self.assertIn("document.querySelectorAll('body > *')", drawer)
+        self.assertIn("el.id === 'shell-connection-status'", drawer)
+        self.assertIn('setPageBehindDrawerInert(open);', drawer)
+        self.assertIn("document.activeElement === document.body", drawer)
+        self.assertIn('<div id="shell-connection-status" class="visually-hidden" role="status" aria-live="polite"></div>', self.layout)
+        self.assertEqual(self.layout.count('announceConnection(OFFLINE_MESSAGE);'), 2)
+        self.assertIn("Create TSR still works and syncs when you're back online", self.layout)
+        self.assertIn("announceConnection('Back online.');", self.layout)
+        self.assertIn('id="main-content" role="main"', self.layout)
+
+    def test_unread_is_a_soft_white_dot_and_the_rail_avatar_carries_it(self):
+        badge = self.shell_css.split('\n.changelog-header-badge {', 1)[1].split('}', 1)[0]
+        self.assertIn('background: var(--shell-focus-ring);', badge)
+        self.assertNotIn('#f0b429', self.shell_css)
+        self.assertIn('body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread::after {', self.shell_css)
+        self.assertIn("avatar.classList.toggle('has-unread', count > 0);", self.layout)
+
+    def test_pinned_header_is_brand_and_pin_only_with_account_tools_in_the_footer(self):
+        header = self.layout.split('<div class="sidebar-header">', 1)[1].split('<div id="sidebar-resize-handle"', 1)[0]
+        self.assertNotIn('appearance-header-button', header)
+        self.assertNotIn('changelog-header-button', header)
+        self.assertIn('sidebar-toggle-icon fa-solid fa-angles-left', header)
+        self.assertIn("icon.classList.toggle('fa-angles-right', collapsed);", self.layout)
+        self.assertEqual(self.layout.count('sidebar-account-tool'), 2)
+        self.assertIn('body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool {', self.shell_css)
+        self.assertNotIn('@container (max-width: 211px)', self.shell_css)
+
+    def test_phone_drawer_opens_from_the_menu_side_and_bar_names_the_section(self):
+        phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
+        self.assertIn('right: -100%;', phone)
+        self.assertIn('.sidebar.active {\n        right: 0;', phone)
+        self.assertIn("label.closest('.sidebar-subnav[aria-label]')", self.layout)
+        self.assertIn("phoneTitle.textContent = section ? section.getAttribute('aria-label') : name;", self.layout)
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]

@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-easier-menu",
+      "release_date": "2026-10-08",
+      "title": "A Tidier, Easier Menu",
+      "summary": "The phone menu opens on the Menu button's side and the menu header is simpler.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-easier-menu-phone",
+          "category": "System",
+          "description": "On phones, the menu now slides in from the right, next to the Menu button, and the top bar shows which section you are in.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-easier-menu-header",
+          "category": "System",
+          "description": "When the menu is pinned open, the Appearance and What's New buttons are now beside your name at the bottom, and new updates show as a small white dot.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-08-easier-menu-offline",
+          "category": "System",
+          "description": "Screen readers now announce when you go offline, and that Create TSR still works until you are back online.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-dashboard-fixes",
       "release_date": "2026-10-08",
       "title": "Dashboard Fixes",

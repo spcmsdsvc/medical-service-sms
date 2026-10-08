@@ -178,27 +178,23 @@ body.sidebar-resizing .main-content {
     --brand-mark-size: 24px;
 }
 
-/* The pinned header shares 240px with three buttons, so the name stacks as
-   "Medical / Service" beside the mark. Resized below 240px (212px of header
-   content), only the mark remains. */
-.sidebar-header {
-    container-type: inline-size;
-}
-
-.sidebar-header .shell-brand {
+/* The phone bar names the section (the page's own heading names the page), so
+   it is context, set a step below the page title; at 0.9rem the longest
+   section, "Reports & Insights", fits a 375px phone beside the three tools. */
+.mobile-nav .shell-brand {
     gap: 8px;
 }
 
-.sidebar-header .shell-brand-name {
-    font-size: 0.95rem;
-    line-height: 1.1;
-    white-space: normal;
+.mobile-nav .shell-brand-name {
+    font-size: 0.9rem;
 }
 
-@container (max-width: 211px) {
-    .sidebar-header .shell-brand-name {
-        display: none;
-    }
+/* The pinned header holds only the brand and the pin control, so the name fits
+   on one line at the default 240px and wraps to two only when the sidebar is
+   resized narrower; it never disappears. */
+.sidebar-header .shell-brand-name {
+    line-height: 1.15;
+    white-space: normal;
 }
 
 .sidebar-resize-handle {
@@ -587,8 +583,6 @@ body.sidebar-resizing .main-content {
 
     /* Rail: icons, separators, dots and initials. */
     body.sidebar-collapsed .sidebar .sidebar-header .shell-brand-name,
-    body.sidebar-collapsed .sidebar .sidebar-header .appearance-header-button,
-    body.sidebar-collapsed .sidebar .sidebar-header .changelog-header-button,
     body.sidebar-collapsed .sidebar .sidebar-resize-handle,
     body.sidebar-collapsed .sidebar .sidebar-section-arrow,
     body.sidebar-collapsed .sidebar .sidebar-calendar-arrow,
@@ -786,6 +780,24 @@ body.sidebar-resizing .main-content {
         outline-offset: 2px;
     }
 
+    /* In the rail, What's New lives in the account flyout, so the avatar carries
+       its unread dot; the pinned sidebar shows it on the header bell instead. */
+    body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread {
+        position: relative;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread::after {
+        content: '';
+        position: absolute;
+        top: -1px;
+        right: -1px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--shell-focus-ring);
+        box-shadow: 0 0 0 2px var(--app-sidebar);
+    }
+
     /* Name label for single links in the rail. */
     body.sidebar-collapsed .sidebar .sidebar-rail-tip.is-visible {
         display: block !important;
@@ -824,6 +836,56 @@ body.sidebar-resizing .main-content {
 .sidebar-user-avatar:disabled {
     opacity: 1;
     cursor: default;
+}
+
+/* Pinned desktop sidebar: Appearance and What's New sit as icons beside Log out,
+   with the same quiet look, instead of crowding the header. Their text labels
+   are for the rail's account flyout. */
+@media (min-width: 993px) {
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool {
+        position: relative;
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: 34px;
+        min-width: 34px;
+        height: 34px;
+        min-height: 34px;
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--sidebar-text);
+        outline-offset: -2px;
+        text-decoration: none;
+        transition: background-color 0.16s ease, color 0.16s ease;
+    }
+
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool:hover,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool:focus-visible,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool.active {
+        background: rgba(255, 255, 255, 0.08);
+        color: #ffffff;
+    }
+
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool > span:not(.changelog-header-badge) {
+        display: none;
+    }
+
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool i {
+        margin: 0;
+        font-size: 0.9rem;
+    }
+
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user {
+        gap: 4px;
+    }
+
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-meta {
+        margin-left: 6px;
+        margin-right: auto;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -875,7 +937,7 @@ body.sidebar-resizing .main-content {
     background: rgba(44, 62, 80, 0.96);
     backdrop-filter: blur(12px);
     color: white;
-    padding: calc(10px + var(--mobile-safe-top)) 20px 10px 20px;
+    padding: calc(10px + var(--mobile-safe-top)) 16px 10px 16px;
     justify-content: space-between;
     align-items: center;
     position: sticky;
@@ -898,7 +960,7 @@ body.sidebar-resizing .main-content {
 .mobile-nav-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     flex: 0 0 auto;
 }
 
@@ -922,9 +984,13 @@ body.sidebar-resizing .main-content {
     /* The drawer opens under the top bar (whose Menu button becomes Close), so it
        needs no header of its own: the top bar already has the title, Appearance
        and What's New, and the desktop pin button has no job here.
-       --mobile-nav-height is measured by setMobileSidebar(). */
+       --mobile-nav-height is measured by setMobileSidebar().
+       It slides in from the right, the side of the Menu button and of a right
+       thumb, so the tap and the panel it opens are on the same edge. */
     .sidebar {
-        left: -100%;
+        left: auto;
+        right: -100%;
+        transition: right 0.3s ease;
         top: var(--mobile-nav-height, 64px);
         width: min(82vw, 240px);
         height: calc(100vh - var(--mobile-nav-height, 64px));
@@ -987,7 +1053,7 @@ body.sidebar-resizing .main-content {
     }
 
     .sidebar.active {
-        left: 0;
+        right: 0;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
     }
 
@@ -1011,7 +1077,6 @@ body.sidebar-resizing .main-content {
 
 /* --- Header tool buttons (appearance + What's New) ------------------------ */
 
-.sidebar-header .changelog-header-button,
 .mobile-nav .changelog-header-button {
     position: relative;
     width: 40px;
@@ -1043,7 +1108,6 @@ body.sidebar-resizing .main-content {
     color: #ffffff;
 }
 
-.sidebar-header .changelog-header-button i,
 .mobile-nav .changelog-header-button i {
     width: auto;
     min-width: 0;
@@ -1051,25 +1115,6 @@ body.sidebar-resizing .main-content {
     font-size: 1rem;
 }
 
-/* Compact desktop header tools; mobile keeps the larger touch targets above. */
-.sidebar-header .appearance-header-button,
-.sidebar-header .changelog-header-button {
-    width: 34px;
-    min-width: 34px;
-    height: 34px;
-    min-height: 34px;
-}
-
-.sidebar-header .appearance-header-button i,
-.sidebar-header .changelog-header-button i {
-    width: auto;
-    min-width: 0;
-    margin: 0 !important;
-    font-size: 0.86rem;
-}
-
-.sidebar-header .changelog-header-button:hover,
-.sidebar-header .changelog-header-button:focus-visible,
 .mobile-nav .changelog-header-button:hover,
 .mobile-nav .changelog-header-button:focus-visible,
 .changelog-header-button.active {
@@ -1080,9 +1125,9 @@ body.sidebar-resizing .main-content {
 }
 
 /* Unread updates are news, not a warning: the button stays neutral and an 8px
-   amber dot sits on its corner, like the rail's count dots. The number is in
-   the button's aria-label and title (refreshGlobalChangelogBadge); the badge
-   keeps it as hidden text. Amber was the whole button plus a heavy "67" pill. */
+   soft white dot sits on its corner. Amber is kept for OFFLINE only. The number
+   is in the button's aria-label and title (refreshGlobalChangelogBadge); the
+   badge keeps it as hidden text. */
 .changelog-header-badge {
     position: absolute;
     top: 5px;
@@ -1090,7 +1135,7 @@ body.sidebar-resizing .main-content {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #f0b429;
+    background: var(--shell-focus-ring);
     display: none;
     overflow: hidden;
     font-size: 0;
@@ -1218,8 +1263,6 @@ body.sidebar-resizing .main-content {
        min-width/min-height rather than width/height so each control keeps its
        own shape and only grows to the floor when it is under it. */
     .skip-to-content,
-    .sidebar-header .changelog-header-button,
-    .sidebar-header .appearance-header-button,
     .mobile-nav .changelog-header-button,
     .mobile-nav .appearance-header-button,
     .toggle-btn {
