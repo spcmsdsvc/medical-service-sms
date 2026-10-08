@@ -194,7 +194,7 @@ class ReimbursementReadinessSourceTests(unittest.TestCase):
         css_end = TEMPLATE.index("</style>", css_start)
         css = TEMPLATE[css_start:css_end]
         for token in (
-            "left: var(--sidebar-width, 240px)",
+            "left: var(--shell-offset, var(--sidebar-width, 240px))",
             "env(safe-area-inset-bottom",
             "body.reim-focus-active .reim-action-dock",
             "@media (max-width: 820px)",

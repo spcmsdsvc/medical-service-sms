@@ -28,6 +28,7 @@ os.environ.setdefault("MEDICAL_SERVICE_TEST_DB", str(TEST_DB))
 os.environ.setdefault("SECRET_KEY", "calibration-title-repair-test-only")
 
 import app as app_module  # noqa: E402
+from tests.schema_flags import reset_schema_flags  # noqa: E402
 from scripts import repair_calibration_certificate_titles as repair  # noqa: E402
 
 
@@ -364,6 +365,7 @@ class CalibrationCertificateTitleRepairIntegrationTests(unittest.TestCase):
         with self.app.app_context():
             self.db.session.remove()
             self.db.drop_all()
+            reset_schema_flags(app_module)
             self.db.create_all()
 
     def tearDown(self):

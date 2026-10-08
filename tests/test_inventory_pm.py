@@ -164,6 +164,11 @@ class InventoryPmTests(unittest.TestCase):
     def tearDownClass(cls):
         with cls.app.app_context():
             app_module.InventoryPmVisit.query.delete()
+            # Deleted shifts leave their engineer rows; SQLite reuses the shift ids in later modules.
+            app_module.Shift.query.filter(
+                app_module.Shift.client_id.in_([cls.gen_client_id, cls.other_client_id])
+            ).delete(synchronize_session=False)
+            app_module.ShiftEngineer.query.filter_by(engineer_id=cls.engineer_id).delete()
             for model, identity in (
                 (app_module.GenorayItem, cls.gen_serial),
                 (app_module.VieworksItem, cls.view_serial),

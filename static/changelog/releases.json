@@ -1,6 +1,214 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-shimadzu-look",
+      "release_date": "2026-10-08",
+      "title": "A Clearer Shimadzu Look",
+      "summary": "The app now uses the Shimadzu font and mark, and shows which page you are on.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-shimadzu-look-brand",
+          "category": "System",
+          "description": "The app now uses the same font as the sign-in page, and the Shimadzu mark sits at the top of the menu with a thin Shimadzu-red line under it.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-shimadzu-look-page-name",
+          "category": "System",
+          "description": "The browser tab and the phone's top bar now show the name of the page you are on.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-08-shimadzu-look-quieter",
+          "category": "System",
+          "description": "New What's New updates show as a small dot instead of a large number, and the OFFLINE tag no longer covers the menu title.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-phone-menu-rows",
+      "release_date": "2026-10-08",
+      "title": "Easier Phone Menu",
+      "summary": "The phone menu's buttons are bigger and long names are no longer cut off.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-phone-menu-rows-labels",
+          "category": "System",
+          "description": "On phones, every item in the menu and the Log out button are now big enough to tap easily with a thumb, and long names such as Reimburse / Liquidation show in full on two lines instead of being cut off.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-vieworks-machine-link",
+      "release_date": "2026-10-08",
+      "title": "Link Vieworks to a Machine",
+      "summary": "You can now choose a Vieworks item's machine from the Vieworks page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-vieworks-machine-link-form",
+          "category": "Inventory",
+          "description": "When adding or editing a Vieworks item, the new Linked Machine list shows the machines at the same medical center. Pick one to link them, or choose Not linked to remove the link. The link also shows on the Product page.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-dark-sidebar-surface",
+      "release_date": "2026-10-08",
+      "title": "Clearer Sidebar in Dark Mode",
+      "summary": "In the dark appearances the sidebar and its menus now stand apart from the page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-dark-sidebar-surface-edge",
+          "category": "System",
+          "description": "In the Graphite and Dark appearances, the sidebar was the same colour as the page behind it, so its menus blended into busy screens such as the Calendar. The sidebar and its menus are now a shade lighter with a faint edge. The Light appearance is unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-sidebar-role-and-icons",
+      "release_date": "2026-10-08",
+      "title": "Correct Role in the Sidebar",
+      "summary": "The sidebar now shows your real role, and its icons are easier to tell apart.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-sidebar-role-label",
+          "category": "System",
+          "description": "The role under your name in the sidebar now matches Settings. Managers no longer show as Staff, and schedulers show as Scheduler.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-sidebar-dividers-icon",
+          "category": "System",
+          "description": "In the thin desktop sidebar, the lines between groups of icons are easier to see, and My Requests now has an inbox icon so it no longer looks like Records.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-sidebar-menus-stay-open",
+      "release_date": "2026-10-08",
+      "title": "Sidebar Menus Stay Open",
+      "summary": "Sidebar menus no longer close by themselves on the Calendar.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-sidebar-menus-calendar-fix",
+          "category": "System",
+          "description": "On desktop, pointing at an icon in the thin sidebar opens its menu. On the Calendar these menus closed again almost at once, even with the mouse held still. They now stay open until you move away from the sidebar or point at another icon.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-account-menu-hover",
+      "release_date": "2026-10-08",
+      "title": "Account Menu Stays Open",
+      "summary": "The menu under your initials no longer closes while you move to it.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-account-menu-hover-fix",
+          "category": "System",
+          "description": "On desktop, pointing at your initials at the bottom of the thin sidebar opens a menu with your name, Appearance, What's New and Log out. It used to close while you moved the pointer up to it; it now stays open until you leave the sidebar or point at another icon.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-rail-flyouts-phone-drawer",
+      "release_date": "2026-10-08",
+      "title": "Quicker Sidebar Menus",
+      "summary": "Sidebar groups open as small menus, the keyboard works along the sidebar, and the phone menu is no longer covered.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-rail-group-flyouts",
+          "category": "System",
+          "description": "On desktop, resting the pointer on a group icon in the thin sidebar (or tapping it) now opens a small menu with just that group's pages, instead of sliding the whole sidebar out. Calendar's menu includes Create TSR, and your initials at the bottom open a menu with Appearance, What's New and Log out. Single icons show their name when you point at them.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-rail-keyboard",
+          "category": "System",
+          "description": "Keyboard users can now move along the sidebar with the up and down arrow keys or Tab without menus popping open. Press Enter, Space or the right arrow to open a group's menu, the arrow keys to move inside it, and the left arrow or Escape to go back. The focus outline in the sidebar is also easier to see.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-08-phone-drawer",
+          "category": "System",
+          "description": "On phones, the menu now opens below the top bar and above the buttons at the bottom of pages such as Travel Request, so Log out is no longer hidden. The page behind is dimmed, tapping it closes the menu, and the Menu button reads Close while the menu is open.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-07-desktop-icon-rail",
+      "release_date": "2026-10-07",
+      "title": "Slimmer Desktop Sidebar",
+      "summary": "On desktop the sidebar is now a thin icon bar, giving pages more room.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-07-desktop-icon-rail-sidebar",
+          "category": "System",
+          "description": "On desktop the sidebar now starts as a thin bar of icons, so tables and the Calendar get more width. Point at the bar (or press Tab into it) to slide the full menu out over the page; move away or press Escape to tuck it back. Click the menu button at the top to keep it pinned open; your choice is remembered. The menu also looks lighter. Phones are unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-07-site-visit-type",
       "release_date": "2026-10-07",
       "title": "New Schedule Type: Site Visit",
