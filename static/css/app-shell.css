@@ -854,6 +854,38 @@ body.sidebar-resizing .main-content {
         display: none;
     }
 
+    /* Thumb-sized drawer (DESIGN.md: 44px touch targets on phones): sub-rows and
+       Log out were 38px and 34px. Long labels such as "Reimburse / Liquidation"
+       wrap onto a second line instead of being cut off in the 240px drawer;
+       desktop keeps single-line labels with an ellipsis. */
+    :root {
+        --sidebar-subrow-height: 44px;
+    }
+
+    .sidebar .sidebar-nav a,
+    .sidebar .sidebar-nav .sidebar-section-toggle,
+    .sidebar .sidebar-nav .sidebar-calendar-main {
+        padding-top: 6px;
+        padding-bottom: 6px;
+        white-space: normal;
+    }
+
+    .sidebar .sidebar-nav a span,
+    .sidebar .sidebar-nav .sidebar-section-toggle span,
+    .sidebar .sidebar-nav .sidebar-calendar-main span {
+        overflow: visible;
+        text-overflow: clip;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+
+    .sidebar .sidebar-logout {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        min-height: 44px;
+    }
+
     /* Open: above fixed page docks (Reimbursement's is 1200) and a tap-to-close
        backdrop, with the top bar above both so Close stays reachable. */
     body.mobile-sidebar-open .sidebar {

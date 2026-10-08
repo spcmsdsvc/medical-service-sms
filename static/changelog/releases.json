@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-phone-menu-rows",
+      "release_date": "2026-10-08",
+      "title": "Easier Phone Menu",
+      "summary": "The phone menu's buttons are bigger and long names are no longer cut off.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-phone-menu-rows-labels",
+          "category": "System",
+          "description": "On phones, every item in the menu and the Log out button are now big enough to tap easily with a thumb, and long names such as Reimburse / Liquidation show in full on two lines instead of being cut off.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-vieworks-machine-link",
       "release_date": "2026-10-08",
       "title": "Link Vieworks to a Machine",

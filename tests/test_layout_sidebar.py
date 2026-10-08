@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=14", self.layout)
+        self.assertIn("app-shell.css') }}?v=15", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -433,6 +433,15 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('--sidebar-edge: rgba(255, 255, 255, 0.14);', self.shell_css)
         self.assertIn(':root[data-app-theme="dark"] .sidebar {\n        box-shadow: inset -1px 0 0 var(--sidebar-edge);', self.shell_css)
         self.assertIn('border: 1px solid var(--sidebar-edge);', self.shell_css)
+
+    def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
+        phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
+        self.assertIn('--sidebar-subrow-height: 44px;', phone)
+        self.assertIn('.sidebar .sidebar-nav a span,', phone)
+        self.assertIn('overflow-wrap: anywhere;', phone)
+        logout = phone.split('.sidebar .sidebar-logout {', 1)[1].split('}', 1)[0]
+        self.assertIn('width: 44px;', logout)
+        self.assertIn('height: 44px;', logout)
 
     def test_phone_drawer_opens_below_the_top_bar_above_docks_with_a_backdrop(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
