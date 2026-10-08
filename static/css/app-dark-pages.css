@@ -637,6 +637,9 @@
 }
 :root[data-app-theme="dark"] .dashboard-workflow-card :is(.dashboard-workflow-title, .dashboard-workflow-subtitle, strong, span) { color: inherit !important; }
 :root[data-app-theme="dark"] .dashboard-whats-new :is(h3, p, div) { color: inherit !important; }
+/* The bell tile kept its pale green fill while the rule above turned its icon light, so it
+   showed as a blank white square. */
+:root[data-app-theme="dark"] .dashboard-whats-new .dashboard-whats-new-icon { background: rgba(20, 128, 74, .24) !important; color: #6fd39b !important; }
 :root[data-app-theme="dark"] .changelog-btn:hover { background: var(--dark-card-hover) !important; }
 :root[data-app-theme="dark"] .changelog-header {
     border-color: var(--dark-border) !important;
