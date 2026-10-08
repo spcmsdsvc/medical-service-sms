@@ -230,6 +230,31 @@ class ActivityRelatedRouteTests(unittest.TestCase):
         self.assertEqual(data['related_by'], 'nearby')
         self.assertEqual(self.related_ids(response), {self.ids['near']})
 
+    def list_links(self, query, approver):
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(self.viewer_id)
+            session['_fresh'] = True
+        with patch.object(app_module, 'is_admin_authorized', return_value=True), \
+                patch.object(app_module, 'is_regional_admin_user', return_value=False), \
+                patch.object(app_module, 'is_superadmin_user', return_value=False), \
+                patch.object(app_module, 'is_approval_center_user', return_value=True), \
+                patch.object(app_module, 'can_user_review_travel_request', return_value=approver):
+            rows = client.get(f'/get_activity_logs?q={query}&per_page=100').get_json()['logs']
+        return {row['id']: row['record_link'] for row in rows}
+
+    def test_list_rows_carry_where_the_category_chip_leads(self):
+        links = self.list_links(self.tr, approver=True)
+        self.assertEqual(links[self.ids['tr_open']], {
+            'open_state': 'open', 'record_label': f'Travel Request {self.tr}',
+            'open_url': f'/approvals?module=travel_request&id={self.travel_id}', 'open_label': 'Open in Approvals',
+        })
+        denied = self.list_links(self.tr, approver=False)[self.ids['tr_open']]
+        self.assertEqual((denied['open_state'], denied['open_url']), ('denied', None))
+        # TR-...0 is a code with no record behind it.
+        self.assertEqual(self.list_links(self.other_tr, approver=True)[self.ids['tr_other']]['open_state'], 'missing')
+        self.assertIsNone(self.list_links(f'Center {self.suffix}', approver=True)[self.ids['plain']])
+
     def test_non_admin_is_denied(self):
         self.assertEqual(self.get('tr_open', admin=False).status_code, 403)
 
@@ -261,6 +286,13 @@ class ActivityDetailsPageTests(unittest.TestCase):
             'Only the assigned approver can open this record.',
             'renderActivityDetail(data.log, data.decision)',
             '${decision.decision} reason',
+            'function renderCategoryChip(',
+            'function showActivityToast(',
+            'id="activity-toast"',
+            "denied: 'Only the assigned approver can open this record.'",
+            "missing: 'This record no longer exists.'",
+            "onclick=\"filterBy('filter-type', this.dataset.value)\"",
+            "event.target.closest('button, a')",
         ):
             self.assertIn(token, ACTIVITY_TEMPLATE)
         for name in ('loadLogs', 'filterBy', 'exportLogs', 'resetFilters', 'changePage', 'renderRow', 'loadFilterOptions'):
@@ -273,7 +305,10 @@ class ActivityDetailsPageTests(unittest.TestCase):
         self.assertIn('v275-activity-details.', APP_SOURCE)
         follow_up = next(r for r in RELEASES['releases'] if r['release_key'] == '2026-10-08-activity-open-record')
         self.assertEqual(follow_up['items'][0]['audiences'], ['admins'])
-        self.assertIn("v276-activity-open-record';", APP_SOURCE)
+        self.assertIn('v276-activity-open-record.', APP_SOURCE)
+        chip = next(r for r in RELEASES['releases'] if r['release_key'] == '2026-10-08-activity-chip-open')
+        self.assertEqual(chip['items'][0]['audiences'], ['admins'])
+        self.assertIn("v277-activity-chip-open';", APP_SOURCE)
 
 
 if __name__ == '__main__':

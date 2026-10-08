@@ -27195,7 +27195,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v273-dashboard-text-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v274-shell-phone-menu.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v275-activity-details.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v276-activity-open-record';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v276-activity-open-record.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v277-activity-chip-open';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -33034,47 +33035,74 @@ def _activity_record_open_link(kind, record):
     return {'open_url': url, 'open_label': 'Open in Approvals' if url else None}
 
 
+ACTIVITY_RECORD_LOOKUPS = {
+    'TR': ('Travel Request', lambda ref: TravelRequest.query.filter_by(request_no=ref).first()),
+    'CA': ('Cash Advance', lambda ref: CashAdvanceHeader.query.filter_by(cash_advance_no=ref).first()),
+    'TL': ('Travel Liquidation', lambda ref: TravelLiquidationHeader.query.filter_by(liquidation_no=ref).first()),
+    'CAL': ('Cash Advance Liquidation', lambda ref: CashAdvanceLiquidationHeader.query.filter_by(liquidation_no=ref).first()),
+    'LR': ('Leave Request', lambda ref: LeaveRequest.query.filter_by(request_no=ref).first()),
+}
+
+
+def _activity_find_record(reference):
+    """(kind, record or None, label) for a supported record code, else None."""
+    number_match = re.fullmatch(r'(schedule|reimbursement) #(\d+)', reference or '')
+    if number_match:
+        model, kind = (Shift, 'Schedule') if number_match.group(1) == 'schedule' else (ReimbursementHeader, 'Reimbursement')
+        return kind, db.session.get(model, int(number_match.group(2))), f"{kind} #{number_match.group(2)}"
+    lookup = ACTIVITY_RECORD_LOOKUPS.get((reference or '').split('-', 1)[0])
+    if not lookup:
+        return None
+    kind, find = lookup
+    return kind, find(reference), f"{kind} {reference}"
+
+
+def _activity_record_fields(kind, record):
+    if kind == 'Schedule':
+        return _activity_schedule_fields(record)
+    if kind == 'Reimbursement':
+        return _activity_reimbursement_fields(record)
+    if kind == 'Travel Request':
+        return _activity_travel_request_fields(record)
+    if kind == 'Cash Advance':
+        return _activity_cash_advance_fields(record)
+    if kind == 'Travel Liquidation':
+        source = record.travel_request
+        return _activity_liquidation_fields(record, source.request_no if source else '')
+    if kind == 'Cash Advance Liquidation':
+        source = record.cash_advance
+        return _activity_liquidation_fields(record, source.cash_advance_no if source else '')
+    return _activity_leave_request_fields(record)
+
+
 def activity_record_summary(reference):
     """Current fields of the record an activity entry mentions, or None if it no longer exists."""
-    number_match = re.fullmatch(r'(schedule|reimbursement) #(\d+)', reference or '')
-    prefix = (reference or '').split('-', 1)[0]
-    if number_match:
-        kind, record_id = number_match.group(1), int(number_match.group(2))
-        if kind == 'schedule':
-            record = db.session.get(Shift, record_id)
-            kind, fields = 'Schedule', record and _activity_schedule_fields(record)
-        else:
-            record = db.session.get(ReimbursementHeader, record_id)
-            kind, fields = 'Reimbursement', record and _activity_reimbursement_fields(record)
-    elif prefix == 'TR':
-        record = TravelRequest.query.filter_by(request_no=reference).first()
-        kind, fields = 'Travel Request', record and _activity_travel_request_fields(record)
-    elif prefix == 'CA':
-        record = CashAdvanceHeader.query.filter_by(cash_advance_no=reference).first()
-        kind, fields = 'Cash Advance', record and _activity_cash_advance_fields(record)
-    elif prefix == 'TL':
-        record = TravelLiquidationHeader.query.filter_by(liquidation_no=reference).first()
-        source = record and record.travel_request
-        kind, fields = 'Travel Liquidation', record and _activity_liquidation_fields(record, source.request_no if source else '')
-    elif prefix == 'CAL':
-        record = CashAdvanceLiquidationHeader.query.filter_by(liquidation_no=reference).first()
-        source = record and record.cash_advance
-        kind, fields = 'Cash Advance Liquidation', record and _activity_liquidation_fields(record, source.cash_advance_no if source else '')
-    elif prefix == 'LR':
-        record = LeaveRequest.query.filter_by(request_no=reference).first()
-        kind, fields = 'Leave Request', record and _activity_leave_request_fields(record)
-    else:
+    found = _activity_find_record(reference)
+    if not found or not found[1]:
         return None
-    if not fields:
-        return None
+    kind, record, label = found
     return {
         'reference': reference,
         'kind': kind,
-        'label': f"{kind} #{number_match.group(2)}" if number_match else f"{kind} {reference}",
+        'label': label,
         'record_id': record.id,
-        'fields': [[label, str(value)] for label, value in fields if value not in (None, '')],
+        'fields': [[name, str(value)] for name, value in _activity_record_fields(kind, record) if value not in (None, '')],
         **_activity_record_open_link(kind, record)
     }
+
+
+def activity_row_link(action):
+    """Where a list row's category chip leads: its first record, if it names one we can summarise."""
+    for reference in extract_activity_references(action):
+        found = _activity_find_record(reference)
+        if not found:
+            continue
+        kind, record, label = found
+        if not record:
+            return {'open_state': 'missing', 'record_label': label, 'open_url': None, 'open_label': None}
+        link = _activity_record_open_link(kind, record)
+        return {'open_state': 'open' if link['open_url'] else 'denied', 'record_label': label, **link}
+    return None
 
 
 ACTIVITY_AUDIT_MODULE_BY_KIND = {
@@ -33262,7 +33290,10 @@ def get_activity_logs():
         'problem_count': problem_count,
         'user_count': user_count,
         'hidden_routine_count': hidden_routine_count,
-        'logs': [activity_log_to_dict(log, today) for log in page_logs]
+        'logs': [
+            {**activity_log_to_dict(log, today), 'record_link': activity_row_link(log.action)}
+            for log in page_logs
+        ]
     })
 
 

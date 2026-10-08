@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-activity-chip-open",
+      "release_date": "2026-10-08",
+      "title": "Open Records from the Category Label",
+      "summary": "In the Activity Log list, the category label of an entry about a record now opens that record.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-activity-chip-open-label",
+          "category": "Activity Log",
+          "description": "Category labels with a small arrow (for example Travel Request or Leave Request) open the record in a new tab: in Approvals if you are its approver, or in Timeline for schedules. If you cannot open it, a message says why. Other labels still filter the list by category.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-activity-open-record",
       "release_date": "2026-10-08",
       "title": "Open Records from the Activity Log",

@@ -37,6 +37,67 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Activity Log Category Chip Opens the Record
+
+**Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(activity): category chip opens the record"). Owner confirmed decision 1 (recommended option) and said "go". Full suite before publishing: 1,656 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.
+
+**Outcome (2026-10-08):** all 5 steps done as planned; service worker `v277-activity-chip-open` (v276 kept as a history marker), release `2026-10-08-activity-chip-open`. Step 1 went slightly further than written: the per-type lookups moved into `ACTIVITY_RECORD_LOOKUPS` and the field builders into `_activity_record_fields`, so `activity_record_summary` and `activity_row_link` share one lookup (summaries unchanged; all earlier tests pass). The row click handler now ignores links as well as buttons, so a link chip does not also open the details panel. Tests: new list test plus template/release checks (29 Activity Log tests OK; 3 fail on the published code `778130c`). Browser (DB copy, temporary logins; copy and launch change removed), 1366x768: as Robert every chip on the `TR-20260609-7` search is a link with the arrow icon (`/approvals?module=travel_request&id=7`; the liquidation entry links its first code `TL-20260611-3`) and clicking it does not open the panel; as Diary the same chips are buttons that show the toast "Only the assigned approver can open this record." without navigating; a "Modified details for client" row's chip still filters (Category set to Client). 375px: no horizontal scroll. No console errors. Existing chip tap size (about 22px) unchanged; not part of this plan.
+**Approved:** 2026-10-08 (owner: "can we make this label when clicked. automatically goes to the linked activity? if possible. show the error if user cannot do that. create a plan"). Under the two-step rule this records approval only; execution needs a separate "go" / "execute" / "start".
+**Detailed:** 2026-10-08.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Context
+
+In the Activity Log table, the "What" column's category chip (e.g. "Leave Request") filters the list by that category when clicked. The owner wants a click on it to go straight to the record the entry is about, the same place as the details panel's "Open in Approvals" / "Show in Timeline" button (published `778130c`), and to show an error when the viewer cannot open it.
+
+## Decisions taken
+
+1. **Which chips change** (recommended; owner to confirm): only rows whose entry names a record with a summary (TR, CA, TL, CAL, LR, `schedule #N`, `reimbursement #N`; about 10% of entries) get the open behaviour. All other rows keep today's "filter by this category" click, so that feature is not lost; filtering by category also stays available from the Category dropdown. The chip's tooltip says which it does ("Open Leave Request LR-… in Approvals" vs "Show only Leave Request").
+2. **When the viewer cannot open it**, the click shows a short message in a small toast at the bottom of the page, and nothing else happens: "Only the assigned approver can open this record." (approval types) or "This record no longer exists." (code no longer found). Same permission rule as the panel button; nobody's access changes.
+3. **Link worked out with the list, not on click:** `/get_activity_logs` returns each row's `open_url` / `open_state`, so the chip is a real link opening in a new tab. Fetching on click and then opening a tab can be blocked as a pop-up.
+4. **Which record:** the entry's first record code (e.g. `CAL-…` for "Created CAL-… for CA-…").
+
+## Investigation
+
+- Chip markup: `renderRow` in [activity.html:323](templates/activity.html:323), `<button class="activity-chip activity-tone-…" onclick="filterBy('filter-type', …)">`; the table click handler ignores buttons other than `.activity-detail-link`, so the chip does not open the panel. `filterBy` is also used by the Who chip, so it stays.
+- The 2026-10-03 release told admins "Click a person or category to filter by it" ([releases.json](static/changelog/releases.json), `2026-10-03-activity-log-simple`); decision 1 keeps that true for rows without a record.
+- `activity_record_summary(reference)` ([app.py](app.py)) finds the record and builds `open_url` with `_activity_record_open_link(kind, record)`, which uses the target routes' own checks. Building full summaries for every row would add several queries per row; a lighter lookup is needed (step 1).
+- `/get_activity_logs` serializes rows with `activity_log_to_dict`, which is also used by the related route; the new keys are added only in `get_activity_logs`. Pages hold 25–100 rows; about 10% name a record (2026-10-08 count: 208 of 2,194).
+- No shared toast exists in `layout.html`; `products.html` and `engineers.html` use page-local Bootstrap toasts.
+
+## Execution steps
+
+1. **Record lookup split** (`app.py`): new `_activity_find_record(reference)` returning `(kind, record, label)` or `None` (the lookup part of `activity_record_summary`, which then calls it; behaviour unchanged). New `activity_row_link(action)`: first reference → `_activity_find_record` → `{'open_url', 'open_label', 'open_state': 'open' | 'denied' | 'missing', 'record_label'}`, or `None` when the entry has no reference with a summary type. Done: summaries and `/get_activity_log_related` output unchanged.
+2. **List response** (`app.py` `get_activity_logs`): each row dict gains `record_link` from `activity_row_link(log.action)`. Done: rows without a code have `record_link: null`.
+3. **Chip** (`templates/activity.html` `renderRow`): when `record_link.open_state === 'open'`, the chip is `<a class="activity-chip …" href="…" target="_blank" rel="noopener">` with an external-link icon and the tooltip "Open <label> in Approvals/Timeline"; when `denied` or `missing`, a `<button>` that calls new `showActivityToast(message)`; when `record_link` is null, today's filter button unchanged. Same-site paths only, via `escapeHtml`. Done: Who chip, Details button and panel still work.
+4. **Toast** (`templates/activity.html`): one Bootstrap toast container (`#activity-toast`, `role="status"`, `aria-live="polite"`) at the bottom; `showActivityToast` sets the text and shows it for 4 s.
+5. **Release**: bump `CACHE_VERSION` (v276 kept as a history marker); release entry "Open Records from the Category Label" (Activity Log, admins).
+
+## Deliberately excluded
+
+- **Changing the Who chip:** not asked.
+- **Opening records for entries without a record code:** nothing to open.
+- **A chip that both filters and opens** (e.g. separate icon): the owner asked for the label itself.
+
+## Verification
+
+- `tests/test_activity_log_details.py`: `activity_row_link` gives `open` with the Approvals URL when the checks pass, `denied` when they fail, `missing` for an unknown code, `None` for an entry without a code; `/get_activity_logs` rows carry `record_link`; template has `showActivityToast`, `#activity-toast`, both messages, and still `filterBy('filter-type'`. Positive control: fail on the current code.
+- Focused: `test_activity_log_details`, `test_activity_log_hardening`.
+- Browser (DB copy, temporary logins removed afterwards): as the approver, a TR row's chip opens the TR in Approvals in a new tab; as a non-approver, the chip shows the toast and does not navigate; a schedule row's chip goes to Timeline; a row without a code still filters by category; the Who chip and the details panel unchanged; 375px; no console errors.
+- Full suite once, before publishing.
+
+## After implementation
+
+1. Self-review; confirm every function the Activity Log page calls is still defined.
+2. Update `changes.md` and this Status.
+3. Wait for "commit and push"; stage only the intended files (never `scheduler.db`, handoffs, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`); one `git ls-remote` check, no Railway polling.
+
+## Risks
+
+- **Mixed chip behaviour:** some chips open, others filter (decision 1); the icon and tooltip mark the difference.
+- **List speed:** extra lookups only for rows with a code (about 1 in 10), at most 100 rows per page.
+- **Blast radius:** Activity Log list only; the details panel, Approvals and Timeline are unchanged.
+
 # Activity Log "Open Record" Button
 
 **Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(activity): open record button, rejection reasons, leave requests"), with Amendment 1. Owner confirmed decision 1 (recommended option) and said "go". Full suite before publishing: 1,655 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.

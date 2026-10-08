@@ -131,6 +131,15 @@
         </div>
     </div>
 
+    <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3 activity-toast-wrap">
+        <div class="toast align-items-center text-bg-dark border-0" id="activity-toast" role="status" aria-live="polite" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body" id="activity-toast-text"></div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    </div>
+
     <div class="offcanvas offcanvas-end activity-detail-panel" tabindex="-1" id="activity-detail" data-bs-backdrop="false" data-bs-scroll="true" aria-labelledby="activity-detail-title">
         <div class="offcanvas-header border-bottom">
             <h3 class="h6 fw-bold mb-0" id="activity-detail-title">Entry details</h3>
@@ -320,9 +329,7 @@ function renderRow(log) {
                 <button type="button" class="activity-chip activity-chip-user" onclick="filterBy('filter-user', this.dataset.value)" data-value="${escapeHtml(log.user)}" title="Show only ${escapeHtml(log.user)}">${escapeHtml(log.user)}</button>
             </td>
             <td data-label="What">
-                <button type="button" class="activity-chip activity-tone-${tone}" onclick="filterBy('filter-type', this.dataset.value)" data-value="${escapeHtml(log.type)}" title="Show only ${escapeHtml(log.type)}">
-                    <i class="fa-solid ${icon} me-1"></i>${escapeHtml(log.type)}
-                </button>
+                ${renderCategoryChip(log, tone, icon)}
                 <span class="text-muted ms-1">${escapeHtml(log.action_type || 'Other')}</span>
             </td>
             <td class="activity-details" data-label="Details"${original}>
@@ -330,6 +337,35 @@ function renderRow(log) {
                 ${log.branch ? `<span class="activity-chip activity-chip-branch ms-1"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(log.branch)}</span>` : ''}
             </td>
         </tr>`;
+}
+
+const RECORD_LINK_MESSAGES = {
+    denied: 'Only the assigned approver can open this record.',
+    missing: 'This record no longer exists.'
+};
+
+// Rows that name a record open it (or explain why not); other rows filter by category.
+function renderCategoryChip(log, tone, icon) {
+    const link = log.record_link;
+    const label = `<i class="fa-solid ${icon} me-1"></i>${escapeHtml(log.type)}`;
+    const url = String((link && link.open_url) || '');
+    if (link && link.open_state === 'open' && url.startsWith('/') && !url.startsWith('//')) {
+        const where = url.startsWith('/timeline') ? 'Timeline' : 'Approvals';
+        return `<a class="activity-chip activity-chip-link activity-tone-${tone}" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Open ${escapeHtml(link.record_label)} in ${where}">
+                    ${label}<i class="fa-solid fa-arrow-up-right-from-square ms-1 activity-chip-link-icon" aria-hidden="true"></i></a>`;
+    }
+    if (link && RECORD_LINK_MESSAGES[link.open_state]) {
+        return `<button type="button" class="activity-chip activity-chip-link activity-tone-${tone}" onclick="showActivityToast(RECORD_LINK_MESSAGES['${link.open_state}'])" title="${escapeHtml(link.record_label)}: ${escapeHtml(RECORD_LINK_MESSAGES[link.open_state])}">
+                    ${label}<i class="fa-solid fa-arrow-up-right-from-square ms-1 activity-chip-link-icon" aria-hidden="true"></i></button>`;
+    }
+    return `<button type="button" class="activity-chip activity-tone-${tone}" onclick="filterBy('filter-type', this.dataset.value)" data-value="${escapeHtml(log.type)}" title="Show only ${escapeHtml(log.type)}">
+                    ${label}
+                </button>`;
+}
+
+function showActivityToast(message) {
+    byId('activity-toast-text').innerText = message;
+    bootstrap.Toast.getOrCreateInstance(byId('activity-toast'), { delay: 4000 }).show();
 }
 
 function filterBy(id, value) {
@@ -534,7 +570,7 @@ function exportLogs() {
 document.addEventListener('DOMContentLoaded', async () => {
     // Clicking a row opens its details; the Who and What chips keep filtering.
     byId('activity-table-body').addEventListener('click', event => {
-        const button = event.target.closest('button');
+        const button = event.target.closest('button, a');
         if (button && !button.classList.contains('activity-detail-link')) return;
         const row = event.target.closest('.activity-log-row');
         if (row) openActivityDetail(row.dataset.logId);
@@ -572,7 +608,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     background: #f1f5f9;
     color: #334155;
 }
-button.activity-chip:hover { filter: brightness(0.95); text-decoration: underline; }
+button.activity-chip:hover,
+a.activity-chip:hover { filter: brightness(0.95); text-decoration: underline; }
+a.activity-chip { text-decoration: none; }
+.activity-chip-link-icon { font-size: 0.6rem; opacity: 0.75; }
+.activity-toast-wrap { z-index: 1080; }
 .activity-chip-user { background: #f8f9fa; border: 1px solid #e2e8f0; }
 .activity-chip-branch { font-size: 0.62rem; padding: 2px 7px; background: #f8f9fa; color: #495057; }
 .activity-tone-workflow { background: #e0f2fe; color: #0369a1; }
