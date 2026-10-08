@@ -37,6 +37,108 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Activity Log Entry Details Panel
+
+**Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(activity): entry details panel with current record summary"), together with Amendment 1. Owner said "go" on 2026-10-08. Full suite before publishing: 1,651 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.
+
+**Outcome (2026-10-08):** all 7 steps done as planned; service worker `v275-activity-details`. Tests: new `tests/test_activity_log_details.py` (10 tests) plus `test_activity_log_hardening` (12) OK; on the committed code 8 of the 10 fail — the two that pass are the 404 cases, which also return 404 there because the route does not exist yet. Browser (DB copy, temporary login on the copy; copy and launch change removed), 1366x768: a `TR-20260609-11` entry shows "Same record · TR-20260609-11" with its 5 sibling entries (cash advance received, sent to Accounting, approved, travel block days, submitted); a calendar schedule entry splits into Client, Product, Engineer(s) and Branch rows; a client edit with no code shows "Same person, around this time"; the Who chip still filters with the panel open; Close returns focus to the row's Details button and clears the highlight; Export CSV returns 200 text/csv. 375x812: bottom sheet at y 122, 690px tall (85vh), no horizontal scroll, no button under 44px. No console errors. Where it differed: nothing; the pane's paused CSS transitions left the sheet mid-slide until transitions were turned off for measuring (known pane quirk, not a page bug).
+**Approved:** 2026-10-08 (owner: "okay approved. build 1 and 3 first. create the plan"). Under the two-step rule this records approval only; execution needs a separate "go" / "execute" / "start".
+**Detailed:** 2026-10-08.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Amendment 1 — Current record summary (2026-10-08)
+
+**Status:** Executed — published to `main` on 2026-10-08 with the base plan. Owner reviewed the panel and said the summary was lacking ("travel to where? who did i approve? when is the travel date?"); the proposal below was answered with "go", taken as approval and go-ahead together. "Open record" button not included (recommended default; owner did not ask for it).
+
+**What:** for each record code in the opened entry, the panel shows a "Current record" card with the record's live fields, labelled as current (not as it was when the entry was written).
+
+| Code | Fields |
+| --- | --- |
+| `TR-…` (`TravelRequest.request_no`) | Requester, type, purpose, route (from → to legs, else destination), client, departure – return dates, requested / approved amount, status |
+| `CA-…` (`CashAdvanceHeader.cash_advance_no`) | Requester, purpose, date needed, requested / approved amount, status |
+| `TL-…` (`TravelLiquidationHeader.liquidation_no`) / `CAL-…` (`CashAdvanceLiquidationHeader.liquidation_no`) | Requester, liquidates (TR / CA number), cash advance, actual expenses, due to Shimadzu / employee, status |
+| `schedule #N` (`Shift.id`) | Title, client, product, engineer(s) (main plus `ShiftEngineer`), start – end, status |
+| `reimbursement #N` (`ReimbursementHeader.id`) | Requester, period, total (sum of `ReimbursementRow.row_total`), status |
+
+**Excluded:** account number, health condition, signatures, remarks, payment references; `submission`, `route`, `visit` references (no summary); Open-record buttons (later).
+
+**Steps:**
+1. `app.py`: new `activity_record_summary(reference)` returning `{'reference', 'kind', 'fields': [[label, value], ...]}` or `None` when the record does not exist, with one small builder per type; empty values skipped. Done: unit-tested per type with test rows.
+2. `app.py` `get_activity_log_related`: response gains `records` (summaries for the entry's references, non-missing only). Scope unchanged (the entry itself is already scope-checked).
+3. `templates/activity.html`: `renderActivityRecords(records)` renders a "Current record · <code>" card per record into new `#activity-detail-records` between the entry and the related list; cleared on each open.
+4. Tests in `tests/test_activity_log_details.py`: TR summary has requester, route, dates, amounts, status; missing code gives no record; template wiring. Positive control on the pre-amendment code.
+5. Browser check on a DB copy (TR, CA, schedule entry), 375 px, console; update release text, `changes.md`, this status.
+
+**Outcome:** done as planned, with three changes found against real data. (a) The stored Travel Request `purpose` is a generated block of route/visit text, so it is not shown; the card shows `Visits` (client – product – purpose tags per route visit) and, for Training/Meeting requests, Training / Conducted by / Venue / Meeting / Meeting with taken from the columns or, for older requests, from the "Label: value" lines in `purpose` (the same fallback as the Approvals page; only those labels are read, so account number and health lines never appear). `Client` is dropped when visits exist or when it only repeats the type. (b) Each summary carries a `label` ("Travel Request TR-…", "Schedule #876") because "Schedule schedule #876" read badly. (c) A CAL entry also names its CA, so it shows two cards (the liquidation and the cash advance). Tests: 4 new (24 in the two modules OK); with the `records` line and the template call removed, 4 fail. Browser (DB copy; removed afterwards): `TR-20260609-7` approval entry shows requester, Manila → Davao, the DDH visit, Jun 19 – Jun 20, 2026, PHP 15,000.00 requested / approved, Liquidation Completed; schedule #876 and CAL-20261004-3 cards correct; 375 px no horizontal scroll, no button under 44px; no console errors.
+
+## Context
+
+On the Activity Log (`/activity_page`) a row shows a one-line, sometimes shortened entry, and clicking it does nothing. Admins reviewing the log want to open an entry and see what it was about. This plan adds a details panel: click a row and a panel opens beside the list (a sheet from the bottom on phones) with the full entry split into readable fields and the other entries about the same record.
+
+## Decisions taken
+
+1. **Side panel, not a centered modal.** The panel slides in from the right on desktop and leaves the list visible and clickable, so clicking another row just updates it. At ≤900px it opens as a bottom sheet.
+2. **Parts 1 and 3 of the proposal only:**
+   - **(1) Full entry, split into fields:** the headline (text before the first " | "), each "Label: value" segment as a labeled row (Client, Product, Engineer(s), …), the full original text when the display text was shortened, the exact date and time, the user, the category, the action type, the branch and the severity.
+   - **(3) Related activity:** other entries that mention the same record code (e.g. `TR-20260609-11`, `CA-…`, `TL-…`, `CAL-…`, `schedule #876`, `reimbursement #45`, `submission #34`), newest first.
+3. **Fallback when an entry has no record code:** the panel shows "Same person, around this time" instead: the same user's entries within 30 minutes either side, routine entries left out. Added while detailing because only about 10% of entries carry a code (see Investigation), so without it the related section would be empty for most rows. **The owner may strike this before the go-ahead.**
+4. Part 2 (Open buttons to the record, live status) comes later as its own plan.
+
+## Investigation
+
+- `ActivityLog` ([app.py:1842](app.py:1842)) has only `id`, `user`, `action` (String(255), but SQLite does not enforce it; the longest stored entry is 453 characters) and `timestamp`. There is no record id, link, or before/after data, so everything in the panel comes from the text.
+- In the current database copy (2,194 entries): date-coded codes `TR` 81, `CA` 33, `TL` 22, `CAL` 18 (pattern `[A-Z]{2,4}-\d{8}-\d+`); "word #N" references `schedule` 28, `reimbursement` 24, `submission` 9, `route` 4, `visit` 1. **1,986 entries (≈90%) have no reference.** That led to decision 3. `ZEN-119003-10824` is an equipment serial (`Added equipment: …`), not a request code, and the date-coded pattern does not match it.
+- Long schedule entries use " | " separators with "Label: value" segments, e.g. `Added calendar schedule: … on 2026-06-05 | Client: … | Product: … | Engineer(s): …`.
+- `activity_log_to_dict` ([app.py:32801](app.py:32801)) returns `id`, `user`, `action`, `display_action`, `type`, `action_type`, `severity`, `branch`, `date` (Today / Yesterday / "Oct 4, 2026") and `time`; there is no full timestamp.
+- Access: `/activity_page`, `/get_activity_logs` and `/get_activity_filter_options` require `is_admin_authorized()` ([app.py:11603](app.py:11603)). `activity_scope_query` ([app.py:32841](app.py:32841)) limits the regional admin to Cebu/Davao/own entries; the new route must apply it both to the opened entry and to the related list.
+- `activity_routine_expression()` marks legacy reimbursement autosaves and theme changes as routine.
+- `templates/activity.html`: `renderRow(log)` builds the rows; the Who and What chips are `<button>`s that call `filterBy(...)`, so a row click must ignore clicks on buttons. Rows are rebuilt from `data.logs` on every `loadLogs`.
+- Bootstrap 5.3.0 bundle is loaded in `layout.html` (offcanvas available); no template uses offcanvas yet.
+- Service worker `CACHE_VERSION` is in `app.py` (~line 27196), currently `v274-shell-phone-menu`. The previous Activity Log release (`2026-10-03-activity-log-simple`) used category "Activity Log", audience `admins`.
+
+## Execution steps
+
+1. **Full timestamp in the row data** (`app.py` `activity_log_to_dict`): add `'timestamp': stamp.strftime('%Y-%m-%d %H:%M:%S')`. Done: existing keys unchanged; `/get_activity_logs` rows carry it.
+2. **Reference finder** (`app.py`, beside `clean_activity_display_action`): new `extract_activity_references(action)` returning a de-duplicated list in order of appearance of date-coded codes (`\b[A-Z]{2,4}-\d{8}-\d+\b`) and "word #N" references for the words schedule, reimbursement, submission, route, visit (normalized to lower-case word, e.g. `schedule #876`). Done: returns `['TR-20260609-11']` for "Marked Travel Request ready for liquidation: TR-20260609-11", `['CAL-20261004-3', 'CA-20260616-1']` for the CAL draft entry, `[]` for "Added equipment: ZEN-119003-10824".
+3. **Related route** (`app.py`, after `get_activity_logs`): `GET /get_activity_log_related/<int:log_id>`, `@login_required`, `denied()` unless `is_admin_authorized()`. Load the entry through `activity_scope_query(ActivityLog.query)`; 404 JSON if missing or out of scope. If it has references: entries whose `action` `ilike`s any reference (scoped, excluding itself), then post-filtered in Python with a word-boundary regex so `schedule #87` does not match `#876`; newest first, at most 20. Otherwise: same `user`, `timestamp` within ±30 minutes, not routine, excluding itself, newest first, at most 20. Response: `{'log': dict, 'references': [...], 'related_by': 'reference' | 'nearby', 'related': [dicts]}`. Done: route returns 200 for an admin, 403 for an engineer, 404 for an out-of-scope id as the regional admin.
+4. **Panel markup** (`templates/activity.html`): an `offcanvas offcanvas-end activity-detail-panel` (`id="activity-detail"`, `data-bs-backdrop="false"`, `data-bs-scroll="true"`, `aria-labelledby="activity-detail-title"`) with header (title, close button) and body sections: headline + category chip, a `<dl>` of fields, the original text (only when different), and "Same record" / "Same person, around this time" with a list `#activity-detail-related`. Done: hidden on load; nothing else on the page moves.
+5. **Panel script** (`templates/activity.html`): keep `activityLogsById` (filled in `loadLogs`); new `parseActivityFields(text)` (split on " | ", "Label: value" → field rows, the rest → headline); new `openActivityDetail(id)` renders the row data at once, marks the row `.is-selected`, then fetches the related route (spinner while loading, message plus Retry on error; a later click aborts the earlier fetch like `loadLogs` does); related items show time, user and display text, and clicking one opens it in the panel. `renderRow` gets `data-log-id`, and the Details text becomes a `<button type="button" class="activity-detail-link">` for keyboard users; a delegated click on `#activity-table-body` opens the row unless the click was on another button (the chips keep filtering). Escape and the close button close it; focus returns to the row's Details button. All text through `escapeHtml`. Done: `loadLogs`, `filterBy`, `exportLogs`, `resetFilters`, `changePage` and the chips work as before.
+6. **Styles** (`templates/activity.html` `<style>`): panel width 420px; selected row highlight; at ≤900px the panel becomes a bottom sheet (full width, max-height 85vh, rounded top, slides up) with 44px tap targets. Done: no horizontal scroll at 375px.
+7. **Release**: bump `CACHE_VERSION` in `app.py` (old value kept as a history comment, following the existing pattern); `static/changelog/releases.json` entry "Activity Log Details" (category "Activity Log", audience `admins`): click an entry to see it in full and the other entries about the same record.
+
+## Deliberately excluded
+
+- **Open buttons and live record status (part 2):** needs a per-type mapping from codes to pages and records; a later plan.
+- **Before/after values:** not stored; would mean changing every logging call.
+- **Schema change or storing record ids on new entries:** not needed for parts 1 and 3.
+- **Matching by client or product name:** names are free text and repeat across unrelated work, so results would be noisy.
+- **Changes to CSV export or filters:** not asked for.
+
+## Verification
+
+- New `tests/test_activity_log_details.py`:
+  - `extract_activity_references` on the examples in step 2, plus `reimbursement #45`, and no match for an equipment serial.
+  - Route with an in-memory/test database: a TR entry returns its sibling TR entries and not an entry for a different TR; `schedule #87` does not pull `schedule #876`; an entry with no code returns the same user's entries within 30 minutes and not routine ones or other users'; engineer gets 403; regional admin gets 404 for a Manila-only entry by another user; missing id 404.
+  - Template: `activity-detail` panel, `openActivityDetail`, `/get_activity_log_related/` and `data-log-id` present; the existing functions (`loadLogs`, `filterBy`, `exportLogs`, `resetFilters`, `changePage`, `renderRow`) still defined.
+  - Release entry exists and the cache marker is bumped.
+  - Positive control: run the new module on the current code first; every test must fail.
+- Focused existing module: `tests/test_activity_log_hardening.py` (update its release/cache test only if it pins the old marker).
+- Browser (copy of `scheduler.db`, temporary admin, both removed afterwards): 1366x768 click a TR entry → fields and the same-record history; click a schedule entry → Client/Product/Engineer rows; click an entry with no code → "Same person, around this time"; click another row with the panel open → it updates; click a related item → it opens; chips still filter; Escape closes and focus returns; Export CSV still downloads. 375x812: bottom sheet, no horizontal scroll, 44px targets. No console errors.
+- Full suite once, before publishing: `venv/Scripts/python.exe scripts/run_suite.py`.
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined and Refresh, Export CSV, filters, paging and chips work.
+2. Update `changes.md`, and this plan's Status (amend here if the outcome differed).
+3. Wait for "commit and push"; stage only the intended files (`app.py`, `templates/activity.html`, `static/changelog/releases.json`, the new test, `plans.md`, `changes.md`; never `scheduler.db`, handoffs, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`); verify `git ls-remote origin refs/heads/main` and Railway's deployment status.
+
+## Risks
+
+- **Text-based matching:** a code typed into another entry's free text links them; acceptable, since it is still about that record.
+- **Query cost:** `ilike '%…%'` scans `activity_log` (≈2,200 rows now); fine at this size, capped at 20 results.
+- **Scope leak:** the regional admin must not see out-of-scope entries through the related list; covered by applying `activity_scope_query` to both queries and by a test.
+- **Blast radius:** the Activity Log page and one new read-only route; no schema change, no logging change.
+
 # Add a Vieworks Item from the Product Form
 
 **Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(products): add a Vieworks item from the Product form"). Owner said "go" on 2026-10-08. Full suite before publishing: 1,631 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.

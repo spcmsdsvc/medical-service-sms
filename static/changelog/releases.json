@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-activity-details",
+      "release_date": "2026-10-08",
+      "title": "Activity Log Details",
+      "summary": "Click an Activity Log entry to see it in full, the record it is about, and the other entries about the same record.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-activity-details-panel",
+          "category": "Activity Log",
+          "description": "Clicking an entry opens a details panel beside the list (a sheet from the bottom on phones): the full entry with Client, Product and Engineer shown as separate lines, the exact date and time, a summary of the record as it is now (for a Travel Request: requester, route, visits, travel dates, amounts and status; also Cash Advances, liquidations, schedules and reimbursements), and the other entries that mention the same record, such as a Travel Request or Cash Advance number. Entries without a record number show the same person's activity within 30 minutes instead.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-easier-menu",
       "release_date": "2026-10-08",
       "title": "A Tidier, Easier Menu",
