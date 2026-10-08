@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-sidebar-groups",
+      "release_date": "2026-10-08",
+      "title": "A Menu Grouped by Task",
+      "summary": "The menu is grouped into Main, Work and Manage, Inventory has its own group, and the slim menu is easier to read.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-sidebar-groups-groups",
+          "category": "System",
+          "description": "Menu items are now grouped by what you do: Main (Dashboard, Approvals, My Requests, Calendar, Create TSR), Work (New Request, Clients, Inventory) and Manage (Reports, Office, Admin). Create TSR has its own item.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-sidebar-groups-inventory",
+          "category": "System",
+          "description": "Inventory is its own menu group: Product Inventory, Genoray, Vieworks, their PM pages and Stock Inventory, each with its own icon. Medical Centers is now called Clients.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-08-sidebar-groups-counts",
+          "category": "System",
+          "description": "The number of approvals waiting for you now shows on the Approvals icon in the slim menu, and the count badge no longer stretches across the row.",
+          "audiences": [
+            "approvers"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-08-sidebar-groups-phone",
+          "category": "System",
+          "description": "On phones, Log out is a labelled row at the bottom of the menu, away from the Close button.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-activity-chip-open",
       "release_date": "2026-10-08",
       "title": "Open Records from the Category Label",

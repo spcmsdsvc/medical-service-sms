@@ -37,6 +37,15 @@
     --sidebar-subnav-bg: rgba(15, 23, 42, 0.28);
     --sidebar-active-bg: rgba(var(--app-primary-rgb), 0.16);
     --shell-focus-ring: #e2e8f0;
+    /* Shell type scale (DESIGN.md Navigation): one size per role. */
+    --shell-text-row: 0.9rem;
+    --shell-text-subrow: 0.84rem;
+    --shell-text-micro: 0.72rem;
+    /* Rail icon captions only: 72px wide, so one step below micro. */
+    --shell-text-caption: 0.66rem;
+    /* Current-page marker: the user's accent lifted toward white so it keeps
+       at least 3:1 on the dark sidebar (plain #0d6efd on #2c3e50 was ~2.4:1). */
+    --sidebar-active-marker: color-mix(in srgb, var(--app-primary) 55%, #ffffff);
     /* Edge of the rail and its flyouts: a hairline in light, where the slate
        already contrasts with the page, and a visible light edge in dark. */
     --sidebar-edge: var(--sidebar-divider);
@@ -96,7 +105,7 @@ body.sidebar-resizing .main-content {
     border-radius: 0 0 8px 8px;
     background: var(--app-primary);
     color: #ffffff;
-    font-size: 0.86rem;
+    font-size: var(--shell-text-subrow);
     font-weight: 700;
     text-decoration: none;
     transition: top 0.15s ease;
@@ -186,7 +195,7 @@ body.sidebar-resizing .main-content {
 }
 
 .mobile-nav .shell-brand-name {
-    font-size: 0.9rem;
+    font-size: var(--shell-text-row);
 }
 
 /* The pinned header holds only the brand and the pin control, so the name fits
@@ -258,9 +267,9 @@ body.sidebar-resizing .main-content {
 
 .sidebar-group-label {
     padding: 12px 20px 5px;
-    font-size: 0.64rem;
-    font-weight: 700;
-    letter-spacing: 0.11em;
+    font-size: var(--shell-text-micro);
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--sidebar-text-dim);
     user-select: none;
@@ -273,8 +282,7 @@ body.sidebar-resizing .main-content {
 /* --- Rows ----------------------------------------------------------------- */
 
 .sidebar a,
-.sidebar-section-toggle,
-.sidebar-calendar-main {
+.sidebar-section-toggle {
     box-sizing: border-box;
     /* min-height, not a fixed height: long labels must be able to breathe. */
     min-height: var(--sidebar-row-height);
@@ -282,11 +290,13 @@ body.sidebar-resizing .main-content {
     padding: 0 20px;
     display: flex;
     align-items: center;
-    gap: 13px;
+    /* 10px, not 13px: at the default 240px the longest group name ("Clients &
+       Equipment") must fit beside its arrow and the nav's thin scrollbar. */
+    gap: 10px;
     color: var(--sidebar-text);
     background: transparent;
     border: 0;
-    font-size: 0.9rem;
+    font-size: var(--shell-text-row);
     font-weight: 600;
     line-height: 1.2;
     letter-spacing: 0.01em;
@@ -297,8 +307,7 @@ body.sidebar-resizing .main-content {
 }
 
 .sidebar a i,
-.sidebar-section-toggle i:first-child,
-.sidebar-calendar-main i {
+.sidebar-section-toggle i:first-child {
     width: 22px;
     min-width: 22px;
     height: 22px;
@@ -311,8 +320,7 @@ body.sidebar-resizing .main-content {
 }
 
 .sidebar a span,
-.sidebar-section-toggle span,
-.sidebar-calendar-main span {
+.sidebar-section-toggle span {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -322,9 +330,7 @@ body.sidebar-resizing .main-content {
 .sidebar a:hover,
 .sidebar a:focus-visible,
 .sidebar-section-toggle:hover,
-.sidebar-section-toggle:focus-visible,
-.sidebar-calendar-arrow:hover,
-.sidebar-calendar-arrow:focus-visible {
+.sidebar-section-toggle:focus-visible {
     background: var(--sidebar-hover);
     color: var(--sidebar-text-strong);
     outline: none;
@@ -350,38 +356,18 @@ body.sidebar-resizing .main-content {
     color: var(--sidebar-text-strong);
 }
 
-.sidebar a.active,
-.sidebar-calendar-main.active {
+.sidebar a.active {
     color: var(--sidebar-text-strong);
     background: var(--sidebar-active-bg);
-    border-left: 3px solid var(--app-primary);
+    border-left: 3px solid var(--sidebar-active-marker);
     padding-left: 17px;
 }
 
-/* --- Calendar row with its collapse arrow --------------------------------- */
-
-.sidebar-calendar-row {
-    display: grid;
-    grid-template-columns: 1fr 46px;
-    min-height: var(--sidebar-row-height);
-    align-items: stretch;
-    border-bottom: 0;
+.sidebar-section-toggle {
+    padding-right: 12px;
 }
 
-.sidebar-calendar-arrow {
-    width: 46px;
-    min-height: var(--sidebar-row-height);
-    border: 0;
-    background: transparent;
-    color: var(--sidebar-text);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.16s ease, color 0.16s ease;
-}
-
-.sidebar-section-toggle .sidebar-section-arrow,
-.sidebar-calendar-arrow .sidebar-section-arrow {
+.sidebar-section-toggle .sidebar-section-arrow {
     margin-left: auto;
     width: 18px;
     min-width: 18px;
@@ -394,12 +380,7 @@ body.sidebar-resizing .main-content {
     transition: transform 0.2s ease;
 }
 
-.sidebar-calendar-arrow .sidebar-section-arrow {
-    margin-left: 0;
-}
-
-.sidebar-section-toggle[aria-expanded="true"] .sidebar-section-arrow,
-.sidebar-calendar-arrow[aria-expanded="true"] .sidebar-section-arrow {
+.sidebar-section-toggle[aria-expanded="true"] .sidebar-section-arrow {
     transform: rotate(90deg);
 }
 
@@ -412,7 +393,7 @@ body.sidebar-resizing .main-content {
 .sidebar-subnav a {
     min-height: var(--sidebar-subrow-height);
     padding: 0 20px 0 48px;
-    font-size: 0.84rem;
+    font-size: var(--shell-text-subrow);
     font-weight: 500;
     border-bottom: 0;
     color: var(--sidebar-text);
@@ -436,7 +417,7 @@ body.sidebar-resizing .main-content {
     border-radius: 999px;
     background: var(--app-primary);
     color: #ffffff;
-    font-size: 0.66rem;
+    font-size: var(--shell-text-micro);
     font-weight: 600;
     line-height: 1;
     align-items: center;
@@ -446,6 +427,25 @@ body.sidebar-resizing .main-content {
 
 .sidebar-count-badge.show {
     display: inline-flex;
+}
+
+/* `.sidebar a span` (flex: 1; min-width: 0) outranks the badge's own rule and
+   stretched "2" into an 80-125px pill. */
+.sidebar a .sidebar-count-badge {
+    flex: 0 0 auto;
+    min-width: 20px;
+}
+
+/* Thin rule between a group's kinds of link (Inventory: equipment, PM, stock). */
+.sidebar-subnav-divider {
+    height: 1px;
+    margin: 4px 16px;
+    background: var(--sidebar-divider);
+}
+
+/* Phone drawer only (see the 992px block); outranks `.sidebar a`. */
+.sidebar .sidebar-logout-row {
+    display: none;
 }
 
 /* --- User footer ---------------------------------------------------------- */
@@ -470,7 +470,7 @@ body.sidebar-resizing .main-content {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.74rem;
+    font-size: var(--shell-text-micro);
     font-weight: 600;
     flex: 0 0 auto;
 }
@@ -484,7 +484,7 @@ body.sidebar-resizing .main-content {
 }
 
 .sidebar-user-name {
-    font-size: 0.8rem;
+    font-size: var(--shell-text-subrow);
     font-weight: 700;
     color: var(--sidebar-text-strong);
     overflow: hidden;
@@ -493,8 +493,11 @@ body.sidebar-resizing .main-content {
 }
 
 .sidebar-user-role {
-    font-size: 0.66rem;
+    font-size: var(--shell-text-micro);
     color: var(--sidebar-text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* `.sidebar .sidebar-logout` outranks the generic `.sidebar a` row rule, which
@@ -507,7 +510,7 @@ body.sidebar-resizing .main-content {
     height: 34px;
     padding: 0;
     border-bottom: 0;
-    border-radius: 8px;
+    border-radius: 6px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -546,7 +549,8 @@ body.sidebar-resizing .main-content {
    on mobile). */
 
 :root {
-    --sidebar-rail-width: 64px;
+    /* 72px: "Dashboard" and "Inventory" get side room instead of touching the edges. */
+    --sidebar-rail-width: 72px;
     --shell-offset: var(--sidebar-width);
 }
 
@@ -585,7 +589,6 @@ body.sidebar-resizing .main-content {
     body.sidebar-collapsed .sidebar .sidebar-header .shell-brand-name,
     body.sidebar-collapsed .sidebar .sidebar-resize-handle,
     body.sidebar-collapsed .sidebar .sidebar-section-arrow,
-    body.sidebar-collapsed .sidebar .sidebar-calendar-arrow,
     body.sidebar-collapsed .sidebar .sidebar-subnav,
     body.sidebar-collapsed .sidebar .sidebar-user-meta,
     body.sidebar-collapsed .sidebar .sidebar-logout {
@@ -605,8 +608,7 @@ body.sidebar-resizing .main-content {
     }
 
     body.sidebar-collapsed .sidebar a,
-    body.sidebar-collapsed .sidebar .sidebar-section-toggle,
-    body.sidebar-collapsed .sidebar .sidebar-calendar-main {
+    body.sidebar-collapsed .sidebar .sidebar-section-toggle {
         position: relative;
         justify-content: center;
         padding: 0;
@@ -615,8 +617,7 @@ body.sidebar-resizing .main-content {
     /* Visually hidden, not display:none: the label stays the control's
        accessible name for screen readers while only the icon shows. */
     body.sidebar-collapsed .sidebar a > span,
-    body.sidebar-collapsed .sidebar .sidebar-section-toggle > span,
-    body.sidebar-collapsed .sidebar .sidebar-calendar-main > span {
+    body.sidebar-collapsed .sidebar .sidebar-section-toggle > span {
         position: absolute;
         width: 1px;
         height: 1px;
@@ -625,33 +626,79 @@ body.sidebar-resizing .main-content {
         white-space: nowrap;
     }
 
-    body.sidebar-collapsed .sidebar .sidebar-section-toggle.active {
-        background: var(--sidebar-active-bg);
-        border-left: 3px solid var(--app-primary);
+    /* Rail captions: a short name under each top-level icon, so the rail reads
+       without hovering. The full name stays the accessible name (the span). */
+    body.sidebar-collapsed .sidebar .sidebar-nav > a[data-rail-caption],
+    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption] {
+        /* 52px rows still fit all eleven admin icons on a 768px-tall screen,
+           paid for by thinner dividers and no divider above the first group. */
+        flex-direction: column;
+        gap: 3px;
+        min-height: 52px;
+        padding: 4px 2px;
     }
 
-    body.sidebar-collapsed .sidebar .sidebar-calendar-row {
-        grid-template-columns: 1fr;
+    body.sidebar-collapsed .sidebar .sidebar-nav > a[data-rail-caption]::after,
+    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption]::after {
+        content: attr(data-rail-caption);
+        max-width: 60px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: var(--shell-text-caption);
+        font-weight: 600;
+        line-height: 1.1;
+        letter-spacing: 0;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-section-toggle.active {
+        background: var(--sidebar-active-bg);
+        border-left: 3px solid var(--sidebar-active-marker);
+    }
+
+    /* A short screen still scrolls the rail, without a scrollbar eating its width. */
+    body.sidebar-collapsed .sidebar .sidebar-nav {
+        padding-top: 4px;
+        padding-bottom: 4px;
+        scrollbar-width: none;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-group-label:first-child {
+        display: none;
     }
 
     body.sidebar-collapsed .sidebar .sidebar-group-label {
         height: 1px;
-        margin: 10px 16px;
+        margin: 6px 16px;
         padding: 0;
         overflow: hidden;
         font-size: 0;
         background: var(--sidebar-rail-divider);
     }
 
+    /* The count stays readable in the rail: one digit (9+), from data-rail-count. */
     body.sidebar-collapsed .sidebar .sidebar-count-badge.show {
         position: absolute;
-        top: 10px;
-        left: calc(50% + 6px);
-        width: 8px;
-        min-width: 8px;
-        height: 8px;
-        padding: 0;
+        top: 3px;
+        left: calc(50% + 3px);
+        width: auto;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
         font-size: 0;
+        /* The rail's label-hiding rule clips every link span, the badge too. */
+        clip: auto;
+        overflow: visible;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-count-badge.show::after {
+        content: attr(data-rail-count);
+        font-size: var(--shell-text-micro);
+        font-variant-numeric: tabular-nums;
     }
 
     body.sidebar-collapsed .sidebar .sidebar-user {
@@ -682,7 +729,7 @@ body.sidebar-resizing .main-content {
     body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-title {
         display: block !important;
         padding: 8px 16px 6px;
-        font-size: 0.72rem;
+        font-size: var(--shell-text-micro);
         font-weight: 600;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -690,22 +737,8 @@ body.sidebar-resizing .main-content {
         user-select: none;
     }
 
-    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-subnav-nested .sidebar-flyout-title {
-        margin-top: 4px;
-    }
-
     body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-only {
         display: flex !important;
-    }
-
-    /* Records: Inventory reads as a subheading, not a second flyout. */
-    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-subnav-toggle {
-        display: none !important;
-    }
-
-    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-subnav-nested {
-        display: block !important;
-        background: transparent;
     }
 
     body.sidebar-collapsed .sidebar .is-flyout-open a,
@@ -753,7 +786,7 @@ body.sidebar-resizing .main-content {
         border-radius: 0;
         outline-offset: -2px;
         color: var(--sidebar-text);
-        font-size: 0.9rem;
+        font-size: var(--shell-text-row);
         font-weight: 600;
     }
 
@@ -807,7 +840,7 @@ body.sidebar-resizing .main-content {
         border-radius: 6px;
         background: var(--app-sidebar-deep, #1a252f);
         color: var(--sidebar-text-strong);
-        font-size: 0.8rem;
+        font-size: var(--shell-text-subrow);
         font-weight: 600;
         white-space: nowrap;
         box-shadow: 4px 6px 18px rgba(15, 23, 42, 0.28);
@@ -854,7 +887,7 @@ body.sidebar-resizing .main-content {
         min-height: 34px;
         padding: 0;
         border: 0;
-        border-radius: 8px;
+        border-radius: 6px;
         background: transparent;
         color: var(--sidebar-text);
         outline-offset: -2px;
@@ -875,11 +908,14 @@ body.sidebar-resizing .main-content {
 
     body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool i {
         margin: 0;
-        font-size: 0.9rem;
+        font-size: var(--shell-text-row);
     }
 
+    /* 10px sides leave the role room for "Superadmin" at 240px. */
     body:not(.sidebar-collapsed) .sidebar .sidebar-user {
         gap: 4px;
+        padding-left: 10px;
+        padding-right: 10px;
     }
 
     body:not(.sidebar-collapsed) .sidebar .sidebar-user-meta {
@@ -992,7 +1028,7 @@ body.sidebar-resizing .main-content {
         right: -100%;
         transition: right 0.3s ease;
         top: var(--mobile-nav-height, 64px);
-        width: min(82vw, 240px);
+        width: min(86vw, 320px);
         height: calc(100vh - var(--mobile-nav-height, 64px));
         height: calc(100dvh - var(--mobile-nav-height, 64px));
         box-shadow: 0 0 0 rgba(0, 0, 0, 0);
@@ -1000,6 +1036,17 @@ body.sidebar-resizing .main-content {
 
     .sidebar-header {
         display: none;
+    }
+
+    /* Account (name, role, Log out) on top of the drawer: the drawer opens from
+       the right, so its bottom-right corner is the thumb's easiest reach, and a
+       one-tap Log out there was the likeliest mis-tap. Menu links take that
+       zone instead. */
+    .sidebar .sidebar-user {
+        order: -1;
+        border-top: 0;
+        border-bottom: 1px solid var(--sidebar-edge);
+        padding: 11px 14px;
     }
 
     /* Thumb-sized drawer (DESIGN.md: 44px touch targets on phones): sub-rows and
@@ -1011,27 +1058,45 @@ body.sidebar-resizing .main-content {
     }
 
     .sidebar .sidebar-nav a,
-    .sidebar .sidebar-nav .sidebar-section-toggle,
-    .sidebar .sidebar-nav .sidebar-calendar-main {
+    .sidebar .sidebar-nav .sidebar-section-toggle {
         padding-top: 6px;
         padding-bottom: 6px;
         white-space: normal;
     }
 
     .sidebar .sidebar-nav a span,
-    .sidebar .sidebar-nav .sidebar-section-toggle span,
-    .sidebar .sidebar-nav .sidebar-calendar-main span {
+    .sidebar .sidebar-nav .sidebar-section-toggle span {
         overflow: visible;
         text-overflow: clip;
         line-height: 1.25;
         overflow-wrap: anywhere;
     }
 
-    .sidebar .sidebar-logout {
-        width: 44px;
-        min-width: 44px;
-        height: 44px;
-        min-height: 44px;
+    /* Log out leaves the account row (right under Close) for a labelled row at
+       the drawer's foot. */
+    .sidebar .sidebar-user .sidebar-logout {
+        display: none;
+    }
+
+    .sidebar .sidebar-logout-row {
+        order: 1;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 48px;
+        padding: 0 20px var(--mobile-safe-bottom);
+        border-top: 1px solid var(--sidebar-edge);
+        color: var(--sidebar-text);
+        font-size: var(--shell-text-row);
+        font-weight: 600;
+        text-decoration: none;
+    }
+
+    .sidebar .sidebar-logout-row:hover,
+    .sidebar .sidebar-logout-row:focus-visible {
+        background: rgba(255, 255, 255, 0.08);
+        color: #ffffff;
     }
 
     /* Open: above fixed page docks (Reimbursement's is 1200) and a tap-to-close
@@ -1164,19 +1229,43 @@ body.sidebar-resizing .main-content {
     left: 50%;
     bottom: -8px;
     transform: translateX(-50%);
-    height: 16px;
-    padding: 0 7px;
+    height: 20px;
+    padding: 0 8px;
     border: 1px solid rgba(250, 204, 21, .55);
     border-radius: 999px;
     background: #3a3410;
     color: #facc15;
     display: inline-flex;
     align-items: center;
-    font-size: .6rem;
+    font-size: var(--shell-text-micro);
     font-weight: 600;
     line-height: 1;
     letter-spacing: .08em;
     white-space: nowrap;
+}
+
+.offline-mode .sidebar-header::after {
+    bottom: -10px;
+}
+
+/* Phone: a full-width strip inside the bottom of the top bar, readable at arm's
+   length outdoors, saying what still works. The bar grows to make room, and the
+   drawer, which measures the bar when it opens, starts below it. */
+.offline-mode .mobile-nav {
+    padding-bottom: 34px;
+}
+
+.offline-mode .mobile-nav::after {
+    content: 'Offline · Create TSR still works';
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    height: 24px;
+    justify-content: center;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    letter-spacing: .02em;
 }
 
 @media (max-width: 768px) {
@@ -1237,7 +1326,7 @@ body.sidebar-resizing .main-content {
        rule previously inflated them unevenly. They get their touch sizing from
        the dedicated block below instead, which sets a minimum without imposing
        this rule's border-radius and font-size on an icon button. */
-    button:not(.toggle-btn):not(.sidebar-section-toggle):not(.sidebar-calendar-arrow):not(.sidebar-user-avatar),
+    button:not(.toggle-btn):not(.sidebar-section-toggle):not(.sidebar-user-avatar),
     .btn:not(.toggle-btn),
     input[type="submit"],
     input[type="button"] {

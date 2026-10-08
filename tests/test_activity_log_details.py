@@ -308,7 +308,7 @@ class ActivityDetailsPageTests(unittest.TestCase):
         self.assertIn('v276-activity-open-record.', APP_SOURCE)
         chip = next(r for r in RELEASES['releases'] if r['release_key'] == '2026-10-08-activity-chip-open')
         self.assertEqual(chip['items'][0]['audiences'], ['admins'])
-        self.assertIn("v277-activity-chip-open';", APP_SOURCE)
+        self.assertIn('v277-activity-chip-open.', APP_SOURCE)
 
 
 if __name__ == '__main__':
