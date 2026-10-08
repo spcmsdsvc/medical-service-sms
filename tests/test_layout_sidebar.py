@@ -108,7 +108,8 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('text-overflow: ellipsis;', label)
         self.assertIn("'Reimburse / Liquidation'", self.layout)
         self.assertIn("'Service Documents'", self.layout)
-        self.assertIn('font-size: 0.84rem;', subnav)
+        self.assertIn('font-size: var(--shell-text-subrow);', subnav)
+        self.assertIn('--shell-text-subrow: 0.84rem;', self.shell_css)
 
     def test_sidebar_resize_handle_has_accessible_separator_contract(self):
         self.assertIn('id="sidebar-resize-handle"', self.layout)
@@ -178,7 +179,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=26", self.layout)
+        self.assertIn("app-shell.css') }}?v=27", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -514,6 +515,16 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('.sidebar.active {\n        right: 0;', phone)
         self.assertIn("label.closest('.sidebar-subnav[aria-label]')", self.layout)
         self.assertIn("phoneTitle.textContent = section ? section.getAttribute('aria-label') : name;", self.layout)
+
+    def test_shell_text_uses_one_three_step_scale(self):
+        import re
+        for token in ('--shell-text-row: 0.9rem;', '--shell-text-subrow: 0.84rem;', '--shell-text-micro: 0.72rem;'):
+            self.assertIn(token, self.shell_css)
+        label = self.shell_css.split('\n.sidebar-group-label {', 1)[1].split('}', 1)[0]
+        self.assertIn('font-size: var(--shell-text-micro);', label)
+        sidebar_part = self.shell_css.split('/* --- Touch device polish', 1)[0]
+        stray = set(re.findall(r'font-size: (0\.(?:64|66|74|8|86)rem)', sidebar_part))
+        self.assertEqual(stray, set())
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]

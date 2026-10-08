@@ -137,6 +137,8 @@ A cool, low-chroma neutral system with one user-selectable accent; colour signal
 **App Font:** Fira Sans, self-hosted (400/500/600, with Segoe UI, system-ui), one family for the whole app including sign-in, via `--app-font` in `app-themes.css` (also Bootstrap's `--bs-body-font-family`). Weights above 600 render as 600. Tables use tabular figures.
 **Document Font:** Cambria (with Times New Roman) for calibration reports and certificates
 
+**Shell scale:** the sidebar, flyouts and phone bar use three steps from `app-shell.css`: `--shell-text-row` 0.9rem (rows, flyout rows, phone bar title), `--shell-text-subrow` 0.84rem (sub-rows, account name, hover name label), `--shell-text-micro` 0.72rem (group labels, flyout titles, role, count badges, initials); the pinned brand name is 1rem.
+
 **Character:** One humanist sans, close to the logo's subline, across app and sign-in; a serif only where it mirrors the official printed form.
 
 ### Hierarchy
