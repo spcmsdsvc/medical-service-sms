@@ -768,10 +768,13 @@ body.sidebar-resizing .main-content {
         color: var(--sidebar-text);
     }
 
+    /* The flyout's "a > span" rule sets width and height to auto, which would
+       collapse the empty dot. */
     body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-badge {
         position: static;
-        flex: 0 0 auto;
-        border-color: var(--app-sidebar);
+        flex: 0 0 8px;
+        width: 8px;
+        height: 8px;
     }
 
     body.sidebar-collapsed .sidebar .sidebar-user-avatar:not(:disabled) {
@@ -1025,11 +1028,10 @@ body.sidebar-resizing .main-content {
     color: var(--sidebar-text);
 }
 
-.mobile-nav .mobile-nav-actions a.changelog-header-button.has-unread,
 .mobile-nav .mobile-nav-actions a.changelog-header-button.active,
 .mobile-nav .mobile-nav-actions a.changelog-header-button:hover,
 .mobile-nav .mobile-nav-actions a.changelog-header-button:focus-visible {
-    color: #ffd45f;
+    color: #ffffff;
 }
 
 .sidebar-header .changelog-header-button i,
@@ -1062,50 +1064,28 @@ body.sidebar-resizing .main-content {
 .mobile-nav .changelog-header-button:hover,
 .mobile-nav .changelog-header-button:focus-visible,
 .changelog-header-button.active {
-    background: rgba(240, 180, 41, 0.16);
-    border-color: #f0b429;
-    color: #ffd45f;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(203, 213, 225, 0.6);
+    color: #ffffff;
     outline: none;
 }
 
-.changelog-header-button.has-unread {
-    background: rgba(240, 180, 41, 0.12);
-    border-color: rgba(240, 180, 41, 0.72);
-    color: #ffd45f;
-}
-
+/* Unread updates are news, not a warning: the button stays neutral and an 8px
+   amber dot sits on its corner, like the rail's count dots. The number is in
+   the button's aria-label and title (refreshGlobalChangelogBadge); the badge
+   keeps it as hidden text. Amber was the whole button plus a heavy "67" pill. */
 .changelog-header-badge {
     position: absolute;
-    top: -7px;
-    right: -7px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 5px;
-    border: 2px solid #1a252f;
-    border-radius: 999px;
+    top: 5px;
+    right: 5px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
     background: #f0b429;
-    color: #3d2b00;
     display: none;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.66rem;
-    font-weight: 950;
-    line-height: 1;
-    box-sizing: border-box;
-}
-
-.sidebar-header .changelog-header-badge {
-    top: -5px;
-    right: -5px;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 3px;
-    border-width: 1px;
-    font-size: 0.56rem;
-}
-
-.mobile-nav .changelog-header-badge {
-    border-color: #2c3e50;
+    overflow: hidden;
+    font-size: 0;
+    color: transparent;
 }
 
 .changelog-header-badge.show {

@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=19", self.layout)
+        self.assertIn("app-shell.css') }}?v=21", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -458,6 +458,15 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('--login-rule: var(--brand-rule);', auth)
         self.assertEqual(self.shell_css.count('box-shadow: inset 0 -2px 0 var(--brand-rule);'), 2)
         self.assertNotIn('border-bottom: 1px solid rgba(255, 255, 255, 0.08);', self.shell_css)
+
+    def test_whats_new_unread_is_a_quiet_dot_not_an_amber_button(self):
+        self.assertNotIn('.changelog-header-button.has-unread {', self.shell_css)
+        self.assertNotIn('font-weight: 950;', self.shell_css)
+        badge = self.shell_css.split('\n.changelog-header-badge {', 1)[1].split('}', 1)[0]
+        self.assertIn('width: 8px;', badge)
+        self.assertIn('font-size: 0;', badge)
+        # The count still reaches screen readers and the tooltip.
+        self.assertIn("button.setAttribute('aria-label', accessibleLabel);", self.layout)
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
