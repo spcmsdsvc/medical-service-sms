@@ -3,39 +3,13 @@
    Depends on the variables defined in app-themes.css. Brand markup (top bar, logo
    panel) comes from templates/_auth_brand.html. */
 
-/* Fira Sans, self-hosted so the sign-in page keeps its type offline (SIL OFL,
-   static/fonts/fira-sans/OFL.txt). Closest free match to the logo's subline. */
-@font-face {
-    font-family: 'Fira Sans';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('../fonts/fira-sans/fira-sans-400.woff2') format('woff2');
-}
-
-@font-face {
-    font-family: 'Fira Sans';
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url('../fonts/fira-sans/fira-sans-500.woff2') format('woff2');
-}
-
-@font-face {
-    font-family: 'Fira Sans';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('../fonts/fira-sans/fira-sans-600.woff2') format('woff2');
-}
-
 /* Charcoal page with the white Shimadzu logo. Brand red comes from the supplied
    logo (#ee3239) and is used for the rule; the button uses a deeper #d9262e so white
    text passes AA (4.9:1). A chosen accent theme recolours the button and rule only. */
 :root {
     --login-accent: #d9262e;
     --login-accent-rgb: 217, 38, 46;
-    --login-rule: #ee3239;
+    --login-rule: var(--brand-rule);
     --login-button: var(--login-accent);
     --login-ground: #14181f;
     --login-on-ground: #ffffff;
@@ -51,7 +25,6 @@
 :root[data-accent-theme="teal"] {
     --login-accent: var(--app-primary);
     --login-accent-rgb: var(--app-primary-rgb);
-    --login-rule: var(--app-primary);
 }
 
 /* Lighter accents are darkened slightly on the button so white text stays readable. */
@@ -96,7 +69,7 @@ body.auth-page {
     color: var(--login-on-ground);
     min-height: 100vh;
     margin: 0;
-    font-family: 'Fira Sans', 'Segoe UI', system-ui, sans-serif;
+    font-family: var(--app-font);
     display: grid;
     grid-template-columns: 1fr minmax(0, 420px);
     grid-template-rows: auto 1fr;

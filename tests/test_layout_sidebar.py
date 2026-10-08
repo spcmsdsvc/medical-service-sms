@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=15", self.layout)
+        self.assertIn("app-shell.css') }}?v=22", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -433,6 +433,51 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('--sidebar-edge: rgba(255, 255, 255, 0.14);', self.shell_css)
         self.assertIn(':root[data-app-theme="dark"] .sidebar {\n        box-shadow: inset -1px 0 0 var(--sidebar-edge);', self.shell_css)
         self.assertIn('border: 1px solid var(--sidebar-edge);', self.shell_css)
+
+    def test_shell_brand_mark_page_name_and_app_font(self):
+        themes = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        self.assertIn("--app-font: 'Fira Sans', 'Segoe UI', system-ui, sans-serif;", themes)
+        self.assertIn("url('../fonts/fira-sans/fira-sans-600.woff2')", themes)
+        self.assertIn('font-family: var(--app-font);', self.shell_css)
+        self.assertNotIn('font-family: sans-serif;', self.shell_css)
+        # The mark is cropped from the logo image, never redrawn, in both headers.
+        self.assertEqual(self.layout.count('<span class="shell-brand-mark" role="img" aria-label="Shimadzu"></span>'), 2)
+        self.assertIn("shimadzu-philippines-logo-white.webp') no-repeat;", self.shell_css)
+        self.assertIn('body.sidebar-collapsed .sidebar .sidebar-header .shell-brand-name,', self.shell_css)
+        self.assertNotIn('MEDICAL SERVICE</h', self.layout)
+        # The page name comes from the active sidebar link.
+        self.assertIn('<title>Medical Service</title>', self.layout)
+        self.assertIn('id="mobile-page-title"', self.layout)
+        self.assertIn("document.title = name + ' · Medical Service';", self.layout)
+
+    def test_sign_in_brand_rule_seals_the_shell_headers(self):
+        themes = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        auth = (ROOT / 'static' / 'css' / 'app-auth.css').read_text(encoding='utf-8')
+        self.assertIn('--brand-rule: #ee3239;', themes)
+        self.assertIn('--brand-rule: var(--app-primary);', themes)
+        self.assertIn('--login-rule: var(--brand-rule);', auth)
+        self.assertEqual(self.shell_css.count('box-shadow: inset 0 -2px 0 var(--brand-rule);'), 2)
+        self.assertNotIn('border-bottom: 1px solid rgba(255, 255, 255, 0.08);', self.shell_css)
+
+    def test_whats_new_unread_is_a_quiet_dot_not_an_amber_button(self):
+        self.assertNotIn('.changelog-header-button.has-unread {', self.shell_css)
+        self.assertNotIn('font-weight: 950;', self.shell_css)
+        badge = self.shell_css.split('\n.changelog-header-badge {', 1)[1].split('}', 1)[0]
+        self.assertIn('width: 8px;', badge)
+        self.assertIn('font-size: 0;', badge)
+        # The count still reaches screen readers and the tooltip.
+        self.assertIn("button.setAttribute('aria-label', accessibleLabel);", self.layout)
+
+    def test_shell_polish_offline_tag_flyout_groups_logout_and_close_button(self):
+        offline = self.shell_css.split(".offline-mode .sidebar-header::after,", 1)[1].split('}', 1)[0]
+        self.assertIn('position: absolute;', offline)
+        self.assertIn('bottom: -8px;', offline)
+        self.assertEqual(self.layout.count('role="group" aria-label="'), 6)
+        self.assertIn('role="group" aria-label="Field Operations"', self.layout)
+        self.assertNotIn('#e8a33d', self.shell_css)
+        self.assertIn('--bs-btn-hover-bg: rgba(255, 255, 255, 0.1);', self.shell_css)
+        self.assertNotIn('font-weight: 800;', self.shell_css)
+        self.assertNotIn('font-weight: 900;', self.shell_css)
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]

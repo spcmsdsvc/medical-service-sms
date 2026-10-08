@@ -107,7 +107,7 @@ class LoginSourceTests(unittest.TestCase):
             self.assertIn('class="login-card"', source)
             self.assertIn('<meta name="theme-color" content="#14181f">', source)
         self.assertIn('--login-ground: #14181f;', self.auth_css)
-        self.assertIn("font-family: 'Fira Sans'", self.auth_css)
+        self.assertIn('font-family: var(--app-font);', self.auth_css)
         self.assertNotIn('auth-wordmark', self.auth_css)
         self.assertIn('--login-page-bg: #000000;', self.auth_css)
         self.assertIn('--login-page-bg: #202124;', self.auth_css)

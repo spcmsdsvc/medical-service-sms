@@ -43,7 +43,9 @@
         document.documentElement.dataset.sidebarCollapsed = stored === 'expanded' ? 'false' : 'true';
     })();
     </script>
-    <title>MEDICAL SERVICE - Management System</title>
+    {#- The current page's name is added in front by the script after the sidebar. -#}
+    <title>Medical Service</title>
+    <link rel="preload" href="{{ url_for('static', filename='fonts/fira-sans/fira-sans-400.woff2') }}" as="font" type="font/woff2" crossorigin>
     <!-- Performance: warm CDN connections before Bootstrap/FontAwesome load. -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
@@ -51,8 +53,8 @@
     <link rel="dns-prefetch" href="//cdnjs.cloudflare.com">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=23">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=15">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=25">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=22">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -70,7 +72,10 @@
     <a href="#main-content" class="skip-to-content">Skip to main content</a>
 
     <div class="mobile-nav no-print">
-        <h4 class="m-0">MEDICAL SERVICE</h4>
+        <div class="shell-brand">
+            <span class="shell-brand-mark" role="img" aria-label="Shimadzu"></span>
+            <h4 class="shell-brand-name m-0" id="mobile-page-title">Medical Service</h4>
+        </div>
         <div class="mobile-nav-actions">
             {% if current_user.is_authenticated %}
             <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
@@ -96,7 +101,10 @@
 
     <div class="sidebar no-print" id="sidebar">
         <div class="sidebar-header">
-            <h5 class="m-0 text-white fw-bold">MEDICAL SERVICE</h5>
+            <div class="shell-brand">
+                <span class="shell-brand-mark" role="img" aria-label="Shimadzu"></span>
+                <h5 class="shell-brand-name m-0">Medical Service</h5>
+            </div>
             <div class="sidebar-header-actions">
                 {% if current_user.is_authenticated %}
                 <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
@@ -211,7 +219,7 @@
                         <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                     </button>
                 </div>
-                <div id="calendar-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path == '/offline-tsr' }}">
+                <div id="calendar-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path == '/offline-tsr' }}" role="group" aria-label="Calendar">
                     <div class="sidebar-flyout-title" aria-hidden="true">Calendar</div>
                     {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar', extra_class='sidebar-flyout-only') }}
                     {{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}
@@ -235,7 +243,7 @@
                     <span>Field Operations</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="field-operations-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in field_ops_paths }}">
+                <div id="field-operations-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in field_ops_paths }}" role="group" aria-label="Field Operations">
                     <div class="sidebar-flyout-title" aria-hidden="true">Field Operations</div>
                     {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
                     {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
@@ -276,7 +284,7 @@
                     <span>Reports &amp; Insights</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}">
+                <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}" role="group" aria-label="Reports &amp; Insights">
                     <div class="sidebar-flyout-title" aria-hidden="true">Reports &amp; Insights</div>
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
                     {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
@@ -300,7 +308,7 @@
                     <span>{{ 'Records' if is_inventory_management_user else 'Resources' }}</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}">
+                <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}" role="group" aria-label="{{ 'Records' if is_inventory_management_user else 'Resources' }}">
                     <div class="sidebar-flyout-title" aria-hidden="true">{{ 'Records' if is_inventory_management_user else 'Resources' }}</div>
                     {% if can_access_calibration_center %}
                         {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
@@ -322,7 +330,7 @@
                             <span>Inventory</span>
                             <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                         </button>
-                        <div id="inventory-sidebar-section" class="collapse sidebar-subnav sidebar-subnav-nested {{ 'show' if request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) }}">
+                        <div id="inventory-sidebar-section" class="collapse sidebar-subnav sidebar-subnav-nested {{ 'show' if request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) }}" role="group" aria-label="Inventory">
                             <div class="sidebar-flyout-title" aria-hidden="true">Inventory</div>
                             {% if can_access_genoray_inventory or can_access_vieworks_inventory %}
                                 {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
@@ -365,7 +373,7 @@
                     <span>Admin</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}">
+                <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}" role="group" aria-label="Admin">
                     <div class="sidebar-flyout-title" aria-hidden="true">Admin</div>
                     {{ nav_link('/activity_page', 'fa-clock-rotate-left', 'Activity Logs') }}
                     {{ nav_link('/settings', 'fa-gear', 'System Settings') }}
@@ -420,6 +428,18 @@
         </div>
         {% endif %}
     </div>
+    <script>
+    // Name the page after its active sidebar link, in the tab title and the phone
+    // top bar. Pages without a sidebar link keep "Medical Service".
+    (function () {
+        const label = document.querySelector('#sidebar a[aria-current="page"] > span');
+        const name = label && label.textContent.trim();
+        if (!name) return;
+        document.title = name + ' · Medical Service';
+        const phoneTitle = document.getElementById('mobile-page-title');
+        if (phoneTitle) phoneTitle.textContent = name;
+    })();
+    </script>
 
     <div class="main-content" id="main-content" tabindex="-1">
         <button type="button"

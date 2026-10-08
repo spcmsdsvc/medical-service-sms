@@ -60,12 +60,17 @@ html {
 body {
     background-color: #f4f7f6;
     overflow-x: hidden;
-    font-family: sans-serif;
+    font-family: var(--app-font);
     /* Was `transition: all 0.3s`, which animated every property and caused visible
        jank when switching theme. Only the theme-driven colors need to animate. */
     transition: background-color 0.3s ease, color 0.3s ease;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+}
+
+/* Fira Sans figures are proportional by default; columns of numbers should line up. */
+table {
+    font-variant-numeric: tabular-nums;
 }
 
 body.sidebar-resizing,
@@ -123,19 +128,77 @@ body.sidebar-resizing .main-content {
 
 .sidebar-header {
     min-height: 72px;
-    padding: 16px 18px;
+    padding: 16px 14px;
     background: #1a252f;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     flex: 0 0 auto;
+    /* The sign-in page's brand rule, carried into the app: it seals the brand
+       header off from the navigation. Inset, so the header keeps its height. */
+    box-shadow: inset 0 -2px 0 var(--brand-rule);
 }
 
-.sidebar-header h5 {
-    font-size: 1.05rem;
-    line-height: 1.15;
-    letter-spacing: 0.02em;
+/* Shimadzu mark plus the app name (sidebar) or the page name (phone top bar).
+   The mark is cropped from the white logo, never redrawn: the square spans
+   x/y 12-280 of the 2000px-wide image, so the background is scaled by
+   2000/268 and shifted by 12/268 of the mark size. */
+.shell-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.shell-brand-mark {
+    --brand-mark-size: 28px;
+    flex: 0 0 var(--brand-mark-size);
+    width: var(--brand-mark-size);
+    height: var(--brand-mark-size);
+    background: url('../images/brand/shimadzu-philippines-logo-white.webp') no-repeat;
+    background-size: calc(var(--brand-mark-size) * 2000 / 268) auto;
+    background-position: calc(var(--brand-mark-size) * -12 / 268) calc(var(--brand-mark-size) * -12 / 268);
+}
+
+.shell-brand-name {
+    min-width: 0;
+    color: #ffffff;
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mobile-nav .shell-brand-mark {
+    --brand-mark-size: 24px;
+}
+
+/* The pinned header shares 240px with three buttons, so the name stacks as
+   "Medical / Service" beside the mark. Resized below 240px (212px of header
+   content), only the mark remains. */
+.sidebar-header {
+    container-type: inline-size;
+}
+
+.sidebar-header .shell-brand {
+    gap: 8px;
+}
+
+.sidebar-header .shell-brand-name {
+    font-size: 0.95rem;
+    line-height: 1.1;
+    white-space: normal;
+}
+
+@container (max-width: 211px) {
+    .sidebar-header .shell-brand-name {
+        display: none;
+    }
 }
 
 .sidebar-resize-handle {
@@ -378,7 +441,7 @@ body.sidebar-resizing .main-content {
     background: var(--app-primary);
     color: #ffffff;
     font-size: 0.66rem;
-    font-weight: 800;
+    font-weight: 600;
     line-height: 1;
     align-items: center;
     justify-content: center;
@@ -412,7 +475,7 @@ body.sidebar-resizing .main-content {
     align-items: center;
     justify-content: center;
     font-size: 0.74rem;
-    font-weight: 800;
+    font-weight: 600;
     flex: 0 0 auto;
 }
 
@@ -452,16 +515,17 @@ body.sidebar-resizing .main-content {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: #e8a33d;
+    color: var(--sidebar-text);
     text-decoration: none;
     flex: 0 0 auto;
     transition: background-color 0.16s ease, color 0.16s ease;
 }
 
+/* Neutral like the other footer tools; amber now only means unread or offline. */
 .sidebar .sidebar-logout:hover,
 .sidebar .sidebar-logout:focus-visible {
-    background: rgba(232, 163, 61, 0.16);
-    color: #ffd45f;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
 }
 
 /* --- Collapse / main content --------------------------------------------- */
@@ -522,7 +586,7 @@ body.sidebar-resizing .main-content {
     }
 
     /* Rail: icons, separators, dots and initials. */
-    body.sidebar-collapsed .sidebar .sidebar-header h5,
+    body.sidebar-collapsed .sidebar .sidebar-header .shell-brand-name,
     body.sidebar-collapsed .sidebar .sidebar-header .appearance-header-button,
     body.sidebar-collapsed .sidebar .sidebar-header .changelog-header-button,
     body.sidebar-collapsed .sidebar .sidebar-resize-handle,
@@ -534,9 +598,16 @@ body.sidebar-resizing .main-content {
         display: none !important;
     }
 
+    /* Rail header: the Shimadzu mark above the pin button. */
     body.sidebar-collapsed .sidebar .sidebar-header {
+        flex-direction: column;
         justify-content: center;
-        padding: 16px 0;
+        gap: 8px;
+        padding: 14px 0 10px;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-header .shell-brand {
+        flex: 0 0 auto;
     }
 
     body.sidebar-collapsed .sidebar a,
@@ -617,9 +688,9 @@ body.sidebar-resizing .main-content {
     body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-title {
         display: block !important;
         padding: 8px 16px 6px;
-        font-size: 0.64rem;
-        font-weight: 700;
-        letter-spacing: 0.11em;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--sidebar-text-dim);
         user-select: none;
@@ -698,10 +769,13 @@ body.sidebar-resizing .main-content {
         color: var(--sidebar-text);
     }
 
+    /* The flyout's "a > span" rule sets width and height to auto, which would
+       collapse the empty dot. */
     body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-badge {
         position: static;
-        flex: 0 0 auto;
-        border-color: var(--app-sidebar);
+        flex: 0 0 8px;
+        width: 8px;
+        height: 8px;
     }
 
     body.sidebar-collapsed .sidebar .sidebar-user-avatar:not(:disabled) {
@@ -807,7 +881,7 @@ body.sidebar-resizing .main-content {
     position: sticky;
     top: 0;
     z-index: 1001;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 -2px 0 var(--brand-rule);
 }
 
 /* Dims the page behind the open phone drawer; a tap on it is an outside click,
@@ -834,6 +908,14 @@ body.sidebar-resizing .main-content {
 
 .mobile-nav-actions .mobile-menu-button {
     min-width: 72px;
+    /* Bootstrap's outline-light fills white on hover and press, which made
+       "Close" a white block while a finger rested on it. */
+    --bs-btn-hover-bg: rgba(255, 255, 255, 0.1);
+    --bs-btn-hover-color: #ffffff;
+    --bs-btn-hover-border-color: rgba(255, 255, 255, 0.7);
+    --bs-btn-active-bg: rgba(255, 255, 255, 0.16);
+    --bs-btn-active-color: #ffffff;
+    --bs-btn-active-border-color: #ffffff;
 }
 
 @media (max-width: 992px) {
@@ -955,11 +1037,10 @@ body.sidebar-resizing .main-content {
     color: var(--sidebar-text);
 }
 
-.mobile-nav .mobile-nav-actions a.changelog-header-button.has-unread,
 .mobile-nav .mobile-nav-actions a.changelog-header-button.active,
 .mobile-nav .mobile-nav-actions a.changelog-header-button:hover,
 .mobile-nav .mobile-nav-actions a.changelog-header-button:focus-visible {
-    color: #ffd45f;
+    color: #ffffff;
 }
 
 .sidebar-header .changelog-header-button i,
@@ -992,50 +1073,28 @@ body.sidebar-resizing .main-content {
 .mobile-nav .changelog-header-button:hover,
 .mobile-nav .changelog-header-button:focus-visible,
 .changelog-header-button.active {
-    background: rgba(240, 180, 41, 0.16);
-    border-color: #f0b429;
-    color: #ffd45f;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(203, 213, 225, 0.6);
+    color: #ffffff;
     outline: none;
 }
 
-.changelog-header-button.has-unread {
-    background: rgba(240, 180, 41, 0.12);
-    border-color: rgba(240, 180, 41, 0.72);
-    color: #ffd45f;
-}
-
+/* Unread updates are news, not a warning: the button stays neutral and an 8px
+   amber dot sits on its corner, like the rail's count dots. The number is in
+   the button's aria-label and title (refreshGlobalChangelogBadge); the badge
+   keeps it as hidden text. Amber was the whole button plus a heavy "67" pill. */
 .changelog-header-badge {
     position: absolute;
-    top: -7px;
-    right: -7px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 5px;
-    border: 2px solid #1a252f;
-    border-radius: 999px;
+    top: 5px;
+    right: 5px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
     background: #f0b429;
-    color: #3d2b00;
     display: none;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.66rem;
-    font-weight: 950;
-    line-height: 1;
-    box-sizing: border-box;
-}
-
-.sidebar-header .changelog-header-badge {
-    top: -5px;
-    right: -5px;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 3px;
-    border-width: 1px;
-    font-size: 0.56rem;
-}
-
-.mobile-nav .changelog-header-badge {
-    border-color: #2c3e50;
+    overflow: hidden;
+    font-size: 0;
+    color: transparent;
 }
 
 .changelog-header-badge.show {
@@ -1044,25 +1103,35 @@ body.sidebar-resizing .main-content {
 
 /* --- Offline status ------------------------------------------------------- */
 
-.offline-mode .mobile-nav::after {
-    content: 'OFFLINE';
-    margin-left: 10px;
-    font-size: .68rem;
-    font-weight: 900;
-    letter-spacing: .08em;
-    color: #facc15;
+/* The tag sits centred on the brand rule, so it never takes space from the
+   name, the page title or the header buttons (as a flex item it squeezed the
+   pinned name to 0px and was pushed off-screen on phones). Opaque, so it
+   reads over the rule and the content below. */
+.offline-mode .sidebar-header {
+    position: relative;
+    z-index: 2;
 }
 
-.offline-mode .sidebar-header::after {
+.offline-mode .sidebar-header::after,
+.offline-mode .mobile-nav::after {
     content: 'OFFLINE';
-    display: inline-block;
-    padding: 4px 8px;
+    position: absolute;
+    left: 50%;
+    bottom: -8px;
+    transform: translateX(-50%);
+    height: 16px;
+    padding: 0 7px;
+    border: 1px solid rgba(250, 204, 21, .55);
     border-radius: 999px;
-    background: rgba(250, 204, 21, .15);
+    background: #3a3410;
     color: #facc15;
+    display: inline-flex;
+    align-items: center;
     font-size: .6rem;
-    font-weight: 900;
+    font-weight: 600;
+    line-height: 1;
     letter-spacing: .08em;
+    white-space: nowrap;
 }
 
 @media (max-width: 768px) {
@@ -1275,11 +1344,6 @@ body.sidebar-resizing .main-content {
 .mobile-device select,
 .mobile-device textarea {
     touch-action: manipulation;
-}
-
-.mobile-device .mobile-nav h4 {
-    font-size: 1rem;
-    font-weight: 900;
 }
 
 .mobile-device .card {

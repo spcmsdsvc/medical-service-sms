@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-shimadzu-look",
+      "release_date": "2026-10-08",
+      "title": "A Clearer Shimadzu Look",
+      "summary": "The app now uses the Shimadzu font and mark, and shows which page you are on.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-shimadzu-look-brand",
+          "category": "System",
+          "description": "The app now uses the same font as the sign-in page, and the Shimadzu mark sits at the top of the menu with a thin Shimadzu-red line under it.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-shimadzu-look-page-name",
+          "category": "System",
+          "description": "The browser tab and the phone's top bar now show the name of the page you are on.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-08-shimadzu-look-quieter",
+          "category": "System",
+          "description": "New What's New updates show as a small dot instead of a large number, and the OFFLINE tag no longer covers the menu title.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-phone-menu-rows",
       "release_date": "2026-10-08",
       "title": "Easier Phone Menu",
