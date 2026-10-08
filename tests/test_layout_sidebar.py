@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=10", self.layout)
+        self.assertIn("app-shell.css') }}?v=11", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -396,6 +396,18 @@ class SidebarSourceTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def test_phone_drawer_opens_below_the_top_bar_above_docks_with_a_backdrop(self):
+        phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
+        self.assertIn('top: var(--mobile-nav-height, 64px);', phone)
+        self.assertIn('.sidebar-header {\n        display: none;', phone)
+        self.assertIn('body.mobile-sidebar-open .sidebar {\n        z-index: 1210;', phone)
+        self.assertIn('body.mobile-sidebar-open .mobile-nav {\n        z-index: 1220;', phone)
+        self.assertIn('body.mobile-sidebar-open .mobile-nav-backdrop {\n        display: block;', phone)
+        self.assertIn('<div class="mobile-nav-backdrop no-print" aria-hidden="true"></div>', self.layout)
+        drawer = self.layout.split('function setMobileSidebar(open) {', 1)[1].split('function toggleSidebarMobile()', 1)[0]
+        self.assertIn("setProperty('--mobile-nav-height'", drawer)
+        self.assertIn("menuButton.textContent = open ? 'Close' : 'Menu';", drawer)
 
     def test_mobile_drawer_uses_the_shared_navigation_boundary_for_all_close_paths(self):
         self.assertIn('function isMobileNavigationViewport()', self.layout)

@@ -795,6 +795,16 @@ body.sidebar-resizing .main-content {
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Dims the page behind the open phone drawer; a tap on it is an outside click,
+   which already closes the drawer. Shown only by the phone media query. */
+.mobile-nav-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1205;
+    background: rgba(15, 23, 42, 0.45);
+}
+
 .sidebar-header-actions,
 .mobile-nav-actions {
     display: flex;
@@ -812,10 +822,35 @@ body.sidebar-resizing .main-content {
 }
 
 @media (max-width: 992px) {
+    /* The drawer opens under the top bar (whose Menu button becomes Close), so it
+       needs no header of its own: the top bar already has the title, Appearance
+       and What's New, and the desktop pin button has no job here.
+       --mobile-nav-height is measured by setMobileSidebar(). */
     .sidebar {
         left: -100%;
+        top: var(--mobile-nav-height, 64px);
         width: min(82vw, 240px);
+        height: calc(100vh - var(--mobile-nav-height, 64px));
+        height: calc(100dvh - var(--mobile-nav-height, 64px));
         box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+
+    .sidebar-header {
+        display: none;
+    }
+
+    /* Open: above fixed page docks (Reimbursement's is 1200) and a tap-to-close
+       backdrop, with the top bar above both so Close stays reachable. */
+    body.mobile-sidebar-open .sidebar {
+        z-index: 1210;
+    }
+
+    body.mobile-sidebar-open .mobile-nav {
+        z-index: 1220;
+    }
+
+    body.mobile-sidebar-open .mobile-nav-backdrop {
+        display: block;
     }
 
     .sidebar-resize-handle {

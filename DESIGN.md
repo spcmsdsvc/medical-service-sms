@@ -204,7 +204,7 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 - **Hover:** faint white wash (7%), text turns white.
 - **Active:** white text, 16% accent wash, 3px accent left rail on the current page only; its open parent group just brightens. In the rail, the parent group icon carries the rail when its child page is active.
 - **Focus-visible:** 2px accent outline inset.
-- **Mobile:** sidebar becomes an off-canvas drawer; bottom-safe mobile nav.
+- **Mobile:** sidebar becomes an off-canvas drawer that opens below the top bar (whose Menu button reads Close while open), above fixed page docks, over a dimmed tap-to-close backdrop; the drawer has no header of its own (the top bar carries the title, Appearance and What's New); bottom-safe mobile nav.
 
 ### Appearance Picker (signature)
 A grid of mode tiles (4 across, 2 on phones) and accent tiles with a 26px circular swatch; the selected tile gets an inset 2px accent ring.
