@@ -52,7 +52,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=22">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=9">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=10">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -478,7 +478,7 @@
         // A closed mobile drawer must not keep its links in the Tab order; inert
         // removes them from focus and from screen readers until it opens. On
         // desktop the sidebar is never hidden: collapsed is the icon rail, whose
-        // icons stay reachable (focusing a group icon opens its flyout).
+        // icons stay reachable (Enter, Space or ArrowRight opens a group's flyout).
         function syncSidebarInert() {
             const sidebar = document.getElementById('sidebar');
             if (!sidebar) return;
@@ -565,9 +565,11 @@
         // the live body/control state as soon as the shell exists.
         syncSidebarVisibilityForViewport();
 
-        // Icon rail flyouts: hovering, focusing or tapping a group icon (or Calendar,
-        // or the avatar) opens that group's own subnav beside the rail; single links
-        // show their name in a label. Leaving, Escape or a tap outside closes it.
+        // Icon rail flyouts: hovering or tapping a group icon (or Calendar, or the
+        // avatar) opens that group's own subnav beside the rail. On the keyboard, Tab
+        // only shows the icon's name; Enter, Space or ArrowRight opens the flyout,
+        // arrows move inside it, ArrowLeft or Escape returns to the icon. Single
+        // links show their name in a label. Leaving or a tap outside closes it.
         (function initSidebarFlyouts() {
             const sidebar = document.getElementById('sidebar');
             if (!sidebar) return;
@@ -579,7 +581,6 @@
             let closeTimer = null;
             let lastPointerType = 'mouse';
             let openAtPointerDown = false;
-            let suppressFocusOpen = false;
 
             const isRail = () => !isMobileNavigationViewport()
                 && document.body.classList.contains('sidebar-collapsed');
@@ -645,6 +646,21 @@
 
             const flyoutFor = node => flyouts.find(f => f.trigger.contains(node) || f.panel.contains(node));
 
+            // Keyboard: the visible links and buttons of a flyout, in order.
+            const itemsOf = flyout => Array.from(flyout.panel.querySelectorAll('a, button'))
+                .filter(item => !item.disabled && item.getClientRects().length);
+
+            function focusItem(flyout, index) {
+                const items = itemsOf(flyout);
+                if (items.length) items[(index + items.length) % items.length].focus();
+            }
+
+            function closeToTrigger() {
+                const target = current && current.focusEl;
+                close();
+                if (target) target.focus();
+            }
+
             flyouts.forEach(flyout => {
                 [flyout.trigger, flyout.panel].forEach(part => {
                     part.addEventListener('pointerenter', event => {
@@ -662,13 +678,6 @@
                 lastPointerType = event.pointerType || 'mouse';
                 const flyout = flyoutFor(event.target);
                 openAtPointerDown = !!flyout && current === flyout;
-            });
-
-            sidebar.addEventListener('focusin', event => {
-                if (suppressFocusOpen || !isRail()) return;
-                const flyout = flyoutFor(event.target);
-                if (flyout) open(flyout);
-                else close();
             });
 
             sidebar.addEventListener('focusout', event => {
@@ -690,40 +699,68 @@
                 event.preventDefault();
                 event.stopPropagation();
                 const wasOpen = event.detail === 0 ? current === flyout : openAtPointerDown;
-                if (wasOpen && !isMouseClick) close();
-                else open(flyout);
+                if (wasOpen && !isMouseClick) {
+                    close();
+                } else {
+                    open(flyout);
+                    if (event.detail === 0) focusItem(flyout, 0);
+                }
             }, true);
 
             document.addEventListener('pointerdown', event => {
                 if (current && !current.trigger.contains(event.target) && !current.panel.contains(event.target)) close();
             });
+            sidebar.addEventListener('keydown', event => {
+                if (!isRail()) return;
+                const flyout = flyoutFor(event.target);
+                if (!flyout) return;
+                const inPanel = flyout.panel.contains(event.target);
+                if (event.key === 'ArrowRight' && !inPanel) {
+                    event.preventDefault();
+                    open(flyout);
+                    focusItem(flyout, 0);
+                } else if (inPanel && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                    event.preventDefault();
+                    const step = event.key === 'ArrowDown' ? 1 : -1;
+                    focusItem(flyout, itemsOf(flyout).indexOf(document.activeElement) + step);
+                } else if (inPanel && event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    closeToTrigger();
+                }
+            });
             document.addEventListener('keydown', event => {
-                if (event.key !== 'Escape' || !current) return;
-                const target = current.focusEl;
-                close();
-                suppressFocusOpen = true;
-                if (target) target.focus();
-                suppressFocusOpen = false;
+                if (event.key === 'Escape' && current) closeToTrigger();
             });
             if (nav) nav.addEventListener('scroll', () => { close(); hideTip(); }, { passive: true });
             window.addEventListener('resize', () => { close(); hideTip(); });
 
-            // Single links: their name in a label beside the icon.
-            if (nav && tip) {
-                const showTip = link => {
+            // Name label beside the icon: single links on hover or focus, and group
+            // icons when the keyboard lands on them (their flyout stays closed).
+            if (tip) {
+                const showTip = control => {
                     if (!isRail()) return;
                     close();
-                    const label = link.querySelector('span');
-                    const rect = link.getBoundingClientRect();
-                    tip.textContent = label ? label.textContent.trim() : '';
+                    const label = control.querySelector('span');
+                    const rect = control.getBoundingClientRect();
+                    tip.textContent = label ? label.textContent.trim() : (control.getAttribute('aria-label') || '');
                     tip.style.top = `${rect.top + rect.height / 2}px`;
                     tip.classList.add('is-visible');
                 };
-                nav.querySelectorAll(':scope > a').forEach(link => {
-                    link.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') showTip(link); });
-                    link.addEventListener('pointerleave', hideTip);
-                    link.addEventListener('focus', () => showTip(link));
-                    link.addEventListener('blur', hideTip);
+                if (nav) {
+                    nav.querySelectorAll(':scope > a').forEach(link => {
+                        link.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') showTip(link); });
+                        link.addEventListener('pointerleave', hideTip);
+                        link.addEventListener('focus', () => showTip(link));
+                        link.addEventListener('blur', hideTip);
+                    });
+                }
+                flyouts.forEach(flyout => {
+                    const control = flyout.focusEl;
+                    if (!control) return;
+                    control.addEventListener('focus', () => {
+                        if (current !== flyout && control.matches(':focus-visible')) showTip(control);
+                    });
+                    control.addEventListener('blur', hideTip);
                 });
             }
 

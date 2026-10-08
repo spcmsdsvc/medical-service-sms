@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=9", self.layout)
+        self.assertIn("app-shell.css') }}?v=10", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -221,6 +221,19 @@ class SidebarSourceTests(unittest.TestCase):
         for part in ('sidebar-user-meta', 'appearance-header-button', 'changelog-header-button', 'href="/logout"'):
             self.assertIn(part, account)
         self.assertIn('id="sidebar-rail-tip"', self.layout)
+
+    def test_rail_flyouts_open_from_keys_not_focus_and_rings_are_visible(self):
+        flyouts = self.layout.split('(function initSidebarFlyouts()', 1)[1].split('})();', 1)[0]
+        # Focus alone must not open a flyout, or Tab walks every link inside it.
+        self.assertNotIn("addEventListener('focusin'", flyouts)
+        for key in ("'ArrowRight'", "'ArrowDown'", "'ArrowUp'", "'ArrowLeft'", "'Escape'"):
+            self.assertIn(key, flyouts)
+        self.assertIn('if (event.detail === 0) focusItem(flyout, 0);', flyouts)
+        # One light focus ring for the shell (the primary blue was 2.44:1).
+        self.assertIn('--shell-focus-ring: #e2e8f0;', self.shell_css)
+        ring = self.shell_css.split('.mobile-nav button:focus-visible {', 1)[1].split('}', 1)[0]
+        self.assertIn('outline: 2px solid var(--shell-focus-ring) !important;', ring)
+        self.assertIn('.sidebar button:focus-visible,', self.shell_css)
 
     def test_footer_logout_stays_an_icon_beside_the_username(self):
         css = (ROOT / 'static' / 'css' / 'app-shell.css').read_text(encoding='utf-8')

@@ -33,6 +33,7 @@
     --sidebar-divider: rgba(148, 163, 184, 0.14);
     --sidebar-subnav-bg: rgba(15, 23, 42, 0.28);
     --sidebar-active-bg: rgba(var(--app-primary-rgb), 0.16);
+    --shell-focus-ring: #e2e8f0;
 }
 
 :root[data-app-theme="dark"] {
@@ -168,11 +169,6 @@ body.sidebar-resizing .main-content {
     background: var(--app-primary);
 }
 
-.sidebar-resize-handle:focus-visible {
-    outline: 2px solid var(--app-primary);
-    outline-offset: -2px;
-}
-
 .sidebar-nav {
     flex: 1 1 auto;
     min-height: 0;
@@ -268,11 +264,15 @@ body.sidebar-resizing .main-content {
     outline: none;
 }
 
+/* One focus ring for the whole shell. The primary blue measured 2.44:1 on the
+   dark sidebar, and the pin button and header tools had no ring at all; this
+   light ring is about 8.9:1, and !important wins over their outline: none. */
 .sidebar a:focus-visible,
-.sidebar-section-toggle:focus-visible,
-.sidebar-calendar-arrow:focus-visible,
-.sidebar-logout:focus-visible {
-    outline: 2px solid var(--app-primary);
+.sidebar button:focus-visible,
+.sidebar [tabindex]:focus-visible,
+.mobile-nav a:focus-visible,
+.mobile-nav button:focus-visible {
+    outline: 2px solid var(--shell-focus-ring) !important;
     outline-offset: -2px;
 }
 
@@ -694,7 +694,6 @@ body.sidebar-resizing .main-content {
     }
 
     body.sidebar-collapsed .sidebar .sidebar-user-avatar:focus-visible {
-        outline: 2px solid #ffffff;
         outline-offset: 2px;
     }
 
