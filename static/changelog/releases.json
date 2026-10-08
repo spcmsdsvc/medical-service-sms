@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-sidebar-role-and-icons",
+      "release_date": "2026-10-08",
+      "title": "Correct Role in the Sidebar",
+      "summary": "The sidebar now shows your real role, and its icons are easier to tell apart.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-sidebar-role-label",
+          "category": "System",
+          "description": "The role under your name in the sidebar now matches Settings. Managers no longer show as Staff, and schedulers show as Scheduler.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-sidebar-dividers-icon",
+          "category": "System",
+          "description": "In the thin desktop sidebar, the lines between groups of icons are easier to see, and My Requests now has an inbox icon so it no longer looks like Records.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-sidebar-menus-stay-open",
       "release_date": "2026-10-08",
       "title": "Sidebar Menus Stay Open",

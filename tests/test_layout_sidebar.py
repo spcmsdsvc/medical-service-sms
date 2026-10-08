@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=12", self.layout)
+        self.assertIn("app-shell.css') }}?v=13", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -411,6 +411,17 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn("avatar.toggleAttribute('aria-hidden', !isRail());", flyouts)
         self.assertIn('aria-label="Show Create TSR"', self.layout)
         self.assertIn('.mobile-nav .mobile-nav-actions a.changelog-header-button {\n    color: var(--sidebar-text);', self.shell_css)
+
+    def test_clarify_role_label_rail_dividers_and_my_requests_icon(self):
+        # The account role comes from get_display_role(), the label Settings shows.
+        self.assertIn("'nav_display_role': get_display_role(current_user) if authenticated else ''", self.app_source)
+        role = self.layout.split('<span class="sidebar-user-role">', 1)[1].split('</span>', 1)[0]
+        self.assertIn('{{ nav_display_role }}', role)
+        self.assertNotIn('Staff', role)
+        self.assertIn('--sidebar-rail-divider: rgba(203, 213, 225, 0.32);', self.shell_css)
+        self.assertIn('background: var(--sidebar-rail-divider);', self.shell_css)
+        self.assertIn("nav_link('/accounting_center', 'fa-inbox', 'My Requests'", self.layout)
+        self.assertNotIn('fa-folder-tree', self.layout)
 
     def test_phone_drawer_opens_below_the_top_bar_above_docks_with_a_backdrop(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
