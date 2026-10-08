@@ -27147,7 +27147,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v264-rail-flyouts-phone-drawer.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v265-account-flyout-hover.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v266-flyout-resize-fix.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v267-role-label-rail-dividers';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v267-role-label-rail-dividers.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v268-dark-rail-surface';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

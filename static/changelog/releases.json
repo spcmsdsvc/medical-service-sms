@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-dark-sidebar-surface",
+      "release_date": "2026-10-08",
+      "title": "Clearer Sidebar in Dark Mode",
+      "summary": "In the dark appearances the sidebar and its menus now stand apart from the page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-dark-sidebar-surface-edge",
+          "category": "System",
+          "description": "In the Graphite and Dark appearances, the sidebar was the same colour as the page behind it, so its menus blended into busy screens such as the Calendar. The sidebar and its menus are now a shade lighter with a faint edge. The Light appearance is unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-sidebar-role-and-icons",
       "release_date": "2026-10-08",
       "title": "Correct Role in the Sidebar",
