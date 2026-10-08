@@ -1474,6 +1474,9 @@ def inject_navigation_access():
         'nav_authenticated': authenticated,
         'nav_is_admin': is_admin_authorized(),
         'nav_is_superadmin': is_superadmin_user(),
+        # The same business-facing label Settings shows (Manager, Scheduler, ...);
+        # the sidebar's own role chain had no branch for managers or schedulers.
+        'nav_display_role': get_display_role(current_user) if authenticated else '',
         'nav_is_engineer': authenticated and role == 'engineer',
         'nav_is_approval_center_user': is_approval_center_user(),
         'nav_is_approver_only': is_approver_only_user(),
