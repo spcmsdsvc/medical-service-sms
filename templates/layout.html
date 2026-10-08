@@ -52,7 +52,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=22">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=11">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=12">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -205,6 +205,7 @@
                         data-bs-target="#calendar-sidebar-section"
                         aria-expanded="{{ 'true' if request.path == '/offline-tsr' else 'false' }}"
                         aria-controls="calendar-sidebar-section"
+                        aria-label="Show Create TSR"
                         title="Show Create TSR"
                     >
                         <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
@@ -585,9 +586,11 @@
             const nav = sidebar.querySelector('.sidebar-nav');
             const tip = document.getElementById('sidebar-rail-tip');
             const avatar = sidebar.querySelector('.sidebar-user-avatar');
+            const OPEN_DELAY = 120;
             const CLOSE_DELAY = 300;
             let current = null;
             let closeTimer = null;
+            let openTimer = null;
             let lastPointerType = 'mouse';
             let openAtPointerDown = false;
 
@@ -674,11 +677,15 @@
                 [flyout.trigger, flyout.panel].forEach(part => {
                     part.addEventListener('pointerenter', event => {
                         if (event.pointerType !== 'mouse') return;
+                        clearTimeout(openTimer);
                         if (current === flyout) clearTimeout(closeTimer);
-                        else if (part === flyout.trigger) open(flyout);
+                        else if (part === flyout.trigger && current) open(flyout);
+                        else if (part === flyout.trigger) openTimer = setTimeout(() => open(flyout), OPEN_DELAY);
                     });
                     part.addEventListener('pointerleave', event => {
-                        if (event.pointerType === 'mouse' && current === flyout) scheduleClose();
+                        if (event.pointerType !== 'mouse') return;
+                        clearTimeout(openTimer);
+                        if (current === flyout) scheduleClose();
                     });
                 });
             });
@@ -719,11 +726,25 @@
             document.addEventListener('pointerdown', event => {
                 if (current && !current.trigger.contains(event.target) && !current.panel.contains(event.target)) close();
             });
+            // The rail's own icons, in order, for ArrowUp/ArrowDown between them.
+            const railIcons = () => Array.from(sidebar.querySelectorAll(
+                '.sidebar-nav > a, .sidebar-nav > .sidebar-section-toggle, .sidebar-calendar-main, .sidebar-user-avatar'
+            )).filter(icon => !icon.disabled && icon.getClientRects().length);
+
             sidebar.addEventListener('keydown', event => {
                 if (!isRail()) return;
                 const flyout = flyoutFor(event.target);
+                const inPanel = !!flyout && flyout.panel.contains(event.target);
+                if (!inPanel && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                    const icons = railIcons();
+                    const index = icons.indexOf(event.target);
+                    if (index === -1) return;
+                    event.preventDefault();
+                    const step = event.key === 'ArrowDown' ? 1 : -1;
+                    icons[(index + step + icons.length) % icons.length].focus();
+                    return;
+                }
                 if (!flyout) return;
-                const inPanel = flyout.panel.contains(event.target);
                 if (event.key === 'ArrowRight' && !inPanel) {
                     event.preventDefault();
                     open(flyout);
@@ -776,7 +797,10 @@
             // The avatar only has a job in the rail. Pinning or crossing into the
             // mobile layout closes any flyout.
             function syncRailState() {
-                if (avatar) avatar.disabled = !isRail();
+                if (avatar) {
+                    avatar.disabled = !isRail();
+                    avatar.toggleAttribute('aria-hidden', !isRail());
+                }
                 if (!isRail()) { close(); hideTip(); }
             }
             syncRailState();

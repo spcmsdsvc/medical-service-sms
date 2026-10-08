@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=11", self.layout)
+        self.assertIn("app-shell.css') }}?v=12", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -229,6 +229,9 @@ class SidebarSourceTests(unittest.TestCase):
         for key in ("'ArrowRight'", "'ArrowDown'", "'ArrowUp'", "'ArrowLeft'", "'Escape'"):
             self.assertIn(key, flyouts)
         self.assertIn('if (event.detail === 0) focusItem(flyout, 0);', flyouts)
+        # ArrowUp/ArrowDown also move between the rail's own icons.
+        self.assertIn('const railIcons = () =>', flyouts)
+        self.assertIn('icons[(index + step + icons.length) % icons.length].focus();', flyouts)
         # One light focus ring for the shell (the primary blue was 2.44:1).
         self.assertIn('--shell-focus-ring: #e2e8f0;', self.shell_css)
         ring = self.shell_css.split('.mobile-nav button:focus-visible {', 1)[1].split('}', 1)[0]
@@ -396,6 +399,13 @@ class SidebarSourceTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def test_shell_polish_hover_intent_names_and_phone_bell_colour(self):
+        flyouts = self.layout.split('(function initSidebarFlyouts()', 1)[1].split('})();', 1)[0]
+        self.assertIn('const OPEN_DELAY = 120;', flyouts)
+        self.assertIn("avatar.toggleAttribute('aria-hidden', !isRail());", flyouts)
+        self.assertIn('aria-label="Show Create TSR"', self.layout)
+        self.assertIn('.mobile-nav .mobile-nav-actions a.changelog-header-button {\n    color: var(--sidebar-text);', self.shell_css)
 
     def test_phone_drawer_opens_below_the_top_bar_above_docks_with_a_backdrop(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
