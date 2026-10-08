@@ -9,6 +9,7 @@ from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 
+from tests.schema_flags import reset_schema_flags
 from tests.sw_cache_version import assert_cache_version_at_least
 
 
@@ -136,6 +137,7 @@ class ClientGroupRouteTests(unittest.TestCase):
                         extension._app_engines[app_module.app][None] = original_engine
                     app_module._client_group_column_ready = original_group_ready
                     app_module._contact_designation_column_ready = original_contact_ready
+                    reset_schema_flags(app_module)
                     if added_superadmin_username:
                         app_module.SUPERADMIN_USERNAMES.discard(added_superadmin_username)
                     if original_csrf is not None:

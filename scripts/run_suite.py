@@ -6,8 +6,8 @@ Usage (from the project root):
 
 Test modules are split across one process per CPU core. Each process imports `tests` on its
 own, so `tests/__init__.py` gives it its own fresh database. The file of every failing test
-is then rerun on its own; a test counts as failing only if it fails there too (some tests leak
-state, e.g. the shared login rate limit, and fail only next to certain other files). The
+not already on the known list is then rerun on its own; a test counts as failing only if it
+fails there too (a test that leaks state can break one that runs after it). The
 result is compared by test id with `tests/known_failures.txt`.
 Exit code 0 when there are no new failures.
 """
@@ -99,11 +99,15 @@ def main():
     totals = collect(jobs)
     grouped = set(totals['failed'])
 
-    # Rerun the file of every failure on its own; only a test that also fails alone counts.
-    retry = sorted({module_of(t) for t in grouped})
+    known = set() if args.update_known else {
+        line.strip() for line in KNOWN.read_text().splitlines() if line.strip() and not line.startswith('#')
+    }
+
+    # Rerun the file of every unexpected failure on its own; only a test that also fails alone counts.
+    retry = sorted({module_of(t) for t in grouped - known})
     alone = set(collect([start_worker([m], workdir, f'_alone{i}') for i, m in enumerate(retry)])['failed'])
-    failed = sorted(grouped & alone)
-    order_dependent = sorted(grouped - alone)
+    failed = sorted((grouped & known) | (grouped & alone))
+    order_dependent = sorted(grouped - known - alone)
 
     print(f"{totals['run']} tests, {totals['failures']} failures, {totals['errors']} errors, "
           f"{totals['skipped']} skips in {time.perf_counter() - started:.0f}s ({len(jobs)} processes)")
@@ -115,7 +119,6 @@ def main():
         print(f'Saved {len(failed)} known failures to {KNOWN.relative_to(ROOT)}')
         return 0
 
-    known = {line.strip() for line in KNOWN.read_text().splitlines() if line.strip() and not line.startswith('#')}
     new = [t for t in failed if t not in known]
     fixed = sorted(known - set(failed))
 

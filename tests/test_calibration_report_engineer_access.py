@@ -17,6 +17,7 @@ os.environ.setdefault("MEDICAL_SERVICE_TEST_DB", str(TEST_DB_PATH))
 os.environ.setdefault("SECRET_KEY", "calibration-report-access-tests")
 
 import app as app_module  # noqa: E402
+from tests.schema_flags import reset_schema_flags  # noqa: E402
 
 
 class CalibrationReportEngineerAccessTests(unittest.TestCase):
@@ -158,6 +159,7 @@ class CalibrationReportEngineerAccessTests(unittest.TestCase):
     def tearDown(self):
         app_module.db.session.remove()
         app_module.db.drop_all()
+        reset_schema_flags(app_module)
         self.context.pop()
         try:
             TEST_DB_PATH.unlink(missing_ok=True)

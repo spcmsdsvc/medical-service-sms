@@ -6,6 +6,8 @@ import unittest
 
 from sqlalchemy import create_engine
 
+from tests.schema_flags import reset_schema_flags
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -361,6 +363,7 @@ class LPRWorkflowTests(unittest.TestCase):
                     app_module.db.session.remove()
                     app_module._lpr_tables_ready = original_ready
                     engines[None] = original_engine
+                    reset_schema_flags(app_module)
                     test_engine.dispose()
         finally:
             if os.path.exists(database_path):

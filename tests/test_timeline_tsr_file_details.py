@@ -232,6 +232,10 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         with cls.app.app_context():
+            # SQLite reuses the submission id, so a leftover approval would collide with the next module's.
+            app_module.CalibrationCertificateApproval.query.filter_by(
+                online_tsr_submission_id=cls.submission_id,
+            ).delete(synchronize_session=False)
             shift = app_module.db.session.get(app_module.Shift, cls.shift_id)
             if shift:
                 app_module.ShiftEngineer.query.filter_by(shift_id=cls.shift_id).delete()

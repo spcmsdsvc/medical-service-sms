@@ -235,6 +235,10 @@ class CalibrationCertificateServerTests(unittest.TestCase):
                 self.assertIn('canonical payload checksum', result['message'])
                 self.assertIsNone(app_module.CalibrationCertificateApproval.query.filter_by(online_tsr_submission_id=submission.id).first())
                 self.assertFalse(list(pathlib.Path(storage_root).glob('*')))
+                # The suite shares one database; a leftover "CA" engineer blocks those initials elsewhere.
+                for row in (submission, shift, product, client, engineer, user):
+                    db.session.delete(row)
+                db.session.commit()
                 db.session.remove()
 
     def test_offline_tsr_renders_unavailable_catalog_state_instead_of_500(self):

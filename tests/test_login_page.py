@@ -365,6 +365,10 @@ class LoginNextRoundTripTests(unittest.TestCase):
         app_module.db.session.remove()
         cls.ctx.pop()
 
+    def setUp(self):
+        # The /login rate limit is per process; other modules' sign-ins must not use up this one's.
+        app_module.limiter.reset()
+
     def _sign_in(self, client, path='/login', **extra):
         data = {'username': 'login_next_probe', 'password': self.PASSWORD}
         data.update(extra)
