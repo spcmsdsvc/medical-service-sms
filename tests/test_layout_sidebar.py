@@ -79,7 +79,8 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertNotIn('<style>', self.layout)
         # Each of these was previously declared three times.
         self.assertEqual(self.shell_css.count('\n.sidebar-subnav {'), 1)
-        self.assertEqual(self.shell_css.count('\n.sidebar-calendar-row {'), 1)
+        # The Calendar split row was removed with the sidebar reorder.
+        self.assertNotIn('sidebar-calendar', self.shell_css)
         # Dead hardcoded pink, already overridden by app-themes.css.
         self.assertNotIn('#d63384', self.layout)
         self.assertNotIn('#d63384', self.shell_css)
@@ -179,7 +180,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=28", self.layout)
+        self.assertIn("app-shell.css') }}?v=31", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -191,7 +192,7 @@ class SidebarSourceTests(unittest.TestCase):
             self.assertNotIn('left: var(--sidebar-width, 240px)', page, name)
 
     def test_rail_labels_stay_named_and_flyouts_sit_above_sticky_headers(self):
-        rail_labels = self.shell_css.split('.sidebar .sidebar-calendar-main > span {', 1)[1].split('}', 1)[0]
+        rail_labels = self.shell_css.split('.sidebar .sidebar-section-toggle > span {', 1)[1].split('}', 1)[0]
         self.assertNotIn('display: none', rail_labels)
         self.assertIn('clip: rect(0 0 0 0);', rail_labels)
         desktop = self.shell_css.split('@media (min-width: 993px) {', 1)[1]
@@ -211,10 +212,10 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('(function initSidebarFlyouts()', self.layout)
         self.assertIn('.sidebar-subnav.is-flyout-open', self.shell_css)
         # Each group's own subnav is the flyout, titled; Inventory is a subheading.
-        for section in ('calendar', 'field-operations', 'reports-insights', 'records', 'inventory', 'admin'):
+        for section in ('new-request', 'clients', 'reports', 'office', 'inventory', 'admin'):
             opening = self.layout.split(f'<div id="{section}-sidebar-section"', 1)[1].split('\n', 2)[1]
             self.assertIn('class="sidebar-flyout-title"', opening, section)
-        self.assertIn("nav_link('/timeline', 'fa-calendar-days', 'Calendar', extra_class='sidebar-flyout-only')", self.layout)
+        self.assertNotIn('calendar-sidebar-section', self.layout)
         self.assertIn('.is-flyout-open .sidebar-subnav-nested {\n        display: block !important;', self.shell_css)
         # The avatar opens an account flyout holding the tools the rail hides.
         self.assertIn('class="sidebar-user-avatar"\n                    aria-label="Account"', self.layout)
@@ -410,7 +411,7 @@ class SidebarSourceTests(unittest.TestCase):
         # Synthetic resize events (Calendar fires them constantly) must not close a flyout.
         self.assertIn('if (viewport === lastViewport) return;', flyouts)
         self.assertIn("avatar.toggleAttribute('aria-hidden', !isRail());", flyouts)
-        self.assertIn('aria-label="Show Create TSR"', self.layout)
+        self.assertIn("{{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}", self.layout)
         self.assertIn('.mobile-nav .mobile-nav-actions a.changelog-header-button {\n    color: var(--sidebar-text);', self.shell_css)
 
     def test_clarify_role_label_rail_dividers_and_my_requests_icon(self):
@@ -474,7 +475,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('position: absolute;', offline)
         self.assertIn('bottom: -8px;', offline)
         self.assertEqual(self.layout.count('role="group" aria-label="'), 6)
-        self.assertIn('role="group" aria-label="Field Operations"', self.layout)
+        self.assertIn('role="group" aria-label="New Request"', self.layout)
         self.assertNotIn('#e8a33d', self.shell_css)
         self.assertIn('--bs-btn-hover-bg: rgba(255, 255, 255, 0.1);', self.shell_css)
         self.assertNotIn('font-weight: 800;', self.shell_css)
@@ -541,8 +542,40 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('width: min(86vw, 320px);', self.shell_css)
         self.assertIn('.sidebar .sidebar-user {\n        order: -1;', self.shell_css)
         # Rail captions.
-        self.assertIn('data-rail-caption="Field Ops"', self.layout)
+        self.assertIn('data-rail-caption="Forms"', self.layout)
         self.assertIn('content: attr(data-rail-caption);', self.shell_css)
+
+    def test_sidebar_order_puts_waiting_work_first_then_work_then_manage(self):
+        nav = self.layout.split('<nav class="sidebar-nav"', 1)[1].split('</nav>', 1)[0]
+        order = [
+            '>Main</div>',
+            "nav_link('/', 'fa-chart-line', 'Dashboard')",
+            "nav_link('/approvals'",
+            "nav_link('/accounting_center'",
+            "nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}\n                {{ nav_link('/offline-tsr'",
+            '>Work</div>',
+            'aria-label="New Request"',
+            'aria-label="Clients &amp; Equipment"',
+            "{% if stock_inventory_view %}\n                {{ nav_link('/stock_inventory'",
+            '>Manage</div>',
+            'aria-label="Reports"',
+            'aria-label="Office"',
+            'aria-label="Admin"',
+        ]
+        positions = [nav.index(marker) for marker in order]
+        self.assertEqual(positions, sorted(positions))
+        for old in ('Field Operations', 'Reports &amp; Insights', 'Resources', '>Operations<', '>Records<', 'sidebar-calendar'):
+            self.assertNotIn(old, nav)
+        # One-link groups render the link itself.
+        self.assertIn('{% if office_link_count > 1 %}', nav)
+        self.assertIn('data-rail-caption="Clients"', nav)
+        self.assertIn("'Create TSR': 'TSR'", self.layout)
+        # Stock Inventory sits in WORK, not MAIN; only stock-only accounts keep it on top,
+        # and the Stock page no longer lights up the Admin group.
+        self.assertIn('{% if stock_inventory_view and stock_inventory_only_user and not hr_schedule_only_user %}', nav)
+        self.assertIn("{% set admin_paths = ['/activity_page', '/settings'] %}", nav)
+        # A long section name falls back to its short caption in the phone bar.
+        self.assertIn('phoneTitle.textContent = toggle.dataset.railCaption;', self.layout)
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
@@ -650,6 +683,24 @@ class SidebarRenderTests(unittest.TestCase):
         self.assertIn('Dashboard', html)
         self.assertNotIn('/activity_page', html)
         self.assertNotIn('/analytics_page', html)
+
+    def test_office_group_shows_only_when_it_holds_more_than_one_link(self):
+        # An engineer's only office link is Personnel: shown directly, no group.
+        engineer = self._render_dashboard_as(self._make_user('layout_office_engineer', 'engineer'))
+        self.assertIn('href="/engineers_page"', engineer)
+        self.assertNotIn('aria-label="Office"', engineer)
+        self.assertIn('aria-label="Clients &amp; Equipment"', engineer)
+        self.assertIn('href="/offline-tsr"', engineer)
+        # Two office permissions: the Office group holds both links.
+        both = self._render_dashboard_as(self._make_user(
+            'layout_office_both', 'accounting', po_admin_access=True, reimbursement_tracker_access=True))
+        office = both.split('aria-label="Office"', 1)[1].split('</div>', 2)[1]
+        self.assertIn('href="/po_details"', office)
+        self.assertIn('href="/reimbursement_tracker"', office)
+        # One office permission: that link alone, no group.
+        one = self._render_dashboard_as(self._make_user('layout_office_one', 'accounting', po_admin_access=True))
+        self.assertIn('href="/po_details"', one)
+        self.assertNotIn('aria-label="Office"', one)
 
     def test_superadmin_role_without_username_allowlist_gets_no_admin_links(self):
         """The headline divergence this work fixes.

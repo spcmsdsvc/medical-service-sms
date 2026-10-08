@@ -53,8 +53,8 @@
     <link rel="dns-prefetch" href="//cdnjs.cloudflare.com">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=27">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=28">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=28">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=31">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -139,7 +139,7 @@
             64px rail; CSS shows it only there. -#}
         {% macro nav_link(href, icon, label, extra_class='', badge_id='') -%}
             {%- set is_active = (request.path == href) -%}
-            {%- set rail_caption = {'Stock Inventory': 'Stock', 'Password Settings': 'Password', 'My Requests': 'Requests', 'Service Documents': 'Documents', 'System Settings': 'Settings', 'Activity Logs': 'Activity', 'Medical Centers': 'Centers', 'Calibration Center': 'Calibration'}.get(label, label) -%}
+            {%- set rail_caption = {'Create TSR': 'TSR', 'Stock Inventory': 'Stock', 'Password Settings': 'Password', 'My Requests': 'Requests', 'Service Documents': 'Documents', 'System Settings': 'Settings', 'Activity Logs': 'Activity', 'Medical Centers': 'Centers', 'Calibration Center': 'Calibration'}.get(label, label) -%}
             <a href="{{ href }}"
                class="{{ extra_class }} {{ 'active' if is_active }}"
                data-rail-caption="{{ rail_caption }}"
@@ -170,23 +170,29 @@
             {% set can_manage_purchase_orders = nav_can_manage_purchase_orders %}
             {% set can_manage_reimbursement_tracker = nav_can_manage_reimbursement_tracker %}
             {% set is_reports_sidebar_user = is_reports_admin_user or is_engineer_only %}
-            {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
-            {% if lpr_enabled %}{% set field_ops_paths = field_ops_paths + ['/lpr'] %}{% endif %}
+            {% set new_request_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
+            {% if lpr_enabled %}{% set new_request_paths = new_request_paths + ['/lpr'] %}{% endif %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
-            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page', '/genoray', '/vieworks', '/genoray/pm', '/vieworks/pm', '/genoray_pm', '/vieworks_pm', '/po_details', '/reimbursement_tracker', '/admin/calibration-center'] %}
             {% set inventory_paths = ['/products_page', '/genoray', '/vieworks', '/genoray/pm', '/vieworks/pm', '/genoray_pm', '/vieworks_pm'] %}
-            {% set admin_paths = ['/activity_page', '/settings', '/stock_inventory'] %}
+            {% set clients_paths = ['/clients_page', '/admin/calibration-center'] + inventory_paths %}
+            {% set office_paths = ['/engineers_page', '/po_details', '/reimbursement_tracker'] %}
+            {% set admin_paths = ['/activity_page', '/settings'] %}
+            {% set show_personnel = nav_can_administer_personnel or is_engineer_only %}
+            {% set office_link_count = [show_personnel, can_manage_purchase_orders, can_manage_reimbursement_tracker]|select|list|length %}
 
+            {#- Order (plans.md "Sidebar Order and Groups"): what is waiting on you and
+                your daily work first (MAIN), then the forms and records you work with
+                (WORK), then reports and administration (MANAGE). A group that would hold
+                a single link for this user shows that link directly. -#}
             <div class="sidebar-group-label" aria-hidden="true">Main</div>
 
             {% if not hr_schedule_only_user %}
                 {{ nav_link('/', 'fa-chart-line', 'Dashboard') }}
             {% endif %}
 
-            {% if stock_inventory_view %}
-                {% if not hr_schedule_only_user %}
-                    {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
-                {% endif %}
+            {#- Stock-only accounts have no WORK section: Stock is their main page. -#}
+            {% if stock_inventory_view and stock_inventory_only_user and not hr_schedule_only_user %}
+                {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
             {% endif %}
 
             {% if hr_schedule_only_user %}
@@ -194,55 +200,38 @@
                 {{ nav_link('/settings', 'fa-key', 'Password Settings') }}
             {% elif not stock_inventory_only_user %}
 
+            {% if new_workflows_enabled and is_approver_user %}
+                {{ nav_link('/approvals', 'fa-clipboard-check', 'Approvals', badge_id='nav-badge-approvals') }}
+            {% endif %}
+
+            {% if new_workflows_enabled and is_accounting_center_user %}
+                {{ nav_link('/accounting_center', 'fa-inbox', 'My Requests', badge_id='nav-badge-my-requests') }}
+            {% endif %}
+
             {% if not is_approver_only_user %}
-                <div class="sidebar-calendar-row {{ 'active' if request.path in ['/timeline', '/offline-tsr'] }}">
-                    <a href="/timeline"
-                       class="sidebar-calendar-main {{ 'active' if request.path == '/timeline' }}"
-                       data-rail-caption="Calendar"
-                       {% if request.path == '/timeline' %}aria-current="page"{% endif %}>
-                        <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
-                        <span>Calendar</span>
-                    </a>
-                    <button
-                        type="button"
-                        class="sidebar-calendar-arrow"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#calendar-sidebar-section"
-                        aria-expanded="{{ 'true' if request.path == '/offline-tsr' else 'false' }}"
-                        aria-controls="calendar-sidebar-section"
-                        aria-label="Show Create TSR"
-                        title="Show Create TSR"
-                    >
-                        <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
-                    </button>
-                </div>
-                <div id="calendar-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path == '/offline-tsr' }}" role="group" aria-label="Calendar">
-                    <div class="sidebar-flyout-title" aria-hidden="true">Calendar</div>
-                    {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar', extra_class='sidebar-flyout-only') }}
-                    {{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}
-                </div>
+                {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}
+                {{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}
             {% endif %}
 
-            {% if new_workflows_enabled or is_accounting_center_user or is_approver_user %}
-            <div class="sidebar-group-label" aria-hidden="true">Operations</div>
-            {% endif %}
+            {% if current_user.is_authenticated and not is_approver_only_user %}
+            <div class="sidebar-group-label" aria-hidden="true">Work</div>
 
-            {% if new_workflows_enabled and current_user.is_authenticated and not is_approver_only_user %}
+            {% if new_workflows_enabled %}
                 <button
                     type="button"
-                    class="sidebar-section-toggle {{ 'active' if request.path in field_ops_paths }}"
-                    data-rail-caption="Field Ops"
+                    class="sidebar-section-toggle {{ 'active' if request.path in new_request_paths }}"
+                    data-rail-caption="Forms"
                     data-bs-toggle="collapse"
-                    data-bs-target="#field-operations-sidebar-section"
-                    aria-expanded="{{ 'true' if request.path in field_ops_paths else 'false' }}"
-                    aria-controls="field-operations-sidebar-section"
+                    data-bs-target="#new-request-sidebar-section"
+                    aria-expanded="{{ 'true' if request.path in new_request_paths else 'false' }}"
+                    aria-controls="new-request-sidebar-section"
                 >
                     <i class="fa-solid fa-briefcase-medical" aria-hidden="true"></i>
-                    <span>Field Operations</span>
+                    <span>New Request</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="field-operations-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in field_ops_paths }}" role="group" aria-label="Field Operations">
-                    <div class="sidebar-flyout-title" aria-hidden="true">Field Operations</div>
+                <div id="new-request-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in new_request_paths }}" role="group" aria-label="New Request">
+                    <div class="sidebar-flyout-title" aria-hidden="true">New Request</div>
                     {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
                     {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
                     {{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}
@@ -251,71 +240,21 @@
                 </div>
             {% endif %}
 
-            {% if new_workflows_enabled and is_accounting_center_user %}
-                {{ nav_link('/accounting_center', 'fa-inbox', 'My Requests', badge_id='nav-badge-my-requests') }}
-            {% endif %}
-
-            {% if new_workflows_enabled and is_approver_user %}
-                {{ nav_link('/approvals', 'fa-clipboard-check', 'Approvals', badge_id='nav-badge-approvals') }}
-            {% endif %}
-
-            {% if is_reports_sidebar_user or (current_user.is_authenticated and not is_approver_only_user) or is_management_user %}
-            <div class="sidebar-group-label" aria-hidden="true">Records</div>
-            {% endif %}
-
-            {# A collapsible group only earns its click when it holds more than one
-               destination. Management accounts get Analytics alongside Service Documents,
-               so the group stays. Everyone else has Service Documents and nothing else,
-               and wrapping one link in a collapsed group named after that same link meant
-               clicking "Service Documents" to reveal "Service Documents". They get the
-               link directly. #}
-            {% if is_reports_admin_user %}
                 <button
                     type="button"
-                    class="sidebar-section-toggle {{ 'active' if request.path in reports_paths }}"
-                    data-rail-caption="Reports"
+                    class="sidebar-section-toggle {{ 'active' if request.path in clients_paths }}"
+                    data-rail-caption="Clients"
                     data-bs-toggle="collapse"
-                    data-bs-target="#reports-insights-sidebar-section"
-                    aria-expanded="{{ 'true' if request.path in reports_paths else 'false' }}"
-                    aria-controls="reports-insights-sidebar-section"
+                    data-bs-target="#clients-sidebar-section"
+                    aria-expanded="{{ 'true' if request.path in clients_paths else 'false' }}"
+                    aria-controls="clients-sidebar-section"
                 >
-                    <i class="fa-solid fa-chart-pie" aria-hidden="true"></i>
-                    <span>Reports &amp; Insights</span>
+                    <i class="fa-solid fa-hospital-user" aria-hidden="true"></i>
+                    <span>Clients &amp; Equipment</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}" role="group" aria-label="Reports &amp; Insights">
-                    <div class="sidebar-flyout-title" aria-hidden="true">Reports &amp; Insights</div>
-                    {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
-                    {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
-                </div>
-            {% elif can_manage_purchase_orders %}
-                {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
-            {% elif is_reports_sidebar_user %}
-                {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
-            {% endif %}
-
-            {% if current_user.is_authenticated and not is_approver_only_user %}
-                <button
-                    type="button"
-                    class="sidebar-section-toggle {{ 'active' if request.path in records_paths }}"
-                    data-rail-caption="{{ 'Records' if is_inventory_management_user else 'Resources' }}"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#records-sidebar-section"
-                    aria-expanded="{{ 'true' if request.path in records_paths else 'false' }}"
-                    aria-controls="records-sidebar-section"
-                >
-                    <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
-                    <span>{{ 'Records' if is_inventory_management_user else 'Resources' }}</span>
-                    <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
-                </button>
-                <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}" role="group" aria-label="{{ 'Records' if is_inventory_management_user else 'Resources' }}">
-                    <div class="sidebar-flyout-title" aria-hidden="true">{{ 'Records' if is_inventory_management_user else 'Resources' }}</div>
-                    {% if can_access_calibration_center %}
-                        {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
-                    {% endif %}
-                    {% if nav_can_administer_personnel or is_engineer_only %}
-                        {{ nav_link('/engineers_page', 'fa-user-gear', 'Personnel') }}
-                    {% endif %}
+                <div id="clients-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in clients_paths }}" role="group" aria-label="Clients &amp; Equipment">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Clients &amp; Equipment</div>
                     {{ nav_link('/clients_page', 'fa-hospital', 'Medical Centers') }}
                     {% if can_access_genoray_inventory or can_access_vieworks_inventory %}
                         <button
@@ -351,13 +290,83 @@
                     {% else %}
                         {{ nav_link('/products_page', 'fa-boxes-stacked', 'Inventory') }}
                     {% endif %}
+                    {% if can_access_calibration_center %}
+                        {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
+                    {% endif %}
+                </div>
+
+            {#- The company's own parts stock, kept apart from the equipment installed
+                at clients (Clients & Equipment › Inventory). -#}
+            {% if stock_inventory_view %}
+                {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
+            {% endif %}
+            {% endif %}
+
+            {% if current_user.is_authenticated %}
+            <div class="sidebar-group-label" aria-hidden="true">Manage</div>
+            {% endif %}
+
+            {# A collapsible group only earns its click when it holds more than one
+               destination. Management accounts get Analytics alongside Service Documents,
+               so the group stays. Everyone else has Service Documents and nothing else,
+               and wrapping one link in a collapsed group named after that same link meant
+               clicking "Service Documents" to reveal "Service Documents". They get the
+               link directly. The Office group below follows the same rule. #}
+            {% if is_reports_admin_user %}
+                <button
+                    type="button"
+                    class="sidebar-section-toggle {{ 'active' if request.path in reports_paths }}"
+                    data-rail-caption="Reports"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#reports-sidebar-section"
+                    aria-expanded="{{ 'true' if request.path in reports_paths else 'false' }}"
+                    aria-controls="reports-sidebar-section"
+                >
+                    <i class="fa-solid fa-chart-pie" aria-hidden="true"></i>
+                    <span>Reports</span>
+                    <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
+                </button>
+                <div id="reports-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}" role="group" aria-label="Reports">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Reports</div>
+                    {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
+                    {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
+                </div>
+            {% elif can_manage_purchase_orders %}
+                {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
+            {% elif is_reports_sidebar_user %}
+                {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
+            {% endif %}
+
+            {% if current_user.is_authenticated and not is_approver_only_user %}
+            {% if office_link_count > 1 %}
+                <button
+                    type="button"
+                    class="sidebar-section-toggle {{ 'active' if request.path in office_paths }}"
+                    data-rail-caption="Office"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#office-sidebar-section"
+                    aria-expanded="{{ 'true' if request.path in office_paths else 'false' }}"
+                    aria-controls="office-sidebar-section"
+                >
+                    <i class="fa-solid fa-building" aria-hidden="true"></i>
+                    <span>Office</span>
+                    <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
+                </button>
+                <div id="office-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in office_paths }}" role="group" aria-label="Office">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Office</div>
+            {% endif %}
+                    {% if show_personnel %}
+                        {{ nav_link('/engineers_page', 'fa-user-gear', 'Personnel') }}
+                    {% endif %}
                     {% if can_manage_purchase_orders %}
                         {{ nav_link('/po_details', 'fa-file-invoice', 'P.O. Details') }}
                     {% endif %}
                     {% if can_manage_reimbursement_tracker %}
                         {{ nav_link('/reimbursement_tracker', 'fa-receipt', 'Reimbursement Tracker') }}
                     {% endif %}
+            {% if office_link_count > 1 %}
                 </div>
+            {% endif %}
             {% endif %}
 
             {% if is_management_user %}
@@ -442,7 +451,14 @@
         document.title = name + ' · Medical Service';
         const section = label.closest('.sidebar-subnav[aria-label]');
         const phoneTitle = document.getElementById('mobile-page-title');
-        if (phoneTitle) phoneTitle.textContent = section ? section.getAttribute('aria-label') : name;
+        if (!phoneTitle) return;
+        phoneTitle.textContent = section ? section.getAttribute('aria-label') : name;
+        // A long section name ("Clients & Equipment") falls back to the section's
+        // short rail caption when it would be cut off in the phone bar.
+        const toggle = section && document.querySelector(`[aria-controls="${section.id}"][data-rail-caption]`);
+        if (toggle && phoneTitle.scrollWidth > phoneTitle.clientWidth) {
+            phoneTitle.textContent = toggle.dataset.railCaption;
+        }
     })();
     </script>
 
@@ -624,8 +640,8 @@
         // the live body/control state as soon as the shell exists.
         syncSidebarVisibilityForViewport();
 
-        // Icon rail flyouts: hovering or tapping a group icon (or Calendar, or the
-        // avatar) opens that group's own subnav beside the rail. On the keyboard, Tab
+        // Icon rail flyouts: hovering or tapping a group icon (or the avatar) opens
+        // that group's own subnav beside the rail. On the keyboard, Tab
         // only shows the icon's name; Enter, Space or ArrowRight opens the flyout,
         // arrows move inside it, ArrowLeft or Escape returns to the icon. Single
         // links show their name in a label. Leaving or a tap outside closes it.
@@ -652,16 +668,6 @@
                     const panel = document.getElementById(toggle.getAttribute('aria-controls'));
                     if (panel) flyouts.push({ trigger: toggle, panel, ariaEl: toggle, focusEl: toggle });
                 });
-                const calendarRow = nav.querySelector('.sidebar-calendar-row');
-                const calendarPanel = document.getElementById('calendar-sidebar-section');
-                if (calendarRow && calendarPanel) {
-                    flyouts.push({
-                        trigger: calendarRow,
-                        panel: calendarPanel,
-                        ariaEl: calendarRow.querySelector('.sidebar-calendar-arrow'),
-                        focusEl: calendarRow.querySelector('.sidebar-calendar-main'),
-                    });
-                }
             }
             const userPanel = document.getElementById('sidebar-user-flyout');
             if (avatar && userPanel) {
@@ -770,16 +776,13 @@
                 }
             });
 
-            // In the rail a group icon opens its flyout instead of Bootstrap's inline
-            // collapse; a touch tap on Calendar or the avatar opens it instead of
-            // navigating. A mouse click or Enter on Calendar still opens Calendar.
+            // In the rail a group icon (or the avatar) opens its flyout instead of
+            // Bootstrap's inline collapse.
             sidebar.addEventListener('click', event => {
                 if (!isRail()) return;
                 const flyout = flyouts.find(f => f.trigger.contains(event.target));
                 if (!flyout) return;
                 const isMouseClick = event.detail > 0 && lastPointerType === 'mouse';
-                const isCalendarLink = flyout.focusEl && flyout.focusEl.tagName === 'A';
-                if (isCalendarLink && (isMouseClick || event.detail === 0 || openAtPointerDown)) return;
                 event.preventDefault();
                 event.stopPropagation();
                 const wasOpen = event.detail === 0 ? current === flyout : openAtPointerDown;
@@ -796,7 +799,7 @@
             });
             // The rail's own icons, in order, for ArrowUp/ArrowDown between them.
             const railIcons = () => Array.from(sidebar.querySelectorAll(
-                '.sidebar-nav > a, .sidebar-nav > .sidebar-section-toggle, .sidebar-calendar-main, .sidebar-user-avatar'
+                '.sidebar-nav > a, .sidebar-nav > .sidebar-section-toggle, .sidebar-user-avatar'
             )).filter(icon => !icon.disabled && icon.getClientRects().length);
 
             sidebar.addEventListener('keydown', event => {

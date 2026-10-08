@@ -282,8 +282,7 @@ body.sidebar-resizing .main-content {
 /* --- Rows ----------------------------------------------------------------- */
 
 .sidebar a,
-.sidebar-section-toggle,
-.sidebar-calendar-main {
+.sidebar-section-toggle {
     box-sizing: border-box;
     /* min-height, not a fixed height: long labels must be able to breathe. */
     min-height: var(--sidebar-row-height);
@@ -291,7 +290,9 @@ body.sidebar-resizing .main-content {
     padding: 0 20px;
     display: flex;
     align-items: center;
-    gap: 13px;
+    /* 10px, not 13px: at the default 240px the longest group name ("Clients &
+       Equipment") must fit beside its arrow and the nav's thin scrollbar. */
+    gap: 10px;
     color: var(--sidebar-text);
     background: transparent;
     border: 0;
@@ -306,8 +307,7 @@ body.sidebar-resizing .main-content {
 }
 
 .sidebar a i,
-.sidebar-section-toggle i:first-child,
-.sidebar-calendar-main i {
+.sidebar-section-toggle i:first-child {
     width: 22px;
     min-width: 22px;
     height: 22px;
@@ -320,8 +320,7 @@ body.sidebar-resizing .main-content {
 }
 
 .sidebar a span,
-.sidebar-section-toggle span,
-.sidebar-calendar-main span {
+.sidebar-section-toggle span {
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -331,9 +330,7 @@ body.sidebar-resizing .main-content {
 .sidebar a:hover,
 .sidebar a:focus-visible,
 .sidebar-section-toggle:hover,
-.sidebar-section-toggle:focus-visible,
-.sidebar-calendar-arrow:hover,
-.sidebar-calendar-arrow:focus-visible {
+.sidebar-section-toggle:focus-visible {
     background: var(--sidebar-hover);
     color: var(--sidebar-text-strong);
     outline: none;
@@ -359,38 +356,18 @@ body.sidebar-resizing .main-content {
     color: var(--sidebar-text-strong);
 }
 
-.sidebar a.active,
-.sidebar-calendar-main.active {
+.sidebar a.active {
     color: var(--sidebar-text-strong);
     background: var(--sidebar-active-bg);
     border-left: 3px solid var(--sidebar-active-marker);
     padding-left: 17px;
 }
 
-/* --- Calendar row with its collapse arrow --------------------------------- */
-
-.sidebar-calendar-row {
-    display: grid;
-    grid-template-columns: 1fr 46px;
-    min-height: var(--sidebar-row-height);
-    align-items: stretch;
-    border-bottom: 0;
+.sidebar-section-toggle {
+    padding-right: 12px;
 }
 
-.sidebar-calendar-arrow {
-    width: 46px;
-    min-height: var(--sidebar-row-height);
-    border: 0;
-    background: transparent;
-    color: var(--sidebar-text);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.16s ease, color 0.16s ease;
-}
-
-.sidebar-section-toggle .sidebar-section-arrow,
-.sidebar-calendar-arrow .sidebar-section-arrow {
+.sidebar-section-toggle .sidebar-section-arrow {
     margin-left: auto;
     width: 18px;
     min-width: 18px;
@@ -403,12 +380,7 @@ body.sidebar-resizing .main-content {
     transition: transform 0.2s ease;
 }
 
-.sidebar-calendar-arrow .sidebar-section-arrow {
-    margin-left: 0;
-}
-
-.sidebar-section-toggle[aria-expanded="true"] .sidebar-section-arrow,
-.sidebar-calendar-arrow[aria-expanded="true"] .sidebar-section-arrow {
+.sidebar-section-toggle[aria-expanded="true"] .sidebar-section-arrow {
     transform: rotate(90deg);
 }
 
@@ -594,7 +566,6 @@ body.sidebar-resizing .main-content {
     body.sidebar-collapsed .sidebar .sidebar-header .shell-brand-name,
     body.sidebar-collapsed .sidebar .sidebar-resize-handle,
     body.sidebar-collapsed .sidebar .sidebar-section-arrow,
-    body.sidebar-collapsed .sidebar .sidebar-calendar-arrow,
     body.sidebar-collapsed .sidebar .sidebar-subnav,
     body.sidebar-collapsed .sidebar .sidebar-user-meta,
     body.sidebar-collapsed .sidebar .sidebar-logout {
@@ -614,8 +585,7 @@ body.sidebar-resizing .main-content {
     }
 
     body.sidebar-collapsed .sidebar a,
-    body.sidebar-collapsed .sidebar .sidebar-section-toggle,
-    body.sidebar-collapsed .sidebar .sidebar-calendar-main {
+    body.sidebar-collapsed .sidebar .sidebar-section-toggle {
         position: relative;
         justify-content: center;
         padding: 0;
@@ -624,8 +594,7 @@ body.sidebar-resizing .main-content {
     /* Visually hidden, not display:none: the label stays the control's
        accessible name for screen readers while only the icon shows. */
     body.sidebar-collapsed .sidebar a > span,
-    body.sidebar-collapsed .sidebar .sidebar-section-toggle > span,
-    body.sidebar-collapsed .sidebar .sidebar-calendar-main > span {
+    body.sidebar-collapsed .sidebar .sidebar-section-toggle > span {
         position: absolute;
         width: 1px;
         height: 1px;
@@ -637,17 +606,16 @@ body.sidebar-resizing .main-content {
     /* Rail captions: a short name under each top-level icon, so the rail reads
        without hovering. The full name stays the accessible name (the span). */
     body.sidebar-collapsed .sidebar .sidebar-nav > a[data-rail-caption],
-    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption],
-    body.sidebar-collapsed .sidebar .sidebar-calendar-main[data-rail-caption] {
+    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption] {
+        /* 48px rows keep all eleven admin icons on a 768px-tall screen. */
         flex-direction: column;
-        gap: 4px;
-        min-height: 54px;
-        padding: 6px 2px;
+        gap: 3px;
+        min-height: 48px;
+        padding: 4px 2px;
     }
 
     body.sidebar-collapsed .sidebar .sidebar-nav > a[data-rail-caption]::after,
-    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption]::after,
-    body.sidebar-collapsed .sidebar .sidebar-calendar-main[data-rail-caption]::after {
+    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption]::after {
         content: attr(data-rail-caption);
         max-width: 60px;
         overflow: hidden;
@@ -662,10 +630,6 @@ body.sidebar-resizing .main-content {
     body.sidebar-collapsed .sidebar .sidebar-section-toggle.active {
         background: var(--sidebar-active-bg);
         border-left: 3px solid var(--sidebar-active-marker);
-    }
-
-    body.sidebar-collapsed .sidebar .sidebar-calendar-row {
-        grid-template-columns: 1fr;
     }
 
     body.sidebar-collapsed .sidebar .sidebar-group-label {
@@ -1056,16 +1020,14 @@ body.sidebar-resizing .main-content {
     }
 
     .sidebar .sidebar-nav a,
-    .sidebar .sidebar-nav .sidebar-section-toggle,
-    .sidebar .sidebar-nav .sidebar-calendar-main {
+    .sidebar .sidebar-nav .sidebar-section-toggle {
         padding-top: 6px;
         padding-bottom: 6px;
         white-space: normal;
     }
 
     .sidebar .sidebar-nav a span,
-    .sidebar .sidebar-nav .sidebar-section-toggle span,
-    .sidebar .sidebar-nav .sidebar-calendar-main span {
+    .sidebar .sidebar-nav .sidebar-section-toggle span {
         overflow: visible;
         text-overflow: clip;
         line-height: 1.25;
@@ -1306,7 +1268,7 @@ body.sidebar-resizing .main-content {
        rule previously inflated them unevenly. They get their touch sizing from
        the dedicated block below instead, which sets a minimum without imposing
        this rule's border-radius and font-size on an icon button. */
-    button:not(.toggle-btn):not(.sidebar-section-toggle):not(.sidebar-calendar-arrow):not(.sidebar-user-avatar),
+    button:not(.toggle-btn):not(.sidebar-section-toggle):not(.sidebar-user-avatar),
     .btn:not(.toggle-btn),
     input[type="submit"],
     input[type="button"] {

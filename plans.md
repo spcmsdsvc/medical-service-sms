@@ -37,6 +37,78 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Sidebar Order and Groups (App Shell)
+
+**Status:** Executed on the playground (not committed yet; awaiting the owner's keep/discard) — owner said "go" on 2026-10-08.
+
+**Outcome (2026-10-08):** all 8 steps done; 119 shell, theme, offline and sign-in tests OK (2 new tests fail on `17f7cd7`). Differences from the plan, found while building:
+- New Request's rail caption is "Forms", not "Request": "Request" sat next to My Requests' "Requests" in the rail.
+- Clients & Equipment uses the `fa-hospital-user` icon so it does not repeat the Medical Centers icon inside its own flyout.
+- At the default 240px, "Clients & Equipment" (and "Approvals" beside its badge) were cut off by the nav's 10px thin scrollbar: the row gap went from 13px to 10px for every row (labels stay aligned) and group toggles' right padding from 20px to 12px; both now fit (136.4px text in a 138px box).
+- With eleven admin icons and captions the rail no longer fit a 768px-tall screen (679/621px): caption rows went from 54px to 48px; it now fits exactly (621/621).
+- On phones "Clients & Equipment" did not fit the top bar; when a section name would be cut off the bar shows the section's short caption ("Clients"); other sections keep their full name.
+
+**Amendment 1 (2026-10-08, owner: "move stock inventory out of the main sidebar"; chose "WORK, after Clients & Equipment" over Office or keeping it in MAIN):** Stock Inventory (the company's own parts stock: barcode scans and stock movements by branch; 5 accounts can edit, engineers read their branch) was a MAIN link, above Approvals and My Requests, although MAIN holds waiting items and daily field work. It is now a plain link in WORK after Clients & Equipment, deliberately not inside Clients & Equipment › Inventory, which is the equipment installed at clients. Stock-only accounts have no WORK section, so for them it stays in MAIN (their main page); HR-schedule and approver-only menus unchanged. `/stock_inventory` was removed from `admin_paths`, so the Admin group no longer shows as active on the Stock page.
+**Approved:** 2026-10-08 (owner: "Approve as written" to the Impeccable `shape` brief, after choosing "each role's own work first", "plain names" and "Create TSR as its own top-level item"). Under the two-step rule this records approval only; execution needs a separate "go" / "execute" / "start".
+**Detailed:** 2026-10-08.
+**Branch:** sandbox `design/playground`, built on `17f7cd7` (the five critique fixes, incl. rail captions). Nothing goes to `main` until a separate "commit and push".
+
+## Context
+
+The sidebar groups grew by history, not by what people come to do. The product principle "each role sees what is waiting on them first" (PRODUCT.md) is not met: Approvals and My Requests sit in the middle under OPERATIONS. Create TSR, the field engineers' main job, is hidden behind the Calendar row's arrow (a split control the critiques flagged twice). "Field Operations" holds request forms, not operations, and "Records"/"Resources" mixes client and equipment records with office administration. Outcome: one order, grouped by task, used identically by the icon rail, the pinned sidebar and the phone drawer, with every role's visibility unchanged.
+
+## Decisions taken
+
+1. Order (owner: each role's own work first):
+   - MAIN: Dashboard · Approvals (approvers only) · My Requests · Calendar · Create TSR
+   - WORK: New Request › (Travel Request · Reimburse / Liquidation · Cash Advance · Leave Request · LPR) · Clients & Equipment › (Medical Centers · Inventory › · Calibration Center)
+   - MANAGE: Reports › (Analytics · Service Documents) · Office › (Personnel · P.O. Details · Reimbursement Tracker) · Admin › (Activity Logs · System Settings), or System Settings as a plain link for non-admins as today.
+2. Names (owner: plain names): group names change only. Field Operations → New Request; Records/Resources → Clients & Equipment; Reports & Insights → Reports; new Office. Group labels Main / Operations / Records → MAIN / WORK / MANAGE. Page link names inside groups do not change.
+3. Create TSR becomes its own top-level link directly under Calendar; Calendar becomes a plain link (no arrow, no Calendar flyout).
+4. A group that would show one visible link to a user renders that link as a plain top-level link (e.g. an engineer sees "Personnel", not "Office › Personnel"), the pattern Reports already uses today.
+5. Visibility rules, URLs, badges (Approvals, My Requests) and the special short menus (HR schedule viewer, stock-inventory-only, approver-only) are unchanged.
+
+## Investigation
+
+- Nav block: `templates/layout.html` 155–389 (`<nav class="sidebar-nav">`). Path lists for active state at 173–178 (`field_ops_paths`, `reports_paths`, `records_paths`, `inventory_paths`, `admin_paths`). Group labels at 180 (Main), 227 (Operations), 263 (Records).
+- Calendar split row and its collapse: 198–225 (`.sidebar-calendar-row`, `#calendar-sidebar-section` with the flyout-only Calendar link and Create TSR). The rail code builds a Calendar flyout from it at 655–663 (`initSidebarFlyouts`), and the rail click handler special-cases the Calendar link (`isCalendarLink`).
+- Visibility conditions per item (verified): Dashboard `not hr_schedule_only_user`; Field Operations `new_workflows_enabled and not is_approver_only_user`; My Requests `new_workflows_enabled and is_accounting_center_user`; Approvals `new_workflows_enabled and is_approver_user`; Reports group `is_reports_admin_user`, else single Analytics (`can_manage_purchase_orders`) or Service Documents (`is_reports_sidebar_user`); Records group `not is_approver_only_user` with Calibration Center (`can_access_calibration_center`), Personnel (`nav_can_administer_personnel or is_engineer_only`), Medical Centers (all), Inventory sub-group or single link, P.O. Details (`can_manage_purchase_orders`), Reimbursement Tracker (`can_manage_reimbursement_tracker`); Admin `is_management_user`.
+- Rail captions (`data-rail-caption`, from `nav_link`'s short-name map and on group toggles) were added in `17f7cd7`; the new group toggles and Create TSR need captions.
+- Tests that pin today's structure: `tests/test_layout_sidebar.py` 82 (`.sidebar-calendar-row` rule count), 194 (calendar-main label rule), 214–217 (flyout sections incl. `calendar`, flyout-only Calendar link), 477 (`aria-label="Field Operations"`), plus caption/role-group tests from today.
+
+## Execution steps
+
+1. **Path lists** (`layout.html` 173–178): replace with `new_request_paths` (the forms), `clients_paths` (clients, products/inventory, Genoray/Vieworks incl. PM, calibration center) and `office_paths` (engineers_page, po_details, reimbursement_tracker); keep `reports_paths`, `inventory_paths`, `admin_paths`. Done: every page still lights its group as active.
+2. **MAIN block**: Dashboard, Approvals (moved up, same condition and badge), My Requests (moved up, same condition and badge), Calendar as a plain `nav_link('/timeline', …)`, Create TSR as `nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR')`. Remove the split Calendar row, `#calendar-sidebar-section` and its CSS (`.sidebar-calendar-row`, `.sidebar-calendar-main`, `.sidebar-calendar-arrow` rules in `app-shell.css`, and any theme-file references). Keep the HR-schedule, stock-only and approver-only branches exactly as they are. Done: no `sidebar-calendar` markup or CSS remains; the HR viewer still sees Calendar + Password Settings.
+3. **WORK block**: group label WORK; "New Request" group (id `new-request-sidebar-section`, icon `fa-briefcase` kept) with the five form links; "Clients & Equipment" group (id `clients-sidebar-section`, icon `fa-hospital`) with Medical Centers, the Inventory sub-group or single Inventory link, and Calibration Center (same conditions). Done: forms and client/equipment pages reachable under the new names.
+4. **MANAGE block**: group label MANAGE; Reports group renamed "Reports" (same branches); "Office" group (id `office-sidebar-section`, icon `fa-building`) with Personnel, P.O. Details, Reimbursement Tracker (same conditions); Admin unchanged. Implement decision 4 by counting each group's visible conditions in Jinja first and rendering a plain `nav_link` when one is visible, a group when two or more, nothing when none. Done: an engineer sees plain "Personnel"; an admin sees "Office ›".
+5. **Rail code** (`initSidebarFlyouts`, about 640–790): remove the Calendar flyout entry and the `isCalendarLink` special case (no Calendar flyout any more); group flyouts are built from the toggles as today, so the new groups need no other change. Keep the Bootstrap collapse guard, keyboard model and tips. Done: rail flyouts open for New Request, Clients & Equipment, Reports, Office, Admin; Calendar and Create TSR show name tips.
+6. **Captions**: `nav_link`'s short-name map gains "Create TSR": "TSR"; group toggles get `data-rail-caption` "Request", "Clients", "Reports", "Office", "Admin". Done: rail captions read Dashboard, Approvals, Requests, Calendar, TSR, Request, Clients, Reports, Office, Admin, Settings without truncation in 64px.
+7. **Phone bar section name**: unchanged mechanism (the `aria-label` of the active link's `role="group"`), so pages now show New Request / Clients & Equipment / Office; MAIN items show their page name. Done: verified on /travel_request and /clients_page.
+8. **DESIGN.md** Navigation: describe the new order, groups, one-link rule and that Calendar has no flyout. **changes.md**: one detailed entry. Done.
+
+## Deliberately excluded
+
+- Permissions, URLs, page content and page titles: not part of navigation order.
+- Bottom tab bar for phones: raised in critiques, not requested; a separate decision.
+- The Inventory sub-group's internal structure (Product Inventory, Genoray, Vieworks, PM): unchanged.
+- The HR-schedule, stock-only and approver-only menus: unchanged; they are already minimal.
+
+## Verification
+
+- Tests (`tests/test_layout_sidebar.py`), each shown to fail on `17f7cd7` before the change: order of the top-level items in the template (Dashboard, Approvals, My Requests, Calendar, Create TSR before WORK); no `sidebar-calendar-row` / `calendar-sidebar-section`; group aria-labels New Request, Clients & Equipment, Reports, Office, Admin; the one-link rule renders Personnel plainly for an engineer (render test in `SidebarRenderTests` with an engineer and an admin user); captions present. Update the tests that pin the old Calendar row and group names (lines 82, 194, 214–217, 477) to the new structure rather than dropping their intent. Run `tests.test_layout_sidebar`, `tests.test_appearance_themes`, `tests.test_offline_api_status`, `tests.test_login_page`.
+- Browser on a database copy (temporary superadmin, engineer and approver-only accounts; removed afterwards): 1366x768 rail and pinned as admin and as engineer (order, captions, flyouts, active group per page; keyboard: arrows across all rail icons, Enter opens flyouts, Escape returns), 375x812 drawer (order, 44px rows, section name in the bar), approver-only and HR viewer menus unchanged; no horizontal scroll; no console errors.
+
+## After implementation
+
+Self-review the diff; focused tests above (no full suite on the playground); browser check; DESIGN.md and changes.md; offer keep/discard; commit to `design/playground` on "keep". Publishing to `main` only on a separate "commit and push": service worker bump, `releases.json` entry explaining the new menu order, full suite once, built in a `main` worktree, protected files never staged.
+
+## Risks
+
+- The Jinja one-link logic could hide a link someone needs: the per-role render tests and the per-role browser check are the safety net.
+- Removing the Calendar split row touches rail click handling: the keyboard and click checks cover it; the Bootstrap guard stays.
+- Users have muscle memory for the old order: the What's New release note on publish explains the move.
+
 # Activity Log Category Chip Opens the Record
 
 **Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(activity): category chip opens the record"). Owner confirmed decision 1 (recommended option) and said "go". Full suite before publishing: 1,656 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.
