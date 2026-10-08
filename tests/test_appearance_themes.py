@@ -200,7 +200,8 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '--app-text': '#ededed',
             '--app-muted': '#b8bbc2',
             '--app-border': '#85888d',
-            '--app-sidebar': '#202124',
+            # The rail sits on the card surface, one step above the page (2026-10-08).
+            '--app-sidebar': '#292a2d',
         }
         expected_page = {
             '--dark-page': '#202124',
@@ -370,11 +371,11 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn(':root[data-app-theme="dark"][data-app-palette="graphite"]', auth_css)
         self.assertIn('--login-page-bg: #202124;', auth_css)
 
-        self.assertIn("filename='css/app-themes.css') }}?v=22", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=23", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=30", layout)
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in sources:
-            self.assertIn("filename='css/app-themes.css') }}?v=22", source)
+            self.assertIn("filename='css/app-themes.css') }}?v=23", source)
             self.assertIn("filename='css/app-auth.css') }}?v=7", source)
 
     def test_graphite_release_and_cache_marker_are_current(self):
@@ -476,11 +477,11 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         ]
         self.assertIn("palette === 'amoled' ? '#000000'", runtime)
         self.assertIn('--login-page-bg: #000000;', auth_styles)
-        self.assertIn("filename='css/app-themes.css') }}?v=22", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=23", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=30", layout)
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in auth:
-            self.assertIn("filename='css/app-themes.css') }}?v=22", source)
+            self.assertIn("filename='css/app-themes.css') }}?v=23", source)
             self.assertIn("filename='css/app-auth.css') }}?v=7", source)
 
     def test_amoled_dark_page_layer_does_not_restore_navy_neutrals(self):
@@ -615,7 +616,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.receipt-pill, .reim-receipt-pill',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-themes.css') }}?v=22", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=23", layout)
 
     def test_dark_mode_covers_system_neutral_surfaces(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')

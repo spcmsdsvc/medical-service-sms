@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=13", self.layout)
+        self.assertIn("app-shell.css') }}?v=14", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -422,6 +422,17 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('background: var(--sidebar-rail-divider);', self.shell_css)
         self.assertIn("nav_link('/accounting_center', 'fa-inbox', 'My Requests'", self.layout)
         self.assertNotIn('fa-folder-tree', self.layout)
+
+    def test_dark_themes_lift_the_rail_off_the_page_with_an_edge(self):
+        themes = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        amoled = themes.split(':root[data-app-theme="dark"] {', 1)[1].split('}', 1)[0]
+        graphite = themes.split(':root[data-app-theme="dark"][data-app-palette="graphite"] {', 1)[1].split('}', 1)[0]
+        self.assertIn('--app-sidebar: #101010;', amoled)
+        self.assertNotIn('--app-sidebar: #202124;', graphite)
+        self.assertIn('--app-sidebar: #292a2d;', graphite)
+        self.assertIn('--sidebar-edge: rgba(255, 255, 255, 0.14);', self.shell_css)
+        self.assertIn(':root[data-app-theme="dark"] .sidebar {\n        box-shadow: inset -1px 0 0 var(--sidebar-edge);', self.shell_css)
+        self.assertIn('border: 1px solid var(--sidebar-edge);', self.shell_css)
 
     def test_phone_drawer_opens_below_the_top_bar_above_docks_with_a_backdrop(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]

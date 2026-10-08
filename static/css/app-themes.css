@@ -64,7 +64,9 @@
     --app-muted: #b0b0b0;
     --app-border: #626262;
     --app-input: #0b0b0b;
-    --app-sidebar: #080808;
+    /* One step above the #000 ground (the card surface), so the rail and its
+       flyouts read as a panel; #080808 on black was indistinguishable. */
+    --app-sidebar: #101010;
     --app-sidebar-deep: #000000;
     --app-shadow: 0 10px 28px rgba(0, 0, 0, .5);
     color-scheme: dark;
@@ -79,7 +81,8 @@
     --app-muted: #b8bbc2;
     --app-border: #85888d;
     --app-input: #202124;
-    --app-sidebar: #202124;
+    /* Was the ground colour itself; the card surface lifts the rail off the page. */
+    --app-sidebar: #292a2d;
     --app-sidebar-deep: #1a1b1e;
     --app-shadow: 0 10px 28px rgba(0, 0, 0, .38);
     color-scheme: dark;
