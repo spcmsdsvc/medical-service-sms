@@ -178,7 +178,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=24", self.layout)
+        self.assertIn("app-shell.css') }}?v=26", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -507,6 +507,13 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertEqual(self.layout.count('sidebar-account-tool'), 2)
         self.assertIn('body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool {', self.shell_css)
         self.assertNotIn('@container (max-width: 211px)', self.shell_css)
+
+    def test_phone_drawer_opens_from_the_menu_side_and_bar_names_the_section(self):
+        phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
+        self.assertIn('right: -100%;', phone)
+        self.assertIn('.sidebar.active {\n        right: 0;', phone)
+        self.assertIn("label.closest('.sidebar-subnav[aria-label]')", self.layout)
+        self.assertIn("phoneTitle.textContent = section ? section.getAttribute('aria-label') : name;", self.layout)
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]

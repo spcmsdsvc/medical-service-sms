@@ -178,6 +178,17 @@ body.sidebar-resizing .main-content {
     --brand-mark-size: 24px;
 }
 
+/* The phone bar names the section (the page's own heading names the page), so
+   it is context, set a step below the page title; at 0.9rem the longest
+   section, "Reports & Insights", fits a 375px phone beside the three tools. */
+.mobile-nav .shell-brand {
+    gap: 8px;
+}
+
+.mobile-nav .shell-brand-name {
+    font-size: 0.9rem;
+}
+
 /* The pinned header holds only the brand and the pin control, so the name fits
    on one line at the default 240px and wraps to two only when the sidebar is
    resized narrower; it never disappears. */
@@ -926,7 +937,7 @@ body.sidebar-resizing .main-content {
     background: rgba(44, 62, 80, 0.96);
     backdrop-filter: blur(12px);
     color: white;
-    padding: calc(10px + var(--mobile-safe-top)) 20px 10px 20px;
+    padding: calc(10px + var(--mobile-safe-top)) 16px 10px 16px;
     justify-content: space-between;
     align-items: center;
     position: sticky;
@@ -949,7 +960,7 @@ body.sidebar-resizing .main-content {
 .mobile-nav-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     flex: 0 0 auto;
 }
 
@@ -973,9 +984,13 @@ body.sidebar-resizing .main-content {
     /* The drawer opens under the top bar (whose Menu button becomes Close), so it
        needs no header of its own: the top bar already has the title, Appearance
        and What's New, and the desktop pin button has no job here.
-       --mobile-nav-height is measured by setMobileSidebar(). */
+       --mobile-nav-height is measured by setMobileSidebar().
+       It slides in from the right, the side of the Menu button and of a right
+       thumb, so the tap and the panel it opens are on the same edge. */
     .sidebar {
-        left: -100%;
+        left: auto;
+        right: -100%;
+        transition: right 0.3s ease;
         top: var(--mobile-nav-height, 64px);
         width: min(82vw, 240px);
         height: calc(100vh - var(--mobile-nav-height, 64px));
@@ -1038,7 +1053,7 @@ body.sidebar-resizing .main-content {
     }
 
     .sidebar.active {
-        left: 0;
+        right: 0;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
     }
 
