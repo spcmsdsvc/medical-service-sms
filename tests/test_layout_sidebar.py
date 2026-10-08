@@ -178,21 +178,18 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=7", self.layout)
+        self.assertIn("app-shell.css') }}?v=12", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
-    def test_icon_rail_peek_and_docks_follow_the_shell_offset(self):
+    def test_icon_rail_and_docks_follow_the_shell_offset(self):
         self.assertIn('--sidebar-rail-width: 64px;', self.shell_css)
         self.assertIn('html[data-sidebar-collapsed="true"] {\n        --shell-offset: var(--sidebar-rail-width);', self.shell_css)
-        self.assertIn('body.sidebar-collapsed.sidebar-peek .sidebar {\n        width: var(--sidebar-width);', self.shell_css)
-        self.assertIn('(function initSidebarPeek()', self.layout)
-        self.assertIn("event.key === 'Escape' && isPeeking()", self.layout)
         for name in ('reimbursement.html', 'travel_request.html', '_liquidation_base.html'):
             page = (ROOT / 'templates' / name).read_text(encoding='utf-8')
             self.assertIn('left: var(--shell-offset, var(--sidebar-width, 240px))', page, name)
             self.assertNotIn('left: var(--sidebar-width, 240px)', page, name)
 
-    def test_rail_labels_stay_named_and_peek_sits_above_sticky_headers(self):
+    def test_rail_labels_stay_named_and_flyouts_sit_above_sticky_headers(self):
         rail_labels = self.shell_css.split('.sidebar .sidebar-calendar-main > span {', 1)[1].split('}', 1)[0]
         self.assertNotIn('display: none', rail_labels)
         self.assertIn('clip: rect(0 0 0 0);', rail_labels)
@@ -205,7 +202,41 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('--sidebar-row-height: 44px;', self.shell_css)
         parent = self.shell_css.split('.sidebar-section-toggle.active {', 1)[1].split('}', 1)[0]
         self.assertNotIn('border-left', parent)
-        self.assertIn('body.sidebar-collapsed:not(.sidebar-peek) .sidebar .sidebar-section-toggle.active {', self.shell_css)
+        self.assertIn('body.sidebar-collapsed .sidebar .sidebar-section-toggle.active {', self.shell_css)
+
+    def test_rail_group_flyouts_replace_the_peek(self):
+        self.assertNotIn('sidebar-peek', self.layout)
+        self.assertNotIn('sidebar-peek', self.shell_css)
+        self.assertIn('(function initSidebarFlyouts()', self.layout)
+        self.assertIn('.sidebar-subnav.is-flyout-open', self.shell_css)
+        # Each group's own subnav is the flyout, titled; Inventory is a subheading.
+        for section in ('calendar', 'field-operations', 'reports-insights', 'records', 'inventory', 'admin'):
+            opening = self.layout.split(f'<div id="{section}-sidebar-section"', 1)[1].split('\n', 2)[1]
+            self.assertIn('class="sidebar-flyout-title"', opening, section)
+        self.assertIn("nav_link('/timeline', 'fa-calendar-days', 'Calendar', extra_class='sidebar-flyout-only')", self.layout)
+        self.assertIn('.is-flyout-open .sidebar-subnav-nested {\n        display: block !important;', self.shell_css)
+        # The avatar opens an account flyout holding the tools the rail hides.
+        self.assertIn('class="sidebar-user-avatar"\n                    aria-label="Account"', self.layout)
+        account = self.layout.split('<div id="sidebar-user-flyout"', 1)[1].split('</div>', 1)[0]
+        for part in ('sidebar-user-meta', 'appearance-header-button', 'changelog-header-button', 'href="/logout"'):
+            self.assertIn(part, account)
+        self.assertIn('id="sidebar-rail-tip"', self.layout)
+
+    def test_rail_flyouts_open_from_keys_not_focus_and_rings_are_visible(self):
+        flyouts = self.layout.split('(function initSidebarFlyouts()', 1)[1].split('})();', 1)[0]
+        # Focus alone must not open a flyout, or Tab walks every link inside it.
+        self.assertNotIn("addEventListener('focusin'", flyouts)
+        for key in ("'ArrowRight'", "'ArrowDown'", "'ArrowUp'", "'ArrowLeft'", "'Escape'"):
+            self.assertIn(key, flyouts)
+        self.assertIn('if (event.detail === 0) focusItem(flyout, 0);', flyouts)
+        # ArrowUp/ArrowDown also move between the rail's own icons.
+        self.assertIn('const railIcons = () =>', flyouts)
+        self.assertIn('icons[(index + step + icons.length) % icons.length].focus();', flyouts)
+        # One light focus ring for the shell (the primary blue was 2.44:1).
+        self.assertIn('--shell-focus-ring: #e2e8f0;', self.shell_css)
+        ring = self.shell_css.split('.mobile-nav button:focus-visible {', 1)[1].split('}', 1)[0]
+        self.assertIn('outline: 2px solid var(--shell-focus-ring) !important;', ring)
+        self.assertIn('.sidebar button:focus-visible,', self.shell_css)
 
     def test_footer_logout_stays_an_icon_beside_the_username(self):
         css = (ROOT / 'static' / 'css' / 'app-shell.css').read_text(encoding='utf-8')
@@ -368,6 +399,25 @@ class SidebarSourceTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def test_shell_polish_hover_intent_names_and_phone_bell_colour(self):
+        flyouts = self.layout.split('(function initSidebarFlyouts()', 1)[1].split('})();', 1)[0]
+        self.assertIn('const OPEN_DELAY = 120;', flyouts)
+        self.assertIn("avatar.toggleAttribute('aria-hidden', !isRail());", flyouts)
+        self.assertIn('aria-label="Show Create TSR"', self.layout)
+        self.assertIn('.mobile-nav .mobile-nav-actions a.changelog-header-button {\n    color: var(--sidebar-text);', self.shell_css)
+
+    def test_phone_drawer_opens_below_the_top_bar_above_docks_with_a_backdrop(self):
+        phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
+        self.assertIn('top: var(--mobile-nav-height, 64px);', phone)
+        self.assertIn('.sidebar-header {\n        display: none;', phone)
+        self.assertIn('body.mobile-sidebar-open .sidebar {\n        z-index: 1210;', phone)
+        self.assertIn('body.mobile-sidebar-open .mobile-nav {\n        z-index: 1220;', phone)
+        self.assertIn('body.mobile-sidebar-open .mobile-nav-backdrop {\n        display: block;', phone)
+        self.assertIn('<div class="mobile-nav-backdrop no-print" aria-hidden="true"></div>', self.layout)
+        drawer = self.layout.split('function setMobileSidebar(open) {', 1)[1].split('function toggleSidebarMobile()', 1)[0]
+        self.assertIn("setProperty('--mobile-nav-height'", drawer)
+        self.assertIn("menuButton.textContent = open ? 'Close' : 'Menu';", drawer)
 
     def test_mobile_drawer_uses_the_shared_navigation_boundary_for_all_close_paths(self):
         self.assertIn('function isMobileNavigationViewport()', self.layout)

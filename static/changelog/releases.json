@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-rail-flyouts-phone-drawer",
+      "release_date": "2026-10-08",
+      "title": "Quicker Sidebar Menus",
+      "summary": "Sidebar groups open as small menus, the keyboard works along the sidebar, and the phone menu is no longer covered.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-rail-group-flyouts",
+          "category": "System",
+          "description": "On desktop, resting the pointer on a group icon in the thin sidebar (or tapping it) now opens a small menu with just that group's pages, instead of sliding the whole sidebar out. Calendar's menu includes Create TSR, and your initials at the bottom open a menu with Appearance, What's New and Log out. Single icons show their name when you point at them.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-rail-keyboard",
+          "category": "System",
+          "description": "Keyboard users can now move along the sidebar with the up and down arrow keys or Tab without menus popping open. Press Enter, Space or the right arrow to open a group's menu, the arrow keys to move inside it, and the left arrow or Escape to go back. The focus outline in the sidebar is also easier to see.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-08-phone-drawer",
+          "category": "System",
+          "description": "On phones, the menu now opens below the top bar and above the buttons at the bottom of pages such as Travel Request, so Log out is no longer hidden. The page behind is dimmed, tapping it closes the menu, and the Menu button reads Close while the menu is open.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-07-desktop-icon-rail",
       "release_date": "2026-10-07",
       "title": "Slimmer Desktop Sidebar",

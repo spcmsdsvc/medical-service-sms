@@ -52,7 +52,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=22">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=7">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=12">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -92,6 +92,7 @@
                     aria-controls="sidebar">Menu</button>
         </div>
     </div>
+    <div class="mobile-nav-backdrop no-print" aria-hidden="true"></div>
 
     <div class="sidebar no-print" id="sidebar">
         <div class="sidebar-header">
@@ -144,6 +145,8 @@
                 {%- if badge_id %}<span class="sidebar-count-badge" id="{{ badge_id }}" aria-hidden="true"></span>{% endif -%}
             </a>
         {%- endmacro %}
+
+        <div id="sidebar-rail-tip" class="sidebar-rail-tip" aria-hidden="true"></div>
 
         <nav class="sidebar-nav" aria-label="Main">
             {# Access flags come from inject_navigation_access() in app.py, which calls the
@@ -202,12 +205,15 @@
                         data-bs-target="#calendar-sidebar-section"
                         aria-expanded="{{ 'true' if request.path == '/offline-tsr' else 'false' }}"
                         aria-controls="calendar-sidebar-section"
+                        aria-label="Show Create TSR"
                         title="Show Create TSR"
                     >
                         <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                     </button>
                 </div>
                 <div id="calendar-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path == '/offline-tsr' }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Calendar</div>
+                    {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar', extra_class='sidebar-flyout-only') }}
                     {{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}
                 </div>
             {% endif %}
@@ -230,6 +236,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
                 <div id="field-operations-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in field_ops_paths }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Field Operations</div>
                     {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
                     {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
                     {{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}
@@ -270,6 +277,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
                 <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Reports &amp; Insights</div>
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
                     {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
                 </div>
@@ -293,6 +301,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
                 <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">{{ 'Records' if is_inventory_management_user else 'Resources' }}</div>
                     {% if can_access_calibration_center %}
                         {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
                     {% endif %}
@@ -314,6 +323,7 @@
                             <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                         </button>
                         <div id="inventory-sidebar-section" class="collapse sidebar-subnav sidebar-subnav-nested {{ 'show' if request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) }}">
+                            <div class="sidebar-flyout-title" aria-hidden="true">Inventory</div>
                             {% if can_access_genoray_inventory or can_access_vieworks_inventory %}
                                 {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
                             {% endif %}
@@ -356,6 +366,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
                 <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Admin</div>
                     {{ nav_link('/activity_page', 'fa-clock-rotate-left', 'Activity Logs') }}
                     {{ nav_link('/settings', 'fa-gear', 'System Settings') }}
                 </div>
@@ -370,7 +381,15 @@
 
         {% if current_user.is_authenticated %}
         <div class="sidebar-user">
-            <span class="sidebar-user-avatar" aria-hidden="true">{{ current_user.username[:2]|upper }}</span>
+            {#- The avatar opens the account flyout in the desktop icon rail; it is
+                disabled elsewhere because the footer is fully shown there. -#}
+            <button type="button"
+                    class="sidebar-user-avatar"
+                    aria-label="Account"
+                    aria-expanded="false"
+                    aria-controls="sidebar-user-flyout"
+                    disabled>{{ current_user.username[:2]|upper }}</button>
+            <div id="sidebar-user-flyout" class="sidebar-user-flyout">
             <span class="sidebar-user-meta">
                 <span class="sidebar-user-name">{{ current_user.username }}</span>
                 <span class="sidebar-user-role">
@@ -383,9 +402,25 @@
                     {%- else -%}Staff{%- endif -%}
                 </span>
             </span>
+            {#- Rail-only copies of the header tools; app-appearance.js and the What's
+                New badge script update every copy by class. -#}
+            <button type="button" class="appearance-header-button sidebar-flyout-only" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
+                <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
+                <span>Appearance</span>
+            </button>
+            {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
+               class="changelog-header-button sidebar-flyout-only {{ 'active' if request.path == '/whats_new' }}"
+               aria-label="What's New"
+               title="What's New">
+                <i class="fa-solid fa-bell" aria-hidden="true"></i>
+                <span>What's New</span>
+                <span class="changelog-header-badge" aria-hidden="true"></span>
+            </a>{% endif %}
             <a href="/logout" class="sidebar-logout" aria-label="Log out" title="Log out">
                 <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+                <span class="sidebar-flyout-only">Log out</span>
             </a>
+            </div>
         </div>
         {% endif %}
     </div>
@@ -445,7 +480,7 @@
         // A closed mobile drawer must not keep its links in the Tab order; inert
         // removes them from focus and from screen readers until it opens. On
         // desktop the sidebar is never hidden: collapsed is the icon rail, whose
-        // icons stay reachable (focusing one opens the peek).
+        // icons stay reachable (Enter, Space or ArrowRight opens a group's flyout).
         function syncSidebarInert() {
             const sidebar = document.getElementById('sidebar');
             if (!sidebar) return;
@@ -503,9 +538,17 @@
             const menuButton = document.getElementById('mobile-menu-button');
             if (!sidebar) return;
 
+            if (open) {
+                // The drawer starts below the top bar, whose height wraps with the title.
+                const mobileNav = document.querySelector('.mobile-nav');
+                if (mobileNav) document.documentElement.style.setProperty('--mobile-nav-height', `${mobileNav.offsetHeight}px`);
+            }
             sidebar.classList.toggle('active', open);
             document.body.classList.toggle('mobile-sidebar-open', open);
-            if (menuButton) menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (menuButton) {
+                menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+                menuButton.textContent = open ? 'Close' : 'Menu';
+            }
             // Must run before focus moves into the drawer: inert elements cannot take focus.
             syncSidebarInert();
 
@@ -532,60 +575,236 @@
         // the live body/control state as soon as the shell exists.
         syncSidebarVisibilityForViewport();
 
-        // Icon rail peek: hovering, focusing or tapping the collapsed rail slides the
-        // full sidebar over the page (no layout shift); leaving it or Escape tucks it back.
-        (function initSidebarPeek() {
+        // Icon rail flyouts: hovering or tapping a group icon (or Calendar, or the
+        // avatar) opens that group's own subnav beside the rail. On the keyboard, Tab
+        // only shows the icon's name; Enter, Space or ArrowRight opens the flyout,
+        // arrows move inside it, ArrowLeft or Escape returns to the icon. Single
+        // links show their name in a label. Leaving or a tap outside closes it.
+        (function initSidebarFlyouts() {
             const sidebar = document.getElementById('sidebar');
             if (!sidebar) return;
-            const OPEN_DELAY = 150;
+            const nav = sidebar.querySelector('.sidebar-nav');
+            const tip = document.getElementById('sidebar-rail-tip');
+            const avatar = sidebar.querySelector('.sidebar-user-avatar');
+            const OPEN_DELAY = 120;
             const CLOSE_DELAY = 300;
-            let timer = null;
+            let current = null;
+            let closeTimer = null;
+            let openTimer = null;
             let lastPointerType = 'mouse';
+            let openAtPointerDown = false;
 
             const isRail = () => !isMobileNavigationViewport()
                 && document.body.classList.contains('sidebar-collapsed');
-            const isPeeking = () => document.body.classList.contains('sidebar-peek');
 
-            function setPeek(open) {
-                clearTimeout(timer);
-                document.body.classList.toggle('sidebar-peek', open && isRail());
+            const flyouts = [];
+            if (nav) {
+                nav.querySelectorAll(':scope > .sidebar-section-toggle').forEach(toggle => {
+                    const panel = document.getElementById(toggle.getAttribute('aria-controls'));
+                    if (panel) flyouts.push({ trigger: toggle, panel, ariaEl: toggle, focusEl: toggle });
+                });
+                const calendarRow = nav.querySelector('.sidebar-calendar-row');
+                const calendarPanel = document.getElementById('calendar-sidebar-section');
+                if (calendarRow && calendarPanel) {
+                    flyouts.push({
+                        trigger: calendarRow,
+                        panel: calendarPanel,
+                        ariaEl: calendarRow.querySelector('.sidebar-calendar-arrow'),
+                        focusEl: calendarRow.querySelector('.sidebar-calendar-main'),
+                    });
+                }
+            }
+            const userPanel = document.getElementById('sidebar-user-flyout');
+            if (avatar && userPanel) {
+                flyouts.push({ trigger: avatar, panel: userPanel, ariaEl: avatar, focusEl: avatar, account: true });
             }
 
-            function schedulePeek(open, delay) {
-                clearTimeout(timer);
-                timer = setTimeout(() => setPeek(open), delay);
+            function hideTip() {
+                if (tip) tip.classList.remove('is-visible');
             }
 
-            sidebar.addEventListener('pointerdown', event => { lastPointerType = event.pointerType || 'mouse'; });
-            sidebar.addEventListener('pointerenter', event => {
-                if (event.pointerType === 'mouse' && isRail()) schedulePeek(true, OPEN_DELAY);
+            function close() {
+                clearTimeout(closeTimer);
+                if (!current) return;
+                const { panel, ariaEl, account } = current;
+                panel.classList.remove('is-flyout-open');
+                panel.style.top = '';
+                if (ariaEl) {
+                    ariaEl.setAttribute('aria-expanded', !account && panel.classList.contains('show') ? 'true' : 'false');
+                }
+                current = null;
+            }
+
+            function open(flyout) {
+                clearTimeout(closeTimer);
+                if (!isRail() || current === flyout) return;
+                close();
+                hideTip();
+                current = flyout;
+                const { trigger, panel, ariaEl, account } = flyout;
+                panel.classList.add('is-flyout-open');
+                if (ariaEl) ariaEl.setAttribute('aria-expanded', 'true');
+                if (!account) {
+                    // Line up with the icon, but never run off the bottom of the screen.
+                    const top = Math.min(trigger.getBoundingClientRect().top, window.innerHeight - panel.offsetHeight - 8);
+                    panel.style.top = `${Math.max(8, top)}px`;
+                }
+            }
+
+            function scheduleClose() {
+                clearTimeout(closeTimer);
+                closeTimer = setTimeout(close, CLOSE_DELAY);
+            }
+
+            const flyoutFor = node => flyouts.find(f => f.trigger.contains(node) || f.panel.contains(node));
+
+            // Keyboard: the visible links and buttons of a flyout, in order.
+            const itemsOf = flyout => Array.from(flyout.panel.querySelectorAll('a, button'))
+                .filter(item => !item.disabled && item.getClientRects().length);
+
+            function focusItem(flyout, index) {
+                const items = itemsOf(flyout);
+                if (items.length) items[(index + items.length) % items.length].focus();
+            }
+
+            function closeToTrigger() {
+                const target = current && current.focusEl;
+                close();
+                if (target) target.focus();
+            }
+
+            flyouts.forEach(flyout => {
+                [flyout.trigger, flyout.panel].forEach(part => {
+                    part.addEventListener('pointerenter', event => {
+                        if (event.pointerType !== 'mouse') return;
+                        clearTimeout(openTimer);
+                        if (current === flyout) clearTimeout(closeTimer);
+                        else if (part === flyout.trigger && current) open(flyout);
+                        else if (part === flyout.trigger) openTimer = setTimeout(() => open(flyout), OPEN_DELAY);
+                    });
+                    part.addEventListener('pointerleave', event => {
+                        if (event.pointerType !== 'mouse') return;
+                        clearTimeout(openTimer);
+                        if (current === flyout) scheduleClose();
+                    });
+                });
             });
-            sidebar.addEventListener('pointerleave', event => {
-                if (event.pointerType === 'mouse' && !sidebar.contains(document.activeElement)) {
-                    schedulePeek(false, CLOSE_DELAY);
+
+            sidebar.addEventListener('pointerdown', event => {
+                lastPointerType = event.pointerType || 'mouse';
+                const flyout = flyoutFor(event.target);
+                openAtPointerDown = !!flyout && current === flyout;
+            });
+
+            sidebar.addEventListener('focusout', event => {
+                if (current && !(current.trigger.contains(event.relatedTarget) || current.panel.contains(event.relatedTarget))) {
+                    close();
                 }
             });
-            sidebar.addEventListener('focusin', () => { if (isRail()) setPeek(true); });
-            sidebar.addEventListener('focusout', event => {
-                if (!sidebar.contains(event.relatedTarget) && !sidebar.matches(':hover')) setPeek(false);
-            });
-            // A tap on the rail opens the peek instead of following the link the
-            // finger happened to land on; the next tap acts normally.
+
+            // In the rail a group icon opens its flyout instead of Bootstrap's inline
+            // collapse; a touch tap on Calendar or the avatar opens it instead of
+            // navigating. A mouse click or Enter on Calendar still opens Calendar.
             sidebar.addEventListener('click', event => {
-                if (lastPointerType === 'touch' && isRail() && !isPeeking()) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setPeek(true);
+                if (!isRail()) return;
+                const flyout = flyouts.find(f => f.trigger.contains(event.target));
+                if (!flyout) return;
+                const isMouseClick = event.detail > 0 && lastPointerType === 'mouse';
+                const isCalendarLink = flyout.focusEl && flyout.focusEl.tagName === 'A';
+                if (isCalendarLink && (isMouseClick || event.detail === 0 || openAtPointerDown)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const wasOpen = event.detail === 0 ? current === flyout : openAtPointerDown;
+                if (wasOpen && !isMouseClick) {
+                    close();
+                } else {
+                    open(flyout);
+                    if (event.detail === 0) focusItem(flyout, 0);
                 }
             }, true);
+
             document.addEventListener('pointerdown', event => {
-                if (isPeeking() && !sidebar.contains(event.target)) setPeek(false);
+                if (current && !current.trigger.contains(event.target) && !current.panel.contains(event.target)) close();
+            });
+            // The rail's own icons, in order, for ArrowUp/ArrowDown between them.
+            const railIcons = () => Array.from(sidebar.querySelectorAll(
+                '.sidebar-nav > a, .sidebar-nav > .sidebar-section-toggle, .sidebar-calendar-main, .sidebar-user-avatar'
+            )).filter(icon => !icon.disabled && icon.getClientRects().length);
+
+            sidebar.addEventListener('keydown', event => {
+                if (!isRail()) return;
+                const flyout = flyoutFor(event.target);
+                const inPanel = !!flyout && flyout.panel.contains(event.target);
+                if (!inPanel && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                    const icons = railIcons();
+                    const index = icons.indexOf(event.target);
+                    if (index === -1) return;
+                    event.preventDefault();
+                    const step = event.key === 'ArrowDown' ? 1 : -1;
+                    icons[(index + step + icons.length) % icons.length].focus();
+                    return;
+                }
+                if (!flyout) return;
+                if (event.key === 'ArrowRight' && !inPanel) {
+                    event.preventDefault();
+                    open(flyout);
+                    focusItem(flyout, 0);
+                } else if (inPanel && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                    event.preventDefault();
+                    const step = event.key === 'ArrowDown' ? 1 : -1;
+                    focusItem(flyout, itemsOf(flyout).indexOf(document.activeElement) + step);
+                } else if (inPanel && event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    closeToTrigger();
+                }
             });
             document.addEventListener('keydown', event => {
-                if (event.key === 'Escape' && isPeeking()) setPeek(false);
+                if (event.key === 'Escape' && current) closeToTrigger();
             });
-            // Pinning or crossing into the mobile layout ends any peek.
-            new MutationObserver(() => { if (!isRail()) setPeek(false); })
+            if (nav) nav.addEventListener('scroll', () => { close(); hideTip(); }, { passive: true });
+            window.addEventListener('resize', () => { close(); hideTip(); });
+
+            // Name label beside the icon: single links on hover or focus, and group
+            // icons when the keyboard lands on them (their flyout stays closed).
+            if (tip) {
+                const showTip = control => {
+                    if (!isRail()) return;
+                    close();
+                    const label = control.querySelector('span');
+                    const rect = control.getBoundingClientRect();
+                    tip.textContent = label ? label.textContent.trim() : (control.getAttribute('aria-label') || '');
+                    tip.style.top = `${rect.top + rect.height / 2}px`;
+                    tip.classList.add('is-visible');
+                };
+                if (nav) {
+                    nav.querySelectorAll(':scope > a').forEach(link => {
+                        link.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') showTip(link); });
+                        link.addEventListener('pointerleave', hideTip);
+                        link.addEventListener('focus', () => showTip(link));
+                        link.addEventListener('blur', hideTip);
+                    });
+                }
+                flyouts.forEach(flyout => {
+                    const control = flyout.focusEl;
+                    if (!control) return;
+                    control.addEventListener('focus', () => {
+                        if (current !== flyout && control.matches(':focus-visible')) showTip(control);
+                    });
+                    control.addEventListener('blur', hideTip);
+                });
+            }
+
+            // The avatar only has a job in the rail. Pinning or crossing into the
+            // mobile layout closes any flyout.
+            function syncRailState() {
+                if (avatar) {
+                    avatar.disabled = !isRail();
+                    avatar.toggleAttribute('aria-hidden', !isRail());
+                }
+                if (!isRail()) { close(); hideTip(); }
+            }
+            syncRailState();
+            new MutationObserver(syncRailState)
                 .observe(document.body, { attributes: true, attributeFilter: ['class'] });
         })();
 
