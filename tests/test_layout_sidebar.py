@@ -479,6 +479,17 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertNotIn('font-weight: 800;', self.shell_css)
         self.assertNotIn('font-weight: 900;', self.shell_css)
 
+    def test_phone_drawer_is_modal_and_offline_is_announced(self):
+        drawer = self.layout.split('function setPageBehindDrawerInert(on) {', 1)[1].split('function toggleSidebarMobile()', 1)[0]
+        self.assertIn("document.querySelectorAll('body > *')", drawer)
+        self.assertIn("el.id === 'shell-connection-status'", drawer)
+        self.assertIn('setPageBehindDrawerInert(open);', drawer)
+        self.assertIn("document.activeElement === document.body", drawer)
+        self.assertIn('<div id="shell-connection-status" class="visually-hidden" role="status" aria-live="polite"></div>', self.layout)
+        self.assertIn("announceConnection('You are offline.');", self.layout)
+        self.assertIn("announceConnection('Back online.');", self.layout)
+        self.assertIn('id="main-content" role="main"', self.layout)
+
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]
         self.assertIn('--sidebar-subrow-height: 44px;', phone)

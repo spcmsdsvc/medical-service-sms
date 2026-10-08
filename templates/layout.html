@@ -70,6 +70,7 @@
 </head>
 <body>
     <a href="#main-content" class="skip-to-content">Skip to main content</a>
+    <div id="shell-connection-status" class="visually-hidden" role="status" aria-live="polite"></div>
 
     <div class="mobile-nav no-print">
         <div class="shell-brand">
@@ -441,7 +442,7 @@
     })();
     </script>
 
-    <div class="main-content" id="main-content" tabindex="-1">
+    <div class="main-content" id="main-content" role="main" tabindex="-1">
         <button type="button"
                 id="show-sidebar-btn"
                 class="btn btn-dark btn-sm mb-3 d-none no-print"
@@ -549,6 +550,26 @@
             applySidebarVisibility(collapsed, true);
         }
 
+        // While the phone drawer is open it behaves as a modal: everything behind it
+        // except the top bar (which holds Close) is inert, so Tab and screen readers
+        // cannot reach the page under the backdrop. Only elements made inert here are
+        // released again.
+        function setPageBehindDrawerInert(on) {
+            document.querySelectorAll('body > *').forEach(function(el) {
+                if (el.id === 'sidebar' || el.id === 'shell-connection-status' || el.classList.contains('mobile-nav')
+                    || el.classList.contains('mobile-nav-backdrop') || el.tagName === 'SCRIPT') return;
+                if (on) {
+                    if (!el.inert) {
+                        el.inert = true;
+                        el.dataset.drawerInert = 'true';
+                    }
+                } else if (el.dataset.drawerInert) {
+                    el.inert = false;
+                    delete el.dataset.drawerInert;
+                }
+            });
+        }
+
         function setMobileSidebar(open) {
             const sidebar = document.getElementById('sidebar');
             const menuButton = document.getElementById('mobile-menu-button');
@@ -567,6 +588,7 @@
             }
             // Must run before focus moves into the drawer: inert elements cannot take focus.
             syncSidebarInert();
+            setPageBehindDrawerInert(open);
 
             if (open) {
                 // Move focus into the drawer so keyboard and screen reader users land
@@ -576,8 +598,10 @@
                     || sidebar.querySelector('.sidebar-nav a')
                     || sidebar.querySelector('a, button');
                 if (target) target.focus();
-            } else if (menuButton && document.activeElement && sidebar.contains(document.activeElement)) {
-                // Only reclaim focus if it was inside the drawer we just closed.
+            } else if (menuButton && (!document.activeElement || document.activeElement === document.body
+                || sidebar.contains(document.activeElement))) {
+                // Reclaim focus if it was inside the drawer we just closed (or dropped to
+                // the body); focus on another top-bar tool stays where it is.
                 menuButton.focus();
             }
         }
@@ -1193,16 +1217,26 @@
         console.info('[PWA] Service worker controller updated.');
     });
 
+    // The OFFLINE tag is drawn by CSS, which screen readers do not reliably read,
+    // so connection changes are also announced through #shell-connection-status.
+    function announceConnection(message){
+        const status = document.getElementById('shell-connection-status');
+        if(status) status.textContent = message;
+    }
+
     window.addEventListener('online', function(){
         document.body.classList.remove('offline-mode');
+        announceConnection('Back online.');
     });
 
     window.addEventListener('offline', function(){
         document.body.classList.add('offline-mode');
+        announceConnection('You are offline.');
     });
 
     if(!navigator.onLine){
         document.body.classList.add('offline-mode');
+        announceConnection('You are offline.');
     }
 })();
 </script>
