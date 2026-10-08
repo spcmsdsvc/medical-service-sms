@@ -262,6 +262,14 @@
                 </div>
                 {% endif %}
 
+                {% if is_vieworks_inventory %}
+                <div class="mb-3">
+                    <label for="v-linked-product" class="small fw-bold text-muted text-uppercase">Linked Machine</label>
+                    <select id="v-linked-product" class="form-select"><option value="">Not linked</option></select>
+                    <div id="v-linked-product-help" class="small text-muted mt-1">Select a medical center to see its machines.</div>
+                </div>
+                {% endif %}
+
                 <div class="row">
                     <div class="col-md-6">
                         <label for="p-w-start" class="small fw-bold text-muted text-uppercase">Start Date</label>
@@ -417,6 +425,7 @@
     let prodModal;
     let productsData = [];
     let vieworksData = [];
+    let productLinkData = [];
     let masterClients = [];
     let nameCounts = {}; // Detects duplicate names in the medical database
     let productSortState = { key: '', direction: 'asc' };
@@ -1029,7 +1038,8 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
             const [resP, resC] = await Promise.all([
                 fetch(freshUrl(inventoryItemsUrl), { cache: 'no-store' }),
                 fetch(freshUrl('/get_clients?fields=basic'), { cache: 'no-store' }),
-                loadVieworksLinkOptions()
+                loadVieworksLinkOptions(),
+                loadProductLinkOptions()
             ]);
 
             if(!resP.ok || !resC.ok){
@@ -1097,6 +1107,40 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
             if(!clientId) help.textContent = 'Select a medical center to see eligible Vieworks items.';
             else if(!eligible.length) help.textContent = 'No unassigned Vieworks/Canon items are available for this medical center.';
             else help.textContent = `${eligible.length} eligible Vieworks/Canon item${eligible.length === 1 ? '' : 's'} available. Use Ctrl/Cmd-click to select multiple.`;
+        }
+    }
+
+    async function loadProductLinkOptions(){
+        if(!isVieworksInventory) return;
+        try{
+            const productsRes = await fetch(freshUrl('/get_products'), { cache: 'no-store' });
+            productLinkData = productsRes.ok ? await productsRes.json() : [];
+        }catch(productsError){
+            productLinkData = [];
+            console.warn('[Vieworks] Machine link options unavailable', productsError);
+        }
+    }
+
+    function refreshProductLinkOptions(selectedSerial=''){
+        if(!isVieworksInventory) return;
+        const select = document.getElementById('v-linked-product');
+        const help = document.getElementById('v-linked-product-help');
+        if(!select) return;
+        const clientId = String(document.getElementById('p-cli-id')?.value || '');
+        const selected = String(selectedSerial || '');
+        const eligible = clientId
+            ? productLinkData.filter(product => String(product.client_id || '') === clientId)
+            : [];
+        select.innerHTML = '<option value="">Not linked</option>' + eligible.map(product => {
+            const serial = String(product.serial_number || '');
+            const label = `${product.name || 'Machine'} — ${serial}${product.bsid ? ` (${product.bsid})` : ''}`;
+            return `<option value="${escapeHtml(serial)}" ${serial === selected ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+        }).join('');
+        select.disabled = !eligible.length;
+        if(help){
+            if(!clientId) help.textContent = 'Select a medical center to see its machines.';
+            else if(!eligible.length) help.textContent = 'This medical center has no machines to link.';
+            else help.textContent = `${eligible.length} machine${eligible.length === 1 ? '' : 's'} at this medical center.`;
         }
     }
 
@@ -1180,6 +1224,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
             if (!val){
                 hiddenId.value = '';
                 refreshVieworksLinkOptions([]);
+                refreshProductLinkOptions('');
                 return;
             }
             hiddenId.value = '';
@@ -1208,6 +1253,7 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
                     hiddenId.value = m.id;
                     resDiv.innerHTML = "";
                     refreshVieworksLinkOptions(currentLinkedVieworksSerials());
+                    refreshProductLinkOptions(document.getElementById('v-linked-product')?.value || '');
                 };
                 
                 resDiv.appendChild(div);
@@ -1812,7 +1858,10 @@ function renderTable(data) {
             linked_vieworks: Array.isArray(savedData.linked_vieworks)
                 ? savedData.linked_vieworks
                 : vieworksData.filter(item => (savedData.linked_vieworks_serials || []).includes(item.serial_number)),
-            with_vieworks_canon: Boolean(savedData.with_vieworks_canon || (savedData.linked_vieworks_serials || []).length)
+            with_vieworks_canon: Boolean(savedData.with_vieworks_canon || (savedData.linked_vieworks_serials || []).length),
+            linked_product: Object.prototype.hasOwnProperty.call(savedData, 'linked_product')
+                ? savedData.linked_product
+                : (previousProduct.linked_product || null)
         };
         updatedProduct.computed_status = savedData.computed_status || getProductWarrantyStatus(updatedProduct);
 
@@ -1850,6 +1899,7 @@ function openAddModal() {
         if(linkCheckbox) linkCheckbox.checked = false;
         if(linkSelect){ linkSelect.innerHTML = ''; linkSelect.disabled = true; }
         refreshVieworksLinkOptions([]);
+        refreshProductLinkOptions('');
         
         prodModal.show(); 
     }
@@ -1901,6 +1951,7 @@ function openAddModal() {
             linkCheckbox.checked = Boolean(p.with_vieworks_canon || (p.linked_vieworks || []).length);
             refreshVieworksLinkOptions((p.linked_vieworks || []).map(item => item.serial_number));
         }
+        refreshProductLinkOptions(p.linked_product?.serial_number || '');
         
         prodModal.show(); 
     }
@@ -1937,6 +1988,9 @@ function openAddModal() {
             if(data.with_vieworks_canon && !linkedSerials.length){
                 return productToast('Select at least one Vieworks/Canon item when the option is enabled.');
             }
+        }
+        if(isVieworksInventory){
+            data.linked_product_serial = document.getElementById('v-linked-product')?.value || '';
         }
         
         data.serial_number = (data.serial_number || '').trim().toUpperCase();

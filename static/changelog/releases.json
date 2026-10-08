@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-vieworks-machine-link",
+      "release_date": "2026-10-08",
+      "title": "Link Vieworks to a Machine",
+      "summary": "You can now choose a Vieworks item's machine from the Vieworks page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-vieworks-machine-link-form",
+          "category": "Inventory",
+          "description": "When adding or editing a Vieworks item, the new Linked Machine list shows the machines at the same medical center. Pick one to link them, or choose Not linked to remove the link. The link also shows on the Product page.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-dark-sidebar-surface",
       "release_date": "2026-10-08",
       "title": "Clearer Sidebar in Dark Mode",

@@ -37,6 +37,70 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Link a Vieworks Item to a Machine from the Vieworks Page
+
+**Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(vieworks): link a Vieworks item to its machine from the Vieworks form"). Owner said "go ahead" on 2026-10-08. Full suite before publishing: 1,623 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.
+
+**Outcome (2026-10-08):** all 6 steps done as planned. Where it differed: the Product page route is `/products_page`, not `/products` (the template test first passed trivially on a 404; it now also asserts each page returns 200). The edit route's link-row delete in `replace_vieworks_parent_link` matches the serial case-insensitively. Fail-first: all 6 new tests fail on the committed `app.py` and template; focused modules OK (`test_vieworks_parent_link` 6, `test_product_vieworks_links_history` 6, `test_vieworks_inventory` 13, `test_product_inventory_batch1` 8, `test_product_inventory_batch3` 4). Browser (DB copy, temporary admin; copy, account and launch change removed): Add on `/vieworks` lists only the chosen center's 7 machines; saving with one links it; edit preselects it, changing to another machine and to "Not linked" both save; the Product page edit form shows the link made from Vieworks; Product Save still works; at 375 px the select fits (26–349 px, 44 px tall, no horizontal scroll); no console errors besides a mistyped `/products` visit. Full suite not run yet (runs once before publishing).
+**Approved:** 2026-10-08 (owner: "approved"). Under the two-step rule this records approval only; execution needs a separate "go" / "execute" / "start".
+**Detailed:** 2026-10-08.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Context
+
+Today a Vieworks item can only be linked to a machine from the Product page: the "With Vieworks/Canon?" switch and multi-select on a Product's add/edit form. On the Vieworks page (`/vieworks`) the add/edit form has no way to choose the machine. The owner asked for the Vieworks add/edit form to offer a machine to link to, "same as the linking on the product page". Both sides write the same link table, so a link made from either page shows on both.
+
+## Decisions taken
+
+1. **One machine per item.** The control is a single dropdown: "Not linked" plus the machines (Product records) owned by the selected medical center. The database allows only one machine per Vieworks item, so the Product page's switch + multi-select pattern does not fit.
+2. **Medical center changes.** Changing an item's medical center and picking a machine from the new center in the same save is allowed. Changing the center while keeping a machine from the old center is still refused.
+3. **"Not linked"** removes the link.
+
+## Investigation
+
+- `ProductVieworksLink` ([app.py:2784](app.py:2784)) has a unique constraint on `vieworks_serial`: at most one machine per Vieworks item; a machine can have many Vieworks items.
+- Product-side checks are in `validate_product_vieworks_links` ([app.py:3205](app.py:3205)): same medical center, and an item already linked to another machine is refused. `replace_product_vieworks_links` ([app.py:3243](app.py:3243)) replaces a machine's whole link list.
+- `product_vieworks_parent_payload` ([app.py:3172](app.py:3172)) serializes an item's machine; `vieworks_item_to_dict` already returns it as `linked_product` ([app.py:33536](app.py:33536)).
+- `add_vieworks_item` ([app.py:63989](app.py:63989)) creates no link. `update_vieworks_item` ([app.py:64045](app.py:64045)) refuses a medical-center change on a linked item (`'A linked Vieworks/Canon item must remain with the same medical center as its Product.'`) and moves the link row when the serial is renamed.
+- The Vieworks page renders `templates/products.html` with `inventory_mode='vieworks'` ([app.py:28977](app.py:28977)). The Product link control is wrapped in `{% if not is_standalone_inventory %}` ([products.html:254](templates/products.html:254)); its script functions (`loadVieworksLinkOptions`, `refreshVieworksLinkOptions`, `setupVieworksLinkControls`) return early on standalone pages.
+- `loadData` ([products.html:1024](templates/products.html:1024)) loads items, clients and Vieworks link options in one `Promise.all`. The medical center autocomplete (`setupAutocomplete`) calls `refreshVieworksLinkOptions` when a center is chosen or cleared.
+- `can_edit_vieworks_inventory` and `can_edit_products_inventory` allow the same roles (admins plus BC01/02/03 engineers), so linking from the Vieworks page needs no new permission.
+- `/get_products` ([app.py:33350](app.py:33350)) returns `serial_number`, `name`, `bsid`, `client_id` for every Product and `[]` for HR-schedule-only users.
+
+## Execution steps
+
+1. **Server helpers** (`app.py`, beside `validate_product_vieworks_links`): add `vieworks_link_state_from_payload(payload)` returning `(present, serial)` for `linked_product_serial` (uppercased; empty string = unlink), and `validate_vieworks_parent_link(client_id, product_serial)` returning an error message or `None` (machine exists; item has a medical center; machine's `client_id` equals the item's). Done: both exist, messages match the Product side's wording.
+2. **Add route** (`add_vieworks_item`): validate before saving; when a serial is sent, add one `ProductVieworksLink` row in the same transaction. Done: add with a valid machine returns `linked_product`; invalid machine returns 400 and creates nothing.
+3. **Edit route** (`update_vieworks_item`): when `linked_product_serial` is in the payload, validate it against the new `client_id`, delete this item's link row, then add the chosen one; this replaces the existing "must remain with the same medical center" block for that request. When the field is absent (CSV import, older callers) keep today's behaviour unchanged. Add "linked machine" to the activity log note when the link changed. Done: link, change machine, unlink, and center + machine together all work; a request without the field behaves exactly as before.
+4. **Markup** (`templates/products.html`): `{% if is_vieworks_inventory %}` block under the medical center field with `<select id="v-linked-product" class="form-select">` labelled "Linked Machine" and `#v-linked-product-help`. Done: present on `/vieworks` only, absent on `/products` and `/genoray`.
+5. **Script** (`templates/products.html`): `loadProductLinkOptions()` fetches `/get_products` on the Vieworks page only, inside the existing `Promise.all` in `loadData`; `refreshProductLinkOptions(selectedSerial)` lists the selected center's machines as "Name — Serial (BSID)" with "Not linked" first, and help text for no center / no machines; the autocomplete calls it beside `refreshVieworksLinkOptions`; `openAddModal` resets to "Not linked"; `openEditModal` preselects `p.linked_product?.serial_number`; `saveProduct` sends `linked_product_serial` on the Vieworks page; `updateProductListAfterSave` keeps the server's `linked_product`. Done: the Product page's link control and every existing function stay untouched and working.
+6. **Release**: bump the service worker `CACHE_VERSION` in `app.py` (old value kept as a history comment); add a `static/changelog/releases.json` entry "Link Vieworks to a Machine" (Inventory; admins and engineers).
+
+## Deliberately excluded
+
+- Linking through CSV import: not asked for.
+- A "Linked machine" column in the Vieworks table: the history panel already shows the link.
+- Any change to the Product page's link control or to the database schema: no new table or column is needed.
+
+## Verification
+
+- New `tests/test_vieworks_parent_link.py`: add with a link; edit to change machine, then unlink; machine from another center → 400; unknown machine → 400; center + machine changed together → OK; payload without the field leaves the link alone; `/get_products` shows the link made from Vieworks; template check that `#v-linked-product` renders only in Vieworks mode. Positive control: run the new tests against the unchanged routes and template and confirm they fail.
+- Focused existing modules: `test_product_vieworks_links_history`, `test_vieworks_inventory`, `test_product_inventory_batch1`, `test_product_inventory_batch3`.
+- Browser (database copy, temporary account removed afterwards): add a Vieworks item linked to a machine; edit to another machine, then to "Not linked"; after each step the Product page's edit form shows the link correctly; changing the medical center refreshes the machine list; Product page Save, Add and the Vieworks multi-select still work; 375 px layout; no console errors.
+- Full suite once, before publishing: `venv/Scripts/python.exe scripts/run_suite.py`.
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined.
+2. Update `changes.md`, and set this plan's Status to `Executed` with the commit hash (amend here if the outcome differed).
+3. Wait for "commit and push"; stage only the intended files (never `scheduler.db`, handoffs, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`); verify `git ls-remote origin refs/heads/main` and Railway's deployment status.
+
+## Risks
+
+- **Stale Product form:** a Product edit form opened before a link was made on the Vieworks page replaces that machine's whole link list when saved, and can drop the new link. This already happens today between two users; it is not new.
+- **Slower Vieworks page:** `/get_products` is a heavier request; it runs in parallel with the others, not after them.
+- **Blast radius:** the add/edit Vieworks routes and the shared `products.html`; the field-absent path keeps old callers unchanged, and the new markup and script are gated to Vieworks mode.
+
 # Sidebar Group Flyouts (Icon Rail)
 
 **Status:** Executed — sandbox `design/playground` commits `a4f2b92`, `cefd6b2`, `ebb50a2`, `1c12ded`; published to `main` on 2026-10-08 (shell files only). Owner said "go" on 2026-10-07.

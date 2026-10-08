@@ -3275,6 +3275,44 @@ def product_link_state_from_payload(payload):
     return True, serials, None
 
 
+def vieworks_link_state_from_payload(payload):
+    """Return whether a Vieworks payload sets its machine, and that Product serial ('' unlinks)."""
+    payload = payload or {}
+    if 'linked_product_serial' not in payload:
+        return False, None
+    return True, (clean_str(payload.get('linked_product_serial')) or '').upper()
+
+
+def validate_vieworks_parent_link(client_id, product_serial):
+    """Validate that one Vieworks item may be linked to the chosen Product machine."""
+    if not product_serial:
+        return None
+    product = Product.query.filter(func.lower(Product.serial_number) == product_serial.casefold()).first()
+    if not product:
+        return f'Product {product_serial} was not found.'
+    item_client_id = clean_int(client_id)
+    if not item_client_id:
+        return 'Select a medical center before linking Vieworks/Canon equipment.'
+    if clean_int(getattr(product, 'client_id', None)) != item_client_id:
+        return 'All linked Vieworks/Canon equipment must belong to the same medical center.'
+    return None
+
+
+def replace_vieworks_parent_link(vieworks_serial, product_serial):
+    """Replace one Vieworks item's machine link inside the caller transaction."""
+    ensure_product_vieworks_link_table()
+    serial = clean_str(vieworks_serial) or ''
+    ProductVieworksLink.query.filter(
+        func.lower(ProductVieworksLink.vieworks_serial) == serial.casefold()
+    ).delete(synchronize_session=False)
+    if product_serial:
+        product = Product.query.filter(func.lower(Product.serial_number) == product_serial.casefold()).first()
+        db.session.add(ProductVieworksLink(
+            product_serial=product.serial_number if product else product_serial,
+            vieworks_serial=serial,
+        ))
+
+
 def resolve_operational_equipment(serial_number, source='product'):
     """Resolve one equipment row only inside its declared inventory table."""
     normalized_source = normalize_equipment_source(source, default='')
@@ -27148,7 +27186,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v265-account-flyout-hover.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v266-flyout-resize-fix.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v267-role-label-rail-dividers.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v268-dark-rail-surface';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v268-dark-rail-surface.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v269-vieworks-machine-link';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -63994,10 +64033,16 @@ def add_vieworks_item():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
     begin_vieworks_write_transaction()
-    values, error = vieworks_payload_values(request.get_json(silent=True) or {})
+    payload = request.get_json(silent=True) or {}
+    values, error = vieworks_payload_values(payload)
     if error:
         db.session.rollback()
         return jsonify({'message': error}), 400
+    _link_present, linked_product_serial = vieworks_link_state_from_payload(payload)
+    link_error = validate_vieworks_parent_link(values['client_id'], linked_product_serial)
+    if link_error:
+        db.session.rollback()
+        return jsonify({'message': link_error, 'field': 'linked_product_serial'}), 400
 
     serial_number = values['serial_number']
     if db.session.get(VieworksItem, serial_number):
@@ -64014,6 +64059,8 @@ def add_vieworks_item():
         generated_bsid = allocate_vieworks_bsid()
         item.bsid = generated_bsid
         db.session.add(item)
+        if linked_product_serial:
+            replace_vieworks_parent_link(serial_number, linked_product_serial)
         db.session.commit()
     except IntegrityError as item_error:
         db.session.rollback()
@@ -64034,7 +64081,8 @@ def add_vieworks_item():
         print(f'[Vieworks] Add item failed for {serial_number}: {item_error}', flush=True)
         return jsonify({'message': 'Unable to add Vieworks item. Please try again.'}), 500
 
-    log_activity(f'Added Vieworks equipment: {item.serial_number}')
+    link_note = f' (linked machine {linked_product_serial})' if linked_product_serial else ''
+    log_activity(f'Added Vieworks equipment: {item.serial_number}{link_note}')
     return jsonify({
         'status': 'success',
         'item': vieworks_item_to_dict(item),
@@ -64096,7 +64144,14 @@ def update_vieworks_item(serial_number):
         }), 409
 
     existing_links = product_vieworks_linked_items(vieworks_serial=old_serial)
-    if existing_links:
+    old_product_serial = existing_links[0][0].product_serial if existing_links else ''
+    link_present, linked_product_serial = vieworks_link_state_from_payload(payload)
+    if link_present:
+        link_error = validate_vieworks_parent_link(values['client_id'], linked_product_serial)
+        if link_error:
+            db.session.rollback()
+            return jsonify({'message': link_error, 'field': 'linked_product_serial'}), 400
+    elif existing_links:
         parent = db.session.get(Product, existing_links[0][0].product_serial)
         parent_client_id = clean_int(getattr(parent, 'client_id', None)) if parent else None
         if not parent or not parent_client_id or clean_int(values['client_id']) != parent_client_id:
@@ -64140,6 +64195,8 @@ def update_vieworks_item(serial_number):
             ProductVieworksLink.query.filter_by(vieworks_serial=old_serial).update(
                 {'vieworks_serial': new_serial}, synchronize_session=False
             )
+        if link_present:
+            replace_vieworks_parent_link(new_serial, linked_product_serial)
         db.session.commit()
     except IntegrityError as item_error:
         db.session.rollback()
@@ -64159,7 +64216,9 @@ def update_vieworks_item(serial_number):
         print(f'[Vieworks] Update item failed for {old_serial}: {item_error}', flush=True)
         return jsonify({'message': 'Unable to update Vieworks item. Please try again.'}), 500
 
-    log_activity(f'Updated Vieworks equipment: {item.serial_number}')
+    link_changed = link_present and linked_product_serial.casefold() != (old_product_serial or '').casefold()
+    link_note = ' (linked machine)' if link_changed else ''
+    log_activity(f'Updated Vieworks equipment: {item.serial_number}{link_note}')
     return jsonify({
         'status': 'success',
         'serial_changed': new_serial != old_serial,
