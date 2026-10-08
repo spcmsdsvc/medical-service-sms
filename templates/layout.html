@@ -682,12 +682,18 @@
                         else if (part === flyout.trigger && current) open(flyout);
                         else if (part === flyout.trigger) openTimer = setTimeout(() => open(flyout), OPEN_DELAY);
                     });
+                    // Moving within the sidebar keeps the flyout open, so the pointer can
+                    // travel from a small trigger (the 32px avatar) across the rail to
+                    // its panel. Another icon replaces it; leaving the sidebar closes it.
                     part.addEventListener('pointerleave', event => {
                         if (event.pointerType !== 'mouse') return;
                         clearTimeout(openTimer);
-                        if (current === flyout) scheduleClose();
+                        if (current === flyout && !sidebar.contains(event.relatedTarget)) scheduleClose();
                     });
                 });
+            });
+            sidebar.addEventListener('pointerleave', event => {
+                if (event.pointerType === 'mouse' && current) scheduleClose();
             });
 
             sidebar.addEventListener('pointerdown', event => {

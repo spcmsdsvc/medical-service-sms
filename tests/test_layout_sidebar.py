@@ -403,6 +403,9 @@ class SidebarSourceTests(unittest.TestCase):
     def test_shell_polish_hover_intent_names_and_phone_bell_colour(self):
         flyouts = self.layout.split('(function initSidebarFlyouts()', 1)[1].split('})();', 1)[0]
         self.assertIn('const OPEN_DELAY = 120;', flyouts)
+        # Crossing the rail from the small avatar to its panel must not close it.
+        self.assertIn('if (current === flyout && !sidebar.contains(event.relatedTarget)) scheduleClose();', flyouts)
+        self.assertIn("sidebar.addEventListener('pointerleave', event => {", flyouts)
         self.assertIn("avatar.toggleAttribute('aria-hidden', !isRail());", flyouts)
         self.assertIn('aria-label="Show Create TSR"', self.layout)
         self.assertIn('.mobile-nav .mobile-nav-actions a.changelog-header-button {\n    color: var(--sidebar-text);', self.shell_css)
