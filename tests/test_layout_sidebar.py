@@ -140,7 +140,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('margin-left: var(--sidebar-width);', self.shell_css)
 
         mobile = self.shell_css.split('@media (max-width: 992px)', 1)[1]
-        self.assertIn('width: min(82vw, 240px);', mobile)
+        self.assertIn('width: min(86vw, 320px);', mobile)
         self.assertIn('.sidebar-resize-handle {', mobile)
         self.assertIn('display: none;', mobile)
 
@@ -179,7 +179,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=27", self.layout)
+        self.assertIn("app-shell.css') }}?v=28", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -525,6 +525,24 @@ class SidebarSourceTests(unittest.TestCase):
         sidebar_part = self.shell_css.split('/* --- Touch device polish', 1)[0]
         stray = set(re.findall(r'font-size: (0\.(?:64|66|74|8|86)rem)', sidebar_part))
         self.assertEqual(stray, set())
+
+    def test_rail_review_fixes_guard_marker_offline_drawer_and_captions(self):
+        # Bootstrap's inline collapse is refused while the rail owns the group.
+        self.assertIn("['show.bs.collapse', 'hide.bs.collapse'].forEach(type => {", self.layout)
+        self.assertIn('if (event.target === flyout.panel && isRail()) event.preventDefault();', self.layout)
+        # Lighter marker that still follows the accent.
+        self.assertIn('--sidebar-active-marker: color-mix(in srgb, var(--app-primary) 55%, #ffffff);', self.shell_css)
+        self.assertNotIn('border-left: 3px solid var(--app-primary);', self.shell_css)
+        # Readable offline tag and a phone strip; the online message is cleared.
+        self.assertIn("content: 'Offline · Create TSR still works';", self.shell_css)
+        self.assertNotIn('font-size: .6rem;', self.shell_css)
+        self.assertIn("status.textContent === 'Back online.'", self.layout)
+        # Wider phone drawer with the account on top.
+        self.assertIn('width: min(86vw, 320px);', self.shell_css)
+        self.assertIn('.sidebar .sidebar-user {\n        order: -1;', self.shell_css)
+        # Rail captions.
+        self.assertIn('data-rail-caption="Field Ops"', self.layout)
+        self.assertIn('content: attr(data-rail-caption);', self.shell_css)
 
     def test_phone_drawer_rows_are_thumb_sized_and_long_labels_wrap(self):
         phone = self.shell_css.split('@media (max-width: 992px) {\n    /* The drawer opens under the top bar', 1)[1].split('\n}\n', 1)[0]

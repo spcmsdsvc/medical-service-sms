@@ -41,6 +41,11 @@
     --shell-text-row: 0.9rem;
     --shell-text-subrow: 0.84rem;
     --shell-text-micro: 0.72rem;
+    /* Rail icon captions only: 64px wide, so one step below micro. */
+    --shell-text-caption: 0.66rem;
+    /* Current-page marker: the user's accent lifted toward white so it keeps
+       at least 3:1 on the dark sidebar (plain #0d6efd on #2c3e50 was ~2.4:1). */
+    --sidebar-active-marker: color-mix(in srgb, var(--app-primary) 55%, #ffffff);
     /* Edge of the rail and its flyouts: a hairline in light, where the slate
        already contrasts with the page, and a visible light edge in dark. */
     --sidebar-edge: var(--sidebar-divider);
@@ -358,7 +363,7 @@ body.sidebar-resizing .main-content {
 .sidebar-calendar-main.active {
     color: var(--sidebar-text-strong);
     background: var(--sidebar-active-bg);
-    border-left: 3px solid var(--app-primary);
+    border-left: 3px solid var(--sidebar-active-marker);
     padding-left: 17px;
 }
 
@@ -629,9 +634,34 @@ body.sidebar-resizing .main-content {
         white-space: nowrap;
     }
 
+    /* Rail captions: a short name under each top-level icon, so the rail reads
+       without hovering. The full name stays the accessible name (the span). */
+    body.sidebar-collapsed .sidebar .sidebar-nav > a[data-rail-caption],
+    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption],
+    body.sidebar-collapsed .sidebar .sidebar-calendar-main[data-rail-caption] {
+        flex-direction: column;
+        gap: 4px;
+        min-height: 54px;
+        padding: 6px 2px;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-nav > a[data-rail-caption]::after,
+    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption]::after,
+    body.sidebar-collapsed .sidebar .sidebar-calendar-main[data-rail-caption]::after {
+        content: attr(data-rail-caption);
+        max-width: 60px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: var(--shell-text-caption);
+        font-weight: 600;
+        line-height: 1.1;
+        letter-spacing: 0;
+    }
+
     body.sidebar-collapsed .sidebar .sidebar-section-toggle.active {
         background: var(--sidebar-active-bg);
-        border-left: 3px solid var(--app-primary);
+        border-left: 3px solid var(--sidebar-active-marker);
     }
 
     body.sidebar-collapsed .sidebar .sidebar-calendar-row {
@@ -996,7 +1026,7 @@ body.sidebar-resizing .main-content {
         right: -100%;
         transition: right 0.3s ease;
         top: var(--mobile-nav-height, 64px);
-        width: min(82vw, 240px);
+        width: min(86vw, 320px);
         height: calc(100vh - var(--mobile-nav-height, 64px));
         height: calc(100dvh - var(--mobile-nav-height, 64px));
         box-shadow: 0 0 0 rgba(0, 0, 0, 0);
@@ -1004,6 +1034,17 @@ body.sidebar-resizing .main-content {
 
     .sidebar-header {
         display: none;
+    }
+
+    /* Account (name, role, Log out) on top of the drawer: the drawer opens from
+       the right, so its bottom-right corner is the thumb's easiest reach, and a
+       one-tap Log out there was the likeliest mis-tap. Menu links take that
+       zone instead. */
+    .sidebar .sidebar-user {
+        order: -1;
+        border-top: 0;
+        border-bottom: 1px solid var(--sidebar-edge);
+        padding: 11px 14px;
     }
 
     /* Thumb-sized drawer (DESIGN.md: 44px touch targets on phones): sub-rows and
@@ -1168,19 +1209,43 @@ body.sidebar-resizing .main-content {
     left: 50%;
     bottom: -8px;
     transform: translateX(-50%);
-    height: 16px;
-    padding: 0 7px;
+    height: 20px;
+    padding: 0 8px;
     border: 1px solid rgba(250, 204, 21, .55);
     border-radius: 999px;
     background: #3a3410;
     color: #facc15;
     display: inline-flex;
     align-items: center;
-    font-size: .6rem;
+    font-size: var(--shell-text-micro);
     font-weight: 600;
     line-height: 1;
     letter-spacing: .08em;
     white-space: nowrap;
+}
+
+.offline-mode .sidebar-header::after {
+    bottom: -10px;
+}
+
+/* Phone: a full-width strip inside the bottom of the top bar, readable at arm's
+   length outdoors, saying what still works. The bar grows to make room, and the
+   drawer, which measures the bar when it opens, starts below it. */
+.offline-mode .mobile-nav {
+    padding-bottom: 34px;
+}
+
+.offline-mode .mobile-nav::after {
+    content: 'Offline · Create TSR still works';
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    height: 24px;
+    justify-content: center;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    letter-spacing: .02em;
 }
 
 @media (max-width: 768px) {
