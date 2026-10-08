@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-sidebar-menus-stay-open",
+      "release_date": "2026-10-08",
+      "title": "Sidebar Menus Stay Open",
+      "summary": "Sidebar menus no longer close by themselves on the Calendar.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-sidebar-menus-calendar-fix",
+          "category": "System",
+          "description": "On desktop, pointing at an icon in the thin sidebar opens its menu. On the Calendar these menus closed again almost at once, even with the mouse held still. They now stay open until you move away from the sidebar or point at another icon.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-account-menu-hover",
       "release_date": "2026-10-08",
       "title": "Account Menu Stays Open",

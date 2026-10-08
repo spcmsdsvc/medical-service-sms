@@ -406,6 +406,8 @@ class SidebarSourceTests(unittest.TestCase):
         # Crossing the rail from the small avatar to its panel must not close it.
         self.assertIn('if (current === flyout && !sidebar.contains(event.relatedTarget)) scheduleClose();', flyouts)
         self.assertIn("sidebar.addEventListener('pointerleave', event => {", flyouts)
+        # Synthetic resize events (Calendar fires them constantly) must not close a flyout.
+        self.assertIn('if (viewport === lastViewport) return;', flyouts)
         self.assertIn("avatar.toggleAttribute('aria-hidden', !isRail());", flyouts)
         self.assertIn('aria-label="Show Create TSR"', self.layout)
         self.assertIn('.mobile-nav .mobile-nav-actions a.changelog-header-button {\n    color: var(--sidebar-text);', self.shell_css)

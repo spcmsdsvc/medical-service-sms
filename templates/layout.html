@@ -768,7 +768,17 @@
                 if (event.key === 'Escape' && current) closeToTrigger();
             });
             if (nav) nav.addEventListener('scroll', () => { close(); hideTip(); }, { passive: true });
-            window.addEventListener('resize', () => { close(); hideTip(); });
+            // Only a real size change closes a flyout. Pages fire synthetic resize
+            // events to re-measure (Calendar does on every toolbar show/hide),
+            // which closed flyouts while the pointer sat still on them.
+            let lastViewport = `${window.innerWidth}x${window.innerHeight}`;
+            window.addEventListener('resize', () => {
+                const viewport = `${window.innerWidth}x${window.innerHeight}`;
+                if (viewport === lastViewport) return;
+                lastViewport = viewport;
+                close();
+                hideTip();
+            });
 
             // Name label beside the icon: single links on hover or focus, and group
             // icons when the keyboard lands on them (their flyout stays closed).
