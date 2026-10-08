@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Sidebar Order and Groups (App Shell)
 
-**Status:** Executed on the playground (not committed yet; awaiting the owner's keep/discard) — owner said "go" on 2026-10-08.
+**Status:** Executed — committed to sandbox `design/playground` as `e262a2d` on the owner's "keep" (2026-10-08); not on `main` until a separate "commit and push".
 
 **Outcome (2026-10-08):** all 8 steps done; 119 shell, theme, offline and sign-in tests OK (2 new tests fail on `17f7cd7`). Differences from the plan, found while building:
 - New Request's rail caption is "Forms", not "Request": "Request" sat next to My Requests' "Requests" in the rail.
