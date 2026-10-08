@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import uuid
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -50,6 +51,8 @@ class ActivityRelatedRouteTests(unittest.TestCase):
         base = datetime(2026, 10, 1, 9, 0)
         cls.tr = 'TR-20261001-' + str(int(uuid.uuid4().int % 90000) + 10000)
         cls.other_tr = cls.tr + '0'
+        cls.lr = 'LR-20261001-' + str(int(uuid.uuid4().int % 90000) + 10000)
+        cls.reject_at = base + timedelta(days=3)
         user = f'Tester{cls.suffix}'
         entries = {
             'tr_open': (user, f'Submitted Travel Request: {cls.tr}', base),
@@ -60,6 +63,8 @@ class ActivityRelatedRouteTests(unittest.TestCase):
             'far': (user, f'Modified details for client: Far {cls.suffix}', base + timedelta(days=5, minutes=45)),
             'routine': (user, 'Updated appearance preference: graphite / teal', base + timedelta(days=5, minutes=5)),
             'someone_else': ('Someone', f'Added client: Other {cls.suffix}', base + timedelta(days=5, minutes=2)),
+            'lr_reject': ('Approver', f'Leave Request Rejected: {cls.lr}', cls.reject_at),
+            'lr_submit': (user, f'Leave Request Submitted: {cls.lr}', cls.reject_at - timedelta(hours=2)),
         }
         with cls.app.app_context():
             app_module.db.create_all()
@@ -85,7 +90,34 @@ class ActivityRelatedRouteTests(unittest.TestCase):
                     route_id=route.id, travel_request_id=travel.id, sequence_no=1,
                     client_name=f'Hospital {destination}', product_name='MobileDaRt', purpose_tags='PM',
                 ))
+            engineer = app_module.Engineer(employee_id=f'LRT-{cls.suffix}', name=f'Leave Tester {cls.suffix}', initials='LT')
+            app_module.db.session.add(engineer)
+            app_module.db.session.flush()
+            leave = app_module.LeaveRequest(
+                request_no=cls.lr, user_id=viewer.id, engineer_id=engineer.id,
+                application_date=base.date(), leave_type='Vacation Leave',
+                start_date=datetime(2026, 10, 12).date(), end_date=datetime(2026, 10, 14).date(),
+                weekday_count=3, reason='private medical detail', status='Rejected',
+                approval_remarks='overwritten later',
+            )
+            app_module.db.session.add(leave)
+            app_module.db.session.flush()
+            audit_rows = [
+                # An older rejection of the same request, outside the 5-minute window.
+                app_module.UniversalApprovalAuditTrail(
+                    module='leave_request', record_id=leave.id, action='rejected', actor_display_name='Old Approver',
+                    remarks='older reason', created_at=cls.reject_at - timedelta(hours=1),
+                ),
+                app_module.UniversalApprovalAuditTrail(
+                    module='leave_request', record_id=leave.id, action='rejected', actor_display_name='Manager One',
+                    remarks='Overlaps the PM visit', created_at=cls.reject_at + timedelta(seconds=2),
+                ),
+            ]
+            app_module.db.session.add_all(audit_rows)
             app_module.db.session.commit()
+            cls.engineer_id = engineer.id
+            cls.leave_id = leave.id
+            cls.audit_ids = [row.id for row in audit_rows]
             cls.travel_id = travel.id
             cls.viewer_id = viewer.id
             cls.ids = {key: row.id for key, row in rows.items()}
@@ -99,6 +131,11 @@ class ActivityRelatedRouteTests(unittest.TestCase):
             for model in (app_module.TravelRequestRouteVisit, app_module.TravelRequestRoute):
                 model.query.filter_by(travel_request_id=cls.travel_id).delete(synchronize_session=False)
             app_module.TravelRequest.query.filter_by(id=cls.travel_id).delete(synchronize_session=False)
+            app_module.UniversalApprovalAuditTrail.query.filter(
+                app_module.UniversalApprovalAuditTrail.id.in_(cls.audit_ids)
+            ).delete(synchronize_session=False)
+            app_module.LeaveRequest.query.filter_by(id=cls.leave_id).delete(synchronize_session=False)
+            app_module.Engineer.query.filter_by(id=cls.engineer_id).delete(synchronize_session=False)
             app_module.User.query.filter_by(id=cls.viewer_id).delete(synchronize_session=False)
             app_module.db.session.commit()
             app_module.db.session.remove()
@@ -140,6 +177,48 @@ class ActivityRelatedRouteTests(unittest.TestCase):
         self.assertNotIn('SECRET-ACCT-123', json.dumps(records))
         self.assertNotIn('123', fields.get('Purpose', ''))
 
+    def test_open_link_only_for_the_assigned_approver(self):
+        with patch.object(app_module, 'is_approval_center_user', return_value=True), \
+                patch.object(app_module, 'can_user_review_travel_request', return_value=True):
+            record = self.get('tr_open').get_json()['records'][0]
+        self.assertEqual(record['open_url'], f'/approvals?module=travel_request&id={self.travel_id}')
+        self.assertEqual(record['open_label'], 'Open in Approvals')
+        with patch.object(app_module, 'is_approval_center_user', return_value=True), \
+                patch.object(app_module, 'can_user_review_travel_request', return_value=False):
+            self.assertIsNone(self.get('tr_open').get_json()['records'][0]['open_url'])
+        with patch.object(app_module, 'is_approval_center_user', return_value=False), \
+                patch.object(app_module, 'can_user_review_travel_request', return_value=True):
+            self.assertIsNone(self.get('tr_open').get_json()['records'][0]['open_url'])
+
+    def test_schedule_links_to_its_day_in_timeline(self):
+        shift = SimpleNamespace(id=5, start_time=datetime(2026, 6, 4, 8, 0))
+        with self.app.test_request_context():
+            with patch.object(app_module, 'can_access_timeline_page', return_value=True):
+                self.assertEqual(
+                    app_module._activity_record_open_link('Schedule', shift),
+                    {'open_url': '/timeline?date=2026-06-04', 'open_label': 'Show in Timeline'},
+                )
+            with patch.object(app_module, 'can_access_timeline_page', return_value=False):
+                self.assertIsNone(app_module._activity_record_open_link('Schedule', shift)['open_url'])
+
+    def test_rejected_leave_request_shows_reason_and_who_rejected(self):
+        with patch.object(app_module, 'is_approval_center_user', return_value=True), \
+                patch.object(app_module, 'can_approve_leave_request', return_value=True):
+            data = self.get('lr_reject').get_json()
+        self.assertEqual(data['decision'], {'decision': 'Rejected', 'reason': 'Overlaps the PM visit', 'by': 'Manager One'})
+        record = data['records'][0]
+        self.assertEqual(record['label'], f'Leave Request {self.lr}')
+        fields = dict(record['fields'])
+        self.assertEqual(fields['Leave type'], 'Vacation Leave')
+        self.assertEqual(fields['Dates'], 'Oct 12, 2026 – Oct 14, 2026 (3 weekdays)')
+        self.assertEqual(fields['Status'], 'Rejected')
+        self.assertNotIn('private medical detail', json.dumps(data))
+        self.assertEqual(record['open_url'], f'/approvals?module=leave_request&id={self.leave_id}')
+
+    def test_reason_only_on_rejection_entries(self):
+        self.assertIsNone(self.get('lr_submit').get_json()['decision'])
+        self.assertIsNone(self.get('tr_open').get_json()['decision'])
+
     def test_code_without_a_record_has_no_summary(self):
         self.assertEqual(self.get('tr_other').get_json()['records'], [])
         self.assertIsNone(app_module.activity_record_summary('route #5'))
@@ -177,6 +256,11 @@ class ActivityDetailsPageTests(unittest.TestCase):
             'function renderActivityRecords(',
             'renderActivityRecords(data.records)',
             'Current record · ',
+            'function activityRecordOpenLink(',
+            'target="_blank" rel="noopener"',
+            'Only the assigned approver can open this record.',
+            'renderActivityDetail(data.log, data.decision)',
+            '${decision.decision} reason',
         ):
             self.assertIn(token, ACTIVITY_TEMPLATE)
         for name in ('loadLogs', 'filterBy', 'exportLogs', 'resetFilters', 'changePage', 'renderRow', 'loadFilterOptions'):
@@ -186,7 +270,10 @@ class ActivityDetailsPageTests(unittest.TestCase):
         release = next(r for r in RELEASES['releases'] if r['release_key'] == '2026-10-08-activity-details')
         self.assertTrue(release['is_published'])
         self.assertEqual(release['items'][0]['audiences'], ['admins'])
-        self.assertIn("v275-activity-details';", APP_SOURCE)
+        self.assertIn('v275-activity-details.', APP_SOURCE)
+        follow_up = next(r for r in RELEASES['releases'] if r['release_key'] == '2026-10-08-activity-open-record')
+        self.assertEqual(follow_up['items'][0]['audiences'], ['admins'])
+        self.assertIn("v276-activity-open-record';", APP_SOURCE)
 
 
 if __name__ == '__main__':

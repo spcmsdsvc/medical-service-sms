@@ -409,7 +409,7 @@ function formatActivityStamp(stamp) {
     return date.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
 }
 
-function renderActivityDetail(log) {
+function renderActivityDetail(log, decision) {
     const display = log.display_action || log.action;
     const { headline, fields } = parseActivityFields(display);
     const tone = CATEGORY_TONES[log.type] || 'workflow';
@@ -419,6 +419,9 @@ function renderActivityDetail(log) {
         ['Who', log.user],
         ['Action', log.action_type || 'Other'],
         ...fields,
+        // Reason given when the request was rejected or returned (from the approval history).
+        ...(decision && decision.reason ? [[`${decision.decision} reason`, decision.reason]] : []),
+        ...(decision && decision.by ? [[`${decision.decision} by`, decision.by]] : []),
         ...(log.branch ? [['Branch', log.branch]] : []),
         ...(log.severity === 'danger' ? [['Result', 'Failed']] : log.severity === 'warning' ? [['Result', 'Needs attention']] : [])
     ];
@@ -439,7 +442,18 @@ function renderActivityRecords(records) {
             <dl class="activity-detail-fields mb-0">
                 ${record.fields.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}
             </dl>
+            ${activityRecordOpenLink(record)}
         </section>`).join('');
+}
+
+// The server sends open_url only when the viewer passes the target page's own checks.
+function activityRecordOpenLink(record) {
+    const url = String(record.open_url || '');
+    if (url.startsWith('/') && !url.startsWith('//')) {
+        return `<a class="btn btn-sm btn-outline-primary mt-2 activity-record-open" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+            <i class="fa-solid fa-arrow-up-right-from-square me-1" aria-hidden="true"></i>${escapeHtml(record.open_label)}</a>`;
+    }
+    return record.kind === 'Schedule' ? '' : '<p class="small text-muted mt-2 mb-0">Only the assigned approver can open this record.</p>';
 }
 
 function renderActivityRelated(data) {
@@ -472,7 +486,7 @@ async function loadActivityRelated(id) {
         const data = await res.json();
         if (id !== activityDetailId) return;
         activityLogsById[id] = data.log;
-        renderActivityDetail(data.log);
+        renderActivityDetail(data.log, data.decision);
         renderActivityRecords(data.records);
         renderActivityRelated(data);
     } catch (error) {
@@ -607,6 +621,7 @@ button.activity-chip:hover { filter: brightness(0.95); text-decoration: underlin
     .activity-table .activity-message-row td { text-align: center; }
     .activity-detail-link,
     .activity-related-item { min-height: 2.75rem; }
+    .activity-record-open { min-height: 2.75rem; display: inline-flex; align-items: center; }
     .activity-detail-panel .btn-close { min-width: 2.75rem; min-height: 2.75rem; }
     /* Bottom sheet on phones and tablets. */
     .activity-detail-panel.offcanvas-end {

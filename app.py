@@ -27194,7 +27194,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v272-product-new-vieworks.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v273-dashboard-text-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v274-shell-phone-menu.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v275-activity-details';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v275-activity-details.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v276-activity-open-record';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -32991,6 +32992,48 @@ def _activity_reimbursement_fields(record):
     ]
 
 
+def _activity_leave_request_fields(record):
+    # The employee's own leave reason is left out: it can hold health details.
+    days = f" ({record.weekday_count} weekday{'s' if record.weekday_count != 1 else ''})" if record.weekday_count else ''
+    duration = {'half_day': 'Half day', 'one_and_half_day': 'One and a half days'}.get(record.duration_type, '')
+    return [
+        ['Requester', _activity_user_name(record.user_id) or record.requester_name_snapshot],
+        ['Leave type', record.leave_type],
+        ['Dates', f"{_activity_date_range(record.start_date, record.end_date)}{days}"],
+        ['Duration', duration],
+        ['Status', record.status],
+    ]
+
+
+def _activity_record_open_link(kind, record):
+    """Where the viewer can open this record, using the same checks as the target route.
+
+    Approval detail routes (/get_*_approval/<id>) open only for the assigned approver,
+    so the link is offered only when those checks pass; nobody's access changes.
+    """
+    if kind == 'Schedule':
+        allowed = can_access_timeline_page() and record.start_time
+        url = f"/timeline?date={record.start_time.strftime('%Y-%m-%d')}" if allowed else None
+        return {'open_url': url, 'open_label': 'Show in Timeline' if url else None}
+    in_approvals = is_approval_center_user()
+    module, allowed = {
+        'Travel Request': ('travel_request', lambda: can_user_review_travel_request(current_user, record)),
+        'Cash Advance': ('cash_advance', lambda: (
+            can_user_approve_cash_advance(current_user, record) or can_user_access_cash_advance(record)
+        )),
+        'Travel Liquidation': ('travel_liquidation', lambda: can_user_approve_travel_liquidation(current_user, record)),
+        'Cash Advance Liquidation': ('cash_advance_liquidation', lambda: (
+            can_user_approve_cash_advance_liquidation(current_user, record)
+        )),
+        'Reimbursement': ('reimbursement', lambda: (
+            reimbursement_is_approver_user() and can_user_approve_reimbursement_header(current_user, record)
+        )),
+        'Leave Request': ('leave_request', lambda: can_approve_leave_request(record)),
+    }[kind]
+    url = f"/approvals?module={module}&id={record.id}" if in_approvals and allowed() else None
+    return {'open_url': url, 'open_label': 'Open in Approvals' if url else None}
+
+
 def activity_record_summary(reference):
     """Current fields of the record an activity entry mentions, or None if it no longer exists."""
     number_match = re.fullmatch(r'(schedule|reimbursement) #(\d+)', reference or '')
@@ -33017,6 +33060,9 @@ def activity_record_summary(reference):
         record = CashAdvanceLiquidationHeader.query.filter_by(liquidation_no=reference).first()
         source = record and record.cash_advance
         kind, fields = 'Cash Advance Liquidation', record and _activity_liquidation_fields(record, source.cash_advance_no if source else '')
+    elif prefix == 'LR':
+        record = LeaveRequest.query.filter_by(request_no=reference).first()
+        kind, fields = 'Leave Request', record and _activity_leave_request_fields(record)
     else:
         return None
     if not fields:
@@ -33025,8 +33071,50 @@ def activity_record_summary(reference):
         'reference': reference,
         'kind': kind,
         'label': f"{kind} #{number_match.group(2)}" if number_match else f"{kind} {reference}",
-        'fields': [[label, str(value)] for label, value in fields if value not in (None, '')]
+        'record_id': record.id,
+        'fields': [[label, str(value)] for label, value in fields if value not in (None, '')],
+        **_activity_record_open_link(kind, record)
     }
+
+
+ACTIVITY_AUDIT_MODULE_BY_KIND = {
+    'Travel Request': 'travel_request',
+    'Cash Advance': 'cash_advance',
+    'Travel Liquidation': 'travel_liquidation',
+    'Cash Advance Liquidation': 'cash_advance_liquidation',
+    'Reimbursement': 'reimbursement',
+    'Leave Request': 'leave_request',
+}
+
+
+def activity_decision_reason(log, records):
+    """Reason given for a rejection or return, from the approval audit trail.
+
+    The record's own approval_remarks are overwritten when it is resubmitted, so the
+    audit event nearest the activity entry (within 5 minutes) is the reliable source.
+    """
+    if not re.search(r'\b(rejected|returned)\b', log.action or '', re.IGNORECASE):
+        return None
+    window = timedelta(minutes=5)
+    for record in records:
+        module = ACTIVITY_AUDIT_MODULE_BY_KIND.get(record['kind'])
+        if not module:
+            continue
+        events = UniversalApprovalAuditTrail.query.filter(
+            UniversalApprovalAuditTrail.module == module,
+            UniversalApprovalAuditTrail.record_id == record['record_id'],
+            UniversalApprovalAuditTrail.action.in_(['rejected', 'returned', 'liquidation_returned']),
+            UniversalApprovalAuditTrail.created_at >= log.timestamp - window,
+            UniversalApprovalAuditTrail.created_at <= log.timestamp + window,
+        ).all()
+        if events:
+            event = min(events, key=lambda row: abs((row.created_at - log.timestamp).total_seconds()))
+            return {
+                'decision': 'Returned' if 'returned' in event.action else 'Rejected',
+                'reason': clean_str(event.remarks) or '',
+                'by': clean_str(event.actor_display_name) or clean_str(event.actor_username) or '',
+            }
+    return None
 
 
 def activity_scope_query(query):
@@ -33219,10 +33307,12 @@ def get_activity_log_related(log_id):
         )
 
     today = get_manila_time().date()
+    records = [summary for summary in map(activity_record_summary, references) if summary]
     return jsonify({
         'log': activity_log_to_dict(log, today),
         'references': references,
-        'records': [summary for summary in map(activity_record_summary, references) if summary],
+        'records': records,
+        'decision': activity_decision_reason(log, records),
         'related_by': 'reference' if references else 'nearby',
         'related': [activity_log_to_dict(row, today) for row in related]
     })

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-activity-open-record",
+      "release_date": "2026-10-08",
+      "title": "Open Records from the Activity Log",
+      "summary": "The Activity Log details panel can now open the record an entry is about, and shows why a request was rejected or returned.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-activity-open-record-button",
+          "category": "Activity Log",
+          "description": "In an entry's details, the Current record card has an Open in Approvals button for Travel Requests, Cash Advances, liquidations and reimbursements you approve, and Show in Timeline for schedules. Both open in a new tab. Records routed to another approver show a note instead. Rejected and returned entries now show the reason and who rejected or returned them, and Leave Requests have their own record summary.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-activity-details",
       "release_date": "2026-10-08",
       "title": "Activity Log Details",

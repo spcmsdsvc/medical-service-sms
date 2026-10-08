@@ -37,6 +37,74 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Activity Log "Open Record" Button
+
+**Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(activity): open record button, rejection reasons, leave requests"), with Amendment 1. Owner confirmed decision 1 (recommended option) and said "go". Full suite before publishing: 1,655 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.
+
+**Outcome (2026-10-08):** all 3 steps done as planned; service worker `v276-activity-open-record` (v275 kept as a history marker), release `2026-10-08-activity-open-record`. Tests: 2 new plus 2 extended in `tests/test_activity_log_details.py`; 26 Activity Log tests OK; on the committed code (`01ea7e8`) the 4 new checks fail. Browser (DB copy, temporary logins on the copy; copy and launch change removed): as Robert (assigned approver for the requester) the `TR-20260609-7` card shows "Open in Approvals" → `/approvals?module=travel_request&id=7`, `target=_blank`, `rel=noopener`; that URL loads `/get_travel_request_approval/7` (200) and shows the request's summary (Jonamar Paunil, Client Visit, Liquidation Completed, PHP 15,000.00, June 19–20, Manila → Davao) in the Approvals detail view; as Diary (not the approver) the card shows "Only the assigned approver can open this record." and no button; schedule #876 shows "Show in Timeline" → `/timeline?date=2026-06-04` (200). 375x812: button 44px, no horizontal scroll. No console errors on either page.
+**Approved:** 2026-10-08 (owner: "okay. plan it now", after "then we will plan the button afterwards"). Under the two-step rule this records approval only; execution needs a separate "go" / "execute" / "start".
+**Detailed:** 2026-10-08.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Amendment 1 — Rejection reason and Leave Requests (2026-10-08)
+
+**Status:** Executed — published to `main` on 2026-10-08 with the base plan. Owner: "rejected requests doesn't show the reason why its rejected", then showed a Leave Request rejection (`LR-20261008-03`) with no record card, reason or approver.
+
+- **Source of the reason:** `UniversalApprovalAuditTrail` (module, record_id, action `rejected` / `returned` / `liquidation_returned`, `remarks`, `actor_display_name`), written by every reject/return route. The record's own `approval_remarks` is not used because a resubmission or later approval overwrites it (e.g. `CA-20260616-1` was rejected twice, then approved).
+- `app.py`: new `activity_decision_reason(log, records)`: only for entries whose text contains "rejected" or "returned"; for each record card, the audit event of that record nearest the entry's time within 5 minutes; returns `{decision, reason, by}`; `/get_activity_log_related` returns it as `decision`; summaries gain `record_id`; new `ACTIVITY_AUDIT_MODULE_BY_KIND`.
+- **Leave Request** (`LR-…`, `LeaveRequest.request_no`) added as a record type: requester, leave type, dates with weekday count, half / one-and-a-half day, status. The employee's own leave `reason` is left out (can hold health details). Open link `/approvals?module=leave_request&id=…` gated by the leave module's own `can_approve`, now exported from `leave_feature.py` as `can_approve_leave_request` (no logic change).
+- `templates/activity.html`: `renderActivityDetail(log, decision)` adds "Rejected reason" / "Rejected by" (or "Returned …") rows to the entry fields.
+- **Outcome:** 2 new tests plus template checks (28 Activity Log tests OK; the new ones fail without the change); leave module tests OK. On the database copy every rejection/return entry with an audit event resolves its own reason (the two rejections of `CA-20260616-1` give "edit purpose" and "confim amount"); one older `reimbursement #2` entry has no audit event and shows no reason. Browser: the CA rejection shows "Rejected reason" and "Rejected by Rodito Aretano Jr"; no console errors. No local leave rejection exists, so the Leave Request path is covered by tests only.
+
+ shows a "Current record" card for Travel Requests, Cash Advances, Travel and Cash Advance Liquidations, schedules and reimbursements, but no way to jump to the record. This plan adds an Open button on each card that goes to the page where that record can be viewed in full.
+
+## Decisions taken
+
+1. **The button appears only when the viewer can actually open the record** (recommended; owner to confirm). The full views of TR/CA/TL/CAL/reimbursement live in the Approvals page detail modals, and their detail routes allow only the record's **assigned approver** (see Investigation). The server works out each button with the same permission functions those routes use, so the button never leads to a "not assigned to you" error. When it cannot be opened, the card shows a quiet note: "Only the assigned approver can open this record." No permissions change. *The alternative, letting every Activity Log admin open any record in Approvals, would widen who sees requests, amounts and attachments; it is not planned.*
+2. **Targets:** TR → `/approvals?module=travel_request&id=<id>`; CA → `module=cash_advance`; TL → `module=travel_liquidation`; CAL → `module=cash_advance_liquidation`; reimbursement #N → `module=reimbursement`; schedule #N → `/timeline?date=<start date>` labelled "Show in Timeline" (Timeline jumps to that day; it cannot open one schedule).
+3. **Opens in a new tab** (`target="_blank" rel="noopener"`), so the Activity Log keeps its place and panel.
+
+## Investigation
+
+- Approvals deep link: `approvalQueueOpenDeepLink` ([approvals.html:6757](templates/approvals.html:6757)) reads `?module=` and `?id=` and calls the opener: `travel_request` → `openTravelApprovalDetail`, `cash_advance`, `cash_advance_liquidation`, `travel_liquidation`, `reimbursement` (also `lpr`, `leave_request`, `calibration_certificate`). Ids are database ids, not request numbers.
+- Page access: `/approvals` requires `is_approval_center_user()` ([app.py:8671](app.py:8671)). Detail routes and their checks: `/get_travel_request_approval/<id>` → `can_user_review_travel_request(current_user, rec)` ([app.py:42537](app.py:42537)); `/get_cash_advance_approval/<id>` → `require_approval_center_user()` then `can_user_approve_cash_advance(current_user, h) or can_user_access_cash_advance(h)`; `/get_travel_liquidation_approval/<id>` → `require_approval_center_user()` + `can_user_approve_travel_liquidation` ([app.py:11352](app.py:11352)); `/get_cash_advance_liquidation_approval/<id>` → `require_approval_center_user()` + `can_user_approve_cash_advance_liquidation`; `/get_reimbursement_approval/<id>` → `reimbursement_is_approver_user()` + `can_user_approve_reimbursement_header` ([app.py:11335](app.py:11335)).
+- These checks depend on the requester's approval routing, **not on status**, so approved/closed records open too.
+- Activity Log viewers (`is_admin_authorized`) are named superadmins (developer, managers, schedulers) and the regional admin; only those configured as approvers (or the legacy reimbursement approver) will see buttons, and only for requesters routed to them. Schedulers will mostly see the note.
+- Owner pages (`/travel_request?id=`, `/cash_advance`, …) open only the user's own records, so they are not used.
+- Timeline: `/timeline` requires `can_access_timeline_page()`; `?date=YYYY-MM-DD` (also `week`, `target_date`) jumps to that date ([timeline.html:14178](templates/timeline.html:14178)).
+- `activity_record_summary` ([app.py](app.py), beside `extract_activity_references`) already loads each record; adding the URL there costs no extra query beyond the permission helpers.
+
+## Execution steps
+
+1. **Server** (`app.py`, `activity_record_summary`): after building fields, add `open_url` and `open_label` (or `None`) using new `_activity_record_open_url(kind, record)`, which returns the URL only when the exact checks of the target route pass for `current_user` (TR: `is_approval_center_user()` and `can_user_review_travel_request`; CA: `is_approval_center_user()` and (`can_user_approve_cash_advance` or `can_user_access_cash_advance`); TL: `is_approval_center_user()` and `can_user_approve_travel_liquidation`; CAL: `is_approval_center_user()` and `can_user_approve_cash_advance_liquidation`; reimbursement: `is_approval_center_user()` and `reimbursement_is_approver_user()` and `can_user_approve_reimbursement_header`; schedule: `can_access_timeline_page()`, date from `start_time`). Labels: "Open in Approvals", "Show in Timeline". Done: summaries unchanged otherwise; `/get_activity_log_related` returns the new keys.
+2. **Page** (`templates/activity.html`, `renderActivityRecords`): when `open_url` is set, an `<a class="btn btn-sm btn-outline-primary mt-2" target="_blank" rel="noopener">` with an external-link icon and `open_label` (URL through `escapeHtml`; only same-site paths starting with `/` are rendered); otherwise, for approval types, the muted note. 44px tall at ≤900px. Done: cards without a URL look as before plus the note.
+3. **Release**: bump `CACHE_VERSION` (keep v275 as a history marker); release entry "Open Records from the Activity Log" (Activity Log, admins).
+
+## Deliberately excluded
+
+- **Widening Approvals access for Activity Log admins:** a permission change; only if the owner chooses it instead of decision 1.
+- **Opening a single schedule:** Timeline has no per-schedule deep link; adding one is separate work.
+- **Buttons for codes without a summary** (`submission`, `route`, `visit`): no record card exists for them.
+
+## Verification
+
+- `tests/test_activity_log_details.py`: with the permission helpers patched to allow, the TR summary has `open_url == '/approvals?module=travel_request&id=<id>'`; patched to deny, `open_url` is `None`; schedule summary links `/timeline?date=YYYY-MM-DD`; template renders the link with `target="_blank"` and the note text. Positive control: these fail on the current code.
+- Focused: `test_activity_log_details`, `test_activity_log_hardening`.
+- Browser (DB copy, temporary login removed afterwards): as an approver (e.g. a manager account on the copy) open a TR entry → "Open in Approvals" opens the TR detail modal in a new tab; as a scheduler account → the note, no button; a schedule entry → Timeline at that day; 375px; no console errors.
+- Full suite once, before publishing.
+
+## After implementation
+
+1. Self-review; confirm every function the Activity Log and Approvals pages call is still defined.
+2. Update `changes.md` and this Status.
+3. Wait for "commit and push"; stage only the intended files (never `scheduler.db`, handoffs, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`); one `git ls-remote` check, no Railway polling.
+
+## Risks
+
+- **Few buttons for some admins:** by design (decision 1); the note explains why.
+- **Permission drift:** if a detail route's check changes later, the button rule must change with it; the helper names the same functions so a search finds both.
+- **Blast radius:** Activity Log panel only; Approvals and Timeline unchanged.
+
 # Activity Log Entry Details Panel
 
 **Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(activity): entry details panel with current record summary"), together with Amendment 1. Owner said "go" on 2026-10-08. Full suite before publishing: 1,651 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.

@@ -338,6 +338,8 @@ def register_leave_feature(ctx):
             return False
         return can_user_approve_for_requester(target, header.user_id, 'leave_request') or (clean_str(getattr(target, 'role', None)) or '').lower() == 'superadmin'
 
+    ctx['can_approve_leave_request'] = can_approve
+
     def editable(header):
         return header.status in EDITABLE_STATUSES
 
