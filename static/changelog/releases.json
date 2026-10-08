@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-dashboard-fixes",
+      "release_date": "2026-10-08",
+      "title": "Dashboard Fixes",
+      "summary": "Dashboard symbols show correctly and the dark appearance looks right.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-dashboard-fixes-symbols",
+          "category": "System",
+          "description": "Date ranges and notes on the Dashboard now show arrows, dashes and dots correctly instead of odd characters.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-dashboard-fixes-dark-bell",
+          "category": "System",
+          "description": "In the dark appearance, the What's New bell on the Dashboard is visible again.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-product-new-vieworks",
       "release_date": "2026-10-08",
       "title": "Add Vieworks Items from the Product Form",

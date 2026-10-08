@@ -21,7 +21,7 @@ class TSRPageDesignContracts(unittest.TestCase):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         self.require_text("/static/css/app-offline-tsr.css?v=8", app_source)
         assert_cache_version_at_least(self, 189, app_source)
-        self.require_text("app-dark-pages.css') }}?v=30", (ROOT / "templates" / "layout.html").read_text(encoding="utf-8"))
+        self.require_text("app-dark-pages.css') }}?v=31", (ROOT / "templates" / "layout.html").read_text(encoding="utf-8"))
         self.require_text("css/app-offline-tsr.css') }}?v=8")
 
     def test_schedule_selection_is_first_and_empty_state_routes_to_calendar(self):

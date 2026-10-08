@@ -478,7 +478,7 @@
             const agingTotal = Number(counts.aging_total || 0);
             const threshold = Number(data.aging_threshold_days || 5);
             if (agingTotal) {
-                aging.textContent = `${agingTotal} waiting more than ${threshold} days â€” oldest ${counts.oldest_days || 0} days`;
+                aging.textContent = `${agingTotal} waiting more than ${threshold} days — oldest ${counts.oldest_days || 0} days`;
                 aging.className = 'manager-approvals-aging is-aging';
             } else if (Number(counts.pending_total || 0)) {
                 aging.textContent = `Nothing older than ${threshold} days`;
@@ -618,7 +618,7 @@
                 <span class="manager-watchlist-accent is-${escapeHtml(row.tone || 'watch')}" aria-hidden="true"></span>
                 <span class="manager-watchlist-body">
                     <span class="manager-watchlist-title">${escapeHtml(row.title || '')}</span>
-                    <span class="manager-watchlist-hint">${escapeHtml(row.subtitle || '')} â€¢ ${escapeHtml(row.detail || '')}</span>
+                    <span class="manager-watchlist-hint">${escapeHtml(row.subtitle || '')} • ${escapeHtml(row.detail || '')}</span>
                 </span>
                 <span class="manager-watchlist-tag">${escapeHtml(managerWatchlistTypeLabel(row.type))}</span>
             </div>
@@ -692,11 +692,11 @@
         const caption = document.getElementById('scheduler-queue-caption');
         if (caption) {
             if (!shown) {
-                caption.textContent = 'Most urgent first â€” select a row to assign or reschedule it';
+                caption.textContent = 'Most urgent first — select a row to assign or reschedule it';
             } else if (shown < total) {
-                caption.textContent = `Showing ${shown} of ${total} â€” most urgent first, select a row to work on it`;
+                caption.textContent = `Showing ${shown} of ${total} — most urgent first, select a row to work on it`;
             } else {
-                caption.textContent = `${shown} to work through â€” most urgent first, select a row`;
+                caption.textContent = `${shown} to work through — most urgent first, select a row`;
             }
         }
 
@@ -721,8 +721,8 @@
                     onclick="selectSchedulerActionShift(${Number(row.id) || 0})">
                 <span class="scheduler-queue-accent ${schedulerQueueAccent(row.category)}" aria-hidden="true"></span>
                 <span class="scheduler-queue-body">
-                    <span class="scheduler-queue-title">${escapeHtml(row.client || 'No client')} â€” ${escapeHtml(row.task || 'Untitled')}</span>
-                    <span class="scheduler-queue-hint">${escapeHtml(row.priority_reason || '')} â€¢ ${escapeHtml(when)} â€¢ ${escapeHtml(row.engineers || 'Unassigned')}</span>
+                    <span class="scheduler-queue-title">${escapeHtml(row.client || 'No client')} — ${escapeHtml(row.task || 'Untitled')}</span>
+                    <span class="scheduler-queue-hint">${escapeHtml(row.priority_reason || '')} • ${escapeHtml(when)} • ${escapeHtml(row.engineers || 'Unassigned')}</span>
                 </span>
                 <span class="scheduler-queue-action">${escapeHtml(schedulerQueueActionLabel(row))} &rarr;</span>
             </button>`;
@@ -749,7 +749,7 @@
             parts.push(`${counts.high_load_engineers} engineer${counts.high_load_engineers === 1 ? '' : 's'} carrying a heavy load`);
         }
         if (counts.watch_load_engineers) parts.push(`${counts.watch_load_engineers} to watch`);
-        setTextIfPresent('scheduler-risk-detail', parts.join(' â€¢ '));
+        setTextIfPresent('scheduler-risk-detail', parts.join(' • '));
     }
 
     function renderSchedulerMetrics() {
@@ -897,7 +897,7 @@
                 <span class="scheduler-availability-avatar">${escapeHtml(row.initials || '?')}</span>
                 <span class="scheduler-availability-main">
                     <strong>${escapeHtml(row.name || 'Engineer')}</strong>
-                    <small>${escapeHtml(row.branch || 'No branch')} â€¢ ${escapeHtml(row.today_tasks || 0)} today â€¢ ${escapeHtml(row.next_7_days || 0)} week</small>
+                    <small>${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.today_tasks || 0)} today • ${escapeHtml(row.next_7_days || 0)} week</small>
                 </span>
                 <span class="badge ${schedulerAvailabilityBadgeClass(level)}">${escapeHtml(schedulerAvailabilityLabel(level))}</span>
             </button>`;
@@ -914,7 +914,7 @@
 
         select.innerHTML = filteredRows.map(row => `
             <option value="${Number(row.engineer_id) || 0}">
-                ${escapeHtml(row.name || 'Engineer')} â€” ${escapeHtml(row.branch || 'No branch')} â€” ${escapeHtml(schedulerAvailabilityLabel(row.loadLevel))}
+                ${escapeHtml(row.name || 'Engineer')} — ${escapeHtml(row.branch || 'No branch')} — ${escapeHtml(schedulerAvailabilityLabel(row.loadLevel))}
             </option>
         `).join('');
 
@@ -972,7 +972,7 @@
         if (hidden) hidden.value = row ? row.id : '';
 
         if (row) {
-            setTextIfPresent('scheduler-selected-action-label', `${row.client || 'No client'} â€¢ ${row.date || ''} â€¢ ${row.task || ''} â€¢ ${row.priority_reason || ''}`);
+            setTextIfPresent('scheduler-selected-action-label', `${row.client || 'No client'} • ${row.date || ''} • ${row.task || ''} • ${row.priority_reason || ''}`);
             if (row.date) {
                 const dateInput = document.getElementById('scheduler-reschedule-date');
                 if (dateInput) dateInput.value = row.date;
@@ -1224,7 +1224,7 @@
             + `<span class="dashboard-today-title">${escapeHtml(row.title)}</span>`
             + `<span class="dashboard-today-hint">${escapeHtml(row.hint)}</span>`
             + '</span>'
-            + `<span class="dashboard-today-action">${escapeHtml(row.action)} â†’</span>`
+            + `<span class="dashboard-today-action">${escapeHtml(row.action)} →</span>`
             + '</a>'
         )).join('');
     }
@@ -1511,7 +1511,7 @@
                     let endLabel = rEnd.task_date || startLabel;
                     if (sDate) startLabel = `${sDate.getFullYear()}-${String(sDate.getMonth() + 1).padStart(2, '0')}-${String(sDate.getDate()).padStart(2, '0')}`;
                     if (eDate) endLabel = `${eDate.getFullYear()}-${String(eDate.getMonth() + 1).padStart(2, '0')}-${String(eDate.getDate()).padStart(2, '0')}`;
-                    let rangeLabel = startLabel === endLabel ? startLabel : `${startLabel} â†’ ${endLabel}`;
+                    let rangeLabel = startLabel === endLabel ? startLabel : `${startLabel} → ${endLabel}`;
                     
                     mergedResults.push({
                         ...rStart,

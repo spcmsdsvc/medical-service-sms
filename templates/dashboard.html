@@ -79,8 +79,8 @@
     <section id="dashboard-whats-new" class="dashboard-whats-new mb-4" style="display:none;border:1px solid #9ad8b8;border-left:5px solid #14804a;background:#f2fbf6;padding:15px 17px;border-radius:8px;">
         <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
             <div class="d-flex align-items-start gap-3">
-                <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:#d9f2e5;color:#11643a;border-radius:6px;flex:0 0 auto;">
-                    <i class="fa-solid fa-bell"></i>
+                <div class="dashboard-whats-new-icon" style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:#d9f2e5;color:#11643a;border-radius:6px;flex:0 0 auto;">
+                    <i class="fa-solid fa-bell" aria-hidden="true"></i>
                 </div>
                 <div>
                     <div class="small fw-bold text-success text-uppercase" id="dashboard-whats-new-date">New System Update</div>
@@ -829,7 +829,7 @@
         schedulerAccount: {{ (dashboard_scheduler_account|default(false))|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=4"></script>
 
 
 {% if session.get('force_pw_change') %}

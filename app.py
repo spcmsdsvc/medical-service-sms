@@ -11554,7 +11554,9 @@ def get_display_role(user):
     if raw_role == 'regional_admin':
         return 'Administrator'
     if raw_role == 'superadmin':
-        return 'Superadmin'
+        # is_superadmin_user() also requires SUPERADMIN_USERNAMES; an account with the
+        # role but not on the list has no admin rights, so it must not be labelled one.
+        return 'Superadmin' if username in SUPERADMIN_USERNAMES else 'Staff'
     return raw_role.capitalize() if raw_role else 'User'
 
 
@@ -27189,7 +27191,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v268-dark-rail-surface.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v269-vieworks-machine-link.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v271-brand-shell.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v272-product-new-vieworks';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v272-product-new-vieworks.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v273-dashboard-text-fixes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
