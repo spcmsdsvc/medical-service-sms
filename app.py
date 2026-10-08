@@ -27188,7 +27188,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v267-role-label-rail-dividers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v268-dark-rail-surface.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v269-vieworks-machine-link.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v271-brand-shell';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v271-brand-shell.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v272-product-new-vieworks';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

@@ -37,6 +37,65 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Add a Vieworks Item from the Product Form
+
+**Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(products): add a Vieworks item from the Product form"). Owner said "go" on 2026-10-08. Full suite before publishing: 1,631 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.
+
+**Outcome (2026-10-08):** all 3 steps done as planned. Where it differed: `main` had moved to service worker v271 (two shell commits), so this is `v272-product-new-vieworks`. The end-to-end test passes on the old code too, as expected (server unchanged; it guards the existing create-then-link flow); the two template tests fail on the committed file. Focused modules OK (new module 3, `test_product_vieworks_links_history` 6, `test_vieworks_inventory` 13, `test_vieworks_parent_link` 6, `test_product_inventory_batch1` 8, `test_product_inventory_batch3` 4). Browser (DB copy, temporary admin; copy, account and launch change removed), 1366x768: button disabled with no center (also with the switch on); after choosing a center it opens the panel with focus on Serial; Add created `ZZ-PNV-01` (BSID V-000001) and selected it in the link list; a duplicate serial showed "Serial number ... already exists in Vieworks inventory." inline and kept the typed value; saving the machine linked it, and the Vieworks page shows the item linked with the machine's room and warranty dates (2026-02-01 to 2028-02-01) and center; editing the machine and adding a second item kept the first selected and saved both links; the panel is closed when the form opens; not on `/vieworks`. 375 px: no horizontal scroll, button, fields and Add 44 px tall. Only console error: the deliberate 409. Full suite not run yet (runs once before publishing).
+**Approved:** 2026-10-08 (owner: "okay. one correction. warranty dates for the vieworks product will be the same as the machine. not left blank"). Under the two-step rule this records approval only; execution needs a separate "go" / "execute" / "start".
+**Detailed:** 2026-10-08.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Context
+
+When a user adds a machine that comes with a Vieworks/Canon unit, she must leave the Product Inventory page, create the item on the Vieworks page, come back, and link it with the "With Vieworks/Canon?" switch. This plan lets her create the Vieworks item from inside the Product add/edit form; the new item is added to the link list already selected, and the link is saved with the machine.
+
+## Decisions taken
+
+1. **Inline panel, not a second modal.** A "+ New Vieworks item" button under the link list opens a small panel in the same form: Serial Number and Name, with Add and Cancel. Bootstrap modals stacked on modals are unreliable.
+2. **Created right away.** Add creates the Vieworks item immediately, adds it to the list and selects it. The link itself is saved when the machine is saved. If she then cancels the machine, the item stays on the Vieworks page, unlinked, to link or delete later.
+3. **Copied from the machine form at the moment Add is clicked:** medical center, room, and **warranty start and end dates** (owner's correction: the same as the machine, not blank). Contract status is not copied (left off) and BSID is auto-assigned as usual.
+4. **When it is available:** only when the switch is on and a medical center is chosen; otherwise the button is disabled and the help text says to choose a medical center first.
+
+## Investigation
+
+- The Product form's link control is `#product-vieworks-link-control` ([products.html:253](templates/products.html:253)), rendered only when `not is_standalone_inventory` (Product page, route `/products_page`). The multi-select `#p-linked-vieworks` is filled by `refreshVieworksLinkOptions(selectedSerials)` from `vieworksData` (loaded by `loadVieworksLinkOptions` from `/api/vieworks/items`) and lists only unlinked items at the selected center (`#p-cli-id`).
+- `POST /api/vieworks/items` (`add_vieworks_item`, [app.py](app.py) ~line 64030) needs only `serial_number` and `name`; it accepts `client_id`, `room`, `start_warranty` / `end_warranty` (also `start_date` / `end_date`; see `vieworks_payload_dates`, end may not be before start), and `under_contract`; BSID is server-assigned; duplicate serial returns 409 with a message. The response includes `item` (from `vieworks_item_to_dict`, same shape as `/api/vieworks/items` rows).
+- The Product form's date fields are `#p-w-start` / `#p-w-end` (`<input type="date">`, ISO values), room `#p-room`, center `#p-cli-id`.
+- `can_edit_products_inventory` and `can_edit_vieworks_inventory` allow the same roles (admins plus BC01/02/03 engineers), so no permission change.
+- The link is still saved by the existing Product save (`linked_vieworks_serials` → `validate_product_vieworks_links` → `replace_product_vieworks_links`), so same-center and one-machine-per-item checks still apply. No server change.
+
+## Execution steps
+
+1. **Markup** (`templates/products.html`, inside `#product-vieworks-link-control`): a `#p-new-vieworks-btn` "+ New Vieworks item" button and a hidden `#p-new-vieworks-form` panel with `#p-new-vieworks-serial`, `#p-new-vieworks-name`, Add / Cancel buttons and an inline message `#p-new-vieworks-msg`. Done: present on `/products_page` only.
+2. **Script** (`templates/products.html`): `toggleNewVieworksForm(show)` opens/closes and clears the panel; `createVieworksFromProduct()` requires serial, name and a chosen center, then `POST`s `/api/vieworks/items` (CSRF header) with `serial_number`, `name`, `client_id`, `room`, `start_warranty`, `end_warranty` taken from the machine form. On success: push `item` into `vieworksData`, call `refreshVieworksLinkOptions([...currentLinkedVieworksSerials(), newSerial])`, close the panel, toast "Vieworks item <BSID> added and selected." On error (409 duplicate or other): show the server message in `#p-new-vieworks-msg` and keep the typed values. `refreshVieworksLinkOptions` also sets the button's enabled state (switch on and center chosen); `openAddModal` / `openEditModal` close the panel. Done: existing link functions and the save flow work as before.
+3. **Release**: bump the service worker `CACHE_VERSION` in `app.py` (old value kept as a history comment); `static/changelog/releases.json` entry "Add Vieworks Items from the Product Form" (Inventory; admins and engineers).
+
+## Deliberately excluded
+
+- Contract status and a manual BSID in the quick panel: kept short; the Vieworks page edits them.
+- Creating the item only when the machine is saved: needs a cross-table server transaction; creating immediately reuses the existing endpoint unchanged.
+- The same shortcut for Genoray: not asked for.
+
+## Verification
+
+- New `tests/test_product_new_vieworks_inline.py`: the panel ids render on `/products_page` and not on `/vieworks` or `/genoray` (each page returns 200); the script posts to `/api/vieworks/items` with `client_id`, `start_warranty` and `end_warranty`; end to end, a Vieworks item created with the machine's center and dates, then `/add_product` linking it, leaves the link and the item's dates equal to the machine's. Positive control: the template checks fail on the current file.
+- Focused existing modules: `test_product_vieworks_links_history`, `test_vieworks_inventory`, `test_vieworks_parent_link`, `test_product_inventory_batch1`, `test_product_inventory_batch3`.
+- Browser (database copy, temporary account removed afterwards): choose a center, enter warranty dates, switch on, "+ New Vieworks item", Add → item selected; save the machine → the Vieworks page shows the item linked, with the machine's room and warranty dates; a duplicate serial shows the inline message; the button is disabled with no center; editing an existing machine works the same; Product Save and the Vieworks page still work; 375 px; no console errors.
+- Full suite once, before publishing: `venv/Scripts/python.exe scripts/run_suite.py`.
+
+## After implementation
+
+1. Self-review the diff; confirm every function the page calls is still defined.
+2. Update `changes.md`, and this plan's Status (amend here if the outcome differed).
+3. Wait for "commit and push"; stage only the intended files (never `scheduler.db`, handoffs, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`); verify `git ls-remote origin refs/heads/main` and Railway's deployment status.
+
+## Risks
+
+- **Unlinked leftovers:** an item added and then abandoned with the machine stays unlinked on the Vieworks page (decision 2).
+- **Dates copied at Add time:** if she changes the machine's warranty dates after adding the Vieworks item, the item keeps the earlier dates; editable on the Vieworks page.
+- **Blast radius:** the Product page's form only; the server is unchanged and the new script runs only in Product mode.
+
 # Link a Vieworks Item to a Machine from the Vieworks Page
 
 **Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(vieworks): link a Vieworks item to its machine from the Vieworks form"). Owner said "go ahead" on 2026-10-08. Full suite before publishing: 1,623 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.

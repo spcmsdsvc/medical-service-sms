@@ -259,6 +259,21 @@
                     <div class="small text-muted mt-1">Link one or more Vieworks items owned by the same medical center.</div>
                     <select id="p-linked-vieworks" class="form-select form-select-sm mt-2" multiple size="4" disabled aria-label="Linked Vieworks or Canon equipment"></select>
                     <div id="p-linked-vieworks-help" class="small text-muted mt-1">Select a medical center to see eligible Vieworks items.</div>
+                    <button type="button" id="p-new-vieworks-btn" class="btn btn-sm btn-outline-primary mt-2" onclick="toggleNewVieworksForm(true)" disabled>
+                        <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>New Vieworks item
+                    </button>
+                    <div id="p-new-vieworks-form" class="border rounded p-2 mt-2 d-none">
+                        <div class="small text-muted mb-2">Uses this machine's medical center, room and warranty dates.</div>
+                        <label for="p-new-vieworks-serial" class="small fw-bold text-muted text-uppercase">Vieworks Serial Number</label>
+                        <input type="text" id="p-new-vieworks-serial" class="form-control form-control-sm mb-2" maxlength="100" autocomplete="off">
+                        <label for="p-new-vieworks-name" class="small fw-bold text-muted text-uppercase">Vieworks Equipment Name</label>
+                        <input type="text" id="p-new-vieworks-name" class="form-control form-control-sm" maxlength="100" autocomplete="off">
+                        <div id="p-new-vieworks-msg" class="small text-danger mt-1" role="alert"></div>
+                        <div class="d-flex gap-2 justify-content-end mt-2">
+                            <button type="button" class="btn btn-sm btn-light" onclick="toggleNewVieworksForm(false)">Cancel</button>
+                            <button type="button" id="p-new-vieworks-add" class="btn btn-sm btn-primary" onclick="createVieworksFromProduct()">Add</button>
+                        </div>
+                    </div>
                 </div>
                 {% endif %}
 
@@ -1103,10 +1118,67 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
             return `<option value="${escapeHtml(serial)}" ${selected.has(serial) ? 'selected' : ''}>${escapeHtml(label)}</option>`;
         }).join('');
         select.disabled = !checkbox.checked || !eligible.length;
+        const newButton = document.getElementById('p-new-vieworks-btn');
+        if(newButton) newButton.disabled = !checkbox.checked || !clientId;
+        if(!checkbox.checked || !clientId) toggleNewVieworksForm(false);
         if(help){
             if(!clientId) help.textContent = 'Select a medical center to see eligible Vieworks items.';
             else if(!eligible.length) help.textContent = 'No unassigned Vieworks/Canon items are available for this medical center.';
             else help.textContent = `${eligible.length} eligible Vieworks/Canon item${eligible.length === 1 ? '' : 's'} available. Use Ctrl/Cmd-click to select multiple.`;
+        }
+    }
+
+    function toggleNewVieworksForm(show){
+        const panel = document.getElementById('p-new-vieworks-form');
+        if(!panel) return;
+        panel.classList.toggle('d-none', !show);
+        document.getElementById('p-new-vieworks-msg').textContent = '';
+        if(show){
+            document.getElementById('p-new-vieworks-serial').focus();
+        }else{
+            document.getElementById('p-new-vieworks-serial').value = '';
+            document.getElementById('p-new-vieworks-name').value = '';
+        }
+    }
+
+    async function createVieworksFromProduct(){
+        const message = document.getElementById('p-new-vieworks-msg');
+        const addButton = document.getElementById('p-new-vieworks-add');
+        const serial = (document.getElementById('p-new-vieworks-serial').value || '').trim().toUpperCase();
+        const name = (document.getElementById('p-new-vieworks-name').value || '').trim();
+        const clientId = document.getElementById('p-cli-id')?.value || '';
+        if(!clientId){ message.textContent = 'Select a medical center first.'; return; }
+        if(!serial || !name){ message.textContent = 'Enter the Vieworks serial number and name.'; return; }
+        message.textContent = '';
+        addButton.disabled = true;
+        try{
+            const res = await fetch('/api/vieworks/items', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+                body: JSON.stringify({
+                    serial_number: serial,
+                    name,
+                    client_id: clientId,
+                    room: (document.getElementById('p-room').value || '').trim(),
+                    start_warranty: document.getElementById('p-w-start').value,
+                    end_warranty: document.getElementById('p-w-end').value
+                })
+            });
+            const payload = await productResponseData(res);
+            if(!res.ok){
+                message.textContent = productResponseMessage(res, payload, 'Unable to add the Vieworks item');
+                return;
+            }
+            const item = payload.item || payload;
+            vieworksData.push(item);
+            refreshVieworksLinkOptions([...currentLinkedVieworksSerials(), item.serial_number]);
+            toggleNewVieworksForm(false);
+            productToast(`Vieworks item ${item.bsid || item.serial_number} added and selected.`, 'success');
+        }catch(createError){
+            console.error('[Products] Unable to add Vieworks item', createError);
+            message.textContent = 'Unable to add the Vieworks item. Please check your connection and try again.';
+        }finally{
+            addButton.disabled = false;
         }
     }
 
@@ -1900,6 +1972,7 @@ function openAddModal() {
         if(linkSelect){ linkSelect.innerHTML = ''; linkSelect.disabled = true; }
         refreshVieworksLinkOptions([]);
         refreshProductLinkOptions('');
+        toggleNewVieworksForm(false);
         
         prodModal.show(); 
     }
@@ -1952,6 +2025,7 @@ function openAddModal() {
             refreshVieworksLinkOptions((p.linked_vieworks || []).map(item => item.serial_number));
         }
         refreshProductLinkOptions(p.linked_product?.serial_number || '');
+        toggleNewVieworksForm(false);
         
         prodModal.show(); 
     }

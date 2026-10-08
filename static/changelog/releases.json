@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-product-new-vieworks",
+      "release_date": "2026-10-08",
+      "title": "Add Vieworks Items from the Product Form",
+      "summary": "Create a machine's Vieworks/Canon item without leaving Product Inventory.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-product-new-vieworks-inline",
+          "category": "Inventory",
+          "description": "When adding or editing a machine with Vieworks/Canon, New Vieworks item creates the Vieworks item right there, with the machine's medical center, room and warranty dates, and selects it for linking. You no longer need to open the Vieworks page first.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-shimadzu-look",
       "release_date": "2026-10-08",
       "title": "A Clearer Shimadzu Look",
