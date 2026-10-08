@@ -688,22 +688,8 @@ body.sidebar-resizing .main-content {
         user-select: none;
     }
 
-    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-subnav-nested .sidebar-flyout-title {
-        margin-top: 4px;
-    }
-
     body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-only {
         display: flex !important;
-    }
-
-    /* Records: Inventory reads as a subheading, not a second flyout. */
-    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-subnav-toggle {
-        display: none !important;
-    }
-
-    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-subnav-nested {
-        display: block !important;
-        background: transparent;
     }
 
     body.sidebar-collapsed .sidebar .is-flyout-open a,

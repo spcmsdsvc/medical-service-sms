@@ -180,7 +180,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=31", self.layout)
+        self.assertIn("app-shell.css') }}?v=32", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -211,12 +211,12 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertNotIn('sidebar-peek', self.shell_css)
         self.assertIn('(function initSidebarFlyouts()', self.layout)
         self.assertIn('.sidebar-subnav.is-flyout-open', self.shell_css)
-        # Each group's own subnav is the flyout, titled; Inventory is a subheading.
+        # Each group's own subnav is the flyout, titled; no nested groups.
         for section in ('new-request', 'clients', 'reports', 'office', 'inventory', 'admin'):
             opening = self.layout.split(f'<div id="{section}-sidebar-section"', 1)[1].split('\n', 2)[1]
             self.assertIn('class="sidebar-flyout-title"', opening, section)
         self.assertNotIn('calendar-sidebar-section', self.layout)
-        self.assertIn('.is-flyout-open .sidebar-subnav-nested {\n        display: block !important;', self.shell_css)
+        self.assertNotIn('sidebar-subnav-nested', self.shell_css)
         # The avatar opens an account flyout holding the tools the rail hides.
         self.assertIn('class="sidebar-user-avatar"\n                    aria-label="Account"', self.layout)
         account = self.layout.split('<div id="sidebar-user-flyout"', 1)[1].split('</div>', 1)[0]
@@ -546,6 +546,8 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('content: attr(data-rail-caption);', self.shell_css)
 
     def test_sidebar_order_puts_waiting_work_first_then_work_then_manage(self):
+        self.assertIn("nav_link('/clients_page', 'fa-hospital', 'Clients')", self.layout)
+        self.assertNotIn("'Medical Centers'", self.layout)
         nav = self.layout.split('<nav class="sidebar-nav"', 1)[1].split('</nav>', 1)[0]
         order = [
             '>Main</div>',
@@ -555,8 +557,9 @@ class SidebarSourceTests(unittest.TestCase):
             "nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}\n                {{ nav_link('/offline-tsr'",
             '>Work</div>',
             'aria-label="New Request"',
-            'aria-label="Clients &amp; Equipment"',
-            "{% if stock_inventory_view %}\n                {{ nav_link('/stock_inventory'",
+            'aria-label="Clients"',
+            'aria-label="Inventory"',
+            "{% if stock_inventory_view %}\n                        {{ nav_link('/stock_inventory'",
             '>Manage</div>',
             'aria-label="Reports"',
             'aria-label="Office"',
@@ -564,11 +567,13 @@ class SidebarSourceTests(unittest.TestCase):
         ]
         positions = [nav.index(marker) for marker in order]
         self.assertEqual(positions, sorted(positions))
-        for old in ('Field Operations', 'Reports &amp; Insights', 'Resources', '>Operations<', '>Records<', 'sidebar-calendar'):
+        for old in ('Clients &amp; Equipment', 'sidebar-subnav-nested', 'Field Operations', 'Reports &amp; Insights', 'Resources', '>Operations<', '>Records<', 'sidebar-calendar'):
             self.assertNotIn(old, nav)
         # One-link groups render the link itself.
         self.assertIn('{% if office_link_count > 1 %}', nav)
         self.assertIn('data-rail-caption="Clients"', nav)
+        self.assertIn('{% if inventory_link_count > 1 %}', nav)
+        self.assertIn('data-rail-caption="Inventory"', nav)
         self.assertIn("'Create TSR': 'TSR'", self.layout)
         # Stock Inventory sits in WORK, not MAIN; only stock-only accounts keep it on top,
         # and the Stock page no longer lights up the Admin group.
@@ -689,7 +694,9 @@ class SidebarRenderTests(unittest.TestCase):
         engineer = self._render_dashboard_as(self._make_user('layout_office_engineer', 'engineer'))
         self.assertIn('href="/engineers_page"', engineer)
         self.assertNotIn('aria-label="Office"', engineer)
-        self.assertIn('aria-label="Clients &amp; Equipment"', engineer)
+        # Engineers have no Calibration Center or brand inventory: plain links.
+        self.assertIn('href="/clients_page"', engineer)
+        self.assertNotIn('aria-label="Clients"', engineer)
         self.assertIn('href="/offline-tsr"', engineer)
         # Two office permissions: the Office group holds both links.
         both = self._render_dashboard_as(self._make_user(

@@ -54,7 +54,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=28">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=31">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=32">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -139,7 +139,7 @@
             64px rail; CSS shows it only there. -#}
         {% macro nav_link(href, icon, label, extra_class='', badge_id='') -%}
             {%- set is_active = (request.path == href) -%}
-            {%- set rail_caption = {'Create TSR': 'TSR', 'Stock Inventory': 'Stock', 'Password Settings': 'Password', 'My Requests': 'Requests', 'Service Documents': 'Documents', 'System Settings': 'Settings', 'Activity Logs': 'Activity', 'Medical Centers': 'Centers', 'Calibration Center': 'Calibration'}.get(label, label) -%}
+            {%- set rail_caption = {'Create TSR': 'TSR', 'Stock Inventory': 'Stock', 'Password Settings': 'Password', 'My Requests': 'Requests', 'Service Documents': 'Documents', 'System Settings': 'Settings', 'Activity Logs': 'Activity', 'Calibration Center': 'Calibration'}.get(label, label) -%}
             <a href="{{ href }}"
                class="{{ extra_class }} {{ 'active' if is_active }}"
                data-rail-caption="{{ rail_caption }}"
@@ -173,8 +173,10 @@
             {% set new_request_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
             {% if lpr_enabled %}{% set new_request_paths = new_request_paths + ['/lpr'] %}{% endif %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
-            {% set inventory_paths = ['/products_page', '/genoray', '/vieworks', '/genoray/pm', '/vieworks/pm', '/genoray_pm', '/vieworks_pm'] %}
-            {% set clients_paths = ['/clients_page', '/admin/calibration-center'] + inventory_paths %}
+            {% set inventory_paths = ['/products_page', '/genoray', '/vieworks', '/genoray/pm', '/vieworks/pm', '/genoray_pm', '/vieworks_pm', '/stock_inventory'] %}
+            {% set inventory_active = request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) %}
+            {% set inventory_link_count = [True, can_access_genoray_inventory, can_access_vieworks_inventory, stock_inventory_view]|select|list|length %}
+            {% set clients_paths = ['/clients_page', '/admin/calibration-center'] %}
             {% set office_paths = ['/engineers_page', '/po_details', '/reimbursement_tracker'] %}
             {% set admin_paths = ['/activity_page', '/settings'] %}
             {% set show_personnel = nav_can_administer_personnel or is_engineer_only %}
@@ -240,6 +242,7 @@
                 </div>
             {% endif %}
 
+            {% if can_access_calibration_center %}
                 <button
                     type="button"
                     class="sidebar-section-toggle {{ 'active' if request.path in clients_paths }}"
@@ -250,55 +253,55 @@
                     aria-controls="clients-sidebar-section"
                 >
                     <i class="fa-solid fa-hospital-user" aria-hidden="true"></i>
-                    <span>Clients &amp; Equipment</span>
+                    <span>Clients</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="clients-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in clients_paths }}" role="group" aria-label="Clients &amp; Equipment">
-                    <div class="sidebar-flyout-title" aria-hidden="true">Clients &amp; Equipment</div>
-                    {{ nav_link('/clients_page', 'fa-hospital', 'Medical Centers') }}
-                    {% if can_access_genoray_inventory or can_access_vieworks_inventory %}
-                        <button
-                            type="button"
-                            class="sidebar-section-toggle sidebar-subnav-toggle {{ 'active' if request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) }}"
-                            data-bs-toggle="collapse"
-                            data-bs-target="#inventory-sidebar-section"
-                            aria-expanded="{{ 'true' if request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) else 'false' }}"
-                            aria-controls="inventory-sidebar-section"
-                        >
-                            <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
-                            <span>Inventory</span>
-                            <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
-                        </button>
-                        <div id="inventory-sidebar-section" class="collapse sidebar-subnav sidebar-subnav-nested {{ 'show' if request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) }}" role="group" aria-label="Inventory">
-                            <div class="sidebar-flyout-title" aria-hidden="true">Inventory</div>
-                            {% if can_access_genoray_inventory or can_access_vieworks_inventory %}
-                                {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
-                            {% endif %}
-                            {% if can_access_genoray_inventory %}
-                                {{ nav_link('/genoray', 'fa-boxes-packing', 'Genoray') }}
-                                {% if nav_can_access_genoray_pm %}
-                                    {{ nav_link('/genoray/pm', 'fa-screwdriver-wrench', 'Genoray PM') }}
-                                {% endif %}
-                            {% endif %}
-                            {% if can_access_vieworks_inventory %}
-                                {{ nav_link('/vieworks', 'fa-boxes-packing', 'Vieworks') }}
-                                {% if nav_can_access_vieworks_pm %}
-                                    {{ nav_link('/vieworks/pm', 'fa-screwdriver-wrench', 'Vieworks PM') }}
-                                {% endif %}
-                            {% endif %}
-                        </div>
-                    {% else %}
-                        {{ nav_link('/products_page', 'fa-boxes-stacked', 'Inventory') }}
+                <div id="clients-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in clients_paths }}" role="group" aria-label="Clients">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Clients</div>
+                    {{ nav_link('/clients_page', 'fa-hospital', 'Clients') }}
+                    {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
+                </div>
+            {% else %}
+                {{ nav_link('/clients_page', 'fa-hospital', 'Clients') }}
+            {% endif %}
+
+            {#- Equipment at clients (Product, Genoray, Vieworks) and the company's own
+                parts stock, in one place. -#}
+            {% if inventory_link_count > 1 %}
+                <button
+                    type="button"
+                    class="sidebar-section-toggle {{ 'active' if inventory_active }}"
+                    data-rail-caption="Inventory"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#inventory-sidebar-section"
+                    aria-expanded="{{ 'true' if inventory_active else 'false' }}"
+                    aria-controls="inventory-sidebar-section"
+                >
+                    <i class="fa-solid fa-warehouse" aria-hidden="true"></i>
+                    <span>Inventory</span>
+                    <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
+                </button>
+                <div id="inventory-sidebar-section" class="collapse sidebar-subnav {{ 'show' if inventory_active }}" role="group" aria-label="Inventory">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Inventory</div>
+                    {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
+                    {% if can_access_genoray_inventory %}
+                        {{ nav_link('/genoray', 'fa-boxes-packing', 'Genoray') }}
+                        {% if nav_can_access_genoray_pm %}
+                            {{ nav_link('/genoray/pm', 'fa-screwdriver-wrench', 'Genoray PM') }}
+                        {% endif %}
                     {% endif %}
-                    {% if can_access_calibration_center %}
-                        {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
+                    {% if can_access_vieworks_inventory %}
+                        {{ nav_link('/vieworks', 'fa-boxes-packing', 'Vieworks') }}
+                        {% if nav_can_access_vieworks_pm %}
+                            {{ nav_link('/vieworks/pm', 'fa-screwdriver-wrench', 'Vieworks PM') }}
+                        {% endif %}
+                    {% endif %}
+                    {% if stock_inventory_view %}
+                        {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
                     {% endif %}
                 </div>
-
-            {#- The company's own parts stock, kept apart from the equipment installed
-                at clients (Clients & Equipment › Inventory). -#}
-            {% if stock_inventory_view %}
-                {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
+            {% else %}
+                {{ nav_link('/products_page', 'fa-boxes-stacked', 'Inventory') }}
             {% endif %}
             {% endif %}
 
@@ -453,7 +456,7 @@
         const phoneTitle = document.getElementById('mobile-page-title');
         if (!phoneTitle) return;
         phoneTitle.textContent = section ? section.getAttribute('aria-label') : name;
-        // A long section name ("Clients & Equipment") falls back to the section's
+        // A long section name ("New Request") falls back to the section's
         // short rail caption when it would be cut off in the phone bar.
         const toggle = section && document.querySelector(`[aria-controls="${section.id}"][data-rail-caption]`);
         if (toggle && phoneTitle.scrollWidth > phoneTitle.clientWidth) {
