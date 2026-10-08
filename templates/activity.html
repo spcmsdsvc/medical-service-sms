@@ -130,6 +130,28 @@
             </div>
         </div>
     </div>
+
+    <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3 activity-toast-wrap">
+        <div class="toast align-items-center text-bg-dark border-0" id="activity-toast" role="status" aria-live="polite" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body" id="activity-toast-text"></div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="offcanvas offcanvas-end activity-detail-panel" tabindex="-1" id="activity-detail" data-bs-backdrop="false" data-bs-scroll="true" aria-labelledby="activity-detail-title">
+        <div class="offcanvas-header border-bottom">
+            <h3 class="h6 fw-bold mb-0" id="activity-detail-title">Entry details</h3>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close details"></button>
+        </div>
+        <div class="offcanvas-body">
+            <div id="activity-detail-body"></div>
+            <div id="activity-detail-records"></div>
+            <h4 class="activity-label mt-4 mb-2" id="activity-detail-related-title">Related entries</h4>
+            <div id="activity-detail-related" aria-live="polite"></div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -138,6 +160,9 @@ let totalPages = 1;
 let debounceTimer = null;
 let activityLoadController = null;
 let activityLoadSequence = 0;
+let activityLogsById = {};
+let activityDetailController = null;
+let activityDetailId = null;
 
 const byId = id => document.getElementById(id);
 const fmt = n => Number(n || 0).toLocaleString();
@@ -295,7 +320,7 @@ function renderRow(log) {
     const details = log.display_action || log.action;
     const original = log.action && log.action !== details ? ` title="${escapeHtml(log.action)}"` : '';
     return `
-        <tr class="small activity-log-row activity-severity-row-${escapeHtml(severity)}">
+        <tr class="small activity-log-row activity-severity-row-${escapeHtml(severity)}${log.id === activityDetailId ? ' is-selected' : ''}" data-log-id="${log.id}">
             <td class="ps-3 text-nowrap" data-label="When">
                 <span class="text-muted">${escapeHtml(log.date)}</span>
                 <span class="fw-bold d-block">${escapeHtml(log.time)}</span>
@@ -304,16 +329,43 @@ function renderRow(log) {
                 <button type="button" class="activity-chip activity-chip-user" onclick="filterBy('filter-user', this.dataset.value)" data-value="${escapeHtml(log.user)}" title="Show only ${escapeHtml(log.user)}">${escapeHtml(log.user)}</button>
             </td>
             <td data-label="What">
-                <button type="button" class="activity-chip activity-tone-${tone}" onclick="filterBy('filter-type', this.dataset.value)" data-value="${escapeHtml(log.type)}" title="Show only ${escapeHtml(log.type)}">
-                    <i class="fa-solid ${icon} me-1"></i>${escapeHtml(log.type)}
-                </button>
+                ${renderCategoryChip(log, tone, icon)}
                 <span class="text-muted ms-1">${escapeHtml(log.action_type || 'Other')}</span>
             </td>
             <td class="activity-details" data-label="Details"${original}>
-                ${escapeHtml(details)}
+                <button type="button" class="activity-detail-link" data-log-id="${log.id}">${escapeHtml(details)}</button>
                 ${log.branch ? `<span class="activity-chip activity-chip-branch ms-1"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(log.branch)}</span>` : ''}
             </td>
         </tr>`;
+}
+
+const RECORD_LINK_MESSAGES = {
+    denied: 'Only the assigned approver can open this record.',
+    missing: 'This record no longer exists.'
+};
+
+// Rows that name a record open it (or explain why not); other rows filter by category.
+function renderCategoryChip(log, tone, icon) {
+    const link = log.record_link;
+    const label = `<i class="fa-solid ${icon} me-1"></i>${escapeHtml(log.type)}`;
+    const url = String((link && link.open_url) || '');
+    if (link && link.open_state === 'open' && url.startsWith('/') && !url.startsWith('//')) {
+        const where = url.startsWith('/timeline') ? 'Timeline' : 'Approvals';
+        return `<a class="activity-chip activity-chip-link activity-tone-${tone}" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Open ${escapeHtml(link.record_label)} in ${where}">
+                    ${label}<i class="fa-solid fa-arrow-up-right-from-square ms-1 activity-chip-link-icon" aria-hidden="true"></i></a>`;
+    }
+    if (link && RECORD_LINK_MESSAGES[link.open_state]) {
+        return `<button type="button" class="activity-chip activity-chip-link activity-tone-${tone}" onclick="showActivityToast(RECORD_LINK_MESSAGES['${link.open_state}'])" title="${escapeHtml(link.record_label)}: ${escapeHtml(RECORD_LINK_MESSAGES[link.open_state])}">
+                    ${label}<i class="fa-solid fa-arrow-up-right-from-square ms-1 activity-chip-link-icon" aria-hidden="true"></i></button>`;
+    }
+    return `<button type="button" class="activity-chip activity-tone-${tone}" onclick="filterBy('filter-type', this.dataset.value)" data-value="${escapeHtml(log.type)}" title="Show only ${escapeHtml(log.type)}">
+                    ${label}
+                </button>`;
+}
+
+function showActivityToast(message) {
+    byId('activity-toast-text').innerText = message;
+    bootstrap.Toast.getOrCreateInstance(byId('activity-toast'), { delay: 4000 }).show();
 }
 
 function filterBy(id, value) {
@@ -370,7 +422,128 @@ async function loadLogs(page = 1) {
         showTableMessage('<i class="fa-solid fa-magnifying-glass me-1"></i>No activity matches these filters.');
         return;
     }
+    activityLogsById = Object.fromEntries(data.logs.map(log => [log.id, log]));
     byId('activity-table-body').innerHTML = data.logs.map(renderRow).join('');
+}
+
+// "Label: value" segments separated by " | " become field rows; the rest is the headline.
+function parseActivityFields(text) {
+    const [headline, ...segments] = String(text || '').split(' | ');
+    const fields = [];
+    const extra = [];
+    segments.forEach(segment => {
+        const match = segment.match(/^([^:]{1,40}):\s*(.+)$/);
+        if (match) fields.push([match[1].trim(), match[2].trim()]);
+        else extra.push(segment);
+    });
+    return { headline: [headline, ...extra].join(' | '), fields };
+}
+
+function formatActivityStamp(stamp) {
+    const date = stamp ? new Date(stamp.replace(' ', 'T')) : null;
+    if (!date || Number.isNaN(date.getTime())) return stamp || '';
+    return date.toLocaleString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+}
+
+function renderActivityDetail(log, decision) {
+    const display = log.display_action || log.action;
+    const { headline, fields } = parseActivityFields(display);
+    const tone = CATEGORY_TONES[log.type] || 'workflow';
+    const icon = CATEGORY_ICONS[log.type] || CATEGORY_ICONS.System;
+    const rows = [
+        ['When', formatActivityStamp(log.timestamp)],
+        ['Who', log.user],
+        ['Action', log.action_type || 'Other'],
+        ...fields,
+        // Reason given when the request was rejected or returned (from the approval history).
+        ...(decision && decision.reason ? [[`${decision.decision} reason`, decision.reason]] : []),
+        ...(decision && decision.by ? [[`${decision.decision} by`, decision.by]] : []),
+        ...(log.branch ? [['Branch', log.branch]] : []),
+        ...(log.severity === 'danger' ? [['Result', 'Failed']] : log.severity === 'warning' ? [['Result', 'Needs attention']] : [])
+    ];
+    byId('activity-detail-body').innerHTML = `
+        <span class="activity-chip activity-tone-${tone} mb-2"><i class="fa-solid ${icon} me-1"></i>${escapeHtml(log.type)}</span>
+        <p class="fw-bold mb-3 activity-detail-headline">${escapeHtml(headline)}</p>
+        <dl class="activity-detail-fields mb-0">
+            ${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}
+        </dl>
+        ${log.action && log.action !== display ? `<p class="activity-label mt-3 mb-1">Original entry</p><p class="small text-muted mb-0 activity-details">${escapeHtml(log.action)}</p>` : ''}`;
+}
+
+// Live fields of the record the entry mentions (as it is now, not when the entry was written).
+function renderActivityRecords(records) {
+    byId('activity-detail-records').innerHTML = (records || []).map(record => `
+        <section class="activity-record-card mt-3">
+            <h4 class="activity-label mb-2">Current record · ${escapeHtml(record.label)}</h4>
+            <dl class="activity-detail-fields mb-0">
+                ${record.fields.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`).join('')}
+            </dl>
+            ${activityRecordOpenLink(record)}
+        </section>`).join('');
+}
+
+// The server sends open_url only when the viewer passes the target page's own checks.
+function activityRecordOpenLink(record) {
+    const url = String(record.open_url || '');
+    if (url.startsWith('/') && !url.startsWith('//')) {
+        return `<a class="btn btn-sm btn-outline-primary mt-2 activity-record-open" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+            <i class="fa-solid fa-arrow-up-right-from-square me-1" aria-hidden="true"></i>${escapeHtml(record.open_label)}</a>`;
+    }
+    return record.kind === 'Schedule' ? '' : '<p class="small text-muted mt-2 mb-0">Only the assigned approver can open this record.</p>';
+}
+
+function renderActivityRelated(data) {
+    const byRecord = data.related_by === 'reference';
+    byId('activity-detail-related-title').innerText = byRecord
+        ? `Same record · ${data.references.join(', ')}`
+        : 'Same person, around this time';
+    if (!data.related.length) {
+        byId('activity-detail-related').innerHTML = `<p class="small text-muted mb-0">${byRecord ? 'No other entries mention this record.' : 'No other entries by this person within 30 minutes.'}</p>`;
+        return;
+    }
+    data.related.forEach(log => { activityLogsById[log.id] = log; });
+    byId('activity-detail-related').innerHTML = `<ul class="activity-related-list">${data.related.map(log => `
+        <li><button type="button" class="activity-related-item" data-log-id="${log.id}">
+            <span class="text-muted">${escapeHtml(log.date)} · ${escapeHtml(log.time)} · ${escapeHtml(log.user)}</span>
+            <span class="d-block">${escapeHtml(log.display_action || log.action)}</span>
+        </button></li>`).join('')}</ul>`;
+}
+
+async function loadActivityRelated(id) {
+    if (activityDetailController) activityDetailController.abort();
+    activityDetailController = typeof AbortController === 'function' ? new AbortController() : null;
+    byId('activity-detail-related').innerHTML = '<p class="small text-muted mb-0"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading...</p>';
+    try {
+        const res = await fetch(`/get_activity_log_related/${id}`, {
+            signal: activityDetailController ? activityDetailController.signal : undefined,
+            cache: 'no-store'
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (id !== activityDetailId) return;
+        activityLogsById[id] = data.log;
+        renderActivityDetail(data.log, data.decision);
+        renderActivityRecords(data.records);
+        renderActivityRelated(data);
+    } catch (error) {
+        if ((error && error.name === 'AbortError') || id !== activityDetailId) return;
+        byId('activity-detail-related').innerHTML = `<p class="small text-danger mb-0">Unable to load related entries. <button type="button" class="btn btn-link btn-sm p-0" onclick="loadActivityRelated(${id})">Retry</button></p>`;
+    }
+}
+
+function openActivityDetail(id) {
+    id = Number(id);
+    const log = activityLogsById[id];
+    if (!log) return;
+    activityDetailId = id;
+    document.querySelectorAll('#activity-table-body .activity-log-row').forEach(row => {
+        row.classList.toggle('is-selected', Number(row.dataset.logId) === id);
+    });
+    byId('activity-detail-related-title').innerText = 'Related entries';
+    renderActivityDetail(log);
+    renderActivityRecords([]);
+    bootstrap.Offcanvas.getOrCreateInstance(byId('activity-detail')).show();
+    loadActivityRelated(id);
 }
 
 function changePage(direction) {
@@ -395,6 +568,23 @@ function exportLogs() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Clicking a row opens its details; the Who and What chips keep filtering.
+    byId('activity-table-body').addEventListener('click', event => {
+        const button = event.target.closest('button, a');
+        if (button && !button.classList.contains('activity-detail-link')) return;
+        const row = event.target.closest('.activity-log-row');
+        if (row) openActivityDetail(row.dataset.logId);
+    });
+    byId('activity-detail-related').addEventListener('click', event => {
+        const item = event.target.closest('.activity-related-item');
+        if (item) openActivityDetail(item.dataset.logId);
+    });
+    byId('activity-detail').addEventListener('hidden.bs.offcanvas', () => {
+        const button = document.querySelector(`#activity-table-body .activity-detail-link[data-log-id="${activityDetailId}"]`);
+        activityDetailId = null;
+        document.querySelectorAll('#activity-table-body .is-selected').forEach(row => row.classList.remove('is-selected'));
+        if (button) button.focus();
+    });
     await loadFilterOptions();
     loadLogs(readFiltersFromUrl());
 });
@@ -418,7 +608,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     background: #f1f5f9;
     color: #334155;
 }
-button.activity-chip:hover { filter: brightness(0.95); text-decoration: underline; }
+button.activity-chip:hover,
+a.activity-chip:hover { filter: brightness(0.95); text-decoration: underline; }
+a.activity-chip { text-decoration: none; }
+.activity-chip-link-icon { font-size: 0.6rem; opacity: 0.75; }
+.activity-toast-wrap { z-index: 1080; }
 .activity-chip-user { background: #f8f9fa; border: 1px solid #e2e8f0; }
 .activity-chip-branch { font-size: 0.62rem; padding: 2px 7px; background: #f8f9fa; color: #495057; }
 .activity-tone-workflow { background: #e0f2fe; color: #0369a1; }
@@ -429,6 +623,27 @@ button.activity-chip:hover { filter: brightness(0.95); text-decoration: underlin
 .activity-tone-system { background: #eef2ff; color: #4f46e5; }
 
 .activity-details { overflow-wrap: anywhere; line-height: 1.35; }
+
+.activity-log-row { cursor: pointer; }
+.activity-log-row.is-selected > td { background: var(--bs-primary-bg-subtle); }
+.activity-detail-link {
+    border: 0; padding: 0; background: none; color: inherit; font: inherit;
+    text-align: left; overflow-wrap: anywhere;
+}
+.activity-detail-link:hover { text-decoration: underline; }
+.activity-detail-panel.offcanvas-end { width: 420px; }
+.activity-detail-headline { overflow-wrap: anywhere; line-height: 1.4; }
+.activity-detail-fields { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 0.85rem; font-size: 0.85rem; }
+.activity-detail-fields dt { color: var(--bs-secondary-color); font-weight: 600; }
+.activity-detail-fields dd { margin: 0; overflow-wrap: anywhere; }
+.activity-record-card { border: 1px solid var(--bs-border-color); border-radius: 0.75rem; padding: 0.75rem 0.85rem; background: var(--bs-tertiary-bg); }
+.activity-related-list { list-style: none; margin: 0; padding: 0; }
+.activity-related-item {
+    display: block; width: 100%; border: 0; border-bottom: 1px solid var(--bs-border-color);
+    background: none; color: inherit; text-align: left; padding: 0.55rem 0; font-size: 0.8rem; line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+.activity-related-item:hover { background: var(--bs-tertiary-bg); }
 
 .activity-log-row.activity-severity-row-warning { box-shadow: inset 4px 0 0 #f59e0b; }
 .activity-log-row.activity-severity-row-danger { box-shadow: inset 4px 0 0 #dc2626; }
@@ -444,6 +659,18 @@ button.activity-chip:hover { filter: brightness(0.95); text-decoration: underlin
     .activity-table td { display: block; border: 0; padding: 0.15rem 0 !important; }
     .activity-table td[data-label="When"] span { display: inline !important; margin-right: 0.35rem; }
     .activity-table .activity-message-row td { text-align: center; }
+    .activity-detail-link,
+    .activity-related-item { min-height: 2.75rem; }
+    .activity-record-open { min-height: 2.75rem; display: inline-flex; align-items: center; }
+    .activity-detail-panel .btn-close { min-width: 2.75rem; min-height: 2.75rem; }
+    /* Bottom sheet on phones and tablets. */
+    .activity-detail-panel.offcanvas-end {
+        top: auto; left: 0; right: 0; width: 100%; height: auto; max-height: 85vh;
+        border-left: 0; border-top: 1px solid var(--bs-border-color);
+        border-radius: 1rem 1rem 0 0; transform: translateY(100%);
+    }
+    .activity-detail-panel.offcanvas-end.showing,
+    .activity-detail-panel.offcanvas-end.show:not(.hiding) { transform: none; }
 }
 </style>
 

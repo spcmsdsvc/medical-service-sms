@@ -1,6 +1,96 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-08-activity-chip-open",
+      "release_date": "2026-10-08",
+      "title": "Open Records from the Category Label",
+      "summary": "In the Activity Log list, the category label of an entry about a record now opens that record.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-activity-chip-open-label",
+          "category": "Activity Log",
+          "description": "Category labels with a small arrow (for example Travel Request or Leave Request) open the record in a new tab: in Approvals if you are its approver, or in Timeline for schedules. If you cannot open it, a message says why. Other labels still filter the list by category.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-activity-open-record",
+      "release_date": "2026-10-08",
+      "title": "Open Records from the Activity Log",
+      "summary": "The Activity Log details panel can now open the record an entry is about, and shows why a request was rejected or returned.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-activity-open-record-button",
+          "category": "Activity Log",
+          "description": "In an entry's details, the Current record card has an Open in Approvals button for Travel Requests, Cash Advances, liquidations and reimbursements you approve, and Show in Timeline for schedules. Both open in a new tab. Records routed to another approver show a note instead. Rejected and returned entries now show the reason and who rejected or returned them, and Leave Requests have their own record summary.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-activity-details",
+      "release_date": "2026-10-08",
+      "title": "Activity Log Details",
+      "summary": "Click an Activity Log entry to see it in full, the record it is about, and the other entries about the same record.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-activity-details-panel",
+          "category": "Activity Log",
+          "description": "Clicking an entry opens a details panel beside the list (a sheet from the bottom on phones): the full entry with Client, Product and Engineer shown as separate lines, the exact date and time, a summary of the record as it is now (for a Travel Request: requester, route, visits, travel dates, amounts and status; also Cash Advances, liquidations, schedules and reimbursements), and the other entries that mention the same record, such as a Travel Request or Cash Advance number. Entries without a record number show the same person's activity within 30 minutes instead.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-08-easier-menu",
+      "release_date": "2026-10-08",
+      "title": "A Tidier, Easier Menu",
+      "summary": "The phone menu opens on the Menu button's side and the menu header is simpler.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-08-easier-menu-phone",
+          "category": "System",
+          "description": "On phones, the menu now slides in from the right, next to the Menu button, and the top bar shows which section you are in.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-08-easier-menu-header",
+          "category": "System",
+          "description": "When the menu is pinned open, the Appearance and What's New buttons are now beside your name at the bottom, and new updates show as a small white dot.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-08-easier-menu-offline",
+          "category": "System",
+          "description": "Screen readers now announce when you go offline, and that Create TSR still works until you are back online.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-dashboard-fixes",
       "release_date": "2026-10-08",
       "title": "Dashboard Fixes",
