@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Daily Automatic Database Backup
 
-**Status:** Executed locally on 2026-10-09 on the owner's "go ahead and execute"; not committed — awaiting "commit and push". 60 focused tests OK (8 new, all fail on the previous `app.py`).
+**Status:** Executed — published to `main` on 2026-10-09 on the owner's "commit and push" (commit `f28d3c4`). 60 focused tests OK (8 new, all fail on the previous `app.py`). Full suite before publishing: 1,679 tests, 14 failures (the known list), 3 errors that occur only alongside other test files, 5 skips, no new failures.
 **Differences from the plan:** (a) the code block sits after `record_storage_activity` rather than after `BACKUP_ARCHIVE_FILENAME_PATTERN`, so every helper it calls is defined above it; (b) activity entries go through a small `record_daily_backup_activity` that logs as user "System" (`record_storage_activity` reads `current_user`, which a background thread does not have); (c) the status line also covers "none has run yet" and "off on this server" (bucket configured but not on Railway).
 **Approved:** 2026-10-09 (owner: "yes write it to plans.md").
 **Detailed:** 2026-10-09.
