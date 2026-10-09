@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-09-account-menu",
+      "release_date": "2026-10-09",
+      "title": "A Clearer Account Menu",
+      "summary": "Your account menu has labelled options, the theme button shows the current theme, and What's New clears once you open it.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-09-account-menu-account",
+          "category": "System",
+          "description": "In the full menu, click your name to open your account menu: Theme, What's New, Menu guide and Log out, each with a label.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-09-account-menu-theme",
+          "category": "System",
+          "description": "The theme button now shows which theme is on, and keeps working when you are offline.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-09-account-menu-whatsnew",
+          "category": "System",
+          "description": "Opening What's New now marks the updates as read, so the dot only appears for updates you have not seen.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-09-account-menu-guide",
+          "category": "System",
+          "description": "Pages in the Menu guide are now links you can open.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-09-menu-guide",
       "release_date": "2026-10-09",
       "title": "Menu Guide and Clearer Names",

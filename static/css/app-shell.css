@@ -519,6 +519,21 @@ body.sidebar-collapsed .shell-guide-header-button {
     font-weight: 600;
 }
 
+.shell-guide a {
+    color: var(--sidebar-text);
+    text-underline-offset: 3px;
+}
+
+.shell-guide a:hover,
+.shell-guide a:focus-visible,
+.shell-guide a.shell-guide-item {
+    color: var(--sidebar-text-strong);
+}
+
+.shell-guide a.shell-guide-item {
+    font-weight: 600;
+}
+
 .shell-guide kbd {
     padding: 1px 6px;
     border-radius: 4px;
@@ -869,7 +884,8 @@ body.sidebar-collapsed .shell-guide-header-button {
     /* Flyouts: the group's existing subnav (or the account block), fixed beside
        the rail so it escapes the sidebar's overflow clip. Top is set by JS. */
     body.sidebar-collapsed .sidebar .sidebar-subnav.is-flyout-open,
-    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open {
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open {
         display: block !important;
         position: fixed;
         left: var(--sidebar-rail-width);
@@ -885,7 +901,8 @@ body.sidebar-collapsed .shell-guide-header-button {
         scrollbar-width: thin;
     }
 
-    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-title {
+    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-title,
+    body:not(.sidebar-collapsed) .sidebar .is-flyout-open .sidebar-flyout-title {
         display: block !important;
         padding: 8px 16px 6px;
         font-size: var(--shell-text-micro);
@@ -896,41 +913,53 @@ body.sidebar-collapsed .shell-guide-header-button {
         user-select: none;
     }
 
-    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-only {
+    body.sidebar-collapsed .sidebar .is-flyout-open .sidebar-flyout-only,
+    body:not(.sidebar-collapsed) .sidebar .is-flyout-open .sidebar-flyout-only {
         display: flex !important;
     }
 
     body.sidebar-collapsed .sidebar .is-flyout-open a,
+    body:not(.sidebar-collapsed) .sidebar .is-flyout-open a,
     body.sidebar-collapsed .sidebar .is-flyout-open .appearance-header-button,
-    body.sidebar-collapsed .sidebar .is-flyout-open .shell-guide-button {
+    body:not(.sidebar-collapsed) .sidebar .is-flyout-open .appearance-header-button,
+    body.sidebar-collapsed .sidebar .is-flyout-open .shell-guide-button,
+    body:not(.sidebar-collapsed) .sidebar .is-flyout-open .shell-guide-button {
         justify-content: flex-start;
         min-height: var(--sidebar-subrow-height);
         padding: 0 16px;
     }
 
-    body.sidebar-collapsed .sidebar .is-flyout-open a.active {
+    body.sidebar-collapsed .sidebar .is-flyout-open a.active,
+    body:not(.sidebar-collapsed) .sidebar .is-flyout-open a.active {
         padding-left: 13px;
     }
 
-    body.sidebar-collapsed .sidebar .is-flyout-open a > span {
+    body.sidebar-collapsed .sidebar .is-flyout-open a > span,
+    body:not(.sidebar-collapsed) .sidebar .is-flyout-open a > span {
         position: static;
         width: auto;
         height: auto;
         clip: auto;
     }
 
-    /* Account flyout: name and role, then the header tools and Log out as rows. */
-    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open {
+    /* Account panel (rail flyout and pinned footer): name and role, then Theme,
+       What's New, Menu guide and Log out as labelled rows. Every rule names the
+       body state (rail or pinned) so it keeps the weight of the rail's own
+       label-hiding and centring rules, which it has to beat. */
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open {
         top: auto;
         bottom: 8px;
     }
 
-    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-user-meta {
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-user-meta,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-user-meta {
         display: flex !important;
         padding: 8px 16px 10px;
     }
 
-    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-logout {
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-logout,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-logout {
         display: flex !important;
         width: 100%;
         height: auto;
@@ -939,7 +968,9 @@ body.sidebar-collapsed .shell-guide-header-button {
     }
 
     body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .appearance-header-button,
-    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .shell-guide-button {
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .appearance-header-button,
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .shell-guide-button,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .shell-guide-button {
         align-items: center;
         background: transparent;
         width: 100%;
@@ -954,14 +985,16 @@ body.sidebar-collapsed .shell-guide-header-button {
     }
 
     /* In the account list the badge carries "unread"; the row stays a plain row. */
-    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button:not(:hover):not(:focus-visible):not(.active) {
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button:not(:hover):not(:focus-visible):not(.active),
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button:not(:hover):not(:focus-visible):not(.active) {
         background: transparent;
         color: var(--sidebar-text);
     }
 
     /* The flyout's "a > span" rule sets width and height to auto, which would
        collapse the empty dot. */
-    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-badge {
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-badge,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-badge {
         position: static;
         flex: 0 0 8px;
         width: 8px;
@@ -974,24 +1007,6 @@ body.sidebar-collapsed .shell-guide-header-button {
 
     body.sidebar-collapsed .sidebar .sidebar-user-avatar:focus-visible {
         outline-offset: 2px;
-    }
-
-    /* In the rail, What's New lives in the account flyout, so the avatar carries
-       its unread dot; the pinned sidebar shows it on the header bell instead. */
-    body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread {
-        position: relative;
-    }
-
-    body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread::after {
-        content: '';
-        position: absolute;
-        top: -1px;
-        right: -1px;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--shell-focus-ring);
-        box-shadow: 0 0 0 2px var(--app-sidebar);
     }
 
     /* Name label for single links in the rail. */
@@ -1034,44 +1049,41 @@ body.sidebar-collapsed .shell-guide-header-button {
     cursor: default;
 }
 
-/* Pinned desktop sidebar: Appearance and What's New sit as icons beside Log out,
-   with the same quiet look, instead of crowding the header. Their text labels
-   are for the rail's account flyout. */
+/* Pinned desktop sidebar: the footer shows the avatar, name, role and a chevron;
+   the avatar (or name, or chevron) opens the account panel above the footer with
+   the same labelled rows as the rail. No unlabelled icon tools in the footer. */
+.sidebar-user-caret {
+    display: none;
+}
+
 @media (min-width: 993px) {
-    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool {
-        position: relative;
-        display: inline-flex !important;
-        align-items: center;
-        justify-content: center;
-        flex: 0 0 auto;
-        width: 34px;
-        min-width: 34px;
-        height: 34px;
-        min-height: 34px;
-        padding: 0;
-        border: 0;
-        border-radius: 6px;
-        background: transparent;
-        color: var(--sidebar-text);
-        outline-offset: -2px;
-        text-decoration: none;
-        transition: background-color 0.16s ease, color 0.16s ease;
-    }
-
-    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool:hover,
-    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool:focus-visible,
-    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool.active {
-        background: rgba(255, 255, 255, 0.08);
-        color: #ffffff;
-    }
-
-    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool > span:not(.changelog-header-badge) {
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout:not(.is-flyout-open) .sidebar-logout {
         display: none;
     }
 
-    body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool i {
-        margin: 0;
-        font-size: var(--shell-text-row);
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-caret {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        flex: 0 0 auto;
+        color: var(--sidebar-text-dim);
+        font-size: var(--shell-text-micro);
+        cursor: pointer;
+    }
+
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-meta,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-avatar:not(:disabled) {
+        cursor: pointer;
+    }
+
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open {
+        left: 8px;
+        bottom: 66px;
+        width: calc(var(--sidebar-width) - 16px);
+        border-left: 1px solid var(--sidebar-edge);
+        border-radius: 10px;
     }
 
     /* 10px sides leave the role room for "Superadmin" at 240px. */

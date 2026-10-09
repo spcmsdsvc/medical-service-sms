@@ -27198,7 +27198,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v276-activity-open-record.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v277-activity-chip-open.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v278-sidebar-groups.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v279-menu-guide';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v279-menu-guide.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v280-account-menu';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

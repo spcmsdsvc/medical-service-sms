@@ -281,11 +281,11 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn("root.dataset.appPalette = paletteFor(state.mode);", runtime)
         self.assertIn("normalized === 'graphite'", runtime)
         self.assertIn('let quickToggleBusy = false;', runtime)
-        self.assertIn('if (quickToggleBusy || state.pending)', runtime)
-        self.assertIn("'Switch to Graphite Dark'", runtime)
-        self.assertIn("'Switch to AMOLED Black'", runtime)
-        self.assertIn("'Switch to Light'", runtime)
-        self.assertIn('button.disabled = quickToggleBusy || state.pending;', runtime)
+        # Only a save in flight blocks the button; a pending (offline) choice does not.
+        self.assertIn('if (quickToggleBusy) return { success: false, busy: true };', runtime)
+        self.assertIn('button.disabled = quickToggleBusy;', runtime)
+        # It names the theme that is on; the accessible name starts with that label.
+        self.assertIn("button.title = `${label}, switch to ${next.name}`;", runtime)
 
     def test_graphite_runtime_cycle_executes_in_node(self):
         runtime = (ROOT / 'static' / 'js' / 'app-appearance.js').read_text(encoding='utf-8')
@@ -295,7 +295,8 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             const vm = require('vm');
             const root = {dataset: {}};
             const meta = {content: ''};
-            const buttons = [{title: '', disabled: false, attrs: {}, setAttribute(key, value) { this.attrs[key] = value; }}];
+            const label = {textContent: ''};
+            const buttons = [{title: '', disabled: false, attrs: {}, setAttribute(key, value) { this.attrs[key] = value; }, querySelector() { return label; }}];
             global.document = {
                 documentElement: root,
                 querySelector(selector) {
@@ -334,7 +335,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
                 if (window.appAppearance.getState().mode !== 'light' || root.dataset.appPalette !== 'light') throw new Error('light setup failed');
                 await window.appAppearance.toggleQuick();
                 if (window.appAppearance.getState().mode !== 'graphite' || root.dataset.appTheme !== 'dark' || root.dataset.appPalette !== 'graphite') throw new Error('graphite step failed');
-                if (buttons[0].title !== 'Switch to AMOLED Black' || meta.content !== '#202124') throw new Error(`graphite controls failed: ${buttons[0].title} / ${meta.content}`);
+                if (buttons[0].title !== 'Theme: Graphite Dark, switch to AMOLED Black' || label.textContent !== 'Theme: Graphite Dark' || meta.content !== '#202124') throw new Error(`graphite controls failed: ${buttons[0].title} / ${meta.content}`);
                 // One tap changes and saves, so it says what happened and offers Undo.
                 const notice = document.notice;
                 if (!notice || notice.text.textContent !== 'Graphite Dark theme on.' || notice.text.attrs.role !== 'status' || notice.undo.hidden || !notice.classList.contains('is-visible')) throw new Error(`theme notice failed: ${notice && notice.text && notice.text.textContent}`);
@@ -344,16 +345,22 @@ class AppearanceThemeSourceTests(unittest.TestCase):
                 if (window.appAppearance.getState().mode !== 'graphite') throw new Error('graphite step after undo failed');
                 await window.appAppearance.toggleQuick();
                 if (window.appAppearance.getState().mode !== 'dark' || root.dataset.appPalette !== 'amoled') throw new Error('amoled step failed');
-                if (buttons[0].title !== 'Switch to Light' || meta.content !== '#000000') throw new Error('amoled controls failed');
+                if (buttons[0].title !== 'Theme: AMOLED Black, switch to Light' || meta.content !== '#000000') throw new Error('amoled controls failed');
                 await window.appAppearance.toggleQuick();
                 if (window.appAppearance.getState().mode !== 'light' || root.dataset.appPalette !== 'light') throw new Error('cycle reset failed');
-                if (buttons[0].title !== 'Switch to Graphite Dark' || meta.content !== '#2c3e50') throw new Error('light controls failed');
+                if (buttons[0].title !== 'Theme: Light, switch to Graphite Dark' || meta.content !== '#2c3e50') throw new Error('light controls failed');
+                // Offline: the choice stays pending, and the button keeps switching.
+                navigator.onLine = false;
+                await window.appAppearance.toggleQuick();
+                await window.appAppearance.toggleQuick();
+                if (window.appAppearance.getState().mode !== 'dark' || buttons[0].disabled) throw new Error(`offline switching failed: ${window.appAppearance.getState().mode}`);
+                navigator.onLine = true;
                 media.matches = true;
                 window.appAppearance.apply('system', 'classic');
-                if (window.appAppearance.getState().effectiveMode !== 'dark' || root.dataset.appPalette !== 'amoled' || buttons[0].title !== 'Switch to Light') throw new Error('system dark resolution failed');
+                if (window.appAppearance.getState().effectiveMode !== 'dark' || root.dataset.appPalette !== 'amoled' || buttons[0].title !== 'Theme: AMOLED Black, switch to Light') throw new Error('system dark resolution failed');
                 media.matches = false;
                 window.appAppearance.apply('system', 'classic');
-                if (window.appAppearance.getState().effectiveMode !== 'light' || root.dataset.appPalette !== 'light' || buttons[0].title !== 'Switch to Graphite Dark') throw new Error('system light resolution failed');
+                if (window.appAppearance.getState().effectiveMode !== 'light' || root.dataset.appPalette !== 'light' || buttons[0].title !== 'Theme: Light, switch to Graphite Dark') throw new Error('system light resolution failed');
             })().catch(error => { console.error(error.stack || error); process.exit(1); });
             """
         ).replace('%SOURCE%', json.dumps(runtime))
@@ -390,7 +397,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
 
         self.assertIn("filename='css/app-themes.css') }}?v=28", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=31", layout)
-        self.assertIn("filename='js/app-appearance.js') }}?v=20", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=21", layout)
         for source in sources:
             self.assertIn("filename='css/app-themes.css') }}?v=28", source)
             self.assertIn("filename='css/app-auth.css') }}?v=9", source)
@@ -496,7 +503,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('--login-page-bg: #000000;', auth_styles)
         self.assertIn("filename='css/app-themes.css') }}?v=28", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=31", layout)
-        self.assertIn("filename='js/app-appearance.js') }}?v=20", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=21", layout)
         for source in auth:
             self.assertIn("filename='css/app-themes.css') }}?v=28", source)
             self.assertIn("filename='css/app-auth.css') }}?v=9", source)
@@ -681,8 +688,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         # which collapsed three overlapping generations of sidebar rules into one.
         shell_css = (ROOT / 'static' / 'css' / 'app-shell.css').read_text(encoding='utf-8')
         self.assertNotIn('.sidebar-header .appearance-header-button', shell_css)
-        self.assertIn('body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool {', shell_css)
-        self.assertIn('width: 34px;', shell_css)
+        self.assertNotIn('.sidebar-user .sidebar-account-tool {', shell_css)
         self.assertIn("css/app-shell.css", layout)
 
 
