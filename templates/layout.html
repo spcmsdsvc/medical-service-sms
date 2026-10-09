@@ -38,9 +38,10 @@
         try {
             stored = localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY);
         } catch (_) {}
-        // "Collapsed" is the 72px icon rail and is the default; only an explicit
-        // pinned choice ('expanded') opens the full sidebar.
-        document.documentElement.dataset.sidebarCollapsed = stored === 'expanded' ? 'false' : 'true';
+        // With no saved choice, wide screens (1440px and up) open the labelled
+        // sidebar pinned and smaller ones the 72px icon rail. A saved choice wins.
+        const pinned = stored ? stored === 'expanded' : window.innerWidth >= 1440;
+        document.documentElement.dataset.sidebarCollapsed = pinned ? 'false' : 'true';
     })();
     </script>
     {#- The current page's name is added in front by the script after the sidebar. -#}
@@ -54,7 +55,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=28">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=37">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=39">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -110,6 +111,14 @@
                 the rail's account flyout), so the header holds only the brand and the
                 pin control. -#}
             <div class="sidebar-header-actions">
+                {% if current_user.is_authenticated %}<button type="button"
+                        class="toggle-btn shell-guide-header-button"
+                        onclick="openShellGuide(this)"
+                        aria-label="Menu guide"
+                        title="Menu guide"
+                        aria-haspopup="dialog">
+                    <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
+                </button>{% endif %}
                 <button type="button"
                         class="toggle-btn"
                         id="sidebar-toggle-desktop"
@@ -135,11 +144,12 @@
         
         {#- One place that renders a nav link, so the active class and aria-current can
             never drift apart. Cash Advance previously had neither.
-            The rail caption is the short name shown under a top-level icon in the
-            72px rail; CSS shows it only there. -#}
+            The rail caption is the name shown under a top-level icon in the 72px
+            rail; CSS shows it only there. It is the label itself, except for two
+            rare accounts whose only links have long names (stock-only, HR schedule). -#}
         {% macro nav_link(href, icon, label, extra_class='', badge_id='') -%}
             {%- set is_active = (request.path == href) -%}
-            {%- set rail_caption = {'Create TSR': 'TSR', 'Stock Inventory': 'Stock', 'Password Settings': 'Password', 'My Requests': 'Requests', 'Service Documents': 'Documents', 'System Settings': 'Settings', 'Activity Logs': 'Activity', 'Calibration Center': 'Calibration'}.get(label, label) -%}
+            {%- set rail_caption = {'Stock Inventory': 'Stock', 'Password Settings': 'Password'}.get(label, label) -%}
             <a href="{{ href }}"
                class="{{ extra_class }} {{ 'active' if is_active }}"
                data-rail-caption="{{ rail_caption }}"
@@ -152,7 +162,7 @@
 
         <div id="sidebar-rail-tip" class="sidebar-rail-tip" aria-hidden="true"></div>
 
-        <nav class="sidebar-nav" aria-label="Main">
+        <nav class="sidebar-nav" id="sidebar-nav" aria-label="Main">
             {# Access flags come from inject_navigation_access() in app.py, which calls the
                same helpers the routes guard themselves with. Do not reintroduce inline
                role logic or hardcoded usernames here: the previous inline versions were
@@ -186,7 +196,7 @@
                 your daily work first (MAIN), then the forms and records you work with
                 (WORK), then reports and administration (MANAGE). A group that would hold
                 a single link for this user shows that link directly. -#}
-            <div class="sidebar-group-label" aria-hidden="true">Main</div>
+            <div class="sidebar-group-label" role="heading" aria-level="2">Main</div>
 
             {% if not hr_schedule_only_user %}
                 {{ nav_link('/', 'fa-chart-line', 'Dashboard') }}
@@ -216,7 +226,7 @@
             {% endif %}
 
             {% if current_user.is_authenticated and not is_approver_only_user %}
-            <div class="sidebar-group-label" aria-hidden="true">Work</div>
+            <div class="sidebar-group-label" role="heading" aria-level="2">Work</div>
 
             {% if new_workflows_enabled %}
                 <button
@@ -229,11 +239,11 @@
                     aria-controls="new-request-sidebar-section"
                 >
                     <i class="fa-solid fa-briefcase-medical" aria-hidden="true"></i>
-                    <span>New Request</span>
+                    <span>Forms</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="new-request-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in new_request_paths }}" role="group" aria-label="New Request">
-                    <div class="sidebar-flyout-title" aria-hidden="true">New Request</div>
+                <div id="new-request-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in new_request_paths }}" role="group" aria-label="Forms">
+                    <div class="sidebar-flyout-title" aria-hidden="true">Forms</div>
                     {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
                     {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
                     {{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}
@@ -256,9 +266,9 @@
                     <span>Clients</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="clients-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in clients_paths }}" role="group" aria-label="Clients">
+                <div id="clients-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in clients_paths }}" role="group" aria-label="Clients">
                     <div class="sidebar-flyout-title" aria-hidden="true">Clients</div>
-                    {{ nav_link('/clients_page', 'fa-hospital', 'Clients') }}
+                    {{ nav_link('/clients_page', 'fa-hospital', 'Client List') }}
                     {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
                 </div>
             {% else %}
@@ -281,7 +291,7 @@
                     <span>Inventory</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="inventory-sidebar-section" class="collapse sidebar-subnav {{ 'show' if inventory_active }}" role="group" aria-label="Inventory">
+                <div id="inventory-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if inventory_active }}" role="group" aria-label="Inventory">
                     <div class="sidebar-flyout-title" aria-hidden="true">Inventory</div>
                     {#- Equipment, then its PM pages, then the company's own stock. -#}
                     {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
@@ -313,14 +323,16 @@
             {% endif %}
 
             {% if current_user.is_authenticated %}
-            <div class="sidebar-group-label" aria-hidden="true">Manage</div>
+            {#- Only administrators manage; everyone else finds documents, people and
+                settings here. -#}
+            <div class="sidebar-group-label" role="heading" aria-level="2">{{ 'Manage' if is_management_user else 'More' }}</div>
             {% endif %}
 
             {# A collapsible group only earns its click when it holds more than one
-               destination. Management accounts get Analytics alongside Service Documents,
-               so the group stays. Everyone else has Service Documents and nothing else,
+               destination. Management accounts get Analytics alongside Documents,
+               so the group stays. Everyone else has Documents and nothing else,
                and wrapping one link in a collapsed group named after that same link meant
-               clicking "Service Documents" to reveal "Service Documents". They get the
+               clicking "Documents" to reveal "Documents". They get the
                link directly. The Office group below follows the same rule. #}
             {% if is_reports_admin_user %}
                 <button
@@ -336,15 +348,15 @@
                     <span>Reports</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="reports-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}" role="group" aria-label="Reports">
+                <div id="reports-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}" role="group" aria-label="Reports">
                     <div class="sidebar-flyout-title" aria-hidden="true">Reports</div>
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
-                    {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
+                    {{ nav_link('/reports_page', 'fa-file-lines', 'Documents') }}
                 </div>
             {% elif can_manage_purchase_orders %}
                 {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
             {% elif is_reports_sidebar_user %}
-                {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
+                {{ nav_link('/reports_page', 'fa-file-lines', 'Documents') }}
             {% endif %}
 
             {% if current_user.is_authenticated and not is_approver_only_user %}
@@ -362,7 +374,7 @@
                     <span>Office</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="office-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in office_paths }}" role="group" aria-label="Office">
+                <div id="office-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in office_paths }}" role="group" aria-label="Office">
                     <div class="sidebar-flyout-title" aria-hidden="true">Office</div>
             {% endif %}
                     {% if show_personnel %}
@@ -393,13 +405,13 @@
                     <span>Admin</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}" role="group" aria-label="Admin">
+                <div id="admin-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}" role="group" aria-label="Admin">
                     <div class="sidebar-flyout-title" aria-hidden="true">Admin</div>
                     {{ nav_link('/activity_page', 'fa-clock-rotate-left', 'Activity Logs') }}
-                    {{ nav_link('/settings', 'fa-gear', 'System Settings') }}
+                    {{ nav_link('/settings', 'fa-gear', 'Settings') }}
                 </div>
             {% elif current_user.is_authenticated %}
-                {{ nav_link('/settings', 'fa-gear', 'System Settings') }}
+                {{ nav_link('/settings', 'fa-gear', 'Settings') }}
             {% endif %}
             {% else %}
                 {{ nav_link('/settings', 'fa-key', 'Password Settings') }}
@@ -438,6 +450,12 @@
                 <span>What's New</span>
                 <span class="changelog-header-badge" aria-hidden="true"></span>
             </a>{% endif %}
+            {#- Rail account flyout: a row; phone drawer: an icon in the account row.
+                The pinned sidebar has its own "?" in the header instead. -#}
+            <button type="button" class="sidebar-flyout-only shell-guide-button" onclick="openShellGuide(this)" aria-label="Menu guide" title="Menu guide" aria-haspopup="dialog">
+                <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
+                <span>Menu guide</span>
+            </button>
             <a href="/logout" class="sidebar-logout" aria-label="Log out" title="Log out">
                 <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
                 <span class="sidebar-flyout-only">Log out</span>
@@ -450,6 +468,27 @@
             <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
             <span>Log out</span>
         </a>
+        {#- Menu guide (shell critique 2026-10-08, Help): filled from this user's own
+            menu by openShellGuide(), so it always matches what they can see. -#}
+        <dialog id="shell-guide" class="shell-guide no-print" aria-labelledby="shell-guide-title">
+            <div class="shell-guide-head">
+                <h2 id="shell-guide-title">Menu guide</h2>
+                <button type="button" class="shell-guide-close" onclick="this.closest('dialog').close()" aria-label="Close menu guide">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div id="shell-guide-sections"></div>
+            {#- Keys are for the desktop slim menu; phones have neither. -#}
+            <div class="shell-guide-keys">
+            <h3>Keys</h3>
+            <ul>
+                <li><kbd>↑</kbd> <kbd>↓</kbd> move between menu icons in the slim menu</li>
+                <li><kbd>→</kbd> or <kbd>Enter</kbd> opens a group; <kbd>←</kbd> or <kbd>Esc</kbd> closes it</li>
+                <li>The <i class="fa-solid fa-angles-left" aria-hidden="true"></i><span class="visually-hidden">pin</span> button at the top pins the full menu open or makes it slim</li>
+            </ul>
+            </div>
+            {% if not stock_inventory_only_user and not hr_schedule_only_user %}<p class="shell-guide-foot"><a href="/whats_new">See what's new</a></p>{% endif %}
+        </dialog>
         {% endif %}
     </div>
     <script>
@@ -466,7 +505,7 @@
         const phoneTitle = document.getElementById('mobile-page-title');
         if (!phoneTitle) return;
         phoneTitle.textContent = section ? section.getAttribute('aria-label') : name;
-        // A long section name ("New Request") falls back to the section's
+        // A long section name ("Client List") falls back to the section's
         // short rail caption when it would be cut off in the phone bar.
         const toggle = section && document.querySelector(`[aria-controls="${section.id}"][data-rail-caption]`);
         if (toggle && phoneTitle.scrollWidth > phoneTitle.clientWidth) {
@@ -493,19 +532,21 @@
     <script>
         const SIDEBAR_VISIBILITY_STORAGE_KEY = 'medical_service_sidebar_visibility';
         const SIDEBAR_DESKTOP_BREAKPOINT = 993;
+        const SIDEBAR_WIDE_PINNED_WIDTH = 1440;
 
         function isMobileNavigationViewport() {
             return window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT;
         }
 
         function readStoredSidebarVisibility() {
-            // The icon rail ('collapsed') is the default; 'expanded' means pinned open.
+            // 'expanded' means pinned open, 'collapsed' the icon rail. With no saved
+            // choice, wide screens (1440px and up) start pinned (same rule as the head script).
+            const byWidth = window.innerWidth >= SIDEBAR_WIDE_PINNED_WIDTH ? 'expanded' : 'collapsed';
             try {
-                return localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY) === 'expanded'
-                    ? 'expanded'
-                    : 'collapsed';
+                const stored = localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY);
+                return stored === 'expanded' || stored === 'collapsed' ? stored : byWidth;
             } catch (_) {
-                return 'collapsed';
+                return byWidth;
             }
         }
 
@@ -1038,7 +1079,7 @@
                 if(!response.ok) return;
                 const data = await response.json();
                 const count = Number(data.unread_count || 0);
-                const countLabel = count > 99 ? '99+' : String(count || '');
+                const countLabel = count > 9 ? '9+' : String(count || '');
                 const accessibleLabel = count > 0
                     ? `What's New, ${count} unread update${count === 1 ? '' : 's'}`
                     : "What's New, no unread updates";
@@ -1105,6 +1146,61 @@
             }
         }
         window.refreshSidebarPendingBadges = refreshSidebarPendingBadges;
+
+        // Menu guide: lists each section of this user's own menu (headings and the
+        // pages under each item), read from the sidebar itself.
+        function openShellGuide(trigger){
+            const dialog = document.getElementById('shell-guide');
+            const nav = document.getElementById('sidebar-nav');
+            if(!dialog || !nav) return;
+            const sections = [];
+            const nameOf = node => {
+                const span = node.querySelector(':scope > span:not(.sidebar-count-badge)');
+                return span ? span.textContent.trim() : '';
+            };
+            Array.from(nav.children).forEach(node => {
+                if(node.classList.contains('sidebar-group-label')){
+                    sections.push({title: node.textContent.trim(), items: []});
+                } else if(sections.length && (node.matches('a') || node.classList.contains('sidebar-section-toggle'))){
+                    const panel = node.matches('button') && document.getElementById(node.getAttribute('aria-controls'));
+                    const pages = panel ? Array.from(panel.querySelectorAll('a')).map(nameOf).filter(Boolean) : [];
+                    sections[sections.length - 1].items.push({name: nameOf(node), pages});
+                }
+            });
+            const holder = document.getElementById('shell-guide-sections');
+            holder.replaceChildren(...sections.filter(section => section.items.length).map(section => {
+                const block = document.createElement('section');
+                const heading = document.createElement('h3');
+                heading.textContent = section.title;
+                const list = document.createElement('ul');
+                section.items.forEach(item => {
+                    const row = document.createElement('li');
+                    const name = document.createElement('strong');
+                    name.textContent = item.name;
+                    row.appendChild(name);
+                    if(item.pages.length) row.append(`: ${item.pages.join(', ')}`);
+                    list.appendChild(row);
+                });
+                block.append(heading, list);
+                return block;
+            }));
+            dialog.returnFocusTo = trigger;
+            if(!dialog.open) dialog.showModal();
+        }
+        window.openShellGuide = openShellGuide;
+        document.addEventListener('DOMContentLoaded', function(){
+            const dialog = document.getElementById('shell-guide');
+            if(!dialog) return;
+            // A tap on the dimmed backdrop closes it, like the phone menu.
+            dialog.addEventListener('click', event => { if(event.target === dialog) dialog.close(); });
+            // Back to the button that opened it, or the account icon when that button
+            // sat in a flyout that has closed since.
+            dialog.addEventListener('close', () => {
+                const target = dialog.returnFocusTo;
+                const fallback = document.querySelector('.sidebar-user-avatar:not(:disabled)') || document.getElementById('sidebar-toggle-desktop');
+                (target && target.getClientRects().length ? target : fallback)?.focus();
+            });
+        });
         document.addEventListener('DOMContentLoaded', refreshSidebarPendingBadges);
 
         // Keyboard and focus behaviour for the sidebar.
@@ -1293,7 +1389,7 @@
 })();
 </script>
 
-<script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=18"></script>
+<script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=19"></script>
 
 {% block page_scripts %}{% endblock %}
 </body>

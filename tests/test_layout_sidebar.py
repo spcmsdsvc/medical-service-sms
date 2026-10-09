@@ -65,7 +65,7 @@ class SidebarSourceTests(unittest.TestCase):
     def test_accessibility_landmarks_and_controls(self):
         self.assertIn('class="skip-to-content"', self.layout)
         self.assertIn('href="#main-content"', self.layout)
-        self.assertIn('<nav class="sidebar-nav" aria-label="Main">', self.layout)
+        self.assertIn('<nav class="sidebar-nav" id="sidebar-nav" aria-label="Main">', self.layout)
         self.assertIn('id="sidebar-toggle-desktop"', self.layout)
         self.assertIn('aria-controls="sidebar"', self.layout)
         # The desktop toggle used to be a bare <i> with onclick: unfocusable.
@@ -108,7 +108,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('overflow: hidden;', label)
         self.assertIn('text-overflow: ellipsis;', label)
         self.assertIn("'Reimburse / Liquidation'", self.layout)
-        self.assertIn("'Service Documents'", self.layout)
+        self.assertIn("'Calibration Center'", self.layout)
         self.assertIn('font-size: var(--shell-text-subrow);', subnav)
         self.assertIn('--shell-text-subrow: 0.84rem;', self.shell_css)
 
@@ -180,7 +180,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=37", self.layout)
+        self.assertIn("app-shell.css') }}?v=39", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -256,10 +256,11 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn("function applySidebarVisibility(", self.layout)
         self.assertIn("function syncSidebarVisibilityForViewport()", self.layout)
         self.assertIn("window.innerWidth >= 993", self.layout)
-        # Storage failures fall back to the icon rail; the head script treats only
-        # an explicit 'expanded' (pinned) choice as open.
-        self.assertIn("return 'collapsed';", self.layout)
-        self.assertIn("stored === 'expanded' ? 'false' : 'true'", self.layout)
+        # A saved choice wins; with none, wide screens (1440px+) start pinned and
+        # smaller ones (or a storage failure there) get the icon rail.
+        self.assertIn("const pinned = stored ? stored === 'expanded' : window.innerWidth >= 1440;", self.layout)
+        self.assertIn("const SIDEBAR_WIDE_PINNED_WIDTH = 1440;", self.layout)
+        self.assertIn("return byWidth;", self.layout)
         self.assertIn('catch (_) {', self.layout)
         self.assertIn('aria-expanded', self.layout)
         self.assertIn('sidebar-collapsed', self.shell_css)
@@ -337,7 +338,10 @@ class SidebarSourceTests(unittest.TestCase):
             }}
             {helpers}
 
-            // No saved choice: the icon rail ('collapsed') is the default.
+            // No saved choice: wide screens start pinned, smaller ones on the icon rail.
+            window.innerWidth = 1500;
+            assert.strictEqual(readStoredSidebarVisibility(), 'expanded');
+            window.innerWidth = 1200;
             assert.strictEqual(readStoredSidebarVisibility(), 'collapsed');
             syncSidebarVisibilityForViewport();
             assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
@@ -475,7 +479,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('position: absolute;', offline)
         self.assertIn('bottom: -8px;', offline)
         self.assertEqual(self.layout.count('role="group" aria-label="'), 6)
-        self.assertIn('role="group" aria-label="New Request"', self.layout)
+        self.assertIn('role="group" aria-label="Forms"', self.layout)
         self.assertNotIn('#e8a33d', self.shell_css)
         self.assertIn('--bs-btn-hover-bg: rgba(255, 255, 255, 0.1);', self.shell_css)
         self.assertNotIn('font-weight: 800;', self.shell_css)
@@ -550,7 +554,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('.sidebar a .sidebar-count-badge {\n    flex: 0 0 auto;', self.shell_css)
         # Rail rows have room for their captions (52px), paid for by thinner dividers.
         self.assertIn('min-height: 52px;', self.shell_css)
-        self.assertIn('.sidebar-nav > .sidebar-group-label:first-child {\n        display: none;', self.shell_css)
+        self.assertIn('.sidebar-nav > .sidebar-group-label:first-child {\n        height: 0;', self.shell_css)
         # The rail shows a one-digit count instead of a bare dot.
         self.assertIn("entry.node.dataset.railCount = count > 9 ? '9+'", self.layout)
         self.assertIn('content: attr(data-rail-count);', self.shell_css)
@@ -566,22 +570,47 @@ class SidebarSourceTests(unittest.TestCase):
         # The role is never cut without an ellipsis.
         self.assertIn('class="sidebar-user-role" title="{{ account_role }}"', self.layout)
 
+    def test_critique_checklist_names_headings_guide_and_accordion(self):
+        nav = self.layout.split('<nav class="sidebar-nav"', 1)[1].split('</nav>', 1)[0]
+        # Point 1-2: one name per item; the caption is the label and may wrap to two lines.
+        for label in ("'Documents'", "'Settings'", "'Client List'", "'My Requests'", "'Create TSR'"):
+            self.assertIn(label, nav)
+        for old in ("'Service Documents'", "'System Settings'", '>New Request<'):
+            self.assertNotIn(old, nav)
+        self.assertIn('-webkit-line-clamp: 2;', self.shell_css)
+        # Point 4-5: readable captions; section headings reach screen readers.
+        self.assertNotIn('--shell-text-caption', self.shell_css)
+        self.assertEqual(nav.count('class="sidebar-group-label" role="heading" aria-level="2"'), 3)
+        self.assertNotIn('class="sidebar-group-label" aria-hidden="true"', nav)
+        # Point 7: only administrators see "Manage".
+        self.assertIn("{{ 'Manage' if is_management_user else 'More' }}", nav)
+        # Point 8: the unread count is capped at 9+.
+        self.assertIn("const countLabel = count > 9 ? '9+'", self.layout)
+        # Point 9: the menu guide, from the header (pinned), the account flyout (rail) and the drawer.
+        self.assertIn('<dialog id="shell-guide"', self.layout)
+        self.assertEqual(self.layout.count('onclick="openShellGuide(this)"'), 2)
+        self.assertIn('body.sidebar-collapsed .shell-guide-header-button {\n    display: none;', self.shell_css)
+        # Point 11: pinned groups open one at a time.
+        self.assertEqual(nav.count('data-bs-parent="#sidebar-nav"'), 6)
+        # Point 12: thumb-sized phone avatar.
+        self.assertIn('.sidebar .sidebar-user-avatar {\n        width: 44px;', self.shell_css)
+
     def test_sidebar_order_puts_waiting_work_first_then_work_then_manage(self):
         self.assertIn("nav_link('/clients_page', 'fa-hospital', 'Clients')", self.layout)
         self.assertNotIn("'Medical Centers'", self.layout)
         nav = self.layout.split('<nav class="sidebar-nav"', 1)[1].split('</nav>', 1)[0]
         order = [
-            '>Main</div>',
+            'aria-level="2">Main</div>',
             "nav_link('/', 'fa-chart-line', 'Dashboard')",
             "nav_link('/approvals'",
             "nav_link('/accounting_center'",
             "nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}\n                {{ nav_link('/offline-tsr'",
-            '>Work</div>',
-            'aria-label="New Request"',
+            'aria-level="2">Work</div>',
+            'aria-label="Forms"',
             'aria-label="Clients"',
             'aria-label="Inventory"',
             '<div class="sidebar-subnav-divider" aria-hidden="true"></div>\n                        {{ nav_link(\'/stock_inventory\'',
-            '>Manage</div>',
+            "{{ 'Manage' if is_management_user else 'More' }}</div>",
             'aria-label="Reports"',
             'aria-label="Office"',
             'aria-label="Admin"',
@@ -595,7 +624,8 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('data-rail-caption="Clients"', nav)
         self.assertIn('{% if inventory_link_count > 1 %}', nav)
         self.assertIn('data-rail-caption="Inventory"', nav)
-        self.assertIn("'Create TSR': 'TSR'", self.layout)
+        # Captions are the labels; only two rare accounts keep short ones.
+        self.assertIn("{%- set rail_caption = {'Stock Inventory': 'Stock', 'Password Settings': 'Password'}.get(label, label) -%}", self.layout)
         # Stock Inventory sits in WORK, not MAIN; only stock-only accounts keep it on top,
         # and the Stock page no longer lights up the Admin group.
         self.assertIn('{% if stock_inventory_view and stock_inventory_only_user and not hr_schedule_only_user %}', nav)

@@ -96,12 +96,34 @@
             if (response.ok && data.success) apply(data.mode, data.accent, { pending: false });
         } catch (_) {}
     }
+    const MODE_NAMES = { light: 'Light', graphite: 'Graphite Dark', dark: 'AMOLED Black' };
+    let noticeTimer = null;
+    // One tap changes and saves the theme, so say what happened and what the
+    // next tap does (shell critique 2026-10-08, point 6).
+    function announceQuickMode(mode) {
+        let notice = document.getElementById('appearance-notice');
+        if (!notice) {
+            notice = document.createElement('div');
+            notice.id = 'appearance-notice';
+            notice.className = 'appearance-notice no-print';
+            notice.setAttribute('role', 'status');
+            notice.setAttribute('aria-live', 'polite');
+            document.body.appendChild(notice);
+        }
+        notice.textContent = `${MODE_NAMES[mode]} theme on. Tap again for ${MODE_NAMES[nextQuickMode(mode)]}.`;
+        notice.classList.add('is-visible');
+        clearTimeout(noticeTimer);
+        noticeTimer = setTimeout(() => notice.classList.remove('is-visible'), 4000);
+    }
     async function toggleQuick() {
         if (quickToggleBusy || state.pending) return { success: false, busy: true };
         quickToggleBusy = true;
         refreshButtons();
+        const mode = nextQuickMode(state.mode);
         try {
-            return await save(nextQuickMode(state.mode), state.accent);
+            const result = await save(mode, state.accent);
+            announceQuickMode(mode);
+            return result;
         } finally {
             quickToggleBusy = false;
             refreshButtons();

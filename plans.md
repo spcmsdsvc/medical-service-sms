@@ -37,6 +37,77 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Shell Critique Checklist (the 12 open points)
+
+**Status:** Executed — sandbox `design/playground`, not committed (awaiting the owner's keep/discard and the re-critique).
+
+**Outcome (2026-10-09):** steps 1-10 done. Differences from the plan, decided or found during execution:
+- Amendment A (owner, "Two-line captions"): "My Requests" and "Create TSR" are established names across the app (page headings, Dashboard shortcut, Calendar buttons, messages), so they were **not** shortened; their rail captions wrap to two lines instead (`-webkit-line-clamp: 2`, 66px). Forms, Documents and Settings were renamed (used nowhere else).
+- Amendment B (owner, "Clients › Client List"): the Clients group holds Client List and Calibration Center; `/clients_page` heading "Client List"; engineers' plain link stays "Clients".
+- Step 6 reduced: the 60-day unread window was built, then removed. About 50 releases ship a week (175 releases in the last 60 days), so the window only took 201 to 175; What's New's "Acknowledge All" already clears every unread release in one click (its label shows only the loaded count, e.g. "(10)"). Only the 9+ badge cap remains.
+- Step 7: the guide's Keys section is hidden on phones (no slim menu or keyboard there). The guide button sits in the pinned header, the rail account flyout and the phone account row, so the pinned footer and the rail height are unchanged.
+- Step 4: the rail's first divider is zero-height instead of `display: none`, so the "Main" heading still reaches screen readers.
+- Rail fit at 1366x768 with 11.5px captions and one two-line caption: 621/621 (My Requests row 58px).
+**Approved:** 2026-10-09, after choosing "Pinned on wide screens", "Shorten the labels", "Short menu guide", and (for the Clients link) "Clients › Client List".
+**Branch:** sandbox `design/playground` on `2ae8406`. Nothing goes to `main` until a separate "commit and push".
+
+## Context
+
+Seven critiques of `templates/layout.html` scored 21–25/40 and never moved. Consistency (4) scored 2 in 7 of 7 runs, Recognition (6) in 6 of 7, Help (10) in 6 of 7; the other heuristics move ±1 between runs (reviewer noise). Each run is a fresh reviewer who finds new issues while the structural causes of the three stuck heuristics stay. This plan fixes only the 12 open points of the latest critique (`.impeccable/critique/2026-10-08T09-29-35Z__templates-layout-html.md`) and then re-critiques against that same list, so progress is measured instead of re-discovered.
+
+## Decisions taken
+
+- Desktop default: labelled sidebar pinned at ≥1440px wide; rail below that; an explicit pin/collapse choice in localStorage wins.
+- One name per item, caption = label: New Request → Forms, My Requests → Requests, Create TSR → New TSR, Service Documents → Documents, System Settings → Settings. Clients group: Clients › Client List, Calibration Center; `/clients_page` heading "Client List"; engineers' plain link "Clients". Rare accounts keep short captions: Stock Inventory → "Stock", Password Settings → "Password".
+- Non-admin accounts see the third heading as "More" instead of "Manage".
+- Menu guide: a "?" beside Appearance / What's New opens a small panel (what each section holds, keyboard keys, link to What's New).
+- Type-to-jump (point 10) is accepted as a gap: it would be a new feature.
+- Already fixed, not reopened: badge size, Clients heading conflict, phone Log out row, rail count, Inventory icons/dividers, role clipping.
+
+## Investigation
+
+- Default: head script `layout.html:35-44` and `readStoredSidebarVisibility` (`layout.html:501`) both treat anything but `'expanded'` as the rail; `syncSidebarVisibilityForViewport` (`:568`) reapplies it on resize.
+- Captions: `rail_caption` map in `nav_link` (`layout.html:142`); group toggles carry `data-rail-caption` literally.
+- Group labels are `aria-hidden` siblings (`layout.html:189, 219, 316`); wrapping sections in elements would break the `.sidebar-nav > a` selectors used by the rail, so labels become headings instead (no DOM regrouping).
+- Theme button: `app-appearance.js` `refreshButtons` (`:44`) already sets title/aria-label from the next mode; `toggleQuick` (`:99`) saves at once.
+- Unread: `changelog_release_to_dict` (`app.py:27888`) `is_unread`; badge text in `refreshGlobalChangelogBadge` (`layout.html:1041`, caps at 99+).
+- "Create TSR" also appears in the offline strip (`app-shell.css:1259`) and the offline announcement (`layout.html:1267`).
+
+## Execution steps
+
+1. Default pinned at ≥1440px: head script and `readStoredSidebarVisibility` return `'expanded'` when nothing is stored and `innerWidth >= 1440`. Done: new browser at 1440 opens pinned, at 1366 the rail; stored choices respected.
+2. Names: rename the labels above in `layout.html`; remove the renamed entries from `rail_caption`; set group toggles' `data-rail-caption` and `aria-label`/flyout title to the same names (Forms); Clients group child "Client List"; `templates/clients.html` heading "Client List"; offline strip and announcement say "New TSR". Done: every top-level caption equals its label except Stock/Password.
+3. Third heading: "Manage" for `is_management_user`, "More" otherwise.
+4. Rail readability: captions use `--shell-text-micro` (0.72rem); group labels lose `aria-hidden` and gain `role="heading" aria-level="2"`. Check rail still fits 768px tall at 1366 (621px); if not, reduce row height by the overflow, never below 50px.
+5. Theme button: after `toggleQuick` succeeds, a polite live status "Dark theme on · tap again to switch back" (reusing an existing status region if one exists).
+6. Unread: `is_unread` is false for releases dated more than 60 days before `get_manila_today()`; badge text caps at "9+".
+7. Menu guide: `?` button (`.sidebar-account-tool`, phone top bar too) opening a small panel `#shell-guide` with the three sections' contents, keys (↑↓ between icons, → or Enter opens a group, Esc closes), and a What's New link.
+8. Pinned overflow: in the pinned sidebar, opening a group closes the other open group (Bootstrap `data-bs-parent` on the nav). Done: at 1366x768 pinned with Inventory open, MANAGE stays visible.
+9. Phone avatar 44px at ≤992px.
+10. `.impeccable/critique/ignore.md`: account row on top on phones, slate sidebar, Fira Sans, Create TSR/New TSR top-level, type-to-jump accepted.
+
+## Deliberately excluded
+
+- Type-to-jump / command palette (new feature).
+- Anything not on the 12-point list, including new findings from the re-critique (they go to a later list).
+- Products redesign, DESIGN.md beyond the lines these steps change.
+
+## Verification
+
+- New tests in `tests/test_layout_sidebar.py` (and a changelog test for the 60-day rule), each failing on `2ae8406`; focused modules: sidebar, appearance themes, offline, sign-in, changelog, client page.
+- Browser on a database copy: 1440x900 and 1366x768 desktop, 375x812 phone; admin and engineer accounts; rail fit, pinned overflow, guide panel keyboard (open, Esc returns focus), theme status, unread count, no console errors, no horizontal scroll.
+- Re-critique with the 12-point list given to the reviewer: each point marked fixed / not fixed; scores may change only on that evidence.
+
+## After implementation
+
+Self-review of the diff; changes.md entry; `app-shell.css` version bump; owner "keep" → commit on `design/playground`; publishing to `main` needs a separate "commit and push" (service worker bump and release then).
+
+## Risks
+
+- Renamed labels change tab titles and phone bar text; tests pin some old names (update them). Blast radius: navigation text only; URLs unchanged.
+- The 60-day unread rule changes What's New counts for everyone (intended).
+- Accordion pinned groups: users with two groups open lose that (intended by point 11).
+
 # Sidebar Order and Groups (App Shell)
 
 **Status:** Executed — committed to sandbox `design/playground` as `e262a2d` on the owner's "keep" (2026-10-08); not on `main` until a separate "commit and push".

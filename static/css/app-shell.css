@@ -41,8 +41,6 @@
     --shell-text-row: 0.9rem;
     --shell-text-subrow: 0.84rem;
     --shell-text-micro: 0.72rem;
-    /* Rail icon captions only: 72px wide, so one step below micro. */
-    --shell-text-caption: 0.66rem;
     /* Current-page marker: the user's accent lifted toward white so it keeps
        at least 3:1 on the dark sidebar (plain #0d6efd on #2c3e50 was ~2.4:1). */
     --sidebar-active-marker: color-mix(in srgb, var(--app-primary) 55%, #ffffff);
@@ -443,6 +441,132 @@ body.sidebar-resizing .main-content {
     background: var(--sidebar-divider);
 }
 
+/* --- Menu guide ----------------------------------------------------------- */
+
+/* The header "?" belongs to the pinned sidebar; the rail and the phone drawer
+   reach the guide from the account row. */
+body.sidebar-collapsed .shell-guide-header-button {
+    display: none;
+}
+
+.shell-guide-button {
+    border: 0;
+    color: var(--sidebar-text);
+}
+
+.sidebar-user-flyout .shell-guide-button:hover,
+.sidebar-user-flyout .shell-guide-button:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
+
+.shell-guide {
+    width: min(92vw, 440px);
+    max-height: min(80vh, 640px);
+    padding: 0;
+    border: 1px solid var(--sidebar-edge);
+    border-radius: 12px;
+    background: var(--app-sidebar);
+    color: var(--sidebar-text);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.35);
+    overflow-y: auto;
+}
+
+.shell-guide::backdrop {
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.shell-guide-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 12px 6px 20px;
+}
+
+.shell-guide h2 {
+    margin: 0;
+    font-size: var(--shell-text-row);
+    font-weight: 700;
+    color: var(--sidebar-text-strong);
+}
+
+.shell-guide h3 {
+    margin: 14px 20px 6px;
+    font-size: var(--shell-text-micro);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sidebar-text-dim);
+}
+
+.shell-guide ul {
+    margin: 0;
+    padding: 0 20px 0 36px;
+    font-size: var(--shell-text-subrow);
+    line-height: 1.5;
+}
+
+.shell-guide strong {
+    color: var(--sidebar-text-strong);
+    font-weight: 600;
+}
+
+.shell-guide kbd {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--sidebar-text-strong);
+    font-size: var(--shell-text-micro);
+}
+
+.shell-guide-close {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sidebar-text);
+}
+
+.shell-guide-close:hover,
+.shell-guide-close:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+}
+
+.shell-guide-foot {
+    margin: 14px 20px 18px;
+    font-size: var(--shell-text-subrow);
+}
+
+.shell-guide-foot a {
+    color: var(--sidebar-text-strong);
+}
+
+/* Theme quick-switch confirmation (app-appearance.js). */
+.appearance-notice {
+    position: fixed;
+    left: 50%;
+    bottom: calc(24px + var(--mobile-safe-bottom));
+    z-index: 1300;
+    max-width: min(90vw, 420px);
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: #1a252f;
+    color: #ffffff;
+    font-size: var(--shell-text-subrow);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+    opacity: 0;
+    transform: translate(-50%, 8px);
+    pointer-events: none;
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.appearance-notice.is-visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
 /* Phone drawer only (see the 992px block); outranks `.sidebar a`. */
 .sidebar .sidebar-logout-row {
     display: none;
@@ -640,12 +764,17 @@ body.sidebar-resizing .main-content {
 
     body.sidebar-collapsed .sidebar .sidebar-nav > a[data-rail-caption]::after,
     body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption]::after {
+        /* The caption is the label itself; a two-word label wraps to a second
+           line ("My / Requests") instead of being shortened. */
         content: attr(data-rail-caption);
-        max-width: 60px;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        max-width: 66px;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-size: var(--shell-text-caption);
+        white-space: normal;
+        text-align: center;
+        font-size: var(--shell-text-micro);
         font-weight: 600;
         line-height: 1.1;
         letter-spacing: 0;
@@ -667,8 +796,11 @@ body.sidebar-resizing .main-content {
         display: none;
     }
 
+    /* No line under the header, but the "Main" heading stays for screen readers. */
     body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-group-label:first-child {
-        display: none;
+        height: 0;
+        margin: 0;
+        background: transparent;
     }
 
     body.sidebar-collapsed .sidebar .sidebar-group-label {
@@ -742,7 +874,8 @@ body.sidebar-resizing .main-content {
     }
 
     body.sidebar-collapsed .sidebar .is-flyout-open a,
-    body.sidebar-collapsed .sidebar .is-flyout-open .appearance-header-button {
+    body.sidebar-collapsed .sidebar .is-flyout-open .appearance-header-button,
+    body.sidebar-collapsed .sidebar .is-flyout-open .shell-guide-button {
         justify-content: flex-start;
         min-height: var(--sidebar-subrow-height);
         padding: 0 16px;
@@ -778,7 +911,10 @@ body.sidebar-resizing .main-content {
         gap: 13px;
     }
 
-    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .appearance-header-button {
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .appearance-header-button,
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .shell-guide-button {
+        align-items: center;
+        background: transparent;
         width: 100%;
         height: auto;
         gap: 13px;
@@ -1076,6 +1212,33 @@ body.sidebar-resizing .main-content {
        the drawer's foot. */
     .sidebar .sidebar-user .sidebar-logout {
         display: none;
+    }
+
+    /* The account row holds the menu guide as an icon, and a thumb-sized avatar. */
+    .sidebar .sidebar-user .shell-guide-button {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        flex: 0 0 auto;
+        border-radius: 6px;
+        background: transparent;
+        font-size: var(--shell-text-row);
+    }
+
+    .sidebar .sidebar-user .shell-guide-button > span {
+        display: none;
+    }
+
+    .shell-guide-keys {
+        display: none;
+    }
+
+    .sidebar .sidebar-user-avatar {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
     }
 
     .sidebar .sidebar-logout-row {
