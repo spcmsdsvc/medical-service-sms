@@ -156,7 +156,11 @@
         const mode = nextQuickMode(state.mode);
         try {
             const result = await save(mode, state.accent);
-            showNotice(`${MODE_NAMES[mode]} theme on.`, previous);
+            // Leaving System is said out loud (Undo returns to it), and a choice that
+            // could not be saved yet says where it is kept.
+            const leftSystem = normalizeMode(previous.mode) === 'system' ? 'System theme off. ' : '';
+            const pending = result && result.success === false ? ' Saved on this device; it syncs when you are back online.' : '';
+            showNotice(`${leftSystem}${MODE_NAMES[mode]} theme on.${pending}`, previous);
             return result;
         } finally {
             quickToggleBusy = false;

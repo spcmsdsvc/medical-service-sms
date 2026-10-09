@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-09-menu-polish",
+      "release_date": "2026-10-09",
+      "title": "Menu Polish",
+      "summary": "Clearer Menu guide, a phone top bar that follows your theme, and easier-to-read menu labels.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-09-menu-polish-guide",
+          "category": "System",
+          "description": "The Menu guide now says in one line what each page is for.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-09-menu-polish-phone",
+          "category": "System",
+          "description": "On phones the top bar follows your theme, and the theme button moved into the menu next to your name.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-09-menu-polish-unread",
+          "category": "System",
+          "description": "On a computer, a small dot on your initials shows when there are new updates.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-09-menu-polish-readable",
+          "category": "System",
+          "description": "Menu labels, counts and initials are easier to read, and a fade shows when the menu has more below.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-09-account-menu",
       "release_date": "2026-10-09",
       "title": "A Clearer Account Menu",

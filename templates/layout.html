@@ -55,7 +55,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=28">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=42">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=44">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -80,9 +80,8 @@
         </div>
         <div class="mobile-nav-actions">
             {% if current_user.is_authenticated %}
-            <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Theme" title="Theme">
-                <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
-            </button>
+            {#- Theme lives in the menu's account row on phones, away from What's New
+                and Menu, so a stray tap on site does not flip it. -#}
             {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
                class="changelog-header-button {{ 'active' if request.path == '/whats_new' }}"
                aria-label="What's New"
@@ -123,7 +122,7 @@
                         class="toggle-btn"
                         id="sidebar-toggle-desktop"
                         onclick="toggleSidebarDesktop()"
-                        aria-label="Hide navigation"
+                        aria-label="Switch to the slim menu"
                         aria-expanded="true"
                         aria-controls="sidebar">
                     <i class="sidebar-toggle-icon fa-solid fa-angles-left" aria-hidden="true"></i>
@@ -131,16 +130,6 @@
             </div>
         </div>
 
-        <div id="sidebar-resize-handle"
-             class="sidebar-resize-handle"
-             role="separator"
-             tabindex="0"
-             aria-label="Resize navigation sidebar"
-             aria-orientation="vertical"
-             aria-valuemin="200"
-             aria-valuemax="360"
-             aria-valuenow="240"
-             title="Resize navigation sidebar"></div>
         
         {#- One place that renders a nav link, so the active class and aria-current can
             never drift apart. Cash Advance previously had neither.
@@ -150,9 +139,38 @@
         {% macro nav_link(href, icon, label, extra_class='', badge_id='') -%}
             {%- set is_active = (request.path == href) -%}
             {%- set rail_caption = {'Stock Inventory': 'Stock', 'Password Settings': 'Password'}.get(label, label) -%}
+            {#- One line per page for the Menu guide (shell critique 2026-10-09). -#}
+            {%- set guide_line = {
+                '/': "Your overview: what is waiting on you and today's work.",
+                '/approvals': 'Requests waiting for your approval.',
+                '/accounting_center': 'The requests you filed and where each one stands.',
+                '/timeline': 'Schedules: who is where, on which job.',
+                '/offline-tsr': 'Write a Technical Service Report; works offline.',
+                '/travel_request': 'Ask approval for official travel.',
+                '/reimbursement': 'Claim expenses or liquidate a cash advance.',
+                '/cash_advance': 'Ask for money ahead of a trip or job.',
+                '/leave_request': 'File a leave request.',
+                '/lpr': 'Local Purchase Requisition for Procurement.',
+                '/clients_page': 'Hospitals and medical centers, their contacts and equipment.',
+                '/admin/calibration-center': 'Calibration reports and certificates.',
+                '/products_page': 'Equipment installed at clients, with warranty and contract status.',
+                '/genoray': 'Genoray equipment inventory.',
+                '/genoray/pm': 'Preventive maintenance plans for Genoray equipment.',
+                '/vieworks': 'Vieworks equipment inventory.',
+                '/vieworks/pm': 'Preventive maintenance plans for Vieworks equipment.',
+                '/stock_inventory': "The company's own parts stock by branch.",
+                '/analytics_page': 'Charts and figures on service work.',
+                '/reports_page': 'Service report (TSR) files.',
+                '/engineers_page': 'Technical personnel directory.',
+                '/po_details': 'Purchase order register.',
+                '/reimbursement_tracker': 'Reimbursement batches and payouts.',
+                '/activity_page': 'Who did what, and when.',
+                '/settings': 'Your password and account settings.',
+            }.get(href, '') -%}
             <a href="{{ href }}"
                class="{{ extra_class }} {{ 'active' if is_active }}"
                data-rail-caption="{{ rail_caption }}"
+               {% if guide_line %}data-guide="{{ guide_line }}"{% endif %}
                {% if is_active %}aria-current="page"{% endif %}>
                 <i class="fa-solid {{ icon }}" aria-hidden="true"></i>
                 <span>{{ label }}</span>
@@ -463,6 +481,17 @@
             </div>
             <i class="fa-solid fa-chevron-up sidebar-user-caret" aria-hidden="true"></i>
         </div>
+        {#- Last in the sidebar's tab order: keyboard users reach the menu first. -#}
+        <div id="sidebar-resize-handle"
+             class="sidebar-resize-handle"
+             role="separator"
+             tabindex="0"
+             aria-label="Resize navigation sidebar"
+             aria-orientation="vertical"
+             aria-valuemin="200"
+             aria-valuemax="360"
+             aria-valuenow="240"
+             title="Resize navigation sidebar"></div>
         {#- Phones only: a labelled Log out at the drawer's foot, away from the
             Close button that sits above the account row. -#}
         <a href="/logout" class="sidebar-logout-row">
@@ -495,13 +524,6 @@
     </script>
 
     <div class="main-content" id="main-content" role="main" tabindex="-1">
-        <button type="button"
-                id="show-sidebar-btn"
-                class="btn btn-dark btn-sm mb-3 d-none no-print"
-                onclick="toggleSidebarDesktop()"
-                aria-label="Show navigation"
-                aria-expanded="false"
-                aria-controls="sidebar"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
         {% block content %}{% endblock %}
     </div>
 
@@ -532,11 +554,10 @@
 
         function syncSidebarVisibilityControls(collapsed) {
             const toggle = document.getElementById('sidebar-toggle-desktop');
-            const showButton = document.getElementById('show-sidebar-btn');
             const expanded = collapsed ? 'false' : 'true';
 
             if (toggle) {
-                const label = collapsed ? 'Pin navigation open' : 'Collapse navigation to icons';
+                const label = collapsed ? 'Switch to the full menu' : 'Switch to the slim menu';
                 const icon = toggle.querySelector('.sidebar-toggle-icon');
                 if (icon) {
                     icon.classList.toggle('fa-angles-right', collapsed);
@@ -545,11 +566,6 @@
                 toggle.setAttribute('aria-expanded', expanded);
                 toggle.setAttribute('aria-label', label);
                 toggle.setAttribute('title', label);
-            }
-            if (showButton) {
-                showButton.classList.toggle('d-none', !collapsed);
-                showButton.setAttribute('aria-expanded', expanded);
-                showButton.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
             }
         }
 
@@ -1094,6 +1110,13 @@
                         button.setAttribute('title', accessibleLabel);
                     }
                 });
+                // Desktop keeps What's New inside the account panel, so the initials
+                // carry a small unread dot and say so to screen readers.
+                const avatar = document.querySelector('.sidebar-user-avatar');
+                if(avatar){
+                    avatar.classList.toggle('has-unread', count > 0);
+                    avatar.setAttribute('aria-label', count > 0 ? `Account, ${count} unread update${count === 1 ? '' : 's'}` : 'Account');
+                }
                 window.dispatchEvent(new CustomEvent('changelog:summary', {detail:data}));
             }catch(error){
                 console.warn('[Changelog] Unable to refresh unread badge', error);
@@ -1160,6 +1183,18 @@
                 link.textContent = nameOf(node);
                 return link;
             };
+            // A page: its link, then its one-line description.
+            const pageItem = node => {
+                const row = document.createElement('li');
+                row.appendChild(linkTo(node));
+                if(node.dataset.guide){
+                    const line = document.createElement('span');
+                    line.className = 'shell-guide-line';
+                    line.textContent = node.dataset.guide;
+                    row.appendChild(line);
+                }
+                return row;
+            };
             Array.from(nav.children).forEach(node => {
                 if(node.classList.contains('sidebar-group-label')){
                     sections.push({title: node.textContent.trim(), items: []});
@@ -1175,23 +1210,19 @@
                 const heading = document.createElement('h3');
                 heading.textContent = section.title;
                 const list = document.createElement('ul');
-                // A plain link is itself the page; a group lists its pages as links.
+                // A plain link is itself a page; a group lists its pages beneath it.
                 section.items.forEach(item => {
-                    const row = document.createElement('li');
                     if(item.pages.length){
+                        const row = document.createElement('li');
                         const name = document.createElement('strong');
                         name.textContent = nameOf(item.node);
-                        row.append(name, ': ');
-                        item.pages.forEach((page, index) => {
-                            if(index) row.append(', ');
-                            row.appendChild(linkTo(page));
-                        });
+                        const pages = document.createElement('ul');
+                        item.pages.forEach(page => pages.appendChild(pageItem(page)));
+                        row.append(name, pages);
+                        list.appendChild(row);
                     } else if(item.node.matches('a')){
-                        const link = linkTo(item.node);
-                        link.classList.add('shell-guide-item');
-                        row.appendChild(link);
+                        list.appendChild(pageItem(item.node));
                     }
-                    list.appendChild(row);
                 });
                 block.append(heading, list);
                 return block;
@@ -1210,10 +1241,18 @@
         document.addEventListener('DOMContentLoaded', function(){
             const nav = document.getElementById('sidebar-nav');
             if(!nav) return;
-            // Fade the bottom edge while more of the menu is below (CSS limits it
-            // to the pinned sidebar and the phone drawer).
-            const updateFade = () => nav.classList.toggle('has-more-below',
-                nav.scrollTop + nav.clientHeight < nav.scrollHeight - 2);
+            // Fade the bottom edge while more of the menu is below (every mode: the
+            // pinned sidebar, the rail and the phone drawer).
+            const updateFade = () => {
+                nav.classList.toggle('has-more-below', nav.scrollTop + nav.clientHeight < nav.scrollHeight - 2);
+                // A label cut off in the full menu shows its whole name on hover.
+                const pinned = !document.body.classList.contains('sidebar-collapsed');
+                nav.querySelectorAll('a').forEach(link => {
+                    const span = link.querySelector(':scope > span:not(.sidebar-count-badge)');
+                    if(pinned && span && span.scrollWidth > span.clientWidth + 1) link.title = span.textContent.trim();
+                    else link.removeAttribute('title');
+                });
+            };
             nav.addEventListener('scroll', updateFade, {passive: true});
             nav.addEventListener('shown.bs.collapse', updateFade);
             nav.addEventListener('hidden.bs.collapse', updateFade);
@@ -1455,7 +1494,7 @@
 </dialog>
 {% endif %}
 
-<script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=21"></script>
+<script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=22"></script>
 
 {% block page_scripts %}{% endblock %}
 </body>

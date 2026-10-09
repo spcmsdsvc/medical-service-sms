@@ -180,7 +180,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=42", self.layout)
+        self.assertIn("app-shell.css') }}?v=44", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -497,16 +497,18 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn("announceConnection('Back online.');", self.layout)
         self.assertIn('id="main-content" role="main"', self.layout)
 
-    def test_unread_is_a_soft_white_dot_on_the_bell_not_the_avatar(self):
+    def test_unread_is_a_soft_white_dot_on_the_bell_and_desktop_initials(self):
         badge = self.shell_css.split('\n.changelog-header-badge {', 1)[1].split('}', 1)[0]
         self.assertIn('background: var(--shell-focus-ring);', badge)
         self.assertNotIn('#f0b429', self.shell_css)
-        # Routine updates no longer light the account avatar (fresh critique 2026-10-09).
-        self.assertNotIn('sidebar-user-avatar.has-unread', self.shell_css)
-        self.assertNotIn("avatar.classList.toggle('has-unread'", self.layout)
+        # Desktop keeps What's New inside the account panel, so the initials carry
+        # the dot in the rail and the pinned sidebar (the 26/40 critique's P1).
+        self.assertIn('    .sidebar .sidebar-user-avatar.has-unread::after {', self.shell_css)
+        self.assertIn("avatar.classList.toggle('has-unread', count > 0);", self.layout)
+        self.assertIn("`Account, ${count} unread update${count === 1 ? '' : 's'}`", self.layout)
 
     def test_pinned_header_is_brand_and_pin_only_with_account_tools_in_the_footer(self):
-        header = self.layout.split('<div class="sidebar-header">', 1)[1].split('<div id="sidebar-resize-handle"', 1)[0]
+        header = self.layout.split('<div class="sidebar-header">', 1)[1].split('<div id="sidebar-rail-tip"', 1)[0]
         self.assertNotIn('appearance-header-button', header)
         self.assertNotIn('changelog-header-button', header)
         self.assertIn('sidebar-toggle-icon fa-solid fa-angles-left', header)
@@ -605,7 +607,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertNotIn('data-bs-parent', nav)
         self.assertIn("if(panel === event.target || panel.querySelector('[aria-current=\"page\"]')) return;", self.layout)
         self.assertIn("nav.classList.toggle('has-more-below',", self.layout)
-        self.assertIn('body:not(.sidebar-collapsed) .sidebar-nav.has-more-below {', self.shell_css)
+        self.assertIn('.sidebar-nav.has-more-below::after {', self.shell_css)
         # The guide sits after the page's other dialogs and stays usable over the phone menu.
         self.assertGreater(self.layout.index('<dialog id="shell-guide"'), self.layout.index('Delete Schedule'))
         self.assertIn("el.id === 'shell-guide'", self.layout)
@@ -616,7 +618,7 @@ class SidebarSourceTests(unittest.TestCase):
         # The Menu guide's pages are links, and its pin key matches the button.
         guide = self.layout.split('function openShellGuide(trigger){', 1)[1].split('window.openShellGuide', 1)[0]
         self.assertIn("link.href = node.getAttribute('href');", guide)
-        self.assertIn('row.appendChild(linkTo(page));', guide)
+        self.assertIn('item.pages.forEach(page => pages.appendChild(pageItem(page)));', guide)
         self.assertIn("'fa-angles-right' : 'fa-angles-left'", guide)
         # Opening What's New marks unread releases read after the list has loaded.
         changelog = (ROOT / 'static' / 'js' / 'app-changelog.js').read_text(encoding='utf-8')
@@ -624,6 +626,46 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn("if(changelogAdminMode || previewRole || !changelogReleases.some(release => release.is_unread)) return;", changelog)
         self.assertIn("    await loadChangelog();\n    markChangelogSeenOnOpen();", changelog)
         self.assertIn("app-changelog.js') }}?v=2", (ROOT / 'templates' / 'changelog.html').read_text(encoding='utf-8'))
+
+    def test_closed_list_from_the_26_of_40_critique(self):
+        """Every code item of plans.md "Shell Closed List" (2026-10-09)."""
+        css, layout = self.shell_css, self.layout
+        appearance = (ROOT / 'static' / 'js' / 'app-appearance.js').read_text(encoding='utf-8')
+        # 2. The phone top bar follows the theme's sidebar colour.
+        self.assertIn('background: color-mix(in srgb, var(--app-sidebar) 96%, transparent);', css)
+        # 3. Short windows: 48px rail rows, and the fade works in every mode.
+        self.assertIn('@media (min-width: 993px) and (max-height: 720px) {', css)
+        self.assertIn('.sidebar-nav::after {\n    content: \'\';\n    position: sticky;', css)
+        self.assertNotIn('mask-image', css)
+        # 4. Rail captions and counts are decorative for assistive tech.
+        self.assertIn("content: attr(data-rail-caption) / '';", css)
+        self.assertIn("content: attr(data-rail-count) / '';", css)
+        # 5 and 11. Leaving System and saving offline are said.
+        self.assertIn("'System theme off. '", appearance)
+        self.assertIn("' Saved on this device; it syncs when you are back online.'", appearance)
+        # 6 and 8. Account rows are 44px with one icon width and gap.
+        self.assertIn('        min-height: 44px;\n        gap: 12px;\n        text-align: left;', css)
+        # 7. Small white text sits on a darkened accent.
+        self.assertIn('--shell-on-accent-bg: color-mix(in srgb, var(--app-primary) 72%, #000000);', css)
+        self.assertEqual(css.count('background: var(--shell-on-accent-bg);'), 2)
+        # 9. A cut-off label shows its full name on hover in the full menu.
+        self.assertIn('if(pinned && span && span.scrollWidth > span.clientWidth + 1) link.title = span.textContent.trim();', layout)
+        # 10. One vocabulary for the two menu modes.
+        self.assertIn("const label = collapsed ? 'Switch to the full menu' : 'Switch to the slim menu';", layout)
+        self.assertNotIn('Pin navigation open', layout)
+        # 12. Every page has a one-line description for the guide.
+        self.assertIn("'/lpr': 'Local Purchase Requisition for Procurement.',", layout)
+        self.assertIn("line.className = 'shell-guide-line';", layout)
+        # 13. The resize handle comes after the menu in the tab order.
+        self.assertGreater(layout.index('id="sidebar-resize-handle"'), layout.index('</nav>'))
+        # 15. Theme left the phone top bar for the menu's account row.
+        top_bar = layout.split('<div class="mobile-nav-actions">', 1)[1].split('</div>', 1)[0]
+        self.assertNotIn('appearance-header-button', top_bar)
+        self.assertIn('    .sidebar .sidebar-user .appearance-header-button,\n    .sidebar .sidebar-user .shell-guide-button {', css)
+        # 16. The phone menu no longer overflows by its padding.
+        self.assertIn('padding-bottom: calc(8px + var(--mobile-safe-bottom));', css)
+        # 19. The never-visible "show navigation" button is gone.
+        self.assertNotIn('show-sidebar-btn', layout)
 
     def test_sidebar_order_puts_waiting_work_first_then_work_then_manage(self):
         self.assertIn("nav_link('/clients_page', 'fa-hospital', 'Clients')", self.layout)
