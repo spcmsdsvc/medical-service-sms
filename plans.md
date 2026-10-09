@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Reimbursement Tracker "PAID" Batch Label
 
-**Status:** Executed — not committed; awaiting "commit and push".
+**Status:** Executed — published to `main` on 2026-10-09 on the owner's "commit and push" (commit `7d3642a`). Full suite before publishing: 1,665 tests, 14 failures (the known list), 3 errors that occur only alongside other test files, 5 skips, no new failures.
 
 **Outcome (2026-10-09):** all 3 steps done as planned; service worker `v282-tracker-paid-batch`, release `2026-10-09-tracker-paid-batch`. Tests: 31 tracker tests OK; the new test and the updated equality fail on the previous code. Browser (DB copy, temporary login; removed): `BATCH-033 (Current)` / `BATCH-032 - PAID` with a mixed current batch; after saving the last unpaid row as paid via the edit form the label became `BATCH-033 (Current) - PAID` without a reload; switching to BATCH-032 shows its two rows; 375px no horizontal scroll (select 286px). Console: only the 400s from the check's own first seeding calls sent without a CSRF token; none from the page.
 **Approved:** 2026-10-09 (owner: "if the whole batch is paid in full, let's show an indicator on the dropdown like BATCH-033 - PAID. create a plan", then "approved. go" — approval and go-ahead in one message).
