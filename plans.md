@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Returned Calibration Report: Fix the Report Only
 
-**Status:** Executed locally on 2026-10-09 (owner: "yes keep the same certificate number. go"); not committed. Awaiting "commit and push".
+**Status:** Executed — published to `main` on 2026-10-09 on the owner's "commit and push" (commit `88f765c`). Full suite before publishing: 1,671 tests, 14 failures (the known list), 3 errors that occur only alongside other test files, 5 skips, no new failures.
 
 **Outcome (2026-10-09):** steps 1–7 done. Service worker `v283-calibration-fix-report`, release `2026-10-09-calibration-fix-report`, `app-calibration-report.js?v=46`, `app-calibration-report.css?v=12`. Tests: new `tests/test_calibration_report_returned_fix.py` (6 tests; 4 fail on the previous code, the other 2 are guards that pass before and after); updated the old "correction mode" notification test and the version pins; 144 focused tests OK. Browser (DB copy, temporary engineer and approver logins; removed): desktop card shows the red report button with a "!" tag and the remarks as its tooltip; phone shows "Fix Calibration Report" and the tagged quick-action button, 375px without horizontal scroll; the report page shows the red banner with the approver and remarks, "Returned" status, and editable fields; after a change and Save Final Report the same approval went back to Pending with the same certificate number, the TSR stayed REV1, the TSR pointed at the new report file, the audit shows Returned → Pending, and the approver's Approvals page lists it as Pending Review with a "resubmitted" notification.
 
