@@ -180,7 +180,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=39", self.layout)
+        self.assertIn("app-shell.css') }}?v=40", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -590,8 +590,15 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('<dialog id="shell-guide"', self.layout)
         self.assertEqual(self.layout.count('onclick="openShellGuide(this)"'), 2)
         self.assertIn('body.sidebar-collapsed .shell-guide-header-button {\n    display: none;', self.shell_css)
-        # Point 11: pinned groups open one at a time.
-        self.assertEqual(nav.count('data-bs-parent="#sidebar-nav"'), 6)
+        # Point 11: opening a group closes the others except the current page's group,
+        # and a fade shows when more of the pinned menu is below.
+        self.assertNotIn('data-bs-parent', nav)
+        self.assertIn("if(panel === event.target || panel.querySelector('[aria-current=\"page\"]')) return;", self.layout)
+        self.assertIn("nav.classList.toggle('has-more-below',", self.layout)
+        self.assertIn('body:not(.sidebar-collapsed) .sidebar-nav.has-more-below {', self.shell_css)
+        # The guide sits after the page's other dialogs and stays usable over the phone menu.
+        self.assertGreater(self.layout.index('<dialog id="shell-guide"'), self.layout.index('Delete Schedule'))
+        self.assertIn("el.id === 'shell-guide'", self.layout)
         # Point 12: thumb-sized phone avatar.
         self.assertIn('.sidebar .sidebar-user-avatar {\n        width: 44px;', self.shell_css)
 

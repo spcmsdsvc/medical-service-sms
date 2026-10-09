@@ -309,7 +309,8 @@ class AppearanceThemeSourceTests(unittest.TestCase):
                 getElementById(id) { return id === 'appearance-notice' ? this.notice : null; },
                 createElement() {
                     const names = new Set();
-                    return {attrs: {}, textContent: '', setAttribute(key, value) { this.attrs[key] = value; },
+                    return {attrs: {}, textContent: '', hidden: false, setAttribute(key, value) { this.attrs[key] = value; },
+                        append(...nodes) { this.children = nodes; }, addEventListener() {},
                         classList: {add(name) { names.add(name); }, remove(name) { names.delete(name); }, contains(name) { return names.has(name); }}};
                 },
                 body: {appendChild(node) { global.document.notice = node; }},
@@ -334,9 +335,13 @@ class AppearanceThemeSourceTests(unittest.TestCase):
                 await window.appAppearance.toggleQuick();
                 if (window.appAppearance.getState().mode !== 'graphite' || root.dataset.appTheme !== 'dark' || root.dataset.appPalette !== 'graphite') throw new Error('graphite step failed');
                 if (buttons[0].title !== 'Switch to AMOLED Black' || meta.content !== '#202124') throw new Error(`graphite controls failed: ${buttons[0].title} / ${meta.content}`);
-                // One tap changes and saves, so it says what happened and what the next tap does.
+                // One tap changes and saves, so it says what happened and offers Undo.
                 const notice = document.notice;
-                if (!notice || notice.textContent !== 'Graphite Dark theme on. Tap again for AMOLED Black.' || notice.attrs.role !== 'status' || !notice.classList.contains('is-visible')) throw new Error(`theme notice failed: ${notice && notice.textContent}`);
+                if (!notice || notice.text.textContent !== 'Graphite Dark theme on.' || notice.text.attrs.role !== 'status' || notice.undo.hidden || !notice.classList.contains('is-visible')) throw new Error(`theme notice failed: ${notice && notice.text && notice.text.textContent}`);
+                await notice.undo.onclick();
+                if (window.appAppearance.getState().mode !== 'light' || notice.text.textContent !== 'Back to Light theme.' || !notice.undo.hidden) throw new Error(`theme undo failed: ${notice.text.textContent}`);
+                await window.appAppearance.toggleQuick();
+                if (window.appAppearance.getState().mode !== 'graphite') throw new Error('graphite step after undo failed');
                 await window.appAppearance.toggleQuick();
                 if (window.appAppearance.getState().mode !== 'dark' || root.dataset.appPalette !== 'amoled') throw new Error('amoled step failed');
                 if (buttons[0].title !== 'Switch to Light' || meta.content !== '#000000') throw new Error('amoled controls failed');
@@ -385,7 +390,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
 
         self.assertIn("filename='css/app-themes.css') }}?v=28", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=31", layout)
-        self.assertIn("filename='js/app-appearance.js') }}?v=19", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=20", layout)
         for source in sources:
             self.assertIn("filename='css/app-themes.css') }}?v=28", source)
             self.assertIn("filename='css/app-auth.css') }}?v=9", source)
@@ -491,7 +496,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('--login-page-bg: #000000;', auth_styles)
         self.assertIn("filename='css/app-themes.css') }}?v=28", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=31", layout)
-        self.assertIn("filename='js/app-appearance.js') }}?v=19", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=20", layout)
         for source in auth:
             self.assertIn("filename='css/app-themes.css') }}?v=28", source)
             self.assertIn("filename='css/app-auth.css') }}?v=9", source)

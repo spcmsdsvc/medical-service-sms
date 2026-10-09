@@ -55,7 +55,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=28">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=39">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=40">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -242,7 +242,7 @@
                     <span>Forms</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="new-request-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in new_request_paths }}" role="group" aria-label="Forms">
+                <div id="new-request-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in new_request_paths }}" role="group" aria-label="Forms">
                     <div class="sidebar-flyout-title" aria-hidden="true">Forms</div>
                     {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
                     {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
@@ -266,7 +266,7 @@
                     <span>Clients</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="clients-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in clients_paths }}" role="group" aria-label="Clients">
+                <div id="clients-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in clients_paths }}" role="group" aria-label="Clients">
                     <div class="sidebar-flyout-title" aria-hidden="true">Clients</div>
                     {{ nav_link('/clients_page', 'fa-hospital', 'Client List') }}
                     {{ nav_link('/admin/calibration-center', 'fa-certificate', 'Calibration Center') }}
@@ -291,7 +291,7 @@
                     <span>Inventory</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="inventory-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if inventory_active }}" role="group" aria-label="Inventory">
+                <div id="inventory-sidebar-section" class="collapse sidebar-subnav {{ 'show' if inventory_active }}" role="group" aria-label="Inventory">
                     <div class="sidebar-flyout-title" aria-hidden="true">Inventory</div>
                     {#- Equipment, then its PM pages, then the company's own stock. -#}
                     {{ nav_link('/products_page', 'fa-boxes-stacked', 'Product Inventory') }}
@@ -348,7 +348,7 @@
                     <span>Reports</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="reports-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}" role="group" aria-label="Reports">
+                <div id="reports-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}" role="group" aria-label="Reports">
                     <div class="sidebar-flyout-title" aria-hidden="true">Reports</div>
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
                     {{ nav_link('/reports_page', 'fa-file-lines', 'Documents') }}
@@ -374,7 +374,7 @@
                     <span>Office</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="office-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in office_paths }}" role="group" aria-label="Office">
+                <div id="office-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in office_paths }}" role="group" aria-label="Office">
                     <div class="sidebar-flyout-title" aria-hidden="true">Office</div>
             {% endif %}
                     {% if show_personnel %}
@@ -405,7 +405,7 @@
                     <span>Admin</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow" aria-hidden="true"></i>
                 </button>
-                <div id="admin-sidebar-section" data-bs-parent="#sidebar-nav" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}" role="group" aria-label="Admin">
+                <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}" role="group" aria-label="Admin">
                     <div class="sidebar-flyout-title" aria-hidden="true">Admin</div>
                     {{ nav_link('/activity_page', 'fa-clock-rotate-left', 'Activity Logs') }}
                     {{ nav_link('/settings', 'fa-gear', 'Settings') }}
@@ -468,27 +468,6 @@
             <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
             <span>Log out</span>
         </a>
-        {#- Menu guide (shell critique 2026-10-08, Help): filled from this user's own
-            menu by openShellGuide(), so it always matches what they can see. -#}
-        <dialog id="shell-guide" class="shell-guide no-print" aria-labelledby="shell-guide-title">
-            <div class="shell-guide-head">
-                <h2 id="shell-guide-title">Menu guide</h2>
-                <button type="button" class="shell-guide-close" onclick="this.closest('dialog').close()" aria-label="Close menu guide">
-                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-                </button>
-            </div>
-            <div id="shell-guide-sections"></div>
-            {#- Keys are for the desktop slim menu; phones have neither. -#}
-            <div class="shell-guide-keys">
-            <h3>Keys</h3>
-            <ul>
-                <li><kbd>↑</kbd> <kbd>↓</kbd> move between menu icons in the slim menu</li>
-                <li><kbd>→</kbd> or <kbd>Enter</kbd> opens a group; <kbd>←</kbd> or <kbd>Esc</kbd> closes it</li>
-                <li>The <i class="fa-solid fa-angles-left" aria-hidden="true"></i><span class="visually-hidden">pin</span> button at the top pins the full menu open or makes it slim</li>
-            </ul>
-            </div>
-            {% if not stock_inventory_only_user and not hr_schedule_only_user %}<p class="shell-guide-foot"><a href="/whats_new">See what's new</a></p>{% endif %}
-        </dialog>
         {% endif %}
     </div>
     <script>
@@ -635,7 +614,7 @@
         // released again.
         function setPageBehindDrawerInert(on) {
             document.querySelectorAll('body > *').forEach(function(el) {
-                if (el.id === 'sidebar' || el.id === 'shell-connection-status' || el.classList.contains('mobile-nav')
+                if (el.id === 'sidebar' || el.id === 'shell-connection-status' || el.id === 'shell-guide' || el.classList.contains('mobile-nav')
                     || el.classList.contains('mobile-nav-backdrop') || el.tagName === 'SCRIPT') return;
                 if (on) {
                     if (!el.inert) {
@@ -1188,6 +1167,31 @@
             if(!dialog.open) dialog.showModal();
         }
         window.openShellGuide = openShellGuide;
+
+        // Pinned sidebar and phone drawer: opening a group closes the other open
+        // groups, except the one holding the current page, so the menu stays short
+        // and you never lose sight of where you are. (The rail uses flyouts.)
+        document.addEventListener('DOMContentLoaded', function(){
+            const nav = document.getElementById('sidebar-nav');
+            if(!nav) return;
+            // Fade the bottom edge while more of the menu is below (CSS limits it
+            // to the pinned sidebar and the phone drawer).
+            const updateFade = () => nav.classList.toggle('has-more-below',
+                nav.scrollTop + nav.clientHeight < nav.scrollHeight - 2);
+            nav.addEventListener('scroll', updateFade, {passive: true});
+            nav.addEventListener('shown.bs.collapse', updateFade);
+            nav.addEventListener('hidden.bs.collapse', updateFade);
+            if(window.ResizeObserver) new ResizeObserver(updateFade).observe(nav);
+            updateFade();
+            if(!window.bootstrap) return;
+            nav.addEventListener('show.bs.collapse', event => {
+                if(event.defaultPrevented || event.target.parentElement !== nav) return;
+                nav.querySelectorAll(':scope > .collapse.show').forEach(panel => {
+                    if(panel === event.target || panel.querySelector('[aria-current="page"]')) return;
+                    bootstrap.Collapse.getOrCreateInstance(panel, {toggle: false}).hide();
+                });
+            });
+        });
         document.addEventListener('DOMContentLoaded', function(){
             const dialog = document.getElementById('shell-guide');
             if(!dialog) return;
@@ -1389,7 +1393,32 @@
 })();
 </script>
 
-<script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=19"></script>
+{% if current_user.is_authenticated %}
+{#- Menu guide (shell critique 2026-10-08, Help): filled from this user's own menu by
+    openShellGuide(), so it always matches what they can see. It sits after the page's
+    other dialogs so its headings do not come before theirs in the outline. -#}
+<dialog id="shell-guide" class="shell-guide no-print" aria-labelledby="shell-guide-title">
+    <div class="shell-guide-head">
+        <h2 id="shell-guide-title">Menu guide</h2>
+        <button type="button" class="shell-guide-close" onclick="this.closest('dialog').close()" aria-label="Close menu guide">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div id="shell-guide-sections"></div>
+    {#- Keys are for the desktop slim menu; phones have neither. -#}
+    <div class="shell-guide-keys">
+    <h3>Keys</h3>
+    <ul>
+        <li><kbd>↑</kbd> <kbd>↓</kbd> move between menu icons in the slim menu</li>
+        <li><kbd>→</kbd> or <kbd>Enter</kbd> opens a group; <kbd>←</kbd> or <kbd>Esc</kbd> closes it</li>
+        <li>The <i class="fa-solid fa-angles-left" aria-hidden="true"></i><span class="visually-hidden">pin</span> button at the top pins the full menu open or makes it slim</li>
+    </ul>
+    </div>
+    {% if not stock_inventory_only_user and not hr_schedule_only_user %}<p class="shell-guide-foot"><a href="/whats_new">See what's new</a></p>{% endif %}
+</dialog>
+{% endif %}
+
+<script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=20"></script>
 
 {% block page_scripts %}{% endblock %}
 </body>

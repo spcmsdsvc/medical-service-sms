@@ -441,6 +441,14 @@ body.sidebar-resizing .main-content {
     background: var(--sidebar-divider);
 }
 
+/* Pinned sidebar and phone drawer: a soft fade at the bottom edge while more of
+   the menu is below (shell critique, point 11). Not in the rail: a mask there
+   would also hide its flyouts, which sit outside the menu's box. */
+body:not(.sidebar-collapsed) .sidebar-nav.has-more-below {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+}
+
 /* --- Menu guide ----------------------------------------------------------- */
 
 /* The header "?" belongs to the pinned sidebar; the rail and the phone drawer
@@ -556,6 +564,9 @@ body.sidebar-collapsed .shell-guide-header-button {
     color: #ffffff;
     font-size: var(--shell-text-subrow);
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
+    display: flex;
+    align-items: center;
+    gap: 12px;
     opacity: 0;
     transform: translate(-50%, 8px);
     pointer-events: none;
@@ -565,6 +576,22 @@ body.sidebar-collapsed .shell-guide-header-button {
 .appearance-notice.is-visible {
     opacity: 1;
     transform: translate(-50%, 0);
+    pointer-events: auto;
+}
+
+.appearance-notice-undo {
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 6px;
+    background: transparent;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.appearance-notice-undo:hover,
+.appearance-notice-undo:focus-visible {
+    background: rgba(255, 255, 255, 0.12);
 }
 
 /* Phone drawer only (see the 992px block); outranks `.sidebar a`. */
@@ -1233,6 +1260,10 @@ body.sidebar-collapsed .shell-guide-header-button {
 
     .shell-guide-keys {
         display: none;
+    }
+
+    .appearance-notice-undo {
+        min-height: 44px;
     }
 
     .sidebar .sidebar-user-avatar {
