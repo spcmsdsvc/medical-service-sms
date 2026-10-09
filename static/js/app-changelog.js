@@ -314,7 +314,32 @@ async function saveChangelogEdit(){
     finally{ button.disabled = false; }
 }
 
-document.addEventListener('DOMContentLoaded', loadChangelog);
+// Opening What's New counts as reading it: once the list has loaded (so this
+// visit still shows what was new), every unread release is marked read and the
+// bell then counts only updates released after this visit. Not in manage or
+// preview mode.
+async function markChangelogSeenOnOpen(){
+    const previewRole = (document.getElementById('changelog-preview-role') || {}).value || '';
+    if(changelogAdminMode || previewRole || !changelogReleases.some(release => release.is_unread)) return;
+    try{
+        const response = await fetch('/api/changelog/releases/acknowledge-all', {
+            method:'POST', credentials:'same-origin', cache:'no-store',
+            headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getCSRFToken()}, body:'{}'
+        });
+        const data = await response.json();
+        if(!response.ok || !data.success) return;
+        const button = document.getElementById('changelog-acknowledge-all');
+        if(button) button.hidden = true;
+        if(typeof window.refreshGlobalChangelogBadge === 'function') window.refreshGlobalChangelogBadge();
+    }catch(_){
+        // Offline or failed: the updates simply stay unread until the next visit.
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async function(){
+    await loadChangelog();
+    markChangelogSeenOnOpen();
+});
 
 // --- IN-APP AUTHORING -------------------------------------------------------
 // The admin API used to be PUT-only, so nothing could be announced without a deploy.

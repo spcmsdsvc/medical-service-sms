@@ -3,10 +3,12 @@
     const root = document.documentElement;
     const VALID_MODES = ['light', 'graphite', 'dark', 'system'];
     const QUICK_MODE_CYCLE = ['light', 'graphite', 'dark'];
-    const NEXT_MODE_META = {
-        light: { icon: 'fa-circle-half-stroke', label: 'Switch to Graphite Dark' },
-        graphite: { icon: 'fa-moon', label: 'Switch to AMOLED Black' },
-        dark: { icon: 'fa-sun', label: 'Switch to Light' },
+    // The quick switch names and shows the theme that is on now; its accessible
+    // name starts with that visible label and then says what a tap does.
+    const MODE_META = {
+        light: { icon: 'fa-sun', name: 'Light' },
+        graphite: { icon: 'fa-circle-half-stroke', name: 'Graphite Dark' },
+        dark: { icon: 'fa-moon', name: 'AMOLED Black' },
     };
     const initial = window.__initialAppearance || { mode: 'light', accent: 'classic', userId: null };
     const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -42,15 +44,22 @@
         try { localStorage.setItem(lastKey, JSON.stringify(stored)); if (scopedKey) localStorage.setItem(scopedKey, JSON.stringify(stored)); } catch (_) {}
     }
     function refreshButtons() {
-        const current = normalizeMode(state.mode) === 'system' ? effective(state.mode) : normalizeMode(state.mode);
-        const next = NEXT_MODE_META[current] || NEXT_MODE_META.light;
+        const normalized = normalizeMode(state.mode);
+        const current = normalized === 'system' ? (effective(normalized) === 'dark' ? 'dark' : 'light') : normalized;
+        const meta = MODE_META[current] || MODE_META.light;
+        const next = MODE_META[nextQuickMode(state.mode)] || MODE_META.light;
+        const label = `Theme: ${meta.name}`;
         document.querySelectorAll('.appearance-header-icon').forEach(icon => {
-            icon.className = `appearance-header-icon fa-solid ${next.icon}`;
+            icon.className = `appearance-header-icon fa-solid ${meta.icon}`;
         });
         document.querySelectorAll('.appearance-header-button').forEach(button => {
-            button.title = next.label;
+            button.title = `${label}, switch to ${next.name}`;
             button.setAttribute('aria-label', button.title);
-            button.disabled = quickToggleBusy || state.pending;
+            const text = button.querySelector('.appearance-header-label');
+            if (text) text.textContent = label;
+            // Offline the choice stays pending until it can be saved; the button
+            // keeps working meanwhile (only a save in flight blocks it).
+            button.disabled = quickToggleBusy;
             button.setAttribute('aria-busy', quickToggleBusy ? 'true' : 'false');
         });
     }
@@ -140,7 +149,7 @@
         noticeTimer = setTimeout(() => notice.classList.remove('is-visible'), undoTo ? 6000 : 3000);
     }
     async function toggleQuick() {
-        if (quickToggleBusy || state.pending) return { success: false, busy: true };
+        if (quickToggleBusy) return { success: false, busy: true };
         quickToggleBusy = true;
         refreshButtons();
         const previous = { mode: state.mode, accent: state.accent };

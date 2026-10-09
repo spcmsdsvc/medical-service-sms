@@ -37,6 +37,54 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Shell Fresh-Critique Fixes (theme, unread, pinned footer, guide links)
+
+**Status:** Executed — sandbox `design/playground`, not committed (awaiting keep/discard).
+
+**Outcome (2026-10-09):** all four steps done. Found while building: the pinned account panel needed the rail's account-flyout CSS generalised (rules no longer prefixed `body.sidebar-collapsed`) and the old pinned icon-tool block removed; a chevron (`.sidebar-user-caret`) marks the footer as openable. With the avatar dot gone, a pinned desktop user sees unread updates only as the dot on the What's New row inside the account panel (the phone keeps its top-bar bell). Browser on a database copy: pinned 1440x900 footer shows avatar, name (142px, with title) and chevron only; the panel opens above the footer (8,619 224x215) from the avatar, the name or the chevron, focus lands on "Theme: Graphite Dark" (accessible name "Theme: Graphite Dark, switch to AMOLED Black"), Escape closes and returns focus, the chevron closes it; visiting What's New took unread from 201 to 0 and hid Acknowledge All; the guide holds 25 links and the pin key matches the button; rail 1366x768 account flyout unchanged beside the rail, nav 621/621; 375x812 drawer account row avatar and guide 44x44, no horizontal scroll. Fix after the owner's screenshot: in the rail the account panel's link rows (What's New, Log out) had lost their labels because the generalised rules no longer outweighed the rail's label-hiding rule; every panel rule now names both body states.
+**Approved:** 2026-10-09 from the fresh critique (`.impeccable/critique/2026-10-09T00-32-20Z__templates-layout-html.md`, 28/40): owner picked Theme button (P1), What's New noise (P1), Pinned footer (P2), Guide links (P3); vertical room left as is; unread rule "Read on opening".
+**Branch:** sandbox `design/playground` on `e20f6d1`.
+
+## Context
+
+The first fresh critique after the checklist work scored 28/40 (earlier fresh runs 21–25). Its priority issues were the quick theme switch (icon shows the next mode, visible label "Appearance" differs from the accessible name, button locks after one offline tap), What's New noise (151–201 unread keeps a dot lit on the bell and the rail avatar), the pinned footer (unlabelled 34px icons, Log out beside the bell, name clipped without a tooltip) and the read-only Menu guide.
+
+## Decisions taken
+
+- Unread: opening What's New marks every unread release as read (existing `POST /api/changelog/releases/acknowledge-all`), once per visit, after the list has loaded so the visit still shows what was new; not in admin manage or preview mode. The account avatar no longer carries an unread dot.
+- Vertical room: unchanged (menus scroll with the fade).
+
+## Investigation
+
+- `app-appearance.js` `refreshButtons` (icon and title from `NEXT_MODE_META`, `disabled = quickToggleBusy || state.pending`); `toggleQuick` returns early while `state.pending`.
+- Rail account row label "Appearance" is static markup in `layout.html` (account flyout); phone top bar has an icon-only copy.
+- `initSidebarFlyouts` (`layout.html`): `open()`, the click handler and keydown all return unless `isRail()`; `syncRailState` disables and hides the avatar outside the rail.
+- `app-shell.css`: the rail/account flyout rules are all prefixed `body.sidebar-collapsed`; the pinned footer icons come from the `body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool` block; avatar dot from `.sidebar-user-avatar.has-unread::after`.
+- `app-changelog.js`: `loadChangelog()` runs on DOMContentLoaded; `acknowledgeAllChangelog()` posts acknowledge-all.
+
+## Execution steps
+
+1. Theme button (`app-appearance.js`, `layout.html`): icon shows the current mode (Light sun, Graphite half-circle, AMOLED Black moon); visible label of the account-row button "Theme: <mode>"; title and accessible name "Theme: <mode>, switch to <next>"; not disabled and not blocked while a save is pending (the latest choice is applied and kept pending until online). Done: name starts with the visible label; offline taps keep switching.
+2. Unread (`app-changelog.js`, `layout.html`, `app-shell.css`): after the first load of What's New (not manage/preview mode, at least one unread), post acknowledge-all, refresh the shell badge, hide the Acknowledge All button. Remove the avatar unread dot (class toggle, label suffix and CSS). Done: after one visit the bell shows 0; avatar has no dot.
+3. Pinned footer (`layout.html` flyout script, `app-shell.css`): in the pinned desktop sidebar the avatar (and the name) opens the same account panel as the rail, above the footer, with labelled rows Theme, What's New, Menu guide, Log out; the footer shows avatar, name/role and a chevron, no icon tools; the name gets `title`. Hover never opens it in pinned mode; Esc, outside click and arrow keys work as in the rail. Done: no 34px icons in the pinned footer; Log out only inside the panel.
+4. Guide links (`layout.html` `openShellGuide`): items and pages are links to their pages; the key line shows the pin icon as it currently is; one line for the pinned sidebar. Done: every page in the guide is a link.
+
+## Deliberately excluded
+
+Vertical room (owner: leave as is); type-to-jump (ignore.md); new findings outside these four.
+
+## Verification
+
+Tests failing on `e20f6d1` for each step (theme label/name and offline toggle in the Node appearance harness; source pins for the footer, avatar dot removal, guide links, auto-acknowledge); focused modules (sidebar, appearance, changelog); browser on a database copy at 1440x900, 1366x768 and 375x812 (pinned footer panel keyboard and mouse, rail unchanged, What's New visit clears the bell, theme label); then a fresh critique.
+
+## After implementation
+
+changes.md, version bumps (`app-shell.css`, `app-appearance.js`, `app-changelog.js`), owner keep/discard, commit on the playground; `main` only on "commit and push".
+
+## Risks
+
+Auto-acknowledge changes What's New for everyone (intended). The pinned account panel reuses rail flyout code; a regression there would affect the rail (covered by the existing rail keyboard tests and the browser check).
+
 # Shell Critique Checklist (the 12 open points)
 
 **Status:** Executed — sandbox `design/playground`, not committed (awaiting the owner's keep/discard and the re-critique).

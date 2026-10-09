@@ -180,7 +180,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=40", self.layout)
+        self.assertIn("app-shell.css') }}?v=42", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
@@ -414,7 +414,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn("sidebar.addEventListener('pointerleave', event => {", flyouts)
         # Synthetic resize events (Calendar fires them constantly) must not close a flyout.
         self.assertIn('if (viewport === lastViewport) return;', flyouts)
-        self.assertIn("avatar.toggleAttribute('aria-hidden', !isRail());", flyouts)
+        self.assertIn("avatar.toggleAttribute('aria-hidden', !usable);", flyouts)
         self.assertIn("{{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}", self.layout)
         self.assertIn('.mobile-nav .mobile-nav-actions a.changelog-header-button {\n    color: var(--sidebar-text);', self.shell_css)
 
@@ -497,12 +497,13 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn("announceConnection('Back online.');", self.layout)
         self.assertIn('id="main-content" role="main"', self.layout)
 
-    def test_unread_is_a_soft_white_dot_and_the_rail_avatar_carries_it(self):
+    def test_unread_is_a_soft_white_dot_on_the_bell_not_the_avatar(self):
         badge = self.shell_css.split('\n.changelog-header-badge {', 1)[1].split('}', 1)[0]
         self.assertIn('background: var(--shell-focus-ring);', badge)
         self.assertNotIn('#f0b429', self.shell_css)
-        self.assertIn('body.sidebar-collapsed .sidebar .sidebar-user-avatar.has-unread::after {', self.shell_css)
-        self.assertIn("avatar.classList.toggle('has-unread', count > 0);", self.layout)
+        # Routine updates no longer light the account avatar (fresh critique 2026-10-09).
+        self.assertNotIn('sidebar-user-avatar.has-unread', self.shell_css)
+        self.assertNotIn("avatar.classList.toggle('has-unread'", self.layout)
 
     def test_pinned_header_is_brand_and_pin_only_with_account_tools_in_the_footer(self):
         header = self.layout.split('<div class="sidebar-header">', 1)[1].split('<div id="sidebar-resize-handle"', 1)[0]
@@ -511,7 +512,16 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('sidebar-toggle-icon fa-solid fa-angles-left', header)
         self.assertIn("icon.classList.toggle('fa-angles-right', collapsed);", self.layout)
         self.assertEqual(self.layout.count('sidebar-account-tool'), 2)
-        self.assertIn('body:not(.sidebar-collapsed) .sidebar .sidebar-user .sidebar-account-tool {', self.shell_css)
+        # The pinned footer has no icon tools: avatar, name or chevron open the
+        # labelled account panel (fresh critique 2026-10-09).
+        self.assertNotIn('.sidebar-user .sidebar-account-tool {', self.shell_css)
+        self.assertIn('body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout:not(.is-flyout-open) .sidebar-logout {\n        display: none;', self.shell_css)
+        self.assertIn('const canOpen = flyout => isRail() || (flyout.account && isPinnedDesktop());', self.layout)
+        # The panel's rules name the body state in both modes, so in the rail they
+        # still outweigh the rail's label-hiding rule (labels went missing without it).
+        self.assertIn('    body.sidebar-collapsed .sidebar .is-flyout-open a > span,\n    body:not(.sidebar-collapsed) .sidebar .is-flyout-open a > span {', self.shell_css)
+        self.assertIn('    body.sidebar-collapsed .sidebar .is-flyout-open a,\n    body:not(.sidebar-collapsed) .sidebar .is-flyout-open a,', self.shell_css)
+        self.assertIn('<span class="sidebar-user-name" title="{{ current_user.username }}">', self.layout)
         self.assertNotIn('@container (max-width: 211px)', self.shell_css)
 
     def test_phone_drawer_opens_from_the_menu_side_and_bar_names_the_section(self):
@@ -601,6 +611,19 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn("el.id === 'shell-guide'", self.layout)
         # Point 12: thumb-sized phone avatar.
         self.assertIn('.sidebar .sidebar-user-avatar {\n        width: 44px;', self.shell_css)
+
+    def test_fresh_critique_guide_links_and_whats_new_read_on_opening(self):
+        # The Menu guide's pages are links, and its pin key matches the button.
+        guide = self.layout.split('function openShellGuide(trigger){', 1)[1].split('window.openShellGuide', 1)[0]
+        self.assertIn("link.href = node.getAttribute('href');", guide)
+        self.assertIn('row.appendChild(linkTo(page));', guide)
+        self.assertIn("'fa-angles-right' : 'fa-angles-left'", guide)
+        # Opening What's New marks unread releases read after the list has loaded.
+        changelog = (ROOT / 'static' / 'js' / 'app-changelog.js').read_text(encoding='utf-8')
+        self.assertIn('async function markChangelogSeenOnOpen(){', changelog)
+        self.assertIn("if(changelogAdminMode || previewRole || !changelogReleases.some(release => release.is_unread)) return;", changelog)
+        self.assertIn("    await loadChangelog();\n    markChangelogSeenOnOpen();", changelog)
+        self.assertIn("app-changelog.js') }}?v=2", (ROOT / 'templates' / 'changelog.html').read_text(encoding='utf-8'))
 
     def test_sidebar_order_puts_waiting_work_first_then_work_then_manage(self):
         self.assertIn("nav_link('/clients_page', 'fa-hospital', 'Clients')", self.layout)

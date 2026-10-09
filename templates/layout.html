@@ -55,7 +55,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=28">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=40">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=42">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -80,7 +80,7 @@
         </div>
         <div class="mobile-nav-actions">
             {% if current_user.is_authenticated %}
-            <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
+            <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Theme" title="Theme">
                 <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
             </button>
             {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
@@ -431,16 +431,16 @@
                     disabled>{{ current_user.username[:2]|upper }}</button>
             <div id="sidebar-user-flyout" class="sidebar-user-flyout">
             <span class="sidebar-user-meta">
-                <span class="sidebar-user-name">{{ current_user.username }}</span>
+                <span class="sidebar-user-name" title="{{ current_user.username }}">{{ current_user.username }}</span>
                 {%- set account_role = 'HR Schedule Viewer' if hr_schedule_only_user else ('Inventory' if stock_inventory_only_user else nav_display_role) %}
                 <span class="sidebar-user-role" title="{{ account_role }}">{{ account_role }}</span>
             </span>
             {#- Account tools: icons beside Log out in the pinned sidebar, labelled rows
                 in the rail's account flyout. app-appearance.js and the What's New badge
                 script update every copy (these and the phone top bar's) by class. -#}
-            <button type="button" class="appearance-header-button sidebar-flyout-only sidebar-account-tool" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
+            <button type="button" class="appearance-header-button sidebar-flyout-only sidebar-account-tool" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Theme" title="Theme">
                 <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
-                <span>Appearance</span>
+                <span class="appearance-header-label">Theme</span>
             </button>
             {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
                class="changelog-header-button sidebar-flyout-only sidebar-account-tool {{ 'active' if request.path == '/whats_new' }}"
@@ -461,6 +461,7 @@
                 <span class="sidebar-flyout-only">Log out</span>
             </a>
             </div>
+            <i class="fa-solid fa-chevron-up sidebar-user-caret" aria-hidden="true"></i>
         </div>
         {#- Phones only: a labelled Log out at the drawer's foot, away from the
             Close button that sits above the account row. -#}
@@ -694,6 +695,12 @@
 
             const isRail = () => !isMobileNavigationViewport()
                 && document.body.classList.contains('sidebar-collapsed');
+            // The pinned desktop sidebar opens the account panel too (by click or
+            // keyboard, never hover), so its footer can hold labelled rows instead
+            // of unlabelled icons.
+            const isPinnedDesktop = () => !isMobileNavigationViewport()
+                && !document.body.classList.contains('sidebar-collapsed');
+            const canOpen = flyout => isRail() || (flyout.account && isPinnedDesktop());
 
             const flyouts = [];
             if (nav) {
@@ -738,7 +745,7 @@
 
             function open(flyout) {
                 clearTimeout(closeTimer);
-                if (!isRail() || current === flyout) return;
+                if (!canOpen(flyout) || current === flyout) return;
                 close();
                 hideTip();
                 current = flyout;
@@ -777,7 +784,7 @@
             flyouts.forEach(flyout => {
                 [flyout.trigger, flyout.panel].forEach(part => {
                     part.addEventListener('pointerenter', event => {
-                        if (event.pointerType !== 'mouse') return;
+                        if (event.pointerType !== 'mouse' || !isRail()) return;
                         clearTimeout(openTimer);
                         if (current === flyout) clearTimeout(closeTimer);
                         else if (part === flyout.trigger && current) open(flyout);
@@ -787,14 +794,14 @@
                     // travel from a small trigger (the 32px avatar) across the rail to
                     // its panel. Another icon replaces it; leaving the sidebar closes it.
                     part.addEventListener('pointerleave', event => {
-                        if (event.pointerType !== 'mouse') return;
+                        if (event.pointerType !== 'mouse' || !isRail()) return;
                         clearTimeout(openTimer);
                         if (current === flyout && !sidebar.contains(event.relatedTarget)) scheduleClose();
                     });
                 });
             });
             sidebar.addEventListener('pointerleave', event => {
-                if (event.pointerType === 'mouse' && current) scheduleClose();
+                if (event.pointerType === 'mouse' && current && isRail()) scheduleClose();
             });
 
             sidebar.addEventListener('pointerdown', event => {
@@ -812,9 +819,8 @@
             // In the rail a group icon (or the avatar) opens its flyout instead of
             // Bootstrap's inline collapse.
             sidebar.addEventListener('click', event => {
-                if (!isRail()) return;
                 const flyout = flyouts.find(f => f.trigger.contains(event.target));
-                if (!flyout) return;
+                if (!flyout || !canOpen(flyout)) return;
                 const isMouseClick = event.detail > 0 && lastPointerType === 'mouse';
                 event.preventDefault();
                 event.stopPropagation();
@@ -828,7 +834,8 @@
             }, true);
 
             document.addEventListener('pointerdown', event => {
-                if (current && !current.trigger.contains(event.target) && !current.panel.contains(event.target)) close();
+                if (current && !current.trigger.contains(event.target) && !current.panel.contains(event.target)
+                    && !event.target.closest('.sidebar-user-caret')) close();
             });
             // The rail's own icons, in order, for ArrowUp/ArrowDown between them.
             const railIcons = () => Array.from(sidebar.querySelectorAll(
@@ -836,10 +843,10 @@
             )).filter(icon => !icon.disabled && icon.getClientRects().length);
 
             sidebar.addEventListener('keydown', event => {
-                if (!isRail()) return;
                 const flyout = flyoutFor(event.target);
+                if (!isRail() && !(flyout && canOpen(flyout))) return;
                 const inPanel = !!flyout && flyout.panel.contains(event.target);
-                if (!inPanel && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                if (isRail() && !inPanel && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
                     const icons = railIcons();
                     const index = icons.indexOf(event.target);
                     if (index === -1) return;
@@ -908,15 +915,30 @@
                 });
             }
 
-            // The avatar only has a job in the rail. Pinning or crossing into the
-            // mobile layout closes any flyout.
+            // The avatar opens the account panel in the rail and the pinned sidebar;
+            // the phone drawer shows the account row in full. Changing mode closes
+            // any flyout that no longer belongs.
             function syncRailState() {
+                const usable = isRail() || isPinnedDesktop();
                 if (avatar) {
-                    avatar.disabled = !isRail();
-                    avatar.toggleAttribute('aria-hidden', !isRail());
+                    avatar.disabled = !usable;
+                    avatar.toggleAttribute('aria-hidden', !usable);
                 }
-                if (!isRail()) { close(); hideTip(); }
+                if (current && !canOpen(current)) close();
+                if (!isRail()) hideTip();
             }
+            // Pinned: the name and the chevron open the panel too (mouse convenience;
+            // the avatar is the keyboard control).
+            sidebar.querySelectorAll('.sidebar-user-meta, .sidebar-user-caret').forEach(part => {
+                part.addEventListener('click', () => {
+                    if (!avatar || !isPinnedDesktop()) return;
+                    if (current && current.account) {
+                        if (part.classList.contains('sidebar-user-caret')) close();
+                    } else {
+                        avatar.click();
+                    }
+                });
+            });
             syncRailState();
             new MutationObserver(syncRailState)
                 .observe(document.body, { attributes: true, attributeFilter: ['class'] });
@@ -1072,11 +1094,6 @@
                         button.setAttribute('title', accessibleLabel);
                     }
                 });
-                const avatar = document.querySelector('.sidebar-user-avatar');
-                if(avatar){
-                    avatar.classList.toggle('has-unread', count > 0);
-                    avatar.setAttribute('aria-label', count > 0 ? `Account, ${count} unread update${count === 1 ? '' : 's'}` : 'Account');
-                }
                 window.dispatchEvent(new CustomEvent('changelog:summary', {detail:data}));
             }catch(error){
                 console.warn('[Changelog] Unable to refresh unread badge', error);
@@ -1137,13 +1154,19 @@
                 const span = node.querySelector(':scope > span:not(.sidebar-count-badge)');
                 return span ? span.textContent.trim() : '';
             };
+            const linkTo = node => {
+                const link = document.createElement('a');
+                link.href = node.getAttribute('href');
+                link.textContent = nameOf(node);
+                return link;
+            };
             Array.from(nav.children).forEach(node => {
                 if(node.classList.contains('sidebar-group-label')){
                     sections.push({title: node.textContent.trim(), items: []});
                 } else if(sections.length && (node.matches('a') || node.classList.contains('sidebar-section-toggle'))){
                     const panel = node.matches('button') && document.getElementById(node.getAttribute('aria-controls'));
-                    const pages = panel ? Array.from(panel.querySelectorAll('a')).map(nameOf).filter(Boolean) : [];
-                    sections[sections.length - 1].items.push({name: nameOf(node), pages});
+                    const pages = panel ? Array.from(panel.querySelectorAll('a')).filter(nameOf) : [];
+                    sections[sections.length - 1].items.push({node, pages});
                 }
             });
             const holder = document.getElementById('shell-guide-sections');
@@ -1152,17 +1175,30 @@
                 const heading = document.createElement('h3');
                 heading.textContent = section.title;
                 const list = document.createElement('ul');
+                // A plain link is itself the page; a group lists its pages as links.
                 section.items.forEach(item => {
                     const row = document.createElement('li');
-                    const name = document.createElement('strong');
-                    name.textContent = item.name;
-                    row.appendChild(name);
-                    if(item.pages.length) row.append(`: ${item.pages.join(', ')}`);
+                    if(item.pages.length){
+                        const name = document.createElement('strong');
+                        name.textContent = nameOf(item.node);
+                        row.append(name, ': ');
+                        item.pages.forEach((page, index) => {
+                            if(index) row.append(', ');
+                            row.appendChild(linkTo(page));
+                        });
+                    } else if(item.node.matches('a')){
+                        const link = linkTo(item.node);
+                        link.classList.add('shell-guide-item');
+                        row.appendChild(link);
+                    }
                     list.appendChild(row);
                 });
                 block.append(heading, list);
                 return block;
             }));
+            // The pin key shows the arrow the button shows now.
+            const pinIcon = dialog.querySelector('.shell-guide-pin-icon');
+            if(pinIcon) pinIcon.className = `fa-solid ${document.body.classList.contains('sidebar-collapsed') ? 'fa-angles-right' : 'fa-angles-left'} shell-guide-pin-icon`;
             dialog.returnFocusTo = trigger;
             if(!dialog.open) dialog.showModal();
         }
@@ -1411,14 +1447,15 @@
     <ul>
         <li><kbd>↑</kbd> <kbd>↓</kbd> move between menu icons in the slim menu</li>
         <li><kbd>→</kbd> or <kbd>Enter</kbd> opens a group; <kbd>←</kbd> or <kbd>Esc</kbd> closes it</li>
-        <li>The <i class="fa-solid fa-angles-left" aria-hidden="true"></i><span class="visually-hidden">pin</span> button at the top pins the full menu open or makes it slim</li>
+        <li>The <i class="fa-solid fa-angles-left shell-guide-pin-icon" aria-hidden="true"></i><span class="visually-hidden">pin</span> button at the top switches between the full menu and the slim menu</li>
+        <li>In the full menu, <kbd>Tab</kbd> moves through the items and <kbd>Enter</kbd> opens a group</li>
     </ul>
     </div>
     {% if not stock_inventory_only_user and not hr_schedule_only_user %}<p class="shell-guide-foot"><a href="/whats_new">See what's new</a></p>{% endif %}
 </dialog>
 {% endif %}
 
-<script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=20"></script>
+<script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=21"></script>
 
 {% block page_scripts %}{% endblock %}
 </body>
