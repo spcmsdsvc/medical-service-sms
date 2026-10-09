@@ -37,6 +37,46 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Shell Closed List (everything from the 26/40 fresh critique)
+
+**Status:** Executed — sandbox `design/playground`, not committed (fresh critique next, then keep/discard).
+
+**Outcome (2026-10-09):** all 19 items closed (17 fixed with tests, item 17 recorded in DESIGN.md per the owner, item 6's "repeated name" verified as one element), the 3 decisions and 2 verifications recorded in `.impeccable/critique/ignore.md`. Browser on a database copy: initials dot and "Account, 201 unread updates" on desktop; badge and initials 7.10:1 (was 4.23:1); account rows 44px with labels at one x in pinned and rail; "Reimburse / Liquidation" gets its full name as a title when cut; toggle "Switch to the slim menu"; resize handle last of 15 sidebar tab stops; guide shows 25 descriptions under links; fade on/off with scroll in the pinned menu (the pane froze its 0.15s transition while unfocused; with transitions off it reads 1 → 0 → 1); rail 1366x768 621/621 with captions equal to labels; rail 1366x650 rows 48px and the fade shows (568/503); 375x812 top bar in the graphite sidebar colour, Theme and guide 44px in the drawer account row, top bar What's New and Menu only, drawer nav 633/633, no horizontal scroll. Built-in fix: the guide description CSS (`.shell-guide-line`) was missing on the first browser pass and was added.
+**Branch:** sandbox `design/playground` on `eaa9e1f`.
+
+## Context
+
+Fresh critiques went 28 → 26 because the previous pass created a new issue (no unread signal on desktop after the avatar dot was removed) and DESIGN.md was not updated. The owner asked to address everything the critique raised and stop the up-and-down cycle. Method: one closed list from `.impeccable/critique/2026-10-09T01-06-07Z__templates-layout-html.md` (Assessment A and B, including minor observations, persona flags and detector findings); each item ends fixed with a test, decided and recorded in `.impeccable/critique/ignore.md`, or verified with a measurement. Before any re-critique, every previously fixed point (the 12-point checklist, Amendment C, the fresh-critique fixes) is re-checked so nothing reopens. Then one fresh critique, not a loop.
+
+## Execution steps (closed list)
+
+1. Desktop unread: `refreshGlobalChangelogBadge` toggles `.has-unread` on the avatar again; 8px dot on the initials in rail and pinned; avatar label "Account, N unread updates".
+2. Phone top bar background follows the theme (`--app-sidebar`) instead of fixed slate.
+3. Short screens: rail rows 48px at `max-height: 720px`; the "more below" cue becomes a sticky gradient inside the nav so it works in the rail too (replaces the mask).
+4. Rail captions decorative for assistive tech: `content: attr(...) / ""` (captions and rail count).
+5. Theme quick switch from System: notice "System theme off. <mode> theme on."; Undo returns to System.
+6. Account panel rows 44px; verify the pinned panel does not repeat the name (single element).
+7. Count badge and avatar initials: background darkened from the accent so white text reaches 4.5:1.
+8. Account panel rows: one icon width and one gap on every row.
+9. Truncated pinned labels get a `title` with the full name when cut off.
+10. One vocabulary: "slim menu" / "full menu" on the pin button labels and in the guide.
+11. Theme saved offline: notice "Saved on this device; it syncs when you are back online."
+12. Menu guide: one short line per page (data from the nav links).
+13. Resize handle moves to the end of the sidebar's tab order.
+14. Rail group tooltip on keyboard focus adds "Enter to open".
+15. Phone: Theme button moves from the top bar into the drawer's account row; the top bar keeps What's New and Menu.
+16. Phone drawer nav: remove the 2px overflow.
+17. Detector radius/size drift: recorded in DESIGN.md as the phone page and dialog sizes (owner: record instead); `#e5e7eb` and 0.95rem documented or aligned only inside the shell.
+18. DESIGN.md brought in line with the shipped shell (captions, Calendar, account panel, row heights, unread dot).
+19. Remove `#show-sidebar-btn` only if nothing else depends on it.
+
+Recorded decisions (ignore.md): pinned groups open one at a time except the current page's; desktop account actions are two clicks (labelled panel); no keyboard shortcut to switch menu modes.
+Verified only: 32px desktop header buttons meet WCAG 2.2 AA 24px; sidebar width/margin transitions are the intended pin motion.
+
+## Verification
+
+A test for each code item failing on `eaa9e1f`; focused modules; regression re-check of every earlier fixed point; browser at 1440x900, 1366x768, 1366x650 and 375x812 (admin and engineer); then one fresh critique.
+
 # Shell Fresh-Critique Fixes (theme, unread, pinned footer, guide links)
 
 **Status:** Executed — committed to `design/playground` as `47f5f72` on the owner's "keep" (2026-10-09); not on `main`.

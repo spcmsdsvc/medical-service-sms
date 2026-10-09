@@ -162,9 +162,9 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('app-dark-pages.css', layout)
         self.assertGreater(layout.index('app-dark-pages.css'), layout.index('{% block content %}'))
         self.assertIn('app-appearance.js', layout)
-        # Phone top bar, and the account footer (an icon when pinned, a row in the
-        # rail's account flyout). The sidebar header no longer carries one.
-        self.assertEqual(layout.count('onclick="window.appAppearance && window.appAppearance.toggleQuick()"'), 2)
+        # One control, in the account panel (rail and pinned) and the phone menu's
+        # account row; the phone top bar no longer carries one.
+        self.assertEqual(layout.count('onclick="window.appAppearance && window.appAppearance.toggleQuick()"'), 1)
         self.assertIn('data-appearance-mode="system"', settings)
         self.assertIn('data-appearance-accent="shimadzu-red"', settings)
         self.assertIn("app-theme-changed", runtime)
@@ -397,7 +397,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
 
         self.assertIn("filename='css/app-themes.css') }}?v=28", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=31", layout)
-        self.assertIn("filename='js/app-appearance.js') }}?v=21", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=22", layout)
         for source in sources:
             self.assertIn("filename='css/app-themes.css') }}?v=28", source)
             self.assertIn("filename='css/app-auth.css') }}?v=9", source)
@@ -503,7 +503,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('--login-page-bg: #000000;', auth_styles)
         self.assertIn("filename='css/app-themes.css') }}?v=28", layout)
         self.assertIn("filename='css/app-dark-pages.css') }}?v=31", layout)
-        self.assertIn("filename='js/app-appearance.js') }}?v=21", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=22", layout)
         for source in auth:
             self.assertIn("filename='css/app-themes.css') }}?v=28", source)
             self.assertIn("filename='css/app-auth.css') }}?v=9", source)

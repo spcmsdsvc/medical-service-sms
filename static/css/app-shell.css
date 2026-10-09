@@ -37,6 +37,9 @@
     --sidebar-subnav-bg: rgba(15, 23, 42, 0.28);
     --sidebar-active-bg: rgba(var(--app-primary-rgb), 0.16);
     --shell-focus-ring: #e2e8f0;
+    /* Accent fill behind small white text (count badges, initials): the accent
+       alone measured 4.23:1 (purple); this mix stays above 4.5:1. */
+    --shell-on-accent-bg: color-mix(in srgb, var(--app-primary) 72%, #000000);
     /* Shell type scale (DESIGN.md Navigation): one size per role. */
     --shell-text-row: 0.9rem;
     --shell-text-subrow: 0.84rem;
@@ -413,7 +416,8 @@ body.sidebar-resizing .main-content {
     height: 20px;
     padding: 0 6px;
     border-radius: 999px;
-    background: var(--app-primary);
+    /* Darker than the accent so white text reaches 4.5:1 on every accent. */
+    background: var(--shell-on-accent-bg);
     color: #ffffff;
     font-size: var(--shell-text-micro);
     font-weight: 600;
@@ -441,12 +445,24 @@ body.sidebar-resizing .main-content {
     background: var(--sidebar-divider);
 }
 
-/* Pinned sidebar and phone drawer: a soft fade at the bottom edge while more of
-   the menu is below (shell critique, point 11). Not in the rail: a mask there
-   would also hide its flyouts, which sit outside the menu's box. */
-body:not(.sidebar-collapsed) .sidebar-nav.has-more-below {
-    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
-    mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+/* A soft fade at the bottom edge while more of the menu is below, in every mode
+   (pinned, rail, phone drawer). A sticky gradient rather than a mask, so the
+   rail's flyouts, which sit outside the menu's box, stay visible. */
+.sidebar-nav::after {
+    content: '';
+    position: sticky;
+    bottom: 0;
+    display: block;
+    height: 32px;
+    margin-top: -32px;
+    background: linear-gradient(to bottom, transparent, var(--app-sidebar));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+}
+
+.sidebar-nav.has-more-below::after {
+    opacity: 1;
 }
 
 /* --- Menu guide ----------------------------------------------------------- */
@@ -525,13 +541,26 @@ body.sidebar-collapsed .shell-guide-header-button {
 }
 
 .shell-guide a:hover,
-.shell-guide a:focus-visible,
-.shell-guide a.shell-guide-item {
+.shell-guide a:focus-visible {
     color: var(--sidebar-text-strong);
 }
 
-.shell-guide a.shell-guide-item {
+.shell-guide a {
     font-weight: 600;
+}
+
+/* Each page's one-line description, under its link. */
+.shell-guide-line {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--sidebar-text-dim);
+    font-size: var(--shell-text-micro);
+    line-height: 1.4;
+}
+
+.shell-guide ul ul {
+    margin: 2px 0 6px;
+    padding-left: 18px;
 }
 
 .shell-guide kbd {
@@ -631,7 +660,7 @@ body.sidebar-collapsed .shell-guide-header-button {
     height: 32px;
     min-width: 32px;
     border-radius: 50%;
-    background: var(--app-primary);
+    background: var(--shell-on-accent-bg);
     color: #ffffff;
     display: inline-flex;
     align-items: center;
@@ -746,11 +775,6 @@ body.sidebar-collapsed .shell-guide-header-button {
         margin-left: var(--sidebar-rail-width);
     }
 
-    /* The rail replaces the old in-page "show navigation" button on desktop. */
-    #show-sidebar-btn {
-        display: none !important;
-    }
-
     /* Rail: icons, separators, dots and initials. */
     body.sidebar-collapsed .sidebar .sidebar-header .shell-brand-name,
     body.sidebar-collapsed .sidebar .sidebar-resize-handle,
@@ -809,6 +833,8 @@ body.sidebar-collapsed .shell-guide-header-button {
         /* The caption is the label itself; a two-word label wraps to a second
            line ("My / Requests") instead of being shortened. */
         content: attr(data-rail-caption);
+        /* Decorative for assistive tech: the link already carries the name. */
+        content: attr(data-rail-caption) / '';
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
@@ -871,6 +897,7 @@ body.sidebar-collapsed .shell-guide-header-button {
 
     body.sidebar-collapsed .sidebar .sidebar-count-badge.show::after {
         content: attr(data-rail-count);
+        content: attr(data-rail-count) / '';
         font-size: var(--shell-text-micro);
         font-variant-numeric: tabular-nums;
     }
@@ -984,6 +1011,35 @@ body.sidebar-collapsed .shell-guide-header-button {
         font-weight: 600;
     }
 
+    /* Every account row: 44px tall, one icon width and one gap, so the labels
+       line up (they started 43-51px in). */
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .appearance-header-button,
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button,
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .shell-guide-button,
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-logout,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .appearance-header-button,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .shell-guide-button,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-logout {
+        min-height: 44px;
+        gap: 12px;
+        text-align: left;
+    }
+
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .appearance-header-button > i,
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button > i,
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .shell-guide-button > i,
+    body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-logout > i,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .appearance-header-button > i,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button > i,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .shell-guide-button > i,
+    body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .sidebar-logout > i {
+        flex: 0 0 22px;
+        width: 22px;
+        margin: 0;
+        text-align: center;
+    }
+
     /* In the account list the badge carries "unread"; the row stays a plain row. */
     body.sidebar-collapsed .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button:not(:hover):not(:focus-visible):not(.active),
     body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout.is-flyout-open .changelog-header-button:not(:hover):not(:focus-visible):not(.active) {
@@ -1049,6 +1105,17 @@ body.sidebar-collapsed .shell-guide-header-button {
     cursor: default;
 }
 
+/* Short desktop windows (a 1366x768 laptop leaves about 650px): rail rows
+   tighten to 48px; the fade shows when the rail still scrolls. */
+@media (min-width: 993px) and (max-height: 720px) {
+    body.sidebar-collapsed .sidebar .sidebar-nav > a[data-rail-caption],
+    body.sidebar-collapsed .sidebar .sidebar-nav > .sidebar-section-toggle[data-rail-caption] {
+        min-height: 48px;
+        padding-top: 2px;
+        padding-bottom: 2px;
+    }
+}
+
 /* Pinned desktop sidebar: the footer shows the avatar, name, role and a chevron;
    the avatar (or name, or chevron) opens the account panel above the footer with
    the same labelled rows as the rail. No unlabelled icon tools in the footer. */
@@ -1059,6 +1126,23 @@ body.sidebar-collapsed .shell-guide-header-button {
 @media (min-width: 993px) {
     body:not(.sidebar-collapsed) .sidebar .sidebar-user-flyout:not(.is-flyout-open) .sidebar-logout {
         display: none;
+    }
+
+    /* Unread What's New: a small dot on the initials (the panel holds the bell). */
+    .sidebar .sidebar-user-avatar.has-unread {
+        position: relative;
+    }
+
+    .sidebar .sidebar-user-avatar.has-unread::after {
+        content: '';
+        position: absolute;
+        top: -1px;
+        right: -1px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--shell-focus-ring);
+        box-shadow: 0 0 0 2px var(--app-sidebar);
     }
 
     body:not(.sidebar-collapsed) .sidebar .sidebar-user-caret {
@@ -1145,7 +1229,8 @@ body.sidebar-collapsed .shell-guide-header-button {
 
 .mobile-nav {
     display: none;
-    background: rgba(44, 62, 80, 0.96);
+    /* Follows the theme's sidebar colour (slate, graphite or AMOLED black). */
+    background: color-mix(in srgb, var(--app-sidebar) 96%, transparent);
     backdrop-filter: blur(12px);
     color: white;
     padding: calc(10px + var(--mobile-safe-top)) 16px 10px 16px;
@@ -1253,7 +1338,9 @@ body.sidebar-collapsed .shell-guide-header-button {
         display: none;
     }
 
-    /* The account row holds the menu guide as an icon, and a thumb-sized avatar. */
+    /* The account row holds Theme and the menu guide as icons, and a
+       thumb-sized avatar. */
+    .sidebar .sidebar-user .appearance-header-button,
     .sidebar .sidebar-user .shell-guide-button {
         display: inline-flex !important;
         align-items: center;
@@ -1266,6 +1353,12 @@ body.sidebar-collapsed .shell-guide-header-button {
         font-size: var(--shell-text-row);
     }
 
+    .sidebar .sidebar-user .appearance-header-button {
+        border: 0;
+        color: var(--sidebar-text);
+    }
+
+    .sidebar .sidebar-user .appearance-header-button > span,
     .sidebar .sidebar-user .shell-guide-button > span {
         display: none;
     }
@@ -1342,7 +1435,7 @@ body.sidebar-collapsed .shell-guide-header-button {
     }
 
     .sidebar-nav {
-        padding-bottom: calc(48px + var(--mobile-safe-bottom));
+        padding-bottom: calc(8px + var(--mobile-safe-bottom));
     }
 }
 
@@ -1724,7 +1817,7 @@ body.sidebar-collapsed .shell-guide-header-button {
     @page { size: landscape; margin: 10mm; }
 
     .no-print, .sidebar, .mobile-nav, .skip-to-content, .btn, .btn-group,
-    .form-control, .form-select, .input-group, #show-sidebar-btn, .add-hint,
+    .form-control, .form-select, .input-group, .add-hint,
     .search-results, .modal {
         display: none !important;
     }
