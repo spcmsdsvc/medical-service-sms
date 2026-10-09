@@ -60,6 +60,7 @@
             <div>
                 <h2 id="backup-controls-title" class="h5 fw-bold mb-1">Backup Center</h2>
                 <p id="backup-message" class="backup-muted mb-0">No backup job is running.</p>
+                <p id="backup-daily-status" class="backup-muted small mb-0 mt-1"></p>
             </div>
             <div class="backup-action-row">
                 <button id="backup-start" type="button" class="btn btn-primary fw-bold"><i class="fa-solid fa-play me-2" aria-hidden="true"></i>Build Backup</button>
@@ -252,6 +253,16 @@
             details.push(`${bucket.object_count || 0} stored documents included${bucket.skipped_count ? `, ${bucket.skipped_count} skipped` : ''}`);
         }
         setText('archive-details', details.filter(Boolean).join(' · '));
+        const daily = payload.daily_backup || {};
+        const dailyFailed = daily.enabled && daily.last_date && !daily.last_ok;
+        $('backup-daily-status').classList.toggle('text-danger', Boolean(dailyFailed));
+        setText('backup-daily-status', !daily.enabled
+            ? `Automatic backups are off: ${daily.off_reason || 'not running on this server'}.`
+            : dailyFailed
+                ? `Last automatic backup failed on ${daily.last_date}: ${daily.last_error || 'unknown error'}`
+                : daily.last_date
+                    ? `Last automatic backup: ${daily.last_date} · ${daily.last_size_human} · ${daily.copies_kept} copies kept (30 days)`
+                    : 'Automatic backups run daily at 2:00 AM; none has run yet.');
         setHidden('archive-sha-wrap', !archive || !archive.sha256);
         setText('archive-sha', archive && archive.sha256 ? `SHA-256: ${archive.sha256}` : '');
         $('archive-sha-copy').onclick = () => navigator.clipboard?.writeText(archive.sha256);

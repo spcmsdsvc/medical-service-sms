@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-09-daily-db-backup",
+      "release_date": "2026-10-09",
+      "title": "Daily Automatic Database Backup",
+      "summary": "The database is now copied to private cloud storage every night, and 30 days of copies are kept.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-09-daily-db-backup",
+          "category": "System Backup",
+          "description": "Every night at 2:00 AM the database is saved to private cloud storage; copies older than 30 days are removed. The Backup page shows when the last automatic backup ran, its size, and whether it worked.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-09-calibration-fix-report",
       "release_date": "2026-10-09",
       "title": "Fix Returned Calibration Reports",

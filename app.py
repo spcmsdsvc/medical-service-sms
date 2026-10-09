@@ -27309,8 +27309,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v277-activity-chip-open.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v278-sidebar-groups.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v279-menu-guide.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v282-tracker-paid-batch.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v283-calibration-fix-report';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v283-calibration-fix-report.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v284-daily-db-backup';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -31462,6 +31462,162 @@ def record_storage_activity(action):
         print(f"[STORAGE] Activity log skipped: {log_error}", flush=True)
 
 
+# --- DAILY AUTOMATIC DATABASE BACKUP ------------------------------------------
+#
+# Every night (02:00 Manila, or the first check after that if the server was down)
+# a consistent database snapshot is gzipped into the private bucket under
+# system_backups/daily/ and copies older than 30 days are pruned. Database only:
+# attachments already live in the bucket. system_backups is deliberately NOT in
+# managed_storage_roots(), so these copies stay out of the manual zip and health.
+
+DAILY_BACKUP_PREFIX = 'system_backups/daily'
+DAILY_BACKUP_RETENTION_DAYS = 30
+DAILY_BACKUP_HOUR = 2
+DAILY_BACKUP_CHECK_SECONDS = 15 * 60
+DAILY_BACKUP_KEY_PATTERN = re.compile(r'^medical_service_db_(\d{8})\.sqlite\.gz$')
+
+_daily_backup_scheduler_lock = threading.Lock()
+_daily_backup_scheduler_started = False
+
+
+def daily_backup_state_path():
+    """Pure path join, deliberately doing no filesystem work."""
+    return os.path.join(RUNTIME_STATE_DIR, '_daily_backup_state.json')
+
+
+def load_daily_backup_state():
+    try:
+        with open(daily_backup_state_path(), 'r', encoding='utf-8') as state_file:
+            state = json.load(state_file)
+        return state if isinstance(state, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def save_daily_backup_state(state):
+    path = daily_backup_state_path()
+    temp_path = f"{path}.tmp-{secrets.token_hex(4)}"
+    try:
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        with open(temp_path, 'w', encoding='utf-8') as state_file:
+            json.dump(state, state_file, indent=2, sort_keys=True)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def daily_backup_storage_ready():
+    return bool(file_storage.writes_bucket and file_storage.bucket_configured)
+
+
+def record_daily_backup_activity(action):
+    try:
+        db.session.add(ActivityLog(user='System', action=action))
+        db.session.commit()
+    except Exception as log_error:
+        db.session.rollback()
+        print(f"[DAILY-BACKUP] Activity log skipped: {log_error}", flush=True)
+
+
+def daily_backup_due(state, now):
+    """Due from 02:00 Manila until today's copy has succeeded."""
+    if now.hour < DAILY_BACKUP_HOUR:
+        return False
+    today = now.strftime('%Y-%m-%d')
+    return not (state.get('last_date') == today and state.get('last_ok'))
+
+
+def run_daily_database_backup(now=None):
+    """Upload today's database copy and prune old ones. Never raises."""
+    if not daily_backup_storage_ready():
+        return 'skipped'
+    now = now or get_manila_time()
+    state = load_daily_backup_state()
+    state.update({'last_date': now.strftime('%Y-%m-%d'), 'last_run_at': now.isoformat()})
+    work_dir = tempfile.mkdtemp(prefix='daily-backup-')
+    try:
+        snapshot_path = os.path.join(work_dir, 'snapshot.sqlite')
+        snapshot = create_sqlite_snapshot(DATABASE_PATH, snapshot_path)
+        if snapshot.get('quick_check') != 'ok':
+            raise RuntimeError(f"Database check failed: {snapshot.get('quick_check') or 'no result'}")
+        gz_path = snapshot_path + '.gz'
+        with open(snapshot_path, 'rb') as source, gzip.open(gz_path, 'wb') as target:
+            shutil.copyfileobj(source, target)
+        key = f"{DAILY_BACKUP_PREFIX}/medical_service_db_{now.strftime('%Y%m%d')}.sqlite.gz"
+        file_storage.upload_file(key, gz_path, content_type='application/gzip')
+        size = os.path.getsize(gz_path)
+
+        cutoff = (now - timedelta(days=DAILY_BACKUP_RETENTION_DAYS)).strftime('%Y%m%d')
+        kept = 0
+        for item in list(file_storage.iter_objects(DAILY_BACKUP_PREFIX + '/')):
+            match = DAILY_BACKUP_KEY_PATTERN.match(item.key[len(DAILY_BACKUP_PREFIX) + 1:])
+            if not match:
+                continue
+            if match.group(1) < cutoff:
+                file_storage.delete(item.key)
+            else:
+                kept += 1
+
+        state.update({'last_ok': True, 'last_key': key, 'last_size': size,
+                      'last_error': '', 'copies_kept': kept})
+        save_daily_backup_state(state)
+        record_daily_backup_activity(f'Daily database backup saved: {key} ({bytes_to_human_size(size)})')
+        return 'ok'
+    except Exception as backup_error:
+        message = clean_str(str(backup_error)) or backup_error.__class__.__name__
+        state.update({'last_ok': False, 'last_error': message})
+        try:
+            save_daily_backup_state(state)
+        except OSError as state_error:
+            print(f"[DAILY-BACKUP] State not saved: {state_error}", flush=True)
+        record_daily_backup_activity(f'Daily database backup failed: {message}')
+        return 'failed'
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _daily_backup_loop():
+    while True:
+        time.sleep(DAILY_BACKUP_CHECK_SECONDS)
+        try:
+            if daily_backup_due(load_daily_backup_state(), get_manila_time()):
+                with app.app_context():
+                    run_daily_database_backup()
+        except Exception as loop_error:
+            print(f"[DAILY-BACKUP] Check failed: {loop_error}", flush=True)
+
+
+def start_daily_backup_scheduler():
+    global _daily_backup_scheduler_started
+    with _daily_backup_scheduler_lock:
+        if _daily_backup_scheduler_started:
+            return False
+        _daily_backup_scheduler_started = True
+    threading.Thread(target=_daily_backup_loop, name='daily-db-backup', daemon=True).start()
+    return True
+
+
+def daily_backup_status():
+    state = load_daily_backup_state()
+    storage_ready = daily_backup_storage_ready()
+    return {
+        'enabled': storage_ready and _daily_backup_scheduler_started,
+        'off_reason': '' if storage_ready else 'cloud storage is not configured',
+        'last_date': state.get('last_date', ''),
+        'last_ok': bool(state.get('last_ok')),
+        'last_size_human': bytes_to_human_size(state['last_size']) if state.get('last_size') else '',
+        'copies_kept': int(state.get('copies_kept') or 0),
+        'last_error': state.get('last_error', ''),
+    }
+
+
+if (os.environ.get('RAILWAY_ENVIRONMENT')
+        and not os.environ.get('MEDICAL_SERVICE_TEST_DB')
+        and str(os.environ.get('DAILY_BACKUP_DISABLED', '')).strip().lower() not in ('1', 'true', 'yes', 'on')):
+    start_daily_backup_scheduler()
+
+
 def record_bucket_connection_error_throttled(message):
     global bucket_connection_error_logged_at
     now = time.time()
@@ -32571,6 +32727,7 @@ def backup_status_payload():
         'last_backup': summary['last_backup'],
         'last_backup_date': summary['last_backup_date'],
         'overdue': summary['overdue'],
+        'daily_backup': daily_backup_status(),
     }
 
 

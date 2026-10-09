@@ -37,6 +37,85 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Daily Automatic Database Backup
+
+**Status:** Executed locally on 2026-10-09 on the owner's "go ahead and execute"; not committed — awaiting "commit and push". 60 focused tests OK (8 new, all fail on the previous `app.py`).
+**Differences from the plan:** (a) the code block sits after `record_storage_activity` rather than after `BACKUP_ARCHIVE_FILENAME_PATTERN`, so every helper it calls is defined above it; (b) activity entries go through a small `record_daily_backup_activity` that logs as user "System" (`record_storage_activity` reads `current_user`, which a background thread does not have); (c) the status line also covers "none has run yet" and "off on this server" (bucket configured but not on Railway).
+**Approved:** 2026-10-09 (owner: "yes write it to plans.md").
+**Detailed:** 2026-10-09.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Context
+
+HR asked for the system's framework for a compliance check (deck: claude.ai artifact "Medical Service System Framework"). Backups today are manual only: a superadmin presses Build Backup on `/admin/backup`; one zip (database + attachments) is written to `/data/backups` on the same Railway volume as the live data, only one is kept, and it expires after 24 hours (`BACKUP_ARCHIVE_MAX_AGE_SECONDS`, `app.py:31009`). There is therefore no history of backups and no copy off the live volume. The deck currently lists "Daily automatic backups, kept 30 days" as **Planned: [date]**; the owner chose not to claim it before it exists.
+
+Intended outcome: every night the database is copied to private object storage, 30 days of copies are kept, and the superadmin can see on the Backup page whether the last run worked.
+
+## Decisions taken
+
+1. **Database only** in the nightly copy. Attachments already live in the bucket; copying them nightly would multiply storage. The manual full backup (database + attachments) is unchanged.
+2. **Location:** the existing private bucket, prefix `system_backups/daily/`, file `medical_service_db_YYYYMMDD.sqlite.gz` (Manila date).
+3. **Retention:** 30 days; older daily copies are deleted by the job.
+4. **Time:** 02:00 Manila. If the server was down at 02:00, run at the first check after it is back that day. At most one successful copy per Manila date.
+
+## Investigation
+
+- `create_sqlite_snapshot(source_path, destination_path)` (`app.py:30640`) copies the live SQLite database with `sqlite3.Connection.backup()` (consistent against a live writer, folds WAL, runs `PRAGMA quick_check`). Reuse it; do not copy the file bytes directly.
+- Storage API (`storage_backend.py`): `upload_file(key, path, ...)` (`:255`), `iter_objects(prefix)` (`:343`, yields `key`, `size`, `last_modified`), `delete(key)` (`:340`), `writes_bucket` / `bucket_configured` (`:113`–`:126`). Global instance `file_storage` (`app.py:992`).
+- The manual full backup and the storage health report only include bucket keys whose top folder is in `managed_storage_roots()` (`app.py:30890`, used at `:30805` and `:31381`). `system_backups` is not in that list, so the daily copies are **not** pulled into the manual zip and do not affect storage-health counts. Do not add it to `managed_storage_roots()`.
+- Durable state lives in `RUNTIME_STATE_DIR` (`/data` on Railway, `instance/` locally; `app.py:30944`); the manual job's state file is `_system_backup_job.json` (`backup_job_state_path`, `:31021`).
+- Production runs one Gunicorn process (`gunicorn.conf.py`: `workers: 1`, `gthread`, `preload_app: False`), so one in-process background thread is enough and cannot double-run across workers. `PROCESS_BOOT_ID` (`:30950`) changes per import.
+- The Backup page polls `/admin/backup/status` → `backup_status_payload()` (`app.py:32503`); the page's `render(payload)` is inline in `templates/system_backup.html` (`:204`; last-backup line at `:242`–`:246`).
+- Activity: `record_storage_activity(action)` (`app.py:31453`). Time: `get_manila_time()` (`:1669`).
+- Service worker version string is generated in `app.py:27313` (currently `v283-calibration-fix-report`).
+
+## Execution steps
+
+1. **Constants and state helpers** — `app.py`, beside the backup code (after `BACKUP_ARCHIVE_FILENAME_PATTERN`, `:31010`): `DAILY_BACKUP_PREFIX = 'system_backups/daily'`, `DAILY_BACKUP_RETENTION_DAYS = 30`, `DAILY_BACKUP_HOUR = 2`, `DAILY_BACKUP_CHECK_SECONDS = 15 * 60`; `daily_backup_state_path()` (pure join → `RUNTIME_STATE_DIR/_daily_backup_state.json`), `load_daily_backup_state()` / `save_daily_backup_state(state)` (atomic write via temp file + `os.replace`; load returns `{}` on any error). State keys: `last_date`, `last_ok`, `last_run_at`, `last_key`, `last_size`, `last_error`, `copies_kept`. Done when the helpers round-trip a dict and a missing/corrupt file loads as `{}`.
+2. **The job** — `run_daily_database_backup(now=None)`: return early (`'skipped'`) unless `file_storage.writes_bucket`; snapshot `DATABASE_PATH` with `create_sqlite_snapshot` into a temp dir, refuse to upload if `quick_check` is not `ok`, gzip it, `upload_file` to `f'{DAILY_BACKUP_PREFIX}/medical_service_db_{YYYYMMDD}.sqlite.gz'` (`content_type='application/gzip'`); then list `iter_objects(DAILY_BACKUP_PREFIX + '/')`, delete keys matching the file pattern whose date in the name is older than 30 days (date from the name, not `last_modified`); count the remaining copies; save state; `record_storage_activity('Daily database backup saved: <key> (<size>)')`. Any exception: save `last_ok=False`, `last_error=clean_str(error)`, record activity "Daily database backup failed: …", never raise. Always remove the temp dir. Done when one call uploads one object, prunes old ones, and records state.
+3. **Timer** — `daily_backup_due(state, now)` (true when `now.hour >= DAILY_BACKUP_HOUR` and `state.last_date != today` or the last run today failed — retry at most once per check interval) and `start_daily_backup_scheduler()`: a daemon thread looping `sleep(DAILY_BACKUP_CHECK_SECONDS)` → if due, run the job; guarded by a module-level lock/flag so it starts once per process. Called at module level after the backup helpers, but only when `os.environ.get('RAILWAY_ENVIRONMENT')` is set, `MEDICAL_SERVICE_TEST_DB` is not set, and `DAILY_BACKUP_DISABLED` is not truthy. Done when importing the app in tests or locally starts no thread.
+4. **Status on the Backup page** — add `'daily_backup': daily_backup_status()` to `backup_status_payload()` (`last_date`, `last_ok`, `last_size_human`, `copies_kept`, `last_error`, `enabled` = bucket configured and scheduler running). In `templates/system_backup.html` add one line under the Backup Center message (`id="backup-daily-status"`), filled in `render(payload)`: "Last automatic backup: <date> · <size> · <n> copies kept (30 days)"; red text "Last automatic backup failed on <date>: <error>" on failure; "Automatic backups are off: cloud storage is not configured." when disabled. Nothing else on the page changes; no existing id, function or button is touched.
+5. **Tests** — see Verification.
+
+## Deliberately excluded
+
+- Attachments in the nightly copy: already in durable bucket storage; the manual full backup covers them.
+- Restore button: rare and risky. Manual restore: download the `.sqlite.gz` from the bucket console, `gunzip`, stop the service, replace `/data/scheduler.db`, start the service. Documented here, not built.
+- Email/notification on failure: the Backup page shows it; can be added later.
+- Listing/downloading daily copies in the page: available from the bucket console.
+- Railway cron service or new Railway variables: not needed; the in-process timer avoids deployment changes. (`DAILY_BACKUP_DISABLED` is an optional off switch, unset by default.)
+- No change to the manual backup, its 24-hour expiry, or `managed_storage_roots()`.
+
+## Verification
+
+- New `tests/test_daily_backup.py` (fake `file_storage` object with `writes_bucket`, `upload_file`, `iter_objects`, `delete`; temp `RUNTIME_STATE_DIR` and a small temp SQLite DB):
+  - one run uploads exactly one key `system_backups/daily/medical_service_db_<Manila date>.sqlite.gz`, and the uploaded file gunzips to a valid SQLite DB;
+  - copies dated 31+ days ago are deleted, 30-day-old and newer are kept, non-matching keys are never deleted;
+  - `daily_backup_due` false before 02:00, true after 02:00 when not done today, false after a successful run today, true again after a failed run;
+  - bucket not configured → `'skipped'`, no upload;
+  - upload raising → state `last_ok=False` with the error, no exception escapes;
+  - importing the app under tests starts no scheduler thread;
+  - `backup_status_payload()` includes `daily_backup`; the template contains `backup-daily-status`.
+  - Positive control: run the new tests against the current code (in-process, never `git stash`) and confirm they fail.
+- Focused modules: `tests/test_daily_backup.py`, `tests/test_system_backup.py`, `tests/test_backup_permanent_fix.py`. Full suite once, before publishing.
+- Browser (local server on a copy of `scheduler.db`, temporary superadmin login, removed afterwards): `/admin/backup` shows the new line in the "off" state locally; Build Backup, Cancel, Download, Delete still work; 375 px no horizontal scroll; no console errors.
+
+## After implementation
+
+1. Self-review; confirm every function the Backup page calls is still defined and its buttons work.
+2. Service worker `v284-daily-db-backup`; What's New release `2026-10-xx-daily-db-backup` ("Daily automatic database backup", superadmin) in `static/changelog/releases.json`.
+3. Update `changes.md` and this Status.
+4. Wait for "commit and push"; stage only the intended files (never `scheduler.db`, handoffs, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`); one `git ls-remote` check, no Railway polling.
+5. The morning after deploy: confirm on the Backup page (or bucket console) that the first `system_backups/daily/` file exists, then change the HR deck's backup item from Planned to Done.
+
+## Risks
+
+- **Bucket not configured on Railway:** job skips and the page says automatic backups are off; nothing fails silently.
+- **Snapshot load at 02:00:** a few seconds of a shared read lock, the same method the manual backup uses; the 60 s busy timeout absorbs writers.
+- **Thread dies or process restarts:** state is on the volume; the next process checks again within 15 minutes and catches up the same day.
+- **Wrong deletions:** pruning only touches keys under `system_backups/daily/` that match the exact file-name pattern; covered by tests.
+- **Blast radius:** a new background thread, a new bucket prefix, and one line on the Backup page. No user workflow changes.
+
 # Returned Calibration Report: Fix the Report Only
 
 **Status:** Executed — published to `main` on 2026-10-09 on the owner's "commit and push" (commit `88f765c`). Full suite before publishing: 1,671 tests, 14 failures (the known list), 3 errors that occur only alongside other test files, 5 skips, no new failures.
