@@ -69,6 +69,15 @@
   options, or refactors that were not asked for.
 - Do not over-verify. Run the focused tests for what changed; skip repeated or redundant checks.
 
+## Token Budget
+
+- Long sessions are the main cost: every tool call re-sends the whole conversation. When the
+  context is large, suggest a fresh session for the next task (after each publish or critique round).
+- One Impeccable critique per session. Run a re-critique in a new session that starts from the
+  `.impeccable/critique/` file, not the old conversation.
+- Use Grep, or Read with offset/limit, instead of reading whole templates (many are 45–66k chars).
+- In browser checks prefer `read_page` / `get_page_text`; take screenshots only for final proof.
+
 ## Mandatory Change Log
 
 - Before performing any request that will add, edit, delete, rename, move, generate, or otherwise modify project files or system behavior, read the newest dated section of `changes.md`. Read older sections only when the task needs that history. Entries from 2026-09-30 and earlier are in `changes-archive.md`; older plans are in `plans-archive.md`.
