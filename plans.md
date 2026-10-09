@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Shell Closed List (everything from the 26/40 fresh critique)
 
-**Status:** Executed — sandbox `design/playground`, not committed (fresh critique next, then keep/discard).
+**Status:** Executed — committed to `design/playground` as `ac94bcb` and published to `main` as `814e634` on the owner's "keep, commit and push" (2026-10-09). Fresh critique afterwards: 29/40.
 
 **Outcome (2026-10-09):** all 19 items closed (17 fixed with tests, item 17 recorded in DESIGN.md per the owner, item 6's "repeated name" verified as one element), the 3 decisions and 2 verifications recorded in `.impeccable/critique/ignore.md`. Browser on a database copy: initials dot and "Account, 201 unread updates" on desktop; badge and initials 7.10:1 (was 4.23:1); account rows 44px with labels at one x in pinned and rail; "Reimburse / Liquidation" gets its full name as a title when cut; toggle "Switch to the slim menu"; resize handle last of 15 sidebar tab stops; guide shows 25 descriptions under links; fade on/off with scroll in the pinned menu (the pane froze its 0.15s transition while unfocused; with transitions off it reads 1 → 0 → 1); rail 1366x768 621/621 with captions equal to labels; rail 1366x650 rows 48px and the fade shows (568/503); 375x812 top bar in the graphite sidebar colour, Theme and guide 44px in the drawer account row, top bar What's New and Menu only, drawer nav 633/633, no horizontal scroll. Built-in fix: the guide description CSS (`.shell-guide-line`) was missing on the first browser pass and was added.
 **Branch:** sandbox `design/playground` on `eaa9e1f`.
