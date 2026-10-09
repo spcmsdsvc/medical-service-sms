@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-09-menu-guide",
+      "release_date": "2026-10-09",
+      "title": "Menu Guide and Clearer Names",
+      "summary": "A Menu guide explains the menu, names match everywhere, and the full menu opens by default on wide screens.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-09-menu-guide-guide",
+          "category": "System",
+          "description": "A new Menu guide (the ? button) lists the menu sections and pages you can open, and on a computer the keys for the slim menu.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-09-menu-guide-names",
+          "category": "System",
+          "description": "Menu names are shorter and match everywhere: Forms, Client List, Documents and Settings. People without administrator rights see the last section as More.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-09-menu-guide-wide",
+          "category": "System",
+          "description": "On wide screens the full menu with labels now opens by default; smaller laptops keep the slim menu. Your own pin choice is remembered.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-09-menu-guide-theme",
+          "category": "System",
+          "description": "Switching the theme from the top bar now shows which theme is on, with an Undo button.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-08-sidebar-groups",
       "release_date": "2026-10-08",
       "title": "A Menu Grouped by Task",

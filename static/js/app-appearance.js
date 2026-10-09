@@ -96,12 +96,59 @@
             if (response.ok && data.success) apply(data.mode, data.accent, { pending: false });
         } catch (_) {}
     }
+    const MODE_NAMES = { light: 'Light', graphite: 'Graphite Dark', dark: 'AMOLED Black', system: 'System' };
+    let noticeTimer = null;
+    // One tap changes and saves the theme, so say what happened and offer Undo
+    // (shell critique 2026-10-08, point 6). The notice stays while it is hovered
+    // or focused, so Undo can be reached by mouse and keyboard.
+    function noticeElement() {
+        let notice = document.getElementById('appearance-notice');
+        if (notice) return notice;
+        notice = document.createElement('div');
+        notice.id = 'appearance-notice';
+        notice.className = 'appearance-notice no-print';
+        const text = document.createElement('span');
+        text.setAttribute('role', 'status');
+        text.setAttribute('aria-live', 'polite');
+        const undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'appearance-notice-undo';
+        undo.textContent = 'Undo';
+        notice.append(text, undo);
+        const hold = () => clearTimeout(noticeTimer);
+        const release = () => { clearTimeout(noticeTimer); noticeTimer = setTimeout(() => notice.classList.remove('is-visible'), 4000); };
+        notice.addEventListener('mouseenter', hold);
+        notice.addEventListener('focusin', hold);
+        notice.addEventListener('mouseleave', release);
+        notice.addEventListener('focusout', release);
+        notice.text = text;
+        notice.undo = undo;
+        document.body.appendChild(notice);
+        return notice;
+    }
+    function showNotice(message, undoTo) {
+        const notice = noticeElement();
+        notice.text.textContent = message;
+        notice.undo.hidden = !undoTo;
+        notice.undo.onclick = undoTo ? async () => {
+            notice.undo.hidden = true;
+            await save(undoTo.mode, undoTo.accent);
+            showNotice(`Back to ${MODE_NAMES[normalizeMode(undoTo.mode)]} theme.`, null);
+        } : null;
+        notice.classList.add('is-visible');
+        clearTimeout(noticeTimer);
+        noticeTimer = setTimeout(() => notice.classList.remove('is-visible'), undoTo ? 6000 : 3000);
+    }
     async function toggleQuick() {
         if (quickToggleBusy || state.pending) return { success: false, busy: true };
         quickToggleBusy = true;
         refreshButtons();
+        const previous = { mode: state.mode, accent: state.accent };
+        const mode = nextQuickMode(state.mode);
         try {
-            return await save(nextQuickMode(state.mode), state.accent);
+            const result = await save(mode, state.accent);
+            showNotice(`${MODE_NAMES[mode]} theme on.`, previous);
+            return result;
         } finally {
             quickToggleBusy = false;
             refreshButtons();

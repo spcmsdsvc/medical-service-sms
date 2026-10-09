@@ -428,7 +428,7 @@ class MedicalCenterSpeedAndUiTests(unittest.TestCase):
         page = self.page()
         for text in ('id="s-search"', '<select id="s-group"', 'Loading medical centers…',
                      'No medical centers match your search.', 'Could not load medical centers. Refresh to try again.',
-                     'Clients</h1>', '+ Add Medical Center', 'aria-label="Contact ${contactCount} name"'):
+                     'Client List</h1>', '+ Add Medical Center', 'aria-label="Contact ${contactCount} name"'):
             self.assertIn(text, page)
         self.assertNotIn('<h5', page)
 
