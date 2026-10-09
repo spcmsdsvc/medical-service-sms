@@ -494,8 +494,8 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertEqual(
             current_body['available_batches'],
             [
-                {'sequence': 33, 'reference': 'BATCH-033'},
-                {'sequence': 32, 'reference': 'BATCH-032'},
+                {'sequence': 33, 'reference': 'BATCH-033', 'paid_in_full': False},
+                {'sequence': 32, 'reference': 'BATCH-032', 'paid_in_full': False},
             ],
         )
 
@@ -544,6 +544,33 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         invalid_scope = client.get('/export_reimbursement_tracker?batch_scope=history')
         self.assertEqual(invalid_scope.status_code, 400)
         self.assertIn('scope', invalid_scope.get_json()['error'].lower())
+
+    def test_batch_choices_mark_fully_paid_batches(self):
+        client = self._client_for(self.tracker_user_id)
+        paid_options = {'paid_in_full': True, 'paid_transfer_date': '2026-08-12', 'representation': '5.00'}
+        self._add(client, **paid_options)
+        second = self._add(client, **paid_options)
+
+        def batch_paid():
+            body = client.get('/get_reimbursement_tracker_entries').get_json()
+            return {batch['sequence']: batch['paid_in_full'] for batch in body['available_batches']}
+
+        self.assertEqual(batch_paid(), {32: True})
+        unpaid = client.put(f"/update_reimbursement_tracker_entry/{second['id']}", json={'paid_in_full': False})
+        self.assertEqual(unpaid.status_code, 200)
+        self.assertEqual(batch_paid(), {32: False})
+        repaid = client.put(
+            f"/update_reimbursement_tracker_entry/{second['id']}",
+            json={'paid_in_full': True, 'paid_transfer_date': '2026-08-13'},
+        )
+        self.assertEqual(repaid.status_code, 200)
+        started = client.post('/start_reimbursement_tracker_batch', json={'expected_batch_sequence': 32})
+        self.assertEqual(started.status_code, 200, started.get_data(as_text=True))
+        # The new current batch is empty, so it is never shown as paid.
+        self.assertEqual(batch_paid(), {33: False, 32: True})
+
+        template = (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
+        self.assertIn("batch.paid_in_full ? ' - PAID' : ''", template)
 
     def test_export_reproduces_the_workbook_layout(self):
         client = self._client_for(self.tracker_user_id)

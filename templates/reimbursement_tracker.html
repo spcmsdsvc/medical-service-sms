@@ -368,7 +368,8 @@
         const selectedSequence = Number(state.viewBatch?.sequence || currentSequence);
         select.innerHTML = state.availableBatches.map((batch) => {
             const currentLabel = Number(batch.sequence) === currentSequence ? ' (Current)' : '';
-            return `<option value="${Number(batch.sequence)}">${escapeHtml(batch.reference)}${currentLabel}</option>`;
+            const paidLabel = batch.paid_in_full ? ' - PAID' : '';
+            return `<option value="${Number(batch.sequence)}">${escapeHtml(batch.reference)}${currentLabel}${paidLabel}</option>`;
         }).join('');
         select.value = String(selectedSequence);
     }

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-09-tracker-paid-batch",
+      "release_date": "2026-10-09",
+      "title": "Paid Batches at a Glance",
+      "summary": "The Reimbursement Tracker batch list marks batches that are fully paid.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-09-tracker-paid-batch",
+          "category": "Reimbursement Tracker",
+          "description": "In View Batch, a batch whose rows are all paid in full now shows \"- PAID\" after its name.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-09-menu-polish",
       "release_date": "2026-10-09",
       "title": "Menu Polish",

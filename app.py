@@ -27199,8 +27199,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v277-activity-chip-open.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v278-sidebar-groups.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v279-menu-guide.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v280-account-menu.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v281-menu-polish';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v281-menu-polish.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v282-tracker-paid-batch';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -56312,23 +56312,29 @@ def reimbursement_tracker_batch_payload(state):
 
 
 def reimbursement_tracker_available_batches(current_sequence):
-    """Return stored batch choices, always including the active empty batch."""
-    sequences = {int(current_sequence)}
-    stored_sequences = db.session.query(
+    """Return stored batch choices, always including the active empty batch.
+
+    A batch is ``paid_in_full`` when it has rows and every row is paid in full.
+    """
+    paid_by_sequence = {int(current_sequence): False}
+    stored_batches = db.session.query(
         ReimbursementTrackerEntry.batch_sequence,
+        func.count(ReimbursementTrackerEntry.id),
+        func.sum(case((ReimbursementTrackerEntry.paid_in_full.is_(True), 1), else_=0)),
     ).filter(
         ReimbursementTrackerEntry.batch_sequence >= 1,
         ReimbursementTrackerEntry.batch_sequence <= 999,
-    ).distinct().all()
-    for (sequence,) in stored_sequences:
+    ).group_by(ReimbursementTrackerEntry.batch_sequence).all()
+    for sequence, row_count, paid_count in stored_batches:
         if sequence is not None:
-            sequences.add(int(sequence))
+            paid_by_sequence[int(sequence)] = bool(row_count) and int(paid_count or 0) == int(row_count)
     return [
         {
             'sequence': sequence,
             'reference': reimbursement_tracker_batch_reference(sequence),
+            'paid_in_full': paid_by_sequence[sequence],
         }
-        for sequence in sorted(sequences, reverse=True)
+        for sequence in sorted(paid_by_sequence, reverse=True)
     ]
 
 

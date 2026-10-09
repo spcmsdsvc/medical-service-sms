@@ -37,6 +37,62 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Reimbursement Tracker "PAID" Batch Label
+
+**Status:** Executed — not committed; awaiting "commit and push".
+
+**Outcome (2026-10-09):** all 3 steps done as planned; service worker `v282-tracker-paid-batch`, release `2026-10-09-tracker-paid-batch`. Tests: 31 tracker tests OK; the new test and the updated equality fail on the previous code. Browser (DB copy, temporary login; removed): `BATCH-033 (Current)` / `BATCH-032 - PAID` with a mixed current batch; after saving the last unpaid row as paid via the edit form the label became `BATCH-033 (Current) - PAID` without a reload; switching to BATCH-032 shows its two rows; 375px no horizontal scroll (select 286px). Console: only the 400s from the check's own first seeding calls sent without a CSRF token; none from the page.
+**Approved:** 2026-10-09 (owner: "if the whole batch is paid in full, let's show an indicator on the dropdown like BATCH-033 - PAID. create a plan", then "approved. go" — approval and go-ahead in one message).
+**Detailed:** 2026-10-09.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Context
+
+The View Batch dropdown on the Reimbursement Tracker lists every batch, with " (Current)" on the active one. The owner wants to see at a glance which batches are fully paid: `BATCH-033 - PAID`, `BATCH-036 (Current) - PAID`.
+
+## Decisions taken
+
+1. Fully paid = the batch has at least one row and every row has `paid_in_full`. An empty batch (a freshly started current batch) never shows PAID.
+2. Plain text suffix ` - PAID` in the `<option>` label; native options cannot carry a reliable badge or colour.
+
+## Investigation
+
+- Dropdown: `renderBatchOptions()` in `templates/reimbursement_tracker.html:364` builds options from `state.availableBatches` and adds ` (Current)`.
+- Batch list: `reimbursement_tracker_available_batches()` in `app.py:56314` returns `{sequence, reference}` only (distinct `batch_sequence` query), so the page cannot know paid state of non-viewed batches.
+- Row paid flag: `ReimbursementTrackerEntry.paid_in_full` (boolean, `app.py:2217`).
+- After saving a row the page calls `loadData(state.viewBatch?.sequence)` (`reimbursement_tracker.html:756`, `:776`), which re-renders the dropdown, so the label updates without new client code.
+- `tests/test_reimbursement_tracker.py:495` asserts `available_batches` by exact equality and must include the new key.
+
+## Execution steps
+
+1. `app.py`, `reimbursement_tracker_available_batches()`: replace the distinct query with one grouped query (`batch_sequence`, row count, paid count); each batch gains `paid_in_full` = count > 0 and paid count == count; the current batch is always listed (`False` when empty). Done when `/get_reimbursement_tracker_entries` returns `paid_in_full` per batch.
+2. `templates/reimbursement_tracker.html`, `renderBatchOptions()`: append `' - PAID'` when `batch.paid_in_full`. Done when fully paid batches show the suffix.
+3. `tests/test_reimbursement_tracker.py`: update the line-495 equality; new test for all paid → `True`, mixed → `False`, empty current → `False`; template check for `' - PAID'` and `batch.paid_in_full`. Positive control: new checks fail on the current code.
+
+## Deliberately excluded
+
+- No filter, colour or badge (text indicator only was asked).
+- No schema change; paid state is derived from existing rows.
+- Exports unchanged.
+
+## Verification
+
+- Focused: `tests/test_reimbursement_tracker.py`. Full suite once, before publishing.
+- Browser (DB copy, temporary login removed afterwards): PAID only on fully paid batches; untick one row's Paid in full → PAID disappears after save, tick again → returns; batch switching still works; " (Current)" still shown; 375px; no console errors.
+
+## After implementation
+
+1. Self-review; confirm every function the tracker page calls is still defined (save, add, export, start batch).
+2. Service worker `v282-tracker-paid-batch` (v281 kept as a history marker); release `2026-10-09-tracker-paid-batch` in `static/changelog/releases.json` (Reimbursement Tracker, admins).
+3. Update `changes.md` and this Status.
+4. Wait for "commit and push"; stage only the intended files (never `scheduler.db`, handoffs, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`); one `git ls-remote` check, no Railway polling.
+
+## Risks
+
+- **Wrong PAID on a mixed batch:** covered by the new test.
+- **Query cost:** one grouped count over the tracker table (small).
+- **Blast radius:** the tracker's batch dropdown only.
+
 # Activity Log Category Chip Opens the Record
 
 **Status:** Executed — published to `main` on 2026-10-08 on the owner's "commit and push" (commit "feat(activity): category chip opens the record"). Owner confirmed decision 1 (recommended option) and said "go". Full suite before publishing: 1,656 tests, 14 failures (the known list), 0 errors, 4 skips, no new failures.
