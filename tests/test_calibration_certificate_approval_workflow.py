@@ -667,7 +667,7 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
             finally:
                 app.config['UPLOAD_FOLDER'] = original_upload_folder
 
-    def test_return_notification_opens_exact_submission_in_correction_mode(self):
+    def test_return_notification_opens_exact_submission_in_report_only_mode(self):
         fixture = self._create_fixture()
         app = app_module.app
         db = app_module.db
@@ -695,7 +695,7 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
                 self.assertIsNotNone(notification)
                 self.assertEqual(
                     notification.target_url,
-                    f'/offline-tsr?edit_submission_id={fixture["submission_id"]}&mode=correct',
+                    f'/offline-tsr?submission_id={fixture["submission_id"]}&mode=calibration_report',
                 )
             finally:
                 app_module.logout_user()

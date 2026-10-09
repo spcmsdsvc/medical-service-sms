@@ -3,6 +3,7 @@
 .calibration-report-card .calibration-report-status.ready{color:#15803d;}
 .calibration-report-card .calibration-report-status.draft{color:#b45309;}
 .calibration-report-card .calibration-report-status.muted{color:#64748b;}
+.calibration-report-card .calibration-report-status.returned{color:#b91c1c;}
 .calibration-report-card .btn{min-height:44px;}
 
 #calibration-report-overlay{position:fixed;inset:0;z-index:2050;display:none;flex-direction:column;background:rgba(15,23,42,.72);backdrop-filter:blur(3px);}
@@ -134,6 +135,7 @@
   .calibration-report-exposure-unit{flex:1 1 100%;order:3;}
 }
 
+[data-app-theme="dark"] .calibration-report-card .calibration-report-status.returned{color:#f87171;}
 [data-app-theme="dark"] .calibration-report-toolbar{background:#202124;border-color:#85888d;color:#ededed;}
 [data-app-theme="dark"] .calibration-report-toolbar-title small{color:#b8bbc2;}
 [data-app-theme="dark"] .calibration-report-workspace{background:#202124;color:#ededed;}

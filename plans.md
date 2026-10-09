@@ -37,6 +37,97 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Returned Calibration Report: Fix the Report Only
+
+**Status:** Executed locally on 2026-10-09 (owner: "yes keep the same certificate number. go"); not committed. Awaiting "commit and push".
+
+**Outcome (2026-10-09):** steps 1–7 done. Service worker `v283-calibration-fix-report`, release `2026-10-09-calibration-fix-report`, `app-calibration-report.js?v=46`, `app-calibration-report.css?v=12`. Tests: new `tests/test_calibration_report_returned_fix.py` (6 tests; 4 fail on the previous code, the other 2 are guards that pass before and after); updated the old "correction mode" notification test and the version pins; 144 focused tests OK. Browser (DB copy, temporary engineer and approver logins; removed): desktop card shows the red report button with a "!" tag and the remarks as its tooltip; phone shows "Fix Calibration Report" and the tagged quick-action button, 375px without horizontal scroll; the report page shows the red banner with the approver and remarks, "Returned" status, and editable fields; after a change and Save Final Report the same approval went back to Pending with the same certificate number, the TSR stayed REV1, the TSR pointed at the new report file, the audit shows Returned → Pending, and the approver's Approvals page lists it as Pending Review with a "resubmitted" notification.
+
+**Amendments during execution:**
+- The Timeline tag is a red "!" badge on a red button (the desktop card button is icon-only, so a "Returned" word does not fit); the remarks are the button tooltip. Lighter red in dark mode.
+- Resubmission only happens when the saved report changed (different report fingerprint); an unchanged returned report stays Returned, so a retry or an old upload cannot resubmit it untouched.
+- The supporting-attachment count ignores the replaced report file, so a correction never hits the attachment limit.
+- Found in the browser: a stale report draft saved on the device could be restored over a returned report and show an old "approved" status. For a returned report, only a local draft saved after the return is restored, and the server's approval status is re-applied after any restore.
+- Tests live in a new focused file instead of the two existing modules.
+**Approved:** 2026-10-09 (owner: "yes write it to plans.md", after the browser check confirmed the findings below).
+**Detailed:** 2026-10-09.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Context
+
+When an approver returns (rejects) a Calibration Report & Certificate, the engineer is sent to correct the **whole TSR**: the notification links to Create TSR in `mode=correct`, and saving creates a new TSR revision (REV+1), even though the TSR itself was fine. The owner wants only the Calibration Report reopened.
+
+A browser check (engineer login, DB copy with one approval set to Returned) also showed the engineer is effectively **never told** about the return:
+
+- Dashboard / sidebar: no notification shown anywhere; the "returned" `SystemNotification` is created but no page lists `calibration_certificate` notifications for the requester (that engineer had 16 older unread calibration notifications).
+- Approvals page: 403 for engineers.
+- Timeline card: plain "View Calibration Report", identical to an approved report, although the server already sends `calibration_report_approval_status: "Returned"`.
+- Create TSR, Calibration Report box: green "Uploaded" tag, and one small grey line: "Uploaded Calibration Reports cannot be replaced through this page. Certificate returned for correction: <remarks>". The page tells the engineer they cannot fix it.
+
+Intended outcome: the engineer sees the return on the Timeline card, opens the report only (TSR locked, no new TSR revision), fixes it, saves, and it goes back to the approver as Pending.
+
+## Decisions taken
+
+1. Fix only the report, on the **same TSR submission**. No new TSR revision. The normal "Correct TSR" flow stays for real TSR mistakes.
+2. Resubmit by putting the **same approval row** back to `Pending` (no new approval row, no schema change). The certificate number stays the same (owner confirmed at go-ahead).
+3. Visibility: a red **"Returned"** tag and a **"Fix Calibration Report"** button label on the Timeline card; the approver's remarks shown prominently at the top of the Calibration Report box.
+4. The rejected report file stays as history but is no longer the current report.
+
+## Investigation
+
+- Return route: `return_calibration_certificate` (`app.py:26236`) sets the approval `Returned`, notifies the requester with `target_url=url_for('offline_tsr_page', edit_submission_id=..., mode='correct')` (`app.py:26287`). That URL loads the full TSR for correction (`getOnlineTSRRevisionRequestFromUrl`, `templates/offline_tsr.html:5234`).
+- One approval per TSR submission: `CalibrationCertificateApproval.online_tsr_submission_id` is `unique=True` (`app.py:3750`), and `submit_calibration_certificate_for_submission` (`app.py:25795`) returns the existing row as a duplicate (`app.py:25800`). This is why today the only way to resubmit is a new TSR revision.
+- A report-only mode already exists: `mode=calibration_report&submission_id=X` (`getOnlineTSRCalibrationRequestFromUrl`, `templates/offline_tsr.html:5371`; context load around `:5440`, message "the original TSR will not be revised"). Timeline buttons open it via `redirectToCalibrationReportFromSchedule` (`templates/timeline.html:20750` sets `mode = 'calibration_report'`).
+- Late upload path: `upload_online_tsr_attachment` (`app.py:26349`) with `late_calibration_report=1`. Blocks replacing an Approved report (`app.py:26400`) and any already-uploaded report (`calibration_report_already_uploaded`, `app.py:26459`). After the upload it calls `submit_calibration_certificate_for_submission` (`app.py:26505`), so resubmission already happens through the upload.
+- Report state: server `calibration_report_state_for_submission` (`app.py:18183`, returns `uploaded` once a generated file exists); client `onlineTSRCalibrationReportState` (`templates/offline_tsr.html:5381`); read-only gate `setOnlineTSRCalibrationReportReadOnly` (`:5324`, called at `:5368` and from `static/js/app-calibration-report.js:1738`); toolbar hidden when uploaded and the "cannot be replaced" note (`app-calibration-report.js:1723`, `:1737`); returned text `:1731`.
+- Timeline: `calibration_report_timeline_state_for_submission` (`app.py:18232`) already returns `approval_status`; it reaches the shift data (`app.py:52058`, `:52264`) but `templates/timeline.html` never reads `calibration_report_approval_status`. Label: `getCalibrationReportTimelineLabel` (`timeline.html:16313`); button renders at `:10672`, `:11129`, `:11915`, `:11971`, `:13215`, `:15267`.
+- Not true: an earlier assumption that "the engineer gets a notification" — they do not see it anywhere (browser check above).
+
+## Execution steps
+
+1. **Notification link** — `app.py`, `return_calibration_certificate`: change `target_url` to `url_for('offline_tsr_page', submission_id=approval.online_tsr_submission_id, mode='calibration_report')`. Done when a new return notification points at report-only mode.
+2. **Server: allow replacing a returned report** — `app.py`, `upload_online_tsr_attachment` late path (`:26458`): when `current_report_state == 'uploaded'` and the latest approval for the submission is `Returned` and `is_latest`, accept a new upload token and merge the payload with `merge_late_calibration_report_payload` instead of returning `calibration_report_already_uploaded`. Pending and Approved stay blocked. Done when a returned report accepts a new DOCX and a pending one still gets 409.
+3. **Server: resubmit in place** — `app.py`, `submit_calibration_certificate_for_submission`: if the existing approval is `Returned` and `is_latest`, rebuild the unsigned certificate PDF, update `report_fingerprint`, `certificate_fingerprint`, `mapped_data_json`, `unsigned_artifact_path`, `submitted_at`, `updated_at`, set `status='Pending'`, clear `return_remarks`/`returned_at`/approver snapshot; for a temporary model, set its `CalibrationCertificateModel` back to Pending. Write a `resubmitted` universal audit entry (Returned → Pending) and notify approvers as on first submit. Keep `certificate_number`. Pending/Approved existing rows still return as duplicates. Done when the same approval id goes Returned → Pending with new fingerprints.
+4. **Server: old file is history** — check how `calibration_certificate_generated_report_source_file` and `calibration_report_approval_map_for_files` (`app.py:25584`) pick the current report; make sure the replaced DOCX/PDF no longer appears as the current report on the schedule card or in client packages (it may remain in history). Done when only the new report shows as current.
+5. **Server: state** — `calibration_report_state_for_submission`: unchanged (`uploaded`); the client decides editability from the approval status (step 6). Add `calibration_report_returned` (bool) and `calibration_report_return_remarks` to the Timeline shift data next to `calibration_report_approval_status` (`app.py:52058`, `:52264`).
+6. **Create TSR page: returned report is editable** — `templates/offline_tsr.html` (`onlineTSRCalibrationReportState`, `setOnlineTSRCalibrationReportReadOnly` caller at `:5368`, status text at `:5469`) and `static/js/app-calibration-report.js` (`:1720`–`:1738`): when the certificate approval is `Returned`, treat the report as editable (Save Final Report, Clear, Generate Sample visible; no "cannot be replaced" note); TSR fields stay read-only as in report-only mode. Show a red banner at the top of the Calibration Report box: "Returned for correction by <approver>: <remarks>. Fix the report and Save Final Report to resubmit." Status tag "Returned" (red) instead of "Uploaded". Bump `app-calibration-report.js?v=46`. Done when the returned report can be edited and saved, and an approved/pending one stays read-only.
+7. **Timeline card** — `templates/timeline.html`, `getCalibrationReportTimelineLabel`: return "Fix Calibration Report" when `calibration_report_approval_status === 'Returned'`; add a small red "Returned" tag on the card buttons listed in Investigation (desktop card and mobile views), with the remarks as the title. Done when a returned report's card reads "Fix Calibration Report" with the tag.
+8. **Tests** — see Verification.
+
+## Deliberately excluded
+
+- No new notification bell/inbox page: a separate, larger feature; the Timeline card is where engineers already work.
+- No email to the engineer on return (owner may ask later).
+- No schema change, no dropping the unique constraint, no approval revision rows: in-place resubmit plus the audit trail keeps history.
+- The `mode=correct` TSR correction flow is unchanged.
+- Old unread `calibration_certificate` notifications are left as they are.
+
+## Verification
+
+- New tests (in `tests/test_calibration_certificate_approval_workflow.py` and `tests/test_tsr_sync_reliability.py`):
+  - Return → notification `target_url` has `mode=calibration_report` and the submission id.
+  - Returned report: late upload with a new token succeeds; approval keeps its id and certificate number, becomes `Pending`, fingerprints change, a `resubmitted` audit row exists; TSR submission count and `revision_no` unchanged.
+  - Pending report: replacement still 409; Approved: still `calibration_report_approved_immutable` (existing tests stay green).
+  - Timeline data includes `calibration_report_returned` / remarks for a returned report.
+  - Template checks: "Fix Calibration Report" label and the Returned tag in `timeline.html`; returned banner text in `app-calibration-report.js`.
+  - Positive control: run the new tests against the current code (in-process, never `git stash`) and confirm they fail.
+- Focused modules: the two above plus `tests/test_tsr_calibration_report.py`, `tests/test_calibration_report_engineer_access.py`. Full suite once, before publishing.
+- Browser (DB copy, temporary engineer + approver logins, removed afterwards): approver returns a report → engineer's Timeline card shows "Fix Calibration Report" + red tag → opens report-only page with red remarks banner, TSR fields locked → edit and Save Final Report → approver sees it Pending in Approvals with the same certificate number → TSR still the same REV. Approved report still read-only. 375px, no console errors.
+
+## After implementation
+
+1. Self-review; confirm every function the Create TSR and Timeline pages call is still defined and Save Final Report, Generate Sample, upload, approve and return still work.
+2. Service worker `v283-calibration-fix-report` (v282 kept as a history marker); What's New release `2026-10-09-calibration-fix-report` ("Fix Returned Calibration Reports", engineers) in `static/changelog/releases.json`.
+3. Update `changes.md` and this Status.
+4. Wait for "commit and push"; stage only the intended files (never `scheduler.db`, handoffs, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`); one `git ls-remote` check, no Railway polling.
+
+## Risks
+
+- **Approver approves a stale certificate:** resubmit rebuilds the unsigned PDF and fingerprints before status goes Pending; covered by tests.
+- **Old report still shown as current or sent to the client:** step 4 plus the browser check.
+- **Unlocking a Pending/Approved report by mistake:** server check is on the latest approval status `Returned` only; existing immutability tests stay.
+- **Blast radius:** calibration report upload/resubmit path, Create TSR Calibration Report box, Timeline calibration button labels.
+
 # Reimbursement Tracker "PAID" Batch Label
 
 **Status:** Executed — published to `main` on 2026-10-09 on the owner's "commit and push" (commit `7d3642a`). Full suite before publishing: 1,665 tests, 14 failures (the known list), 3 errors that occur only alongside other test files, 5 skips, no new failures.

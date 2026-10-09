@@ -1965,6 +1965,32 @@
 </div>
 
 <style>
+/* Calibration Report returned for correction: red button with a red "!" tag. */
+:root button[data-calibration-returned="true"][data-calibration-returned] {
+    position: relative;
+    color: #b91c1c !important;
+    border-color: #b91c1c !important;
+}
+:root[data-app-theme="dark"] button[data-calibration-returned="true"] {
+    color: #f87171 !important;
+    border-color: #f87171 !important;
+}
+button[data-calibration-returned="true"]::after {
+    content: "!";
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #b91c1c;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 16px;
+    text-align: center;
+}
 .schedule-visit-flags {
     display: flex;
     flex-wrap: wrap;
@@ -10667,7 +10693,7 @@ function shouldUseEngineerMobileView(){
                             <i class="fa-solid fa-pen-to-square"></i>
                             Edit TSR
                         </button>` : ''}
-                        ${canOpenCalibrationReportForSchedule(shift) ? `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-tsr" onclick="openMobileFullCalendarLiteCalibrationReportAction('${escapeHtml(String(shift?.id || ''))}', '${escapeHtml(String(dayIso || ''))}', '${escapeHtml(String(engineerId || ''))}')">
+                        ${canOpenCalibrationReportForSchedule(shift) ? `<button type="button"${calibrationReportReturnedAttrs(shift)} class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-tsr" onclick="openMobileFullCalendarLiteCalibrationReportAction('${escapeHtml(String(shift?.id || ''))}', '${escapeHtml(String(dayIso || ''))}', '${escapeHtml(String(engineerId || ''))}')">
                             <i class="fa-solid fa-file-circle-check"></i>
                             ${escapeHtml(getCalibrationReportTimelineLabel(shift))}
                         </button>` : ''}
@@ -11126,7 +11152,7 @@ async function openMobileAddSchedule(){
         }
 
         const calibrationBtn = canOpenCalibrationReportForSchedule(shift)
-            ? `<button type="button" class="mobile-sticky-btn mobile-sticky-offline-tsr" title="${escapeHtml(getCalibrationReportTimelineLabel(shift))}" aria-label="${escapeHtml(getCalibrationReportTimelineLabel(shift))}" onclick="redirectToCalibrationReportFromSchedule(${editPayload}, ${engineerId}, '${dayIso}')"><i class="fa-solid fa-file-circle-check"></i></button>`
+            ? `<button type="button"${calibrationReportReturnedAttrs(shift)} class="mobile-sticky-btn mobile-sticky-offline-tsr" title="${escapeHtml(getCalibrationReportTimelineLabel(shift))}" aria-label="${escapeHtml(getCalibrationReportTimelineLabel(shift))}" onclick="redirectToCalibrationReportFromSchedule(${editPayload}, ${engineerId}, '${dayIso}')"><i class="fa-solid fa-file-circle-check"></i></button>`
             : '';
 
         const duplicateBtn = canManage
@@ -11912,7 +11938,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
                     ? `<button type="button" class="mobile-action-btn mobile-action-muted" disabled title="Select equipment on Calendar first"><i class="fa-solid fa-lock"></i>Create TSR unavailable</button>`
                     : '';
         const calibrationAction = canOpenCalibrationReportForSchedule(shift)
-            ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCalibrationReportFromSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-circle-check"></i>${escapeHtml(getCalibrationReportTimelineLabel(shift))}</button>`
+            ? `<button type="button"${calibrationReportReturnedAttrs(shift)} class="mobile-action-btn mobile-action-success" onclick="redirectToCalibrationReportFromSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-circle-check"></i>${escapeHtml(getCalibrationReportTimelineLabel(shift))}</button>`
             : '';
 
         return `<div class="mobile-workflow-primary-row">${editAction}${tsrAction}${calibrationAction}</div>`;
@@ -11968,7 +11994,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
             : `<button type="button" class="mobile-action-btn mobile-action-muted" disabled><i class="fa-solid fa-file-invoice"></i>${isWork ? 'TSR Pending' : 'No TSR'}</button>`;
 
         const calibrationAction = canOpenCalibrationReportForSchedule(shift)
-            ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCalibrationReportFromSchedule(${editPayload}, ${rowEngineer.id}, '${day.iso}')"><i class="fa-solid fa-file-circle-check"></i>${escapeHtml(getCalibrationReportTimelineLabel(shift))}</button>`
+            ? `<button type="button"${calibrationReportReturnedAttrs(shift)} class="mobile-action-btn mobile-action-success" onclick="redirectToCalibrationReportFromSchedule(${editPayload}, ${rowEngineer.id}, '${day.iso}')"><i class="fa-solid fa-file-circle-check"></i>${escapeHtml(getCalibrationReportTimelineLabel(shift))}</button>`
             : '';
 
         const detailsAction = `<button type="button" class="mobile-action-btn mobile-action-dark" onclick="setMobileStickyActionContextByKey('${escapeHtml(mobileContextKey)}')"><i class="fa-solid fa-circle-info"></i>Details</button>`;
@@ -13211,7 +13237,7 @@ function collectMobileEngineerSchedules(){
                     </button>
                 ` : ''}
                 ${canCalibration ? `
-                    <button type="button" class="timeline-summary-action-btn timeline-summary-action-edit" onclick="openTimelineSummaryCalibrationReport(event)">
+                    <button type="button"${calibrationReportReturnedAttrs(shift)} class="timeline-summary-action-btn timeline-summary-action-edit" onclick="openTimelineSummaryCalibrationReport(event)">
                         <i class="fa-solid fa-file-circle-check"></i>${escapeHtml(getCalibrationReportTimelineLabel(shift))}
                     </button>
                 ` : ''}
@@ -15264,7 +15290,7 @@ async function loadGrid(options={}) {
                                     </button>
                                 ` : ''}
                                 ${canOpenCalibrationReportForSchedule(s) ? `
-                                    <button type="button" class="schedule-card-action-btn schedule-card-action-tsr" draggable="false" title="${escapeHtml(getCalibrationReportTimelineLabel(s))}" aria-label="${escapeHtml(getCalibrationReportTimelineLabel(s))}" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); redirectToCalibrationReportFromSchedule(${shiftActionPayload}, ${eng.id}, '${day.iso}')">
+                                    <button type="button"${calibrationReportReturnedAttrs(s)} class="schedule-card-action-btn schedule-card-action-tsr" draggable="false" title="${escapeHtml(getCalibrationReportTimelineLabel(s))}" aria-label="${escapeHtml(getCalibrationReportTimelineLabel(s))}" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); redirectToCalibrationReportFromSchedule(${shiftActionPayload}, ${eng.id}, '${day.iso}')">
                                         <i class="fa-solid fa-file-circle-check"></i>
                                     </button>
                                 ` : ''}
@@ -16311,10 +16337,18 @@ if(shift.engineers){
     }
 
     function getCalibrationReportTimelineLabel(shift){
+        if(shift?.calibration_report_returned) return 'Fix Calibration Report';
         const state = String(shift?.calibration_report_state || 'not_started').trim().toLowerCase();
         if(state === 'uploaded') return 'View Calibration Report';
         if(state === 'draft') return 'Finish Calibration Report';
         return 'Create Calibration Report';
+    }
+
+    function calibrationReportReturnedAttrs(shift){
+        // Marks the report button red when the approver returned the report for correction.
+        if(!shift?.calibration_report_returned) return '';
+        const remarks = String(shift.calibration_report_return_remarks || '').trim();
+        return ` data-calibration-returned="true" title="${escapeHtml('Calibration Report returned for correction' + (remarks ? ': ' + remarks : ''))}"`;
     }
 
     function hasScheduleTSREquipmentAssignment(shift){

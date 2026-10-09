@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=11">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=12">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=8">
 <script>
 (() => {
@@ -33,7 +33,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=45"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=46"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page offline-tsr-layout">
   <div class="offline-tsr-hero no-print">
@@ -420,6 +420,10 @@ window.CalibrationReportConfig = {
                 <div class="small text-muted" id="calibration-report-summary">Create an optional calibration report from the supplied form. It will remain separate from the main TSR PDF.</div>
               </div>
               <span id="calibration-report-status" class="calibration-report-status muted">Not Started</span>
+            </div>
+            <div id="calibration-report-returned-banner" class="alert alert-danger d-flex gap-2 align-items-start py-2 px-3 mb-2 d-none" role="alert">
+              <i class="fa-solid fa-rotate-left mt-1" aria-hidden="true"></i>
+              <div class="small fw-bold" data-returned-remarks></div>
             </div>
             <div class="d-flex flex-wrap gap-2">
               <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-create-btn"><i class="fa-solid fa-file-circle-plus me-1"></i><span id="calibration-report-entry-label">Create Calibration Report</span></button>
@@ -5365,7 +5369,13 @@ function applyOnlineTSRCalibrationOnlyGate(){
   if(heroTitle) heroTitle.innerHTML = '<i class="fa-solid fa-file-circle-check text-primary me-2"></i>Calibration Report';
   if(heroSubtitle) heroSubtitle.textContent = 'Complete or review the Calibration Report attached to the saved TSR. The original TSR will not be revised.';
 
-  setOnlineTSRCalibrationReportReadOnly(String(onlineTSRCalibrationContext?.calibration_report_state || '').toLowerCase() === 'uploaded');
+  setOnlineTSRCalibrationReportReadOnly(onlineTSRCalibrationReportLocked());
+}
+
+function onlineTSRCalibrationReportLocked(){
+  // A report the approver returned stays editable so it can be corrected on the same TSR.
+  return String(onlineTSRCalibrationContext?.calibration_report_state || '').toLowerCase() === 'uploaded'
+    && !onlineTSRCalibrationContext?.calibration_report_returned;
 }
 
 function getOnlineTSRCalibrationRequestFromUrl(){
@@ -5389,7 +5399,7 @@ function onlineTSRCalibrationReportState(submission, payload){
 
 async function restoreStandaloneLateCalibrationDraft(submissionId){
   const targetId = String(submissionId || '').trim();
-  if(!targetId || String(onlineTSRCalibrationContext?.calibration_report_state || '').toLowerCase() === 'uploaded') return null;
+  if(!targetId || onlineTSRCalibrationReportLocked()) return null;
 
   let records = [];
   try{
@@ -5406,6 +5416,10 @@ async function restoreStandaloneLateCalibrationDraft(submissionId){
     }
   }
   if(!candidate?.payload?.calibration_report) return null;
+  // For a returned report, only a correction saved on this device after the return is worth restoring.
+  const returnedAt = Date.parse(onlineTSRCalibrationContext?.calibration_report_returned_at || '');
+  const draftSavedAt = Date.parse(candidate.payload.calibration_report.updated_at || '');
+  if(onlineTSRCalibrationContext?.calibration_report_returned && !(draftSavedAt > returnedAt)) return null;
 
   const localId = String(candidate.id || candidate.payload._draft_id || '').trim();
   if(localId) standaloneCurrentDraftId = localId;
@@ -5442,6 +5456,8 @@ async function loadOnlineTSRCalibrationFromUrl(){
       shift_id: submission.shift_id,
       revision_no: submission.revision_no || 1,
       calibration_report_state: onlineTSRCalibrationReportState(submission, payload),
+      calibration_report_returned: String(submission.calibration_certificate?.status || '').toLowerCase() === 'returned',
+      calibration_report_returned_at: submission.calibration_certificate?.returned_at || '',
       local_draft_id: '',
       recovered_local_draft_id: ''
     };
@@ -5464,14 +5480,18 @@ async function loadOnlineTSRCalibrationFromUrl(){
       }
     }
     const restoredLateDraft = await restoreStandaloneLateCalibrationDraft(onlineTSRCalibrationContext.submission_id);
+    if(restoredLateDraft && submission.calibration_certificate && window.calibrationReport?.setApprovalStatus){
+      // The server's approval status wins over the one stored in a local draft.
+      window.calibrationReport.setApprovalStatus(submission.calibration_certificate, submission.calibration_certificate.status);
+    }
     applyOnlineTSRCalibrationOnlyGate();
     updateCreateTSRScheduleGate({ showMessage: !hasStandaloneScheduleSelection() });
-    const stateLabel = onlineTSRCalibrationContext.calibration_report_state === 'uploaded' ? 'uploaded and read-only' : onlineTSRCalibrationContext.calibration_report_state === 'draft' ? 'saved as a draft' : 'not started';
+    const stateLabel = onlineTSRCalibrationContext.calibration_report_returned ? 'returned for correction; fix it and Save Final Report to resubmit' : onlineTSRCalibrationContext.calibration_report_state === 'uploaded' ? 'uploaded and read-only' : onlineTSRCalibrationContext.calibration_report_state === 'draft' ? 'saved as a draft' : 'not started';
     showTSRStatus(
       restoredLateDraft
         ? 'Calibration Report is saved locally but not uploaded. Retry Save Final Report to attach it to the existing TSR.'
         : `Saved TSR REV${submission.revision_no || 1} loaded. Calibration Report is ${stateLabel}; the original TSR will not be revised.`,
-      restoredLateDraft ? 'warning' : (onlineTSRCalibrationContext.calibration_report_state === 'uploaded' ? 'info' : 'warning')
+      restoredLateDraft ? 'warning' : (onlineTSRCalibrationReportLocked() ? 'info' : 'warning')
     );
     return true;
   }catch(err){

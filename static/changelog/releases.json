@@ -1,6 +1,35 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-09-calibration-fix-report",
+      "release_date": "2026-10-09",
+      "title": "Fix Returned Calibration Reports",
+      "summary": "A Calibration Report returned by the approver is now fixed on its own, without revising the TSR.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-09-calibration-fix-report-timeline",
+          "category": "Timeline",
+          "description": "When an approver returns a Calibration Report, its button on the schedule turns red and reads \"Fix Calibration Report\". Hover it to see the approver's remarks.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-09-calibration-fix-report-edit",
+          "category": "Create TSR",
+          "description": "The returned report opens on its own with the remarks in a red banner. Correct it and choose Save Final Report: it goes back to the approver with the same certificate number, and the TSR keeps its revision.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-09-tracker-paid-batch",
       "release_date": "2026-10-09",
       "title": "Paid Batches at a Glance",

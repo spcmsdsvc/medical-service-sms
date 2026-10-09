@@ -18174,6 +18174,8 @@ def online_tsr_submission_to_dict(submission, include_payload=True, include_clie
         'payload': payload if include_payload else None,
         'calibration_report_state': calibration_report_state_for_submission(submission),
         'calibration_report_approval_status': calibration_timeline_state['approval_status'],
+        'calibration_report_returned': calibration_timeline_state['returned'],
+        'calibration_report_return_remarks': calibration_timeline_state['return_remarks'],
         'calibration_report_locked': calibration_timeline_state['locked'],
         'calibration_report_conversion_state': calibration_timeline_state['conversion_state'],
         'calibration_certificate': calibration_certificate_approval_to_dict(certificate_approval) if certificate_approval else None,
@@ -18229,11 +18231,29 @@ def calibration_report_approval_for_submission(submission):
         return None
 
 
+def calibration_report_is_returned_for_correction(submission, approval=None):
+    """Return whether the approver sent this TSR's current report back for correction."""
+    approval = approval if approval is not None else calibration_report_approval_for_submission(submission)
+    return bool(
+        approval and
+        clean_str(getattr(approval, 'status', None)) == 'Returned' and
+        bool(getattr(approval, 'is_latest', False))
+    )
+
+
+def calibration_report_current_source_file_id(submission):
+    """Return the DOCX source the submission currently points at (replaced reports are history)."""
+    payload = parse_online_tsr_payload_json(submission) if submission else None
+    marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+    return clean_int(marker.get('file_id')) if isinstance(marker, dict) else None
+
+
 def calibration_report_timeline_state_for_submission(submission, approval=None):
     """Return compact approval/conversion state without exposing the private DOCX."""
     approval = approval if approval is not None else calibration_report_approval_for_submission(submission)
     approval_status = clean_str(getattr(approval, 'status', None)) if approval else ''
     locked = bool(approval and approval_status == 'Approved' and getattr(approval, 'is_latest', False))
+    returned = calibration_report_is_returned_for_correction(submission, approval=approval) if approval else False
     conversion_state = 'none'
     if approval:
         source_file = calibration_certificate_generated_report_source_file(approval)
@@ -18243,6 +18263,8 @@ def calibration_report_timeline_state_for_submission(submission, approval=None):
     return {
         'approval_status': approval_status,
         'locked': locked,
+        'returned': returned,
+        'return_remarks': (clean_str(getattr(approval, 'return_remarks', None)) or '') if returned else '',
         'conversion_state': conversion_state or 'pending',
     }
 
@@ -25581,6 +25603,15 @@ def calibration_certificate_approval_map_for_files(file_records):
     return result
 
 
+def calibration_report_source_is_current(source_file, submission=None):
+    """False for a report DOCX replaced after a return; it stays only as history."""
+    submission_id = clean_int(getattr(source_file, 'online_tsr_submission_id', None))
+    if submission is None and submission_id:
+        submission = db.session.get(OnlineTsrSubmission, submission_id)
+    current_id = calibration_report_current_source_file_id(submission)
+    return not current_id or current_id == clean_int(getattr(source_file, 'id', None))
+
+
 def calibration_report_approval_map_for_files(file_records):
     """Resolve generated Calibration Report PDFs to their exact combined approval.
 
@@ -25621,7 +25652,8 @@ def calibration_report_approval_map_for_files(file_records):
             not submission_id or
             not calibration_report_source_file_is_private(source_file) or
             clean_int(getattr(source_file, 'shift_id', None)) != clean_int(getattr(file_record, 'shift_id', None)) or
-            clean_int(getattr(file_record, 'online_tsr_submission_id', None)) != submission_id
+            clean_int(getattr(file_record, 'online_tsr_submission_id', None)) != submission_id or
+            not calibration_report_source_is_current(source_file)
         ):
             continue
         report_links[file_id] = (
@@ -25696,6 +25728,18 @@ def calibration_report_visibility_context_for_files(file_records):
             if source_ids else []
         )
         sources_by_id = {clean_int(source.id): source for source in sources}
+        source_submission_ids = {
+            clean_int(getattr(source, 'online_tsr_submission_id', None))
+            for source in sources
+            if clean_int(getattr(source, 'online_tsr_submission_id', None))
+        }
+        submissions_by_id = {
+            clean_int(item.id): item
+            for item in (
+                OnlineTsrSubmission.query.filter(OnlineTsrSubmission.id.in_(source_submission_ids)).all()
+                if source_submission_ids else []
+            )
+        }
     except Exception as context_error:
         print(f'[CALIBRATION-REPORT] Bulk visibility lookup skipped: {context_error}', flush=True)
         return empty
@@ -25716,6 +25760,8 @@ def calibration_report_visibility_context_for_files(file_records):
         ):
             continue
         artifact_ids.add(pdf_id)
+        if not calibration_report_source_is_current(source, submissions_by_id.get(submission_id)):
+            continue
         if clean_str(getattr(conversion, 'state', None)) == 'ready' and submission_id:
             ready_links[pdf_id] = (
                 clean_int(getattr(pdf_record, 'shift_id', None)),
@@ -25798,13 +25844,25 @@ def submit_calibration_certificate_for_submission(submission):
     if not submission:
         return {'ok': False, 'code': 'submission_missing', 'message': 'The TSR submission was not found.'}
     existing = CalibrationCertificateApproval.query.filter_by(online_tsr_submission_id=submission.id).first()
-    if existing:
-        return {'ok': True, 'duplicate': True, 'approval': existing}
-    shift = db.session.get(Shift, submission.shift_id)
     payload = parse_online_tsr_payload_json(submission)
+    # A returned report is resubmitted on the same approval row (same certificate number)
+    # only after the engineer saved a changed report; anything else stays a duplicate.
+    resubmit = None
+    if existing:
+        report_now = payload.get('calibration_report') if isinstance(payload, dict) else None
+        generated_now = report_now.get('generated') if isinstance(report_now, dict) else None
+        fingerprint_now = clean_str(generated_now.get('fingerprint')) if isinstance(generated_now, dict) else ''
+        if not (
+            calibration_report_is_returned_for_correction(submission, approval=existing) and
+            fingerprint_now and fingerprint_now != clean_str(existing.report_fingerprint)
+        ):
+            return {'ok': True, 'duplicate': True, 'approval': existing}
+        resubmit = existing
+    shift = db.session.get(Shift, submission.shift_id)
+    number_override = resubmit.certificate_number if resubmit else None
     try:
         catalog = calibration_certificate_effective_catalog()
-        values, missing, report = calibration_certificate_values(payload, shift=shift, catalog=catalog)
+        values, missing, report = calibration_certificate_values(payload, shift=shift, certificate_number_override=number_override, catalog=catalog)
         catalog_errors, _ = calibration_certificate_catalog_errors(report, catalog=catalog)
         model_resolution = calibration_certificate_model_resolution(report, catalog=catalog)
     except Exception as catalog_error:
@@ -25821,7 +25879,7 @@ def submit_calibration_certificate_for_submission(submission):
     template_path = calibration_certificate_template_path()
     with open(template_path, 'rb') as template_stream:
         template_bytes = template_stream.read()
-    unsigned_bytes, _, certificate_fingerprint = build_calibration_certificate_pdf(payload, shift=shift, catalog=catalog)
+    unsigned_bytes, _, certificate_fingerprint = build_calibration_certificate_pdf(payload, shift=shift, certificate_number_override=number_override, catalog=catalog)
     stored_name = f'private_calibration_certificate_{submission.id}_{secrets.token_hex(8)}.pdf'
     local_path = calibration_certificate_private_path(stored_name)
     report_certificate = report.get('certificate') if isinstance(report.get('certificate'), dict) else {}
@@ -25839,6 +25897,49 @@ def submit_calibration_certificate_for_submission(submission):
             original_filename=stored_name,
             content_type='application/pdf',
         )
+        report_fingerprint = clean_str(report.get('generated', {}).get('fingerprint')) if isinstance(report.get('generated'), dict) else ''
+        mapped_data_json = json.dumps({**values, 'bsid': normalize_product_bsid(report_certificate.get('bsid')) or normalize_product_bsid(getattr(resolve_shift_equipment(shift), 'bsid', None))}, ensure_ascii=False)
+        if resubmit:
+            now = get_manila_time()
+            updated = CalibrationCertificateApproval.query.filter_by(id=resubmit.id, status='Returned', is_latest=True).update({
+                'status': 'Pending',
+                'report_fingerprint': report_fingerprint,
+                'certificate_fingerprint': certificate_fingerprint,
+                'model_source': model_resolution['source'],
+                'model_catalog_id': model_catalog.id if model_catalog is not None else model_resolution.get('catalog_id'),
+                'mapped_data_json': mapped_data_json,
+                'template_sha256': CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
+                'unsigned_artifact_path': stored_name,
+                'approver_user_id': None,
+                'approver_name_snapshot': None,
+                'approver_title_snapshot': None,
+                'approver_signature_snapshot': None,
+                'return_remarks': None,
+                'returned_at': None,
+                'submitted_at': now,
+                'updated_at': now,
+            }, synchronize_session=False)
+            if updated != 1:
+                raise IntegrityError('calibration resubmit', None, Exception('approval changed during resubmission'))
+            db.session.expire(resubmit)
+            approval = resubmit
+            record_universal_approval_audit(
+                'calibration_certificate', approval.id, 'resubmitted',
+                actor_user=db.session.get(User, submission.submitted_by_user_id),
+                status_from='Returned', status_to='Pending',
+                metadata={
+                    'submission_id': submission.id,
+                    'revision_no': approval.revision_no,
+                    'model_source': model_resolution['source'],
+                    'model_name': model_resolution['value'],
+                },
+            )
+            approvers = get_assigned_approvers_for_requester(submission.submitted_by_user_id, 'calibration_certificate') if submission.submitted_by_user_id else []
+            for approver_user in approvers:
+                create_system_notification(approver_user.id, 'Calibration Report & Certificate resubmitted', f'{approval.certificate_number} was corrected and is ready for report and certificate review.', module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': model_resolution['source']})
+            db.session.add(ActivityLog(user=clean_str(getattr(submission, 'submitted_by_name', None)) or 'System', action=f'Resubmitted corrected Calibration Report & Certificate {approval.certificate_number}'))
+            db.session.commit()
+            return {'ok': True, 'duplicate': False, 'resubmitted': True, 'approval': approval}
         for older in CalibrationCertificateApproval.query.filter_by(shift_id=shift.id, is_latest=True).all():
             older.is_latest = False
             if older.status == 'Pending':
@@ -25851,14 +25952,14 @@ def submit_calibration_certificate_for_submission(submission):
             revision_no=clean_int(getattr(submission, 'revision_no', None)) or 1,
             is_latest=True,
             status='Pending',
-            report_fingerprint=clean_str(report.get('generated', {}).get('fingerprint')) if isinstance(report.get('generated'), dict) else '',
+            report_fingerprint=report_fingerprint,
             certificate_fingerprint=certificate_fingerprint,
             model_source=model_resolution['source'],
             model_catalog_id=(
                 model_catalog.id if model_catalog is not None else model_resolution.get('catalog_id')
             ),
             certificate_number=values['Textfield'],
-            mapped_data_json=json.dumps({**values, 'bsid': normalize_product_bsid(report_certificate.get('bsid')) or normalize_product_bsid(getattr(resolve_shift_equipment(shift), 'bsid', None))}, ensure_ascii=False),
+            mapped_data_json=mapped_data_json,
             template_sha256=CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
             unsigned_artifact_path=stored_name,
             submitted_at=get_manila_time(),
@@ -26286,8 +26387,8 @@ def return_calibration_certificate(approval_id):
             record_id=approval.id,
             target_url=url_for(
                 'offline_tsr_page',
-                edit_submission_id=approval.online_tsr_submission_id,
-                mode='correct',
+                submission_id=approval.online_tsr_submission_id,
+                mode='calibration_report',
             ),
             metadata={'event': 'returned', 'approval_id': approval.id},
         )
@@ -26417,6 +26518,7 @@ def upload_online_tsr_attachment(submission_id):
                     'message': 'The approved Calibration Report is read-only and cannot be replaced.',
                 }), 409
     late_calibration_report = None
+    replaced_report_file_id = None
     if late_calibration_report_requested:
         if not bool(getattr(submission, 'is_latest', True)):
             return jsonify({
@@ -26462,7 +26564,14 @@ def upload_online_tsr_attachment(submission_id):
                 and existing_file.online_tsr_submission_id == submission.id
                 and normalize_online_tsr_submission_token(existing_file.upload_token) == upload_token
             )
-            if not same_submission_file:
+            if not same_submission_file and calibration_report_is_returned_for_correction(submission):
+                replaced_report_file_id = calibration_report_current_source_file_id(submission)
+                if not merge_late_calibration_report_payload(submission, late_calibration_report):
+                    return jsonify({
+                        'status': 'error',
+                        'message': 'The final Calibration Report payload is invalid.'
+                    }), 400
+            elif not same_submission_file:
                 return jsonify({
                     'status': 'error',
                     'error_code': 'calibration_report_already_uploaded',
@@ -26523,6 +26632,7 @@ def upload_online_tsr_attachment(submission_id):
     saved_count = ShiftFile.query.filter(
         ShiftFile.online_tsr_submission_id == submission.id,
         ShiftFile.upload_token.isnot(None),
+        ShiftFile.id != (replaced_report_file_id or 0),
     ).count()
     if saved_count >= TSR_SUPPORTING_ATTACHMENT_MAX_COUNT:
         return jsonify({
@@ -27199,8 +27309,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v277-activity-chip-open.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v278-sidebar-groups.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v279-menu-guide.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v281-menu-polish.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v282-tracker-paid-batch';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v282-tracker-paid-batch.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v283-calibration-fix-report';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27223,14 +27333,14 @@ const APP_SHELL = [
   '/static/css/app-dashboard.css',
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
-  '/static/css/app-calibration-report.css?v=11',
+  '/static/css/app-calibration-report.css?v=12',
   '/static/css/app-offline-tsr.css?v=8',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=45',
+  '/static/js/app-calibration-report.js?v=46',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
@@ -52056,6 +52166,8 @@ def get_timeline_data():
                     if latest_online_tsr else 'not_started'
                 ),
                 'calibration_report_approval_status': calibration_timeline_state['approval_status'],
+                'calibration_report_returned': calibration_timeline_state['returned'],
+                'calibration_report_return_remarks': calibration_timeline_state['return_remarks'],
                 'calibration_report_locked': calibration_timeline_state['locked'],
                 'calibration_report_conversion_state': calibration_timeline_state['conversion_state'],
                 'engineers': assigned_engineer_ids,
@@ -52262,6 +52374,8 @@ def get_shift_details(shift_id):
                 if latest_online_tsr else 'not_started'
             ),
             'calibration_report_approval_status': calibration_timeline_state['approval_status'],
+            'calibration_report_returned': calibration_timeline_state['returned'],
+            'calibration_report_return_remarks': calibration_timeline_state['return_remarks'],
             'calibration_report_locked': calibration_timeline_state['locked'],
             'calibration_report_conversion_state': calibration_timeline_state['conversion_state'],
             'engineers': assigned_engineer_ids,
