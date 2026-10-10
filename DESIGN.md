@@ -1,0 +1,229 @@
+---
+name: Medical Service SMS
+description: Internal service-management system for Shimadzu Philippines' medical imaging department.
+colors:
+  primary: "#0d6efd"
+  primary-shimadzu-red: "#c8102e"
+  brand-red-logo: "#ee3239"
+  brand-red-text: "#d9262e"
+  ground-light: "#f4f7f6"
+  surface: "#ffffff"
+  surface-raised: "#f8fafc"
+  ink: "#172033"
+  ink-muted: "#64748b"
+  hairline: "#dbe3ea"
+  sidebar: "#2c3e50"
+  sidebar-deep: "#1a252f"
+  sidebar-text: "#cbd5e1"
+  sidebar-text-dim: "#a8b6c6"
+  auth-ground: "#14181f"
+  graphite-ground: "#202124"
+  graphite-surface: "#292a2d"
+  graphite-raised: "#333438"
+  amoled-ground: "#000000"
+  amoled-surface: "#101010"
+  amoled-raised: "#191919"
+  dark-ink: "#ededed"
+  dark-hairline: "#626262"
+typography:
+  body:
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "1rem"
+    fontWeight: 400
+    lineHeight: 1.5
+  title:
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "1.05rem"
+    fontWeight: 700
+  label:
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "0.78rem"
+    fontWeight: 600
+  micro:
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "0.72rem"
+    fontWeight: 700
+  auth:
+    fontFamily: "'Fira Sans', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "0.85rem"
+    fontWeight: 400
+  document:
+    fontFamily: "Cambria, 'Times New Roman', serif"
+rounded:
+  sm: "6px"
+  md: "10px"
+  lg: "12px"
+  card-mobile: "16px"
+  card-mobile-page: "14px"
+  dialog-mobile: "18px"
+  pill: "999px"
+spacing:
+  touch: "44px"
+  mobile-gutter: "14px"
+  sidebar-row: "44px"
+  sidebar-subrow: "38px"
+  sidebar-width: "240px"
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.surface}"
+    rounded: "{rounded.sm}"
+  card:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.md}"
+  card-mobile:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.card-mobile}"
+  input:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.sm}"
+  nav-sidebar:
+    backgroundColor: "{colors.sidebar}"
+    textColor: "{colors.sidebar-text}"
+    height: "{spacing.sidebar-row}"
+  nav-sidebar-header:
+    backgroundColor: "{colors.sidebar-deep}"
+  chip-status:
+    rounded: "{rounded.pill}"
+  button-auth:
+    backgroundColor: "{colors.brand-red-text}"
+    textColor: "{colors.surface}"
+---
+
+# Design System: Medical Service SMS
+
+## Overview
+
+**Creative North Star: "The Service Logbook"**
+
+A field engineer's logbook made digital: dense, orderly, and trustworthy. Every screen is a working page — schedules, reports, requests, approvals — and the design's job is to make the next entry obvious and the record legible. Expression is kept to precise details; the paper forms the system replaces remain the visual authority for anything that gets printed or generated.
+
+The app is built on Bootstrap 5.3 with a thin token layer (`static/css/app-themes.css`) that every page inherits. A dark slate sidebar frames a pale, cool-grey work area of white panels. The user chooses the mode (light, graphite, AMOLED dark, or system) and one accent from seven; all accent-coloured UI flows from the single `--app-primary` variable, so nothing hardcodes its own blue. Sign-in pages are the one branded moment: charcoal ground, the white Shimadzu logo, Fira Sans, and Shimadzu red.
+
+**Key Characteristics:**
+- Operate mode: scanability and consistency over expression.
+- One accent variable drives buttons, links, focus, active nav and pagination.
+- Four themes; generated documents always render on fixed white.
+- Phone-ready: 44px touch targets, 14px safe gutter, stacked cards instead of wide tables.
+
+## Colors
+
+A cool, low-chroma neutral system with one user-selectable accent; colour signals action and state, never decoration.
+
+### Primary
+- **Classic Signal Blue** (`primary`): the default accent. Primary buttons, links, focus rings, active sidebar rail, pagination, checked inputs. Hover and active states are derived with `color-mix` toward black (84% / 76%); soft fills and borders mix it into the surface (10% / 24%).
+- **Shimadzu Accent Red** (`primary-shimadzu-red`): the "Shimadzu Red" accent option, replacing the primary everywhere when chosen. Other options: Clinical Green `#198754`, Corporate Blue `#2563eb`, Purple `#8b5cf6`, Pink `#be185d`, Teal `#0f766e`.
+
+### Brand (sign-in only)
+- **Logo Red** (`brand-red-logo`): measured from the logo; the brand rule (`--brand-rule`): the short rule under the sign-in logo and a 2px inset rule along the bottom of the sidebar header and phone top bar. Never behind text. A chosen accent theme recolours the rule.
+- **Deep Brand Red** (`brand-red-text`): the sign-in button colour; white text passes AA on it (4.9:1).
+
+### Neutral
+- **Cool Mist Ground** (`ground-light`): the light-mode page background.
+- **Paper White** (`surface`) / **Frost Raised** (`surface-raised`): panels and cards / headers, footers, disabled inputs.
+- **Deep Navy Ink** (`ink`) / **Slate Muted** (`ink-muted`): body text / secondary text and help text.
+- **Hairline** (`hairline`): borders and dividers.
+- **Logbook Slate** (`sidebar`) / **Midnight Slate** (`sidebar-deep`): sidebar body / sidebar header; light text tokens `sidebar-text` and `sidebar-text-dim` (4.5:1 for small uppercase group labels).
+- **Graphite** (`graphite-*`) and **AMOLED** (`amoled-*`) sets: the two dark palettes, with `dark-ink` text and `dark-hairline` borders.
+
+### Named Rules
+**The One Variable Rule.** Accent colour comes only from `--app-primary` (and its derived `--app-primary-soft`, `-strong`, `-text`, `--app-focus`). A hardcoded accent hex breaks the user's chosen theme.
+
+**The White Paper Rule.** Document canvases, PDF and TSR previews, signature pads and print output are always `#fff` on `#000`, in every theme — they represent the official paper form.
+
+**The Semantic Status Rule.** Schedule and status colours stay semantic and are not re-themed by the accent.
+
+## Typography
+
+**App Font:** Fira Sans, self-hosted (400/500/600, with Segoe UI, system-ui), one family for the whole app including sign-in, via `--app-font` in `app-themes.css` (also Bootstrap's `--bs-body-font-family`). Weights above 600 render as 600. Tables use tabular figures.
+**Document Font:** Cambria (with Times New Roman) for calibration reports and certificates
+
+**Shell scale:** the sidebar, flyouts and phone bar use three steps from `app-shell.css`: `--shell-text-row` 0.9rem (rows, flyout rows, phone bar title), `--shell-text-subrow` 0.84rem (sub-rows, account name, hover name label), `--shell-text-micro` 0.72rem (group labels, flyout titles, role, count badges, initials); the rail's icon captions use micro too and wrap to a second line rather than shorten a label; the pinned brand name is 1rem.
+
+**Character:** One humanist sans, close to the logo's subline, across app and sign-in; a serif only where it mirrors the official printed form.
+
+### Hierarchy
+- **Title** (700, ~1.05rem): card, panel and section titles; Bootstrap headings for page titles.
+- **Body** (400, 1rem, 1.5): forms, tables, prose.
+- **Label** (600, ~0.78–0.86rem): field labels, table meta, nav text, chips.
+- **Micro** (700, ~0.66–0.72rem): uppercase sidebar group labels, badges, dense table annotations.
+
+### Named Rules
+**The Small-Text Contrast Rule.** Anything under ~0.8rem must still meet 4.5:1 — the sidebar dim text was raised to `#a8b6c6` for exactly this reason.
+
+## Layout
+
+On desktop (≥993px) the navigation is the pinned labelled sidebar by default at 1440px wide and up, and a 72px icon rail below that (a saved pin/collapse choice wins), beside a fluid main area using Bootstrap's grid and containers; hovering, focusing or tapping a group icon opens that group's links in a flyout beside the rail without moving the page, and pinning keeps it open and pushing the page (user-resizable 200–360px in 20px steps, pinned only). Fixed page docks follow `--shell-offset` (rail, pinned width, or 0 on phones). Rows in the sidebar are 44px (sub-rows 38px). Density is high on desktop: tables carry most data, with frozen columns and a horizontal-scroll hint that appears only when the table actually overflows.
+
+Breakpoints follow Bootstrap: the main collapse happens at 768px, with further adjustments at 992, 640, 576 and 420px. At ≤768px the shell switches to a mobile nav, tables become stacked cards (16px radius), page panels drop their padding so cards sit on the shell gutter, and all tappable controls are at least 44px tall. Safe-area insets are respected top and bottom.
+
+## Elevation & Depth
+
+Mostly flat with soft ambient lift. Cards carry a barely-there shadow; themed panels use `--app-shadow`; in dark modes depth comes from the ground → surface → raised tonal steps rather than shadow.
+
+### Shadow Vocabulary
+- **Card rest** (`0 4px 6px rgba(0,0,0,.05)`): default Bootstrap card.
+- **Panel** (`0 8px 24px rgba(15,23,42,.08)`, dark: `0 10px 28px rgba(0,0,0,.5)`): `--app-shadow`, themed panels.
+- **Focus ring** (`0 0 0 .25rem var(--app-focus)`): inputs, selects, checkboxes, buttons on focus.
+- **Selected option** (`inset 0 0 0 2px var(--app-primary)`): chosen appearance mode / accent tile.
+
+### Named Rules
+**The Tonal Dark Rule.** In graphite and AMOLED, separate layers with the surface tokens, not heavier shadows.
+
+## Shapes
+
+Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px; cards 10–12px; phone cards 16px (phone page panels 14px, phone dialogs 18px, recorded as they ship, owner 2026-10-09); keyboard keys in the Menu guide 4px and the skip link's bottom corners 8px; status chips and swatches are full pills or circles. Other shell values the detector flags are recorded here too: the 0.95rem phone headings and icons, the `#e5e7eb` hairline on the phone docked bar, and shadows and scrims built on slate `rgba(15, 23, 42, α)`. Cards are borderless on light (shadow only); in dark modes they gain a `dark-hairline` border. The active sidebar item is marked by a 3px accent rail on the left edge.
+
+## Components
+
+### Buttons
+- **Shape:** gently rounded (Bootstrap default ~6px).
+- **Primary:** accent fill, white text; hover darkens to 84% accent, active to 76%.
+- **Outline primary:** accent-text label and border, fills with accent on hover.
+- **Focus:** accent border plus the 0.25rem focus ring.
+- **Sign-in button:** Deep Brand Red (or the chosen accent, darkened for lighter accents).
+- **Add / create (exception):** Bootstrap success green for Add buttons and their modal headers, e.g. Product Inventory. Owner decision 2026-10-07; the only allowed exception to the One Variable Rule.
+
+### Chips / Badges
+- **Style:** pill (999px), small label weight; status colours are semantic (Bootstrap success / warning / danger / info / secondary).
+
+### Cards / Containers
+- **Corner Style:** 10px (desktop), 16px (phone cards).
+- **Background:** `surface`; headers and footers `surface-raised`.
+- **Shadow Strategy:** card rest shadow; see Elevation.
+- **Border:** none on light; `dark-hairline` in dark themes.
+
+### Inputs / Fields
+- **Style:** Bootstrap fields on `surface` (dark: `--app-input`), `hairline` border.
+- **Focus:** accent border + focus ring.
+- **Disabled / Read-only:** `surface-raised` background, muted text, full opacity.
+
+### Navigation
+- **Brand:** the Shimadzu mark (cropped from the white logo image by `.shell-brand-mark`, never redrawn) heads the sidebar: 28px above the pin button in the rail, beside "Medical Service" on one line when pinned (it wraps to two lines below 240px, never hides). The phone top bar shows the 24px mark and the current section's name at 0.9rem (e.g. Inventory; pages outside a section show their own name), since the page's heading below names the page; the tab title reads "Page · Medical Service". Both come from the active sidebar link.
+- **Order:** three groups, by what people come to do. MAIN: Dashboard, Approvals (approvers), My Requests, Calendar, Create TSR. WORK: Forms (the request forms), Clients (Client List, Calibration Center), Inventory (Product Inventory, Genoray, Vieworks | their PM pages | Stock Inventory, split by thin dividers; stock-only accounts see Stock in MAIN). MANAGE for administrators, MORE for everyone else: Reports (Analytics, Documents), Office (Personnel, P.O. Details, Reimbursement Tracker), Admin (Activity Logs, Settings) or Settings alone. One name per item: the rail caption is the label (stock-only and HR-schedule accounts keep "Stock" and "Password"). A group that would show one link to someone shows that link directly, and opening a group in the pinned sidebar or phone menu closes the others except the one holding the current page. The group headings are announced to screen readers. Calendar has no arrow or flyout. Who sees what is decided by the server's access helpers, never by the template. A "?" (pinned header, account panel, phone account row) opens the Menu guide: this user's own sections, each page as a link with a one-line description, plus the slim menu's keys on desktop. The two modes are called the "full menu" and the "slim menu" everywhere.
+- **Sidebar:** Logbook Slate body (kept dark, owner choice 2026-10-07), Midnight Slate 72px header holding only the brand and the pin control (« collapse, » open); the pinned footer shows the initials, name and role and a chevron, which open the account panel above it; rows are 44px with a 22px icon, label truncating with ellipsis, `sidebar-text` colour, weight 600 (sub-rows 500), and no divider between rows.
+- **Icon rail (desktop default):** 72px, 52px captioned rows; each top-level icon carries a short caption below it (it is the label itself, e.g. Dashboard, My Requests, Forms, Clients, Inventory, Reports, Office, Admin; two-word labels wrap to two lines; the caption is decorative and the link keeps the name for screen readers; rows tighten to 48px on windows 720px tall or less), group labels become thin separators, count badges become 16px one-digit badges (9+) on the icon's corner, the footer shows initials. Hover, focus or tap a group icon for a flyout with the group name and its links; single links show a name label. The initials open the account panel (rail and pinned): name, role, then labelled 44px rows Theme ("Theme: <current mode>"), What's New, Menu guide, Log out. Unread What's New updates show as an 8px soft white dot (`--shell-focus-ring`) on the account initials on desktop and on the phone top-bar bell; the count is in their labels ("Account, N unread updates") and badges show 9+ at most. Opening What's New marks its updates read. Count badges and initials sit on `--shell-on-accent-bg` (the accent darkened) so their white text reaches 4.5:1. A soft fade at the menu's bottom edge shows when more is below, in every mode. Offline, an amber OFFLINE tag (0.72rem) sits centred on the sidebar header's brand rule, and the phone top bar grows a full-width strip "Offline · Create TSR still works", and screen readers hear that Create TSR still works offline. Amber in the shell means only offline; Log out is neutral. Flyouts use the sidebar surface with a soft offset shadow; Escape or a tap outside closes; the ☰ control pins or collapses.
+- **Hover:** faint white wash (7%), text turns white.
+- **Active:** white text, 16% accent wash, 3px left rail in `--sidebar-active-marker` (the accent mixed 55% with white, ≥3:1 on the dark sidebar) on the current page only; its open parent group just brightens. In the rail, the parent group icon carries the rail when its child page is active.
+- **Focus-visible:** 2px accent outline inset.
+- **Mobile:** sidebar becomes an off-canvas drawer (min(86vw, 320px)) that slides in from the right (the Menu button's side) below the top bar, with the account row (name, role) at its top and a labelled Log out row at its foot, away from the Close button (whose Menu button reads Close while open), above fixed page docks, over a dimmed tap-to-close backdrop; the drawer has no header of its own (the top bar carries the title, What's New and Menu, in the theme's sidebar colour); the drawer's account row holds Theme and the Menu guide as 44px icons; bottom-safe mobile nav.
+
+### Appearance Picker (signature)
+A grid of mode tiles (4 across, 2 on phones) and accent tiles with a 26px circular swatch; the selected tile gets an inset 2px accent ring.
+
+## Do's and Don'ts
+
+### Do:
+- **Do** take every accent colour from `--app-primary` and its derived tokens.
+- **Do** use the theme variables (`--app-surface`, `--app-text`, `--app-border`, …) so a page works in light, graphite and AMOLED.
+- **Do** keep tappable controls ≥44px on phones and turn wide tables into stacked cards at ≤768px.
+- **Do** keep document previews and print output white with black text.
+- **Do** use the white Shimadzu logo image only on dark grounds; never retype the logotype.
+
+### Don't:
+- **Don't** hardcode an accent hex in a page template.
+- **Don't** put white text on Logo Red `#ee3239` (4.1:1); use Deep Brand Red `#d9262e`.
+- **Don't** re-theme schedule or status colours with the accent.
+- **Don't** use `transition: all`; animate only the properties that change.
+- **Don't** invent further Shimadzu brand rules until the official brand guide is in the repository.
