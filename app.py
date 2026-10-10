@@ -18,7 +18,7 @@ CORE ARCHITECTURAL MODULES AND BUSINESS LOGIC:
 
 2.  ACTIVITY LOGGING (v5.4.5):
     - Background audit trail recording all significant system actions.
-    - UPDATED: Disabled login/logout logging to reduce noise.
+    - UPDATED 2026-10-10: Login-form sign-ins, failed/blocked sign-ins and sign-outs are logged; PWA/remember-me restores are not.
     - Captures Calendar and Database changes for Admin oversight.
     - Timestamps strictly follow Manila Time (UTC+8).
 
@@ -8033,6 +8033,16 @@ def add_activity_log_entry(action, user_label=None):
     ))
 
 
+def record_signin_event(action, user_label):
+    """Log a sign-in, failed or blocked sign-in, or sign-out. Never raises."""
+    try:
+        add_activity_log_entry(action, user_label)
+        db.session.commit()
+    except Exception as signin_log_error:
+        db.session.rollback()
+        print(f"[AUTH] Unable to record sign-in activity: {signin_log_error}", flush=True)
+
+
 def generate_temp_password(length=14):
     """Generates a one-time temporary password for first-run/local testing bootstrap."""
     alphabet = string.ascii_letters + string.digits + "!@#$%&*"
@@ -12980,6 +12990,7 @@ def login():
             # branch the redirect below would silently bounce the user back here
             # with no explanation, which reads as a wrong password.
             flash('This account has been deactivated. Please contact your administrator.')
+            record_signin_event('Blocked sign-in: account deactivated', user_rec.username)
         elif user_rec and password_matches:
             # PWA/mobile convenience: automatically keep users remembered after app close/reopen.
             session.permanent = True
@@ -12993,9 +13004,11 @@ def login():
 
             if not logged_in:
                 flash('This account cannot sign in right now. Please contact your administrator.')
+                record_signin_event('Blocked sign-in: account cannot sign in', user_rec.username)
             else:
                 try:
                     user_rec.last_login_at = datetime.now()
+                    add_activity_log_entry('Signed in', user_rec.username)
                     db.session.commit()
                 except Exception as login_stamp_error:
                     db.session.rollback()
@@ -13020,6 +13033,11 @@ def login():
                 return set_pwa_login_cookie(response, user_rec)
         else:
             flash('Username or password is incorrect. Check caps lock and try again.')
+            # An unknown username is never stored: people sometimes type their password there.
+            if user_rec:
+                record_signin_event('Failed sign-in: wrong password', user_rec.username)
+            else:
+                record_signin_event('Failed sign-in: unknown username', 'Unknown')
 
     # A failed attempt hands the typed username back so it need not be retyped. The
     # password is never echoed, and this POST response is never cached offline.
@@ -13060,7 +13078,9 @@ def auth_status():
 
 @app.route('/logout')
 def logout():
-    # log_activity removed v5.4.5 per request
+    # Sign-outs are logged again since 2026-10-10; only interactive sign-ins count, so it stays quiet.
+    if current_user and current_user.is_authenticated:
+        record_signin_event('Signed out', current_user.username)
     logout_user()
     session.clear()
     response = redirect(url_for('login'))
@@ -27310,7 +27330,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v278-sidebar-groups.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v279-menu-guide.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v283-calibration-fix-report.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v284-daily-db-backup';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v285-signin-activity-log';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -32949,7 +32969,7 @@ def download_system_backup():
 ACTIVITY_CATEGORY_RULES = [
     ('Stock Inventory', ['stock inventory']),
     ('Leave Request', ['leave request', 'form to follow', 'lr-']),
-    ('Security', ['password', 'unauthorized', 'denied']),
+    ('Security', ['password', 'unauthorized', 'denied', 'signed in', 'signed out', 'sign-in']),
     ('Cash Advance Liquidation', ['cash advance liquidation', 'cal-']),
     ('Travel Liquidation', ['travel liquidation', 'tl-']),
     ('Cash Advance', ['cash advance', 'ca-']),
@@ -32967,7 +32987,7 @@ ACTIVITY_CATEGORY_RULES = [
 ]
 
 ACTIVITY_ACTION_RULES = [
-    ('Security', ['password', 'unauthorized', 'denied']),
+    ('Security', ['password', 'unauthorized', 'denied', 'signed in', 'signed out', 'sign-in']),
     ('Reject', ['rejected ', ' rejected', 'rejection']),
     ('Return', ['returned ', ' returned', 'return ']),
     ('Approve', ['approved ', ' approved', 'approval stamp']),

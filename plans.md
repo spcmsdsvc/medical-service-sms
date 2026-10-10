@@ -37,6 +37,94 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Record Sign-ins in the Activity Log
+
+**Status:** Executed locally on 2026-10-10 (owner: "execute"); not committed — awaiting "commit and push". 9 new tests (7 fail on the previous `app.py`; the 2 "must not log" guards pass on both, as expected); focused run 74 tests OK. Browser check on a DB copy passed. Full suite still to run before publishing.
+**Differences from the plan:** none.
+**Approved:** 2026-10-10 (owner: "yes to both, write it to plans.md").
+**Detailed:** 2026-10-10.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Context
+
+HR's compliance deck (claude.ai artifact "Medical Service Management System Framework", page 8 "All transactions are recorded" and page 12 "Open items") lists **"Record each sign-in in the activity log — Planned"**. Today the Activity log records actions but no sign-ins, sign-outs or failed attempts, so a reviewer cannot answer "who signed in, and were there failed attempts?".
+
+Intended outcome: every interactive sign-in, failed sign-in, blocked sign-in and sign-out appears on the Activity page with a Security badge, without flooding the log. After publishing, the deck's open item becomes Done.
+
+## Decisions taken
+
+1. **Log sign-outs:** yes (owner, 2026-10-10).
+2. **Log failed attempts:** yes (owner, 2026-10-10).
+3. **Only the login form counts as a sign-in.** Automatic re-authentication (PWA restore cookie, 30-day remember-me cookie) is not logged. This is what keeps the noise down.
+4. **Unknown usernames are logged without the typed text**: people sometimes type their password into the username box, so the typed value must never be stored.
+5. Wording (exact action texts):
+
+| Event | `ActivityLog.user` | `ActivityLog.action` |
+| --- | --- | --- |
+| Successful sign-in | the user | `Signed in` |
+| Wrong password, known account | that username | `Failed sign-in: wrong password` |
+| Correct password, deactivated account | that username | `Blocked sign-in: account deactivated` |
+| Correct password, `login_user` refused | that username | `Blocked sign-in: account cannot sign in` |
+| Unknown username | `Unknown` | `Failed sign-in: unknown username` |
+| Sign-out (authenticated user only) | the user | `Signed out` |
+
+## Investigation
+
+- **Login/logout logging was switched off on purpose before.** The `app.py` header says "ACTIVITY LOGGING (v5.4.5) … Disabled login/logout logging to reduce noise" (`app.py:19-21`), and `logout()` carries `# log_activity removed v5.4.5 per request` (`app.py:13063`). The noise came from logging every session; decision 3 avoids it. The owner was told this before approving.
+- `login()` is at `app.py:12959` (rate limit `10 per minute; 60 per hour` on POST, `app.py:12958`). Order of branches: unknown user → dummy hash compare (`DUMMY_PASSWORD_HASH`, `app.py:7513`); correct password + `is_active` false → flash "deactivated"; correct password → `login_user(...)`; `logged_in` false → flash "cannot sign in right now"; otherwise `last_login_at` is stamped and committed inside a `try/except` with rollback (≈`app.py:12997-13002`); else → flash "Username or password is incorrect".
+- `logout()` is at `app.py:13062`, not `@login_required`; it calls `logout_user()` then `session.clear()`. `current_user` may be anonymous here.
+- PWA restore signs users in via `restore_user_from_pwa_login_cookie()` (`app.py:7670`, `login_user(..., fresh=False)` ≈`app.py:7697`), a separate path from `login()`. Remember-me is handled by Flask-Login. Neither goes through `login()`, so logging only inside `login()` satisfies decision 3 without extra checks.
+- Helpers: `log_activity(action)` (`app.py:8011`) needs an authenticated `current_user` and commits immediately, so it is unsuitable for failed attempts. `add_activity_log_entry(action, user_label=None)` (`app.py:8018`) adds without committing and capitalizes the label, matching `log_activity`'s `username.capitalize()`. Use it for every event.
+- `ActivityLog` (`app.py:1842`): `user`, `action`, `timestamp` (Manila time) only. No schema change needed.
+- Classification rules: `ACTIVITY_CATEGORY_RULES` (`app.py:32949`), `ACTIVITY_ACTION_RULES` (`app.py:32969`), `ACTIVITY_SEVERITY_RULES` (`app.py:32987`). `Security` matches `password`, `unauthorized`, `denied` today, so "Failed sign-in: wrong password" is already Security but "Signed in", "Signed out" and "unknown username" are not. `failed` is already `danger`; `blocked` is already `warning`.
+- Requests over the rate limit are rejected by Flask-Limiter before `login()` runs.
+- Existing tests: `tests/test_activity_log_details.py` (imports `app` with a temp DB via `MEDICAL_SERVICE_TEST_DB`).
+
+## Execution steps
+
+1. **Read first:** newest section of `changes.md`; `login()` and `logout()` in full.
+2. **`login()` success path (`app.py`, inside the existing `last_login_at` `try`):** call `add_activity_log_entry('Signed in', user_rec.username)` before the existing `db.session.commit()`, so the entry and the timestamp commit together and the existing `except` rolls both back. Done = a successful login writes exactly one `Signed in` row; a failing commit still signs the user in.
+3. **`login()` failed and blocked paths:** add a small local helper, e.g. `record_signin_event(action, user_label)`, that does `add_activity_log_entry(...)` + `db.session.commit()` inside `try/except` with `db.session.rollback()` and a `[AUTH]` print. It never raises. Call it in the deactivated branch, the `logged_in` false branch, the wrong-password branch (known user → their username; unknown → label `Unknown`, action `Failed sign-in: unknown username`). Done = each branch writes exactly one row and the user-facing flash messages and responses are unchanged.
+4. **`logout()`:** before `logout_user()`, if `current_user.is_authenticated`, call the same helper with `Signed out` and the username. Replace the `# log_activity removed v5.4.5 per request` comment with one line saying sign-outs are logged again since 2026-10-10 (noise handled by logging only interactive sign-ins). Update the `app.py` header line "Disabled login/logout logging to reduce noise" to match. Done = signing out writes one `Signed out` row; visiting `/logout` signed out writes nothing.
+5. **Classification rules:** add `'signed in'`, `'signed out'`, `'sign-in'` to the `Security` entries of `ACTIVITY_CATEGORY_RULES` and `ACTIVITY_ACTION_RULES`. No severity change is needed (`failed` → danger, `blocked` → warning already). Done = all six action texts classify as Security; no existing classification changes (check that `sign-in` does not newly match any existing logged texts with a quick `rg -i "sign-in" app.py leave_feature.py`).
+6. **Tests:** new `tests/test_signin_activity_log.py` (same temp-DB import pattern as `tests/test_activity_log_details.py`), using the Flask test client with CSRF disabled for the test app config:
+   - each of the six events writes exactly one row with the exact `user` and `action` from the table;
+   - the unknown-username row never contains the typed username (use a distinctive value and assert it appears in no `ActivityLog.action` or `.user`);
+   - a PWA-cookie restore (`restore_user_from_pwa_login_cookie` path: set a valid PWA login cookie and request a protected page) writes no `Signed in` row;
+   - `/logout` while signed out writes no row;
+   - classification: all six texts map to the `Security` category/action.
+   Positive control: run the new module against the current `app.py` first (before step 2) and record that the event tests fail.
+7. **Self-review** the diff: no flash text, redirect, cookie or rate-limit behaviour changed; every function `login()`/`logout()` called before is still called.
+
+## Deliberately excluded
+
+- **Rate-limited attempts:** rejected before `login()`; logging them would need a limiter hook and brings the noise back.
+- **PWA restore and remember-me re-authentication:** decision 3.
+- **Storing the typed username for unknown accounts:** decision 4.
+- **IP address / device:** not requested; `ActivityLog` has no column for it and adding one is a schema change. Can be a later plan.
+- **Retention/cleanup of old Activity rows:** waits on HR's retention-period decision (deck open item).
+- **Deck update:** done after publishing (page 12 item → removed or Done), outside the codebase.
+
+## Verification
+
+- Focused tests: `venv/Scripts/python.exe -m unittest tests.test_signin_activity_log tests.test_activity_log_details -v`.
+- Full suite once, before publishing: `venv/Scripts/python.exe scripts/run_suite.py` (compare with `tests/known_failures.txt`).
+- Browser check on a **copy** of `scheduler.db` with a temporary test account: sign in; sign out; fail once with a wrong password; try an unknown username; deactivate the test account and try again; open the Activity page and confirm all rows appear with the Security badge, filter by Security works, and nothing else changed on the login page. Standing bar: 375 px login page, console clean. Clean up the DB copy, test account and launch entry afterwards.
+
+## After implementation
+
+1. Bump the service worker `CACHE_VERSION` (`app.py:27313`, currently `…-v284-daily-db-backup`) to `…-v285-signin-activity-log`.
+2. Add a `static/changelog/releases.json` entry at the top (`release_key` `2026-10-10-signin-activity-log`, category `Security`, plain wording: "Sign-ins, failed sign-in attempts and sign-outs now appear in the Activity log.").
+3. Append detailed bullets to `changes.md` under `codex changes - 2026-10-10`.
+4. Update this plan's Status to `Executed` with the commit hash and any differences from the plan.
+5. Commit checklist: stage only the intended files (`app.py`, the new test file, `static/changelog/releases.json`, `plans.md`, `changes.md`); never `scheduler.db`, `output/`, `tmp/`, handoff artifacts or unrelated changes. Publish only on a separate "commit and push".
+
+## Risks
+
+- **Login breaks because of logging:** every write is wrapped and rolls back on error; the success-path entry shares the existing guarded commit. Blast radius if wrong: sign-in for everyone, so the focused tests and the browser check both exercise every branch.
+- **Noise returns:** limited to interactive sign-ins; engineers on the PWA appear about once per 30 days. If it is still too noisy, the Security filter hides it; removal is a one-line revert per call site.
+- **Password leakage via the username box:** prevented by decision 4 and asserted by a test.
+
 # Daily Automatic Database Backup
 
 **Status:** Executed — published to `main` on 2026-10-09 on the owner's "commit and push" (commit `f28d3c4`). 60 focused tests OK (8 new, all fail on the previous `app.py`). Full suite before publishing: 1,679 tests, 14 failures (the known list), 3 errors that occur only alongside other test files, 5 skips, no new failures.

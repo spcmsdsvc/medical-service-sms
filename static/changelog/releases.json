@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-10-signin-activity-log",
+      "release_date": "2026-10-10",
+      "title": "Sign-ins in the Activity Log",
+      "summary": "Sign-ins, failed sign-in attempts and sign-outs now appear in the Activity log.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-10-signin-activity-log",
+          "category": "Security",
+          "description": "Each sign-in from the login page, each failed or blocked attempt, and each sign-out is recorded in the Activity log with a Security badge. Reopening the phone app does not count as a new sign-in.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-09-daily-db-backup",
       "release_date": "2026-10-09",
       "title": "Daily Automatic Database Backup",
