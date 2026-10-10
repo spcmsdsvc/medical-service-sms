@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Record Sign-ins in the Activity Log
 
-**Status:** Executed locally on 2026-10-10 (owner: "execute"); not committed — awaiting "commit and push". 9 new tests (7 fail on the previous `app.py`; the 2 "must not log" guards pass on both, as expected); focused run 74 tests OK. Browser check on a DB copy passed. Full suite still to run before publishing.
+**Status:** Executed — published to `main` on 2026-10-10 on the owner's "commit and push" (commit `2a4d59e`). 9 new tests (7 fail on the previous `app.py`; the 2 "must not log" guards pass on both); focused run 74 tests OK. Full suite before publishing: 1,688 tests, 14 failures (the known list), 3 errors that occur only alongside other test files, 5 skips, no new failures. Browser check on a DB copy passed.
 **Differences from the plan:** none.
 **Approved:** 2026-10-10 (owner: "yes to both, write it to plans.md").
 **Detailed:** 2026-10-10.
