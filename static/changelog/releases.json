@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-10-whats-new-dot-recent",
+      "release_date": "2026-10-10",
+      "title": "Quieter What's New Dot",
+      "summary": "The What's New dot now counts only updates from the last 30 days.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-10-whats-new-dot-recent",
+          "category": "Navigation",
+          "description": "The unread dot on your initials, the bell count and the dashboard What's New card now count only updates from the last 30 days, so an old backlog no longer keeps the dot on. Older updates are still listed on the What's New page.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-10-signin-activity-log",
       "release_date": "2026-10-10",
       "title": "Sign-ins in the Activity Log",

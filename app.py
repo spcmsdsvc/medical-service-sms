@@ -28105,6 +28105,7 @@ def whats_new_page():
 
 
 CHANGELOG_RELEASES_PER_PAGE = 10
+CHANGELOG_UNREAD_DOT_DAYS = 30
 
 
 @app.route('/api/changelog/releases')
@@ -28256,7 +28257,13 @@ def get_nav_pending_summary():
 def get_changelog_unread_summary():
     ensure_changelog_tables()
     releases = get_visible_changelog_release_dicts(current_user, admin_view=False)
-    unread = [release for release in releases if release.get('is_unread')]
+    # Only recent releases light the shell dot, so an old unread backlog cannot keep
+    # it on forever. The What's New page still lists every release's read state.
+    cutoff = (get_manila_time().date() - timedelta(days=CHANGELOG_UNREAD_DOT_DAYS)).isoformat()
+    unread = [
+        release for release in releases
+        if release.get('is_unread') and (release.get('release_date') or '') >= cutoff
+    ]
     latest = unread[0] if unread else None
     if latest:
         latest = {

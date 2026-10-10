@@ -3,7 +3,8 @@ import os
 import pathlib
 import tempfile
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -735,6 +736,87 @@ class ChangelogDigestEnabledPathTests(unittest.TestCase):
         # Both are accepted; the invalid one falls back to all branches rather
         # than erroring, matching how preview validates the same parameter.
         self.assertEqual(len(self.sent), 2)
+
+
+class ChangelogUnreadDotWindowTests(unittest.TestCase):
+    """The shell dot counts only unread releases from the last 30 days."""
+
+    NOW = datetime(2026, 10, 10, 9, 0)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config['WTF_CSRF_ENABLED'] = False
+        cls.app.config['TESTING'] = True
+        with cls.app.app_context():
+            app_module.db.create_all()
+            app_module.ensure_changelog_tables()
+
+    def _client(self, username='clog_dot_user'):
+        with self.app.app_context():
+            user = app_module.User.query.filter_by(username=username).first()
+            if not user:
+                user = app_module.User(
+                    username=username, role='engineer', is_active=True,
+                    password=app_module.generate_password_hash('ClogTest123')
+                )
+                app_module.db.session.add(user)
+                app_module.db.session.commit()
+            user_id = user.id
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(user_id)
+            session['_fresh'] = True
+        return client
+
+    def _summary(self, *days_ago):
+        releases = [
+            {'id': index + 1, 'release_date': (self.NOW.date() - timedelta(days=days)).isoformat(),
+             'title': f'R{index}', 'summary': '', 'items': [{}], 'is_unread': True}
+            for index, days in enumerate(days_ago)
+        ]
+        with mock.patch.object(app_module, 'get_visible_changelog_release_dicts', return_value=releases),                 mock.patch.object(app_module, 'get_manila_time', return_value=self.NOW):
+            return self._client().get('/api/changelog/unread-summary').get_json()
+
+    def test_recent_unread_release_lights_the_dot(self):
+        data = self._summary(0)
+        self.assertEqual(data['unread_count'], 1)
+        self.assertEqual(data['latest_unread']['id'], 1)
+
+    def test_old_unread_release_does_not_light_the_dot(self):
+        data = self._summary(31)
+        self.assertEqual(data['unread_count'], 0)
+        self.assertIsNone(data['latest_unread'])
+
+    def test_day_thirty_still_counts(self):
+        self.assertEqual(self._summary(30, 31, 200)['unread_count'], 1)
+
+    def test_whats_new_page_still_shows_old_release_unread(self):
+        title = 'Dot window old release marker'
+        with self.app.app_context():
+            release = app_module.ChangelogRelease.query.filter_by(title=title).first()
+            if not release:
+                release = app_module.ChangelogRelease(
+                    release_key='app-dot-window-old', title=title, is_published=True,
+                    release_date=app_module.get_manila_time().date() - timedelta(days=400)
+                )
+                release.items.append(app_module.ChangelogItem(
+                    item_key='app-dot-window-old-1', description='Old update.',
+                    audiences_json='["everyone"]'
+                ))
+                app_module.db.session.add(release)
+                app_module.db.session.commit()
+            release_id = release.id
+
+        client = self._client('clog_dot_page_user')
+        page = client.get('/api/changelog/releases', query_string={'search': title}).get_json()
+        listed = [r for r in page['releases'] if r['id'] == release_id]
+        self.assertEqual(len(listed), 1)
+        self.assertTrue(listed[0]['is_unread'])
+
+        summary = client.get('/api/changelog/unread-summary').get_json()
+        latest = summary['latest_unread'] or {}
+        self.assertNotEqual(latest.get('id'), release_id)
 
 
 if __name__ == '__main__':
