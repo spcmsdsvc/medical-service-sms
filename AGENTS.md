@@ -17,8 +17,8 @@
 - **Write it detailed, and write it to be executed.** Prose alone is not enough. Every plan
   carries numbered execution steps that can be worked through one at a time, each naming the
   files and functions it touches and what "done" looks like — plus what happens *after* the
-  code is written: self-review, proving the tests fail without the fix, the focused tests (full suite only
-  before publishing), browser
+  code is written: self-review, proving the tests fail without the fix, the focused tests (full suite before
+  publishing only when the change touches shared code — see "Keep It Simple"), browser
   verification, the service worker bump, `releases.json`, the journals, and the commit
   checklist. The required structure is in `plans.md` under "How to use this file".
 - Keep the `Status` line current — `Approved — awaiting go-ahead`, `In progress`, `Executed`
@@ -68,6 +68,12 @@
 - Do not over-engineer. Make the smallest change that solves the request, with no extra layers,
   options, or refactors that were not asked for.
 - Do not over-verify. Run the focused tests for what changed; skip repeated or redundant checks.
+- Full suite (`venv/Scripts/python.exe scripts/run_suite.py`, about 75 s) runs once before
+  publishing **only when the change touches shared code**: the shell (`layout.html`,
+  `app-shell.css`, shared JS), shared `app.py` helpers, auth/permissions, or the database
+  schema. A small change confined to one page or one function publishes after its focused
+  tests. When needed, run it in the main project folder (it has `.env`), not a temporary
+  worktree, where missing settings add about 30 false failures.
 
 ## Token Budget
 
