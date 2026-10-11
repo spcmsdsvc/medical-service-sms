@@ -3,20 +3,32 @@
    window.__dashboardConfig, set inline by the template before this loads. */
 
     (function(){
+        const dismissKey = 'medical_dashboard_whats_new_dismissed';
+        function readDismissedRelease(){
+            try { return localStorage.getItem(dismissKey) || ''; } catch (err) { return ''; }
+        }
         function renderDashboardChangelogPrompt(data){
             const panel = document.getElementById('dashboard-whats-new');
             const latest = data?.latest_unread;
             if(!panel) return;
-            if(!latest || Number(data.unread_count || 0) <= 0){
+            if(!latest || Number(data.unread_count || 0) <= 0 || readDismissedRelease() === String(latest.id || '')){
                 panel.style.display = 'none';
                 return;
             }
+            panel.dataset.releaseId = String(latest.id || '');
             document.getElementById('dashboard-whats-new-date').textContent = `${Number(data.unread_count || 0)} unread update${Number(data.unread_count || 0) === 1 ? '' : 's'} | ${latest.release_date || ''}`;
             document.getElementById('dashboard-whats-new-title').textContent = latest.title || "What's New";
             document.getElementById('dashboard-whats-new-summary').textContent = latest.summary || `${Number(latest.item_count || 0)} improvement(s) are ready to review.`;
             panel.style.display = '';
         }
         window.addEventListener('changelog:summary', event => renderDashboardChangelogPrompt(event.detail || {}));
+        document.addEventListener('click', event => {
+            if(!event.target.closest('#dashboard-whats-new-dismiss')) return;
+            const panel = document.getElementById('dashboard-whats-new');
+            if(!panel) return;
+            try { localStorage.setItem(dismissKey, panel.dataset.releaseId || ''); } catch (err) { /* hide anyway */ }
+            panel.style.display = 'none';
+        });
     })();
 
     // --- APP INITIALIZATION ---
@@ -32,6 +44,7 @@
     const dashboardHybridView = __cfg.hybridView === true;
     const dashboardManagerView = __cfg.managerView === true;
     const dashboardSchedulerAccount = __cfg.schedulerAccount === true;
+    const dashboardStaffLanding = __cfg.staffLanding === true;
 
     // v5.4.5: Real-time Manila Ticker and Date
     function updateClock() {
@@ -53,8 +66,8 @@
         const manilaTime = new Intl.DateTimeFormat('en-US', clockOptions).format(now);
         const manilaDate = new Intl.DateTimeFormat('en-US', dateOptions).format(now);
         
-        document.getElementById('system-clock').innerText = manilaTime;
-        document.getElementById('current-date').innerText = manilaDate;
+        setTextIfPresent('system-clock', manilaTime);
+        setTextIfPresent('current-date', manilaDate);
     }
 
     setInterval(updateClock, 1000);
@@ -332,6 +345,7 @@
     }
 
     function resetDashboardLayout() {
+        if (!window.confirm('Reset the dashboard to the default section order?')) return;
         localStorage.removeItem(dashboardLayoutStorageKey);
         localStorage.removeItem(dashboardCollapsedStorageKey);
         localStorage.removeItem(dashboardHiddenStorageKey);
@@ -580,6 +594,26 @@
         }).join('');
     }
 
+    // Inventory PM (Genoray, Vieworks) for the current Manila month. The label names the
+    // brands so the figure is never read as covering all preventive maintenance.
+    function renderManagerPmSummary(pm) {
+        const box = document.getElementById('manager-pm-summary');
+        if (!box) return;
+        if (!pm || typeof pm !== 'object') {
+            box.classList.add('d-none');
+            return;
+        }
+        const due = Number(pm.due_this_month || 0);
+        const done = Number(pm.done_this_month || 0);
+        const overdue = Number(pm.overdue || 0);
+        const percent = due ? Math.round(done / due * 100) : null;
+        box.innerHTML = `
+            <span class="manager-pm-label">Inventory PM (Genoray, Vieworks) this month</span>
+            <span class="manager-pm-value">${escapeHtml(done)} / ${escapeHtml(due)} done${percent === null ? '' : ` (${escapeHtml(percent)}%)`}</span>
+            <span class="manager-pm-overdue ${overdue ? 'is-late' : ''}">${escapeHtml(overdue)} overdue</span>`;
+        box.classList.remove('d-none');
+    }
+
     function managerWatchlistTypeLabel(type) {
         const labels = {
             severe_overdue: 'Severely overdue',
@@ -639,6 +673,7 @@
 
             renderManagerRisk(managerOverviewData);
             renderManagerDirection(managerOverviewData);
+            renderManagerPmSummary(managerOverviewData.pm);
             renderManagerWatchlist(managerOverviewData);
             renderManagerBranchOverview(managerOverviewData.branch_summary || []);
             renderManagerEngineerUtilization(managerOverviewData.engineer_utilization || []);
@@ -1121,6 +1156,88 @@
         }
     }
 
+    // Writes a metric and colours it only when it is above zero (data-metric-tone names
+    // the colour), so a zero always reads neutral.
+    function setMetricValue(elementId, value) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        el.innerText = value;
+        const tone = el.dataset.metricTone;
+        if (tone) el.classList.toggle(`dashboard-metric-${tone}`, Number(value) > 0);
+    }
+
+    async function loadMyPendingTsrCount() {
+        if (!dashboardHasEngineerProfile) return;
+        try {
+            const data = await fetchJsonOrThrow('/get_my_pending_tsr_count');
+            setMetricValue('count-my-pending-tsr', Number((data || {}).pending_tsr || 0));
+        } catch (error) {
+            console.warn('[Dashboard] Pending TSR count could not be loaded', error);
+            setTextIfPresent('count-my-pending-tsr', '–');
+        }
+    }
+
+    // Shared by "Needs you today" and the staff "Waiting on you" card.
+    function renderDashboardTodayRows(list, rows) {
+        list.innerHTML = rows.map(row => (
+            `<a class="dashboard-today-row" href="${escapeHtml(row.href || '/timeline')}">`
+            + `<span class="dashboard-today-accent ${row.accent}" aria-hidden="true"></span>`
+            + '<span class="dashboard-today-body">'
+            + `<span class="dashboard-today-title">${escapeHtml(row.title)}</span>`
+            + `<span class="dashboard-today-hint">${escapeHtml(row.hint)}</span>`
+            + '</span>'
+            + `<span class="dashboard-today-action">${escapeHtml(row.action)} →</span>`
+            + '</a>'
+        )).join('');
+    }
+
+    function renderDashboardClear(list, message) {
+        list.innerHTML = '<div class="dashboard-today-clear">'
+            + '<i class="fa-solid fa-circle-check" aria-hidden="true"></i>'
+            + `<span>${escapeHtml(message)}</span>`
+            + '</div>';
+    }
+
+    async function loadStaffWaiting() {
+        const list = document.getElementById('staff-waiting-list');
+        if (!list || !dashboardStaffLanding) return;
+        try {
+            const data = await fetchJsonOrThrow('/api/nav/pending-summary');
+            const approvals = Number((data || {}).approvals_pending || 0);
+            const requests = Number((data || {}).my_requests_action || 0);
+            const rows = [];
+            if (approvals) {
+                rows.push({
+                    accent: 'is-warning',
+                    title: approvals === 1 ? '1 request is waiting for your approval' : `${approvals} requests are waiting for your approval`,
+                    hint: 'Approvals',
+                    action: 'Review',
+                    href: '/approvals'
+                });
+            }
+            if (requests) {
+                rows.push({
+                    accent: 'is-warning',
+                    title: requests === 1 ? '1 of your requests needs attention' : `${requests} of your requests need attention`,
+                    hint: 'My Requests',
+                    action: 'Open',
+                    href: '/accounting_center'
+                });
+            }
+            if (!rows.length) {
+                renderDashboardClear(list, 'Nothing is waiting on you right now.');
+                return;
+            }
+            renderDashboardTodayRows(list, rows);
+        } catch (error) {
+            console.warn('[Dashboard] Waiting items could not be loaded', error);
+            list.innerHTML = '<div class="dashboard-today-clear">'
+                + '<span>Could not check what is waiting on you.</span>'
+                + '<button type="button" class="btn btn-sm btn-outline-secondary fw-bold ms-auto" onclick="loadStaffWaiting()">Retry</button>'
+                + '</div>';
+        }
+    }
+
     function getCurrentEngineerTasks() {
         if (!dashboardHasEngineerProfile) return [];
         return allOpenTasksRaw.filter(isTaskAssignedToCurrentEngineer);
@@ -1143,8 +1260,8 @@
 
         setTextIfPresent('count-my-active', myTasks.length);
         setTextIfPresent('count-my-upcoming', upcomingVisits);
-        setTextIfPresent('count-my-continuation', continuationCount);
-        setTextIfPresent('count-my-waiting', waitingCount);
+        setMetricValue('count-my-continuation', continuationCount);
+        setMetricValue('count-my-waiting', waitingCount);
 
         renderEngineerTodayPanel(myTasks, todayStart);
     }
@@ -1176,12 +1293,14 @@
             return tasks.length === 1 ? place : `${place} and ${tasks.length - 1} more`;
         }
 
+        // Each row opens the timeline on the week of the first task it names.
         if (overdue.length) {
             rows.push({
                 accent: 'is-danger',
                 title: overdue.length === 1 ? '1 visit is past its scheduled date' : `${overdue.length} visits are past their scheduled date`,
                 hint: describe(overdue),
-                action: 'Review'
+                action: 'Review',
+                href: dashboardTimelineHref(overdue[0])
             });
         }
         if (dueToday.length) {
@@ -1189,7 +1308,8 @@
                 accent: '',
                 title: dueToday.length === 1 ? '1 visit scheduled today' : `${dueToday.length} visits scheduled today`,
                 hint: describe(dueToday),
-                action: 'Open'
+                action: 'Open',
+                href: dashboardTimelineHref(dueToday[0])
             });
         }
         if (continuation.length) {
@@ -1197,7 +1317,8 @@
                 accent: 'is-warning',
                 title: continuation.length === 1 ? '1 job is for continuation' : `${continuation.length} jobs are for continuation`,
                 hint: describe(continuation),
-                action: 'Continue'
+                action: 'Continue',
+                href: dashboardTimelineHref(continuation[0])
             });
         }
         if (waiting.length) {
@@ -1205,28 +1326,25 @@
                 accent: 'is-warning',
                 title: waiting.length === 1 ? '1 job is waiting on parts or P.O.' : `${waiting.length} jobs are waiting on parts or P.O.`,
                 hint: describe(waiting),
-                action: 'Check'
+                action: 'Check',
+                href: dashboardTimelineHref(waiting[0])
             });
         }
 
         if (!rows.length) {
-            list.innerHTML = '<div class="dashboard-today-clear">'
-                + '<i class="fa-solid fa-circle-check" aria-hidden="true"></i>'
-                + '<span>Nothing needs your attention right now.</span>'
-                + '</div>';
+            const next = myTasks
+                .filter(task => {
+                    const taskDate = parseDashboardDate(task.task_date);
+                    return taskDate && taskDate > todayStart;
+                })
+                .sort((a, b) => dashboardDateValue(a.task_date) - dashboardDateValue(b.task_date))[0];
+            renderDashboardClear(list, next
+                ? `Nothing needs you today. Next visit: ${next.task_date}, ${next.client || 'facility to be confirmed'}.`
+                : 'Nothing needs your attention right now.');
             return;
         }
 
-        list.innerHTML = rows.map(row => (
-            '<a class="dashboard-today-row" href="/timeline">'
-            + `<span class="dashboard-today-accent ${row.accent}" aria-hidden="true"></span>`
-            + '<span class="dashboard-today-body">'
-            + `<span class="dashboard-today-title">${escapeHtml(row.title)}</span>`
-            + `<span class="dashboard-today-hint">${escapeHtml(row.hint)}</span>`
-            + '</span>'
-            + `<span class="dashboard-today-action">${escapeHtml(row.action)} →</span>`
-            + '</a>'
-        )).join('');
+        renderDashboardTodayRows(list, rows);
     }
 
     /**
@@ -1280,6 +1398,11 @@
             if (dashboardHasEngineerProfile) {
                 updateEngineerSummaryCards();
                 renderMyTasks();
+                loadMyPendingTsrCount();
+            }
+
+            if (dashboardStaffLanding) {
+                loadStaffWaiting();
             }
 
             if (dashboardSchedulerOnly) {
@@ -1306,6 +1429,7 @@
             // separate decision from retiring the markup; that decision has since been taken
             // and it is gone.
 
+            populateEngineerFilter();
             filterAndRender();
 
         } catch (dashboardError) {
@@ -1331,12 +1455,36 @@
         return 'dashboard-status-progress';
     }
 
+    // Kept for existing callers. Status colours are fixed semantic pairs (DESIGN.md:
+    // never re-theme status with the accent), shared by the tables and the phone cards.
     function dashboardBootstrapStatusClass(status) {
-        const value = String(status || '').toLowerCase();
-        if (value.includes('waiting for p.o')) return 'bg-warning text-dark';
-        if (value.includes('waiting for parts')) return 'bg-info text-dark';
-        if (value.includes('continuation')) return 'bg-dark';
-        return 'bg-primary';
+        return `dashboard-status-chip ${dashboardStatusClass(status)}`;
+    }
+
+    function dashboardStatusChip(status) {
+        return `<span class="${dashboardBootstrapStatusClass(status)}">${escapeHtml(status || 'In Progress')}</span>`;
+    }
+
+    // Days past the last scheduled day of an open task; 0 when not late. Open tasks are
+    // never Completed, so any past date means the visit was not closed on time.
+    function dashboardDaysLate(task) {
+        const end = parseDashboardDate(task.range_end_date || task.task_date);
+        if (!end) return 0;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const days = Math.round((today - end) / 86400000);
+        return days > 0 ? days : 0;
+    }
+
+    function dashboardLateChip(task) {
+        const days = dashboardDaysLate(task);
+        return days ? `<span class="dashboard-late-chip">${escapeHtml(days)} day${days === 1 ? '' : 's'} late</span>` : '';
+    }
+
+    // The timeline jumps to the week of ?date= (applyTimelineUrlDateTarget).
+    function dashboardTimelineHref(task) {
+        const date = String((task || {}).raw_sort_date || (task || {}).task_date || '');
+        return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `/timeline?date=${date}` : '/timeline';
     }
 
     function dashboardEquipmentLabel(task) {
@@ -1352,14 +1500,15 @@
 
     function buildDashboardTaskMobileCard(task, options = {}) {
         const compact = Boolean(options.compact);
+        const late = dashboardDaysLate(task) > 0;
         return `
-            <div class="dashboard-mobile-task-card">
+            <a class="dashboard-mobile-task-card${late ? ' is-late' : ''}" href="${escapeHtml(dashboardTimelineHref(task))}">
                 <div class="dashboard-mobile-card-top">
                     <div>
-                        <div class="dashboard-mobile-card-date">${escapeHtml(dashboardTaskDateLabel(task))}</div>
+                        <div class="dashboard-mobile-card-date">${escapeHtml(dashboardTaskDateLabel(task))} ${dashboardLateChip(task)}</div>
                         <div class="dashboard-mobile-card-title">${escapeHtml(task.client || 'No facility')}</div>
                     </div>
-                    <span class="dashboard-mobile-status ${dashboardStatusClass(task.status)}">${escapeHtml(task.status || 'In Progress')}</span>
+                    ${dashboardStatusChip(task.status)}
                 </div>
                 <div class="dashboard-mobile-card-body">
                     <div class="dashboard-mobile-card-row">
@@ -1380,20 +1529,44 @@
                         <span>Created ${escapeHtml(formatCreatedOn(task.created_at))}</span>
                     </div>`}
                 </div>
-            </div>
+            </a>
         `;
     }
+
+    // Phones show 20 cards at a time; the company-wide list used to render all of them.
+    const DASHBOARD_MOBILE_PAGE_SIZE = 20;
 
     function renderMobileTaskList(containerId, tasks, options = {}) {
         const container = document.getElementById(containerId);
         if(!container) return;
 
-        if(!tasks || !tasks.length){
+        container._dashboardTasks = tasks || [];
+        container._dashboardOptions = options;
+        container._dashboardLimit = DASHBOARD_MOBILE_PAGE_SIZE;
+        drawMobileTaskList(container);
+    }
+
+    function drawMobileTaskList(container) {
+        const tasks = container._dashboardTasks || [];
+        if(!tasks.length){
             container.innerHTML = '';
             return;
         }
 
-        container.innerHTML = tasks.map(task => buildDashboardTaskMobileCard(task, options)).join('');
+        const shown = tasks.slice(0, container._dashboardLimit);
+        const remaining = tasks.length - shown.length;
+        container.innerHTML = shown.map(task => buildDashboardTaskMobileCard(task, container._dashboardOptions)).join('')
+            + (remaining > 0
+                ? `<button type="button" class="btn btn-outline-secondary fw-bold w-100 dashboard-show-more">Show ${Math.min(remaining, DASHBOARD_MOBILE_PAGE_SIZE)} more <span class="fw-normal">(${remaining} left)</span></button>`
+                : '');
+
+        const more = container.querySelector('.dashboard-show-more');
+        if (more) {
+            more.addEventListener('click', () => {
+                container._dashboardLimit += DASHBOARD_MOBILE_PAGE_SIZE;
+                drawMobileTaskList(container);
+            });
+        }
     }
 
     function parseDashboardDate(value) {
@@ -1437,20 +1610,25 @@
         if(!targetBody) return;
 
         const myTasks = getCurrentEngineerTasks();
+        const tableWrap = document.getElementById('my-tasks-table-wrap');
 
         targetBody.innerHTML = "";
 
         if (myTasks.length === 0) {
             emptyMsg.classList.remove('d-none');
+            // No header row over an empty table: one line says it.
+            if (tableWrap) tableWrap.classList.add('d-none');
             renderMobileTaskList('my-tasks-mobile-list', []);
         } else {
             emptyMsg.classList.add('d-none');
+            if (tableWrap) tableWrap.classList.remove('d-none');
             renderMobileTaskList('my-tasks-mobile-list', myTasks, { compact: true });
 
             targetBody.innerHTML = myTasks.map(task => `
-                <tr class="small dashboard-my-task-row">
+                <tr class="small dashboard-my-task-row${dashboardDaysLate(task) ? ' dashboard-row-late' : ''}">
                     <td class="ps-4">
-                        <div class="fw-bold text-primary">${escapeHtml(dashboardTaskDateLabel(task))}</div>
+                        <a class="fw-bold dashboard-row-link" href="${escapeHtml(dashboardTimelineHref(task))}">${escapeHtml(dashboardTaskDateLabel(task))}</a>
+                        ${dashboardLateChip(task)}
                     </td>
                     <td>
                         <strong>${escapeHtml(task.client || 'No facility')}</strong>
@@ -1460,7 +1638,7 @@
                         <div class="xsmall text-muted">Product / Serial</div>
                     </td>
                     <td class="text-muted">${escapeHtml(task.task || 'No task details')}</td>
-                    <td class="text-end pe-4"><span class="badge ${dashboardBootstrapStatusClass(task.status)} shadow-none py-2 px-3 dashboard-task-badge">${escapeHtml(task.status || 'In Progress')}</span></td>
+                    <td class="text-end pe-4">${dashboardStatusChip(task.status)}</td>
                 </tr>`).join('');
         }
     }
@@ -1516,7 +1694,8 @@
                     mergedResults.push({
                         ...rStart,
                         display_range: rangeLabel,
-                        raw_sort_date: rStart.task_date
+                        raw_sort_date: rStart.task_date,
+                        range_end_date: rEnd.task_date
                     });
                     
                     if (currentRec) sequenceBuffer = [currentRec];
@@ -1526,21 +1705,36 @@
         return mergedResults;
     }
 
-    function toggleSort() {
-        const label = document.getElementById('sort-btn');
+    const OPEN_TASK_SORT_MODES = ['scheduled_latest', 'scheduled_oldest', 'created_latest'];
 
-        if (currentSortMode === 'scheduled_latest') {
-            currentSortMode = 'scheduled_oldest';
-            label.innerHTML = '<i class="fa-solid fa-sort me-1"></i> Sort: Oldest Scheduled';
-        } else if (currentSortMode === 'scheduled_oldest') {
-            currentSortMode = 'created_latest';
-            label.innerHTML = '<i class="fa-solid fa-sort me-1"></i> Sort: Latest Created';
-        } else {
-            currentSortMode = 'scheduled_latest';
-            label.innerHTML = '<i class="fa-solid fa-sort me-1"></i> Sort: Latest Scheduled';
-        }
-
+    function setOpenTasksSort(mode) {
+        currentSortMode = OPEN_TASK_SORT_MODES.includes(mode) ? mode : 'scheduled_latest';
+        const select = document.getElementById('sort-mode');
+        if (select && select.value !== currentSortMode) select.value = currentSortMode;
         filterAndRender();
+    }
+
+    // Kept for existing callers: cycles to the next sort mode.
+    function toggleSort() {
+        const next = OPEN_TASK_SORT_MODES[(OPEN_TASK_SORT_MODES.indexOf(currentSortMode) + 1) % OPEN_TASK_SORT_MODES.length];
+        setOpenTasksSort(next);
+    }
+
+    function taskEngineerNames(task) {
+        const names = Array.isArray(task.engineer_names) && task.engineer_names.length
+            ? task.engineer_names
+            : String(task.engineer || '').split(',');
+        return names.map(name => String(name || '').trim()).filter(name => name && name !== 'None');
+    }
+
+    function populateEngineerFilter() {
+        const select = document.getElementById('filter-engineer');
+        if (!select) return;
+        const current = select.value;
+        const names = Array.from(new Set(allOpenTasksRaw.flatMap(taskEngineerNames))).sort((a, b) => a.localeCompare(b));
+        select.innerHTML = '<option value="">All engineers</option>'
+            + names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+        if (names.includes(current)) select.value = current;
     }
 
     function formatCreatedOn(value) {
@@ -1571,8 +1765,19 @@
         if (!statusFilter || !targetBody) return;
 
         const activeFilter = statusFilter.value;
+        const engineerFilter = (document.getElementById('filter-engineer') || {}).value || '';
+        const searchText = String((document.getElementById('open-tasks-search') || {}).value || '').trim().toLowerCase();
         let processedList = groupTasksByRange(allOpenTasksRaw);
-        let filteredTasks = processedList.filter(t => !activeFilter || t.status === activeFilter);
+        let filteredTasks = processedList.filter(t => {
+            if (activeFilter && t.status !== activeFilter) return false;
+            if (engineerFilter && !taskEngineerNames(t).includes(engineerFilter)) return false;
+            if (searchText) {
+                const haystack = [t.client, t.engineer, t.product_name || t.product, t.serial, t.task]
+                    .map(value => String(value || '').toLowerCase()).join(' ');
+                if (!haystack.includes(searchText)) return false;
+            }
+            return true;
+        });
 
         filteredTasks.sort((a, b) => {
             const scheduledA = parseDashboardDate(a.raw_sort_date || a.task_date) || new Date(0);
@@ -1595,24 +1800,25 @@
 
         if (filteredTasks.length === 0) {
             document.getElementById('no-tasks-msg').classList.remove('d-none');
+            setTextIfPresent('no-tasks-text', (activeFilter || engineerFilter || searchText)
+                ? 'No open tasks match these filters.'
+                : 'No open technical tasks.');
             renderMobileTaskList('open-tasks-mobile-list', []);
         } else {
             document.getElementById('no-tasks-msg').classList.add('d-none');
             renderMobileTaskList('open-tasks-mobile-list', filteredTasks);
 
             targetBody.innerHTML = filteredTasks.map(task => {
-                let statusCSS = "bg-primary";
-                if (task.status === "Waiting for P.O") statusCSS = "bg-warning text-dark";
-                else if (task.status === "Waiting for Parts") statusCSS = "bg-info";
-                else if (task.status === "For Continuation") statusCSS = "bg-dark";
-
                 return `
-                    <tr class="small">
-                        <td class="ps-4"><span class="fw-bold text-primary">${escapeHtml(task.display_range)}</span></td>
+                    <tr class="small${dashboardDaysLate(task) ? ' dashboard-row-late' : ''}">
+                        <td class="ps-4">
+                            <a class="fw-bold dashboard-row-link" href="${escapeHtml(dashboardTimelineHref(task))}">${escapeHtml(task.display_range)}</a>
+                            ${dashboardLateChip(task)}
+                        </td>
                         <td><strong>${escapeHtml(task.engineer)}</strong></td>
                         <td>${escapeHtml(task.client)}</td>
                         <td class="text-muted">${escapeHtml(task.task)}</td>
-                        <td><span class="badge ${statusCSS} shadow-none py-2 px-3" style="font-size: 0.65rem;">${escapeHtml(task.status)}</span></td>
+                        <td>${dashboardStatusChip(task.status)}</td>
                         <td class="text-end pe-4 text-muted font-monospace">${escapeHtml(formatCreatedOn(task.created_at))}</td>
                     </tr>`;
             }).join('');

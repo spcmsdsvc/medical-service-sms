@@ -37,6 +37,139 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Dashboard Critique Fixes (all 5 issues)
+
+**Status:** Executed locally on 2026-10-11 on the owner's "execute the Dashboard Critique Fixes plan"; not committed (awaiting a separate "commit and push"). New `tests/test_dashboard_critique_fixes.py` (19 tests; 12 of its 13 source tests fail against the `HEAD` template/JS/CSS, the 13th is the off-limits guard and passes on both; the endpoint tests need `/get_my_pending_tsr_count` and `inventory_pm_month_summary`, absent from `HEAD`). Focused run: 108 tests OK (dashboard ×6 modules, changelog coverage, dark-mode readability). Full suite not run (no shared code touched). Detector: 1 advisory left (the `2rem` lock icon, a known false positive). Browser check on a DB copy passed (engineer and staff at 375 px, manager at 1366 px, graphite dark and light).
+**Differences from the plan:**
+- **What's New unread count (step 9):** no change needed. `/api/changelog/unread-summary` already applies the same 30-day window as the sidebar dot (release `2026-10-10-whats-new-dot-recent`); the critique's "90 vs 34" came from two accounts with different read states.
+- **Heading levels (step 6):** promoted to h3/h4 everywhere except the off-limits scheduler and "Needs Your Decision" blocks, which keep their h5/h6 (decision 2 outranks a perfect outline). Engineer and staff views now read h1 → h2 → h3.
+- **What's New (step 2):** placed after the role's first work sections (before Shortcuts). A saved custom layout re-appends the sortable sections, so for those users it sits above them; harmless, and Customize is desktop-only.
+- **Metric strip wrap (step 4):** the two-column phone layout is scoped to the engineer strip only, so the scheduler and manager strips are visually untouched.
+- **Shortcuts for staff (step 7):** Timeline is shown only when `can_access_timeline_page()` allows it (new template value `dashboard_can_open_timeline`) and TSR files only with `nav_can_view_admin_reports`, so staff are never offered a link that bounces.
+- **Extra one-line fix:** "Needs you today" title and hint were inline spans that ran together ("dateOspital"); they now display as two lines. Found during the browser check; pre-existing.
+- **Existing test updated:** `tests/test_dashboard_engineer.py::test_needs_you_today_is_built_from_loaded_data` now finds the empty state through the shared `renderDashboardClear` helper.
+**Approved:** 2026-10-11 (owner: "approved, write it to plans.md").
+**Detailed:** 2026-10-11.
+**Source:** Impeccable critique `.impeccable/critique/2026-10-11T03-23-50Z__templates-dashboard-html.md` (23/40; 3 × P1, 2 × P2), preceded by a research pass on 10 field-service dashboards and a read-only page scan.
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+
+## Context
+
+The owner researched 10 field-service dashboards (ServiceNow clinical engineering, TheWorxHub BioMed, Smart Hospital Maintenance, Dynamics 365 Field Service, ServiceTitan, Jobber, Arrivy, MaintainX, Limble, Linear) and adopted 6 patterns: (1) attention first, (2) role-based landing, (3) hide empty boxes, (4) status colour + filters on task lists, (5) field KPIs, (6) dispatch on one screen.
+
+The scan and critique found the engineer and fallback views bury the work under chrome (on a 375 px phone the first work section starts at y=623), statuses don't signal urgency, rows lead nowhere, the 3 active `staff` accounts land on a raw 124-row table, zeros render red, and there are no field KPIs.
+
+Intended outcome: the engineer's day is on the first phone screen, every status and row is actionable, every role sees what is waiting on them, and managers see PM performance.
+
+## Decisions taken
+
+1. Fix all 5 priority issues plus the page-level minor observations (owner, 2026-10-11).
+2. **Off-limits:** the scheduler workbench (`scheduler-core`, `scheduler-dispatch`, `scheduler-coordination`) and the manager's "Needs Your Decision" section (`manager-executive`, including its approvals block and metric strip). Their markup must stay byte-identical.
+3. Critique-loop rule: fix exactly the critique's points, introduce no new issues; one fresh re-critique in a new session at the end.
+4. Staff landing = "Waiting on you" (approvals + My Requests) plus Shortcuts (owner, 2026-10-11).
+5. PM KPI covers inventory PM (Genoray, Vieworks) only, and says so in its label (owner, 2026-10-11).
+6. Engineer strip gets a 5th item, "TSRs pending" (owner, 2026-10-11).
+
+## Investigation
+
+- All 13 template `onclick` handlers are defined in `static/js/app-dashboard.js` (nothing missing).
+- The Layout toolbar copy says "saved on this device" (`templates/dashboard.html:108`), but the layout syncs to the account (`syncDashboardLayoutToAccount` / `loadDashboardLayoutFromAccount`, `static/js/app-dashboard.js:184-222`).
+- "Needs You Today" rows all link to `/timeline` (`renderEngineerTodayPanel`, `app-dashboard.js:1221`).
+- The timeline already deep-links: `?date=YYYY-MM-DD` jumps to that date's week (`applyTimelineUrlDateTarget`, `templates/timeline.html:14203`). No timeline change needed.
+- `dashboardBootstrapStatusClass` returns `bg-primary` (the accent) for In Progress, against DESIGN.md "Don't re-theme schedule or status colours with the accent". The mobile chip `.dashboard-status-progress` measured 3.95:1 at 9.9 px (122 instances).
+- `count-my-continuation` always carries `dashboard-metric-alert` (`dashboard.html:530`), so "0" renders red.
+- What's New (`dashboard.html:79-93`) uses inline `#9ad8b8`, `#14804a`, `#f2fbf6`, `#d9f2e5`, `#11643a` and `border-radius:8px`; `app-dashboard.css` has no rules for it, so it is light-only. Detector: 6 true positives (L70 clock `0.9rem`, L79, L82); L839 lock icon `2rem` is a false positive. The date line is 4.29:1.
+- No `<h1>`; outline is H2 → H3 → H6 → H5. `fa-hand-wave` is a Font Awesome Pro icon and renders as an empty gap.
+- The branch `not dashboard_effective_scheduler_only and not dashboard_effective_manager_view` (`dashboard.html:710`) shows only Open Technical Tasks to accounts without an engineer profile. Active accounts affected: the 3 `staff` users (no engineer profile, not admin, not HR-only, not stock-only — verified on `scheduler.db`). The `approver` account has an engineer profile and gets the engineer view.
+- `/api/nav/pending-summary` already returns `approvals_pending` and `my_requests_action`; the sidebar badges `/approvals` and `/accounting_center` ("My Requests", `layout.html:238`) from it.
+- `InventoryPmVisit` (`app.py:2812`) has `brand`, `equipment_serial`, `target_date`, `completed_at`, `shift_id` — Genoray and Vieworks inventory PM only.
+- Pending TSR in `/get_manager_overview` (`app.py:35663`) = a completed shift with no TSR file (`shift_has_tsr_file`, around `app.py:35731`). There is no per-engineer equivalent today.
+- The temp superadmin used for the critique did not get the manager view: `is_superadmin_user()` (`app.py:11583`) also needs the username in `SUPERADMIN_USERNAMES`; `is_manager_dashboard_user()` admits `MANAGER_USERNAMES` or admin-authorized non-schedulers. The browser check must use such a name.
+- Existing tests: `tests/test_dashboard_{engineer,hybrid,manager,scheduler,text_encoding}.py` (static-source style). Assets: `app-dashboard.css?v=5`, `app-dashboard.js?v=4`. `CACHE_VERSION` at `app.py:27333` (`…-v285-signin-activity-log`).
+
+## Execution steps
+
+1. **Read first:** newest section of `changes.md`; the 4 dashboard test files; `renderMyTasks`, `filterAndRender`, `renderMobileTaskList`, `renderDashboardChangelogPrompt` in full.
+2. **Attention first** (`/impeccable distill`; `templates/dashboard.html`, `static/css/app-dashboard.css`, `static/js/app-dashboard.js`):
+   - Replace the `dashboard-personalize-toolbar` block with a small "Customize" icon button and "Reset" in the header row, hidden at ≤768px. Keep id `dashboard-customize-toggle` and functions `toggleDashboardCustomizeMode()` / `resetDashboardLayout()`; add a `confirm()` to Reset.
+   - Copy: "saved to your account".
+   - Hide the clock badge at ≤768px.
+   - What's New becomes a one-line dismissible strip placed after the first work section; keep the `dashboard-whats-new*` ids so `renderDashboardChangelogPrompt` keeps working.
+   - Done = at 375px the first work section starts in the first screen (target y < 300).
+3. **Quiet zero states** (`distill`; `updateEngineerSummaryCards`, `renderMyTasks`, `dashboard.html`):
+   - Apply `dashboard-metric-alert` / `-warn` from JS only when the value is > 0 (remove the static classes from the markup).
+   - Engineer with no tasks: hide the empty `my-tasks` table headers; show one "You're clear" line naming the next upcoming visit when there is one.
+   - Done = zeros render neutral; one empty message instead of three.
+4. **Phone fixes** (`/impeccable adapt`; `app-dashboard.css`, `renderMobileTaskList`):
+   - Fix the metric-strip wrap that orphans "waiting" behind a dangling divider.
+   - Mobile task lists render 20 cards, then a "Show 20 more" button.
+   - Done = fallback mobile page < 6,000px; no horizontal overflow at 375px.
+5. **Status colour and urgency** (`/impeccable colorize`; `dashboardStatusClass`, `dashboardBootstrapStatusClass`, `app-dashboard.css`):
+   - Fixed semantic status colours (In Progress = fixed info/slate pair, not the accent); ≥4.5:1 in light and dark; mobile chip ≥0.75rem.
+   - Past-due rows (date < today, not completed): tinted row plus an "N days late" text chip (not colour alone).
+   - Move What's New inline hex and radius into CSS using Bootstrap success variables / theme tokens so it works in all 4 themes.
+   - Done = the 6 detector true positives are gone; contrast passes in light and dark.
+6. **Rows that lead somewhere + filters** (`/impeccable harden`; `renderMyTasks`, `buildDashboardTaskMobileCard`, `filterAndRender`, `renderEngineerTodayPanel`, `dashboard.html`):
+   - Rows and mobile cards link to `/timeline?date=<task_date>`; "Needs You Today" rows link to their first task's date.
+   - Open Technical Tasks: search box (facility, engineer, equipment, task) and an engineer `<select>` built from the loaded rows.
+   - Replace the 3-state sort button with a labelled `<select>`; keep `toggleSort()` defined (delegating) so nothing breaks.
+   - Add one visually-hidden `<h1>Dashboard</h1>`; fix heading levels (Layout `h6` goes with step 2; empty-state `h6` → `p`).
+   - Replace `fa-hand-wave` with a free icon or remove it.
+   - Done = rows reachable with Tab; heading outline h1 → h2 → h3 with no skipped levels.
+7. **Staff landing** (`/impeccable shape`; `dashboard.html`, `app-dashboard.js`):
+   - For the fallback branch without an engineer profile: a "Waiting on you" card fed by `/api/nav/pending-summary` (approvals pending → `/approvals`; requests needing attention → `/accounting_center`), with an "all clear" line when both are 0.
+   - Show the Shortcuts block for them too (widen its gate; admin-only links stay gated by `dashboard_effective_admin_view`).
+   - Open Technical Tasks starts collapsed for them, as it already does for engineers.
+   - Done = a staff account sees waiting items first; the table is one click away.
+8. **Field KPIs** (`shape`; `app.py`, `app-dashboard.js`, `dashboard.html`):
+   - `/get_manager_overview` gains `pm: {due_this_month, done_this_month, overdue}` from `InventoryPmVisit` (Manila month; both brands; manager view only). Rendered as a row in the **Direction** card labelled "Inventory PM (Genoray, Vieworks) this month: done / due · N overdue".
+   - New `GET /get_my_pending_tsr_count` (`@login_required`; only the signed-in user's own engineer profile's shifts; same definition and date window as the manager's pending TSR; 0 for accounts without a profile). Shown as a 5th "TSRs pending" item on the engineer strip, neutral when 0.
+   - Done = both numbers match a manual SQL count on the DB copy.
+9. **Polish** (`/impeccable polish`):
+   - Replace the stale header comment (`dashboard.html:9-25`) with a short accurate one.
+   - Remove the duplicated "Reference:" heading inside the Open Tasks toggle.
+   - One column vocabulary in both tables ("Engineer", "Facility").
+   - Move inline table widths and badge sizes into CSS.
+   - What's New unread number uses the same 30-day window as the sidebar dot (`CHANGELOG_UNREAD_DOT_DAYS`).
+10. **Self-review:** every function, id and handler that existed is still defined and used; save/assign/reschedule/refresh/customize still work; scheduler and manager-executive blocks unchanged in `git diff`; update DESIGN.md if a new status-colour rule is introduced.
+
+## Deliberately excluded
+
+- **Scheduler workbench and "Needs Your Decision":** off-limits (decision 2).
+- **Cleaning the 124 months-old "In Progress" visits:** data hygiene for the owner, not design; the past-due chip makes them visible.
+- **`SUPERADMIN_USERNAMES` provisioning, `/dashboard` 404, engineers landing on `/timeline` after login:** outside this page.
+- **Keyboard shortcuts and URL filter state:** not a priority issue.
+- **Manager Directory Totals:** kept; Customize already allows reordering or hiding.
+- **PM for non-inventory equipment:** no structured PM-due data exists for it (decision 5).
+
+## Verification
+
+- New tests, each shown to fail on the current code first (positive control):
+  - Template/JS: no `bg-primary` status class; alert/warn class applied only when > 0; `?date=` links in the row renderers; an `<h1>` present; toolbar copy says "account"; no inline hex inside `#dashboard-whats-new`; scheduler and manager-executive markup unchanged.
+  - App: `pm` block in `/get_manager_overview` (seed due / done / overdue visits, assert counts); `/get_my_pending_tsr_count` counts only the signed-in engineer's shifts and never another engineer's.
+  - Staff fallback: renders "Waiting on you" and Open Tasks starts collapsed.
+- Focused run: `venv/Scripts/python.exe -m unittest tests.test_dashboard_engineer tests.test_dashboard_hybrid tests.test_dashboard_manager tests.test_dashboard_scheduler tests.test_dashboard_text_encoding -v` plus the new modules.
+- Full suite: not required (one page plus one new route; no shared helpers, shell, auth or schema).
+- Impeccable detector once at the end: `impeccable detect --json templates/dashboard.html`.
+- Browser check on a copy of `scheduler.db` with temporary engineer, staff and manager accounts (manager on a `MANAGER_USERNAMES` / `SUPERADMIN_USERNAMES` name so the real manager view renders): desktop 1366 and mobile 375, light and dark theme — first screen shows work, no red zeros, past-due chips, row links land on the right week, search/filter, Show more, staff landing, PM/TSR numbers match SQL, scheduler and manager-executive unchanged, console clean, tap targets ≥44px. Clean up the DB copy, accounts and launch entry afterwards.
+
+## After implementation
+
+1. Bump `?v=` on `app-dashboard.css` (5 → 6) and `app-dashboard.js` (4 → 5).
+2. Bump service worker `CACHE_VERSION` to `…-v286-dashboard-critique-fixes` (old value kept as a history comment, following the existing pattern).
+3. Add a `static/changelog/releases.json` entry at the top ("Dashboard: your day first", category Dashboard, plain wording).
+4. Append detailed bullets to `changes.md` under the execution date.
+5. Update this plan's Status to `Executed` with the commit hash and any differences from the plan.
+6. Commit checklist: stage only `templates/dashboard.html`, `static/css/app-dashboard.css`, `static/js/app-dashboard.js`, `app.py`, the tests, `static/changelog/releases.json`, `plans.md`, `changes.md` (and `DESIGN.md` if changed); never `scheduler.db`, `output/`, `tmp/` or handoff artifacts. Publish only on a separate "commit and push".
+7. Re-critique in a **new session** that starts from the snapshot file.
+
+## Risks
+
+- **Breaking an existing handler** (Reimbursement precedent): ids and functions are kept; step 10 checks each one.
+- **New route leaking another engineer's data:** scoped to `current_user`'s engineer profile; a test asserts it.
+- **PM number misread as all PM:** the label names Genoray and Vieworks.
+- **Scope size (10 steps):** each step is independently testable; if it runs long, split after step 6 and record the split here.
+
 # Record Sign-ins in the Activity Log
 
 **Status:** Executed — published to `main` on 2026-10-10 on the owner's "commit and push" (commit `2a4d59e`). 9 new tests (7 fail on the previous `app.py`; the 2 "must not log" guards pass on both); focused run 74 tests OK. Full suite before publishing: 1,688 tests, 14 failures (the known list), 3 errors that occur only alongside other test files, 5 skips, no new failures. Browser check on a DB copy passed.

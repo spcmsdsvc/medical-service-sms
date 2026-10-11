@@ -306,7 +306,7 @@
 
     /* Subordination, not concealment. The personal sections keep every row and every
        control; they simply stop competing with the manager block for first read. */
-    .dashboard-scope-personal .card-header h5,
+    .dashboard-scope-personal .card-header :is(h3, h5),
     .dashboard-scope-personal .dashboard-today-header {
         font-size: 1rem;
     }
@@ -320,7 +320,7 @@
        !important is required, not decorative: Bootstrap's .text-primary utility declares its
        colour !important, so specificity alone loses to it. Verified in the browser -- the
        first attempt at this rule had no effect for exactly that reason. */
-    .dashboard-scope-personal .card-header h5.text-primary {
+    .dashboard-scope-personal .card-header :is(h3, h5).text-primary {
         color: var(--app-primary-text) !important;
     }
 
@@ -328,18 +328,6 @@
         font-size: 1.35rem;
     }
 
-
-    .dashboard-personalize-toolbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        padding: 0.9rem 1rem;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
-    }
 
     .dashboard-sortable-section {
         position: relative;
@@ -393,11 +381,6 @@
 
     .dashboard-my-task-row td {
         vertical-align: middle;
-    }
-
-    .dashboard-task-badge {
-        min-width: 96px;
-        letter-spacing: .02em;
     }
 
     .dashboard-empty-state {
@@ -938,15 +921,19 @@
         margin-top: 0.1rem;
     }
 
-    .dashboard-mobile-status {
+    /* Status chips: fixed semantic pairs, never the accent (DESIGN.md). Each pair is at
+       least 4.5:1 and carries its own background, so it reads the same in every theme. */
+    .dashboard-status-chip {
+        display: inline-block;
         white-space: nowrap;
         border-radius: 999px;
-        padding: 0.35rem 0.55rem;
-        font-size: 0.62rem;
-        font-weight: 900;
+        padding: 0.3rem 0.6rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+        line-height: 1.2;
     }
 
-    .dashboard-status-progress { background: #e7f1ff; color: #0d6efd; }
+    .dashboard-status-progress { background: #eef2ff; color: #3730a3; }
     .dashboard-status-po { background: #fff6db; color: #946200; }
     .dashboard-status-parts { background: #e0f2fe; color: #0369a1; }
     .dashboard-status-continuation { background: #f1f5f9; color: #334155; }
@@ -996,14 +983,6 @@
 
         .branding-group p { font-size: 0.78rem; }
 
-        .header-clock-container,
-        .header-clock-container .badge {
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            white-space: normal;
-        }
-
         .row.mb-4.g-3 > [class*="col-"] {
             flex: 0 0 100%;
             max-width: 100%;
@@ -1033,27 +1012,12 @@
         }
 
 
-        .dashboard-personalize-toolbar {
-            align-items: flex-start;
-            flex-direction: column;
-            padding: 0.85rem;
-        }
-
         .dashboard-scope-divider {
             margin: 1.35rem 0 0.85rem;
         }
 
         .dashboard-scope-divider-label {
             font-size: 0.72rem;
-        }
-
-        .dashboard-personalize-toolbar .d-flex {
-            width: 100%;
-        }
-
-        .dashboard-personalize-toolbar .btn {
-            flex: 1;
-            min-height: 2.5rem;
         }
 
         .dashboard-drag-handle {
@@ -1361,7 +1325,7 @@
 :root[data-app-theme="dark"] .scheduler-queue-action,
 :root[data-app-theme="dark"] .hybrid-shortcut i,
 /* !important because Bootstrap's .text-primary utility is itself !important. */
-:root[data-app-theme="dark"] .dashboard-scope-personal .card-header h5.text-primary {
+:root[data-app-theme="dark"] .dashboard-scope-personal .card-header :is(h3, h5).text-primary {
     color: #cbd5e1 !important;
 }
 
@@ -1375,7 +1339,7 @@
 
     /* Separated from the group above only because this one needs !important to outrank
        Bootstrap's .text-primary utility; the others are not Bootstrap-coloured. */
-    :root[data-app-theme="dark"] .dashboard-scope-personal .card-header h5.text-primary {
+    :root[data-app-theme="dark"] .dashboard-scope-personal .card-header :is(h3, h5).text-primary {
         color: color-mix(in srgb, var(--app-primary) 40%, #ffffff) !important;
     }
 }
@@ -1429,4 +1393,231 @@ body.dashboard-customize-active .dashboard-section-hidden {
     opacity: 0.45;
     outline: 2px dashed var(--app-border, #cbd5e1);
     outline-offset: 3px;
+}
+
+
+/* =========================================================
+   Dashboard critique fixes (2026-10-11): header tools, What's New strip,
+   past-due rows, row links, open-task filters, phone paging, inventory PM.
+   ========================================================= */
+
+.dashboard-header-tools .header-clock-container {
+    font-size: 0.85rem;
+}
+
+/* What's New: one line, success-toned through Bootstrap variables, not hex. */
+.dashboard-whats-new {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bs-success-bg-subtle, #d1e7dd);
+    border: 1px solid var(--bs-success-border-subtle, #a3cfbb);
+    border-left: 4px solid var(--bs-success, #198754);
+    border-radius: 10px;
+}
+
+.dashboard-whats-new-icon {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--app-surface, #ffffff);
+    color: var(--bs-success-text-emphasis, #0a3622);
+}
+
+.dashboard-whats-new-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.15rem 0.6rem;
+    font-size: 0.85rem;
+    color: var(--bs-success-text-emphasis, #0a3622);
+}
+
+.dashboard-whats-new-date {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.dashboard-whats-new-summary {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dashboard-whats-new-dismiss {
+    flex: 0 0 auto;
+}
+
+.dashboard-whats-new .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Title and hint were inline spans, so they ran together ("dateOspital"). */
+.dashboard-today-title,
+.dashboard-today-hint {
+    display: block;
+}
+
+:root[data-app-theme="dark"] .dashboard-whats-new :is(span, strong) {
+    color: inherit;
+}
+
+/* Past-due: a red edge plus an "N days late" text chip, so it is never colour alone. */
+.table > tbody > tr.dashboard-row-late > td {
+    --bs-table-bg: rgba(200, 16, 46, 0.05);
+}
+
+.table > tbody > tr.dashboard-row-late > td:first-child {
+    box-shadow: inset 3px 0 0 #c8102e;
+}
+
+.dashboard-late-chip {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: #fde8ea;
+    color: #a1121f;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.dashboard-row-link {
+    color: var(--app-primary, #0d6efd);
+    text-decoration: none;
+}
+
+.dashboard-row-link:hover,
+.dashboard-row-link:focus-visible {
+    text-decoration: underline;
+}
+
+:root[data-app-theme="dark"] .dashboard-row-link {
+    color: #cbd5e1;
+}
+
+@supports (color: color-mix(in srgb, red 50%, white)) {
+    :root[data-app-theme="dark"] .dashboard-row-link {
+        color: color-mix(in srgb, var(--app-primary) 40%, #ffffff);
+    }
+}
+
+/* Phone cards are links to their week on the timeline. */
+a.dashboard-mobile-task-card {
+    display: block;
+    color: #334155;
+    text-decoration: none;
+}
+
+a.dashboard-mobile-task-card.is-late {
+    box-shadow: inset 4px 0 0 #c8102e, 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+.dashboard-show-more {
+    min-height: 44px;
+}
+
+/* Open technical tasks: search, engineer, status, sort, calendar. */
+.open-tasks-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.open-tasks-controls #open-tasks-search {
+    width: 16rem;
+}
+
+.open-tasks-controls .form-select {
+    width: auto;
+}
+
+.open-tasks-col-date { width: 25%; }
+.open-tasks-col-engineer { width: 15%; }
+.open-tasks-col-facility,
+.open-tasks-col-task { width: 20%; }
+.open-tasks-col-status,
+.open-tasks-col-created { width: 10%; }
+
+/* Inventory PM summary inside the manager Direction card. */
+.manager-pm-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--app-border, #e5e7eb);
+    font-size: 0.85rem;
+}
+
+.manager-pm-label {
+    color: var(--app-muted, #6b7280);
+}
+
+.manager-pm-value {
+    font-weight: 800;
+    color: var(--app-text, #111827);
+}
+
+.manager-pm-overdue.is-late {
+    color: #c8102e;
+    font-weight: 700;
+}
+
+:root[data-app-theme="dark"] .manager-pm-overdue.is-late {
+    color: #f5a3ab;
+}
+
+@media (max-width: 768px) {
+    .dashboard-whats-new-summary {
+        display: none;
+    }
+
+    .dashboard-whats-new .btn,
+    .dashboard-whats-new-dismiss {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .open-tasks-controls,
+    .open-tasks-controls > * {
+        width: 100%;
+    }
+
+    .open-tasks-controls #open-tasks-search,
+    .open-tasks-controls .form-select,
+    .open-tasks-controls .btn {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    /* The strip used to orphan its last item behind a dangling divider. Two columns
+       keep every metric on a row with its label. Engineer strip only: the scheduler
+       and manager strips are left as they are. */
+    [data-dashboard-section="engineer-summary"].dashboard-metric-strip {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    [data-dashboard-section="engineer-summary"] .dashboard-metric-divider {
+        display: none;
+    }
+
+    [data-dashboard-section="engineer-summary"] .dashboard-metric-link {
+        grid-column: 1 / -1;
+    }
 }

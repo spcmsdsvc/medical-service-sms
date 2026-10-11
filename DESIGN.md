@@ -187,6 +187,7 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 
 ### Chips / Badges
 - **Style:** pill (999px), small label weight; status colours are semantic (Bootstrap success / warning / danger / info / secondary).
+- **Dashboard task status** (`.dashboard-status-chip`, `static/css/app-dashboard.css`): fixed pairs that carry their own background, at least 0.75rem and 4.5:1 in every theme: In Progress `#3730a3` on `#eef2ff`, Waiting for P.O `#946200` on `#fff6db`, Waiting for Parts `#0369a1` on `#e0f2fe`, For Continuation `#334155` on `#f1f5f9`. Past-due adds a text chip ("N days late", `#a1121f` on `#fde8ea`) and a red left edge, never colour alone.
 
 ### Cards / Containers
 - **Corner Style:** 10px (desktop), 16px (phone cards).

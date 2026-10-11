@@ -1,28 +1,16 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=5">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=6">
 {% endblock %}
 
 {% block content %}
 
-<!-- 
-    ===========================================================================
-    MEDICAL SERVICE SYSTEM - OPERATIONS DASHBOARD
-    ===========================================================================
-    Version: 5.4.5 (PH Time Header Alignment)
-    This module provides a bird's-eye view of technical operations.
-    
-    KEY LOGIC:
-    1. GREETING: Personalized hero greeting utilizing logged-in username.
-    2. WIDGET SWAP (v5.2): 
-       - ENGINEERS see their specific "My Active Tasks".
-       - ADMINS see a live-refreshing "Recent System Activity" log.
-    3. ANALYTICS: High-level counters for personnel, medical centers, and assets.
-    4. MULTI-DAY GROUPING: Technical tasks spanning consecutive days are merged.
-    5. DATA CLEANING: Excludes HR categories (Leave/Training) from technical views.
-    ===========================================================================
--->
+{# OPERATIONS DASHBOARD -- one page, four role views (scheduler workbench, manager,
+   engineer, and staff without an engineer profile; admins with a profile get the manager
+   view with their own work below a divider). Each view leads with what is waiting on
+   that role. Data loads in static/js/app-dashboard.js; HR categories (leave, training)
+   are excluded from the task views there. #}
 
 <div class="container py-4">
 {# nav_is_scheduler comes from inject_navigation_access() and calls the same
@@ -35,6 +23,8 @@
 {% set dashboard_effective_admin_view = dashboard_admin_view and not dashboard_scheduler_account %}
 {% set dashboard_effective_hybrid_view = dashboard_hybrid_view and not dashboard_scheduler_account %}
 {% set dashboard_effective_manager_view = dashboard_manager_view and not dashboard_scheduler_account %}
+{# Accounts in none of the role views (staff without an engineer profile). #}
+{% set dashboard_staff_landing = not dashboard_effective_scheduler_only and not dashboard_effective_manager_view and not dashboard_has_engineer_profile %}
 
     
     {% if backup_overdue_notice %}
@@ -53,69 +43,39 @@
     </div>
     {% endif %}
 
-    <!-- DASHBOARD BRANDING HEADER (PERSONALIZED) -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    {# Header. The clock and the layout controls are desktop-only: on a phone the status
+       bar already shows the time and drag-to-reorder does not work well on touch, and
+       both used to push the first piece of work below the fold. #}
+    <div class="dashboard-header d-flex justify-content-between align-items-center gap-3 mb-4">
         <div class="branding-group">
+            <h1 class="visually-hidden">Dashboard</h1>
             <h2 class="h4 mb-0 fw-bold">
-                <i class="fa-solid fa-hand-wave me-2 text-primary"></i>
                 Welcome back, {{ current_user.username.capitalize() }}!
             </h2>
             <p class="text-muted small mb-0">
                 Operational Overview of MEDICAL SERVICE Technical Visits
             </p>
         </div>
-        
-        <!-- v5.4.5 UI Fix: Date moved beside the time in a combined badge -->
-        <div class="header-clock-container">
-            <span class="badge bg-dark px-3 py-2 shadow-sm font-monospace" style="font-size: 0.9rem;">
-                <i class="fa-solid fa-calendar-day me-2 text-info"></i>
+
+        <div class="dashboard-header-tools d-none d-md-flex align-items-center gap-2">
+            <span class="header-clock-container badge bg-dark px-3 py-2 shadow-sm font-monospace">
+                <i class="fa-solid fa-calendar-day me-2 text-info" aria-hidden="true"></i>
                 <span id="current-date" class="me-3"></span>
-                <i class="fa-solid fa-clock me-2 text-warning"></i>
+                <i class="fa-solid fa-clock me-2 text-warning" aria-hidden="true"></i>
                 <span id="system-clock">00:00:00 AM</span>
             </span>
-        </div>
-    </div>
-
-    <section id="dashboard-whats-new" class="dashboard-whats-new mb-4" style="display:none;border:1px solid #9ad8b8;border-left:5px solid #14804a;background:#f2fbf6;padding:15px 17px;border-radius:8px;">
-        <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-            <div class="d-flex align-items-start gap-3">
-                <div class="dashboard-whats-new-icon" style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:#d9f2e5;color:#11643a;border-radius:6px;flex:0 0 auto;">
-                    <i class="fa-solid fa-bell" aria-hidden="true"></i>
-                </div>
-                <div>
-                    <div class="small fw-bold text-success text-uppercase" id="dashboard-whats-new-date">New System Update</div>
-                    <h3 class="h6 fw-bold mb-1 text-dark" id="dashboard-whats-new-title">What's New</h3>
-                    <p class="small text-muted mb-0" id="dashboard-whats-new-summary"></p>
-                </div>
-            </div>
-            <a href="/whats_new" class="btn btn-success fw-bold"><i class="fa-solid fa-arrow-right me-1"></i>View Updates</a>
-        </div>
-    </section>
-
-
-    {# RETIRED: the developer-only dashboard view switcher, removed by owner decision.
-       Verifying a role's dashboard now means signing in as an account that holds that role,
-       which is stronger evidence than a session flag that only approximated one. Its section
-       id stays registered in DASHBOARD_SECTION_IDS so saved layouts naming it still save. #}
-
-    <!-- DASHBOARD PERSONALIZATION CONTROLS -->
-    <div class="dashboard-personalize-toolbar mb-4">
-        <div>
-            <h6 class="mb-0 fw-bold text-dark">
-                <i class="fa-solid fa-sliders me-2 text-primary"></i>
-                Dashboard Layout
-            </h6>
-            <p class="text-muted small mb-0">Turn on customize mode to drag sections into your preferred order. Your layout is saved on this device.</p>
-        </div>
-        <div class="d-flex gap-2 flex-wrap">
-            <button type="button" id="dashboard-customize-toggle" class="btn btn-sm btn-outline-primary fw-bold" onclick="toggleDashboardCustomizeMode()">
+            <button type="button" id="dashboard-customize-toggle" class="btn btn-sm btn-outline-primary fw-bold" onclick="toggleDashboardCustomizeMode()" title="Drag sections into your preferred order. Your layout is saved to your account.">
                 <i class="fa-solid fa-grip-vertical me-1"></i>Customize
             </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="resetDashboardLayout()">
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="resetDashboardLayout()" title="Restore the default section order">
                 <i class="fa-solid fa-arrow-rotate-left me-1"></i>Reset
             </button>
         </div>
     </div>
+
+    {# RETIRED: the developer-only dashboard view switcher, removed by owner decision.
+       Its section id stays registered in DASHBOARD_SECTION_IDS so saved layouts naming it
+       still save. #}
 
     {% if dashboard_effective_scheduler_only %}
     {#
@@ -394,10 +354,10 @@
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
             <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
-                    <h5 class="mb-0 fw-bold text-dark">
+                    <h3 class="h5 mb-0 fw-bold text-dark">
                         <i class="fa-solid fa-arrow-trend-up me-2 text-primary"></i>
                         Direction
-                    </h5>
+                    </h3>
                     <div class="xsmall text-muted mt-1" id="manager-direction-caption">Comparing the last 7 days with the 7 before it</div>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-direction-body', this)">
@@ -406,6 +366,8 @@
             </div>
             <div id="manager-direction-body" class="card-body dashboard-collapsible-body">
                 <div class="manager-direction-grid" id="manager-direction-grid"></div>
+                {# Inventory PM only: Genoray and Vieworks are the PM plans with due dates. #}
+                <div class="manager-pm-summary mt-3 d-none" id="manager-pm-summary" role="status"></div>
                 {#
                     Only metrics that count events inside a window appear here. Current
                     overdue and pending TSR are states as of now, and a shift that was
@@ -423,10 +385,10 @@
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
             <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
-                    <h5 class="mb-0 fw-bold text-dark">
+                    <h3 class="h5 mb-0 fw-bold text-dark">
                         <i class="fa-solid fa-triangle-exclamation me-2 text-warning"></i>
                         What Needs Attention
-                    </h5>
+                    </h3>
                     <div class="xsmall text-muted mt-1" id="manager-watchlist-caption">Severe overdue, aged TSR, blocked jobs, repeat equipment and at-risk clients</div>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
@@ -442,15 +404,15 @@
                 <div class="manager-drilldown border-top">
                     <div class="row g-3 p-3">
                         <div class="col-lg-6">
-                            <h6 class="fw-bold text-dark small mb-2">
+                            <h4 class="h6 fw-bold text-dark small mb-2">
                                 <i class="fa-solid fa-building me-2"></i>Branch workload
-                            </h6>
+                            </h4>
                             <div id="manager-branch-list" class="dashboard-team-list manager-branch-list"></div>
                         </div>
                         <div class="col-lg-6">
-                            <h6 class="fw-bold text-dark small mb-2">
+                            <h4 class="h6 fw-bold text-dark small mb-2">
                                 <i class="fa-solid fa-users-gear me-2"></i>Engineer utilization
-                            </h6>
+                            </h4>
                             <div id="manager-engineer-utilization-list" class="dashboard-team-list manager-utilization-list"></div>
                         </div>
                     </div>
@@ -526,14 +488,21 @@
             <span class="dashboard-metric-label">upcoming</span>
         </div>
         <div class="dashboard-metric-divider" aria-hidden="true"></div>
+        {# Alert / warn colour is applied from JS only when the value is above zero, so a
+           red "0" never trains people to ignore red. #}
         <div class="dashboard-metric">
-            <span class="dashboard-metric-value dashboard-metric-alert" id="count-my-continuation">0</span>
+            <span class="dashboard-metric-value" id="count-my-continuation" data-metric-tone="alert">0</span>
             <span class="dashboard-metric-label">for continuation</span>
         </div>
         <div class="dashboard-metric-divider" aria-hidden="true"></div>
         <div class="dashboard-metric">
-            <span class="dashboard-metric-value dashboard-metric-warn" id="count-my-waiting">0</span>
+            <span class="dashboard-metric-value" id="count-my-waiting" data-metric-tone="warn">0</span>
             <span class="dashboard-metric-label">{% if dashboard_effective_hybrid_view %}waiting, yours{% else %}waiting{% endif %}</span>
+        </div>
+        <div class="dashboard-metric-divider" aria-hidden="true"></div>
+        <div class="dashboard-metric">
+            <span class="dashboard-metric-value" id="count-my-pending-tsr" data-metric-tone="warn">0</span>
+            <span class="dashboard-metric-label">TSRs pending</span>
         </div>
         <a href="/timeline" class="dashboard-metric-link">Open timeline →</a>
     </div>
@@ -588,14 +557,46 @@
         excluded because phase 2 deliberately dropped their shortcut cards as sidebar
         duplicates.
     #}
-    {% if (dashboard_has_engineer_profile or dashboard_effective_admin_view) and not dashboard_effective_scheduler_only %}
+    {% if dashboard_staff_landing %}
+    {# Staff land on what is waiting on them, from the same summary the sidebar badges
+       use. The company-wide task table below starts collapsed for them. #}
+    <div class="dashboard-today mb-4" id="staff-waiting" aria-live="polite">
+        <div class="dashboard-today-header">
+            <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+            <span>Waiting on you</span>
+        </div>
+        <div id="staff-waiting-list" class="dashboard-today-list">
+            <div class="dashboard-today-clear">
+                <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>
+                <span>Checking what is waiting on you&hellip;</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# What's New: one dismissible line, placed after the first piece of work so it no
+       longer pushes the work below the fold. Colours live in app-dashboard.css. #}
+    <section id="dashboard-whats-new" class="dashboard-whats-new mb-4" style="display:none;" aria-label="What's New">
+        <div class="dashboard-whats-new-icon" aria-hidden="true">
+            <i class="fa-solid fa-bell"></i>
+        </div>
+        <div class="dashboard-whats-new-text">
+            <span class="dashboard-whats-new-date" id="dashboard-whats-new-date">New System Update</span>
+            <strong id="dashboard-whats-new-title">What's New</strong>
+            <span class="dashboard-whats-new-summary" id="dashboard-whats-new-summary"></span>
+        </div>
+        <a href="/whats_new" class="btn btn-sm btn-success fw-bold">View</a>
+        <button type="button" class="btn-close dashboard-whats-new-dismiss" id="dashboard-whats-new-dismiss" aria-label="Dismiss this update notice"></button>
+    </section>
+
+    {% if (dashboard_has_engineer_profile or dashboard_effective_admin_view or dashboard_staff_landing) and not dashboard_effective_scheduler_only %}
     <div class="dashboard-quick-admin mb-4 dashboard-sortable-section" data-dashboard-section="quick-admin" data-dashboard-title="Shortcuts">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <div>
-                <h5 class="mb-0 fw-bold text-dark">
+                <h3 class="h5 mb-0 fw-bold text-dark">
                     <i class="fa-solid fa-bolt me-2 text-warning"></i>
                     Shortcuts
-                </h5>
+                </h3>
                 <p class="text-muted small mb-0">Everywhere you go, listed once</p>
             </div>
             <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('quick-admin-actions-body', this)">
@@ -605,11 +606,13 @@
 
         <div id="quick-admin-actions-body" class="dashboard-collapsible-body">
             <div class="hybrid-shortcut-grid">
+                {% if dashboard_can_open_timeline %}
                 <a href="/timeline" class="hybrid-shortcut is-primary">
                     <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
                     <strong>Timeline</strong>
                     <span>Schedules and dispatch</span>
                 </a>
+                {% endif %}
                 {% if dashboard_has_engineer_profile %}
                 <a href="/offline-tsr" class="hybrid-shortcut">
                     <i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i>
@@ -617,11 +620,13 @@
                     <span>Prepare a service report</span>
                 </a>
                 {% endif %}
+                {% if not dashboard_staff_landing or nav_can_view_admin_reports %}
                 <a href="/reports_page" class="hybrid-shortcut">
                     <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
                     <strong>TSR files</strong>
                     <span>Archive and downloads</span>
                 </a>
+                {% endif %}
                 <a href="/clients_page" class="hybrid-shortcut">
                     <i class="fa-solid fa-hospital" aria-hidden="true"></i>
                     <strong>Clients</strong>
@@ -667,13 +672,13 @@
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-primary dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="my-active-tasks" data-dashboard-title="My Active Tasks">
         <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
             <div>
-                {# Stays an h5 so the heading outline is unchanged for screen readers. Visual
-                   subordination under the manager block is done in CSS, from the
-                   dashboard-scope-personal class on the section wrapper. #}
-                <h5 class="mb-0 fw-bold text-primary">
+                {# A section heading (h3) under the page h1/h2. Visual subordination under the
+                   manager block is done in CSS, from the dashboard-scope-personal class on
+                   the section wrapper. #}
+                <h3 class="h5 mb-0 fw-bold text-primary">
                     <i class="fa-solid fa-user-check me-2"></i>
                     My Active Tasks
-                </h5>
+                </h3>
                 <div class="xsmall text-muted mt-1">Assigned technical visits that still need action</div>
             </div>
             <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">
@@ -681,12 +686,12 @@
             </a>
         </div>
         <div class="card-body p-0">
-            <div class="table-responsive">
+            <div class="table-responsive" id="my-tasks-table-wrap">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light text-uppercase small fw-bold text-muted">
                         <tr>
                             <th class="ps-4">Scheduled Date</th>
-                            <th>Medical Facility</th>
+                            <th>Facility</th>
                             <th>Equipment</th>
                             <th>Task Details</th>
                             <th class="text-end pe-4">Current Status</th>
@@ -697,10 +702,9 @@
                     </tbody>
                 </table>
             </div>
-            <div id="no-my-tasks" class="text-center p-4 d-none dashboard-empty-state">
-                <i class="fa-solid fa-circle-check fa-3x text-success opacity-25 mb-3"></i>
-                <h6 class="fw-bold mb-1">No active tasks assigned</h6>
-                <p class="text-muted small mb-0">You are clear for now. Use Timeline to check future schedules or Create TSR for completed visits.</p>
+            <div id="no-my-tasks" class="dashboard-today-clear d-none">
+                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                <span>No active tasks assigned. Use Timeline for future schedules or Create TSR for completed visits.</span>
             </div>
             <div id="my-tasks-mobile-list" class="dashboard-mobile-card-list p-3"></div>
         </div>
@@ -711,9 +715,9 @@
     <!-- OPEN TECHNICAL TASKS REGISTRY (COMPANY-WIDE) -->
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 dashboard-sortable-section" data-dashboard-section="open-technical-tasks" data-dashboard-title="Open Technical Tasks">
 
-        {% if dashboard_has_engineer_profile %}
-        {# For engineers this table is company-wide reference, not their own work, so it
-           starts collapsed. Their assignments are already shown above. #}
+        {% if dashboard_has_engineer_profile or dashboard_staff_landing %}
+        {# For engineers and staff this table is company-wide reference, not their own
+           work, so it starts collapsed. #}
         <button type="button"
                 class="dashboard-collapsible-toggle"
                 id="open-tasks-toggle"
@@ -728,39 +732,42 @@
 
         {# id must not be open-tasks-body: that belongs to the <tbody> the task
            renderer writes into. #}
-        <div id="open-tasks-panel" class="{% if dashboard_has_engineer_profile %}collapse{% endif %}">
+        <div id="open-tasks-panel" class="{% if dashboard_has_engineer_profile or dashboard_staff_landing %}collapse{% endif %}">
 
         <div class="card-header bg-white py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3">
-            
+
             <div class="header-label">
-                <h5 class="mb-0 fw-bold text-dark">
-                    <i class="fa-solid fa-list-check me-2 text-danger"></i>
-                    {% if dashboard_has_engineer_profile %}Reference: All Open Technical Tasks{% else %}All Open Technical Tasks{% endif %}
-                </h5>
+                <h3 class="h5 mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-list-check me-2 text-danger" aria-hidden="true"></i>
+                    All Open Technical Tasks
+                </h3>
                 <p class="xsmall text-muted mb-0 italic">{% if dashboard_has_engineer_profile %}Company-wide reference only. Your own assignments are shown above.{% else %}Excludes Personnel Leave and internal Training records{% endif %}</p>
             </div>
-            
-            <div class="d-flex gap-2 align-items-center">
-                
-                <!-- Status Workflow Filter -->
-                <select id="filter-status" class="form-select form-select-sm border-primary shadow-none" onchange="filterAndRender()">
+
+            <div class="open-tasks-controls">
+                <input type="search" id="open-tasks-search" class="form-control form-control-sm" placeholder="Search facility, engineer, equipment, task" aria-label="Search open technical tasks" oninput="filterAndRender()">
+
+                <select id="filter-engineer" class="form-select form-select-sm" aria-label="Filter by engineer" onchange="filterAndRender()">
+                    <option value="">All engineers</option>
+                </select>
+
+                <select id="filter-status" class="form-select form-select-sm" aria-label="Filter by status" onchange="filterAndRender()">
                     <option value="">All Open Statuses</option>
                     <option value="In Progress">In Progress</option>
                     <option value="For Continuation">For Continuation</option>
                     <option value="Waiting for P.O">Waiting for P.O</option>
                     <option value="Waiting for Parts">Waiting for Parts</option>
                 </select>
-                
-                <!-- Sorting Controller Group -->
-                <div class="btn-group">
-                    <button id="sort-btn" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleSort()">
-                        <i class="fa-solid fa-sort me-1"></i> Sort: Latest Scheduled
-                    </button>
-                    <a href="/timeline" class="btn btn-sm btn-primary shadow-sm fw-bold">
-                        <i class="fa-solid fa-calendar-days me-1"></i>Open Calendar Grid
-                    </a>
-                </div>
 
+                <select id="sort-mode" class="form-select form-select-sm" aria-label="Sort open technical tasks" onchange="setOpenTasksSort(this.value)">
+                    <option value="scheduled_latest">Latest scheduled</option>
+                    <option value="scheduled_oldest">Oldest scheduled</option>
+                    <option value="created_latest">Latest created</option>
+                </select>
+
+                <a href="/timeline" class="btn btn-sm btn-primary shadow-sm fw-bold">
+                    <i class="fa-solid fa-calendar-days me-1" aria-hidden="true"></i>Open Calendar Grid
+                </a>
             </div>
 
         </div>
@@ -772,12 +779,12 @@
                     
                     <thead class="table-light text-uppercase small fw-bold text-muted sticky-top">
                         <tr>
-                            <th class="ps-4" style="width: 25%;">Scheduled Date / Range</th>
-                            <th style="width: 15%;">Medical Engineer</th>
-                            <th style="width: 20%;">Facility Name</th>
-                            <th style="width: 20%;">Technical Task</th>
-                            <th style="width: 10%;">Technical Status</th>
-                            <th class="text-end pe-4" style="width: 10%;">Created On</th>
+                            <th class="ps-4 open-tasks-col-date">Scheduled Date / Range</th>
+                            <th class="open-tasks-col-engineer">Engineer</th>
+                            <th class="open-tasks-col-facility">Facility</th>
+                            <th class="open-tasks-col-task">Task</th>
+                            <th class="open-tasks-col-status">Status</th>
+                            <th class="text-end pe-4 open-tasks-col-created">Created On</th>
                         </tr>
                     </thead>
 
@@ -791,11 +798,9 @@
             <div id="open-tasks-mobile-list" class="dashboard-mobile-card-list p-3"></div>
 
             <!-- Zero State Result UI -->
-            <div id="no-tasks-msg" class="text-center p-5 d-none text-muted">
-                <div class="empty-icon-container mb-3">
-                    <i class="fa-solid fa-circle-check fa-4x text-success opacity-25"></i>
-                </div>
-                <h5 class="fw-bold">No Pending technical tasks detected.</h5>
+            <div id="no-tasks-msg" class="dashboard-today-clear d-none">
+                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                <span id="no-tasks-text">No open technical tasks.</span>
             </div>
 
         </div>
@@ -826,10 +831,11 @@
         schedulerOnly: {{ (dashboard_effective_scheduler_only|default(false))|tojson }},
         hybridView: {{ (dashboard_effective_hybrid_view|default(false))|tojson }},
         managerView: {{ (dashboard_effective_manager_view|default(false))|tojson }},
-        schedulerAccount: {{ (dashboard_scheduler_account|default(false))|tojson }}
+        schedulerAccount: {{ (dashboard_scheduler_account|default(false))|tojson }},
+        staffLanding: {{ (dashboard_staff_landing|default(false))|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=5"></script>
 
 
 {% if session.get('force_pw_change') %}

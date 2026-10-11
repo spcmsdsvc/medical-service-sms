@@ -1,6 +1,60 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-11-dashboard-your-day-first",
+      "release_date": "2026-10-11",
+      "title": "Dashboard: Your Day First",
+      "summary": "The dashboard now shows your work first, marks late visits, and every visit opens its week on the Timeline.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-11-dashboard-phone-first",
+          "category": "Dashboard",
+          "description": "On a phone your own work now starts on the first screen. The clock and the Customize button moved to the top bar on computers, and the What's New notice is one line you can dismiss.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-11-dashboard-late-and-links",
+          "category": "Dashboard",
+          "description": "Visits past their date show how many days late they are, statuses keep the same colours in every theme, and tapping a visit opens its week on the Timeline. Phones show 20 visits at a time with a Show more button.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-11-dashboard-pending-tsr",
+          "category": "Dashboard",
+          "description": "Your summary now counts your completed visits that still need a TSR.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-11-dashboard-open-task-search",
+          "category": "Dashboard",
+          "description": "All Open Technical Tasks has a search box, an engineer filter and a clear sort menu.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 4
+        },
+        {
+          "item_key": "2026-10-11-dashboard-inventory-pm",
+          "category": "Dashboard",
+          "description": "The Direction card shows this month's inventory PM (Genoray, Vieworks): how many are done out of those due, and how many are overdue.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-10-whats-new-dot-recent",
       "release_date": "2026-10-10",
       "title": "Quieter What's New Dot",

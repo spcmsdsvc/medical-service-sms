@@ -27330,7 +27330,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v278-sidebar-groups.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v279-menu-guide.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v283-calibration-fix-report.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v285-signin-activity-log';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v285-signin-activity-log.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v286-dashboard-critique-fixes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27864,6 +27865,8 @@ def dashboard_page():
         dashboard_approver_only=dashboard_caps.get('approver_only', False),
         dashboard_can_approve_requests=dashboard_caps.get('can_approve_requests', False),
         dashboard_display_role=dashboard_caps['display_role'],
+        # Staff accounts get shortcuts too, so the Timeline link must not bounce them.
+        dashboard_can_open_timeline=can_access_timeline_page(),
     )
 
 
@@ -36002,8 +36005,78 @@ def get_manager_overview():
             branch_summary.values(),
             key=lambda row: (-row.get('open_tasks', 0), row.get('branch') or '')
         ),
-        'engineer_utilization': engineer_rows[:20]
+        'engineer_utilization': engineer_rows[:20],
+        'pm': inventory_pm_month_summary(today)
     })
+
+
+def inventory_pm_month_summary(today):
+    """Inventory PM (Genoray, Vieworks) due, done and overdue for the Manila month of `today`.
+
+    InventoryPmVisit is the only PM record with planned due dates, so the dashboard labels
+    this figure by brand rather than presenting it as all preventive maintenance. A visit
+    counts as done once its completion was captured (completed_at), which happens when the
+    linked schedule is completed. Never raises: PM is additive and must not break the
+    manager overview.
+    """
+    try:
+        ensure_inventory_pm_visit_table()
+        month_start = today.replace(day=1)
+        next_month = (month_start + timedelta(days=32)).replace(day=1)
+        due_query = InventoryPmVisit.query.filter(
+            InventoryPmVisit.target_date >= month_start,
+            InventoryPmVisit.target_date < next_month,
+        )
+        return {
+            'due_this_month': due_query.count(),
+            'done_this_month': due_query.filter(InventoryPmVisit.completed_at.isnot(None)).count(),
+            'overdue': InventoryPmVisit.query.filter(
+                InventoryPmVisit.target_date < today,
+                InventoryPmVisit.completed_at.is_(None),
+            ).count(),
+        }
+    except Exception as pm_error:
+        db.session.rollback()
+        print(f'[Dashboard] Inventory PM summary skipped: {pm_error}', flush=True)
+        return None
+
+
+@app.route('/get_my_pending_tsr_count')
+@login_required
+def get_my_pending_tsr_count():
+    """The signed-in engineer's own completed visits that still have no TSR file.
+
+    Same definition and window as the manager overview's pending TSR (completed shift,
+    no TSR file, start date within the last 180 days to the next 60), limited to shifts
+    this account's engineer profile is assigned to. Accounts without a profile get 0.
+    """
+    profile = getattr(current_user, 'engineer_profile', None)
+    if not profile:
+        return jsonify({'success': True, 'pending_tsr': 0})
+
+    ensure_shift_file_original_filename_column()
+    today = get_manila_today()
+    start_dt, end_dt = build_shift_datetime_bounds(today - timedelta(days=180), today + timedelta(days=60))
+    linked_shift_ids = db.session.query(ShiftEngineer.shift_id).filter(ShiftEngineer.engineer_id == profile.id)
+    shifts = (
+        Shift.query
+        .options(selectinload(Shift.files))
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.status == 'Completed')
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+        .filter(or_(Shift.id.in_(linked_shift_ids), Shift.engineer_id == profile.id))
+        .all()
+    )
+    # get_shift_engineer_records() falls back to Shift.engineer_id only when a shift has
+    # no ShiftEngineer rows, so a primary engineer removed from the linked list is not
+    # counted for that shift.
+    pending = [
+        shift for shift in shifts
+        if any(eng.id == profile.id for eng in get_shift_engineer_records(shift))
+        and not shift_has_tsr_file(shift)
+    ]
+    return jsonify({'success': True, 'pending_tsr': len(pending)})
 
 
 

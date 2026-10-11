@@ -73,7 +73,11 @@ class DashboardSourceTests(unittest.TestCase):
         # It must not introduce its own request; the phase was "show less, fetch same".
         panel = self.js.split('function renderEngineerTodayPanel')[1].split('\n    function ')[0]
         self.assertNotIn('fetch(', panel)
-        self.assertIn('dashboard-today-clear', panel, 'an empty state must exist')
+        # The empty state is rendered through the shared renderDashboardClear helper
+        # (also used by the staff "Waiting on you" card) since 2026-10-11.
+        self.assertIn('renderDashboardClear(list', panel, 'an empty state must exist')
+        clear = self.js.split('function renderDashboardClear')[1].split('\n    function ')[0]
+        self.assertIn('dashboard-today-clear', clear)
 
     def test_reference_table_starts_collapsed_for_engineers(self):
         self.assertIn('id="open-tasks-toggle"', self.dashboard)
