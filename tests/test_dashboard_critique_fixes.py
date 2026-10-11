@@ -38,7 +38,8 @@ class DashboardCritiqueSourceTests(unittest.TestCase):
     def test_layout_controls_moved_to_the_header_and_say_account(self):
         self.assertNotIn('dashboard-personalize-toolbar', self.dashboard)
         self.assertNotIn('saved on this device', self.dashboard)
-        header = _block(self.dashboard, 'class="dashboard-header', '{# RETIRED')
+        # Dashboard Style moved them into the shadcn-style page header.
+        header = _block(self.dashboard, 'class="dash-page-header', '{# RETIRED')
         self.assertIn('id="dashboard-customize-toggle"', header)
         self.assertIn('saved to your account', header)
         # Desktop-only, so they no longer push phone content down.
@@ -49,7 +50,8 @@ class DashboardCritiqueSourceTests(unittest.TestCase):
         self.assertIn('confirm(', reset)
 
     def test_page_has_an_h1_and_no_pro_only_icon(self):
-        self.assertIn('<h1 class="visually-hidden">Dashboard</h1>', self.dashboard)
+        # Dashboard Style made the title visible (owner, 2026-10-11).
+        self.assertIn('<h1 class="dash-page-h1">Dashboard</h1>', self.dashboard)
         self.assertNotIn('fa-hand-wave', self.dashboard)
 
     def test_whats_new_has_no_inline_colours_and_can_be_dismissed(self):

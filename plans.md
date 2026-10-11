@@ -37,6 +37,121 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Dashboard Style — shadcn Cards, Spacing, Chart and Header (all dashboards)
+
+**Status:** Phase 1 executed locally on 2026-10-11 (owner: "go phase 1"); not committed, publish waits for "commit and push". Phases 2–3 awaiting go-ahead. Brief: `.impeccable/briefs/dashboard-style.md`. New `tests/test_dashboard_style.py` (14 tests; 6 of 7 source tests fail on `HEAD`, the kept-functions guard passes on both; the 7 endpoint tests need `/get_dashboard_series`, absent on `HEAD`). Focused run: 177 tests OK. Browser check passed on a DB copy as `jonamar` (49 sample completed visits added to the copy): graphite and light at 1366 px, AMOLED at 375 px, no horizontal scroll, no tap target under 44px, muted text 9:1 on AMOLED, tabs, panel, Customize and the chart switch/readout/keys all working, console clean.
+**Phase 1 amendments (found while building):**
+- The header subtitle and primary button were done for **every role** in phase 1, because the header is shared: Your work / Company overview / Dispatch / What's waiting on you, and Create TSR / Open approvals or Open analytics / Open calendar. This was planned for steps 11, 17 and 20, which now only cover the rest of those phases.
+- `current-date` is **kept** (moved into the subtitle; `updateClock` now writes "Sunday, October 11"). Only `system-clock` was removed.
+- **Layout reset:** `resetDashboardLayoutIfOutdated()` reads the *first* versioned section, so the version went onto `engineer-summary` (`3`) rather than onto the new chart section. Hybrid accounts (whose first versioned section is `manager-executive`) don't reset; for them, a saved layout puts the chart at the bottom until they press Reset.
+- **The 3-month range is drawn as weekly totals** (13 points, "Week of Aug 24 · 5 visits"). Daily counts of 0–2 over 90 days read as spikes in the browser check. 30 and 7 days stay daily.
+- **The engineer cards differ slightly from step 4:** the TSRs pending helper is "Visits from the last 180 days" (a Create TSR link there would be a sub-44px target and repeats the header button). Waiting reads "waiting parts" (hybrid: "waiting, yours").
+- **Shortcuts (step 8)** were restyled in CSS only, because the shortcut tests pin the grid markup. Step 9's spacing pass was limited to the new cards. The Hide buttons were not restyled.
+- **Assets** ended at `app-dashboard.css?v=12` and `app-dashboard.js?v=11` (bumped again mid-check, because the service worker served the first bump's files).
+- **Tests updated** (assertions only, same properties): `test_dashboard_engineer.py` (stat cards instead of the strip), `test_dashboard_trends.py` (week card instead of bars), `test_dashboard_critique_fixes.py` (visible h1, header tools in `.dash-page-header`), `test_dashboard_hybrid.py` ("waiting parts").
+**Approved:** 2026-10-11 (owner, after two inline mockups: "i like shadecn's dashboard. the cards, the spacing, the chart, the big header on top" → "keep, write the plan for all dashboards").
+**Detailed:** 2026-10-11.
+**Branch:** `main` (local first; each phase publishes only on its own "commit and push").
+**Phases:** 1 shared parts + engineer · 2 manager · 3 scheduler and staff. Each phase needs its own go-ahead ("go phase 1" etc.), like the Remodel plan.
+
+## Context
+
+The owner wants the dashboard to *feel* like a dashboard. The reference is the shadcn/ui example (https://ui.shadcn.com/examples/dashboard): a big page title, a row of stat cards (label, small corner badge, big number, one sentence, one muted helper line), generous even spacing, one area chart with a range switch, and a data table in a card. Today's page has a small "Welcome back" heading with a dark clock badge, thin metric strips with dividers, and stacked panels with their own headers and Hide buttons. The Remodel (A–C) and Trends work fixed *what* each view shows; this plan changes *how it looks* across every view, without changing what any button does.
+
+Approved mockup (engineer view, sample data): header "Dashboard" + "Your work, <date>" + one primary button; four stat cards (Visits today · Overdue · TSRs pending · Done this week); "Visits completed" area chart with 3 months / 30 days / 7 days; the work orders as a table card with filter pills.
+
+## Decisions taken
+
+1. **shadcn look, our identity.** Layout, spacing, card anatomy and the chart follow shadcn. Colours, fonts, radii and the three themes (light, graphite, AMOLED) come from `DESIGN.md`, so it will not be black-and-white like shadcn. The Impeccable skill (`shape` then build) translates the mockup into our tokens in phase 1.
+2. **All dashboards, phased:** engineer (phase 1), manager and hybrid (phase 2), scheduler and staff landing (phase 3).
+3. **Presentation only.** Every element id, `onclick` handler, endpoint and permission keeps working (AGENTS.md "Protect Existing Functions"). Ids move into the new cards rather than being renamed.
+4. **One chart per view.** Engineer: own "Visits completed". Manager: company "Visits completed", with Overdue by age kept as a second, smaller card. A hybrid account gets the company chart only. **Scheduler: no area chart by default** — the engineer lanes are its picture, and a chart would repeat the 7-day board. (Owner can change this at go-ahead for phase 3.)
+5. **Chart data is real history.** A completed visit is a Shift with `status == 'Completed'`, counted on its visit date (`start_time`). There is no `completed_at` on `Shift` (`app.py:3607`), so this matches how `/get_my_done_tasks` already defines "done". No snapshot table is needed, unlike the manager trends.
+6. **No chart library.** The chart is a hand-written SVG in `app-dashboard.js`, like the existing sparklines and age bars. Chart.js is loaded only by the analytics page (`static/js/app-analytics.js`) and is not added to the dashboard.
+7. **Clock badge goes.** The header's dark date/clock badge (`dashboard.html:61-66`) is removed. The date moves into the subtitle. `setTextIfPresent` (`app-dashboard.js:69-70`) already skips missing ids.
+8. **Sparklines leave the manager tiles.** The big chart is the visual; a tile keeps its trend as the corner badge plus a sentence ("Up 4 from last week"). `renderManagerKpiTrend` already returns when the spark element is missing (`app-dashboard.js:828`).
+
+## Investigation
+
+- **Header** (`dashboard.html:48-74`): visually-hidden `<h1>Dashboard</h1>`, a visible `h4` "Welcome back, <name>!", the subtitle "Operational Overview of MEDICAL SERVICE Technical Visits", and a desktop-only tools group (clock badge, Customize `toggleDashboardCustomizeMode()`, Reset `resetDashboardLayout()`).
+- **Engineer summary** (`dashboard.html:475-511`): a `.dashboard-metric-strip` with `count-my-today`, `count-my-overdue`, `count-my-pending-tsr`, `count-my-waiting`, `count-my-continuation`, the week strip (`engineer-week`, `engineer-week-bars`, `engineer-week-label`) and an "Open timeline →" link. Filled by `updateEngineerSummaryCards()`, `loadMyPendingTsrCount()` and `renderEngineerWeek()`.
+- **Work orders** (`dashboard.html:515`): the `engineer-work-orders` section (tabs, list, detail panel) from phase B. It keeps its behaviour; only the card surface and tab look change.
+- **Manager tiles** (`dashboard.html:251-340`): `.manager-kpi` buttons/links with `manager-*-count` ids, `manager-trend-*` labels and `manager-spark-*` SVGs; `openManagerKpi()` filters; PM tile `manager-kpi-pm`. Direction (`:344`), What Needs Attention (`:375`), Directory Totals (`:425`).
+- **Scheduler board** (`dashboard.html:93-230`): header, `scheduler-risk` line, `.scheduler-metric-strip` of filter buttons (`data-scheduler-filter`, `scheduler-*-count`, `setSchedulerQueueFilter()`), then queue / lanes / selected schedule.
+- **Staff landing** (`dashboard.html:595-610`): "Waiting on you" list only.
+- **Saved layouts** (`app-dashboard.js:262-280`): sections a saved layout does not mention are appended at the **end**, so a new chart section would land at the bottom for anyone with a saved order. Phases A–C solved the same thing with `data-dashboard-layout-version` and `resetDashboardLayoutIfOutdated()`; this plan does the same.
+- **Section ids** are whitelisted in `DASHBOARD_SECTION_IDS` (`app.py:31867`); a new section id must be added there or the layout save rejects it.
+- **Tests pinning today's markup:** `tests/test_dashboard_engineer.py` and `tests/test_dashboard_trends.py` reference the metric strip, week bars, clock or spark markup. They are updated, not deleted, in the phase that changes that markup.
+- **Assets today:** `app-dashboard.css?v=10`, `app-dashboard.js?v=9`, `CACHE_VERSION` `…-v290-dashboard-trends` (`app.py:27377`).
+
+## Execution steps
+
+### Phase 1 — shared parts + engineer dashboard
+
+1. **Impeccable `shape`** for the dashboard style. Input: this plan, the approved mockup, `DESIGN.md`. Output: the brief for the header, stat card, area chart and table card in our tokens and all three themes, saved under `.impeccable/`. Done = brief written; no code yet.
+2. **Page header** (`dashboard.html:48-74`, `app-dashboard.css`): the visible `<h1>Dashboard</h1>` (about 1.75rem; replaces the hidden h1 and the "Welcome back" h2); a role subtitle with the Manila date ("Your work, Sunday 11 October" for engineers; phases 2–3 add theirs); one primary button per role on the right (engineer: Create TSR → `/offline-tsr`, the sidebar's link); Customize and Reset stay as quiet secondary buttons, desktop only. The clock badge is removed (decision 7). Done = one header on every role view, no horizontal scroll at 375 px.
+3. **Stat card component** (`app-dashboard.css`, new `.dash-stat`): `surface`, hairline border, 12px radius, 1.25rem padding; muted label top-left, small badge top-right, about 2rem tabular number, a 0.875rem sentence, a 0.75rem muted helper line. Grid: 4 across at ≥1200 px, 2 across below, both phone and tablet. Tone rules carried over from KPI Tiles: alert/warn colour only above zero, never the accent. Done = component styled in all three themes.
+4. **Engineer cards** (`dashboard.html:475-511`): the metric strip becomes four `.dash-stat` cards — Visits today (`count-my-today`; helper: next visit time), Overdue (`count-my-overdue`; helper holds `count-my-continuation` and `count-my-waiting` as "N for continuation · N waiting parts"), TSRs pending (`count-my-pending-tsr`), Done this week (holds `engineer-week` and `engineer-week-label`; badge: change vs last week). The section id `engineer-summary` stays. `renderEngineerWeek()` fills the card number and badge instead of bars; `engineer-week-bars` is removed together with its CSS. Done = every id the loaders write to still exists (grep each one), and values match the old strip on the same data.
+5. **Series endpoint** (`app.py`, next to `/get_my_done_tasks` at `:34915`): `GET /get_dashboard_series?metric=my_completed&days=90` → `{metric, days, points:[{date:'YYYY-MM-DD', value}]}`, Manila days, zero-filled, oldest first. `days` is limited to 7, 30 or 90 (anything else → 90). `my_completed` uses the same filters and ownership rule as `get_my_done_tasks` (client set, not Training/leave, linked engineer list decides); without an engineer profile it returns empty points. Login required. Done = endpoint returns 90 points for the owner on a DB copy, totals match a SQL count.
+6. **Area chart** (`app-dashboard.js`, new `renderDashboardAreaChart(container, points, options)`; `app-dashboard.css` `.dash-chart`): a new section `engineer-activity` ("Visits completed", `data-dashboard-layout-version="1"`) placed under the cards; added to `DASHBOARD_SECTION_IDS`. Smooth line plus a light fill in the accent, 3 hairline gridlines, date labels on the x-axis, a segmented 3 months / 30 days / 7 days switch (44px targets), and a readout line (`role="status"`) that shows "Tue 6 Oct · 3 visits" on hover, tap or arrow keys. The SVG carries an `aria-label` with the total for the range. One fetch of 90 days; 30 and 7 are slices. Draws once on load (fill fades in, line draws); off under reduced motion. Empty range: one line "No completed visits in this range". Done = switch, readout and empty state work in all themes at 1366 and 375 px.
+7. **Work orders as a table card** (`dashboard.html:515`, `app-dashboard.css`): the section sits in one card; tabs look like shadcn's pills (still `.work-orders-tab`, still 44px, counts kept). The table and phone cards, row click and the detail panel are unchanged. Done = phase B's tests still pass.
+8. **Shortcuts** (`dashboard.html:628`): the grid becomes one quiet row of icon links. Same links and the same admin gate.
+9. **Spacing pass:** one vertical rhythm between sections (1.5rem, 1rem on phones), with a section's own heading inside its card. Hide buttons stay (`toggleDashboardSection`) as quiet icon buttons with an `aria-label`.
+10. **Self-review:** every function the engineer view calls is still defined (`updateEngineerSummaryCards`, `loadMyPendingTsrCount`, `renderEngineerWeek`, `renderMyTasks`, `setWorkOrdersTab`, `openWorkOrderPanel`, `toggleDashboardCustomizeMode`, `resetDashboardLayout`, `toggleDashboardSection`); no id removed except `engineer-week-bars`, `current-date` and `system-clock` (decision 7, and `setTextIfPresent` is null-safe); `DESIGN.md` gains "Page Header", "Stat Cards" and "Area Chart", and "KPI Tiles" points to them.
+
+### Phase 2 — manager and hybrid
+
+11. **Header:** subtitle "Company overview, <date>"; primary button Open approvals (`/approvals`) for approvers, otherwise Open analytics (`/analytics_page`).
+12. **Tiles → stat cards** (`dashboard.html:251-340`): each `.manager-kpi` keeps its element type (link or button), id, `data-manager-kpi`, `aria-pressed` and `onclick`, and takes the `.dash-stat` anatomy: the trend goes into the corner badge and a sentence; the `manager-spark-*` SVGs are removed (decision 8); the PM meter stays as the PM card's helper. The active filter keeps its 2px accent underline. `renderManagerKpiTrend()` writes the badge and sentence. Done = every filter still works and every number matches both endpoints.
+13. **Company chart:** `metric=company_completed` on the same endpoint (step 5). Allowed only when `is_manager_dashboard_user()`, otherwise 403. Counts every completed service visit with the same filters as `my_completed` but no ownership filter. New section `manager-activity` (layout version 1, added to `DASHBOARD_SECTION_IDS`) renders it with the phase 1 chart. On ≥1200 px it sits two-thirds wide beside the Overdue by age card (one-third); stacked below that.
+14. **What Needs Attention as a table card**, its filter line as pills. Direction and Directory Totals take the card surface and spacing; no content change.
+15. **Hybrid:** the engineer cards and work orders sit under the manager part, keeping their "yours" labels and the scope divider; no personal chart (decision 4).
+16. **Self-review** as step 10 for the manager functions (`openManagerKpi`, `renderManagerTrends`, `renderOverdueByAge`, `openOverdueAge`, `renderManagerWatchlist`, `loadManagerOverview`, `loadManagerApprovals`, `renderManagerUpdated`).
+
+### Phase 3 — scheduler and staff landing
+
+17. **Header:** subtitle "Dispatch, <date>"; primary button Open calendar (`/timeline`). The board's own title row becomes the card heading with Refresh.
+18. **Filter strip → stat cards** (`dashboard.html:117-150`): the buttons keep `data-scheduler-filter`, ids, `aria-pressed` and `setSchedulerQueueFilter()`, and take the `.dash-stat` look (no trend badge: the scheduler has no recorded history). The `scheduler-risk` line sits under the header as one status sentence.
+19. **Board regions** (queue, lanes, selected schedule) take the card surface and spacing. Lane logic, drag-and-drop, assign and reschedule are untouched.
+20. **Staff landing:** the phase 1 header (subtitle "What's waiting on you, <date>") and the "Waiting on you" list in a card.
+21. **Self-review** as step 10 for the scheduler functions (`setSchedulerBoardView`, `renderSchedulerAvailabilityStrip`, `setSchedulerQueueFilter`, `dropOnSchedulerLane`, `confirmSchedulerLaneAssign`, `loadSchedulerDispatchIntelligence`, `loadSchedulerCoordinationTools`).
+
+## Deliberately excluded
+
+- **New metrics or data** beyond completed visits per day: this plan is about looks.
+- **Scheduler chart:** decision 4; can be added at phase 3's go-ahead.
+- **A chart library:** decision 6.
+- **The sidebar and app shell** (`layout.html`, `app-shell.css`): not part of the request, and they are shared code.
+- **Analytics page:** it already has its own charts.
+- **Data-table features from shadcn** (column picker, row selection, pagination controls): the lists already cap at 20 rows and have tabs or filters.
+
+## Verification
+
+- **New test module** `tests/test_dashboard_style.py`, growing per phase:
+  - Phase 1: a visible `<h1>Dashboard</h1>` and no clock badge; four `.dash-stat` cards in the engineer view, with every kept id present; the `engineer-activity` section is registered in `DASHBOARD_SECTION_IDS`; `/get_dashboard_series?metric=my_completed` returns zero-filled Manila days, counts only the signed-in engineer's completed visits (another engineer's visit and a Training row excluded), clamps `days`, and returns empty points without a profile; a kept-functions guard; assets bumped at least to v11/v10.
+  - Phase 2: `company_completed` returns 403 for a plain engineer and 200 for a manager; tiles keep `data-manager-kpi` and `onclick`; no `manager-spark-` left; the `manager-activity` section is registered.
+  - Phase 3: scheduler filter cards keep `data-scheduler-filter` and `onclick`; the staff landing has the header.
+  - **Positive control:** each phase's new tests are shown failing on `HEAD`, run in-process against `git show HEAD:<file>` (not `git stash`, per the browser-check notes), except the kept-functions guard, which passes on both.
+- **Update, don't delete,** the assertions in `tests/test_dashboard_engineer.py` and `tests/test_dashboard_trends.py` that pin the old strip, week bars or sparklines.
+- **Focused run per phase:** all `tests/test_dashboard_*.py`, changelog coverage and dark-mode readability. The full suite is not needed (the dashboard page only; no shell, auth or schema change).
+- **Browser per phase** on a copy of `scheduler.db` (temporary password on the copy only): the phase's role view at 1366 px in light and graphite and at 375 px in AMOLED; cards match the old numbers; chart range switch, readout, keyboard and empty state; every existing button in that view clicked once (Customize, Reset, Hide, filters, tabs, panel, assign); no horizontal scroll; tap targets at least 44px; console clean; dark-mode contrast at least 4.5:1. Then clean up the copy and the launch entry. One screenshot per theme as final proof.
+- **One Impeccable critique** after phase 3, in a new session.
+
+## After implementation (each phase)
+
+1. Assets: `app-dashboard.css?v=` and `app-dashboard.js?v=` +1 per phase; `CACHE_VERSION` +1 (phase 1 `…-v291-dashboard-style`), keeping the previous one as a history comment.
+2. `static/changelog/releases.json`: one release per phase (engineers / admins / schedulers).
+3. `DESIGN.md` entries (step 10), `changes.md` bullets, and this plan's Status with the commit and any differences.
+4. Commit only `templates/dashboard.html`, `static/css/app-dashboard.css`, `static/js/app-dashboard.js`, `app.py` (phases 1–2), the tests, `releases.json`, `DESIGN.md`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files. Publish only on that phase's "commit and push".
+
+## Risks
+
+- **A loader writes to an id that moved and silently stops updating:** ids are moved, not renamed; the self-review greps each one, and the kept-functions test guards it.
+- **Saved layouts put the new chart at the bottom:** layout version on the new sections resets saved layouts once (as in phases A–C).
+- **The chart misleads:** it counts visit dates, not completion times (decision 5). The empty state never draws a flat zero line as if it were data.
+- **Dark themes:** `app-dark-pages.css` forces some `-kpi-value` classes to plain text with `!important` (phase C finding), so new class names avoid that pattern; contrast is checked in the browser.
+- **Blast radius:** one page, plus one read-only endpoint. Rolling back = revert the phase's commit.
+
 # Developer Account — Engineer-Only Dashboard
 
 **Status:** Executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `d000fc4`; owner: "execute the last written plan"). New `tests/test_dashboard_developer_view.py` (4 tests; 3 fail on `HEAD`, and the permissions guard passes on both). Changed from the plan: the "other admin" guard uses `robert` (a superadmin with a profile keeps the hybrid view) instead of a regional admin, whose predicate is tied to one named account. `test_dashboard_hybrid.py`'s pinned `hybrid_view` source line was updated. Full suite: 1,766 tests, only the 14 known failures. Browser check on a DB copy as `jonamar` passed: engineer summary, work orders (with the week strip), Shortcuts including the admin links, open technical tasks; no manager section, no scope divider, no `/get_manager_*` requests, no failed requests, no horizontal scroll at 1366 px or 375 px.

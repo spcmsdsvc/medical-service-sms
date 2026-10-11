@@ -177,7 +177,8 @@ class DashboardTrendSourceTests(unittest.TestCase):
         self.assertIn("openManagerKpi(`age:${key}`)", self.js)
 
     def test_engineer_week_strip(self):
-        self.assertIn('id="engineer-week-bars"', self.dashboard)
+        # Dashboard Style turned the week bars into the Done this week stat card.
+        self.assertIn('id="engineer-week-count"', self.dashboard)
         self.assertIn('function renderEngineerWeek(', self.js)
         self.assertIn('renderEngineerWeek();', self.js.split('async function loadMyDoneTasks(')[1].split('\n    function ')[0])
 

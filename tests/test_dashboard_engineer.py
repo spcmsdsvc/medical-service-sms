@@ -37,7 +37,9 @@ class DashboardSourceTests(unittest.TestCase):
         self.assertIn('window.__dashboardConfig', self.js)
 
     def test_engineer_summary_is_a_strip_not_four_tiles(self):
-        self.assertIn('dashboard-metric-strip', self.dashboard)
+        # Dashboard Style (owner, 2026-10-11) replaced the strip with shadcn-style stat cards.
+        self.assertIn('data-dashboard-section="engineer-summary"', self.dashboard)
+        self.assertIn('class="dash-stat"', self.dashboard)
         self.assertNotIn('dashboard-engineer-summary-card', self.dashboard)
         # The count ids must survive so updateEngineerSummaryCards() keeps working.
         # active / upcoming left the header line in the work-order remodel (phase B);

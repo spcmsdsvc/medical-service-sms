@@ -195,8 +195,21 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 - **Shadow Strategy:** card rest shadow; see Elevation.
 - **Border:** none on light; `dark-hairline` in dark themes.
 
+### Page Header (dashboard)
+- **Header** (`.dash-page-header`): a visible 1.75rem/600 "Dashboard" title (1.5rem on phones), a 0.9rem muted role subtitle with the Manila date ("Your work, Sunday, October 11"), and on the right one primary button for the role (Create TSR, Open approvals or Open analytics, Open calendar). Customize and Reset are quiet outline buttons, desktop only. No clock badge.
+
+### Stat Cards (dashboard, shadcn model)
+- **Card** (`.dash-stat`): `surface`, hairline border, 12px radius, 1.25rem padding (1rem on phones). Top row: 0.82rem/500 muted label left, an optional pill badge right (`.dash-stat-badge`, 0.72rem, hairline border). Then a 2rem/600 tabular number (1.6rem on phones), a 0.86rem/500 sentence and a 0.76rem muted helper line. Four across at 1200px and up, two across below.
+- **Tone:** the number (or a count inside the helper) takes the alert or warn pair only above zero, as in KPI Tiles; never the accent. A badge that reports an improvement is green text (`#15803d`, dark `#4ade80`).
+- **Class names** avoid `-stat-value`, `-stat-label` and `-kpi-value`, which `app-dark-pages.css` forces to plain text in dark mode.
+
+### Area Chart (dashboard)
+- **Chart** (`.dash-chart`, drawn by `renderDashboardAreaChart`): one card, title plus a muted range subtitle, a segmented 3 months / 30 days / 7 days switch (`.dash-segment`, 10px radius, pressed segment a 9% ink wash; 44px tall on phones). A 2px accent line with a 12% accent fill (in dark themes the accent mixed 70% with white), three hairline gridlines with 0.72rem muted labels, and three to five date labels. Three months is drawn as weekly totals; 30 and 7 days are daily.
+- **Reading:** a readout line under the chart (`role="status"`) shows the range total, or the day or week under the pointer, tap or arrow keys, with a dashed cursor and a ringed dot. An empty range shows one sentence, never a flat line.
+- **Motion:** draws once on load (line 0.9s exponential ease-out, then the fill fades in); off under `prefers-reduced-motion`.
+
 ### Tabs and Detail Panel (dashboard work orders)
-- **Tabs** (`.work-orders-tab`): 44px text tabs with their count, muted text; the selected tab gets `--app-text` and a 2px accent underline. They scroll sideways on phones rather than wrap.
+- **Tabs** (`.work-orders-tab`): pill tabs with their count (36px, 44px on phones), hairline border and muted text; the selected tab gets a 9% ink wash and `--app-text`. They scroll sideways on phones rather than wrap.
 - **Detail panel** (`.work-order-panel`): a 22rem column right of the list at 992px and up; below that a full-screen sheet on `surface` with a sticky header and a 44px Close. It opens from a row, closes with Esc or Close, and returns focus to the row. One primary action at its foot.
 
 ### KPI Tiles (manager dashboard)

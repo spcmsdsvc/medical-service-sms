@@ -135,7 +135,7 @@ class HybridDashboardSourceTests(unittest.TestCase):
         self.assertIn('Waiting P.O / parts{% if dashboard_effective_hybrid_view %}, '
                       'company-wide{% endif %}', self.dashboard)
         self.assertIn('{% if dashboard_effective_hybrid_view %}waiting, yours'
-                      '{% else %}waiting{% endif %}', self.dashboard)
+                      '{% else %}waiting parts{% endif %}', self.dashboard)
 
     def test_personal_sections_are_subordinated_by_class_not_by_hiding(self):
         # Each personal section carries the marker class, conditionally on the hybrid flag.

@@ -1505,10 +1505,6 @@ body.dashboard-customize-active .dashboard-section-hidden {
    past-due rows, row links, open-task filters, phone paging, inventory PM.
    ========================================================= */
 
-.dashboard-header-tools .header-clock-container {
-    font-size: 0.85rem;
-}
-
 /* What's New: one line, success-toned through Bootstrap variables, not hex. */
 .dashboard-whats-new {
     display: flex;
@@ -2118,22 +2114,6 @@ a.dashboard-mobile-task-card.is-late {
     50% { opacity: 0.3; }
 }
 
-.engineer-week-bars {
-    display: inline-flex;
-    align-items: flex-end;
-    gap: 3px;
-    height: 24px;
-}
-
-.engineer-week-bar {
-    width: 6px;
-    border-radius: 2px 2px 0 0;
-    background: #94a3b8;
-}
-
-.engineer-week-bar.is-today { background: var(--app-primary, #0d6efd); }
-.engineer-week-bar.is-future { background: rgba(148, 163, 184, 0.35); }
-
 @media (max-width: 575.98px) {
     .manager-age-track { height: 52px; }
 }
@@ -2185,3 +2165,343 @@ a.dashboard-mobile-task-card.is-late {
 @media (max-width: 575.98px) {
     .manager-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+
+/* =========================================================
+   Dashboard Style (shadcn model, plans.md): page header, stat cards, the Visits
+   completed area chart, table-card work orders and the shortcut row. Theme variables
+   only; class names avoid the -stat-value / -kpi-value patterns that
+   app-dark-pages.css forces to plain text in dark mode.
+   ========================================================= */
+
+.dash-page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.dash-page-h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    color: var(--app-text, #172033);
+}
+
+.dash-page-sub {
+    margin: 0.2rem 0 0;
+    font-size: 0.9rem;
+    color: var(--app-muted, #64748b);
+}
+
+.dash-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dash-page-tools { gap: 0.5rem; }
+
+.dash-page-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    font-weight: 600;
+}
+
+.dash-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.dash-stat {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 1.25rem;
+    background: var(--app-surface, #ffffff);
+    border: 1px solid var(--app-border, #dbe3ea);
+    border-radius: 12px;
+}
+
+.dash-stat-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.dash-stat-name {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--app-muted, #64748b);
+}
+
+.dash-stat-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--app-border, #dbe3ea);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--app-muted, #64748b);
+    white-space: nowrap;
+}
+
+.dash-stat-badge.is-better { color: #15803d; }
+
+.dash-stat-num {
+    margin: 0.35rem 0 0.5rem;
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--app-text, #172033);
+    font-variant-numeric: tabular-nums;
+}
+
+.dash-stat-line {
+    font-size: 0.86rem;
+    font-weight: 500;
+    color: var(--app-text, #172033);
+}
+
+.dash-stat-help {
+    margin-top: 0.15rem;
+    font-size: 0.76rem;
+    color: var(--app-muted, #64748b);
+}
+
+/* Alert / warn tone, set from JS only above zero (setMetricValue). */
+.dash-stat-num.dashboard-metric-alert,
+.dash-stat-help .dashboard-metric-alert { color: #c8102e; }
+.dash-stat-num.dashboard-metric-warn,
+.dash-stat-help .dashboard-metric-warn { color: #b45309; }
+.dash-stat-help .dashboard-metric-alert,
+.dash-stat-help .dashboard-metric-warn { font-weight: 600; }
+
+.dash-card {
+    padding: 1.25rem;
+    background: var(--app-surface, #ffffff);
+    border: 1px solid var(--app-border, #dbe3ea);
+    border-radius: 12px;
+}
+
+.dash-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.dash-card-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--app-text, #172033);
+}
+
+.dash-card-sub {
+    margin: 0.1rem 0 0;
+    font-size: 0.82rem;
+    color: var(--app-muted, #64748b);
+}
+
+.dash-segment {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--app-border, #dbe3ea);
+    border-radius: 10px;
+}
+
+.dash-segment-btn {
+    min-height: 40px;
+    padding: 0 0.8rem;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--app-muted, #64748b);
+    font-size: 0.82rem;
+    font-weight: 500;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.dash-segment-btn:hover { color: var(--app-text, #172033); }
+
+.dash-segment-btn[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--app-text, #172033) 9%, transparent);
+    color: var(--app-text, #172033);
+}
+
+.dash-segment-btn:focus-visible,
+.dash-chart-svg:focus-visible {
+    outline: 2px solid var(--app-primary, #0d6efd);
+    outline-offset: 2px;
+}
+
+.dash-chart { min-height: 160px; }
+
+.dash-chart-svg {
+    display: block;
+    overflow: visible;
+    border-radius: 6px;
+    touch-action: pan-y;
+}
+
+.dash-chart-grid { stroke: var(--app-border, #dbe3ea); stroke-width: 1; }
+
+.dash-chart-axis {
+    fill: var(--app-muted, #64748b);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.dash-chart-fill { fill: var(--app-primary, #0d6efd); opacity: 0.12; }
+
+.dash-chart-line {
+    fill: none;
+    stroke: var(--app-primary, #0d6efd);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.dash-chart-cursor {
+    stroke: var(--app-muted, #64748b);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+
+.dash-chart-dot {
+    fill: var(--app-surface, #ffffff);
+    stroke: var(--app-primary, #0d6efd);
+    stroke-width: 2;
+}
+
+/* The one load moment: the line draws, then the fill fades in. */
+.dash-chart-svg.is-drawing .dash-chart-line {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: dashChartDraw 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.dash-chart-svg.is-drawing .dash-chart-fill {
+    opacity: 0;
+    animation: dashChartFill 0.5s ease-out 0.4s forwards;
+}
+
+@keyframes dashChartDraw { to { stroke-dashoffset: 0; } }
+@keyframes dashChartFill { to { opacity: 0.12; } }
+
+.dash-chart-readout {
+    min-height: 1.3em;
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    color: var(--app-muted, #64748b);
+    font-variant-numeric: tabular-nums;
+}
+
+.dash-chart-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--app-muted, #64748b);
+    text-align: center;
+}
+
+/* Work orders: one table card with pill tabs (same buttons, same handlers). */
+.work-orders-head { padding: 1.25rem 1.25rem 0.75rem; }
+
+.work-orders-tabs {
+    gap: 0.375rem;
+    padding: 0 1.25rem 0.75rem;
+}
+
+.work-orders-tab {
+    min-height: 36px;
+    padding: 0 0.85rem;
+    border: 1px solid var(--app-border, #dbe3ea);
+    border-radius: 999px;
+    font-weight: 500;
+}
+
+.work-orders-tab:hover { color: var(--app-text, #172033); }
+
+.work-orders-tab[aria-selected="true"] {
+    background: color-mix(in srgb, var(--app-text, #172033) 9%, transparent);
+    border-color: transparent;
+    color: var(--app-text, #172033);
+}
+
+/* Shortcuts: one quiet row of icon links instead of a grid of tiles. */
+.hybrid-shortcut-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.hybrid-shortcut {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    padding: 0 0.9rem;
+    border-radius: 999px;
+    transition: background-color 0.15s ease;
+}
+
+.hybrid-shortcut:hover,
+.hybrid-shortcut:focus-visible {
+    transform: none;
+    box-shadow: none;
+    background: color-mix(in srgb, var(--app-text, #172033) 6%, var(--app-surface, #ffffff));
+}
+
+.hybrid-shortcut i { font-size: 0.95rem; }
+.hybrid-shortcut strong { font-size: 0.85rem; font-weight: 500; }
+.hybrid-shortcut span { display: none; }
+
+@media (max-width: 1199.98px) {
+    .dash-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 575.98px) {
+    .dash-page-h1 { font-size: 1.5rem; }
+    .dash-page-actions .btn,
+    .dash-segment-btn,
+    .work-orders-tab { min-height: 44px; }
+    .dash-stats { gap: 0.75rem; }
+    .dash-stat { padding: 1rem; }
+    .dash-stat-num { font-size: 1.6rem; }
+    .dash-stat-top { flex-wrap: wrap; }
+    .dash-card { padding: 1rem; }
+    .work-orders-head { padding: 1rem 1rem 0.75rem; }
+    .work-orders-tabs { padding: 0 1rem 0.75rem; }
+    .hybrid-shortcut { flex: 1 1 calc(50% - 0.25rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dash-chart-svg.is-drawing .dash-chart-line { animation: none; stroke-dasharray: none; stroke-dashoffset: 0; }
+    .dash-chart-svg.is-drawing .dash-chart-fill { animation: none; opacity: 0.12; }
+}
+
+:root[data-app-theme="dark"] .dash-stat-badge.is-better { color: #4ade80; }
+:root[data-app-theme="dark"] .dash-stat-num.dashboard-metric-alert,
+:root[data-app-theme="dark"] .dash-stat-help .dashboard-metric-alert { color: #f5a3ab; }
+:root[data-app-theme="dark"] .dash-stat-num.dashboard-metric-warn,
+:root[data-app-theme="dark"] .dash-stat-help .dashboard-metric-warn { color: #fbbf24; }
+:root[data-app-theme="dark"] .dash-chart-line,
+:root[data-app-theme="dark"] .dash-chart-dot { stroke: color-mix(in srgb, var(--app-primary) 70%, #ffffff); }
+:root[data-app-theme="dark"] .dash-chart-fill { fill: color-mix(in srgb, var(--app-primary) 70%, #ffffff); }

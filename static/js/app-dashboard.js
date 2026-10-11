@@ -56,11 +56,12 @@
             second: '2-digit', 
             hour12: true 
         };
+        // The header subtitle: "Your work, Sunday, October 11".
         const dateOptions = {
             timeZone: 'Asia/Manila',
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric'
         };
 
         const manilaTime = new Intl.DateTimeFormat('en-US', clockOptions).format(now);
@@ -1726,7 +1727,16 @@
         setMetricValue('count-my-continuation', continuationCount);
         setMetricValue('count-my-waiting', waitingCount);
 
+        renderEngineerTodayHelp(buckets.today);
         renderEngineerTodayPanel(myTasks, todayStart);
+    }
+
+    // Visits today card helper: the earliest timed visit today ("09:00 AM").
+    function renderEngineerTodayHelp(todayTasks) {
+        const times = todayTasks.map(task => task.time_start).filter(Boolean)
+            .sort((a, b) => schedulerTimeToMinutes(a) - schedulerTimeToMinutes(b));
+        setTextIfPresent('engineer-today-line', todayTasks.length ? 'Scheduled for today' : 'Nothing scheduled today');
+        setTextIfPresent('engineer-today-help', times.length ? `First at ${times[0]}` : '');
     }
 
     // "Needs you today" is derived entirely from tasks already loaded for the tables
@@ -1867,6 +1877,10 @@
                 if (workOrdersDone === null) {
                     workOrdersDone = false;
                     loadMyDoneTasks();
+                }
+                if (!dashboardChartState.requested) {
+                    dashboardChartState.requested = true;
+                    loadEngineerActivity();
                 }
             }
 
@@ -2129,45 +2143,198 @@
         if (workOrdersTab === 'done') renderMyTasks();
     }
 
-    // Header strip: visits finished each day Mon-Sun, from the Done this week rows
+    // Done this week card: visits finished Monday to today, from the Done this week rows
     // (/get_my_done_tasks covers the last 7 days, so every day from Monday is present).
     function renderEngineerWeek() {
-        const box = document.getElementById('engineer-week');
-        const bars = document.getElementById('engineer-week-bars');
-        const divider = document.getElementById('engineer-week-divider');
-        if (!box || !bars) return;
+        const count = document.getElementById('engineer-week-count');
+        if (!count) return;
         if (!Array.isArray(workOrdersDone)) {
-            box.classList.add('d-none');
-            if (divider) divider.classList.add('d-none');
+            count.textContent = '–';
+            return;
+        }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - (today.getDay() + 6) % 7);
+        const total = workOrdersDone.filter(task => {
+            const day = parseDashboardDate(task.task_date);
+            return day && day >= monday && day <= today;
+        }).length;
+        animateDashboardNumber(count, total);
+        renderEngineerWeekBadge();
+    }
+
+    // The card's badge: Monday-to-today against the same days last week, both from the
+    // Visits completed series (same definition as the Done this week rows).
+    function renderEngineerWeekBadge() {
+        const badge = document.getElementById('engineer-week-badge');
+        const points = dashboardChartState.points;
+        if (!badge || !points.length) return;
+        const todayIndex = (new Date().getDay() + 6) % 7;
+        const sum = list => list.reduce((total, point) => total + Number(point.value || 0), 0);
+        const thisWeek = sum(points.slice(-(todayIndex + 1)));
+        const lastWeek = sum(points.slice(-(todayIndex + 8), -7));
+        const delta = thisWeek - lastWeek;
+        badge.className = `dash-stat-badge${delta > 0 ? ' is-better' : ''}`;
+        badge.innerHTML = delta === 0
+            ? 'Same as last week'
+            : `<i class="fa-solid fa-arrow-${delta > 0 ? 'up' : 'down'}" aria-hidden="true"></i> ${Math.abs(delta)} vs last week`;
+    }
+
+    // ---- Visits completed area chart (Dashboard Style) ----
+    const dashboardChartState = {points: [], range: 90, index: null, firstDraw: true, requested: false};
+    const DASHBOARD_CHART_RANGES = {90: 'Last 3 months', 30: 'Last 30 days', 7: 'Last 7 days'};
+
+    async function loadEngineerActivity() {
+        const chart = document.getElementById('engineer-activity-chart');
+        if (!chart) return;
+        try {
+            const data = await fetchJsonOrThrow('/get_dashboard_series?metric=my_completed&days=90');
+            dashboardChartState.points = Array.isArray((data || {}).points) ? data.points : [];
+        } catch (error) {
+            console.warn('[Dashboard] Visits completed could not be loaded', error);
+            chart.innerHTML = '<p class="dash-chart-empty">Could not load completed visits. Refresh the page to try again.</p>';
+            return;
+        }
+        setDashboardChartRange(dashboardChartState.range);
+        renderEngineerWeekBadge();
+    }
+
+    function setDashboardChartRange(range) {
+        const days = DASHBOARD_CHART_RANGES[range] ? Number(range) : 90;
+        dashboardChartState.range = days;
+        dashboardChartState.index = null;
+        document.querySelectorAll('.dash-segment-btn').forEach(button => {
+            button.setAttribute('aria-pressed', String(Number(button.dataset.range) === days));
+        });
+        setTextIfPresent('engineer-activity-sub', DASHBOARD_CHART_RANGES[days] + (days === 90 ? ', by week' : ''));
+        const daily = dashboardChartState.points.slice(-days);
+        renderDashboardAreaChart(
+            document.getElementById('engineer-activity-chart'),
+            days === 90 ? groupDashboardPointsByWeek(daily) : daily,
+            {unit: 'visit', label: DASHBOARD_CHART_RANGES[days].toLowerCase(), weekly: days === 90,
+             readout: document.getElementById('engineer-activity-readout')}
+        );
+    }
+
+    // Three months of daily 0-2 counts read as spikes, so that range is drawn as weekly
+    // totals, counted back from today (the oldest group may be shorter than 7 days).
+    function groupDashboardPointsByWeek(points) {
+        const groups = [];
+        for (let end = points.length; end > 0; end -= 7) {
+            const week = points.slice(Math.max(0, end - 7), end);
+            groups.unshift({date: week[0].date, value: week.reduce((sum, point) => sum + Number(point.value || 0), 0)});
+        }
+        return groups;
+    }
+
+    function formatDashboardChartDay(value, withWeekday) {
+        const date = new Date(`${value}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleDateString('en-US', withWeekday
+            ? {weekday: 'short', month: 'short', day: 'numeric'}
+            : {month: 'short', day: 'numeric'});
+    }
+
+    // One smooth line with a light fill, three gridlines and a few date labels. Pointer,
+    // tap and arrow keys move a marker and write the day into the readout line.
+    function renderDashboardAreaChart(container, points, options) {
+        if (!container) return;
+        const readout = options.readout;
+        const plural = n => `${n} ${options.unit}${n === 1 ? '' : 's'}`;
+        const values = points.map(point => Number(point.value || 0));
+        const total = values.reduce((sum, value) => sum + value, 0);
+        const summary = `${plural(total)} in the ${options.label}`;
+        if (!points.length || total === 0) {
+            container.innerHTML = '<p class="dash-chart-empty">No completed visits in this range.</p>';
+            if (readout) readout.textContent = '';
             return;
         }
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayIndex = (today.getDay() + 6) % 7;
-        const monday = new Date(today);
-        monday.setDate(today.getDate() - todayIndex);
-        const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-        const counts = [0, 0, 0, 0, 0, 0, 0];
-        workOrdersDone.forEach(task => {
-            const day = parseDashboardDate(task.task_date);
-            if (!day) return;
-            const index = Math.round((day - monday) / 86400000);
-            if (index >= 0 && index <= todayIndex) counts[index] += 1;
-        });
-
-        const total = counts.reduce((sum, value) => sum + value, 0);
-        const max = Math.max(...counts, 1);
-        bars.innerHTML = counts.map((count, index) => {
-            const state = index === todayIndex ? ' is-today' : (index > todayIndex ? ' is-future' : '');
-            const height = index > todayIndex ? 2 : Math.max(Math.round(count / max * 22), 2);
-            return `<span class="engineer-week-bar${state}" style="height: ${height}px" title="${names[index]}: ${count}"></span>`;
+        const width = Math.max(container.clientWidth, 280);
+        const height = width < 576 ? 160 : 200;
+        const pad = {top: 12, right: 8, bottom: 24, left: 8};
+        const top = Math.max(4, Math.ceil(Math.max(...values) / 2) * 2);
+        const x = i => pad.left + (points.length === 1 ? 0 : i * (width - pad.left - pad.right) / (points.length - 1));
+        const y = v => pad.top + (1 - v / top) * (height - pad.top - pad.bottom);
+        let line = `M${x(0)},${y(values[0])}`;
+        for (let i = 1; i < values.length; i += 1) {
+            const mid = (x(i - 1) + x(i)) / 2;
+            line += ` C${mid},${y(values[i - 1])} ${mid},${y(values[i])} ${x(i)},${y(values[i])}`;
+        }
+        const base = y(0);
+        const grid = [0, top / 2, top].map(v =>
+            `<line class="dash-chart-grid" x1="${pad.left}" x2="${width - pad.right}" y1="${y(v)}" y2="${y(v)}"/>` +
+            (v ? `<text class="dash-chart-axis" x="${pad.left}" y="${y(v) - 4}">${v}</text>` : '')).join('');
+        const tickCount = Math.min(points.length, width < 576 ? 3 : 5);
+        const ticks = Array.from({length: tickCount}, (_, n) =>
+            Math.round(n * (points.length - 1) / Math.max(tickCount - 1, 1)));
+        const labels = ticks.map((i, n) => {
+            const anchor = n === 0 ? 'start' : (n === ticks.length - 1 ? 'end' : 'middle');
+            return `<text class="dash-chart-axis" x="${x(i)}" y="${height - 6}" text-anchor="${anchor}">${escapeHtml(formatDashboardChartDay(points[i].date))}</text>`;
         }).join('');
-        bars.setAttribute('aria-label', `Visits done this week: ${counts.slice(0, todayIndex + 1).map((count, index) => `${names[index]} ${count}`).join(', ')}`);
-        setTextIfPresent('engineer-week-label', `${total} done this week`);
-        box.classList.remove('d-none');
-        if (divider) divider.classList.remove('d-none');
+
+        const animate = dashboardChartState.firstDraw && !dashboardReducedMotion.matches;
+        dashboardChartState.firstDraw = false;
+        container.innerHTML = `<svg class="dash-chart-svg${animate ? ' is-drawing' : ''}" viewBox="0 0 ${width} ${height}" width="100%" height="${height}" tabindex="0" role="img" aria-label="Visits completed, ${escapeHtml(summary)}. Use the left and right arrow keys to read each ${options.weekly ? 'week' : 'day'}.">
+            ${grid}
+            <path class="dash-chart-fill" d="${line} L${x(values.length - 1)},${base} L${x(0)},${base} Z"/>
+            <path class="dash-chart-line" d="${line}" pathLength="1"/>
+            <line class="dash-chart-cursor d-none" y1="${pad.top}" y2="${base}"/>
+            <circle class="dash-chart-dot d-none" r="4"/>
+            ${labels}
+        </svg>`;
+        if (readout) readout.textContent = summary;
+
+        const svg = container.querySelector('svg');
+        const cursor = svg.querySelector('.dash-chart-cursor');
+        const dot = svg.querySelector('.dash-chart-dot');
+        const show = index => {
+            dashboardChartState.index = index;
+            if (index === null) {
+                cursor.classList.add('d-none');
+                dot.classList.add('d-none');
+                if (readout) readout.textContent = summary;
+                return;
+            }
+            cursor.setAttribute('x1', x(index));
+            cursor.setAttribute('x2', x(index));
+            dot.setAttribute('cx', x(index));
+            dot.setAttribute('cy', y(values[index]));
+            cursor.classList.remove('d-none');
+            dot.classList.remove('d-none');
+            const when = options.weekly
+                ? `Week of ${formatDashboardChartDay(points[index].date)}`
+                : formatDashboardChartDay(points[index].date, true);
+            if (readout) readout.textContent = `${when} · ${plural(values[index])}`;
+        };
+        const nearest = event => {
+            const box = svg.getBoundingClientRect();
+            const px = (event.clientX - box.left) / box.width * width;
+            const step = (width - pad.left - pad.right) / Math.max(points.length - 1, 1);
+            return Math.min(points.length - 1, Math.max(0, Math.round((px - pad.left) / step)));
+        };
+        svg.addEventListener('pointermove', event => show(nearest(event)));
+        svg.addEventListener('pointerdown', event => show(nearest(event)));
+        svg.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') show(null); });
+        svg.addEventListener('blur', () => show(null));
+        svg.addEventListener('keydown', event => {
+            const last = points.length - 1;
+            const current = dashboardChartState.index === null ? last + 1 : dashboardChartState.index;
+            const moves = {ArrowLeft: current - 1, ArrowRight: current + 1, Home: 0, End: last};
+            if (!(event.key in moves)) return;
+            event.preventDefault();
+            show(Math.min(last, Math.max(0, moves[event.key])));
+        });
     }
+
+    let dashboardChartResizeTimer = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(dashboardChartResizeTimer);
+        dashboardChartResizeTimer = setTimeout(() => {
+            if (dashboardChartState.points.length) setDashboardChartRange(dashboardChartState.range);
+        }, 200);
+    });
 
     /**
      * Personalization Logic.

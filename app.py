@@ -27374,7 +27374,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v287-dispatch-board.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v288-work-orders.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v289-manager-kpis.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v290-dashboard-trends';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v291-dashboard-style';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -31887,6 +31887,8 @@ DASHBOARD_SECTION_IDS = {
     # remodel phase B); both stay accepted so a saved layout naming them still saves.
     'engineer-today',
     'engineer-work-orders',
+    # Dashboard Style: the Visits completed chart.
+    'engineer-activity',
     'admin-counters',
     'quick-admin',
     # Retired in the hybrid work, ids still accepted so a saved layout naming them does not
@@ -34949,6 +34951,57 @@ def get_my_done_tasks():
         row['has_tsr'] = shift_has_tsr_file(shift)
         rows.append(row)
     return jsonify(rows)
+
+
+DASHBOARD_SERIES_DAYS = (7, 30, 90)
+
+
+@app.route('/get_dashboard_series')
+@login_required
+def get_dashboard_series():
+    """Daily counts for the dashboard's Visits completed chart, oldest Manila day first.
+
+    metric=my_completed: the signed-in engineer's own Completed service visits, counted on
+    their visit date, with the same filters and ownership rule as /get_my_done_tasks.
+    days is 7, 30 or 90 (anything else is 90); every day is present, zero-filled.
+    """
+    metric = (request.args.get('metric') or '').strip()
+    if metric != 'my_completed':
+        return jsonify({'error': 'Unknown metric.'}), 400
+    try:
+        days = int(request.args.get('days') or 90)
+    except (TypeError, ValueError):
+        days = 90
+    if days not in DASHBOARD_SERIES_DAYS:
+        days = 90
+
+    today = get_manila_today()
+    first_day = today - timedelta(days=days - 1)
+    counts = {first_day + timedelta(days=offset): 0 for offset in range(days)}
+    profile = getattr(current_user, 'engineer_profile', None)
+    if profile:
+        start_dt, end_dt = build_shift_datetime_bounds(first_day, today)
+        linked_shift_ids = db.session.query(ShiftEngineer.shift_id).filter(ShiftEngineer.engineer_id == profile.id)
+        shifts = (
+            Shift.query
+            .filter(Shift.client_id.isnot(None))
+            .filter(Shift.status == 'Completed')
+            .filter(Shift.title.notin_(['Training'] + LEAVE_CATEGORIES))
+            .filter(Shift.start_time >= start_dt)
+            .filter(Shift.start_time < end_dt)
+            .filter(or_(Shift.id.in_(linked_shift_ids), Shift.engineer_id == profile.id))
+            .all()
+        )
+        for shift in shifts:
+            day = shift.start_time.date()
+            if day in counts and any(eng.id == profile.id for eng in get_shift_engineer_records(shift)):
+                counts[day] += 1
+
+    return jsonify({
+        'metric': metric,
+        'days': days,
+        'points': [{'date': day.isoformat(), 'value': value} for day, value in counts.items()],
+    })
 
 
 def dashboard_team_shift_row(shift):

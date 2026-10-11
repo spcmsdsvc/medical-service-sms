@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-11-dashboard-style",
+      "release_date": "2026-10-11",
+      "title": "A Cleaner Dashboard",
+      "summary": "Your dashboard has a clear title, four number cards and a chart of your completed visits.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-11-dashboard-style-cards",
+          "category": "Dashboard",
+          "description": "Your numbers now sit in four cards: visits today, overdue, TSRs pending and done this week, with a line under each that explains it. Done this week shows the change from the same days last week.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-11-dashboard-style-chart",
+          "category": "Dashboard",
+          "description": "A new Visits completed chart shows your completed visits for the last 3 months, 30 days or 7 days. Point at the chart, tap it, or use the arrow keys to read a day.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-11-dashboard-style-header",
+          "category": "Dashboard",
+          "description": "The dashboard opens with a clear title, today's date and one main button for your role. Shortcuts are now one compact row.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-11-dashboard-trends",
       "release_date": "2026-10-11",
       "title": "Numbers With Direction",
