@@ -37,6 +37,155 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Developer Account — Engineer-Only Dashboard
+
+**Status:** Approved — awaiting go-ahead.
+**Approved:** 2026-10-11 (owner: "i am not the admin. i am the developer but i'm also just an engineer"; chose "Engineer only").
+**Detailed:** 2026-10-11.
+**Branch:** `main` (local first; publish only on a separate "commit and push").
+
+## Context
+
+`jonamar` is `DEVELOPER_SUPERADMIN_USERNAME` (`app.py:8137`) and has an Engineer profile. Superadmin makes `is_manager_dashboard_user()` true (`app.py:11503`: admin-authorized and not a scheduler), so `get_dashboard_capabilities()` (`app.py:11749`) gives the account `manager_view` and `hybrid_view`. The owner's dashboard therefore opens with the manager tiles, approvals, chart and watchlist, and only then shows their own work. The owner is the developer and a field engineer, not a manager. Intended outcome: the owner's dashboard is the plain engineer dashboard, with every developer/superadmin permission unchanged.
+
+## Decisions taken
+
+1. **Engineer only** for the developer account (owner, 2026-10-11). The opposite of `MANAGER_PRIMARY_USERNAMES` (`app.py:8146`, manager-only for `rodito`).
+2. **Presentation only.** No permission changes: `/get_manager_overview`, `/get_manager_approvals`, Settings, Approvals and all superadmin routes keep their own checks and stay reachable for the developer (for testing).
+3. **Shortcuts keep their admin links** (`dashboard_effective_admin_view`, `dashboard.html:681`). They're developer tools, not manager data.
+4. Corrects the Dashboard Trends plan's decision 5, which called the owner's view "hybrid". The owner gets the trends plan's engineer half (the done-this-week strip) and no manager tiles.
+
+## Investigation
+
+- `get_dashboard_capabilities()` (`app.py:11749-11779`): `has_engineer_profile` = profile and not manager-primary; `hybrid_view` = engineer sections and admin-authorized; `manager_view` = `is_manager_dashboard_user` and not scheduler-only.
+- Template (`dashboard.html:21-26`): `dashboard_effective_manager_view` gates the whole manager branch; `dashboard_effective_hybrid_view` only changes labels ("Your own work orders", "waiting, yours", "company-wide"); the staff landing needs no manager view **and** no engineer profile, so the developer won't fall into it.
+- JS (`app-dashboard.js:44-45`): `hybridView` / `managerView` from the template config; `loadManagerApprovals` / `loadManagerOverview` return early when `managerView` is false, so the developer's dashboard stops calling them.
+- Display role (`get_display_role`, `app.py:11570`) stays "Superadmin"; it isn't a dashboard flag.
+
+## Execution steps
+
+1. **Constant** (`app.py`, next to `MANAGER_PRIMARY_USERNAMES`): `ENGINEER_PRIMARY_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME}`, with a comment saying it's dashboard presentation only. Add `is_engineer_primary_user(user=None)`, mirroring `is_manager_primary_user`.
+2. **Capabilities** (`get_dashboard_capabilities`): `engineer_primary = is_engineer_primary_user(target) and bool(engineer_profile)` (without a profile the account keeps today's view, so it never lands on an empty page). `hybrid_view` and `manager_view` become false when `engineer_primary`. `admin_view` is unchanged (decision 3). Done = the developer's flags are engineer + admin shortcuts, with no manager or hybrid view.
+3. **Self-review:** no other caller of `get_dashboard_capabilities` changes meaning (grep); `is_manager_dashboard_user` is untouched, so endpoint authorization is unchanged.
+
+## Deliberately excluded
+
+- **Permissions:** nothing the developer can open or do changes (decision 2).
+- **A UI toggle** to switch views: not asked for. A browser check on another account covers the manager view.
+- **Other superadmins** (`robert`): not part of this request.
+
+## Verification
+
+- New test in `tests/test_dashboard_hybrid.py` (or a new `tests/test_dashboard_developer_view.py` if that file's fixtures don't fit): for the developer account with an Engineer profile, `get_dashboard_capabilities()` returns `manager_view=False`, `hybrid_view=False`, `has_engineer_profile=True`, `admin_view=True`; the dashboard renders the work orders without `data-dashboard-section="manager-executive"`; `/get_manager_overview` still returns 200 for the developer. A positive control shows the capability test fails on `HEAD`. Plus a guard: `rodito`'s and a regional admin's flags are unchanged.
+- Focused: the dashboard test modules (as in the Trends plan). Full suite once before publishing (auth/permissions helper area, per AGENTS.md).
+- Browser on a copy of `scheduler.db` as `jonamar` (temporary password on the copy only): engineer dashboard with the done-this-week strip and Shortcuts; no manager section; no `/get_manager_*` requests in the network log; 1366 and 375 px; console clean. Clean up afterwards.
+
+## After implementation
+
+1. Assets: no CSS/JS change, so no `?v=` bump. `CACHE_VERSION` isn't needed (the server-rendered template changes per request).
+2. `releases.json`: no entry (affects one account, the developer).
+3. `changes.md` bullets; Status here with the commit; amend Dashboard Trends decision 5 to point here.
+4. Commit only `app.py`, the test file, `plans.md`, `changes.md` (plus the Trends files if both publish together). Never `scheduler.db`, `output/`, `tmp/` or handoffs.
+
+## Risks
+
+- **Developer loses a quick view of the manager numbers:** intended. The analytics page and `/approvals` stay reachable.
+- **Saved Customize layout** from the hybrid view names manager sections that no longer render. Unknown ids are skipped by the layout loader; the browser check confirms this.
+
+# Dashboard Trends — "Alive, Not Overloaded"
+
+**Status:** Executed — not committed (2026-10-11, owner: "execute all"). Publish waits for a separate "commit and push". New `tests/test_dashboard_trends.py` (15 tests; 14 fail on `HEAD`, the kept-functions guard passes on both). Focused run: 153 dashboard tests OK. Full suite (`run_suite.py`, `PYTHONUTF8=1`): 1,762 tests, 15 failures = the 14 known + `test_dashboard_manager_kpis.test_assets_and_cache_bumped` (pinned exact asset versions; now "at least"), fixed and rerun green. Browser check on a DB copy passed (rodito manager+approver, then the owner's superadmin+engineer hybrid view; 1366 px graphite and light, 375 px AMOLED; no horizontal scroll; bars ≥44 px).
+**Differences from the plan:**
+- **Buckets** are 1–6 · 7–14 · 15–30 · 31+ days (plan said 1–7 · 8–14), so the second bar starts exactly at the watchlist threshold (`MANAGER_SEVERE_AGE_DAYS = 7`). Bars under 7 days carry a new `overdue` row type ("Overdue"). The threshold is shown in the chart's note line ("the watchlist starts at 7 days") instead of a dashed line.
+- **Count-up fallback:** found in the browser check. A background or unfocused tab pauses `requestAnimationFrame`, so the tiles stuck at 0. `animateDashboardNumber` now sets the final value after 800 ms no matter what, and a newer count cancels an older one.
+- **Snapshot write placement:** in `/get_manager_overview` it runs after every count is built, just before `jsonify`. The commit expires ORM objects, and nothing reads them after that point.
+- **Zero-count bars stay enabled** (no disabled controls); pressing one shows the list's empty line.
+- **Detector fixes:** font sizes moved onto the DESIGN.md ramp (0.72 / 1rem), bar radius 6px, and the PM meter animates `transform: scaleX` rather than `width`. Remaining detector items are design-system colour advisories that the existing dashboard CSS already uses.
+- On the real data copy, 202 of 203 overdue visits are 31+ days late, so the chart is honestly one tall bar for now.
+**Approved:** 2026-10-11 (owner: "keep, run impeccable shape and write the plan"; snapshot and chart choices answered the same day).
+**Detailed:** 2026-10-11.
+**Source:** Owner's question "does the dashboard feel lacking? why not charts?" Research picked Stripe Home (number + sparkline + period change), ServiceTitan custom dashboards (one bar chart with a target line, click to drill in) and Vercel/Linear (grey by default, colour only for meaning). An inline mockup with sample numbers was approved ("keep"). Impeccable `shape` brief below.
+**Branch:** `main` (local first; publish only on a separate "commit and push").
+
+## Context
+
+The remodel (phases A–C) made each role's screen action-first, but every number is static. A manager sees "Overdue 12" without knowing whether that's better or worse than last week. The goal is to make the dashboard **feel alive but not overloaded**: each existing number gets a direction, one chart answers "how bad is it?", and motion is brief.
+
+## Shape brief (Impeccable)
+
+1. **Job and audience:** managers (desktop, morning check) and engineers (phone, between sites). Mode: Operate.
+2. **Outcome:** in one glance, a manager sees which numbers are getting worse and where the overdue work sits by age. An engineer sees the week's finished visits.
+3. **Direction:** stays inside DESIGN.md ("The Service Logbook"). Trends are ink-muted by default, and status red appears **only** on a worsening trend or an over-limit bar, never the accent. The one focal moment is the overdue-by-age chart.
+4. **Scope:** manager KPI tiles (5), one chart under them, the engineer header strip. The scheduler board and staff view are untouched. **Anti-goals:** no new tiles, no second chart, no looping animation, no chart library, and no trend on a number that the data can't back.
+5. **States:** first day (no history, so the tile shows "Trend from Oct 13"), 1–6 days (no delta yet, partial sparkline), ≥7 days (delta), 4+ weeks (full sparkline). Zero overdue means the chart shows one line, "Nothing overdue". A scoped viewer (branch-limited) gets no company trend.
+6. **Interaction:** tiles keep their current clicks. Chart bars are buttons: tap to filter What Needs Attention to that age range, tap again to clear. On first load the numbers count up (≤700 ms) and tiles fade in staggered (≤400 ms). After each refresh, "Updated N min ago" pulses for 3 s, then sits still. `prefers-reduced-motion` turns off all motion.
+7. **Constraints:** inline SVG only (no Chart.js on this page); light, graphite and AMOLED; 375 px with no horizontal scroll; 44 px targets; every chart gets `role="img"` and a text label.
+
+## Decisions taken
+
+1. **Daily snapshot** for the "right now" counts (owner, 2026-10-11). History can't be rebuilt honestly. `get_manager_overview`'s docstring (`app.py:35739-35743`) says reconstructed overdue/TSR counts are systematically undercounted.
+2. **The one chart = Overdue by age** (owner): 1–7 · 8–14 · 15–30 · 31+ days late. It's accurate from day one.
+3. Trends are **weekly points**: up to 4 past weeks plus today. The delta compares today with the snapshot taken 6–8 days ago. If there isn't one, no delta is shown (it is never guessed).
+4. Colour meaning: for the overdue, TSR, waiting and approvals tiles, lower is better. PM done/due shows a progress meter instead of a sparkline (it is a ratio to a limit).
+5. **(Corrected by "Developer Account — Engineer-Only Dashboard" above: the owner is the developer and an engineer, and their dashboard is engineer-only.)** **The owner's own view is a first-class target** (owner, 2026-10-11: "add me to your plan — superadmin, also an engineer, not manager or scheduler"). A superadmin with an engineer profile is a manager-dashboard user (`is_manager_dashboard_user`, `app.py:11503`: admin-authorized and not a scheduler), so the page renders the **hybrid view**: company-wide manager tiles and chart on top, "Your own work orders" below. Both halves of this plan must work there: tile trends and the age chart (company-wide), the done-this-week strip (own visits). The approvals tile stays hidden unless the account is a configured approver (`is_approval_center_user`), so an owner who isn't an approver writes no approvals snapshot. The browser check uses a superadmin + engineer test account as its main case.
+
+## Investigation
+
+- Tiles: `templates/dashboard.html:272-293` (`manager-kpis`; ids `manager-approvals-total`, `manager-overdue-count`, `manager-pending-tsr-count`, `manager-kpi-pm`, `manager-waiting-count`; `openManagerKpi(type)`). The tile number class is `.manager-kpi-num` because `app-dark-pages.css` forces `[class*="-kpi-value"]`. Avoid that substring in new class names.
+- Counts: `/get_manager_overview` (`app.py:35732`) returns `counts.overdue_schedules / pending_tsr / waiting_items`, scoped by `analytics_scope_query` (`app.py:52855`). **Correction found while executing:** `analytics_visible_engineer_ids()` (`app.py:52834`) never returns `None`; it always returns a list, so "unscoped" means `analytics_requested_branch() == 'ALL'` (`app.py:52802`, the default when no `?branch=` is sent). Overdue = open with date < today; `MANAGER_SEVERE_AGE_DAYS = 7` (`app.py:35600`). The watchlist holds only ≥7-day overdue, so the 1–7 bar needs its own rows.
+- Approvals: `/get_manager_approvals` (`app.py:35632`) counts **per approver** (`apply_assigned_approver_filter`), so its snapshot is keyed per user.
+- PM: `inventory_pm_month_summary(today)` (`app.py:36088`) → `renderManagerPmSummary` (`app-dashboard.js:636`).
+- Watchlist render: `renderManagerWatchlist(data, type)` (`app-dashboard.js:682`) already takes a type filter (phase C).
+- Engineer header: `count-my-today` / `count-my-overdue` (`dashboard.html:454,461`). Done visits: `GET /get_my_done_tasks` (`app.py:34877`, last 7 days, own profile), currently loaded only when its tab opens.
+- No cron. The daily backup uses a 15-minute thread (`_daily_backup_loop`, `app.py:31613`) that depends on backup storage. Snapshots will **not** ride on it; they're written lazily on the first qualifying request of the Manila day (see step 2).
+- Tables: models are created by `db.create_all()`. A new model needs no column migration (`app.py:58197` notes create_all doesn't add columns, which only matters for existing tables).
+- Assets: `app-dashboard.css?v=9` (`dashboard.html:4`), `app-dashboard.js?v=8` (`dashboard.html:799`), `CACHE_VERSION … v289-manager-kpis` (`app.py:27337`).
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section; `reference/craft-floor.md` from the Impeccable skill (before any UI edit); the functions above in full.
+2. **Model + writer** (`app.py`): `DashboardDailyCount(id, day DATE, scope VARCHAR(40), metric VARCHAR(40), value INT)`, unique on `(day, scope, metric)`. Add a helper `record_dashboard_daily_counts(scope, values: dict)` that inserts today's (Manila) rows if absent (ignores duplicates, so two concurrent requests are harmless) and never raises into the request (log and continue). Done = a second call on the same day changes nothing.
+3. **Write points:** in `/get_manager_overview`, only when `analytics_requested_branch() == 'ALL'`, call the helper with scope `all` and `overdue`, `pending_tsr`, `waiting`. In `/get_manager_approvals`, when `is_approver`, call it with scope `user:<id>` and `approvals`. Done = rows appear after one dashboard load, and a scoped viewer writes nothing.
+4. **Read trends** (`app.py`): add `dashboard_trend(scope, metric, today_value)` → `{points: [≤4 weekly values + today], delta: int|null, since: 'YYYY-MM-DD'|null}`. Weekly point = latest snapshot in each of the 4 previous 7-day windows. Delta = today − the snapshot from 6–8 days ago, else `null`. Add `trends` to both endpoints (overview: only when the branch is `ALL`; approvals: own scope). Done = endpoint tests with seeded snapshots give exact points/delta; no snapshots gives `points:[today]`, `delta:null`.
+5. **Overdue by age** (`/get_manager_overview`, additive): `overdue_by_age: [{key:'1_7'|'8_14'|'15_30'|'31_plus', label, count, rows:[top 20 manager_watchlist_entry]}]` from the existing `overdue_shifts` (no new query). Done = counts sum to `counts.overdue_schedules`.
+6. **Tile markup** (`dashboard.html`): inside each existing tile, below the label, add `<span class="manager-kpi-trend" id="manager-trend-{overdue|tsr|waiting|approvals}">` (delta text) and `<svg class="manager-kpi-spark" aria-hidden="true">`. For PM, add a meter `<span class="manager-kpi-meter">`. Ids and `onclick` stay unchanged.
+7. **Chart markup:** a new block directly under `.manager-kpis` in the same section: heading "Overdue by age", 4 bar buttons (`data-overdue-age="1_7"…`, `aria-pressed`) drawn as SVG/inline elements, the count above each bar, and a dashed line at the severe threshold (7 days) labelled "Watchlist starts". No new dashboard section (no layout-version bump).
+8. **JS** (`app-dashboard.js`): `renderManagerTrends(trends)` (sparkline polyline, delta text "▲4 vs last week" / "▼3" / "Same as last week" / "Trend from Oct 13"; red only when worse); `renderOverdueByAge(data)`; `openOverdueAge(key)` reuses the `renderManagerWatchlist` filter path with that bucket's rows and the filter line "Overdue 8–14 days"; `animateDashboardNumber(el, to)` (count-up from the current value, skipped under reduced motion); an "Updated N min ago" line with a 3 s pulse after each load. Call these from the existing load functions (`loadManagerOverview` / `renderManagerApprovals`); don't rename anything.
+9. **Engineer strip:** under the engineer header, a 7-day bar strip (Mon–Sun, today in the accent, future days hairline) from `/get_my_done_tasks`, fetched once on load and reused by the Done this week tab (no second request). Also shown in hybrid view.
+10. **CSS** (`app-dashboard.css`): tile trend/spark/meter, chart bars (≤24 px, 4 px top radius, neutral fill; red when the bucket is ≥ the severe threshold and non-zero), entrance motion with `@media (prefers-reduced-motion: reduce)` off, graphite and AMOLED pairs, 375 px (tiles 2-up, chart full width).
+11. **Self-review:** every function and id from the Remodel plan's Investigation list still exists (grep); `git diff` touches only the manager tiles area, the engineer header and the new model/helpers.
+12. **Impeccable:** `impeccable detect --json templates/dashboard.html` once; fix real findings.
+
+## Deliberately excluded
+
+- **Overdue-by-week chart:** it needs 8 weeks of snapshots. Revisit once history exists.
+- **Backfilling history:** the reconstruction would be dishonest (decision 1).
+- **Scheduler board and staff view:** the lanes already work like a chart.
+- **Chart library:** four bars and four sparklines don't justify one, and inline SVG themes with CSS variables.
+- **Looping animation:** "alive" comes from the entrance motion and the post-refresh pulse only.
+- **Branch-scoped trends:** scoped viewers get today's numbers without a company trend, so they never see a mismatch.
+
+## Verification
+
+- New `tests/test_dashboard_trends.py`: snapshot write is idempotent and skipped for scoped viewers; approvals snapshot is per user; `dashboard_trend` points/delta with seeded rows and with none; `overdue_by_age` sums to the overdue count; markup ids present; kept functions present. Each one fails on `HEAD` first.
+- Focused: the six dashboard modules + `test_dashboard_manager_kpis`, `test_dashboard_work_orders` + the new module.
+- **Full suite once before publishing** (new database table = schema): `venv/Scripts/python.exe scripts/run_suite.py` in the main folder.
+- Browser on a copy of `scheduler.db` (**superadmin + engineer hybrid account first** (the owner's view), then manager and plain engineer test accounts; seed a few snapshot rows on the copy only): 1366 and 375 px, light, graphite, AMOLED; tiles still match the endpoints; bars filter and clear; reduced motion is static; console clean; 44 px targets. Clean up the copy, accounts and launch entry.
+
+## After implementation
+
+1. `app-dashboard.css?v=10`, `app-dashboard.js?v=9`; `CACHE_VERSION … v290-dashboard-trends` (keep the old value as a comment).
+2. `static/changelog/releases.json` entry, category Dashboard: "Numbers now show which way they're moving".
+3. `changes.md` bullets; DESIGN.md gets the patterns "KPI trend" and "age bars".
+4. Update this plan's Status with the commit and any differences.
+5. Commit only: `app.py`, `templates/dashboard.html`, `static/css/app-dashboard.css`, `static/js/app-dashboard.js`, `releases.json`, the tests, `plans.md`, `changes.md`, `DESIGN.md`. Never `scheduler.db`, `output/`, `tmp/` or handoffs.
+
+## Risks
+
+- **Write during a GET:** isolated in a helper that swallows its own errors. A failed snapshot only means a missing point.
+- **Empty trends for the first weeks:** expected and labelled ("Trend from …"), never faked.
+- **Tile height grows:** checked at 375 px; the sparkline is 26 px.
+
 # Dashboard Remodel — MaintainX Work Orders + ServiceTitan Dispatch
 
 **Status:** Phase A executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `44f32b9`). Phase B executed and on `origin/main` (commit `6b36d8b`). Phase C executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `e30359c`). Next: one re-critique in a new session.

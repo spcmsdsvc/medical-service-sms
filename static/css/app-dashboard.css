@@ -1937,6 +1937,230 @@ a.dashboard-mobile-task-card.is-late {
 :root[data-app-theme="dark"] .manager-kpi.is-alert:not(.is-zero) .manager-kpi-num { color: #f5a3ab; }
 :root[data-app-theme="dark"] .manager-kpi.is-warn:not(.is-zero) .manager-kpi-num { color: #fbbf24; }
 
+/* =========================================================
+   DASHBOARD TRENDS ("alive, not overloaded")
+   Each tile: change vs last week + a weekly sparkline, ink-muted unless the count rose
+   (every trended count is lower-is-better). One chart: overdue by age. Motion is one
+   load moment -- tiles settle, numbers count, bars grow -- plus a 3-pulse dot on refresh.
+   ========================================================= */
+.manager-kpi-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--app-muted, #6b7280);
+    font-variant-numeric: tabular-nums;
+}
+
+.manager-kpi-trend:empty { display: none; }
+.manager-kpi-trend i { font-size: 0.72rem; }
+.manager-kpi-trend.is-worse { color: #c8102e; }
+.manager-kpi-trend.is-better { color: #15803d; }
+
+.manager-kpi-spark {
+    display: block;
+    width: 100%;
+    height: 24px;
+    margin-top: auto;
+    overflow: visible;
+}
+
+.manager-kpi-spark polyline {
+    fill: none;
+    stroke: #94a3b8;
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.manager-kpi-spark.is-worse polyline { stroke: #c8102e; }
+
+.manager-kpi-meter {
+    display: block;
+    height: 6px;
+    margin-top: auto;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.28);
+    overflow: hidden;
+}
+
+.manager-kpi-meter span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--app-primary, #0d6efd);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.manager-kpis .manager-kpi { animation: managerKpiSettle 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.manager-kpis .manager-kpi:nth-child(2) { animation-delay: 60ms; }
+.manager-kpis .manager-kpi:nth-child(3) { animation-delay: 120ms; }
+.manager-kpis .manager-kpi:nth-child(4) { animation-delay: 180ms; }
+.manager-kpis .manager-kpi:nth-child(5) { animation-delay: 240ms; }
+
+@keyframes managerKpiSettle {
+    from { opacity: 0.35; transform: translateY(6px); }
+}
+
+.manager-age {
+    padding: 0.75rem 0.9rem 0.5rem;
+    border: 1px solid var(--app-border, #e5e7eb);
+    border-radius: 12px;
+    background: var(--app-surface, #ffffff);
+}
+
+.manager-age-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+}
+
+.manager-age-title { font-size: 0.85rem; font-weight: 700; }
+
+.manager-age-note {
+    font-size: 0.75rem;
+    color: var(--app-muted, #6b7280);
+}
+
+.manager-age-bars {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.manager-age-bar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 44px;
+    padding: 0.35rem 0.25rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--app-text, #111827);
+    cursor: pointer;
+    transition: background-color 0.18s ease;
+}
+
+.manager-age-bar:hover { background: rgba(148, 163, 184, 0.12); }
+.manager-age-bar.is-active { box-shadow: inset 0 -2px 0 0 var(--app-primary, #0d6efd); }
+
+.manager-age-bar:focus-visible {
+    outline: 2px solid var(--app-primary, #0d6efd);
+    outline-offset: 2px;
+}
+
+.manager-age-count {
+    font-size: 1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.manager-age-bar.is-empty .manager-age-count { color: var(--app-muted, #6b7280); }
+
+.manager-age-track {
+    display: flex;
+    align-items: flex-end;
+    width: min(100%, 2.25rem);
+    height: 64px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.5);
+}
+
+.manager-age-fill {
+    display: block;
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    background: #94a3b8;
+    transform-origin: bottom;
+    animation: managerAgeGrow 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+/* Lateness past the watchlist threshold deepens one red, step by step. */
+.manager-age-bar.is-step-1 .manager-age-fill { background: #e9828d; }
+.manager-age-bar.is-step-2 .manager-age-fill { background: #d94656; }
+.manager-age-bar.is-step-3 .manager-age-fill { background: #a50e25; }
+
+@keyframes managerAgeGrow {
+    from { transform: scaleY(0.15); }
+}
+
+.manager-age-label {
+    font-size: 0.72rem;
+    color: var(--app-muted, #6b7280);
+    white-space: nowrap;
+}
+
+.manager-updated {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--app-muted, #6b7280);
+}
+
+.manager-updated-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #16a34a;
+}
+
+.manager-updated.is-fresh .manager-updated-dot { animation: managerUpdatedPulse 1s ease-in-out 3; }
+
+@keyframes managerUpdatedPulse {
+    50% { opacity: 0.3; }
+}
+
+.engineer-week-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 24px;
+}
+
+.engineer-week-bar {
+    width: 6px;
+    border-radius: 2px 2px 0 0;
+    background: #94a3b8;
+}
+
+.engineer-week-bar.is-today { background: var(--app-primary, #0d6efd); }
+.engineer-week-bar.is-future { background: rgba(148, 163, 184, 0.35); }
+
+@media (max-width: 575.98px) {
+    .manager-age-track { height: 52px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .manager-kpis .manager-kpi,
+    .manager-age-fill,
+    .manager-updated.is-fresh .manager-updated-dot { animation: none; }
+    .manager-kpi-meter span { transition: none; }
+}
+
+:root[data-app-theme="dark"] .manager-kpi-trend,
+:root[data-app-theme="dark"] .manager-age-note,
+:root[data-app-theme="dark"] .manager-age-label,
+:root[data-app-theme="dark"] .manager-age-bar.is-empty .manager-age-count,
+:root[data-app-theme="dark"] .manager-updated { color: var(--dark-muted); }
+:root[data-app-theme="dark"] .manager-kpi-trend.is-worse { color: #f5a3ab; }
+:root[data-app-theme="dark"] .manager-kpi-trend.is-better { color: #4ade80; }
+:root[data-app-theme="dark"] .manager-kpi-spark.is-worse polyline { stroke: #f87171; }
+:root[data-app-theme="dark"] .manager-age { border-color: var(--dark-border); }
+:root[data-app-theme="dark"] .manager-age-count,
+:root[data-app-theme="dark"] .manager-age-title { color: var(--dark-text); }
+:root[data-app-theme="dark"] .manager-age-bar:hover { background: rgba(148, 163, 184, 0.18); }
+:root[data-app-theme="dark"] .manager-age-bar.is-step-1 .manager-age-fill { background: #f5a3ab; }
+:root[data-app-theme="dark"] .manager-age-bar.is-step-2 .manager-age-fill { background: #ef5a6a; }
+:root[data-app-theme="dark"] .manager-age-bar.is-step-3 .manager-age-fill { background: #c8102e; }
+
 .manager-risk { flex-wrap: wrap; }
 
 .manager-risk-open {

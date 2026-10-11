@@ -85,8 +85,11 @@ class ManagerKpiSourceTests(unittest.TestCase):
             self.assertTrue(re.search(rf'function {name}\(', self.js), name)
 
     def test_assets_and_cache_bumped(self):
-        self.assertIn("css/app-dashboard.css') }}?v=9", self.dashboard)
-        self.assertIn("js/app-dashboard.js') }}?v=8", self.dashboard)
+        # At least, not equal: later dashboard work bumps these again.
+        css_version = int(re.search(r"app-dashboard\.css'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        js_version = int(re.search(r"app-dashboard\.js'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        self.assertGreaterEqual(css_version, 9)
+        self.assertGreaterEqual(js_version, 8)
         self.assertIn('-v289-manager-kpis', self.app_source)
 
 

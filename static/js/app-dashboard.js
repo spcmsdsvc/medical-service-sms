@@ -521,6 +521,7 @@
         const counts = data.counts || {};
         const modules = Array.isArray(data.modules) ? data.modules : [];
         setManagerKpiValue('manager-approvals-total', counts.pending_total || 0);
+        renderManagerKpiTrend('approvals', (data.trends || {}).approvals);
 
         const aging = document.getElementById('manager-approvals-aging');
         if (aging) {
@@ -647,6 +648,8 @@
         const overdue = Number(pm.overdue || 0);
         const percent = due ? Math.round(done / due * 100) : null;
         setTextIfPresent('manager-kpi-pm', `${done} / ${due}`);
+        const meter = document.getElementById('manager-kpi-pm-meter');
+        if (meter) meter.style.transform = `scaleX(${due ? Math.min(done / due, 1) : 0})`;
         if (tile) tile.classList.remove('d-none');
         box.innerHTML = `
             <span class="manager-pm-label">Inventory PM (Genoray, Vieworks) this month</span>
@@ -658,6 +661,7 @@
     function managerWatchlistTypeLabel(type) {
         const labels = {
             severe_overdue: 'Severely overdue',
+            overdue: 'Overdue',
             aged_tsr: 'TSR missing',
             waiting: 'Blocked',
             repeat_equipment: 'Repeat equipment',
@@ -687,10 +691,21 @@
         const payload = data || {};
         const allRows = Array.isArray(payload.watchlist) ? payload.watchlist : [];
         const byType = payload.watchlist_by_type || {};
-        const rows = filter ? (Array.isArray(byType[filter]) ? byType[filter] : allRows.filter(row => row.type === filter)) : allRows;
-        const total = filter
-            ? Number((payload.watchlist_type_totals || {})[filter] || rows.length)
-            : Number(payload.watchlist_total || rows.length);
+        // 'age:<bucket>' comes from an Overdue by age bar; the bucket carries its own rows.
+        const ageBucket = filter.startsWith('age:')
+            ? (Array.isArray(payload.overdue_by_age) ? payload.overdue_by_age : []).find(bucket => `age:${bucket.key}` === filter)
+            : null;
+        let rows;
+        let total;
+        if (ageBucket) {
+            rows = Array.isArray(ageBucket.rows) ? ageBucket.rows : [];
+            total = Number(ageBucket.count || rows.length);
+        } else {
+            rows = filter ? (Array.isArray(byType[filter]) ? byType[filter] : allRows.filter(row => row.type === filter)) : allRows;
+            total = filter
+                ? Number((payload.watchlist_type_totals || {})[filter] || rows.length)
+                : Number(payload.watchlist_total || rows.length);
+        }
         setTextIfPresent('manager-watchlist-count', `${total} item${total === 1 ? '' : 's'}`);
 
         const caption = document.getElementById('manager-watchlist-caption');
@@ -705,8 +720,13 @@
         if (filterLine) filterLine.classList.toggle('d-none', !filter);
         if (filter) {
             setTextIfPresent('manager-watchlist-filter-label',
-                `Showing: ${managerWatchlistFilterText(filter, Number(payload.severe_age_days || 7))}`);
+                `Showing: ${ageBucket ? `Overdue ${ageBucket.label}` : managerWatchlistFilterText(filter, Number(payload.severe_age_days || 7))}`);
         }
+        document.querySelectorAll('[data-overdue-age]').forEach(bar => {
+            const active = `age:${bar.dataset.overdueAge}` === filter;
+            bar.classList.toggle('is-active', active);
+            bar.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
         document.querySelectorAll('[data-manager-kpi]').forEach(tile => {
             const active = tile.dataset.managerKpi === filter;
             tile.classList.toggle('is-active', active);
@@ -736,10 +756,165 @@
 
     // A KPI tile's number; a zero tile drops its alert/warn colour.
     function setManagerKpiValue(id, value) {
-        setTextIfPresent(id, value);
         const el = document.getElementById(id);
+        animateDashboardNumber(el, value);
         const tile = el ? el.closest('.manager-kpi') : null;
         if (tile) tile.classList.toggle('is-zero', Number(value) === 0);
+    }
+
+    // ---- Dashboard Trends ("alive, not overloaded") ----
+    const dashboardReducedMotion = window.matchMedia
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        : {matches: false};
+
+    // Counts from the number on screen to the new one (exponential ease-out, 700 ms).
+    // Non-numbers and reduced motion set the text directly.
+    function animateDashboardNumber(el, value) {
+        if (!el) return;
+        const target = Number(value);
+        const from = Number(el.textContent);
+        if (!Number.isFinite(target) || !Number.isFinite(from) || from === target || dashboardReducedMotion.matches) {
+            el.textContent = value;
+            return;
+        }
+        const token = {};
+        el._dashboardCount = token;
+        const started = performance.now();
+        const step = now => {
+            if (el._dashboardCount !== token) return;
+            const progress = Math.min((now - started) / 700, 1);
+            const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+            el.textContent = Math.round(from + (target - from) * eased);
+            if (progress < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+        // A background tab pauses requestAnimationFrame; never leave a half-counted number.
+        setTimeout(() => {
+            if (el._dashboardCount === token) el.textContent = value;
+        }, 800);
+    }
+
+    function formatDashboardShortDate(value) {
+        const date = parseDashboardDate(value);
+        return date ? date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
+    }
+
+    // One tile's trend: the change vs last week and a weekly sparkline. Every trended count
+    // is lower-is-better, so a rise is the only red. Without a row from a week ago the
+    // tile says when the comparison starts rather than guessing one.
+    function renderManagerKpiTrend(key, trend) {
+        const label = document.getElementById(`manager-trend-${key}`);
+        const spark = document.getElementById(`manager-spark-${key}`);
+        if (!label) return;
+        if (!trend || typeof trend !== 'object') {
+            label.innerHTML = '';
+            if (spark) spark.classList.add('d-none');
+            return;
+        }
+
+        const delta = trend.delta;
+        let tone = 'is-flat';
+        if (delta === null || delta === undefined) {
+            label.textContent = `Trend from ${formatDashboardShortDate(trend.delta_from)}`;
+        } else if (Number(delta) === 0) {
+            label.textContent = 'Same as last week';
+        } else {
+            const up = Number(delta) > 0;
+            tone = up ? 'is-worse' : 'is-better';
+            label.innerHTML = `<i class="fa-solid fa-arrow-${up ? 'up' : 'down'}" aria-hidden="true"></i> ${escapeHtml(Math.abs(Number(delta)))} vs last week`;
+        }
+        label.className = `manager-kpi-trend ${tone}`;
+
+        if (!spark) return;
+        const points = (Array.isArray(trend.points) ? trend.points : []).map(Number).filter(Number.isFinite);
+        if (points.length < 2) {
+            spark.classList.add('d-none');
+            return;
+        }
+        const min = Math.min(...points);
+        const range = Math.max(...points) - min;
+        const coords = points.map((value, index) => {
+            const x = Math.round(index / (points.length - 1) * 100);
+            const y = range ? Math.round((21 - (value - min) / range * 18) * 10) / 10 : 12;
+            return `${x},${y}`;
+        });
+        spark.querySelector('polyline')?.setAttribute('points', coords.join(' '));
+        spark.setAttribute('class', `manager-kpi-spark ${tone}`);
+    }
+
+    function renderManagerTrends(trends) {
+        const data = trends || {};
+        renderManagerKpiTrend('overdue', data.overdue);
+        renderManagerKpiTrend('pending_tsr', data.pending_tsr);
+        renderManagerKpiTrend('waiting', data.waiting);
+    }
+
+    // The one chart: overdue visits by how late they are. Bars are buttons that filter
+    // What Needs Attention; lateness past the watchlist threshold deepens the red.
+    function renderOverdueByAge(data) {
+        const box = document.getElementById('manager-overdue-age');
+        const bars = document.getElementById('manager-overdue-age-bars');
+        if (!box || !bars) return;
+        const buckets = Array.isArray((data || {}).overdue_by_age) ? data.overdue_by_age : null;
+        if (!buckets) {
+            box.classList.add('d-none');
+            return;
+        }
+        box.classList.remove('d-none');
+
+        const total = buckets.reduce((sum, bucket) => sum + Number(bucket.count || 0), 0);
+        const severeDays = Number((data || {}).severe_age_days || 7);
+        setTextIfPresent('manager-overdue-age-note', total
+            ? `${total} visit${total === 1 ? '' : 's'} · the watchlist starts at ${severeDays} days`
+            : 'Nothing overdue');
+        bars.classList.toggle('d-none', !total);
+        if (!total) {
+            bars.innerHTML = '';
+            return;
+        }
+
+        const max = Math.max(...buckets.map(bucket => Number(bucket.count || 0)), 1);
+        bars.innerHTML = buckets.map((bucket, index) => {
+            const count = Number(bucket.count || 0);
+            const height = count ? Math.max(Math.round(count / max * 100), 6) : 0;
+            const active = managerWatchlistFilter === `age:${bucket.key}`;
+            return `
+            <button type="button" class="manager-age-bar is-step-${index}${count ? '' : ' is-empty'}${active ? ' is-active' : ''}"
+                    data-overdue-age="${escapeHtml(bucket.key)}" aria-pressed="${active ? 'true' : 'false'}"
+                    aria-label="${escapeHtml(count)} overdue ${escapeHtml(bucket.label)}"
+                    onclick="openOverdueAge('${escapeHtml(bucket.key)}')">
+                <span class="manager-age-count">${escapeHtml(count)}</span>
+                <span class="manager-age-track"><span class="manager-age-fill" style="height: ${height}%"></span></span>
+                <span class="manager-age-label">${escapeHtml(bucket.label)}</span>
+            </button>`;
+        }).join('');
+    }
+
+    function openOverdueAge(key) {
+        openManagerKpi(`age:${key}`);
+    }
+
+    // "Updated N min ago" beside Refresh. The dot pulses for three seconds after each load,
+    // then sits still: the page reads as live without anything looping.
+    let managerUpdatedAt = null;
+    let managerUpdatedTimer = null;
+
+    function renderManagerUpdatedLabel() {
+        if (!managerUpdatedAt) return;
+        const minutes = Math.floor((Date.now() - managerUpdatedAt) / 60000);
+        setTextIfPresent('manager-updated-label',
+            minutes < 1 ? 'Updated just now' : `Updated ${minutes} min ago`);
+    }
+
+    function renderManagerUpdated() {
+        const box = document.getElementById('manager-updated');
+        if (!box) return;
+        managerUpdatedAt = Date.now();
+        renderManagerUpdatedLabel();
+        box.classList.remove('d-none', 'is-fresh');
+        void box.offsetWidth;
+        box.classList.add('is-fresh');
+        if (!managerUpdatedTimer) managerUpdatedTimer = setInterval(renderManagerUpdatedLabel, 60000);
     }
 
     function revealManagerSection(bodyId) {
@@ -784,6 +959,9 @@
             setManagerKpiValue('manager-pending-tsr-count', counts.pending_tsr || 0);
             setManagerKpiValue('manager-waiting-count', counts.waiting_items || 0);
 
+            renderManagerTrends(managerOverviewData.trends);
+            renderOverdueByAge(managerOverviewData);
+            renderManagerUpdated();
             renderManagerRisk(managerOverviewData);
             renderManagerDirection(managerOverviewData);
             renderManagerPmSummary(managerOverviewData.pm);
@@ -1685,6 +1863,11 @@
                 updateEngineerSummaryCards();
                 renderMyTasks();
                 loadMyPendingTsrCount();
+                // Fetched once for the header strip; the Done this week tab reuses the rows.
+                if (workOrdersDone === null) {
+                    workOrdersDone = false;
+                    loadMyDoneTasks();
+                }
             }
 
             if (dashboardStaffLanding) {
@@ -1942,7 +2125,48 @@
             console.warn('[Dashboard] Done this week could not be loaded', error);
             workOrdersDone = undefined;
         }
+        renderEngineerWeek();
         if (workOrdersTab === 'done') renderMyTasks();
+    }
+
+    // Header strip: visits finished each day Mon-Sun, from the Done this week rows
+    // (/get_my_done_tasks covers the last 7 days, so every day from Monday is present).
+    function renderEngineerWeek() {
+        const box = document.getElementById('engineer-week');
+        const bars = document.getElementById('engineer-week-bars');
+        const divider = document.getElementById('engineer-week-divider');
+        if (!box || !bars) return;
+        if (!Array.isArray(workOrdersDone)) {
+            box.classList.add('d-none');
+            if (divider) divider.classList.add('d-none');
+            return;
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayIndex = (today.getDay() + 6) % 7;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - todayIndex);
+        const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const counts = [0, 0, 0, 0, 0, 0, 0];
+        workOrdersDone.forEach(task => {
+            const day = parseDashboardDate(task.task_date);
+            if (!day) return;
+            const index = Math.round((day - monday) / 86400000);
+            if (index >= 0 && index <= todayIndex) counts[index] += 1;
+        });
+
+        const total = counts.reduce((sum, value) => sum + value, 0);
+        const max = Math.max(...counts, 1);
+        bars.innerHTML = counts.map((count, index) => {
+            const state = index === todayIndex ? ' is-today' : (index > todayIndex ? ' is-future' : '');
+            const height = index > todayIndex ? 2 : Math.max(Math.round(count / max * 22), 2);
+            return `<span class="engineer-week-bar${state}" style="height: ${height}px" title="${names[index]}: ${count}"></span>`;
+        }).join('');
+        bars.setAttribute('aria-label', `Visits done this week: ${counts.slice(0, todayIndex + 1).map((count, index) => `${names[index]} ${count}`).join(', ')}`);
+        setTextIfPresent('engineer-week-label', `${total} done this week`);
+        box.classList.remove('d-none');
+        if (divider) divider.classList.remove('d-none');
     }
 
     /**

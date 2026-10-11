@@ -1941,6 +1941,26 @@ class ChangelogAcknowledgement(db.Model):
     )
 
 
+class DashboardDailyCount(db.Model):
+    """One dashboard count as it stood on one Manila day.
+
+    Overdue, pending TSR, waiting and approvals are states as of now; a visit that was
+    overdue last week and has since been completed has left the set, so past values cannot
+    be rebuilt. The dashboard records them once a day instead, and the KPI tiles draw their
+    trend from these rows. `scope` is 'all' for company-wide counts, 'user:<id>' for a
+    per-approver count.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    day = db.Column(db.Date, nullable=False, index=True)
+    scope = db.Column(db.String(40), nullable=False)
+    metric = db.Column(db.String(40), nullable=False)
+    value = db.Column(db.Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        db.UniqueConstraint('day', 'scope', 'metric', name='uq_dashboard_daily_count'),
+    )
+
+
 class EmailRecipientSetting(db.Model):
     """S12A0 dynamic email recipients managed from Settings.
 
@@ -27334,7 +27354,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v286-dashboard-critique-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v287-dispatch-board.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v288-work-orders.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v289-manager-kpis';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v289-manager-kpis.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v290-dashboard-trends';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -35600,6 +35621,83 @@ MANAGER_WAITING_STATUSES = {'Waiting for P.O', 'Waiting for Parts'}
 MANAGER_SEVERE_AGE_DAYS = 7
 MANAGER_REPEAT_SERVICE_THRESHOLD = 4
 
+# Overdue-by-age chart. The second bucket starts at MANAGER_SEVERE_AGE_DAYS, so the
+# chart's "watchlist starts" line falls between the first two bars.
+MANAGER_OVERDUE_AGE_BUCKETS = (
+    ('1_6', '1–6 days', 1, 6),
+    ('7_14', '7–14 days', 7, 14),
+    ('15_30', '15–30 days', 15, 30),
+    ('31_plus', '31+ days', 31, None),
+)
+DASHBOARD_TREND_WEEKS = 4
+
+
+def record_dashboard_daily_counts(scope, values, today=None):
+    """Store today's value of each metric once; later calls the same day change nothing.
+
+    Runs inside a GET, so it must never break the page: any failure is logged and rolled
+    back, and the cost is one missing point on a trend line.
+    """
+    today = today or get_manila_today()
+    try:
+        existing = {
+            metric for (metric,) in db.session.query(DashboardDailyCount.metric)
+            .filter_by(day=today, scope=scope).all()
+        }
+        added = False
+        for metric, value in values.items():
+            if metric in existing:
+                continue
+            db.session.add(DashboardDailyCount(day=today, scope=scope, metric=metric, value=int(value or 0)))
+            added = True
+        if added:
+            db.session.commit()
+    except Exception as snapshot_error:
+        # IntegrityError here means a concurrent request wrote the same day first.
+        db.session.rollback()
+        if not isinstance(snapshot_error, IntegrityError):
+            print(f"[Dashboard] Daily count not recorded for {scope}: {snapshot_error}", flush=True)
+
+
+def dashboard_trend(scope, metric, today_value, today=None):
+    """Weekly points from the daily rows plus today's live value, and the change vs last week.
+
+    points: the latest recorded value in each of the previous DASHBOARD_TREND_WEEKS 7-day
+    windows (a window with no row is skipped), then today. delta: today minus the row from
+    6-8 days ago, nearest to 7; None when there is none -- never estimated. delta_from: the
+    first day a delta can exist (first row + 7 days), for the "trend from" label.
+    """
+    today = today or get_manila_today()
+    start = today - timedelta(days=DASHBOARD_TREND_WEEKS * 7)
+    rows = dict(
+        db.session.query(DashboardDailyCount.day, DashboardDailyCount.value)
+        .filter(DashboardDailyCount.scope == scope, DashboardDailyCount.metric == metric)
+        .filter(DashboardDailyCount.day >= start, DashboardDailyCount.day < today)
+        .all()
+    )
+
+    points = []
+    for weeks_back in range(DASHBOARD_TREND_WEEKS, 0, -1):
+        window_start = today - timedelta(days=weeks_back * 7)
+        window_end = window_start + timedelta(days=7)
+        in_window = [day for day in rows if window_start <= day < window_end]
+        if in_window:
+            points.append(rows[max(in_window)])
+    points.append(int(today_value or 0))
+
+    delta = None
+    for offset in (7, 6, 8):
+        previous = rows.get(today - timedelta(days=offset))
+        if previous is not None:
+            delta = int(today_value or 0) - previous
+            break
+
+    first_day = db.session.query(db.func.min(DashboardDailyCount.day)).filter(
+        DashboardDailyCount.scope == scope, DashboardDailyCount.metric == metric
+    ).scalar()
+    delta_from = (first_day or today) + timedelta(days=7)
+    return {'points': points, 'delta': delta, 'delta_from': delta_from.isoformat()}
+
 
 def manager_approval_queue_models():
     """(key, label, model, scope) per approval queue, ordered by the module catalog.
@@ -35710,6 +35808,10 @@ def get_manager_approvals():
         'aging_total': aging_total,
         'oldest_days': oldest_days
     }
+    # Per approver: each queue is filtered to the signed-in account's routing.
+    trend_scope = f'user:{current_user.id}'
+    record_dashboard_daily_counts(trend_scope, {'approvals': pending_total})
+    payload['trends'] = {'approvals': dashboard_trend(trend_scope, 'approvals', pending_total)}
     return jsonify(payload)
 
 
@@ -36058,9 +36160,51 @@ def get_manager_overview():
     else:
         risk_level, risk_label = 'stable', 'Operations stable'
 
+    # ---- Overdue by age (the one chart under the KPI tiles) ---------------------------
+    overdue_by_age = []
+    for bucket_key, bucket_label, min_days, max_days in MANAGER_OVERDUE_AGE_BUCKETS:
+        bucket_rows = []
+        for shift in overdue_shifts:
+            row = resolved[shift.id]
+            days = (today - row['date']).days
+            if days < min_days or (max_days is not None and days > max_days):
+                continue
+            bucket_rows.append((days, shift, row))
+        bucket_rows.sort(key=lambda item: -item[0])
+        overdue_by_age.append({
+            'key': bucket_key,
+            'label': bucket_label,
+            'count': len(bucket_rows),
+            'rows': [
+                manager_watchlist_entry(
+                    f'shift:{shift.id}',
+                    'severe_overdue' if days >= MANAGER_SEVERE_AGE_DAYS else 'overdue',
+                    row['shift'].client.name if row['shift'].client else 'No client',
+                    row['shift'].title or 'Untitled',
+                    f'Overdue by {days} day(s)',
+                    ', '.join(engineer.name for engineer in row['engineers']) or 'Unassigned',
+                    'critical' if days >= MANAGER_SEVERE_AGE_DAYS else 'watch', days
+                )
+                for days, shift, row in bucket_rows[:20]
+            ]
+        })
+
+    # ---- Trends: company-wide only, so a branch-filtered view never shows a company line
+    trend_counts = {
+        'overdue': len(overdue_shifts),
+        'pending_tsr': len(pending_tsr_shifts),
+        'waiting': len(waiting_shifts),
+    }
+    trends = {}
+    if analytics_requested_branch() == 'ALL':
+        record_dashboard_daily_counts('all', trend_counts, today)
+        trends = {metric: dashboard_trend('all', metric, value, today) for metric, value in trend_counts.items()}
+
     return jsonify({
         'status': 'success',
         'generated_at': get_manila_time().isoformat(),
+        'trends': trends,
+        'overdue_by_age': overdue_by_age,
         'risk': {'score': risk_score, 'level': risk_level, 'label': risk_label},
         'counts': {
             'open_schedules': len(open_shifts),

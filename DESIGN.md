@@ -203,6 +203,9 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 - **Tile** (`.manager-kpi`): `surface`, hairline border, 12px radius, 44px minimum; a 1.6rem number (`.manager-kpi-num`, tabular) over a 0.78rem muted label. Auto-fit grid of 9.5rem tiles; two columns on phones.
 - **Tone:** the number takes the existing alert (overdue) or warn (TSR, waiting) colour, light and dark pairs; a tile at zero stays neutral (`.is-zero`). Never the accent.
 - **Action:** a tile is a link (Approvals) or a filter button for the list it summarises; the active filter gets the 2px accent underline and `aria-pressed`, pressing it again clears it.
+- **KPI trend:** under the label, "N vs last week" with an up/down Font Awesome arrow, plus a 24px weekly sparkline (`.manager-kpi-trend`, `.manager-kpi-spark`). Ink-muted by default; red only when a lower-is-better count rose, green text when it fell. Without a recorded value from a week ago it says "Trend from <date>"; never estimated. A ratio to a limit (PM done/due) gets a 6px accent meter instead of a sparkline.
+- **Age bars** (`.manager-age`): the dashboard's one chart, four bar buttons (count above, ≤36px bar, label below) on a hairline baseline. Below the watchlist threshold the bar is slate; past it, one red deepens step by step. Pressing a bar filters the list like a tile.
+- **Motion:** one load moment only. Tiles settle (opacity 0.35→1, 6px rise, staggered 60ms), numbers count up (700ms, exponential ease-out, with a timeout so a background tab still lands on the real value), and bars grow from the baseline. The "Updated" dot pulses three times after each refresh, never on a loop. All of it is off under `prefers-reduced-motion`.
 
 ### Inputs / Fields
 - **Style:** Bootstrap fields on `surface` (dark: `--app-input`), `hairline` border.

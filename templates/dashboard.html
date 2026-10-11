@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=9">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=10">
 {% endblock %}
 
 {% block content %}
@@ -261,6 +261,7 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-executive-body', this)">
                     <i class="fa-solid fa-chevron-up me-1"></i>Hide
                 </button>
+                <span class="manager-updated d-none align-self-center" id="manager-updated" role="status"><span class="manager-updated-dot" aria-hidden="true"></span><span id="manager-updated-label"></span></span>
                 <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="loadManagerOverview()">
                     <i class="fa-solid fa-rotate me-1"></i>Refresh
                 </button>
@@ -273,25 +274,47 @@
                 <a href="/approvals" class="manager-kpi d-none" id="manager-kpi-approvals">
                     <span class="manager-kpi-num" id="manager-approvals-total">0</span>
                     <span class="manager-kpi-label">Approvals waiting</span>
+                    <span class="manager-kpi-trend" id="manager-trend-approvals"></span>
+                    <svg class="manager-kpi-spark d-none" id="manager-spark-approvals" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points=""/></svg>
                 </a>
                 <button type="button" class="manager-kpi is-alert" data-manager-kpi="severe_overdue" aria-pressed="false" onclick="openManagerKpi('severe_overdue')">
                     <span class="manager-kpi-num" id="manager-overdue-count">0</span>
                     <span class="manager-kpi-label">Overdue</span>
+                    <span class="manager-kpi-trend" id="manager-trend-overdue"></span>
+                    <svg class="manager-kpi-spark d-none" id="manager-spark-overdue" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points=""/></svg>
                 </button>
                 <button type="button" class="manager-kpi is-warn" data-manager-kpi="aged_tsr" aria-pressed="false" onclick="openManagerKpi('aged_tsr')">
                     <span class="manager-kpi-num" id="manager-pending-tsr-count">0</span>
                     <span class="manager-kpi-label">TSRs pending</span>
+                    <span class="manager-kpi-trend" id="manager-trend-pending_tsr"></span>
+                    <svg class="manager-kpi-spark d-none" id="manager-spark-pending_tsr" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points=""/></svg>
                 </button>
                 <button type="button" class="manager-kpi d-none" id="manager-kpi-pm-tile" onclick="openManagerKpi('pm')">
                     <span class="manager-kpi-num" id="manager-kpi-pm">0 / 0</span>
                     <span class="manager-kpi-label">Inventory PM done / due</span>
+                    <span class="manager-kpi-meter" aria-hidden="true"><span id="manager-kpi-pm-meter"></span></span>
                 </button>
                 <button type="button" class="manager-kpi is-warn" data-manager-kpi="waiting" aria-pressed="false" onclick="openManagerKpi('waiting')">
                     <span class="manager-kpi-num" id="manager-waiting-count">0</span>
                     {# "company-wide" earns its words: an admin with an engineer profile has a
                        second, personal "waiting" figure further down the same page. #}
                     <span class="manager-kpi-label">Waiting P.O / parts{% if dashboard_effective_hybrid_view %}, company-wide{% endif %}</span>
+                    <span class="manager-kpi-trend" id="manager-trend-waiting"></span>
+                    <svg class="manager-kpi-spark d-none" id="manager-spark-waiting" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points=""/></svg>
                 </button>
+            </div>
+
+            {#
+                Dashboard Trends: the one chart. Overdue visits by how late they are; each bar
+                is a button that filters What Needs Attention to that age range
+                (openOverdueAge). The second bar starts at the watchlist threshold.
+            #}
+            <div class="manager-age d-none mb-3" id="manager-overdue-age" role="group" aria-labelledby="manager-overdue-age-title">
+                <div class="manager-age-head">
+                    <h6 class="manager-age-title mb-0" id="manager-overdue-age-title">Overdue by age</h6>
+                    <span class="manager-age-note" id="manager-overdue-age-note"></span>
+                </div>
+                <div class="manager-age-bars" id="manager-overdue-age-bars"></div>
             </div>
 
             {#
@@ -343,7 +366,7 @@
                     any reconstructed "last week" figure would be systematically low.
                 #}
                 <p class="xsmall text-muted mb-0 mt-2">
-                    Overdue and pending TSR are current totals, not period counts, so they carry no comparison.
+                    Overdue, pending TSR and waiting are current totals, not period counts. Their trends on the tiles above come from one recorded count per day, not from this comparison.
                 </p>
             </div>
         </div>
@@ -475,6 +498,13 @@
         <div class="dashboard-metric">
             <span class="dashboard-metric-value" id="count-my-continuation" data-metric-tone="alert">0</span>
             <span class="dashboard-metric-label">for continuation</span>
+        </div>
+        <div class="dashboard-metric-divider d-none" id="engineer-week-divider" aria-hidden="true"></div>
+        {# Dashboard Trends: visits finished Mon-Sun this week, from /get_my_done_tasks
+           (the same rows the Done this week tab shows). #}
+        <div class="dashboard-metric engineer-week d-none" id="engineer-week">
+            <span class="engineer-week-bars" id="engineer-week-bars" role="img"></span>
+            <span class="dashboard-metric-label" id="engineer-week-label">done this week</span>
         </div>
         <a href="/timeline" class="dashboard-metric-link">Open timeline →</a>
     </div>
@@ -796,7 +826,7 @@
         staffLanding: {{ (dashboard_staff_landing|default(false))|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=8"></script>
+<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=9"></script>
 
 
 {% if session.get('force_pw_change') %}

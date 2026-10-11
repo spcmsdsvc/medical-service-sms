@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-11-dashboard-trends",
+      "release_date": "2026-10-11",
+      "title": "Numbers With Direction",
+      "summary": "Dashboard numbers now show which way they're moving.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-11-dashboard-trends-tiles",
+          "category": "Dashboard",
+          "description": "Overdue, TSRs pending, Waiting and Approvals now show the change since last week and a small trend line. Red means the number went up. The dashboard records these numbers once a day, so the comparison starts a week after this update.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-11-dashboard-trends-age",
+          "category": "Dashboard",
+          "description": "A new Overdue by age chart sorts overdue visits by how late they are. Click a bar to see those visits in What Needs Attention.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-11-dashboard-trends-week",
+          "category": "Dashboard",
+          "description": "Your summary line shows how many visits you finished each day this week.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-11-manager-kpis",
       "release_date": "2026-10-11",
       "title": "Manager Numbers First",
