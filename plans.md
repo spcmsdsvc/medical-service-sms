@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Dashboard Remodel — MaintainX Work Orders + ServiceTitan Dispatch
 
-**Status:** Phase A executed 2026-10-11, not committed (awaiting "commit and push"). Phases B and C awaiting go-ahead.
+**Status:** Phase A executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `44f32b9`). Phases B and C awaiting go-ahead.
 **Phase A differences from the plan:**
 - **A1 finding:** `/scheduler_quick_assign_shift` replaces the engineer list (`delete_shift_engineer_links` then re-adds), so the drop sends existing ∪ dropped, as planned. Its conflict check still applies and refuses overlapping visits.
 - **A2:** `visits` is built in `get_scheduler_coordination_tools`, not inside `scheduler_engineer_availability_row`, so each shift is serialized once and shared across its engineers. Added `board_start` (Manila date): `generated_at` is UTC and would show the wrong day before 08:00 Manila.
