@@ -39,7 +39,14 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Dashboard Remodel — MaintainX Work Orders + ServiceTitan Dispatch
 
-**Status:** Phase A executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `44f32b9`). Phases B and C awaiting go-ahead.
+**Status:** Phase A executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `44f32b9`). Phase B executed locally on 2026-10-11 on the owner's "go phase B"; not committed (awaiting "commit and push"). Phase C awaiting go-ahead.
+**Phase B differences from the plan:**
+- **Investigation correction:** `/get_open_tasks` had no `has_tsr` or times. Its rows are now built by `dashboard_task_row()` with `time_start` / `time_end` added; `has_tsr` is on Done this week rows only (open visits get their TSR after completion; the panel says so).
+- **Task notes:** `Shift` has no notes column, so the panel shows the visit title as "Task".
+- **Header line:** visits today · overdue · TSRs pending · waiting · for continuation. `count-my-active` / `count-my-upcoming` left the markup (JS still sets them if present); `count-my-today` and `count-my-overdue` are new.
+- **Rows** keep their `/timeline?date=` href; a plain click opens the panel, a modifier click follows the link. First load opens the first non-empty tab.
+- **Bug found in the browser check:** done visits showed "N days late"; `dashboardDaysLate` now returns 0 for Completed.
+- **Tests updated:** `test_dashboard_engineer.py`, `test_dashboard_hybrid.py` (not `test_dashboard_critique_fixes.py`, which still passed).
 **Phase A differences from the plan:**
 - **A1 finding:** `/scheduler_quick_assign_shift` replaces the engineer list (`delete_shift_engineer_links` then re-adds), so the drop sends existing ∪ dropped, as planned. Its conflict check still applies and refuses overlapping visits.
 - **A2:** `visits` is built in `get_scheduler_coordination_tools`, not inside `scheduler_engineer_availability_row`, so each shift is serialized once and shared across its engineers. Added `board_start` (Manila date): `generated_at` is UTC and would show the wrong day before 08:00 Manila.

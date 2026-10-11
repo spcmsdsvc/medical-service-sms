@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-11-work-orders",
+      "release_date": "2026-10-11",
+      "title": "Your Work Orders",
+      "summary": "Engineers now see their own visits as one work-order list with tabs, and a visit opens its details beside the list.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-11-work-orders-tabs",
+          "category": "Dashboard",
+          "description": "Your visits are grouped in tabs: Today, Overdue, Upcoming, Waiting parts and Done this week. The top line shows today's visits, overdue visits, TSRs pending and jobs waiting.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-11-work-orders-details",
+          "category": "Dashboard",
+          "description": "Tap a visit to see its facility, equipment, serial, time, engineers and TSR state, with a button to open it on the Timeline. Press Esc or Close to go back to the list.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-11-dispatch-board",
       "release_date": "2026-10-11",
       "title": "New Dispatch Board",

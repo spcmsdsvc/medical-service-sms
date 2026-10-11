@@ -27332,7 +27332,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v283-calibration-fix-report.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v285-signin-activity-log.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v286-dashboard-critique-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v287-dispatch-board';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v287-dispatch-board.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v288-work-orders';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -31841,7 +31842,10 @@ DASHBOARD_SECTION_IDS = {
     'manager-direction',
     'manager-watchlist',
     'engineer-summary',
+    # engineer-today and my-active-tasks were merged into engineer-work-orders (dashboard
+    # remodel phase B); both stay accepted so a saved layout naming them still saves.
     'engineer-today',
+    'engineer-work-orders',
     'admin-counters',
     'quick-admin',
     # Retired in the hybrid work, ids still accepted so a saved layout naming them does not
@@ -34831,38 +34835,79 @@ def get_open_tasks():
         .all()
     )
 
-    results = []
-    for s in active_shifts:
-        assigned_engineer_ids = get_shift_assigned_engineer_ids(s)
-        assigned_engineers = [
-            db.session.get(Engineer, engineer_id)
-            for engineer_id in assigned_engineer_ids
-            if engineer_id
-        ]
-        assigned_engineers = [engineer for engineer in assigned_engineers if engineer]
-
-        eng_names = [engineer.name for engineer in assigned_engineers]
-        equipment = resolve_shift_equipment(s)
-
-        results.append({
-            'id': s.id,
-            'task_date': s.start_time.strftime("%Y-%m-%d") if s.start_time else '',
-            'created_at': s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else '',
-            'engineer': ", ".join(eng_names) if eng_names else "None",
-            'engineer_ids': assigned_engineer_ids,
-            'engineer_names': eng_names,
-            'client': s.client.name if s.client else "N/A",
-            'client_id': s.client_id,
-            'product': getattr(equipment, 'name', None) or "",
-            'product_name': getattr(equipment, 'name', None) or "",
-            'product_id': s.product_id or '',
-            'serial': getattr(equipment, 'serial_number', None) or (s.product_id or ''),
-            'task': s.title,
-            'status': s.status
-        })
+    return jsonify([dashboard_task_row(s) for s in active_shifts])
 
 
-    return jsonify(results)
+def dashboard_task_row(s):
+    """One dashboard task row; shared by /get_open_tasks and /get_my_done_tasks."""
+    assigned_engineer_ids = get_shift_assigned_engineer_ids(s)
+    assigned_engineers = [
+        db.session.get(Engineer, engineer_id)
+        for engineer_id in assigned_engineer_ids
+        if engineer_id
+    ]
+    assigned_engineers = [engineer for engineer in assigned_engineers if engineer]
+
+    eng_names = [engineer.name for engineer in assigned_engineers]
+    equipment = resolve_shift_equipment(s)
+
+    return {
+        'id': s.id,
+        'task_date': s.start_time.strftime("%Y-%m-%d") if s.start_time else '',
+        'time_start': s.start_time.strftime('%I:%M %p') if s.start_time else '',
+        'time_end': s.end_time.strftime('%I:%M %p') if s.end_time else '',
+        'created_at': s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else '',
+        'engineer': ", ".join(eng_names) if eng_names else "None",
+        'engineer_ids': assigned_engineer_ids,
+        'engineer_names': eng_names,
+        'client': s.client.name if s.client else "N/A",
+        'client_id': s.client_id,
+        'product': getattr(equipment, 'name', None) or "",
+        'product_name': getattr(equipment, 'name', None) or "",
+        'product_id': s.product_id or '',
+        'serial': getattr(equipment, 'serial_number', None) or (s.product_id or ''),
+        'task': s.title,
+        'status': s.status
+    }
+
+
+@app.route('/get_my_done_tasks')
+@login_required
+def get_my_done_tasks():
+    """The signed-in engineer's own Completed service visits from the last 7 days (Manila).
+
+    Same row shape as /get_open_tasks plus has_tsr. Accounts without an engineer profile
+    get []. Loaded by the dashboard only when the "Done this week" tab is opened.
+    """
+    profile = getattr(current_user, 'engineer_profile', None)
+    if not profile:
+        return jsonify([])
+
+    ensure_shift_file_original_filename_column()
+    today = get_manila_today()
+    start_dt, end_dt = build_shift_datetime_bounds(today - timedelta(days=6), today)
+    linked_shift_ids = db.session.query(ShiftEngineer.shift_id).filter(ShiftEngineer.engineer_id == profile.id)
+    shifts = (
+        Shift.query
+        .options(joinedload(Shift.client), joinedload(Shift.product), selectinload(Shift.files))
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.status == 'Completed')
+        .filter(Shift.title.notin_(['Training'] + LEAVE_CATEGORIES))
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+        .filter(or_(Shift.id.in_(linked_shift_ids), Shift.engineer_id == profile.id))
+        .order_by(Shift.start_time.desc())
+        .all()
+    )
+    # Same ownership rule as get_my_pending_tsr_count: the linked engineer list decides.
+    rows = []
+    for shift in shifts:
+        if not any(eng.id == profile.id for eng in get_shift_engineer_records(shift)):
+            continue
+        row = dashboard_task_row(shift)
+        row['has_tsr'] = shift_has_tsr_file(shift)
+        rows.append(row)
+    return jsonify(rows)
 
 
 def dashboard_team_shift_row(shift):

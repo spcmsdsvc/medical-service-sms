@@ -1456,6 +1456,11 @@
         const continuationCount = myTasks.filter(task => task.status === 'For Continuation').length;
         const waitingCount = myTasks.filter(task => ['Waiting for P.O', 'Waiting for Parts'].includes(task.status)).length;
 
+        const buckets = workOrderBuckets(myTasks);
+        setTextIfPresent('count-my-today', buckets.today.length);
+        setMetricValue('count-my-overdue', buckets.overdue.length);
+        // active / upcoming left the header line in the work-order remodel; kept for any
+        // page that still carries them.
         setTextIfPresent('count-my-active', myTasks.length);
         setTextIfPresent('count-my-upcoming', upcomingVisits);
         setMetricValue('count-my-continuation', continuationCount);
@@ -1466,7 +1471,8 @@
 
     // "Needs you today" is derived entirely from tasks already loaded for the tables
     // below. It issues no requests of its own -- the point is to surface what matters
-    // first, not to fetch more.
+    // first, not to fetch more. Its section was merged into My Work Orders (phase B), so
+    // without #engineer-today-list this returns at once; kept for existing callers.
     function renderEngineerTodayPanel(myTasks, todayStart) {
         const list = document.getElementById('engineer-today-list');
         if (!list) return;
@@ -1664,8 +1670,10 @@
     }
 
     // Days past the last scheduled day of an open task; 0 when not late. Open tasks are
-    // never Completed, so any past date means the visit was not closed on time.
+    // never Completed, so any past date means the visit was not closed on time. Done
+    // work orders (Completed) are never late.
     function dashboardDaysLate(task) {
+        if (task.status === 'Completed') return 0;
         const end = parseDashboardDate(task.range_end_date || task.task_date);
         if (!end) return 0;
         const today = new Date();
@@ -1700,10 +1708,10 @@
         const compact = Boolean(options.compact);
         const late = dashboardDaysLate(task) > 0;
         return `
-            <a class="dashboard-mobile-task-card${late ? ' is-late' : ''}" href="${escapeHtml(dashboardTimelineHref(task))}">
+            <a class="dashboard-mobile-task-card${late ? ' is-late' : ''}" href="${escapeHtml(dashboardTimelineHref(task))}"${options.workOrder ? ` data-work-order-id="${escapeHtml(task.id)}"` : ''}>
                 <div class="dashboard-mobile-card-top">
                     <div>
-                        <div class="dashboard-mobile-card-date">${escapeHtml(dashboardTaskDateLabel(task))} ${dashboardLateChip(task)}</div>
+                        <div class="dashboard-mobile-card-date">${escapeHtml(dashboardTaskDateLabel(task))} ${dashboardLateChip(task)} ${workOrderTsrChip(task)}</div>
                         <div class="dashboard-mobile-card-title">${escapeHtml(task.client || 'No facility')}</div>
                     </div>
                     ${dashboardStatusChip(task.status)}
@@ -1797,9 +1805,67 @@
         return names.some(name => String(name || '').trim().toLowerCase().includes(userToken));
     }
 
+    // ---- My Work Orders (dashboard remodel phase B, MaintainX model) ----
+    // Tabs filter the engineer's own open tasks (already loaded); "Done this week" is
+    // fetched from /get_my_done_tasks the first time it is opened.
+    const WORK_ORDER_TABS = ['today', 'overdue', 'upcoming', 'waiting', 'done'];
+    const WORK_ORDER_EMPTY = {
+        today: 'No visits today.',
+        overdue: 'Nothing overdue.',
+        upcoming: 'No upcoming visits.',
+        waiting: 'Nothing waiting on parts or P.O.',
+        done: 'No visits completed in the last 7 days.'
+    };
+    let workOrdersTab = '';
+    let workOrdersDone = null;
+    let workOrdersReturnFocus = null;
+
+    function workOrderBuckets(myTasks) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const day = task => parseDashboardDate(task.task_date);
+        return {
+            today: myTasks.filter(task => day(task) && day(task).getTime() === todayStart.getTime()),
+            overdue: myTasks.filter(task => dashboardDaysLate(task) > 0),
+            upcoming: myTasks.filter(task => day(task) && day(task) > todayStart),
+            waiting: myTasks.filter(task => ['Waiting for P.O', 'Waiting for Parts'].includes(task.status))
+        };
+    }
+
+    // Only done rows carry has_tsr; open visits get their TSR after completion.
+    function workOrderTsrChip(task) {
+        if (task.has_tsr === undefined) return '';
+        return task.has_tsr
+            ? '<span class="work-order-tsr is-done">TSR uploaded</span>'
+            : '<span class="work-order-tsr is-missing">TSR missing</span>';
+    }
+
+    function workOrderTimeLabel(task) {
+        if (!task.time_start) return '';
+        return task.time_end ? `${task.time_start} – ${task.time_end}` : task.time_start;
+    }
+
+    function setWorkOrdersTab(tab) {
+        if (!WORK_ORDER_TABS.includes(tab)) return;
+        workOrdersTab = tab;
+        closeWorkOrderPanel(false);
+        renderMyTasks();
+    }
+
+    async function loadMyDoneTasks() {
+        try {
+            const rows = await fetchJsonOrThrow('/get_my_done_tasks');
+            workOrdersDone = Array.isArray(rows) ? rows : [];
+        } catch (error) {
+            console.warn('[Dashboard] Done this week could not be loaded', error);
+            workOrdersDone = undefined;
+        }
+        if (workOrdersTab === 'done') renderMyTasks();
+    }
+
     /**
      * Personalization Logic.
-     * Filters the dataset to show only tasks assigned to the current user.
+     * Renders the active work-order tab of the tasks assigned to the current user.
      */
     function renderMyTasks() {
         const targetBody = document.getElementById('my-tasks-body');
@@ -1807,25 +1873,53 @@
 
         if(!targetBody) return;
 
-        const myTasks = getCurrentEngineerTasks();
+        const buckets = workOrderBuckets(getCurrentEngineerTasks());
         const tableWrap = document.getElementById('my-tasks-table-wrap');
+        const emptyText = document.getElementById('no-my-tasks-text');
+
+        ['today', 'overdue', 'upcoming', 'waiting'].forEach(tab => setTextIfPresent(`work-orders-count-${tab}`, buckets[tab].length));
+        setTextIfPresent('work-orders-count-done', Array.isArray(workOrdersDone) ? workOrdersDone.length : '');
+        // First visit: open the first tab that has work in it.
+        if (!workOrdersTab) {
+            workOrdersTab = ['today', 'overdue', 'upcoming', 'waiting'].find(tab => buckets[tab].length) || 'today';
+        }
+        document.querySelectorAll('.work-orders-tab').forEach(button => {
+            button.setAttribute('aria-selected', String(button.dataset.tab === workOrdersTab));
+        });
+
+        let tasks = buckets[workOrdersTab] || [];
+        let message = WORK_ORDER_EMPTY[workOrdersTab];
+        if (workOrdersTab === 'done') {
+            if (workOrdersDone === null) {
+                workOrdersDone = false;
+                loadMyDoneTasks();
+            }
+            tasks = Array.isArray(workOrdersDone) ? workOrdersDone : [];
+            if (workOrdersDone === false) message = 'Loading visits completed this week…';
+            if (workOrdersDone === undefined) message = 'Could not load completed visits. Open the tab again to retry.';
+            if (workOrdersDone === undefined) workOrdersDone = null;
+        }
 
         targetBody.innerHTML = "";
 
-        if (myTasks.length === 0) {
+        if (tasks.length === 0) {
             emptyMsg.classList.remove('d-none');
+            if (emptyText) emptyText.textContent = message;
             // No header row over an empty table: one line says it.
             if (tableWrap) tableWrap.classList.add('d-none');
             renderMobileTaskList('my-tasks-mobile-list', []);
         } else {
             emptyMsg.classList.add('d-none');
             if (tableWrap) tableWrap.classList.remove('d-none');
-            renderMobileTaskList('my-tasks-mobile-list', myTasks, { compact: true });
+            renderMobileTaskList('my-tasks-mobile-list', tasks, { compact: true, workOrder: true });
 
-            targetBody.innerHTML = myTasks.map(task => `
-                <tr class="small dashboard-my-task-row${dashboardDaysLate(task) ? ' dashboard-row-late' : ''}">
-                    <td class="ps-4">
-                        <a class="fw-bold dashboard-row-link" href="${escapeHtml(dashboardTimelineHref(task))}">${escapeHtml(dashboardTaskDateLabel(task))}</a>
+            // The date link opens the detail panel (delegated click below); the href keeps
+            // the timeline reachable with a modifier click or without JS.
+            targetBody.innerHTML = tasks.map(task => `
+                <tr class="small dashboard-my-task-row work-order-row${dashboardDaysLate(task) ? ' dashboard-row-late' : ''}" data-work-order-id="${escapeHtml(task.id)}">
+                    <td class="ps-3">
+                        <a class="fw-bold dashboard-row-link" href="${escapeHtml(dashboardTimelineHref(task))}" data-work-order-id="${escapeHtml(task.id)}">${escapeHtml(dashboardTaskDateLabel(task))}</a>
+                        <div class="xsmall text-muted">${escapeHtml(workOrderTimeLabel(task))}</div>
                         ${dashboardLateChip(task)}
                     </td>
                     <td>
@@ -1833,13 +1927,78 @@
                     </td>
                     <td>
                         <div class="fw-bold text-dark">${escapeHtml(dashboardEquipmentLabel(task))}</div>
-                        <div class="xsmall text-muted">Product / Serial</div>
                     </td>
-                    <td class="text-muted">${escapeHtml(task.task || 'No task details')}</td>
-                    <td class="text-end pe-4">${dashboardStatusChip(task.status)}</td>
+                    <td class="text-end pe-3">${dashboardStatusChip(task.status)} ${workOrderTsrChip(task)}</td>
                 </tr>`).join('');
         }
     }
+
+    function findWorkOrder(id) {
+        const pool = allOpenTasksRaw.concat(Array.isArray(workOrdersDone) ? workOrdersDone : []);
+        return pool.find(task => String(task.id) === String(id));
+    }
+
+    function openWorkOrderPanel(id, trigger) {
+        const panel = document.getElementById('work-order-panel');
+        const body = document.getElementById('work-order-panel-body');
+        const task = findWorkOrder(id);
+        if (!panel || !body || !task) return false;
+
+        const field = (label, value) => `<dt>${escapeHtml(label)}</dt><dd>${value}</dd>`;
+        const tsr = task.has_tsr === undefined
+            ? 'Upload after the visit is completed'
+            : (task.has_tsr ? 'Uploaded' : 'Missing');
+        document.getElementById('work-order-panel-title').textContent = task.client || 'Work order';
+        body.innerHTML = '<dl class="work-order-fields">'
+            + field('Status', `${dashboardStatusChip(task.status)} ${dashboardLateChip(task)}`)
+            + field('Date', escapeHtml([dashboardTaskDateLabel(task), workOrderTimeLabel(task)].filter(Boolean).join(', ')))
+            + field('Facility', escapeHtml(task.client || 'No facility'))
+            + field('Equipment', escapeHtml(task.product_name || task.product || 'No equipment listed'))
+            + field('Serial', escapeHtml(task.serial || '—'))
+            + field('Engineers', escapeHtml((task.engineer_names || []).join(', ') || task.engineer || '—'))
+            + field('TSR', escapeHtml(tsr))
+            + field('Task', escapeHtml(task.task || 'No task details'))
+            + '</dl>'
+            + `<a class="btn btn-primary fw-bold w-100" href="${escapeHtml(dashboardTimelineHref(task))}">Open on timeline</a>`;
+
+        document.querySelectorAll('.work-order-row.is-selected').forEach(row => row.classList.remove('is-selected'));
+        const row = document.querySelector(`.work-order-row[data-work-order-id="${CSS.escape(String(task.id))}"]`);
+        if (row) row.classList.add('is-selected');
+
+        workOrdersReturnFocus = trigger || null;
+        panel.hidden = false;
+        document.getElementById('work-orders-layout')?.classList.add('has-panel');
+        document.body.classList.add('work-order-sheet-open');
+        document.getElementById('work-order-panel-close')?.focus();
+        return true;
+    }
+
+    function closeWorkOrderPanel(restoreFocus = true) {
+        const panel = document.getElementById('work-order-panel');
+        if (!panel || panel.hidden) return;
+        panel.hidden = true;
+        document.getElementById('work-orders-layout')?.classList.remove('has-panel');
+        document.body.classList.remove('work-order-sheet-open');
+        document.querySelectorAll('.work-order-row.is-selected').forEach(row => row.classList.remove('is-selected'));
+        if (!restoreFocus) return;
+        const target = workOrdersReturnFocus && workOrdersReturnFocus.isConnected
+            ? workOrdersReturnFocus
+            : document.querySelector('.work-orders-tab[aria-selected="true"]');
+        if (target) target.focus();
+    }
+
+    // Rows, date links and phone cards open the panel; a modifier click still follows
+    // the link to the timeline.
+    document.addEventListener('click', event => {
+        const hit = event.target.closest('#work-orders-list [data-work-order-id]');
+        if (!hit || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        const link = hit.closest('a') || hit.querySelector('a[data-work-order-id]');
+        if (openWorkOrderPanel(hit.dataset.workOrderId, link || hit)) event.preventDefault();
+    });
+
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeWorkOrderPanel();
+    });
 
     /**
      * AGGREGATION LOGIC:

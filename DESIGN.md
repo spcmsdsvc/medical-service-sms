@@ -195,6 +195,10 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 - **Shadow Strategy:** card rest shadow; see Elevation.
 - **Border:** none on light; `dark-hairline` in dark themes.
 
+### Tabs and Detail Panel (dashboard work orders)
+- **Tabs** (`.work-orders-tab`): 44px text tabs with their count, muted text; the selected tab gets `--app-text` and a 2px accent underline. They scroll sideways on phones rather than wrap.
+- **Detail panel** (`.work-order-panel`): a 22rem column right of the list at 992px and up; below that a full-screen sheet on `surface` with a sticky header and a 44px Close. It opens from a row, closes with Esc or Close, and returns focus to the row. One primary action at its foot.
+
 ### Inputs / Fields
 - **Style:** Bootstrap fields on `surface` (dark: `--app-input`), `hairline` border.
 - **Focus:** accent border + focus ring.

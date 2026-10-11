@@ -1740,3 +1740,154 @@ a.dashboard-mobile-task-card.is-late {
         grid-column: 1 / -1;
     }
 }
+
+/* My Work Orders (dashboard remodel phase B, MaintainX model): status tabs, one list,
+   a detail panel on the right at 992 px and up, a full-screen sheet below that. */
+.work-orders {
+    background: var(--app-surface, #ffffff);
+    border: 1px solid var(--app-border, #e5e7eb);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.work-orders-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.8rem 1rem;
+    color: var(--app-text, #111827);
+}
+
+.work-orders-tabs {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0 0.75rem;
+    border-bottom: 1px solid var(--app-border, #e5e7eb);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.work-orders-tab {
+    min-height: 44px;
+    padding: 0 0.75rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--app-muted, #6b7280);
+    font-size: 0.83rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.work-orders-tab[aria-selected="true"] {
+    color: var(--app-text, #111827);
+    border-bottom-color: var(--app-primary, #0d6efd);
+}
+
+.work-orders-tab:focus-visible {
+    outline: 2px solid var(--app-primary, #0d6efd);
+    outline-offset: -2px;
+}
+
+.work-orders-tab-count {
+    margin-left: 0.25rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.work-orders-layout { display: block; }
+
+.work-orders-list { min-width: 0; }
+
+.work-orders-list .dashboard-mobile-card-list { padding: 0.75rem; }
+
+.work-order-row { cursor: pointer; }
+
+.work-order-row.is-selected > td { background: var(--app-surface-raised, #f8fafc); }
+
+.work-order-tsr {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.work-order-tsr.is-done { background: #e6f4ea; color: #1e6b34; }
+.work-order-tsr.is-missing { background: #fff6db; color: #7a5200; }
+
+:root[data-app-theme="dark"] .work-order-tsr.is-done { background: rgba(34, 197, 94, 0.16); color: #a7f3c0; }
+:root[data-app-theme="dark"] .work-order-tsr.is-missing { background: rgba(234, 179, 8, 0.16); color: #fde68a; }
+
+.work-order-panel {
+    background: var(--app-surface, #ffffff);
+    color: var(--app-text, #111827);
+}
+
+.work-order-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid var(--app-border, #e5e7eb);
+}
+
+.work-order-panel-head .btn-close {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+}
+
+.work-order-panel-body { padding: 1rem; }
+
+.work-order-fields {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+}
+
+.work-order-fields dt {
+    color: var(--app-muted, #6b7280);
+    font-weight: 600;
+}
+
+.work-order-fields dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.work-order-panel-body .btn { min-height: 44px; }
+
+@media (min-width: 992px) {
+    .work-orders-layout.has-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 22rem;
+    }
+
+    .work-order-panel { border-left: 1px solid var(--app-border, #e5e7eb); }
+}
+
+@media (max-width: 991.98px) {
+    .work-order-panel {
+        position: fixed;
+        inset: 0;
+        z-index: 1060;
+        overflow-y: auto;
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .work-order-panel-head {
+        position: sticky;
+        top: 0;
+        background: inherit;
+        padding-top: max(0.8rem, env(safe-area-inset-top));
+    }
+
+    body.work-order-sheet-open { overflow: hidden; }
+}

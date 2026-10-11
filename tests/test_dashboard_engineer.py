@@ -40,7 +40,9 @@ class DashboardSourceTests(unittest.TestCase):
         self.assertIn('dashboard-metric-strip', self.dashboard)
         self.assertNotIn('dashboard-engineer-summary-card', self.dashboard)
         # The count ids must survive so updateEngineerSummaryCards() keeps working.
-        for count_id in ('count-my-active', 'count-my-upcoming',
+        # active / upcoming left the header line in the work-order remodel (phase B);
+        # their numbers are the work-order tab counts now.
+        for count_id in ('count-my-today', 'count-my-overdue',
                          'count-my-continuation', 'count-my-waiting'):
             self.assertIn(f'id="{count_id}"', self.dashboard)
 
@@ -68,7 +70,9 @@ class DashboardSourceTests(unittest.TestCase):
                 f'{destination} should be offered exactly once in the shortcut grid')
 
     def test_needs_you_today_is_built_from_loaded_data(self):
-        self.assertIn('id="engineer-today-list"', self.dashboard)
+        # Its section was merged into My Work Orders (phase B); the renderer stays
+        # defined for existing callers and no-ops without its list.
+        self.assertNotIn('id="engineer-today-list"', self.dashboard)
         self.assertIn('function renderEngineerTodayPanel', self.js)
         # It must not introduce its own request; the phase was "show less, fetch same".
         panel = self.js.split('function renderEngineerTodayPanel')[1].split('\n    function ')[0]

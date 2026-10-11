@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=7">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=8">
 {% endblock %}
 
 {% block content %}
@@ -434,30 +434,29 @@
 
     <!-- ANALYTICS MATRIX -->
     {% if dashboard_has_engineer_profile %}
-    <!-- ENGINEER SUMMARY STRIP
-         Replaces four large tiles that all linked to the same destination. The count
-         element ids are unchanged so updateEngineerSummaryCards() keeps working; only
-         the presentation changed.
+    <!-- ENGINEER HEADER LINE + MY WORK ORDERS (MaintainX model, dashboard remodel phase B)
+         The header line is the old summary strip with today's numbers. count-my-waiting,
+         count-my-continuation and count-my-pending-tsr keep their ids so
+         updateEngineerSummaryCards() and loadMyPendingTsrCount() keep working.
 
-         The labels say "assigned to you" for hybrids because the manager strip above uses
-         the same component with company-wide numbers. A pure engineer has no such ambiguity
-         and keeps the shorter labels. -->
+         The labels say "yours" for hybrids because the manager strip above uses the same
+         component with company-wide numbers. -->
     <div class="dashboard-metric-strip mb-3 dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="engineer-summary" data-dashboard-title="Engineer Summary">
         <div class="dashboard-metric">
-            <span class="dashboard-metric-value" id="count-my-active">0</span>
-            <span class="dashboard-metric-label">active</span>
-        </div>
-        <div class="dashboard-metric-divider" aria-hidden="true"></div>
-        <div class="dashboard-metric">
-            <span class="dashboard-metric-value" id="count-my-upcoming">0</span>
-            <span class="dashboard-metric-label">upcoming</span>
+            <span class="dashboard-metric-value" id="count-my-today">0</span>
+            <span class="dashboard-metric-label">visits today</span>
         </div>
         <div class="dashboard-metric-divider" aria-hidden="true"></div>
         {# Alert / warn colour is applied from JS only when the value is above zero, so a
            red "0" never trains people to ignore red. #}
         <div class="dashboard-metric">
-            <span class="dashboard-metric-value" id="count-my-continuation" data-metric-tone="alert">0</span>
-            <span class="dashboard-metric-label">for continuation</span>
+            <span class="dashboard-metric-value" id="count-my-overdue" data-metric-tone="alert">0</span>
+            <span class="dashboard-metric-label">overdue</span>
+        </div>
+        <div class="dashboard-metric-divider" aria-hidden="true"></div>
+        <div class="dashboard-metric">
+            <span class="dashboard-metric-value" id="count-my-pending-tsr" data-metric-tone="warn">0</span>
+            <span class="dashboard-metric-label">TSRs pending</span>
         </div>
         <div class="dashboard-metric-divider" aria-hidden="true"></div>
         <div class="dashboard-metric">
@@ -466,25 +465,58 @@
         </div>
         <div class="dashboard-metric-divider" aria-hidden="true"></div>
         <div class="dashboard-metric">
-            <span class="dashboard-metric-value" id="count-my-pending-tsr" data-metric-tone="warn">0</span>
-            <span class="dashboard-metric-label">TSRs pending</span>
+            <span class="dashboard-metric-value" id="count-my-continuation" data-metric-tone="alert">0</span>
+            <span class="dashboard-metric-label">for continuation</span>
         </div>
         <a href="/timeline" class="dashboard-metric-link">Open timeline →</a>
     </div>
 
-    <!-- NEEDS YOU TODAY
-         Built entirely from data already loaded for the task tables. No new requests.
-
-         Deliberately not collapsed by default for hybrids. It is real work assigned to a real
-         person, and hiding it to reduce visual noise would trade a cosmetic gain for a missed
-         visit. It is made subordinate instead, not hidden. -->
-    <div class="dashboard-today mb-4 dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="engineer-today" data-dashboard-title="Needs You Today">
-        <div class="dashboard-today-header">
-            <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
-            <span>{% if dashboard_effective_hybrid_view %}Your own visits today{% else %}Needs you today{% endif %}</span>
+    {# One work-order list with status tabs and a detail panel. Replaces "Needs you today"
+       and "My Active Tasks"; my-tasks-body and no-my-tasks stay the list containers so
+       renderMyTasks() callers keep working. Not collapsed for hybrids: it is real work. #}
+    <section class="work-orders mb-4 dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="engineer-work-orders" data-dashboard-title="My Work Orders" data-dashboard-layout-version="2" aria-labelledby="work-orders-title">
+        <div class="work-orders-head">
+            <h3 class="h5 mb-0 fw-bold" id="work-orders-title">{% if dashboard_effective_hybrid_view %}Your own work orders{% else %}My work orders{% endif %}</h3>
+            <a href="/timeline" class="btn btn-sm btn-outline-secondary fw-bold">Open my calendar</a>
         </div>
-        <div id="engineer-today-list" class="dashboard-today-list" aria-live="polite"></div>
-    </div>
+        <div class="work-orders-tabs" role="tablist" aria-label="Work order status">
+            <button type="button" role="tab" class="work-orders-tab" id="work-orders-tab-today" data-tab="today" aria-selected="true" aria-controls="work-orders-list" onclick="setWorkOrdersTab('today')">Today <span class="work-orders-tab-count" id="work-orders-count-today">0</span></button>
+            <button type="button" role="tab" class="work-orders-tab" id="work-orders-tab-overdue" data-tab="overdue" aria-selected="false" aria-controls="work-orders-list" onclick="setWorkOrdersTab('overdue')">Overdue <span class="work-orders-tab-count" id="work-orders-count-overdue">0</span></button>
+            <button type="button" role="tab" class="work-orders-tab" id="work-orders-tab-upcoming" data-tab="upcoming" aria-selected="false" aria-controls="work-orders-list" onclick="setWorkOrdersTab('upcoming')">Upcoming <span class="work-orders-tab-count" id="work-orders-count-upcoming">0</span></button>
+            <button type="button" role="tab" class="work-orders-tab" id="work-orders-tab-waiting" data-tab="waiting" aria-selected="false" aria-controls="work-orders-list" onclick="setWorkOrdersTab('waiting')">Waiting parts <span class="work-orders-tab-count" id="work-orders-count-waiting">0</span></button>
+            <button type="button" role="tab" class="work-orders-tab" id="work-orders-tab-done" data-tab="done" aria-selected="false" aria-controls="work-orders-list" onclick="setWorkOrdersTab('done')">Done this week <span class="work-orders-tab-count" id="work-orders-count-done"></span></button>
+        </div>
+        <div class="work-orders-layout" id="work-orders-layout">
+            <div class="work-orders-list" id="work-orders-list" role="tabpanel" aria-live="polite">
+                <div class="table-responsive" id="my-tasks-table-wrap">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light text-uppercase small fw-bold text-muted">
+                            <tr>
+                                <th class="ps-3">Date</th>
+                                <th>Facility</th>
+                                <th>Equipment</th>
+                                <th class="text-end pe-3">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="my-tasks-body"></tbody>
+                    </table>
+                </div>
+                <div id="no-my-tasks" class="dashboard-today-clear d-none">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    <span id="no-my-tasks-text">Nothing here.</span>
+                </div>
+                <div id="my-tasks-mobile-list" class="dashboard-mobile-card-list"></div>
+            </div>
+            {# Right-side panel at 992 px and up, a full-screen sheet below that. #}
+            <aside class="work-order-panel" id="work-order-panel" aria-labelledby="work-order-panel-title" hidden>
+                <div class="work-order-panel-head">
+                    <h4 class="h6 mb-0 fw-bold" id="work-order-panel-title">Work order</h4>
+                    <button type="button" class="btn-close" id="work-order-panel-close" aria-label="Close work order" onclick="closeWorkOrderPanel()"></button>
+                </div>
+                <div class="work-order-panel-body" id="work-order-panel-body"></div>
+            </aside>
+        </div>
+    </section>
     {% endif %}
 
     {#
@@ -631,50 +663,6 @@
     {% endif %}
 
 
-    <!-- v5.2 ROLE-BASED WIDGET SECTION -->
-    {% if dashboard_has_engineer_profile %}
-    <!-- ENGINEER-ONLY: MY ACTIVE TASKS -->
-    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-primary dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="my-active-tasks" data-dashboard-title="My Active Tasks">
-        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-            <div>
-                {# A section heading (h3) under the page h1/h2. Visual subordination under the
-                   manager block is done in CSS, from the dashboard-scope-personal class on
-                   the section wrapper. #}
-                <h3 class="h5 mb-0 fw-bold text-primary">
-                    <i class="fa-solid fa-user-check me-2"></i>
-                    My Active Tasks
-                </h3>
-                <div class="xsmall text-muted mt-1">Assigned technical visits that still need action</div>
-            </div>
-            <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">
-                Open My Full Calendar
-            </a>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive" id="my-tasks-table-wrap">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light text-uppercase small fw-bold text-muted">
-                        <tr>
-                            <th class="ps-4">Scheduled Date</th>
-                            <th>Facility</th>
-                            <th>Equipment</th>
-                            <th>Task Details</th>
-                            <th class="text-end pe-4">Current Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="my-tasks-body">
-                        <!-- Personal tasks filtered by JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-            <div id="no-my-tasks" class="dashboard-today-clear d-none">
-                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                <span>No active tasks assigned. Use Timeline for future schedules or Create TSR for completed visits.</span>
-            </div>
-            <div id="my-tasks-mobile-list" class="dashboard-mobile-card-list p-3"></div>
-        </div>
-    </div>
-    {% endif %}
 
     {% if not dashboard_effective_scheduler_only and not dashboard_effective_manager_view %}
     <!-- OPEN TECHNICAL TASKS REGISTRY (COMPANY-WIDE) -->
@@ -706,7 +694,7 @@
                     <i class="fa-solid fa-list-check me-2 text-danger" aria-hidden="true"></i>
                     All Open Technical Tasks
                 </h3>
-                <p class="xsmall text-muted mb-0 italic">{% if dashboard_has_engineer_profile %}Company-wide reference only. Your own assignments are shown above.{% else %}Excludes Personnel Leave and internal Training records{% endif %}</p>
+                <p class="xsmall text-muted mb-0 italic">{% if dashboard_has_engineer_profile %}Company-wide reference only. Your own work orders are shown above.{% else %}Excludes Personnel Leave and internal Training records{% endif %}</p>
             </div>
 
             <div class="open-tasks-controls">
@@ -800,7 +788,7 @@
         staffLanding: {{ (dashboard_staff_landing|default(false))|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=6"></script>
+<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=7"></script>
 
 
 {% if session.get('force_pw_change') %}

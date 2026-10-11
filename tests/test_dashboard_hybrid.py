@@ -141,14 +141,16 @@ class HybridDashboardSourceTests(unittest.TestCase):
         # Each personal section carries the marker class, conditionally on the hybrid flag.
         # Asserted per section rather than by counting occurrences, so a mention in a
         # comment cannot satisfy it and adding a comment cannot break it.
-        for section in ('engineer-summary', 'engineer-today', 'my-active-tasks'):
-            opening_tag = self.dashboard.split(
-                f'data-dashboard-section="{section}"')[0].rsplit('<div', 1)[1]
+        # engineer-today and my-active-tasks were merged into engineer-work-orders
+        # (dashboard remodel phase B), a <section>.
+        for section in ('engineer-summary', 'engineer-work-orders'):
+            before = self.dashboard.split(f'data-dashboard-section="{section}"')[0]
+            opening_tag = before[max(before.rfind('<div'), before.rfind('<section')):]
             self.assertIn('dashboard-scope-personal', opening_tag, section)
             self.assertIn('dashboard_effective_hybrid_view', opening_tag, section)
         self.assertIn('.dashboard-scope-personal', self.css)
-        # engineer-today must not be collapsed away: it is real assigned work.
-        today = self.dashboard.split('data-dashboard-section="engineer-today"')[1][:600]
+        # The work orders must not be collapsed away: it is real assigned work.
+        today = self.dashboard.split('data-dashboard-section="engineer-work-orders"')[1][:200]
         self.assertNotIn('d-none', today)
         self.assertNotIn('collapse', today)
 
@@ -374,7 +376,7 @@ class ManagerPrimaryExemptionTests(unittest.TestCase):
             session['_fresh'] = True
 
         body = client.get('/').get_data(as_text=True)
-        for section in ('engineer-summary', 'engineer-today', 'my-active-tasks'):
+        for section in ('engineer-summary', 'engineer-work-orders', 'engineer-today', 'my-active-tasks'):
             self.assertNotIn(f'data-dashboard-section="{section}"', body, section)
         self.assertNotIn('dashboard-scope-divider', body)
         # The manager view itself must still be there.
