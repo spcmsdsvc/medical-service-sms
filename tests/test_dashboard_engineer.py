@@ -92,9 +92,10 @@ class DashboardSourceTests(unittest.TestCase):
         still carries. Three ids have left the list, all for the same reason: they were
         gated on `admin_view and not manager_view`, which no account satisfies, so they
         never rendered and were retired rather than kept as unreachable markup.
-        recent-activity went last, when the hybrid view was ratified.
+        recent-activity went last, when the hybrid view was ratified. The dispatch board
+        remodel merged scheduler-core / -dispatch / -coordination into scheduler-board.
         """
-        for section in ('scheduler-core', 'scheduler-dispatch', 'scheduler-coordination',
+        for section in ('scheduler-board',
                         'manager-executive', 'manager-direction', 'manager-watchlist',
                         'admin-counters', 'quick-admin'):
             self.assertIn(f'data-dashboard-section="{section}"', self.dashboard)

@@ -37,9 +37,131 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Dashboard Remodel — MaintainX Work Orders + ServiceTitan Dispatch
+
+**Status:** Phase A executed 2026-10-11, not committed (awaiting "commit and push"). Phases B and C awaiting go-ahead.
+**Phase A differences from the plan:**
+- **A1 finding:** `/scheduler_quick_assign_shift` replaces the engineer list (`delete_shift_engineer_links` then re-adds), so the drop sends existing ∪ dropped, as planned. Its conflict check still applies and refuses overlapping visits.
+- **A2:** `visits` is built in `get_scheduler_coordination_tools`, not inside `scheduler_engineer_availability_row`, so each shift is serialized once and shared across its engineers. Added `board_start` (Manila date): `generated_at` is UTC and would show the wrong day before 08:00 Manila.
+- **Step 0.2:** the version attribute sits on the `scheduler-board` section, not the page root: the role flags are `{% set %}` below the root `<div>`. A page with no attribute never resets. The account-copy reset waits for page load, because `getCSRFToken` is defined later by `layout.html` (calling it early stopped the whole script; caught in the browser check).
+- **Phone order:** queue, selected, lanes (plan said queue, lanes, selected). With 27 lanes the panel a tapped row fills sat 3,000 px down.
+- **Removed:** the per-section Hide buttons (one board, nothing to hide), the load-level side stripe (the badge already shows load; detector "side-tab"), unused `schedulerAvailabilityClass`. The dispatch metric strip got the engineer strip's two-column phone layout.
+- **Tests updated** for the merged section: `test_dashboard_scheduler.py`, `test_dashboard_engineer.py`, `test_dashboard_critique_fixes.py`.
+**Approved:** 2026-10-11 (owner: "approved, a").
+**Detailed:** 2026-10-11.
+**Source:** The owner's research on 10 field-service dashboards (see "Dashboard Critique Fixes" below, Context), narrowed to two models: **MaintainX** (engineer work-order list) and **ServiceTitan** (dispatch board, KPI tiles).
+**Branch:** `main` (local first; nothing is pushed until a separate "commit and push").
+**Delivery:** three phases, each its own publish with its own tests, browser check, release entry and commit: **A scheduler → B engineer → C manager**. Start each phase only on a go-ahead; the owner may say "do all three".
+
+## Context
+
+Commit `e55deb2` applied the research as fixes on the old layout. The scheduler workbench and "Needs Your Decision" were off-limits, so pattern 6 (dispatch on one screen) never happened and no role page looks like the dashboards researched. The owner expected a remodel.
+
+Intended outcome:
+- **Scheduler:** one-screen dispatch board — queue, engineer lanes, selected job — like ServiceTitan's Dispatch Board.
+- **Engineer:** a "My Work Orders" list with status tabs and a detail panel, like MaintainX.
+- **Manager:** clickable KPI tiles first, then the decision list, like ServiceTitan's dashboard.
+- **Staff:** unchanged ("Waiting on you", shipped in `e55deb2`).
+
+## Decisions taken
+
+1. Scheduler workbench and "Needs Your Decision" are **unlocked** (owner, 2026-10-11). This supersedes decision 2 of "Dashboard Critique Fixes".
+2. Models: MaintainX + ServiceTitan (owner, 2026-10-11).
+3. Saved Customize layouts: **reset everyone once** to the new default per remodelled role (owner choice "a"). Customize/Reset stay available.
+4. No priority field exists, so urgency = days late (the existing past-due chip). MaintainX's High/Medium/Low is not imitated.
+5. Drag-and-drop **assigns** only. Moving a visit in time stays in the Reschedule box.
+6. Every existing function, element id and `onclick` handler listed in Investigation stays defined and working (AGENTS.md "Protect Existing Functions").
+
+## Investigation
+
+- Files: `templates/dashboard.html` (50 KB), `static/js/app-dashboard.js` (87 KB, ~104 functions), `static/css/app-dashboard.css` (44 KB). Assets at `app-dashboard.css?v=6` (`dashboard.html:4`), `app-dashboard.js?v=5` (`dashboard.html:838`). Service worker `CACHE_VERSION` at `app.py:27334` (`…-v286-dashboard-critique-fixes`).
+- Role branches in `dashboard.html`: scheduler `{% if dashboard_effective_scheduler_only %}` (L80–265; sections `scheduler-core`, `scheduler-dispatch`, `scheduler-coordination`); manager (L267–460; `manager-executive`, `manager-direction`, `manager-watchlist`, `admin-counters`); engineer (L471–558; `engineer-summary`, `engineer-today`), staff (L560), `quick-admin` (L593), `my-active-tasks` (L672), `open-technical-tasks` (L716).
+- Data the page already loads (`fetchJsonOrThrow`): `/get_scheduler_dispatch_intelligence` (L820), `/get_scheduler_coordination_tools` (L975), `/get_manager_approvals` (L530), `/get_manager_overview` (L666), `/get_my_pending_tsr_count` (L1172), `/api/nav/pending-summary` (L1205), `/get_engineers`, `/get_clients`, `/get_products`, `/get_open_tasks` (L1370–1382).
+- `/get_open_tasks` (`app.py:34802`) excludes `Completed`, Training and leave. Fields: `id, date, task_date, time_start, time_end, status, client, product_name, serial, engineer_ids, engineer_names, has_tsr, age_days, task …`. So **Done this week needs a new personal route** (step B2).
+- `scheduler_engineer_availability_row` (`app.py:35189`) returns counts only (`today_tasks`, `next_7_days`, `overdue`, `waiting_items`, `availability`), no times. Lanes need each engineer's visits with start/end → additive field in step A2. `get_scheduler_coordination_tools` (`app.py:35259`) already loads open service shifts −30/+30 days.
+- Assign goes through `submitSchedulerQuickAssign()` → `POST /scheduler_quick_assign_shift {shift_id, engineer_ids}` (`app-dashboard.js:1083`). **To verify in A1:** whether the route replaces or adds to the assigned list; a drop must keep the engineers already assigned.
+- Layout storage: keys `medical_dashboard_{layout,collapsed,hidden}_<user>` (`app-dashboard.js:161-163`) plus the account copy via `/api/preferences/dashboard-layout` (`app.py:31882`). `resetDashboardLayout()` (`L347`) clears both.
+- Timeline deep link supports `?date=` only (`applyTimelineUrlDateTarget`, `timeline.html:14203`); it cannot open a specific visit. So the detail panel's action is "Open on timeline" (TSR upload happens there). The outline's separate "Upload TSR" button is folded into that link, because a direct upload needs a timeline change, which is excluded.
+- Functions that must survive (called from markup or other code): `toggleDashboardSection`, `loadSchedulerDispatchIntelligence`, `setSchedulerQueueFilter`, `loadSchedulerCoordinationTools`, `setSchedulerBranchFilter`, `selectSchedulerActionShift`, `selectSchedulerEngineerForAssign`, `submitSchedulerQuickAssign`, `submitSchedulerQuickReschedule`, `loadManagerOverview`, `loadManagerApprovals`, `renderManagerPmSummary`, `renderMyTasks`, `renderEngineerTodayPanel`, `updateEngineerSummaryCards`, `filterAndRender`, `toggleSort`, `populateEngineerFilter`, `toggleDashboardCustomizeMode`, `resetDashboardLayout`, `renderDashboardChangelogPrompt`. Ids to keep include `scheduler-selected-shift-id`, `scheduler-assign-engineers`, `scheduler-reschedule-{date,start,end}`, `scheduler-action-status`, every `scheduler-*-count`, `manager-approvals*`, `manager-*-count`, `my-tasks-body`, `no-my-tasks`, `dashboard-customize-toggle`, `dashboard-whats-new*`.
+- Tests: `tests/test_dashboard_{critique_fixes,engineer,hybrid,manager,scheduler,text_encoding}.py` (static-source style). Some assert today's markup and will need updating where the markup legitimately changes; each update is listed in the phase's change log.
+
+## Execution steps
+
+### Phase 0 — shared (done with phase A)
+
+0.1 **Read first:** newest section of `changes.md`; the 6 dashboard test files; DESIGN.md; the functions in Investigation in full before touching them.
+0.2 **One-time layout reset** (`app-dashboard.js`): the template renders `data-dashboard-layout-version` on the dashboard root, set per role branch (scheduler, engineer, manager; staff stays 1). In `initDashboardDragAndDrop()`, if `localStorage['medical_dashboard_layout_version_<user>']` ≠ that value, clear the three layout keys, call `syncDashboardLayoutToAccount([], [])` once, then store the value. Each phase bumps only its own role's version, so only that role's users reset, once. Done = a stale saved order no longer reorders the new sections; Reset still works.
+
+### Phase A — Scheduler dispatch board (ServiceTitan)
+
+A1. **Verify assign semantics** of `/scheduler_quick_assign_shift`; record the finding under this plan. A drop sends `existing engineer_ids ∪ {dropped}`.
+A2. **Backend, additive** (`app.py`, `scheduler_engineer_availability_row`): add `visits: [{shift_id, date, time_start, time_end, client, status, overdue}]` for the engineer's open shifts from today to today+6. Existing keys unchanged. Done = endpoint test asserts the new key and the old keys.
+A3. **Layout** (`dashboard.html`, `app-dashboard.css`): replace the three stacked sections with one `scheduler-board` section, CSS grid, three columns at ≥1200 px:
+   - **Left — Queue:** risk line, the five filter counts (same buttons, ids, `setSchedulerQueueFilter`), `#scheduler-dispatch-list`.
+   - **Middle — Board:** branch filter strip (same ids); a **Today / 7 days** toggle; one lane per engineer (name, initials, availability chip, today count). Today = hour axis 07:00–19:00 with visit blocks placed by time; 7 days = 7 day-columns with block counts. Blocks are coloured by status (DESIGN.md status colours, never the accent); overdue blocks carry the "N days late" text.
+   - **Right — Selected job:** the existing Selected Schedule card (assign `<select>`, reschedule inputs, Save buttons, `#scheduler-action-status`) unchanged in ids.
+   - 768–1199 px: queue and selected job stacked on the left, board on the right. Below 768 px: queue, then the board as a list of engineers, each expandable to their visits, then the selected job.
+   Done = all three regions visible without scrolling at 1366×768.
+A4. **Lanes render** (`app-dashboard.js`): new `renderSchedulerBoard()`, called from `renderSchedulerCoordinationTools()`; `renderSchedulerAvailabilityStrip()` kept (delegates to the board) so callers keep working. Clicking a block calls `selectSchedulerActionShift(id)`; clicking a lane header calls `selectSchedulerEngineerForAssign(id)`.
+A5. **Drag to assign:** queue rows `draggable="true"`; lanes are drop targets. A drop selects the shift, shows a confirm line in the selected-job card ("Assign <engineer> to <facility>, <date>?" with Confirm / Cancel), and Confirm goes through `submitSchedulerAction('/scheduler_quick_assign_shift', …)`. Keyboard/touch fallback: select a row, then click "Assign here" on a lane. Done = assign works by drag, by keyboard and by the old Save Assignment.
+A6. **Self-review:** every Investigation function and id still present (grep); `git diff` shows no change outside the scheduler branch of the template besides phase-0 code.
+A7. **Tests** (new `tests/test_dashboard_dispatch_board.py`): `visits` key and scoping in coordination tools; board markup present with the three regions; kept ids and functions present; drop handler calls the existing assign route; layout version constant present. Show each fails on `HEAD` first. Update `test_dashboard_scheduler.py` where it asserts the old three-section markup.
+
+### Phase B — Engineer work orders (MaintainX)
+
+B1. **Layout** (`dashboard.html`): the engineer branch becomes a header line (today: visits · overdue · TSRs pending · waiting parts; same `count-*` ids and `updateEngineerSummaryCards`) plus one `engineer-work-orders` section that replaces `engineer-today` and `my-active-tasks`. Keep `my-tasks-body` and `no-my-tasks` as the list containers so `renderMyTasks` callers keep working. Open Technical Tasks stays below, collapsed.
+B2. **Done this week** (`app.py`): new `GET /get_my_done_tasks` (`@login_required`), Completed service visits of the signed-in user's own engineer profile in the last 7 days (Manila), same row shape as `/get_open_tasks`; `[]` without a profile. Loaded only when the tab is opened.
+B3. **Tabs** (`app-dashboard.js`): `renderMyTasks()` renders the active tab — **Today · Overdue · Upcoming · Waiting parts · Done this week** — each with its count. Rows: status chip, "N days late" chip when overdue, facility, equipment + serial, time, TSR state (`has_tsr`). Empty tab = one line ("Nothing overdue").
+B4. **Detail panel:** clicking a row opens a right-side panel at ≥992 px, or a full-screen sheet below that: facility, equipment, serial, date/time, engineers, status, TSR state, task notes, and **Open on timeline** (`/timeline?date=`). Close with Esc or the button; focus returns to the row.
+B5. **Self-review** as A6, for the engineer branch and the hybrid view (`dashboard_effective_hybrid_view` keeps the "yours" labels).
+B6. **Tests** (new `tests/test_dashboard_work_orders.py`): `/get_my_done_tasks` returns only the signed-in engineer's completed visits from the last 7 days and never another engineer's; tabs and panel markup; kept ids/functions. Fail-first on `HEAD`. Update `test_dashboard_engineer.py` / `test_dashboard_critique_fixes.py` where they assert `engineer-today` markup.
+
+### Phase C — Manager KPI tiles (ServiceTitan)
+
+C1. **Layout** (`dashboard.html`): the manager branch opens with a KPI tile row: **Approvals waiting · Overdue · TSRs pending · Inventory PM done/due · Waiting parts**. Values come from the existing `manager-*-count` ids and `renderManagerPmSummary`; the ids move into the tiles. Below: approvals list (`#manager-approvals`, unchanged), risk line, Direction, What Needs Attention, then Directory Totals last.
+C2. **Clickable tiles** (`app-dashboard.js`): Approvals → `/approvals`; Overdue / TSRs / Waiting → expand What Needs Attention filtered to that type (`renderManagerWatchlist` gains an optional type filter, default unchanged); PM → stays in Direction. Zero tiles stay neutral.
+C3. **Self-review** as A6, including the hybrid view (manager + own engineer work orders).
+C4. **Tests** (new `tests/test_dashboard_manager_kpis.py`): tile markup, ids kept, watchlist filter default unchanged. Fail-first. Update `test_dashboard_manager.py` where needed.
+
+## Deliberately excluded
+
+- **Priority levels:** no data for them (decision 4).
+- **Drag to reschedule / resize blocks:** the Reschedule box covers it; time-drag needs conflict checks the board does not have (decision 5).
+- **Timeline changes, including deep-linking to one visit:** separate page; "Open on timeline" by date is enough.
+- **Staff landing:** shipped in `e55deb2`, unchanged.
+- **Map view (ServiceTitan's map):** no location data on engineers.
+- **Real-time updates:** the Refresh buttons stay; no polling or sockets.
+
+## Verification (per phase)
+
+- New tests fail on `HEAD` first (positive control), then pass.
+- Focused run: `venv/Scripts/python.exe -m unittest tests.test_dashboard_engineer tests.test_dashboard_hybrid tests.test_dashboard_manager tests.test_dashboard_scheduler tests.test_dashboard_text_encoding tests.test_dashboard_critique_fixes` plus the phase's new module and the changelog/dark-mode modules run last time.
+- Full suite: not required (one page plus additive routes; no shell, shared helpers, auth or schema). If a phase touches a shared helper after all, run it once before publishing.
+- `impeccable detect --json templates/dashboard.html` once per phase.
+- Browser check on a copy of `scheduler.db` with temporary scheduler / engineer / manager accounts (manager on a `MANAGER_USERNAMES` name): 1366 and 375 px, light and dark. Scheduler: three regions on one screen, lanes match SQL for today, drag-assign and keyboard-assign persist, reschedule still saves, a stale saved layout is reset once. Engineer: tab counts match SQL, Done this week shows only own visits, panel opens/closes with focus return. Manager: tiles match the old numbers, tiles filter the watchlist, approvals link works. Console clean, tap targets ≥44 px, no horizontal scroll at 375. Clean up DB copy, accounts and launch entry afterwards.
+
+## After implementation (per phase)
+
+1. Bump `?v=` on `app-dashboard.css` and `app-dashboard.js` (A: 6→7 / 5→6; then +1 each phase).
+2. Bump `CACHE_VERSION` (`…-v287-dispatch-board`, `…-v288-work-orders`, `…-v289-manager-kpis`), keeping the old value as a history comment.
+3. `static/changelog/releases.json` entry at the top, category Dashboard, plain wording ("New dispatch board", "Your work orders", "Manager numbers first").
+4. `changes.md` bullets under the execution date; DESIGN.md if a new pattern (lane block, KPI tile, side panel) is introduced.
+5. Update this plan: phase status, commit hash, differences.
+6. Commit checklist: stage only `templates/dashboard.html`, `static/css/app-dashboard.css`, `static/js/app-dashboard.js`, `app.py`, the tests, `releases.json`, `plans.md`, `changes.md`, `DESIGN.md` if changed. Never `scheduler.db`, `output/`, `tmp/`, handoffs. Publish only on a separate "commit and push".
+7. One re-critique in a new session after phase C.
+
+## Risks
+
+- **Breaking scheduler actions** (most-used mutating view): ids and functions kept; A5/A6 test old Save Assignment and Reschedule alongside the new drag.
+- **Drop replaces existing engineers:** A1 verifies the route; the drop sends the union.
+- **Lane load cost:** `visits` reuses the shifts already loaded (no new query); 7-day window only.
+- **Existing tests asserting old markup:** updated in the same phase and listed in `changes.md`, never deleted silently.
+- **Layout reset:** per-role version (step 0.2), so each user resets once, when their own role's page changes. A hybrid manager-engineer resets on the manager version only; Customize remains.
+- **Scope size:** three independent phases; stop after any phase without leaving the page half-built.
+
 # Dashboard Critique Fixes (all 5 issues)
 
-**Status:** Executed locally on 2026-10-11 on the owner's "execute the Dashboard Critique Fixes plan"; not committed (awaiting a separate "commit and push"). New `tests/test_dashboard_critique_fixes.py` (19 tests; 12 of its 13 source tests fail against the `HEAD` template/JS/CSS, the 13th is the off-limits guard and passes on both; the endpoint tests need `/get_my_pending_tsr_count` and `inventory_pm_month_summary`, absent from `HEAD`). Focused run: 108 tests OK (dashboard ×6 modules, changelog coverage, dark-mode readability). Full suite not run (no shared code touched). Detector: 1 advisory left (the `2rem` lock icon, a known false positive). Browser check on a DB copy passed (engineer and staff at 375 px, manager at 1366 px, graphite dark and light).
+**Status:** Executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `e55deb2`). New `tests/test_dashboard_critique_fixes.py` (19 tests; 12 of its 13 source tests fail against the `HEAD` template/JS/CSS, the 13th is the off-limits guard and passes on both; the endpoint tests need `/get_my_pending_tsr_count` and `inventory_pm_month_summary`, absent from `HEAD`). Focused run: 108 tests OK (dashboard ×6 modules, changelog coverage, dark-mode readability). Full suite not run (no shared code touched). Detector: 1 advisory left (the `2rem` lock icon, a known false positive). Browser check on a DB copy passed (engineer and staff at 375 px, manager at 1366 px, graphite dark and light).
 **Differences from the plan:**
 - **What's New unread count (step 9):** no change needed. `/api/changelog/unread-summary` already applies the same 30-day window as the sidebar dot (release `2026-10-10-whats-new-dot-recent`); the critique's "90 vs 34" came from two accounts with different read states.
 - **Heading levels (step 6):** promoted to h3/h4 everywhere except the off-limits scheduler and "Needs Your Decision" blocks, which keep their h5/h6 (decision 2 outranks a perfect outline). Engineer and staff views now read h1 → h2 → h3.

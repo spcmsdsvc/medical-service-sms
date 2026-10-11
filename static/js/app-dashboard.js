@@ -82,6 +82,8 @@
     let schedulerBranchFilter = 'ALL';
     let schedulerQueueFilter = 'all';
     let schedulerSelectedShift = null;
+    let schedulerBoardView = 'today';
+    let schedulerPendingLaneAssign = null;
 
     /**
      * MASTER DATA LOADER:
@@ -353,7 +355,36 @@
         syncDashboardLayoutToAccount([], []).finally(() => location.reload());
     }
 
+    // A remodel renames a role's sections, so a layout saved against the old page is
+    // cleared once. The template sets the version per role (data-dashboard-layout-version);
+    // version 1 is a page that has not been remodelled, so it never resets. Resolves once
+    // the account copy is cleared, so the account load that follows cannot restore it.
+    function resetDashboardLayoutIfOutdated() {
+        const root = document.querySelector('[data-dashboard-layout-version]');
+        const version = root ? root.getAttribute('data-dashboard-layout-version') : '';
+        const versionKey = `medical_dashboard_layout_version_${loggedInUser || 'user'}`;
+        try {
+            if (!version || localStorage.getItem(versionKey) === version) return Promise.resolve();
+            localStorage.setItem(versionKey, version);
+            if (version === '1') return Promise.resolve();
+            localStorage.removeItem(dashboardLayoutStorageKey);
+            localStorage.removeItem(dashboardCollapsedStorageKey);
+            localStorage.removeItem(dashboardHiddenStorageKey);
+        } catch (storageError) {
+            return Promise.resolve();
+        }
+        // getCSRFToken() is defined by layout.html after this file runs, so the account
+        // copy is cleared once the page has finished loading.
+        const pageReady = document.readyState === 'loading'
+            ? new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, {once: true}))
+            : Promise.resolve();
+        return pageReady
+            .then(() => syncDashboardLayoutToAccount([], []))
+            .catch(error => console.warn('[Dashboard] Unable to reset the saved layout', error));
+    }
+
     function initDashboardDragAndDrop() {
+        const layoutReset = resetDashboardLayoutIfOutdated();
         addDashboardDragHandles();
         applySavedDashboardOrder();
         applyHiddenDashboardSections();
@@ -362,7 +393,7 @@
 
         // Then reconcile against the account copy, which wins. Runs after the cached
         // layout is already applied so there is no visible reflow on the common path.
-        loadDashboardLayoutFromAccount();
+        layoutReset.then(loadDashboardLayoutFromAccount);
 
         getDashboardSections().forEach(section => {
             section.addEventListener('dragstart', event => {
@@ -753,6 +784,8 @@
             <button type="button"
                     class="scheduler-queue-row${selected ? ' is-selected' : ''}"
                     aria-pressed="${selected ? 'true' : 'false'}"
+                    draggable="true"
+                    ondragstart="startSchedulerQueueDrag(event, ${Number(row.id) || 0})"
                     onclick="selectSchedulerActionShift(${Number(row.id) || 0})">
                 <span class="scheduler-queue-accent ${schedulerQueueAccent(row.category)}" aria-hidden="true"></span>
                 <span class="scheduler-queue-body">
@@ -849,13 +882,6 @@
         return String(row.availability || 'available').toLowerCase();
     }
 
-    function schedulerAvailabilityClass(level) {
-        const value = String(level || '').toLowerCase();
-        if (value === 'busy') return 'scheduler-availability-busy';
-        if (value === 'watch') return 'scheduler-availability-watch';
-        return 'scheduler-availability-available';
-    }
-
     function schedulerAvailabilityBadgeClass(level) {
         const value = String(level || '').toLowerCase();
         if (value === 'busy') return 'bg-danger';
@@ -913,6 +939,84 @@
         container.innerHTML = buttons.join('');
     }
 
+    // --- DISPATCH BOARD LANES ---
+    // Today view spans 07:00-19:00; visits outside are clamped to the edge.
+    const SCHEDULER_BOARD_START_HOUR = 7;
+    const SCHEDULER_BOARD_END_HOUR = 19;
+
+    function schedulerTimeToMinutes(label) {
+        const value = convertTimeLabelToInputValue(label);
+        if (!value) return null;
+        const [hour, minute] = value.split(':').map(Number);
+        return hour * 60 + minute;
+    }
+
+    // Manila "today" as the server saw it, so the board and the lanes agree on the date.
+    function schedulerBoardDates() {
+        const start = parseDashboardDate((schedulerCoordinationData || {}).board_start) || new Date();
+        start.setHours(0, 0, 0, 0);
+        return Array.from({length: 7}, (_, index) => {
+            const day = new Date(start);
+            day.setDate(start.getDate() + index);
+            const iso = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+            return {iso, label: day.toLocaleDateString(undefined, {weekday: 'short', day: 'numeric'})};
+        });
+    }
+
+    function schedulerLaneBlock(visit, extraClass, style) {
+        const selected = schedulerSelectedShift && Number(schedulerSelectedShift.id) === Number(visit.id);
+        const when = [visit.time_start, visit.time_end].filter(Boolean).join('–');
+        const title = `${visit.client || 'No client'} • ${visit.task || ''} • ${when} • ${visit.status || 'In Progress'}`;
+        return `
+            <button type="button" class="scheduler-lane-block ${dashboardStatusClass(visit.status)} ${extraClass}${selected ? ' is-selected' : ''}"
+                    ${style ? `style="${style}"` : ''} title="${escapeHtml(title)}"
+                    aria-pressed="${selected ? 'true' : 'false'}"
+                    onclick="selectSchedulerActionShift(${Number(visit.id) || 0})">
+                <span class="scheduler-lane-block-time">${escapeHtml(visit.time_start || '')}</span>
+                <span class="scheduler-lane-block-client">${escapeHtml(visit.client || 'No client')}</span>
+            </button>`;
+    }
+
+    // Today: blocks placed by time; overlapping visits go to the next row of the lane.
+    function schedulerTodayTrack(visits, todayIso) {
+        const span = (SCHEDULER_BOARD_END_HOUR - SCHEDULER_BOARD_START_HOUR) * 60;
+        const rowEnds = [];
+        const blocks = visits
+            .filter(visit => visit.date === todayIso)
+            .map(visit => {
+                const rawStart = schedulerTimeToMinutes(visit.time_start);
+                const rawEnd = schedulerTimeToMinutes(visit.time_end);
+                const start = Math.min(Math.max((rawStart ?? SCHEDULER_BOARD_START_HOUR * 60) - SCHEDULER_BOARD_START_HOUR * 60, 0), span - 30);
+                const end = Math.min(Math.max((rawEnd ?? 0) - SCHEDULER_BOARD_START_HOUR * 60, start + 30), span);
+                let row = rowEnds.findIndex(rowEnd => rowEnd <= start);
+                if (row === -1) { row = rowEnds.length; rowEnds.push(end); } else { rowEnds[row] = end; }
+                const style = `--block-start:${(start / span * 100).toFixed(2)}%;--block-span:${((end - start) / span * 100).toFixed(2)}%;--block-row:${row}`;
+                return schedulerLaneBlock(visit, 'is-timed', style);
+            });
+        if (!blocks.length) return '<span class="scheduler-lane-free">Free today</span>';
+        return `<div class="scheduler-lane-timed" style="--lane-rows:${Math.max(rowEnds.length, 1)}">${blocks.join('')}</div>`;
+    }
+
+    function schedulerWeekTrack(visits, dates) {
+        return `<div class="scheduler-lane-week">${dates.map(day => {
+            const dayVisits = visits.filter(visit => visit.date === day.iso);
+            const shown = dayVisits.slice(0, 3).map(visit => schedulerLaneBlock(visit, 'is-compact', '')).join('');
+            const more = dayVisits.length > 3 ? `<span class="scheduler-lane-more">+${dayVisits.length - 3} more</span>` : '';
+            return `<div class="scheduler-lane-day"><span class="scheduler-lane-day-label">${escapeHtml(day.label)}</span>${shown}${more}</div>`;
+        }).join('')}</div>`;
+    }
+
+    function schedulerBoardAxis(dates) {
+        if (schedulerBoardView === 'week') return '';
+        const hours = [];
+        for (let hour = SCHEDULER_BOARD_START_HOUR; hour < SCHEDULER_BOARD_END_HOUR; hour += 2) {
+            hours.push(`<span>${hour > 12 ? hour - 12 : hour}${hour >= 12 ? 'p' : 'a'}</span>`);
+        }
+        return `<div class="scheduler-lane scheduler-lane-axis" aria-hidden="true"><span class="scheduler-lane-head"></span><div class="scheduler-lane-hours">${hours.join('')}</div></div>`;
+    }
+
+    // Renders the engineer lanes. Kept under its old name because the dispatch payload
+    // loader and the branch filter both call it.
     function renderSchedulerAvailabilityStrip() {
         const container = document.getElementById('scheduler-availability-strip');
         if (!container) return;
@@ -925,18 +1029,102 @@
             return;
         }
 
-        container.innerHTML = rows.slice(0, 24).map(row => {
+        const dates = schedulerBoardDates();
+        const canAssignHere = Boolean(schedulerSelectedShift);
+        container.innerHTML = schedulerBoardAxis(dates) + rows.map(row => {
             const level = row.loadLevel;
+            const engineerId = Number(row.engineer_id) || 0;
+            const visits = Array.isArray(row.visits) ? row.visits : [];
+            const track = schedulerBoardView === 'week' ? schedulerWeekTrack(visits, dates) : schedulerTodayTrack(visits, dates[0].iso);
             return `
-            <button type="button" class="scheduler-availability-chip ${schedulerAvailabilityClass(level)}" onclick="selectSchedulerEngineerForAssign(${Number(row.engineer_id) || 0})">
-                <span class="scheduler-availability-avatar">${escapeHtml(row.initials || '?')}</span>
-                <span class="scheduler-availability-main">
-                    <strong>${escapeHtml(row.name || 'Engineer')}</strong>
-                    <small>${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.today_tasks || 0)} today • ${escapeHtml(row.next_7_days || 0)} week</small>
-                </span>
-                <span class="badge ${schedulerAvailabilityBadgeClass(level)}">${escapeHtml(schedulerAvailabilityLabel(level))}</span>
-            </button>`;
+            <div class="scheduler-lane" data-engineer-id="${engineerId}"
+                 ondragover="allowSchedulerLaneDrop(event)" ondragleave="this.classList.remove('is-drop-target')"
+                 ondrop="dropOnSchedulerLane(event, ${engineerId})">
+                <div class="scheduler-lane-head">
+                    <button type="button" class="scheduler-lane-name" onclick="selectSchedulerEngineerForAssign(${engineerId})" title="Select ${escapeHtml(row.name || 'engineer')} in the assign list">
+                        <span class="scheduler-availability-avatar">${escapeHtml(row.initials || '?')}</span>
+                        <span class="scheduler-availability-main">
+                            <strong>${escapeHtml(row.name || 'Engineer')}</strong>
+                            <small>${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.today_tasks || 0)} today • ${escapeHtml(row.next_7_days || 0)} week</small>
+                        </span>
+                    </button>
+                    <span class="badge ${schedulerAvailabilityBadgeClass(level)}">${escapeHtml(schedulerAvailabilityLabel(level))}</span>
+                    ${canAssignHere ? `<button type="button" class="btn btn-sm btn-outline-success fw-bold scheduler-lane-assign" onclick="proposeSchedulerLaneAssign(${engineerId})">Assign here</button>` : ''}
+                </div>
+                <div class="scheduler-lane-track">${track}</div>
+            </div>`;
         }).join('');
+    }
+
+    function setSchedulerBoardView(view) {
+        schedulerBoardView = view === 'week' ? 'week' : 'today';
+        document.querySelectorAll('#scheduler-board-view [data-board-view]').forEach(button => {
+            const active = button.getAttribute('data-board-view') === schedulerBoardView;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        renderSchedulerAvailabilityStrip();
+    }
+
+    function startSchedulerQueueDrag(event, shiftId) {
+        if (!event.dataTransfer) return;
+        event.dataTransfer.setData('text/plain', String(shiftId));
+        event.dataTransfer.effectAllowed = 'move';
+    }
+
+    function allowSchedulerLaneDrop(event) {
+        event.preventDefault();
+        event.currentTarget.classList.add('is-drop-target');
+    }
+
+    function dropOnSchedulerLane(event, engineerId) {
+        event.preventDefault();
+        event.currentTarget.classList.remove('is-drop-target');
+        const shiftId = Number(event.dataTransfer ? event.dataTransfer.getData('text/plain') : 0);
+        if (!shiftId) return;
+        selectSchedulerActionShift(shiftId);
+        proposeSchedulerLaneAssign(engineerId);
+    }
+
+    // A drop (or "Assign here") only proposes; Confirm sends it. The assign route replaces
+    // the engineer list, so the engineers already on the schedule are sent along too.
+    function proposeSchedulerLaneAssign(engineerId) {
+        const shift = schedulerSelectedShift;
+        const engineer = ((schedulerCoordinationData || {}).availability || [])
+            .find(row => Number(row.engineer_id) === Number(engineerId));
+        if (!shift || !engineer) return;
+
+        const current = (Array.isArray(shift.engineer_ids) ? shift.engineer_ids : []).map(Number);
+        if (current.includes(Number(engineerId))) {
+            setSchedulerActionStatus(`${escapeHtml(engineer.name)} is already assigned to this schedule.`, 'info');
+            return;
+        }
+
+        schedulerPendingLaneAssign = {shiftId: Number(shift.id), engineerIds: [...current, Number(engineerId)]};
+        const verb = current.length ? 'Add' : 'Assign';
+        setTextIfPresent('scheduler-drop-confirm-text', `${verb} ${engineer.name} to ${shift.client || 'this schedule'}, ${shift.date || ''}?`);
+        const box = document.getElementById('scheduler-drop-confirm');
+        if (box) {
+            box.classList.remove('d-none');
+            const confirmButton = box.querySelector('button');
+            if (confirmButton) confirmButton.focus();
+        }
+    }
+
+    function cancelSchedulerLaneAssign() {
+        schedulerPendingLaneAssign = null;
+        const box = document.getElementById('scheduler-drop-confirm');
+        if (box) box.classList.add('d-none');
+    }
+
+    async function confirmSchedulerLaneAssign() {
+        const pending = schedulerPendingLaneAssign;
+        cancelSchedulerLaneAssign();
+        if (!pending) return;
+        await submitSchedulerAction('/scheduler_quick_assign_shift', {
+            shift_id: pending.shiftId,
+            engineer_ids: pending.engineerIds
+        }, 'Assignment updated. Dashboard refreshed.');
     }
 
     function renderSchedulerAssignableEngineers() {
@@ -983,6 +1171,7 @@
     function setSchedulerBranchFilter(branchName) {
         schedulerBranchFilter = branchName || 'ALL';
         schedulerSelectedShift = null;
+        cancelSchedulerLaneAssign();
         const hidden = document.getElementById('scheduler-selected-shift-id');
         if (hidden) hidden.value = '';
         setSchedulerActionStatus('', 'info', true);
@@ -997,17 +1186,25 @@
         const rows = schedulerDispatchData && Array.isArray(schedulerDispatchData.priority_queue)
             ? schedulerDispatchData.priority_queue
             : [];
-        return rows.find(row => Number(row.id) === Number(shiftId)) || null;
+        const queued = rows.find(row => Number(row.id) === Number(shiftId));
+        if (queued) return queued;
+        // Board blocks can be schedules that are not in the queue (on time, assigned).
+        for (const lane of ((schedulerCoordinationData || {}).availability || [])) {
+            const visit = (lane.visits || []).find(row => Number(row.id) === Number(shiftId));
+            if (visit) return visit;
+        }
+        return null;
     }
 
     function selectSchedulerActionShift(shiftId) {
         const row = findSchedulerActionShift(shiftId);
         schedulerSelectedShift = row;
+        cancelSchedulerLaneAssign();
         const hidden = document.getElementById('scheduler-selected-shift-id');
         if (hidden) hidden.value = row ? row.id : '';
 
         if (row) {
-            setTextIfPresent('scheduler-selected-action-label', `${row.client || 'No client'} • ${row.date || ''} • ${row.task || ''} • ${row.priority_reason || ''}`);
+            setTextIfPresent('scheduler-selected-action-label', [row.client || 'No client', row.date, row.task, row.engineers, row.priority_reason].filter(Boolean).join(' • '));
             if (row.date) {
                 const dateInput = document.getElementById('scheduler-reschedule-date');
                 if (dateInput) dateInput.value = row.date;
@@ -1024,6 +1221,7 @@
 
         renderSchedulerAssignableEngineers();
         renderSchedulerQueue();
+        renderSchedulerAvailabilityStrip();
         setSchedulerActionStatus('', 'info', true);
     }
 

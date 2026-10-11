@@ -27331,7 +27331,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v279-menu-guide.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v283-calibration-fix-report.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v285-signin-activity-log.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v286-dashboard-critique-fixes';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v286-dashboard-critique-fixes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v287-dispatch-board';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -31830,9 +31831,12 @@ DASHBOARD_SECTION_IDS = {
     # Accounts that saved a layout while it existed still send it back, and the POST
     # handler below rejects unknown ids -- dropping it here would 400 their next save.
     'scheduler-final-note',
+    # scheduler-core / -dispatch / -coordination were merged into scheduler-board by the
+    # dispatch board remodel; still accepted for the same reason as above.
     'scheduler-core',
     'scheduler-dispatch',
     'scheduler-coordination',
+    'scheduler-board',
     'manager-executive',
     'manager-direction',
     'manager-watchlist',
@@ -35316,6 +35320,19 @@ def get_scheduler_coordination_tools():
             branch = row.get('branch') or 'Unassigned'
             branch_counts[branch] = branch_counts.get(branch, 0) + 1
 
+        # Dispatch board lanes: each engineer's open visits from today to today+6. Each
+        # shift is serialized once and shared by every engineer assigned to it.
+        board_end = today + timedelta(days=6)
+        visits_by_engineer = {}
+        for shift in open_shifts:
+            if not shift.start_time or not (today <= shift.start_time.date() <= board_end):
+                continue
+            visit = scheduler_coordination_shift_row(shift)
+            for engineer_id in visit['engineer_ids']:
+                visits_by_engineer.setdefault(engineer_id, []).append(visit)
+        for row in availability_rows:
+            row['visits'] = visits_by_engineer.get(row['engineer_id'], [])
+
         unassigned_rows = []
         action_rows = []
 
@@ -35336,6 +35353,7 @@ def get_scheduler_coordination_tools():
             'status': 'success',
             'phase': 'scheduler-phase-3-coordination-tools-safe',
             'generated_at': get_manila_time().isoformat(),
+            'board_start': today.isoformat(),
             'branches': sorted(branch_counts.keys()),
             'branch_counts': dict(sorted(branch_counts.items())),
             'availability': availability_rows,

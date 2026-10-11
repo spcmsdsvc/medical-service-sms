@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-11-dispatch-board",
+      "release_date": "2026-10-11",
+      "title": "New Dispatch Board",
+      "summary": "Schedulers now dispatch from one screen: the queue, every engineer's day, and the selected schedule side by side.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-11-dispatch-board-lanes",
+          "category": "Dashboard",
+          "description": "Each engineer has a row showing their visits today by hour, or the next 7 days. Select a visit on the board to reschedule or reassign it.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-11-dispatch-board-drag-assign",
+          "category": "Dashboard",
+          "description": "Drag a job from the Priority Queue onto an engineer to assign it, then confirm. Engineers already on the job stay assigned. Without a mouse, select the job and press Assign here on the engineer's row.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-11-dashboard-your-day-first",
       "release_date": "2026-10-11",
       "title": "Dashboard: Your Day First",

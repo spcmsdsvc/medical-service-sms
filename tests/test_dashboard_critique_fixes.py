@@ -111,12 +111,9 @@ class DashboardCritiqueSourceTests(unittest.TestCase):
         self.assertIn("'/get_my_pending_tsr_count'", self.js)
 
     def test_off_limits_sections_keep_their_markup(self):
-        """The owner kept the scheduler workbench and Needs Your Decision as they were."""
-        for marker in ('data-dashboard-section="scheduler-core"',
-                       'data-dashboard-section="scheduler-dispatch"',
-                       'data-dashboard-section="scheduler-coordination"',
-                       'data-dashboard-section="manager-executive"'):
-            self.assertIn(marker, self.dashboard)
+        """Needs Your Decision kept its markup. (The scheduler workbench was unlocked and
+        rebuilt as the dispatch board -- see tests/test_dashboard_dispatch_board.py.)"""
+        self.assertIn('data-dashboard-section="manager-executive"', self.dashboard)
         executive = _block(self.dashboard, 'data-dashboard-section="manager-executive"',
                            'data-dashboard-section="manager-direction"')
         self.assertIn('<h5 class="mb-0 fw-bold text-dark">', executive)

@@ -34,8 +34,12 @@ class SchedulerDashboardSourceTests(unittest.TestCase):
     def test_guarded_section_ids_survive(self):
         # test_dashboard_engineer.py asserts these too. Repeated here because this is the
         # phase that rewrote their interiors -- the ids are the contract, not the contents.
+        # The dispatch board remodel merged the three workbench sections into one; the
+        # retired ids stay accepted by the layout endpoint for saved layouts.
+        self.assertIn('data-dashboard-section="scheduler-board"', self.dashboard)
         for section in ('scheduler-core', 'scheduler-dispatch', 'scheduler-coordination'):
-            self.assertIn(f'data-dashboard-section="{section}"', self.dashboard)
+            self.assertNotIn(f'data-dashboard-section="{section}"', self.dashboard)
+            self.assertIn(f"'{section}',", self.app_source)
 
     def test_retired_banner_markup_is_gone_but_its_id_is_still_accepted(self):
         self.assertNotIn('data-dashboard-section="scheduler-final-note"', self.dashboard)

@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=6">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=7">
 {% endblock %}
 
 {% block content %}
@@ -79,186 +79,151 @@
 
     {% if dashboard_effective_scheduler_only %}
     {#
-        SCHEDULER DASHBOARD -- DISPATCH WORKBENCH
+        SCHEDULER DASHBOARD -- DISPATCH BOARD (modelled on ServiceTitan's Dispatch Board)
 
-        The scheduler is the only role whose dashboard mutates data, so this view is a
-        workbench rather than a report. Three sections, in the order the work happens:
+        One screen, three regions, in the order the work happens:
+          queue     the priority queue; drag a row onto an engineer, or select it
+          lanes     one lane per engineer, today by hour or the next 7 days
+          selected  the chosen schedule: assign, reschedule, or confirm a drop
 
-          scheduler-core          how bad is it right now, and what do I want to look at
-          scheduler-dispatch      the one priority queue -- click a row to work on it
-          scheduler-coordination  who is free, and the two actions that fix the row
-
-        Every count in scheduler-core is a filter button for the queue below, so the same
-        five numbers a scheduler already reads are the only navigation the page needs.
+        The status line and the five filter counts above the regions filter the queue.
+        Element ids and onclick handlers are the same ones the old three-section
+        workbench used, so app-dashboard.js keeps one code path for both.
     #}
-    <div class="scheduler-core-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-core" data-dashboard-title="Dispatch Status">
+    <div class="scheduler-board mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-board" data-dashboard-title="Dispatch Board" data-dashboard-layout-version="2">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
-                <h5 class="mb-0 fw-bold text-dark">
-                    <i class="fa-solid fa-calendar-check me-2 text-primary"></i>
-                    Dispatch Status
-                </h5>
-                <p class="text-muted small mb-0">Pick a number to filter the queue below</p>
+                <h3 class="h5 mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-calendar-check me-2 text-primary" aria-hidden="true"></i>Dispatch Board
+                </h3>
+                <p class="text-muted small mb-0">Drag a job onto an engineer to assign it, or select it to assign or reschedule</p>
             </div>
             <div class="d-flex gap-2 flex-wrap">
-                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('scheduler-core-body', this)">
-                    <i class="fa-solid fa-chevron-up me-1"></i>Hide
+                <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="loadSchedulerDispatchIntelligence(); loadSchedulerCoordinationTools();">
+                    <i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Refresh
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="loadSchedulerDispatchIntelligence()">
-                    <i class="fa-solid fa-rotate me-1"></i>Refresh
-                </button>
+                <a href="/timeline" class="btn btn-sm btn-primary fw-bold">
+                    <i class="fa-solid fa-calendar-days me-1" aria-hidden="true"></i>Open Calendar
+                </a>
             </div>
         </div>
 
-        <div id="scheduler-core-body" class="dashboard-collapsible-body">
-            <div id="scheduler-risk" class="scheduler-risk mb-3" role="status" aria-live="polite">
-                <span class="scheduler-risk-dot" aria-hidden="true"></span>
-                <span class="scheduler-risk-label" id="scheduler-risk-label">Loading dispatch status&hellip;</span>
-                <span class="scheduler-risk-detail" id="scheduler-risk-detail"></span>
-            </div>
-
-            <div class="dashboard-metric-strip scheduler-metric-strip" id="scheduler-metric-strip" role="group" aria-label="Filter the dispatch queue">
-                <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="all" aria-pressed="true" onclick="setSchedulerQueueFilter('all')">
-                    <span class="dashboard-metric-value" id="scheduler-queue-count">0</span>
-                    <span class="dashboard-metric-label">In queue</span>
-                </button>
-                <span class="dashboard-metric-divider" aria-hidden="true"></span>
-                <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="overdue" aria-pressed="false" onclick="setSchedulerQueueFilter('overdue')">
-                    <span class="dashboard-metric-value dashboard-metric-alert" id="scheduler-overdue-count">0</span>
-                    <span class="dashboard-metric-label">Overdue</span>
-                </button>
-                <span class="dashboard-metric-divider" aria-hidden="true"></span>
-                <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="unassigned" aria-pressed="false" onclick="setSchedulerQueueFilter('unassigned')">
-                    <span class="dashboard-metric-value dashboard-metric-alert" id="scheduler-unassigned-count">0</span>
-                    <span class="dashboard-metric-label">Unassigned</span>
-                </button>
-                <span class="dashboard-metric-divider" aria-hidden="true"></span>
-                <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="waiting" aria-pressed="false" onclick="setSchedulerQueueFilter('waiting')">
-                    <span class="dashboard-metric-value dashboard-metric-warn" id="scheduler-waiting-count">0</span>
-                    <span class="dashboard-metric-label">Waiting P.O / parts</span>
-                </button>
-                <span class="dashboard-metric-divider" aria-hidden="true"></span>
-                <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="tsr" aria-pressed="false" onclick="setSchedulerQueueFilter('tsr')">
-                    <span class="dashboard-metric-value dashboard-metric-warn" id="scheduler-pending-tsr-count">0</span>
-                    <span class="dashboard-metric-label">Pending TSR</span>
-                </button>
-                <span class="dashboard-metric-divider" aria-hidden="true"></span>
-                <span class="dashboard-metric scheduler-metric-static">
-                    <span class="dashboard-metric-value" id="scheduler-next7-count">0</span>
-                    <span class="dashboard-metric-label">Next 7 days</span>
-                </span>
-                <a href="/timeline" class="dashboard-metric-link">Open calendar &rarr;</a>
-            </div>
+        <div id="scheduler-risk" class="scheduler-risk mb-3" role="status" aria-live="polite">
+            <span class="scheduler-risk-dot" aria-hidden="true"></span>
+            <span class="scheduler-risk-label" id="scheduler-risk-label">Loading dispatch status&hellip;</span>
+            <span class="scheduler-risk-detail" id="scheduler-risk-detail"></span>
         </div>
-    </div>
 
-    <div class="scheduler-dispatch-panel mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-dispatch" data-dashboard-title="Priority Queue">
-        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div>
-                    <h5 class="mb-0 fw-bold text-primary">
-                        <i class="fa-solid fa-truck-medical me-2"></i>
-                        Priority Queue
-                    </h5>
+        <div class="dashboard-metric-strip scheduler-metric-strip mb-3" id="scheduler-metric-strip" role="group" aria-label="Filter the dispatch queue">
+            <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="all" aria-pressed="true" onclick="setSchedulerQueueFilter('all')">
+                <span class="dashboard-metric-value" id="scheduler-queue-count">0</span>
+                <span class="dashboard-metric-label">In queue</span>
+            </button>
+            <span class="dashboard-metric-divider" aria-hidden="true"></span>
+            <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="overdue" aria-pressed="false" onclick="setSchedulerQueueFilter('overdue')">
+                <span class="dashboard-metric-value dashboard-metric-alert" id="scheduler-overdue-count">0</span>
+                <span class="dashboard-metric-label">Overdue</span>
+            </button>
+            <span class="dashboard-metric-divider" aria-hidden="true"></span>
+            <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="unassigned" aria-pressed="false" onclick="setSchedulerQueueFilter('unassigned')">
+                <span class="dashboard-metric-value dashboard-metric-alert" id="scheduler-unassigned-count">0</span>
+                <span class="dashboard-metric-label">Unassigned</span>
+            </button>
+            <span class="dashboard-metric-divider" aria-hidden="true"></span>
+            <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="waiting" aria-pressed="false" onclick="setSchedulerQueueFilter('waiting')">
+                <span class="dashboard-metric-value dashboard-metric-warn" id="scheduler-waiting-count">0</span>
+                <span class="dashboard-metric-label">Waiting P.O / parts</span>
+            </button>
+            <span class="dashboard-metric-divider" aria-hidden="true"></span>
+            <button type="button" class="dashboard-metric scheduler-metric" data-scheduler-filter="tsr" aria-pressed="false" onclick="setSchedulerQueueFilter('tsr')">
+                <span class="dashboard-metric-value dashboard-metric-warn" id="scheduler-pending-tsr-count">0</span>
+                <span class="dashboard-metric-label">Pending TSR</span>
+            </button>
+            <span class="dashboard-metric-divider" aria-hidden="true"></span>
+            <span class="dashboard-metric scheduler-metric-static">
+                <span class="dashboard-metric-value" id="scheduler-next7-count">0</span>
+                <span class="dashboard-metric-label">Next 7 days</span>
+            </span>
+        </div>
+
+        <div class="scheduler-board-grid">
+            <section class="scheduler-board-queue card border-0 shadow-sm rounded-4 overflow-hidden" aria-labelledby="scheduler-queue-heading">
+                <div class="card-header bg-white border-bottom py-3">
+                    <h4 class="h6 mb-0 fw-bold text-primary" id="scheduler-queue-heading">
+                        <i class="fa-solid fa-truck-medical me-2" aria-hidden="true"></i>Priority Queue
+                    </h4>
                     <div class="xsmall text-muted mt-1" id="scheduler-queue-caption">Most urgent first &mdash; select a row to assign or reschedule it</div>
                 </div>
-                <div class="d-flex gap-2 flex-wrap">
-                    <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('scheduler-dispatch-body', this)">
-                        <i class="fa-solid fa-chevron-up me-1"></i>Hide
-                    </button>
-                    <a href="/timeline" class="btn btn-sm btn-primary fw-bold">
-                        <i class="fa-solid fa-calendar-days me-1"></i>Open Calendar
-                    </a>
-                </div>
-            </div>
-            <div id="scheduler-dispatch-body" class="card-body p-0 dashboard-collapsible-body">
                 <div id="scheduler-dispatch-list" class="scheduler-queue" aria-live="polite"></div>
-            </div>
-        </div>
-    </div>
+            </section>
 
-    <div class="scheduler-coordination-panel mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-coordination" data-dashboard-title="Assign &amp; Reschedule">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <div>
-                <h5 class="mb-0 fw-bold text-dark">
-                    <i class="fa-solid fa-screwdriver-wrench me-2 text-success"></i>
-                    Assign &amp; Reschedule
-                </h5>
-                <p class="text-muted small mb-0">Who is free, and the two actions that clear a queue row</p>
-            </div>
-            <div class="d-flex gap-2 flex-wrap">
-                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('scheduler-coordination-body', this)">
-                    <i class="fa-solid fa-chevron-up me-1"></i>Hide
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="loadSchedulerCoordinationTools()">
-                    <i class="fa-solid fa-rotate me-1"></i>Refresh Tools
-                </button>
-            </div>
-        </div>
-
-        <div id="scheduler-coordination-body" class="dashboard-collapsible-body">
-            <div class="scheduler-branch-filter-strip mb-3" id="scheduler-branch-filters" role="group" aria-label="Filter by branch">
-                <button type="button" class="btn btn-sm btn-success fw-bold" data-branch="ALL" aria-pressed="true" onclick="setSchedulerBranchFilter('ALL')">
-                    All Branches
-                </button>
-            </div>
-
-            <div class="card border-0 shadow-sm rounded-4 mb-3 overflow-hidden">
+            <section class="scheduler-board-lanes card border-0 shadow-sm rounded-4 overflow-hidden" aria-labelledby="scheduler-lanes-heading">
                 <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
-                        <h6 class="mb-0 fw-bold text-success">
-                            <i class="fa-solid fa-user-check me-2"></i>Engineer Availability
-                        </h6>
-                        <div class="xsmall text-muted mt-1">Select one to assign them to the schedule chosen above</div>
+                        <h4 class="h6 mb-0 fw-bold text-success" id="scheduler-lanes-heading">
+                            <i class="fa-solid fa-user-check me-2" aria-hidden="true"></i>Engineers
+                        </h4>
+                        <span class="xsmall text-muted" id="scheduler-availability-count">0 engineers</span>
                     </div>
-                    <span class="badge bg-light text-dark border" id="scheduler-availability-count">0 engineers</span>
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Board range" id="scheduler-board-view">
+                        <button type="button" class="btn btn-outline-secondary fw-bold active" data-board-view="today" aria-pressed="true" onclick="setSchedulerBoardView('today')">Today</button>
+                        <button type="button" class="btn btn-outline-secondary fw-bold" data-board-view="week" aria-pressed="false" onclick="setSchedulerBoardView('week')">7 days</button>
+                    </div>
                 </div>
-                <div id="scheduler-availability-strip" class="scheduler-availability-strip"></div>
-            </div>
+                <div class="scheduler-branch-filter-strip px-3 pt-3" id="scheduler-branch-filters" role="group" aria-label="Filter by branch">
+                    <button type="button" class="btn btn-sm btn-success fw-bold" data-branch="ALL" aria-pressed="true" onclick="setSchedulerBranchFilter('ALL')">
+                        All Branches
+                    </button>
+                </div>
+                <div id="scheduler-availability-strip" class="scheduler-lanes" aria-live="polite"></div>
+            </section>
 
-            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <section class="scheduler-board-selected card border-0 shadow-sm rounded-4 overflow-hidden" aria-labelledby="scheduler-selected-heading">
                 <div class="card-header bg-white border-bottom py-3">
-                    <h6 class="mb-0 fw-bold text-primary">
-                        <i class="fa-solid fa-pen-to-square me-2"></i>Selected Schedule
-                    </h6>
+                    <h4 class="h6 mb-0 fw-bold text-primary" id="scheduler-selected-heading">
+                        <i class="fa-solid fa-pen-to-square me-2" aria-hidden="true"></i>Selected Schedule
+                    </h4>
                     <div class="xsmall text-muted mt-1" id="scheduler-selected-action-label">Select a schedule from the priority queue to assign or reschedule.</div>
                 </div>
                 <div class="card-body">
                     <input type="hidden" id="scheduler-selected-shift-id">
 
-                    <div class="row g-3">
-                        <div class="col-lg-6">
-                            <label class="form-label small fw-bold text-muted" for="scheduler-assign-engineers">Assign / Reassign Engineer</label>
-                            <select id="scheduler-assign-engineers" class="form-select form-select-sm" multiple size="6"></select>
-                            <div class="xsmall text-muted mt-1">Hold Ctrl / Cmd to select multiple engineers.</div>
-                            <button type="button" class="btn btn-sm btn-success fw-bold mt-2 w-100" onclick="submitSchedulerQuickAssign()">
-                                <i class="fa-solid fa-user-plus me-1"></i>Save Assignment
-                            </button>
+                    <div id="scheduler-drop-confirm" class="scheduler-drop-confirm mb-3 d-none" role="alert">
+                        <p class="small fw-bold mb-2" id="scheduler-drop-confirm-text"></p>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-success fw-bold" onclick="confirmSchedulerLaneAssign()">Confirm</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="cancelSchedulerLaneAssign()">Cancel</button>
                         </div>
-                        <div class="col-lg-6">
-                            <div class="scheduler-reschedule-box">
-                                <label class="form-label small fw-bold text-muted" for="scheduler-reschedule-date">Quick Reschedule</label>
-                                <div class="row g-2">
-                                    <div class="col-12">
-                                        <input type="date" id="scheduler-reschedule-date" class="form-control form-control-sm" aria-label="New schedule date">
-                                    </div>
-                                    <div class="col-6">
-                                        <input type="time" id="scheduler-reschedule-start" class="form-control form-control-sm" aria-label="New start time">
-                                    </div>
-                                    <div class="col-6">
-                                        <input type="time" id="scheduler-reschedule-end" class="form-control form-control-sm" aria-label="New end time">
-                                    </div>
-                                </div>
-                                <button type="button" class="btn btn-sm btn-outline-primary fw-bold mt-2 w-100" onclick="submitSchedulerQuickReschedule()">
-                                    <i class="fa-solid fa-calendar-arrow-up me-1"></i>Save New Schedule Time
-                                </button>
+                    </div>
+
+                    <label class="form-label small fw-bold text-muted" for="scheduler-assign-engineers">Assign / Reassign Engineer</label>
+                    <select id="scheduler-assign-engineers" class="form-select form-select-sm" multiple size="6"></select>
+                    <div class="xsmall text-muted mt-1">Hold Ctrl / Cmd to select multiple engineers.</div>
+                    <button type="button" class="btn btn-sm btn-success fw-bold mt-2 w-100" onclick="submitSchedulerQuickAssign()">
+                        <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i>Save Assignment
+                    </button>
+
+                    <div class="scheduler-reschedule-box mt-3">
+                        <label class="form-label small fw-bold text-muted" for="scheduler-reschedule-date">Quick Reschedule</label>
+                        <div class="row g-2">
+                            <div class="col-12">
+                                <input type="date" id="scheduler-reschedule-date" class="form-control form-control-sm" aria-label="New schedule date">
+                            </div>
+                            <div class="col-6">
+                                <input type="time" id="scheduler-reschedule-start" class="form-control form-control-sm" aria-label="New start time">
+                            </div>
+                            <div class="col-6">
+                                <input type="time" id="scheduler-reschedule-end" class="form-control form-control-sm" aria-label="New end time">
                             </div>
                         </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary fw-bold mt-2 w-100" onclick="submitSchedulerQuickReschedule()">
+                            <i class="fa-solid fa-calendar-arrow-up me-1" aria-hidden="true"></i>Save New Schedule Time
+                        </button>
                     </div>
 
                     <div id="scheduler-action-status" class="scheduler-action-status small mt-3 d-none" role="status" aria-live="polite"></div>
                 </div>
-            </div>
+            </section>
         </div>
     </div>
 
@@ -835,7 +800,7 @@
         staffLanding: {{ (dashboard_staff_landing|default(false))|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=5"></script>
+<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=6"></script>
 
 
 {% if session.get('force_pw_change') %}
