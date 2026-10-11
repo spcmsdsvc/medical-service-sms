@@ -6,6 +6,7 @@ with status tabs, a detail panel and a "Done this week" tab fed by /get_my_done_
 
 import os
 import pathlib
+import re
 import tempfile
 import unittest
 from datetime import timedelta
@@ -98,8 +99,11 @@ class WorkOrderSourceTests(unittest.TestCase):
         self.assertIn('position: fixed;', _block(self.css, '@media (max-width: 991.98px)', '}\n'))
 
     def test_assets_and_service_worker_bumped(self):
-        self.assertIn("app-dashboard.css') }}?v=8", self.dashboard)
-        self.assertIn("app-dashboard.js') }}?v=7", self.dashboard)
+        # At least the phase B versions; later phases bump them again.
+        css_version = int(re.search(r"app-dashboard\.css'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        js_version = int(re.search(r"app-dashboard\.js'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        self.assertGreaterEqual(css_version, 8)
+        self.assertGreaterEqual(js_version, 7)
         self.assertIn('v288-work-orders', self.app_source)
 
 

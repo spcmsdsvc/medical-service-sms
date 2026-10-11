@@ -199,6 +199,11 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 - **Tabs** (`.work-orders-tab`): 44px text tabs with their count, muted text; the selected tab gets `--app-text` and a 2px accent underline. They scroll sideways on phones rather than wrap.
 - **Detail panel** (`.work-order-panel`): a 22rem column right of the list at 992px and up; below that a full-screen sheet on `surface` with a sticky header and a 44px Close. It opens from a row, closes with Esc or Close, and returns focus to the row. One primary action at its foot.
 
+### KPI Tiles (manager dashboard)
+- **Tile** (`.manager-kpi`): `surface`, hairline border, 12px radius, 44px minimum; a 1.6rem number (`.manager-kpi-num`, tabular) over a 0.78rem muted label. Auto-fit grid of 9.5rem tiles; two columns on phones.
+- **Tone:** the number takes the existing alert (overdue) or warn (TSR, waiting) colour, light and dark pairs; a tile at zero stays neutral (`.is-zero`). Never the accent.
+- **Action:** a tile is a link (Approvals) or a filter button for the list it summarises; the active filter gets the 2px accent underline and `aria-pressed`, pressing it again clears it.
+
 ### Inputs / Fields
 - **Style:** Bootstrap fields on `surface` (dark: `--app-input`), `hairline` border.
 - **Focus:** accent border + focus ring.

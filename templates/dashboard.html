@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=8">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=9">
 {% endblock %}
 
 {% block content %}
@@ -243,8 +243,12 @@
 
         One risk verdict, not four. The old view carried four independently-thresholded
         "stable / watch / critical" badges on one screen.
+
+        Remodel phase C (ServiceTitan): the section opens with one row of KPI tiles. The
+        tiles hold the existing count ids, so the loaders fill them unchanged; Overdue,
+        TSRs and Waiting filter What Needs Attention (openManagerKpi), PM opens Direction.
     #}
-    <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Needs Your Decision">
+    <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Needs Your Decision" data-dashboard-layout-version="3">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
                 <h5 class="mb-0 fw-bold text-dark">
@@ -264,6 +268,32 @@
         </div>
 
         <div id="manager-executive-body" class="dashboard-collapsible-body">
+            {# The approvals tile is hidden unless the account is an approver, like the list below. #}
+            <div class="manager-kpis mb-3" role="group" aria-label="Today's numbers">
+                <a href="/approvals" class="manager-kpi d-none" id="manager-kpi-approvals">
+                    <span class="manager-kpi-num" id="manager-approvals-total">0</span>
+                    <span class="manager-kpi-label">Approvals waiting</span>
+                </a>
+                <button type="button" class="manager-kpi is-alert" data-manager-kpi="severe_overdue" aria-pressed="false" onclick="openManagerKpi('severe_overdue')">
+                    <span class="manager-kpi-num" id="manager-overdue-count">0</span>
+                    <span class="manager-kpi-label">Overdue</span>
+                </button>
+                <button type="button" class="manager-kpi is-warn" data-manager-kpi="aged_tsr" aria-pressed="false" onclick="openManagerKpi('aged_tsr')">
+                    <span class="manager-kpi-num" id="manager-pending-tsr-count">0</span>
+                    <span class="manager-kpi-label">TSRs pending</span>
+                </button>
+                <button type="button" class="manager-kpi d-none" id="manager-kpi-pm-tile" onclick="openManagerKpi('pm')">
+                    <span class="manager-kpi-num" id="manager-kpi-pm">0 / 0</span>
+                    <span class="manager-kpi-label">Inventory PM done / due</span>
+                </button>
+                <button type="button" class="manager-kpi is-warn" data-manager-kpi="waiting" aria-pressed="false" onclick="openManagerKpi('waiting')">
+                    <span class="manager-kpi-num" id="manager-waiting-count">0</span>
+                    {# "company-wide" earns its words: an admin with an engineer profile has a
+                       second, personal "waiting" figure further down the same page. #}
+                    <span class="manager-kpi-label">Waiting P.O / parts{% if dashboard_effective_hybrid_view %}, company-wide{% endif %}</span>
+                </button>
+            </div>
+
             {#
                 Hidden unless the account is actually an approver. is_manager_dashboard_user()
                 also admits regional admins and the developer account, who would otherwise
@@ -271,10 +301,6 @@
             #}
             <div id="manager-approvals" class="manager-approvals mb-3 d-none">
                 <div class="manager-approvals-head">
-                    <div>
-                        <span class="manager-approvals-total" id="manager-approvals-total">0</span>
-                        <span class="manager-approvals-total-label">waiting for you</span>
-                    </div>
                     <span class="manager-approvals-aging" id="manager-approvals-aging" role="status" aria-live="polite"></span>
                     <a href="/approvals" class="btn btn-sm btn-dark fw-bold ms-auto">
                         <i class="fa-solid fa-stamp me-1"></i>Open Approvals
@@ -286,31 +312,8 @@
             <div id="manager-risk" class="manager-risk mb-3" role="status" aria-live="polite">
                 <span class="manager-risk-dot" aria-hidden="true"></span>
                 <span class="manager-risk-label" id="manager-risk-label">Loading operational status&hellip;</span>
-            </div>
-
-            <div class="dashboard-metric-strip manager-metric-strip">
-                <div class="dashboard-metric">
-                    <span class="dashboard-metric-value" id="manager-open-count">0</span>
-                    <span class="dashboard-metric-label">Open schedules</span>
-                </div>
-                <span class="dashboard-metric-divider" aria-hidden="true"></span>
-                <div class="dashboard-metric">
-                    <span class="dashboard-metric-value dashboard-metric-alert" id="manager-overdue-count">0</span>
-                    <span class="dashboard-metric-label">Overdue</span>
-                </div>
-                <span class="dashboard-metric-divider" aria-hidden="true"></span>
-                <div class="dashboard-metric">
-                    <span class="dashboard-metric-value dashboard-metric-warn" id="manager-pending-tsr-count">0</span>
-                    <span class="dashboard-metric-label">Pending TSR</span>
-                </div>
-                <span class="dashboard-metric-divider" aria-hidden="true"></span>
-                <div class="dashboard-metric">
-                    <span class="dashboard-metric-value dashboard-metric-warn" id="manager-waiting-count">0</span>
-                    {# "company-wide" earns its words: an admin with an engineer profile has a
-                       second, personal "waiting" figure further down the same page. #}
-                    <span class="dashboard-metric-label">Waiting P.O / parts{% if dashboard_effective_hybrid_view %}, company-wide{% endif %}</span>
-                </div>
-                <a href="/analytics_page" class="dashboard-metric-link">Open analytics &rarr;</a>
+                <span class="manager-risk-open"><span id="manager-open-count">0</span> open schedules</span>
+                <a href="/analytics_page" class="dashboard-metric-link ms-auto">Open analytics &rarr;</a>
             </div>
         </div>
     </div>
@@ -364,7 +367,12 @@
                 </div>
             </div>
             <div id="manager-watchlist-body" class="dashboard-collapsible-body d-none">
-                <div id="manager-watchlist-list" class="manager-watchlist" aria-live="polite"></div>
+                {# Shown while a KPI tile filters the list to one type. #}
+                <div id="manager-watchlist-filter" class="manager-watchlist-filter d-none" tabindex="-1">
+                    <span id="manager-watchlist-filter-label"></span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary fw-bold ms-auto" onclick="openManagerKpi('')">Show all</button>
+                </div>
+                <div id="manager-watchlist-list" class="manager-watchlist" aria-live="polite" tabindex="-1"></div>
 
                 <div class="manager-drilldown border-top">
                     <div class="row g-3 p-3">
@@ -788,7 +796,7 @@
         staffLanding: {{ (dashboard_staff_landing|default(false))|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=7"></script>
+<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=8"></script>
 
 
 {% if session.get('force_pw_change') %}

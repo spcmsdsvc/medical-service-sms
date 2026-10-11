@@ -27333,7 +27333,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v285-signin-activity-log.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v286-dashboard-critique-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v287-dispatch-board.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v288-work-orders';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v288-work-orders.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v289-manager-kpis';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -36034,6 +36035,14 @@ def get_manager_overview():
     for entry in watchlist:
         watchlist_counts[entry['type']] = watchlist_counts.get(entry['type'], 0) + 1
 
+    # The dashboard's KPI tiles filter to one type. Built before de-duplication: a job
+    # blocked on parts is usually also severely overdue, and would otherwise vanish from
+    # the Waiting filter. Lower-ranked types can also miss the overall top 20.
+    watchlist_by_type = {}
+    for entry in entries:
+        watchlist_by_type.setdefault(entry['type'], []).append(entry)
+    watchlist_type_totals = {entry_type: len(rows) for entry_type, rows in watchlist_by_type.items()}
+
     # ---- One risk verdict, replacing four independently-thresholded badges ----------
     risk_score = (
         (len(overdue_shifts) * 3) +
@@ -36064,6 +36073,9 @@ def get_manager_overview():
         'watchlist': watchlist[:20],
         'watchlist_total': watchlist_total,
         'watchlist_counts': watchlist_counts,
+        'watchlist_by_type': {entry_type: rows[:20] for entry_type, rows in watchlist_by_type.items()},
+        'watchlist_type_totals': watchlist_type_totals,
+        'severe_age_days': MANAGER_SEVERE_AGE_DAYS,
         'branch_summary': sorted(
             branch_summary.values(),
             key=lambda row: (-row.get('open_tasks', 0), row.get('branch') or '')

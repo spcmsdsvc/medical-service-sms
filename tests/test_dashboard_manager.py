@@ -330,6 +330,24 @@ class ManagerEndpointTests(unittest.TestCase):
         self.assertIn(shift_key, keys)
         self.assertEqual(keys.count(shift_key), 1)
 
+    def test_watchlist_by_type_backs_the_kpi_filters(self):
+        """Phase C: a tile filters the watchlist to one type, past the overall top 20."""
+        payload = self._client_for(self.manager_username).get('/get_manager_overview').get_json()
+        self.assertEqual(payload['severe_age_days'], app_module.MANAGER_SEVERE_AGE_DAYS)
+        by_type = payload['watchlist_by_type']
+        totals = payload['watchlist_type_totals']
+        for entry_type, rows in by_type.items():
+            self.assertEqual(len(rows), min(20, totals[entry_type]))
+            self.assertTrue(all(row['type'] == entry_type for row in rows))
+
+        # The blocked-and-overdue visit shows as severely overdue in the main list, yet the
+        # Waiting tile must still find it: per-type lists are built before de-duplication.
+        with self.app.app_context():
+            shift_id = app_module.Shift.query.filter_by(title='Manager overdue blocked visit').first().id
+        main_types = {row['key']: row['type'] for row in payload['watchlist']}
+        self.assertEqual(main_types.get(f'shift:{shift_id}'), 'severe_overdue')
+        self.assertIn(f'shift:{shift_id}', [row['key'] for row in by_type['waiting']])
+
     def test_overview_reports_one_risk_verdict(self):
         payload = self._client_for(self.manager_username).get('/get_manager_overview').get_json()
         self.assertIn(payload['risk']['level'], ('stable', 'watch', 'critical'))

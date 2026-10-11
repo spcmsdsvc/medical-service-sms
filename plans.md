@@ -39,7 +39,14 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Dashboard Remodel — MaintainX Work Orders + ServiceTitan Dispatch
 
-**Status:** Phase A executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `44f32b9`). Phase B executed locally on 2026-10-11 on the owner's "go phase B"; not committed (awaiting "commit and push"). Phase C awaiting go-ahead.
+**Status:** Phase A executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `44f32b9`). Phase B executed and on `origin/main` (commit `6b36d8b`). Phase C executed locally on 2026-10-11 on the owner's "go phase C"; not committed (awaiting "commit and push"). Next: one re-critique in a new session.
+**Phase C differences from the plan:**
+- **Backend (not planned):** `/get_manager_overview` gains `watchlist_by_type`, `watchlist_type_totals` (built before de-duplication) and `severe_age_days`. Filtering the sent top 20 client-side failed on real data: the top 20 was all severely overdue, and all 7 waiting jobs were also severely overdue, so de-duplication hid them.
+- **Watchlist holds severe cases only** (7+ days), so a filter line names what is shown ("Overdue 7 days or more") beside the tile's full count.
+- **`manager-approvals-total`** moved from the approvals list head into the tile; the head keeps the aging line and Open Approvals. `manager-open-count` and "Open analytics" moved into the risk line; the metric strip is gone.
+- **Layout version "3"**, not "2": hybrid accounts stored "2" from phase B (the per-user key is shared across roles), so "2" would not reset them.
+- **Tile number class** `.manager-kpi-num`: `app-dark-pages.css` forces `[class*="-kpi-value"]` to plain text in dark mode.
+- **PM tile** hidden when the server sends no PM summary; zero tiles stay neutral.
 **Phase B differences from the plan:**
 - **Investigation correction:** `/get_open_tasks` had no `has_tsr` or times. Its rows are now built by `dashboard_task_row()` with `time_start` / `time_end` added; `has_tsr` is on Done this week rows only (open visits get their TSR after completion; the panel says so).
 - **Task notes:** `Shift` has no notes column, so the panel shows the visit title as "Task".

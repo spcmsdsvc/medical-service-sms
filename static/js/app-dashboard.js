@@ -77,6 +77,7 @@
     let allOpenTasksRaw = []; 
     let currentSortMode = 'scheduled_latest'; 
     let managerOverviewData = null;
+    let managerWatchlistFilter = '';
     let schedulerCoordinationData = null;
     let schedulerDispatchData = null;
     let schedulerBranchFilter = 'ALL';
@@ -506,17 +507,20 @@
      */
     function renderManagerApprovals(data) {
         const panel = document.getElementById('manager-approvals');
+        const tile = document.getElementById('manager-kpi-approvals');
         if (!panel) return;
 
         if (!data || data.is_approver !== true || data.workflows_enabled !== true) {
             panel.classList.add('d-none');
+            if (tile) tile.classList.add('d-none');
             return;
         }
         panel.classList.remove('d-none');
+        if (tile) tile.classList.remove('d-none');
 
         const counts = data.counts || {};
         const modules = Array.isArray(data.modules) ? data.modules : [];
-        setTextIfPresent('manager-approvals-total', counts.pending_total || 0);
+        setManagerKpiValue('manager-approvals-total', counts.pending_total || 0);
 
         const aging = document.getElementById('manager-approvals-aging');
         if (aging) {
@@ -561,8 +565,10 @@
             renderManagerApprovals(await fetchJsonOrThrow('/get_manager_approvals'));
         } catch (approvalsError) {
             console.warn('Manager approvals could not be loaded:', approvalsError);
-            const panel = document.getElementById('manager-approvals');
-            if (panel) panel.classList.add('d-none');
+            ['manager-approvals', 'manager-kpi-approvals'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('d-none');
+            });
         }
     }
 
@@ -629,15 +635,19 @@
     // brands so the figure is never read as covering all preventive maintenance.
     function renderManagerPmSummary(pm) {
         const box = document.getElementById('manager-pm-summary');
+        const tile = document.getElementById('manager-kpi-pm-tile');
         if (!box) return;
         if (!pm || typeof pm !== 'object') {
             box.classList.add('d-none');
+            if (tile) tile.classList.add('d-none');
             return;
         }
         const due = Number(pm.due_this_month || 0);
         const done = Number(pm.done_this_month || 0);
         const overdue = Number(pm.overdue || 0);
         const percent = due ? Math.round(done / due * 100) : null;
+        setTextIfPresent('manager-kpi-pm', `${done} / ${due}`);
+        if (tile) tile.classList.remove('d-none');
         box.innerHTML = `
             <span class="manager-pm-label">Inventory PM (Genoray, Vieworks) this month</span>
             <span class="manager-pm-value">${escapeHtml(done)} / ${escapeHtml(due)} done${percent === null ? '' : ` (${escapeHtml(percent)}%)`}</span>
@@ -656,24 +666,58 @@
         return labels[String(type || '')] || 'Attention';
     }
 
-    function renderManagerWatchlist(data) {
+    // What a KPI tile's filter shows. The watchlist holds only the severe cases, so the
+    // line says so rather than letting "Overdue 12" sit above a list of 3.
+    function managerWatchlistFilterText(type, days) {
+        const texts = {
+            severe_overdue: `Overdue ${days} days or more`,
+            aged_tsr: `Completed ${days} days or more ago with no TSR`,
+            waiting: 'Blocked on P.O / parts'
+        };
+        return texts[type] || managerWatchlistTypeLabel(type);
+    }
+
+    // With no type the server's list renders as sent; a type (from a KPI tile) shows that
+    // type only, from watchlist_by_type so lower-ranked types are not cut by the top 20.
+    function renderManagerWatchlist(data, type) {
         const container = document.getElementById('manager-watchlist-list');
         if (!container) return;
 
-        const rows = Array.isArray((data || {}).watchlist) ? data.watchlist : [];
-        const total = Number((data || {}).watchlist_total || rows.length);
+        const filter = String(type || '');
+        const payload = data || {};
+        const allRows = Array.isArray(payload.watchlist) ? payload.watchlist : [];
+        const byType = payload.watchlist_by_type || {};
+        const rows = filter ? (Array.isArray(byType[filter]) ? byType[filter] : allRows.filter(row => row.type === filter)) : allRows;
+        const total = filter
+            ? Number((payload.watchlist_type_totals || {})[filter] || rows.length)
+            : Number(payload.watchlist_total || rows.length);
         setTextIfPresent('manager-watchlist-count', `${total} item${total === 1 ? '' : 's'}`);
 
         const caption = document.getElementById('manager-watchlist-caption');
-        if (caption && total > rows.length) {
-            caption.textContent = `Showing the ${rows.length} most pressing of ${total}`;
+        if (caption) {
+            if (!caption.dataset.defaultText) caption.dataset.defaultText = caption.textContent;
+            caption.textContent = total > rows.length
+                ? `Showing the ${rows.length} most pressing of ${total}`
+                : caption.dataset.defaultText;
         }
+
+        const filterLine = document.getElementById('manager-watchlist-filter');
+        if (filterLine) filterLine.classList.toggle('d-none', !filter);
+        if (filter) {
+            setTextIfPresent('manager-watchlist-filter-label',
+                `Showing: ${managerWatchlistFilterText(filter, Number(payload.severe_age_days || 7))}`);
+        }
+        document.querySelectorAll('[data-manager-kpi]').forEach(tile => {
+            const active = tile.dataset.managerKpi === filter;
+            tile.classList.toggle('is-active', active);
+            tile.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
 
         if (!rows.length) {
             container.innerHTML = `
                 <div class="manager-watchlist-clear">
                     <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                    <span>Nothing needs management attention right now.</span>
+                    <span>${filter ? 'Nothing of this kind needs management attention right now.' : 'Nothing needs management attention right now.'}</span>
                 </div>`;
             return;
         }
@@ -690,6 +734,44 @@
         `).join('');
     }
 
+    // A KPI tile's number; a zero tile drops its alert/warn colour.
+    function setManagerKpiValue(id, value) {
+        setTextIfPresent(id, value);
+        const el = document.getElementById(id);
+        const tile = el ? el.closest('.manager-kpi') : null;
+        if (tile) tile.classList.toggle('is-zero', Number(value) === 0);
+    }
+
+    function revealManagerSection(bodyId) {
+        const body = document.getElementById(bodyId);
+        if (body && body.classList.contains('d-none')) {
+            toggleDashboardSection(bodyId, document.querySelector(`[onclick="toggleDashboardSection('${bodyId}', this)"]`));
+        }
+        return body;
+    }
+
+    // KPI tiles: 'pm' opens Direction at the PM line; a watchlist type filters What Needs
+    // Attention (pressing the active tile again, or '' from Show all, clears the filter).
+    function openManagerKpi(type) {
+        if (type === 'pm') {
+            revealManagerSection('manager-direction-body');
+            const pm = document.getElementById('manager-pm-summary');
+            if (pm) pm.scrollIntoView({block: 'center'});
+            return;
+        }
+        managerWatchlistFilter = type && type !== managerWatchlistFilter ? type : '';
+        renderManagerWatchlist(managerOverviewData, managerWatchlistFilter);
+        if (!managerWatchlistFilter) {
+            // Show all hides its own button; keep focus in the list rather than losing it.
+            if (!type) document.getElementById('manager-watchlist-list')?.focus({preventScroll: true});
+            return;
+        }
+        revealManagerSection('manager-watchlist-body');
+        const panel = document.querySelector('[data-dashboard-section="manager-watchlist"]');
+        if (panel) panel.scrollIntoView({block: 'start'});
+        document.getElementById('manager-watchlist-filter')?.focus({preventScroll: true});
+    }
+
     async function loadManagerOverview() {
         if (!dashboardManagerView || dashboardSchedulerOnly) return;
 
@@ -698,14 +780,14 @@
             managerOverviewData = data || {};
             const counts = managerOverviewData.counts || {};
             setTextIfPresent('manager-open-count', counts.open_schedules || 0);
-            setTextIfPresent('manager-overdue-count', counts.overdue_schedules || 0);
-            setTextIfPresent('manager-pending-tsr-count', counts.pending_tsr || 0);
-            setTextIfPresent('manager-waiting-count', counts.waiting_items || 0);
+            setManagerKpiValue('manager-overdue-count', counts.overdue_schedules || 0);
+            setManagerKpiValue('manager-pending-tsr-count', counts.pending_tsr || 0);
+            setManagerKpiValue('manager-waiting-count', counts.waiting_items || 0);
 
             renderManagerRisk(managerOverviewData);
             renderManagerDirection(managerOverviewData);
             renderManagerPmSummary(managerOverviewData.pm);
-            renderManagerWatchlist(managerOverviewData);
+            renderManagerWatchlist(managerOverviewData, managerWatchlistFilter);
             renderManagerBranchOverview(managerOverviewData.branch_summary || []);
             renderManagerEngineerUtilization(managerOverviewData.engineer_utilization || []);
         } catch (managerError) {

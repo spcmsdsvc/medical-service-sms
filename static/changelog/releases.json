@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-11-manager-kpis",
+      "release_date": "2026-10-11",
+      "title": "Manager Numbers First",
+      "summary": "The manager dashboard now opens with one row of numbers you can click.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-11-manager-kpis-tiles",
+          "category": "Dashboard",
+          "description": "The top of the dashboard shows approvals waiting, overdue visits, TSRs pending, Inventory PM done out of due this month, and jobs waiting for P.O or parts.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-11-manager-kpis-filter",
+          "category": "Dashboard",
+          "description": "Click Overdue, TSRs pending or Waiting to open What Needs Attention showing only that kind of item. Click the number again or Show all to see everything. Approvals waiting opens the Approvals page.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-11-work-orders",
       "release_date": "2026-10-11",
       "title": "Your Work Orders",
