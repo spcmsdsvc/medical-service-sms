@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Dashboard Remodel — MaintainX Work Orders + ServiceTitan Dispatch
 
-**Status:** Phase A executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `44f32b9`). Phase B executed and on `origin/main` (commit `6b36d8b`). Phase C executed locally on 2026-10-11 on the owner's "go phase C"; not committed (awaiting "commit and push"). Next: one re-critique in a new session.
+**Status:** Phase A executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `44f32b9`). Phase B executed and on `origin/main` (commit `6b36d8b`). Phase C executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `e30359c`). Next: one re-critique in a new session.
 **Phase C differences from the plan:**
 - **Backend (not planned):** `/get_manager_overview` gains `watchlist_by_type`, `watchlist_type_totals` (built before de-duplication) and `severe_age_days`. Filtering the sent top 20 client-side failed on real data: the top 20 was all severely overdue, and all 7 waiting jobs were also severely overdue, so de-duplication hid them.
 - **Watchlist holds severe cases only** (7+ days), so a filter line names what is shown ("Overdue 7 days or more") beside the tile's full count.
