@@ -54,7 +54,7 @@ class HybridGateReachabilityTests(unittest.TestCase):
     def test_the_hybrid_flag_is_satisfiable_and_actually_used(self):
         """hybrid_view existed unused for the whole of phase 4. It has a job now."""
         source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn("'hybrid_view': engineer_sections and admin_authorized,", source)
+        self.assertIn("'hybrid_view': engineer_sections and admin_authorized and not engineer_primary,", source)
 
         dashboard = (ROOT / 'templates' / 'dashboard.html').read_text(encoding='utf-8')
         gates = re.findall(r'\{%-?\s*if\s+(.+?)-?%\}', dashboard, re.DOTALL)

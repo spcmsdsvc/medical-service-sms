@@ -8144,6 +8144,10 @@ MANAGER_USERNAMES = {'rodito', 'robert'}
 # be the same username today. That constant means approval routing; borrowing it would
 # couple routing to dashboard layout, so changing one would silently move the other.
 MANAGER_PRIMARY_USERNAMES = {'rodito'}
+# The opposite: accounts whose dashboard is the plain engineer dashboard even though
+# they are admin-authorized (the developer is a field engineer, not a manager).
+# Dashboard presentation only -- every permission and route check is unchanged.
+ENGINEER_PRIMARY_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME}
 SCHEDULER_USERNAMES = {'diary', 'hanna'}
 SUPERADMIN_DISPLAY_USERNAMES = {'jonamar', 'robert'}
 SUPERADMIN_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME} | MANAGER_USERNAMES | SCHEDULER_USERNAMES
@@ -11562,6 +11566,16 @@ def is_manager_primary_user(user=None):
     )
 
 
+def is_engineer_primary_user(user=None):
+    """True for accounts whose dashboard is the engineer view only (presentation only)."""
+    target = user or current_user
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        _username_of(target) in ENGINEER_PRIMARY_USERNAMES
+    )
+
+
 def get_display_role(user):
     """Business-facing role label for Settings/UI without weakening backend authority."""
     username = _username_of(user)
@@ -11764,14 +11778,19 @@ def get_dashboard_capabilities(user=None):
     # itself is untouched, so the account keeps its profile everywhere else.
     manager_primary = is_manager_primary_user(target)
     engineer_sections = bool(engineer_profile) and not manager_primary
+    # An engineer-primary account with a profile gets no manager or hybrid view; without
+    # a profile it keeps the default view so it never lands on an empty dashboard.
+    engineer_primary = is_engineer_primary_user(target) and bool(engineer_profile)
 
     return {
         'has_engineer_profile': engineer_sections,
         'admin_view': admin_authorized,
         'scheduler_view': scheduler_user,
         'scheduler_only': scheduler_only,
-        'hybrid_view': engineer_sections and admin_authorized,
-        'manager_view': is_manager_dashboard_user(target) and not scheduler_only,
+        'hybrid_view': engineer_sections and admin_authorized and not engineer_primary,
+        'manager_view': (
+            is_manager_dashboard_user(target) and not scheduler_only and not engineer_primary
+        ),
         'approver_view': is_configured_approver_user(target),
         'approver_only': is_approver_only_user(target),
         'can_approve_requests': is_configured_approver_user(target),
