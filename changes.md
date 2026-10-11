@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-11
 
+- Published **Dashboard Trends** to `origin/main` on the owner's "commit and push" (`95d7bde`: `app.py`, `templates/dashboard.html`, `static/css/app-dashboard.css`, `static/js/app-dashboard.js`, `static/changelog/releases.json`, `tests/test_dashboard_trends.py`, `tests/test_dashboard_manager_kpis.py`, `DESIGN.md`, `plans.md`, `changes.md`). Railway creates the `dashboard_daily_count` table on start (`db.create_all()`), and trends begin recording on the first manager dashboard load. The Developer Account engineer-only plan is recorded but not executed. Not staged: `scheduler.db`, the handoff, `changes-archive.md`, `.impeccable/`.
+
 - Recorded the approved plan **Developer Account — Engineer-Only Dashboard** at the top of `plans.md` (awaiting go-ahead; no code changed). The developer account (`jonamar`, superadmin and engineer, not a manager) gets the plain engineer dashboard: no manager tiles or hybrid labels; permissions and admin shortcuts unchanged. The Dashboard Trends plan's decision 5 is marked as corrected.
 
 - Recorded the approved plan **Dashboard Trends — "Alive, Not Overloaded"** at the top of `plans.md` (status: awaiting go-ahead; no code changed). Manager KPI tiles get sparklines and week-over-week deltas from a new daily snapshot table, there's one "Overdue by age" chart, and engineers get a done-this-week strip. Built from an Impeccable `shape` brief and the owner's choices (daily snapshot; overdue-by-age chart).
