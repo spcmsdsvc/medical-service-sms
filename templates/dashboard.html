@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=12">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=14">
 {% endblock %}
 
 {% block content %}
@@ -259,7 +259,7 @@
         tiles hold the existing count ids, so the loaders fill them unchanged; Overdue,
         TSRs and Waiting filter What Needs Attention (openManagerKpi), PM opens Direction.
     #}
-    <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Needs Your Decision" data-dashboard-layout-version="3">
+    <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Needs Your Decision" data-dashboard-layout-version="4">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
                 <h5 class="mb-0 fw-bold text-dark">
@@ -280,52 +280,44 @@
         </div>
 
         <div id="manager-executive-body" class="dashboard-collapsible-body">
-            {# The approvals tile is hidden unless the account is an approver, like the list below. #}
+            {# The approvals card is hidden unless the account is an approver, like the list below.
+               Dashboard Style phase 2: each tile keeps its element, id, data-manager-kpi,
+               aria-pressed and onclick, and takes the stat card anatomy. The trend is the
+               corner badge (aria-hidden: the line under the number says it in words) and the
+               line (manager-trend-line-*, data-default when there is no trend). #}
             <div class="manager-kpis mb-3" role="group" aria-label="Today's numbers">
-                <a href="/approvals" class="manager-kpi d-none" id="manager-kpi-approvals">
-                    <span class="manager-kpi-num" id="manager-approvals-total">0</span>
-                    <span class="manager-kpi-label">Approvals waiting</span>
-                    <span class="manager-kpi-trend" id="manager-trend-approvals"></span>
-                    <svg class="manager-kpi-spark d-none" id="manager-spark-approvals" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points=""/></svg>
+                <a href="/approvals" class="manager-kpi dash-stat d-none" id="manager-kpi-approvals">
+                    <span class="dash-stat-top"><span class="dash-stat-name">Approvals waiting</span><span class="manager-kpi-trend dash-stat-badge" id="manager-trend-approvals" aria-hidden="true"></span></span>
+                    <span class="manager-kpi-num dash-stat-num" id="manager-approvals-total">0</span>
+                    <span class="dash-stat-line" id="manager-trend-line-approvals" data-default="Requests waiting on you">Requests waiting on you</span>
+                    <span class="dash-stat-help">Open the approval center</span>
                 </a>
-                <button type="button" class="manager-kpi is-alert" data-manager-kpi="severe_overdue" aria-pressed="false" onclick="openManagerKpi('severe_overdue')">
-                    <span class="manager-kpi-num" id="manager-overdue-count">0</span>
-                    <span class="manager-kpi-label">Overdue</span>
-                    <span class="manager-kpi-trend" id="manager-trend-overdue"></span>
-                    <svg class="manager-kpi-spark d-none" id="manager-spark-overdue" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points=""/></svg>
+                <button type="button" class="manager-kpi dash-stat is-alert" data-manager-kpi="severe_overdue" aria-pressed="false" onclick="openManagerKpi('severe_overdue')">
+                    <span class="dash-stat-top"><span class="dash-stat-name">Overdue</span><span class="manager-kpi-trend dash-stat-badge" id="manager-trend-overdue" aria-hidden="true"></span></span>
+                    <span class="manager-kpi-num dash-stat-num" id="manager-overdue-count">0</span>
+                    <span class="dash-stat-line" id="manager-trend-line-overdue" data-default="Past their visit date">Past their visit date</span>
+                    <span class="dash-stat-help">Show the late ones below</span>
                 </button>
-                <button type="button" class="manager-kpi is-warn" data-manager-kpi="aged_tsr" aria-pressed="false" onclick="openManagerKpi('aged_tsr')">
-                    <span class="manager-kpi-num" id="manager-pending-tsr-count">0</span>
-                    <span class="manager-kpi-label">TSRs pending</span>
-                    <span class="manager-kpi-trend" id="manager-trend-pending_tsr"></span>
-                    <svg class="manager-kpi-spark d-none" id="manager-spark-pending_tsr" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points=""/></svg>
+                <button type="button" class="manager-kpi dash-stat is-warn" data-manager-kpi="aged_tsr" aria-pressed="false" onclick="openManagerKpi('aged_tsr')">
+                    <span class="dash-stat-top"><span class="dash-stat-name">TSRs pending</span><span class="manager-kpi-trend dash-stat-badge" id="manager-trend-pending_tsr" aria-hidden="true"></span></span>
+                    <span class="manager-kpi-num dash-stat-num" id="manager-pending-tsr-count">0</span>
+                    <span class="dash-stat-line" id="manager-trend-line-pending_tsr" data-default="Completed visits without a TSR">Completed visits without a TSR</span>
+                    <span class="dash-stat-help">Show the aged ones below</span>
                 </button>
-                <button type="button" class="manager-kpi d-none" id="manager-kpi-pm-tile" onclick="openManagerKpi('pm')">
-                    <span class="manager-kpi-num" id="manager-kpi-pm">0 / 0</span>
-                    <span class="manager-kpi-label">Inventory PM done / due</span>
+                <button type="button" class="manager-kpi dash-stat d-none" id="manager-kpi-pm-tile" onclick="openManagerKpi('pm')">
+                    <span class="dash-stat-top"><span class="dash-stat-name">Inventory PM</span></span>
+                    <span class="manager-kpi-num dash-stat-num" id="manager-kpi-pm">0 / 0</span>
+                    <span class="dash-stat-line">Done / due</span>
                     <span class="manager-kpi-meter" aria-hidden="true"><span id="manager-kpi-pm-meter"></span></span>
                 </button>
-                <button type="button" class="manager-kpi is-warn" data-manager-kpi="waiting" aria-pressed="false" onclick="openManagerKpi('waiting')">
-                    <span class="manager-kpi-num" id="manager-waiting-count">0</span>
+                <button type="button" class="manager-kpi dash-stat is-warn" data-manager-kpi="waiting" aria-pressed="false" onclick="openManagerKpi('waiting')">
                     {# "company-wide" earns its words: an admin with an engineer profile has a
                        second, personal "waiting" figure further down the same page. #}
-                    <span class="manager-kpi-label">Waiting P.O / parts{% if dashboard_effective_hybrid_view %}, company-wide{% endif %}</span>
-                    <span class="manager-kpi-trend" id="manager-trend-waiting"></span>
-                    <svg class="manager-kpi-spark d-none" id="manager-spark-waiting" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points=""/></svg>
+                    <span class="dash-stat-top"><span class="dash-stat-name">Waiting P.O / parts</span><span class="manager-kpi-trend dash-stat-badge" id="manager-trend-waiting" aria-hidden="true"></span></span>
+                    <span class="manager-kpi-num dash-stat-num" id="manager-waiting-count">0</span>
+                    <span class="dash-stat-line" id="manager-trend-line-waiting" data-default="Blocked on a P.O or parts">Blocked on a P.O or parts</span>
+                    <span class="dash-stat-help">{% if dashboard_effective_hybrid_view %}Company-wide · show{% else %}Show{% endif %} them below</span>
                 </button>
-            </div>
-
-            {#
-                Dashboard Trends: the one chart. Overdue visits by how late they are; each bar
-                is a button that filters What Needs Attention to that age range
-                (openOverdueAge). The second bar starts at the watchlist threshold.
-            #}
-            <div class="manager-age d-none mb-3" id="manager-overdue-age" role="group" aria-labelledby="manager-overdue-age-title">
-                <div class="manager-age-head">
-                    <h6 class="manager-age-title mb-0" id="manager-overdue-age-title">Overdue by age</h6>
-                    <span class="manager-age-note" id="manager-overdue-age-note"></span>
-                </div>
-                <div class="manager-age-bars" id="manager-overdue-age-bars"></div>
             </div>
 
             {#
@@ -352,15 +344,52 @@
         </div>
     </div>
 
-    <div class="manager-direction-panel mb-4 dashboard-sortable-section" data-dashboard-section="manager-direction" data-dashboard-title="Direction">
-        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+    {# Visits scheduled vs completed, company-wide (Dashboard Style phase 2, then the
+       Manager Chart plan): the phase 1 chart over company_completed with company_scheduled
+       as a muted dashed comparison line, two-thirds wide beside Overdue by age on wide
+       screens. A hybrid account gets this chart only, not a personal one. #}
+    <div class="dash-activity-row mb-4 dashboard-sortable-section" data-dashboard-section="manager-activity" data-dashboard-title="Scheduled vs Completed" data-dashboard-layout-version="1">
+        <section class="dash-card dash-chart-card" aria-labelledby="manager-activity-title">
+            <div class="dash-card-head">
                 <div>
-                    <h3 class="h5 mb-0 fw-bold text-dark">
-                        <i class="fa-solid fa-arrow-trend-up me-2 text-primary"></i>
-                        Direction
-                    </h3>
-                    <div class="xsmall text-muted mt-1" id="manager-direction-caption">Comparing the last 7 days with the 7 before it</div>
+                    <h2 class="dash-card-title" id="manager-activity-title">Visits — scheduled vs completed</h2>
+                    <p class="dash-card-sub" id="manager-activity-sub">Last 3 months</p>
+                    <p class="dash-chart-key">
+                        <span class="dash-chart-key-item"><span class="dash-chart-swatch is-compare" aria-hidden="true"></span>Scheduled</span>
+                        <span class="dash-chart-key-item"><span class="dash-chart-swatch" aria-hidden="true"></span>Completed</span>
+                    </p>
+                </div>
+                <div class="dash-segment" role="group" aria-label="Chart range">
+                    <button type="button" class="dash-segment-btn" data-range="90" aria-pressed="true" onclick="setDashboardChartRange(90)">3 months</button>
+                    <button type="button" class="dash-segment-btn" data-range="30" aria-pressed="false" onclick="setDashboardChartRange(30)">30 days</button>
+                    <button type="button" class="dash-segment-btn" data-range="7" aria-pressed="false" onclick="setDashboardChartRange(7)">7 days</button>
+                </div>
+            </div>
+            <div class="dash-chart" id="manager-activity-chart"></div>
+            <p class="dash-chart-readout" id="manager-activity-readout" role="status" aria-live="polite"></p>
+        </section>
+
+        {#
+            Dashboard Trends: overdue visits by how late they are (the smaller card); each bar
+            is a button that filters What Needs Attention to that age range
+            (openOverdueAge). The second bar starts at the watchlist threshold.
+        #}
+        <div class="manager-age dash-card d-none" id="manager-overdue-age" role="group" aria-labelledby="manager-overdue-age-title">
+            <div class="manager-age-head">
+                <h2 class="manager-age-title dash-card-title mb-0" id="manager-overdue-age-title">Overdue by age</h2>
+                <span class="manager-age-note" id="manager-overdue-age-note"></span>
+            </div>
+            <div class="manager-age-bars" id="manager-overdue-age-bars"></div>
+        </div>
+
+    </div>
+
+    <div class="manager-direction-panel mb-4 dashboard-sortable-section" data-dashboard-section="manager-direction" data-dashboard-title="Direction">
+        <div class="card dash-panel overflow-hidden">
+            <div class="card-header dash-panel-head d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h3 class="dash-card-title">Direction</h3>
+                    <p class="dash-card-sub" id="manager-direction-caption">Comparing the last 7 days with the 7 before it</p>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-direction-body', this)">
                     <i class="fa-solid fa-chevron-up me-1"></i>Hide
@@ -384,17 +413,14 @@
     </div>
 
     <div class="manager-watchlist-panel mb-4 dashboard-sortable-section" data-dashboard-section="manager-watchlist" data-dashboard-title="What Needs Attention">
-        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="card dash-panel overflow-hidden">
+            <div class="card-header dash-panel-head d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
-                    <h3 class="h5 mb-0 fw-bold text-dark">
-                        <i class="fa-solid fa-triangle-exclamation me-2 text-warning"></i>
-                        What Needs Attention
-                    </h3>
-                    <div class="xsmall text-muted mt-1" id="manager-watchlist-caption">Severe overdue, aged TSR, blocked jobs, repeat equipment and at-risk clients</div>
+                    <h3 class="dash-card-title">What Needs Attention</h3>
+                    <p class="dash-card-sub" id="manager-watchlist-caption">Severe overdue, aged TSR, blocked jobs, repeat equipment and at-risk clients</p>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
-                    <span class="badge bg-light text-dark border" id="manager-watchlist-count">0 items</span>
+                    <span class="dash-stat-badge align-self-center" id="manager-watchlist-count">0 items</span>
                     <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-watchlist-body', this)">
                         <i class="fa-solid fa-chevron-down me-1"></i>Show
                     </button>
@@ -517,8 +543,10 @@
     </div>
 
     {# Visits completed (Dashboard Style): one area chart, own visits by visit date,
-       from /get_dashboard_series. Drawn by renderDashboardAreaChart(). #}
-    <section class="dash-card dash-chart-card mb-3 dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="engineer-activity" data-dashboard-title="Visits Completed" aria-labelledby="engineer-activity-title">
+       from /get_dashboard_series. Drawn by renderDashboardAreaChart(). Not for hybrids,
+       who get the company chart above (one chart per view). #}
+    {% if not dashboard_effective_hybrid_view %}
+    <section class="dash-card dash-chart-card mb-3 dashboard-sortable-section" data-dashboard-section="engineer-activity" data-dashboard-title="Visits Completed" aria-labelledby="engineer-activity-title">
         <div class="dash-card-head">
             <div>
                 <h2 class="dash-card-title" id="engineer-activity-title">Visits completed</h2>
@@ -533,6 +561,7 @@
         <div class="dash-chart" id="engineer-activity-chart"></div>
         <p class="dash-chart-readout" id="engineer-activity-readout" role="status" aria-live="polite"></p>
     </section>
+    {% endif %}
 
     {# One work-order list with status tabs and a detail panel. Replaces "Needs you today"
        and "My Active Tasks"; my-tasks-body and no-my-tasks stay the list containers so
@@ -851,7 +880,7 @@
         staffLanding: {{ (dashboard_staff_landing|default(false))|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=11"></script>
+<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=13"></script>
 
 
 {% if session.get('force_pw_change') %}

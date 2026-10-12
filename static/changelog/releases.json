@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-manager-workload-chart",
+      "release_date": "2026-10-12",
+      "title": "Scheduled vs Completed",
+      "summary": "The company chart now shows visits scheduled next to visits completed.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-manager-workload-chart-lines",
+          "category": "Dashboard",
+          "description": "The company chart has two lines: a dashed line for visits scheduled and a solid line for visits completed. Point at it, tap it or use the arrow keys to read both numbers for a day or week.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-12-dashboard-style-manager",
+      "release_date": "2026-10-12",
+      "title": "A Cleaner Company Overview",
+      "summary": "The company numbers sit in cards, and a chart shows the company's completed visits.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-dashboard-style-manager-cards",
+          "category": "Dashboard",
+          "description": "Approvals, overdue, TSRs pending, Inventory PM and waiting are now number cards. Each says in words how it changed from last week. Overdue, TSRs and waiting still open the matching list.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-dashboard-style-manager-chart",
+          "category": "Dashboard",
+          "description": "A new Visits completed chart shows the company's completed visits for the last 3 months, 30 days or 7 days, with Overdue by age beside it.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-11-dashboard-style",
       "release_date": "2026-10-11",
       "title": "A Cleaner Dashboard",

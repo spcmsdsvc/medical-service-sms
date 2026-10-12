@@ -27374,7 +27374,10 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v287-dispatch-board.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v288-work-orders.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v289-manager-kpis.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v291-dashboard-style';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v290-dashboard-trends.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v291-dashboard-style.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v292-dashboard-style-manager.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v293-manager-workload-chart';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -31887,8 +31890,9 @@ DASHBOARD_SECTION_IDS = {
     # remodel phase B); both stay accepted so a saved layout naming them still saves.
     'engineer-today',
     'engineer-work-orders',
-    # Dashboard Style: the Visits completed chart.
+    # Dashboard Style: the Visits completed charts (engineer's own, company-wide).
     'engineer-activity',
+    'manager-activity',
     'admin-counters',
     'quick-admin',
     # Retired in the hybrid work, ids still accepted so a saved layout naming them does not
@@ -34963,11 +34967,17 @@ def get_dashboard_series():
 
     metric=my_completed: the signed-in engineer's own Completed service visits, counted on
     their visit date, with the same filters and ownership rule as /get_my_done_tasks.
+    metric=company_completed: every Completed service visit in the manager's analytics scope
+    (same filters, no ownership rule); manager dashboard users only.
+    metric=company_scheduled: every service visit in that scope, any status, on its visit
+    date (the manager chart's comparison line); manager dashboard users only.
     days is 7, 30 or 90 (anything else is 90); every day is present, zero-filled.
     """
     metric = (request.args.get('metric') or '').strip()
-    if metric != 'my_completed':
+    if metric not in ('my_completed', 'company_completed', 'company_scheduled'):
         return jsonify({'error': 'Unknown metric.'}), 400
+    if metric.startswith('company_') and not can_view_manager_dashboard():
+        return denied('Company visits are only available to manager-authorized accounts.')
     try:
         days = int(request.args.get('days') or 90)
     except (TypeError, ValueError):
@@ -34978,20 +34988,25 @@ def get_dashboard_series():
     today = get_manila_today()
     first_day = today - timedelta(days=days - 1)
     counts = {first_day + timedelta(days=offset): 0 for offset in range(days)}
+    start_dt, end_dt = build_shift_datetime_bounds(first_day, today)
+    visits = (
+        Shift.query
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.title.notin_(['Training'] + LEAVE_CATEGORIES))
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+    )
+    completed = visits.filter(Shift.status == 'Completed')
     profile = getattr(current_user, 'engineer_profile', None)
-    if profile:
-        start_dt, end_dt = build_shift_datetime_bounds(first_day, today)
+    if metric.startswith('company_'):
+        scoped = analytics_scope_query(completed if metric == 'company_completed' else visits)
+        for (start_time,) in scoped.with_entities(Shift.start_time):
+            day = start_time.date()
+            if day in counts:
+                counts[day] += 1
+    elif profile:
         linked_shift_ids = db.session.query(ShiftEngineer.shift_id).filter(ShiftEngineer.engineer_id == profile.id)
-        shifts = (
-            Shift.query
-            .filter(Shift.client_id.isnot(None))
-            .filter(Shift.status == 'Completed')
-            .filter(Shift.title.notin_(['Training'] + LEAVE_CATEGORIES))
-            .filter(Shift.start_time >= start_dt)
-            .filter(Shift.start_time < end_dt)
-            .filter(or_(Shift.id.in_(linked_shift_ids), Shift.engineer_id == profile.id))
-            .all()
-        )
+        shifts = completed.filter(or_(Shift.id.in_(linked_shift_ids), Shift.engineer_id == profile.id)).all()
         for shift in shifts:
             day = shift.start_time.date()
             if day in counts and any(eng.id == profile.id for eng in get_shift_engineer_records(shift)):

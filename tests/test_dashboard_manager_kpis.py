@@ -76,7 +76,7 @@ class ManagerKpiSourceTests(unittest.TestCase):
 
     def test_manager_layout_resets_once(self):
         self.assertRegex(self.manager_block,
-                         r'data-dashboard-section="manager-executive"[^>]*data-dashboard-layout-version="3"')
+                         r'data-dashboard-section="manager-executive"[^>]*data-dashboard-layout-version="4"')
 
     def test_kept_functions_still_defined(self):
         for name in ('loadManagerOverview', 'loadManagerApprovals', 'renderManagerApprovals',

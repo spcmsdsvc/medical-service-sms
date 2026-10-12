@@ -37,9 +37,94 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Manager Chart — Scheduled vs Completed
+
+**Status:** Executed on 2026-10-12 (owner: "go"); not committed — publishes on "commit and push", together with or after Dashboard Style phase 2. Tests: 5 source tests and 2 endpoint tests added to `tests/test_dashboard_style.py`; all 5 source tests fail on `HEAD`. Focused run: 192 tests OK. Browser check on a DB copy passed: `robert` (graphite and light, 1366 px), `rodito` (AMOLED, 375 px), `jonamar` (engineer chart still one line, no `company_scheduled` request).
+**Differences from the plan:**
+- **Positive control:** the kept-functions guard also fails on `HEAD`, because `loadManagerActivity` comes from phase 2, which is not committed yet. On the phase 2 working tree it passes. On `HEAD`, `company_scheduled` returns 400.
+- **Empty state** with the comparison reads "No scheduled visits in this range." (shown only when both lines are zero).
+- **Endpoint shape:** `company_scheduled` and `company_completed` share one base query (`visits`; `completed` adds the status filter), so both lines always use the same filters and scope.
+- **Data on the DB copy:** 9 visits scheduled and 5 completed in the last 3 months (it matches a SQL count on the copy). The readout reads, for example, "Week of Aug 18 · 5 scheduled · 4 completed".
+**Approved:** 2026-10-12 (owner: chose "Scheduled vs completed" over Visits scheduled, Overdue over time and a manager picker; then "keep, write the plan").
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Dashboard Style phase 2 (executed 2026-10-12, **not yet committed**). This plan edits phase 2's `manager-activity` chart; commit phase 2 first or publish both together.
+
+## Context
+
+The owner thought the manager's "Visits completed" chart showed the manager's own visits. It counts every engineer's Completed visits in the manager's scope, but on its own it says little to a manager, and it looks almost empty: only 5 visits in the last 3 months are marked `Completed` in the database. The owner wants a chart that answers "is the team keeping up with its workload?": visits scheduled per day/week against visits completed, as two lines on the same card.
+
+## Decisions taken
+
+1. **Two lines, one card:** Scheduled (muted second line, no fill) and Completed (the accent line and fill, as now). The 3 months / 30 days / 7 days switch is unchanged; 3 months stays weekly totals for both lines.
+2. **Scheduled** = every service visit (`client_id` set, not Training or leave) counted on its visit date (`start_time`), **any status**, in the manager's analytics scope (`analytics_scope_query`). The window ends today; future bookings are not counted.
+3. **Managers only:** `metric=company_scheduled` returns 403 for non-manager accounts, like `company_completed`.
+4. **Copy:** title "Visits — scheduled vs completed"; a small key under the title; readout "Week of Aug 4 · 6 scheduled · 2 completed" (daily: "Tue, Oct 6 · …"); summary "5 of 38 scheduled visits completed in the last 3 months".
+5. **Only the manager/hybrid chart changes.** The engineer chart (`engineer-activity`, `my_completed`) stays a single line.
+6. **No manager data picker and no Overdue line** for now (see Deliberately excluded).
+
+## Investigation
+
+- **Endpoint:** `get_dashboard_series` (`app.py:34964`) already takes `metric`, clamps `days` to `DASHBOARD_SERIES_DAYS` (`app.py:34959`), zero-fills Manila days, and builds one Completed/Training/leave query shared by both metrics. The metric whitelist is at `app.py:34974`, the manager gate at `:34976`, the `company_completed` scope branch at `:34998`. The scheduled count needs the same query **without** the `status == 'Completed'` filter.
+- **Chart:** `renderDashboardAreaChart(container, points, options)` (`app-dashboard.js:2257`) draws one series. Its scale (`top`), summary (`:2263`) and readout (`:2325`) all use `values` from that series, so a second series needs: the scale taken over both series, a second path, and readout/summary text built from both.
+- **Loader:** `loadManagerActivity()` (`app-dashboard.js:2203`) fetches `company_completed` only. `setDashboardChartRange()` (`:2218`) slices and, for 90 days, groups by week (`groupDashboardPointsByWeek`, `:2238`); the scheduled series must be sliced and grouped the same way.
+- **Markup:** the `manager-activity` section (`dashboard.html:350`), title at `:354`. Section id and the `manager-activity-*` element ids stay.
+- **CSS:** `.dash-chart-line` / `.dash-chart-fill` (`app-dashboard.css:2349-2351`), with dark-theme pairs at the end of the Dashboard Style block.
+- **Data note:** the Completed line stays low as long as visits are not marked Completed. That is real data, and the gap to Scheduled makes it visible; it is not something this plan fixes.
+
+## Execution steps
+
+1. **Endpoint** (`app.py`, `get_dashboard_series`): add `company_scheduled` to the metric whitelist and to the manager gate. Build the base filters once (client set, not Training/leave, inside the window); `completed` adds `status == 'Completed'`; `company_scheduled` uses the base query through `analytics_scope_query` with no status filter. Update the docstring. Done = 7/30/90 points, zero-filled; a manager gets counts that include open and completed visits; an engineer gets 403.
+2. **Two-series chart** (`app-dashboard.js`, `renderDashboardAreaChart`): accept an optional `options.compare = {points, unit, label}`. When it is present: take `top` over both series; draw the compare line first (`.dash-chart-line.is-compare`, no fill, no draw-in animation), then the Completed fill and line as now; add a second dot on the cursor; build the readout as "<when> · N scheduled · N completed" and the summary as "N of M scheduled visits completed in the <range>". The empty state shows only when **both** series are zero. Without `compare`, the output is identical to today. Done = the engineer chart unchanged; the manager chart shows both lines.
+3. **Loader** (`app-dashboard.js`): `loadManagerActivity()` fetches `company_completed` and `company_scheduled` in parallel (`Promise.all`) and stores the scheduled points in `dashboardChartState.comparePoints`. `setDashboardChartRange()` slices and week-groups `comparePoints` like `points`, and passes `compare` only when the prefix is `manager-activity`. The resize handler needs no change. Done = switching ranges updates both lines and the readout.
+4. **Markup** (`dashboard.html`, `manager-activity`): title "Visits — scheduled vs completed"; under the subtitle a key (`.dash-chart-key`: two swatch-plus-label items, "Scheduled" and "Completed"; the swatches are `aria-hidden`, the labels are text). `data-dashboard-title` becomes "Scheduled vs Completed". Section id and element ids unchanged; no layout version bump (nothing moves).
+5. **CSS** (`app-dashboard.css`, Dashboard Style block): `.dash-chart-line.is-compare` (1.5px, `--app-muted` with about 0.7 opacity, dashed 4 3 so it reads without colour), the compare dot, and `.dash-chart-key` with swatches matching both lines. Dark pairs for graphite and AMOLED. Done = both lines distinguishable in all three themes and in greyscale.
+6. **DESIGN.md:** the "Area Chart" entry gains the comparison line rule (muted dashed line, no fill, key under the title, readout names both values).
+7. **Self-review:** every function the manager view calls is still defined (`loadManagerActivity`, `setDashboardChartRange`, `renderDashboardAreaChart`, `groupDashboardPointsByWeek`, `openManagerKpi`, `renderOverdueByAge`, `loadManagerOverview`); the engineer chart is untouched; no id removed.
+
+## Deliberately excluded
+
+- **Overdue over time:** daily counts only exist since 2026-10-11 (`DashboardDailyCount`), so the line would be nearly empty for weeks. It can be added once there is history.
+- **A manager picker** (Scheduled / Completed / Overdue): the owner chose the fixed comparison; a picker can come later.
+- **Future bookings** on the Scheduled line: the chart ends today, like the Completed line.
+- **Engineer and scheduler charts:** not part of the request.
+- **Fixing how visits get marked Completed:** a process question, not a chart change.
+
+## Verification
+
+- **Tests** (`tests/test_dashboard_style.py`):
+  - Endpoint: `company_scheduled` returns 403 for an engineer and a staff account; for the regional admin it returns 7 zero-filled points whose today value counts the seeded open visit as well as the completed ones (lower bounds, shared test DB); Training is excluded.
+  - Source: `company_scheduled` is fetched by `loadManagerActivity`; `renderDashboardAreaChart` handles `options.compare`; the `manager-activity` card has the key and the new title; the engineer chart's call passes no `compare`; kept-functions guard.
+  - **Positive control:** run the new tests in-process against `git show HEAD:<file>` (not `git stash`); all fail except the kept-functions guard. On `HEAD`, `company_scheduled` is a 400.
+- **Focused run:** all `tests/test_dashboard_*.py`, `test_changelog_coverage`, `test_dark_mode_readability`. Full suite not needed (dashboard page and one read-only endpoint).
+- **Browser** on a copy of `scheduler.db` (temporary passwords on the copy only): hybrid account (`robert`) at 1366 px in graphite and light; manager-only (`rodito`) at 375 px in AMOLED. Both lines are drawn, the scheduled totals match a SQL count on the copy, the readout names both values on hover, tap and arrow keys, the range switch updates both lines, the empty state shows only when both are zero, the engineer chart (`jonamar`) is still a single line, no horizontal scroll, contrast at least 4.5:1, console clean. Clean up the copy, passwords, appearance overrides and launch entry afterwards. One screenshot per theme as final proof.
+
+## After implementation
+
+1. Assets `app-dashboard.css?v=14`, `app-dashboard.js?v=13`; `CACHE_VERSION` `…-v293-manager-workload-chart`, keeping v292 as a history comment.
+2. `static/changelog/releases.json`: one release for admins ("Scheduled vs completed").
+3. `DESIGN.md` (step 6), `changes.md` bullets, and this plan's Status with the commit and any differences.
+4. Commit only `app.py`, `templates/dashboard.html`, `static/css/app-dashboard.css`, `static/js/app-dashboard.js`, `tests/test_dashboard_style.py`, `static/changelog/releases.json`, `DESIGN.md`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **The engineer chart changes by accident:** `compare` is optional and only the manager loader passes it; a source test pins the engineer call.
+- **Scheduled dwarfs Completed** and the Completed line flattens: expected with today's data, and the readout gives exact numbers. The y-scale is shared on purpose so the two are comparable.
+- **Scope mismatch between the two lines:** both use `analytics_scope_query` and the same base filters.
+- **Blast radius:** one card plus one read-only metric. Rolling back = revert the commit.
+
 # Dashboard Style — shadcn Cards, Spacing, Chart and Header (all dashboards)
 
-**Status:** Phase 1 executed — published to `main` on 2026-10-11 on the owner's "commit and push" (commit `350b64b`; owner: "go phase 1"). Phases 2–3 awaiting go-ahead. Brief: `.impeccable/briefs/dashboard-style.md`. New `tests/test_dashboard_style.py` (14 tests; 6 of 7 source tests fail on `HEAD`, the kept-functions guard passes on both; the 7 endpoint tests need `/get_dashboard_series`, absent on `HEAD`). Focused run: 177 tests OK. Browser check passed on a DB copy as `jonamar` (49 sample completed visits added to the copy): graphite and light at 1366 px, AMOLED at 375 px, no horizontal scroll, no tap target under 44px, muted text 9:1 on AMOLED, tabs, panel, Customize and the chart switch/readout/keys all working, console clean.
+**Status:** Phase 2 executed on 2026-10-12 (owner: "go phase 2"); not committed — publishes on its own "commit and push". Phase 3 awaiting go-ahead. Phase 1 published to `main` on 2026-10-11 (commit `350b64b`; owner: "go phase 1"). Phase 2 tests: 6 source tests and 2 endpoint tests added to `tests/test_dashboard_style.py`; 5 of the 6 source tests fail on `HEAD` (the manager kept-functions guard passes on both), and on `HEAD` `company_completed` is a 400, so both endpoint tests fail. Focused run: 185 tests OK. Browser check on a DB copy passed as `robert` (hybrid; graphite and light at 1366 px) and `rodito` (manager only; AMOLED at 375 px): numbers match phase C's endpoint figures, filters, age bars, PM card, Hide/Show, chart switch and keys all work, no horizontal scroll, tap targets ≥44 px on phones, contrast ≥4.76:1 light, 6.47:1 graphite, 8.11:1 AMOLED, console clean.
+**Phase 1 details:** Brief: `.impeccable/briefs/dashboard-style.md`. New `tests/test_dashboard_style.py` (14 tests; 6 of 7 source tests fail on `HEAD`, the kept-functions guard passes on both; the 7 endpoint tests need `/get_dashboard_series`, absent on `HEAD`). Focused run: 177 tests OK. Browser check passed on a DB copy as `jonamar` (49 sample completed visits added to the copy): graphite and light at 1366 px, AMOLED at 375 px, no horizontal scroll, no tap target under 44px, muted text 9:1 on AMOLED, tabs, panel, Customize and the chart switch/readout/keys all working, console clean.
+**Phase 2 amendments (found while building):**
+- **`company_completed` uses the manager's analytics scope** (`analytics_scope_query`, like `/get_manager_overview`), not every visit unconditionally, so the chart and the tiles count the same population.
+- **Overdue by age moved** out of `manager-executive` into the new `manager-activity` section, so it can sit one-third wide beside the chart (ids unchanged). Hiding "Needs Your Decision" no longer hides it.
+- **Layout reset:** `manager-executive` went to layout version `4` (it is the first versioned section for managers and hybrids, which `resetDashboardLayoutIfOutdated()` reads), so saved manager layouts reset once and the chart lands in place. `manager-activity` carries version `1` as planned.
+- **Hybrids:** `engineer-activity` is not rendered for them (decision 4). The Done this week badge still needs the engineer's own series, so `loadEngineerActivity()` fetches it for the badge alone (`engineerSeriesPoints`); the chart state now has a `prefix` naming whose chart is on the page.
+- **Card copy:** badge "↑ 4" / "Same" (`aria-hidden`) plus the sentence "Up 4 from last week"; without a trend the sentence is the card's description (`data-default`). The hybrid Waiting card's "company-wide" moved from the name (which wrapped to three lines at 1366 px) to its helper line ("Company-wide · show them below").
+- **Step 14** was done as card surface only: Direction and What Needs Attention got a hairline `.dash-panel` with a `.dash-card-title` header (icons dropped), the item count became a `.dash-stat-badge`, and Show all became a pill. Directory Totals only got the card padding.
+- **Assets** `app-dashboard.css?v=13`, `app-dashboard.js?v=12`; `CACHE_VERSION` `…-v292-dashboard-style-manager`. Tests updated (assertions only): `test_dashboard_trends.py` (trend lines instead of sparklines; the age card sits in `manager-activity`), `test_dashboard_manager_kpis.py` (layout version 4), `test_dashboard_hybrid.py` (company-wide on the helper line).
 **Phase 1 amendments (found while building):**
 - The header subtitle and primary button were done for **every role** in phase 1, because the header is shared: Your work / Company overview / Dispatch / What's waiting on you, and Create TSR / Open approvals or Open analytics / Open calendar. This was planned for steps 11, 17 and 20, which now only cover the rest of those phases.
 - `current-date` is **kept** (moved into the subtitle; `updateClock` now writes "Sunday, October 11"). Only `system-clock` was removed.

@@ -132,8 +132,9 @@ class HybridDashboardSourceTests(unittest.TestCase):
 
     def test_the_colliding_waiting_metrics_are_both_scoped_for_hybrids(self):
         """Two strips carried a bare "waiting" meaning different things on one page."""
-        self.assertIn('Waiting P.O / parts{% if dashboard_effective_hybrid_view %}, '
-                      'company-wide{% endif %}', self.dashboard)
+        # Dashboard Style phase 2: the scope moved from the card name to its helper line.
+        self.assertIn('{% if dashboard_effective_hybrid_view %}Company-wide · show'
+                      '{% else %}Show{% endif %} them below', self.dashboard)
         self.assertIn('{% if dashboard_effective_hybrid_view %}waiting, yours'
                       '{% else %}waiting parts{% endif %}', self.dashboard)
 

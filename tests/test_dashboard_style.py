@@ -1,7 +1,8 @@
 """Dashboard Style (plans.md): shadcn-style header, stat cards and the Visits completed chart.
 
-Phase 1 covers the shared header and the engineer view. Every existing id and handler keeps
-working; the chart reads /get_dashboard_series.
+Phase 1 covers the shared header and the engineer view; phase 2 the manager and hybrid view
+(tiles as stat cards, the company chart). Every existing id and handler keeps working; the
+charts read /get_dashboard_series.
 """
 
 import os
@@ -87,10 +88,119 @@ class DashboardStyleSourceTests(unittest.TestCase):
         self.assertIn('v291-dashboard-style', self.app_source)
 
 
+class DashboardStyleManagerSourceTests(unittest.TestCase):
+    """Phase 2: manager and hybrid."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dashboard = _read('templates', 'dashboard.html')
+        cls.js = _read('static', 'js', 'app-dashboard.js')
+        cls.app_source = _read('app.py')
+        cls.manager = cls.dashboard.split('{% if dashboard_effective_manager_view and not dashboard_effective_scheduler_only %}')[1].split('SCOPE BOUNDARY')[0]
+
+    def test_tiles_are_stat_cards_that_keep_their_filters(self):
+        tiles = self.manager.split('class="manager-kpis')[1].split('\n            </div>\n')[0]
+        self.assertEqual(tiles.count('class="manager-kpi dash-stat'), 5)
+        for kpi in ('severe_overdue', 'aged_tsr', 'waiting'):
+            self.assertIn(f'data-manager-kpi="{kpi}" aria-pressed="false" onclick="openManagerKpi(\'{kpi}\')"', tiles)
+        self.assertIn('onclick="openManagerKpi(\'pm\')"', tiles)
+        self.assertIn('href="/approvals" class="manager-kpi dash-stat d-none" id="manager-kpi-approvals"', tiles)
+        for key in ('approvals', 'overdue', 'pending_tsr', 'waiting'):
+            self.assertIn(f'id="manager-trend-{key}"', tiles)
+            self.assertIn(f'id="manager-trend-line-{key}" data-default=', tiles)
+        self.assertNotIn('manager-spark-', self.dashboard)
+        self.assertIn('id="manager-kpi-pm-meter"', tiles)
+
+    def test_company_chart_section_is_registered_and_wired(self):
+        self.assertIn('data-dashboard-section="manager-activity"', self.manager)
+        self.assertIn("'manager-activity',", self.app_source)
+        for element_id in ('manager-activity-chart', 'manager-activity-sub', 'manager-activity-readout'):
+            self.assertIn(f'id="{element_id}"', self.manager)
+        # Overdue by age is the smaller card beside the chart.
+        row = self.manager.split('data-dashboard-section="manager-activity"')[1].split('data-dashboard-section=')[0]
+        self.assertIn('id="manager-overdue-age"', row)
+        self.assertIn('function loadManagerActivity(', self.js)
+        self.assertIn('/get_dashboard_series?metric=company_completed&days=90', self.js)
+
+    def test_hybrid_gets_the_company_chart_only(self):
+        engineer = self.dashboard.split('{% if dashboard_has_engineer_profile %}')[1]
+        before_chart = engineer.split('data-dashboard-section="engineer-activity"')[0]
+        self.assertIn('{% if not dashboard_effective_hybrid_view %}', before_chart.rsplit('#}', 1)[1])
+        # The Done this week badge still gets the engineer's own series.
+        self.assertIn('engineerSeriesPoints', self.js.split('function renderEngineerWeekBadge(')[1].split('function ')[0])
+
+    def test_saved_manager_layouts_reset_once(self):
+        self.assertRegex(self.manager, r'data-dashboard-section="manager-executive"[^>]*data-dashboard-layout-version="4"')
+
+    def test_manager_functions_survive(self):
+        for function in ('openManagerKpi', 'renderManagerTrends', 'renderManagerKpiTrend', 'renderOverdueByAge',
+                         'openOverdueAge', 'renderManagerWatchlist', 'loadManagerOverview',
+                         'loadManagerApprovals', 'renderManagerUpdated', 'setManagerKpiValue',
+                         'setDashboardChartRange', 'renderDashboardAreaChart'):
+            self.assertRegex(self.js, rf'function {function}\(', function)
+
+    def test_assets_and_cache_bumped(self):
+        css_version = int(re.search(r"app-dashboard\.css'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        js_version = int(re.search(r"app-dashboard\.js'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        self.assertGreaterEqual(css_version, 13)
+        self.assertGreaterEqual(js_version, 12)
+        self.assertIn('v292-dashboard-style-manager', self.app_source)
+
+
+class ManagerWorkloadChartSourceTests(unittest.TestCase):
+    """Manager Chart plan: visits scheduled as a comparison line on the manager chart."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dashboard = _read('templates', 'dashboard.html')
+        cls.js = _read('static', 'js', 'app-dashboard.js')
+        cls.app_source = _read('app.py')
+
+    def _function(self, name):
+        return self.js.split(f'function {name}(')[1].split('\n    function ')[0]
+
+    def test_manager_loader_fetches_both_series(self):
+        loader = self._function('loadManagerActivity')
+        self.assertIn('metric=company_completed&days=90', loader)
+        self.assertIn('metric=company_scheduled&days=90', loader)
+        self.assertIn('Promise.all', loader)
+
+    def test_chart_draws_an_optional_compare_line(self):
+        chart = self._function('renderDashboardAreaChart')
+        self.assertIn('options.compare', chart)
+        self.assertIn('dash-chart-line is-compare', chart)
+        self.assertIn('scheduled · ${values[index]} completed', chart)
+        # Only the manager chart passes a comparison; the engineer chart stays one line.
+        self.assertIn("prefix === 'manager-activity'", self._function('setDashboardChartRange'))
+
+    def test_card_has_the_title_and_key(self):
+        card = self.dashboard.split('data-dashboard-section="manager-activity"')[1].split('id="manager-overdue-age"')[0]
+        self.assertIn('Visits — scheduled vs completed', card)
+        self.assertIn('class="dash-chart-key"', card)
+        self.assertIn('dash-chart-swatch is-compare', card)
+        engineer = self.dashboard.split('data-dashboard-section="engineer-activity"')[1].split('</section>')[0]
+        self.assertNotIn('dash-chart-key', engineer)
+
+    def test_kept_functions_survive(self):
+        for function in ('loadManagerActivity', 'loadEngineerActivity', 'setDashboardChartRange',
+                         'renderDashboardAreaChart', 'groupDashboardPointsByWeek', 'openManagerKpi',
+                         'renderOverdueByAge', 'loadManagerOverview'):
+            self.assertRegex(self.js, rf'function {function}\(', function)
+
+    def test_assets_and_cache_bumped(self):
+        css_version = int(re.search(r"app-dashboard\.css'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        js_version = int(re.search(r"app-dashboard\.js'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        self.assertGreaterEqual(css_version, 14)
+        self.assertGreaterEqual(js_version, 13)
+        self.assertIn('v293-manager-workload-chart', self.app_source)
+
+
 class DashboardSeriesEndpointTests(unittest.TestCase):
     ENGINEER_USER = 'dash_style_test_engineer'
     OTHER_USER = 'dash_style_test_other'
     STAFF_USER = 'dash_style_test_staff'
+    # A real manager-dashboard account: is_regional_admin_user() is tied to this username.
+    MANAGER_USER = app_module.REGIONAL_ADMIN_USERNAME
 
     @classmethod
     def setUpClass(cls):
@@ -123,6 +233,10 @@ class DashboardSeriesEndpointTests(unittest.TestCase):
                 engineer = app_module.Engineer.query.filter_by(employee_id=employee_id).first()
                 if engineer:
                     db.session.delete(engineer)
+            if getattr(cls, 'created_manager', False):
+                manager = app_module.User.query.filter_by(username=cls.MANAGER_USER).first()
+                if manager:
+                    db.session.delete(manager)
             for username in (cls.ENGINEER_USER, cls.OTHER_USER, cls.STAFF_USER):
                 user = app_module.User.query.filter_by(username=username).first()
                 if user:
@@ -149,6 +263,10 @@ class DashboardSeriesEndpointTests(unittest.TestCase):
                                    password=app_module.generate_password_hash('DashStyle123'))
             db.session.add(user)
             users[username] = user
+        cls.created_manager = not app_module.User.query.filter_by(username=cls.MANAGER_USER).first()
+        if cls.created_manager:
+            db.session.add(app_module.User(username=cls.MANAGER_USER, role='regional_admin', is_active=True,
+                                           password=app_module.generate_password_hash('DashStyle123')))
         db.session.commit()
 
         mine = app_module.Engineer(employee_id='DS-E1', name='Dash Style Engineer', initials='DS',
@@ -222,6 +340,40 @@ class DashboardSeriesEndpointTests(unittest.TestCase):
         points = self._get(self.STAFF_USER, 'metric=my_completed&days=30').get_json()['points']
         self.assertEqual(len(points), 30)
         self.assertEqual(sum(point['value'] for point in points), 0)
+
+    def test_company_series_is_for_managers_only(self):
+        self.assertEqual(self._get(self.ENGINEER_USER, 'metric=company_completed&days=7').status_code, 403)
+        self.assertEqual(self._get(self.STAFF_USER, 'metric=company_completed&days=7').status_code, 403)
+
+    def test_company_series_counts_every_engineer(self):
+        response = self._get(self.MANAGER_USER, 'metric=company_completed&days=7')
+        self.assertEqual(response.status_code, 200)
+        points = response.get_json()['points']
+        self.assertEqual(len(points), 7)
+        by_date = {point['date']: point['value'] for point in points}
+        # Shared test DB: other modules may add visits, so these are lower bounds.
+        self.assertGreaterEqual(by_date[self.today.isoformat()], 2)
+        self.assertGreaterEqual(by_date[(self.today - timedelta(days=2)).isoformat()], 1)
+
+    def test_scheduled_series_is_for_managers_only(self):
+        self.assertEqual(self._get(self.ENGINEER_USER, 'metric=company_scheduled&days=7').status_code, 403)
+        self.assertEqual(self._get(self.STAFF_USER, 'metric=company_scheduled&days=7').status_code, 403)
+
+    def test_scheduled_series_counts_open_visits_too(self):
+        def by_date(metric):
+            response = self._get(self.MANAGER_USER, f'metric={metric}&days=7')
+            self.assertEqual(response.status_code, 200)
+            points = response.get_json()['points']
+            self.assertEqual(len(points), 7)
+            return {point['date']: point['value'] for point in points}
+        scheduled = by_date('company_scheduled')
+        completed = by_date('company_completed')
+        yesterday = (self.today - timedelta(days=1)).isoformat()
+        # The seeded In Progress visit yesterday is scheduled but not completed.
+        self.assertGreaterEqual(scheduled[yesterday] - completed[yesterday], 1)
+        self.assertGreaterEqual(scheduled[self.today.isoformat()], 2)
+        for day, value in completed.items():
+            self.assertLessEqual(value, scheduled[day], day)
 
     def test_unknown_metric_is_rejected(self):
         self.assertEqual(self._get(self.ENGINEER_USER, 'metric=everything').status_code, 400)

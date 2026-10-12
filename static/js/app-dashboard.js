@@ -800,47 +800,35 @@
         return date ? date.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
     }
 
-    // One tile's trend: the change vs last week and a weekly sparkline. Every trended count
-    // is lower-is-better, so a rise is the only red. Without a row from a week ago the
-    // tile says when the comparison starts rather than guessing one.
+    // One card's trend (Dashboard Style): a short corner badge and a sentence on the card's
+    // line. Every trended count is lower-is-better, so a rise is the only red. Without a row
+    // from a week ago the card says when the comparison starts rather than guessing one;
+    // without a trend the line keeps its own description (data-default).
     function renderManagerKpiTrend(key, trend) {
-        const label = document.getElementById(`manager-trend-${key}`);
-        const spark = document.getElementById(`manager-spark-${key}`);
-        if (!label) return;
-        if (!trend || typeof trend !== 'object') {
-            label.innerHTML = '';
-            if (spark) spark.classList.add('d-none');
-            return;
-        }
-
-        const delta = trend.delta;
+        const badge = document.getElementById(`manager-trend-${key}`);
+        const line = document.getElementById(`manager-trend-line-${key}`);
+        if (!badge) return;
         let tone = 'is-flat';
-        if (delta === null || delta === undefined) {
-            label.textContent = `Trend from ${formatDashboardShortDate(trend.delta_from)}`;
-        } else if (Number(delta) === 0) {
-            label.textContent = 'Same as last week';
-        } else {
-            const up = Number(delta) > 0;
-            tone = up ? 'is-worse' : 'is-better';
-            label.innerHTML = `<i class="fa-solid fa-arrow-${up ? 'up' : 'down'}" aria-hidden="true"></i> ${escapeHtml(Math.abs(Number(delta)))} vs last week`;
+        let short = '';
+        let sentence = line ? (line.dataset.default || '') : '';
+        if (trend && typeof trend === 'object') {
+            const delta = trend.delta;
+            if (delta === null || delta === undefined) {
+                sentence = `Trend from ${formatDashboardShortDate(trend.delta_from)}`;
+            } else if (Number(delta) === 0) {
+                short = 'Same';
+                sentence = 'Same as last week';
+            } else {
+                const up = Number(delta) > 0;
+                const size = Math.abs(Number(delta));
+                tone = up ? 'is-worse' : 'is-better';
+                short = `<i class="fa-solid fa-arrow-${up ? 'up' : 'down'}" aria-hidden="true"></i> ${escapeHtml(size)}`;
+                sentence = `${up ? 'Up' : 'Down'} ${size} from last week`;
+            }
         }
-        label.className = `manager-kpi-trend ${tone}`;
-
-        if (!spark) return;
-        const points = (Array.isArray(trend.points) ? trend.points : []).map(Number).filter(Number.isFinite);
-        if (points.length < 2) {
-            spark.classList.add('d-none');
-            return;
-        }
-        const min = Math.min(...points);
-        const range = Math.max(...points) - min;
-        const coords = points.map((value, index) => {
-            const x = Math.round(index / (points.length - 1) * 100);
-            const y = range ? Math.round((21 - (value - min) / range * 18) * 10) / 10 : 12;
-            return `${x},${y}`;
-        });
-        spark.querySelector('polyline')?.setAttribute('points', coords.join(' '));
-        spark.setAttribute('class', `manager-kpi-spark ${tone}`);
+        badge.innerHTML = short;
+        badge.className = `manager-kpi-trend dash-stat-badge ${tone}`;
+        if (line) line.textContent = sentence;
     }
 
     function renderManagerTrends(trends) {
@@ -1898,6 +1886,10 @@
                 // with the overview rather than needing its own round-trip.
                 loadManagerApprovals();
                 loadManagerOverview();
+                if (!dashboardChartState.companyRequested) {
+                    dashboardChartState.companyRequested = true;
+                    loadManagerActivity();
+                }
             }
 
             // The recent-activity section and its 5-second poll used to be loaded here,
@@ -2168,7 +2160,7 @@
     // Visits completed series (same definition as the Done this week rows).
     function renderEngineerWeekBadge() {
         const badge = document.getElementById('engineer-week-badge');
-        const points = dashboardChartState.points;
+        const points = engineerSeriesPoints;
         if (!badge || !points.length) return;
         const todayIndex = (new Date().getDay() + 6) % 7;
         const sum = list => list.reduce((total, point) => total + Number(point.value || 0), 0);
@@ -2182,22 +2174,49 @@
     }
 
     // ---- Visits completed area chart (Dashboard Style) ----
-    const dashboardChartState = {points: [], range: 90, index: null, firstDraw: true, requested: false};
+    // One chart per page: the engineer's own (engineer-activity) or the company's
+    // (manager-activity, managers and hybrids). prefix names the chart's element ids.
+    const dashboardChartState = {points: [], range: 90, index: null, firstDraw: true, requested: false,
+                                 companyRequested: false, prefix: 'engineer-activity', comparePoints: []};
     const DASHBOARD_CHART_RANGES = {90: 'Last 3 months', 30: 'Last 30 days', 7: 'Last 7 days'};
+    // The engineer's own series also feeds the Done this week badge, chart or not (hybrids).
+    let engineerSeriesPoints = [];
 
     async function loadEngineerActivity() {
         const chart = document.getElementById('engineer-activity-chart');
-        if (!chart) return;
+        if (!chart && !document.getElementById('engineer-week-badge')) return;
         try {
             const data = await fetchJsonOrThrow('/get_dashboard_series?metric=my_completed&days=90');
-            dashboardChartState.points = Array.isArray((data || {}).points) ? data.points : [];
+            engineerSeriesPoints = Array.isArray((data || {}).points) ? data.points : [];
         } catch (error) {
             console.warn('[Dashboard] Visits completed could not be loaded', error);
+            if (chart) chart.innerHTML = '<p class="dash-chart-empty">Could not load completed visits. Refresh the page to try again.</p>';
+            return;
+        }
+        if (chart) {
+            dashboardChartState.points = engineerSeriesPoints;
+            setDashboardChartRange(dashboardChartState.range);
+        }
+        renderEngineerWeekBadge();
+    }
+
+    async function loadManagerActivity() {
+        const chart = document.getElementById('manager-activity-chart');
+        if (!chart) return;
+        dashboardChartState.prefix = 'manager-activity';
+        try {
+            const [completed, scheduled] = await Promise.all([
+                fetchJsonOrThrow('/get_dashboard_series?metric=company_completed&days=90'),
+                fetchJsonOrThrow('/get_dashboard_series?metric=company_scheduled&days=90'),
+            ]);
+            dashboardChartState.points = Array.isArray((completed || {}).points) ? completed.points : [];
+            dashboardChartState.comparePoints = Array.isArray((scheduled || {}).points) ? scheduled.points : [];
+        } catch (error) {
+            console.warn('[Dashboard] Company visits completed could not be loaded', error);
             chart.innerHTML = '<p class="dash-chart-empty">Could not load completed visits. Refresh the page to try again.</p>';
             return;
         }
         setDashboardChartRange(dashboardChartState.range);
-        renderEngineerWeekBadge();
     }
 
     function setDashboardChartRange(range) {
@@ -2207,13 +2226,21 @@
         document.querySelectorAll('.dash-segment-btn').forEach(button => {
             button.setAttribute('aria-pressed', String(Number(button.dataset.range) === days));
         });
-        setTextIfPresent('engineer-activity-sub', DASHBOARD_CHART_RANGES[days] + (days === 90 ? ', by week' : ''));
-        const daily = dashboardChartState.points.slice(-days);
+        const prefix = dashboardChartState.prefix;
+        setTextIfPresent(`${prefix}-sub`, DASHBOARD_CHART_RANGES[days] + (days === 90 ? ', by week' : ''));
+        const byRange = series => {
+            const daily = series.slice(-days);
+            return days === 90 ? groupDashboardPointsByWeek(daily) : daily;
+        };
+        const points = byRange(dashboardChartState.points);
+        // The manager chart compares against visits scheduled; the engineer chart has no compare.
+        const comparePoints = prefix === 'manager-activity' ? byRange(dashboardChartState.comparePoints) : [];
         renderDashboardAreaChart(
-            document.getElementById('engineer-activity-chart'),
-            days === 90 ? groupDashboardPointsByWeek(daily) : daily,
+            document.getElementById(`${prefix}-chart`),
+            points,
             {unit: 'visit', label: DASHBOARD_CHART_RANGES[days].toLowerCase(), weekly: days === 90,
-             readout: document.getElementById('engineer-activity-readout')}
+             readout: document.getElementById(`${prefix}-readout`),
+             compare: points.length && comparePoints.length === points.length ? {points: comparePoints} : null}
         );
     }
 
@@ -2238,15 +2265,23 @@
 
     // One smooth line with a light fill, three gridlines and a few date labels. Pointer,
     // tap and arrow keys move a marker and write the day into the readout line.
+    // options.compare = {points} adds a muted dashed line (the manager chart's visits
+    // scheduled), drawn on the same scale and named in the readout; same length as points.
     function renderDashboardAreaChart(container, points, options) {
         if (!container) return;
         const readout = options.readout;
         const plural = n => `${n} ${options.unit}${n === 1 ? '' : 's'}`;
         const values = points.map(point => Number(point.value || 0));
         const total = values.reduce((sum, value) => sum + value, 0);
-        const summary = `${plural(total)} in the ${options.label}`;
-        if (!points.length || total === 0) {
-            container.innerHTML = '<p class="dash-chart-empty">No completed visits in this range.</p>';
+        const compare = options.compare
+            ? options.compare.points.map(point => Number(point.value || 0))
+            : null;
+        const compareTotal = compare ? compare.reduce((sum, value) => sum + value, 0) : 0;
+        const summary = compare
+            ? `${total} of ${compareTotal} scheduled ${options.unit}${compareTotal === 1 ? '' : 's'} completed in the ${options.label}`
+            : `${plural(total)} in the ${options.label}`;
+        if (!points.length || (total === 0 && compareTotal === 0)) {
+            container.innerHTML = `<p class="dash-chart-empty">No ${compare ? 'scheduled' : 'completed'} visits in this range.</p>`;
             if (readout) readout.textContent = '';
             return;
         }
@@ -2254,14 +2289,18 @@
         const width = Math.max(container.clientWidth, 280);
         const height = width < 576 ? 160 : 200;
         const pad = {top: 12, right: 8, bottom: 24, left: 8};
-        const top = Math.max(4, Math.ceil(Math.max(...values) / 2) * 2);
+        const top = Math.max(4, Math.ceil(Math.max(...values, ...(compare || [])) / 2) * 2);
         const x = i => pad.left + (points.length === 1 ? 0 : i * (width - pad.left - pad.right) / (points.length - 1));
         const y = v => pad.top + (1 - v / top) * (height - pad.top - pad.bottom);
-        let line = `M${x(0)},${y(values[0])}`;
-        for (let i = 1; i < values.length; i += 1) {
-            const mid = (x(i - 1) + x(i)) / 2;
-            line += ` C${mid},${y(values[i - 1])} ${mid},${y(values[i])} ${x(i)},${y(values[i])}`;
-        }
+        const smooth = series => {
+            let path = `M${x(0)},${y(series[0])}`;
+            for (let i = 1; i < series.length; i += 1) {
+                const mid = (x(i - 1) + x(i)) / 2;
+                path += ` C${mid},${y(series[i - 1])} ${mid},${y(series[i])} ${x(i)},${y(series[i])}`;
+            }
+            return path;
+        };
+        const line = smooth(values);
         const base = y(0);
         const grid = [0, top / 2, top].map(v =>
             `<line class="dash-chart-grid" x1="${pad.left}" x2="${width - pad.right}" y1="${y(v)}" y2="${y(v)}"/>` +
@@ -2276,11 +2315,13 @@
 
         const animate = dashboardChartState.firstDraw && !dashboardReducedMotion.matches;
         dashboardChartState.firstDraw = false;
-        container.innerHTML = `<svg class="dash-chart-svg${animate ? ' is-drawing' : ''}" viewBox="0 0 ${width} ${height}" width="100%" height="${height}" tabindex="0" role="img" aria-label="Visits completed, ${escapeHtml(summary)}. Use the left and right arrow keys to read each ${options.weekly ? 'week' : 'day'}.">
+        container.innerHTML = `<svg class="dash-chart-svg${animate ? ' is-drawing' : ''}" viewBox="0 0 ${width} ${height}" width="100%" height="${height}" tabindex="0" role="img" aria-label="Visits ${compare ? 'scheduled and ' : ''}completed, ${escapeHtml(summary)}. Use the left and right arrow keys to read each ${options.weekly ? 'week' : 'day'}.">
             ${grid}
+            ${compare ? `<path class="dash-chart-line is-compare" d="${smooth(compare)}"/>` : ''}
             <path class="dash-chart-fill" d="${line} L${x(values.length - 1)},${base} L${x(0)},${base} Z"/>
             <path class="dash-chart-line" d="${line}" pathLength="1"/>
             <line class="dash-chart-cursor d-none" y1="${pad.top}" y2="${base}"/>
+            ${compare ? '<circle class="dash-chart-dot is-compare d-none" r="3.5"/>' : ''}
             <circle class="dash-chart-dot d-none" r="4"/>
             ${labels}
         </svg>`;
@@ -2288,12 +2329,14 @@
 
         const svg = container.querySelector('svg');
         const cursor = svg.querySelector('.dash-chart-cursor');
-        const dot = svg.querySelector('.dash-chart-dot');
+        const dot = svg.querySelector('.dash-chart-dot:not(.is-compare)');
+        const compareDot = svg.querySelector('.dash-chart-dot.is-compare');
         const show = index => {
             dashboardChartState.index = index;
             if (index === null) {
                 cursor.classList.add('d-none');
                 dot.classList.add('d-none');
+                if (compareDot) compareDot.classList.add('d-none');
                 if (readout) readout.textContent = summary;
                 return;
             }
@@ -2303,10 +2346,19 @@
             dot.setAttribute('cy', y(values[index]));
             cursor.classList.remove('d-none');
             dot.classList.remove('d-none');
+            if (compareDot) {
+                compareDot.setAttribute('cx', x(index));
+                compareDot.setAttribute('cy', y(compare[index]));
+                compareDot.classList.remove('d-none');
+            }
             const when = options.weekly
                 ? `Week of ${formatDashboardChartDay(points[index].date)}`
                 : formatDashboardChartDay(points[index].date, true);
-            if (readout) readout.textContent = `${when} · ${plural(values[index])}`;
+            if (readout) {
+                readout.textContent = compare
+                    ? `${when} · ${compare[index]} scheduled · ${values[index]} completed`
+                    : `${when} · ${plural(values[index])}`;
+            }
         };
         const nearest = event => {
             const box = svg.getBoundingClientRect();

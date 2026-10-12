@@ -1935,7 +1935,8 @@ a.dashboard-mobile-task-card.is-late {
 
 /* =========================================================
    DASHBOARD TRENDS ("alive, not overloaded")
-   Each tile: change vs last week + a weekly sparkline, ink-muted unless the count rose
+   Each tile: change vs last week (badge + line since Dashboard Style phase 2; the
+   sparklines were removed then), ink-muted unless the count rose
    (every trended count is lower-is-better). One chart: overdue by age. Motion is one
    load moment -- tiles settle, numbers count, bars grow -- plus a 3-pulse dot on refresh.
    ========================================================= */
@@ -1953,25 +1954,6 @@ a.dashboard-mobile-task-card.is-late {
 .manager-kpi-trend i { font-size: 0.72rem; }
 .manager-kpi-trend.is-worse { color: #c8102e; }
 .manager-kpi-trend.is-better { color: #15803d; }
-
-.manager-kpi-spark {
-    display: block;
-    width: 100%;
-    height: 24px;
-    margin-top: auto;
-    overflow: visible;
-}
-
-.manager-kpi-spark polyline {
-    fill: none;
-    stroke: #94a3b8;
-    stroke-width: 1.75;
-    stroke-linejoin: round;
-    stroke-linecap: round;
-    vector-effect: non-scaling-stroke;
-}
-
-.manager-kpi-spark.is-worse polyline { stroke: #c8102e; }
 
 .manager-kpi-meter {
     display: block;
@@ -2132,7 +2114,6 @@ a.dashboard-mobile-task-card.is-late {
 :root[data-app-theme="dark"] .manager-updated { color: var(--dark-muted); }
 :root[data-app-theme="dark"] .manager-kpi-trend.is-worse { color: #f5a3ab; }
 :root[data-app-theme="dark"] .manager-kpi-trend.is-better { color: #4ade80; }
-:root[data-app-theme="dark"] .manager-kpi-spark.is-worse polyline { stroke: #f87171; }
 :root[data-app-theme="dark"] .manager-age { border-color: var(--dark-border); }
 :root[data-app-theme="dark"] .manager-age-count,
 :root[data-app-theme="dark"] .manager-age-title { color: var(--dark-text); }
@@ -2505,3 +2486,98 @@ a.dashboard-mobile-task-card.is-late {
 :root[data-app-theme="dark"] .dash-chart-line,
 :root[data-app-theme="dark"] .dash-chart-dot { stroke: color-mix(in srgb, var(--app-primary) 70%, #ffffff); }
 :root[data-app-theme="dark"] .dash-chart-fill { fill: color-mix(in srgb, var(--app-primary) 70%, #ffffff); }
+
+/* Dashboard Style phase 2 (manager and hybrid): the KPI tiles take the stat card anatomy
+   (.manager-kpi.dash-stat keeps the filter, hover and active underline), the company
+   chart sits two-thirds wide beside Overdue by age, and Direction / What Needs Attention
+   use the same hairline card surface. */
+.manager-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 1rem;
+}
+
+.manager-kpi.dash-stat { gap: 0; }
+.manager-kpi .manager-kpi-meter { margin-top: 0.75rem; }
+
+.dash-activity-row {
+    display: grid;
+    gap: 1rem;
+}
+
+.dash-activity-row > .manager-age {
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem;
+}
+
+.dash-activity-row .manager-age-title { font-size: 1rem; font-weight: 600; }
+.dash-activity-row .manager-age-bars { flex: 1; align-items: end; margin-top: 1rem; }
+
+.dash-panel {
+    border: 1px solid var(--app-border, #dbe3ea);
+    border-radius: 12px;
+    background: var(--app-surface, #ffffff);
+}
+
+.dash-panel-head {
+    padding: 1.25rem;
+    background: transparent;
+    border-bottom: 1px solid var(--app-border, #dbe3ea);
+}
+
+[data-dashboard-section="admin-counters"].dashboard-metric-strip { padding: 1rem 1.25rem; }
+
+.manager-watchlist-filter .btn { border-radius: 999px; }
+
+@media (min-width: 1200px) {
+    .dash-activity-row:has(> .manager-age:not(.d-none)) {
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 575.98px) {
+    .manager-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+    .dash-activity-row > .manager-age,
+    .dash-panel-head { padding: 1rem; }
+}
+
+:root[data-app-theme="dark"] .dash-panel,
+:root[data-app-theme="dark"] .dash-panel-head { border-color: var(--dark-border); }
+
+/* Manager chart: visits scheduled as a muted dashed comparison line (no fill, no draw-in),
+   so it reads apart from the Completed accent line without relying on colour. */
+.dash-chart-line.is-compare {
+    stroke: var(--app-muted, #64748b);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+    opacity: 0.8;
+}
+
+.dash-chart-svg.is-drawing .dash-chart-line.is-compare { animation: none; stroke-dasharray: 4 3; stroke-dashoffset: 0; }
+
+.dash-chart-dot.is-compare { stroke: var(--app-muted, #64748b); }
+
+.dash-chart-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    margin: 0.4rem 0 0;
+    font-size: 0.78rem;
+    color: var(--app-muted, #64748b);
+}
+
+.dash-chart-key-item { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.dash-chart-swatch {
+    width: 1rem;
+    height: 0;
+    border-top: 2px solid var(--app-primary, #0d6efd);
+}
+
+.dash-chart-swatch.is-compare { border-top: 2px dashed var(--app-muted, #64748b); }
+
+:root[data-app-theme="dark"] .dash-chart-line.is-compare,
+:root[data-app-theme="dark"] .dash-chart-dot.is-compare { stroke: var(--dark-muted); }
+:root[data-app-theme="dark"] .dash-chart-key { color: var(--dark-muted); }
+:root[data-app-theme="dark"] .dash-chart-swatch { border-top-color: color-mix(in srgb, var(--app-primary) 70%, #ffffff); }
+:root[data-app-theme="dark"] .dash-chart-swatch.is-compare { border-top-color: var(--dark-muted); }

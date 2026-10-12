@@ -162,7 +162,9 @@ class DashboardTrendSourceTests(unittest.TestCase):
     def test_tiles_carry_trend_slots_and_keep_their_ids(self):
         for key in ('approvals', 'overdue', 'pending_tsr', 'waiting'):
             self.assertEqual(self.dashboard.count(f'id="manager-trend-{key}"'), 1, key)
-            self.assertEqual(self.dashboard.count(f'id="manager-spark-{key}"'), 1, key)
+            # Dashboard Style phase 2: the sparklines left; the trend is the badge plus a line.
+            self.assertEqual(self.dashboard.count(f'id="manager-trend-line-{key}"'), 1, key)
+        self.assertNotIn('manager-spark-', self.dashboard)
         self.assertIn('id="manager-kpi-pm-meter"', self.dashboard)
         for kept in ('manager-approvals-total', 'manager-overdue-count', 'manager-pending-tsr-count',
                      'manager-waiting-count', 'manager-kpi-pm'):
@@ -172,7 +174,8 @@ class DashboardTrendSourceTests(unittest.TestCase):
         tiles = self.dashboard.index('class="manager-kpis')
         chart = self.dashboard.index('id="manager-overdue-age"')
         self.assertLess(tiles, chart)
-        self.assertLess(chart, self.dashboard.index('id="manager-approvals"'))
+        # Dashboard Style phase 2: it sits beside the company chart, in manager-activity.
+        self.assertLess(self.dashboard.index('data-dashboard-section="manager-activity"'), chart)
         self.assertIn('function openOverdueAge(', self.js)
         self.assertIn("openManagerKpi(`age:${key}`)", self.js)
 
