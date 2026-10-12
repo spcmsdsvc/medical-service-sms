@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-my-requests-fixes",
+      "release_date": "2026-10-12",
+      "title": "Clearer My Requests",
+      "summary": "Each My Requests tab uses its own words, errors show where you can read them, and the page remembers your tab.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-my-requests-fixes-labels",
+          "category": "My Requests",
+          "description": "Each tab now has its own filters, counts and column headings. For example, Travel Requests shows Awaiting approval, Approved and Funds received, and Liquidations shows To do, Submitted and Completed. The Leave badge now counts your open leave records.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-my-requests-fixes-dialogs",
+          "category": "My Requests",
+          "description": "If a confirmation can't be saved, the reason now appears inside the dialog. If your session has expired, the dialog tells you to log in again.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-12-my-requests-fixes-open",
+          "category": "My Requests",
+          "description": "Open on a travel request or cash advance now stays in the same tab, and Back returns you to the same tab and filter.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-dashboard-style-scheduler",
       "release_date": "2026-10-12",
       "title": "A Cleaner Dispatch Board",

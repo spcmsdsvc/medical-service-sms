@@ -37,6 +37,176 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# My Requests — Batch B: "Needs your action" Tab, Rejected Tabs, Sidebar Badge
+
+**Status:** Approved — awaiting go-ahead.
+**Approved:** 2026-10-12 (owner chose: approved-but-unreceived money listed without counting in the badge; "Mark travel completed" only after the return date; My Requests opens on "Needs your action"; then "approved, write the plan").
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch A (executed 2026-10-12, **not yet committed**). Commit Batch A first or publish both together.
+
+## Context
+
+The 2026-10-12 scan found that the red "My Requests" sidebar badge (`my_requests_action`) counts Rejected/Returned records that the page mostly hides — rejected reimbursements never appear, rejected travel requests and cash advances only under All — and that users must click through five tabs to find what needs them. Batch B adds one "Needs your action" list across all modules, makes the badge count exactly that list's to-do groups, and adds Rejected tabs. It also closes a gap left by Batch A: the two GET list loads still parse responses with `res.json()`.
+
+## Decisions taken
+
+1. **Three groups in "Needs your action"**; the badge counts only the first two:
+
+   | Group | Contents | Action |
+   | --- | --- | --- |
+   | **To fix** | Rejected/Returned reimbursements, travel requests, cash advances, travel liquidations, cash advance liquidations, leave | Open the record (link) |
+   | **Your next step** | Mark travel completed (funds received **and** `return_date` before today); Create cash advance liquidation (received, no liquidation); Continue a **draft** liquidation (travel or cash advance); Mark an **approved** liquidation completed (travel or cash advance, where the existing `can_complete` rule allows); leave in Form to Follow or Provisional | Same buttons and dialogs as the module tabs |
+   | **Confirm when you receive it** | Approved reimbursements (not paid), approved travel requests without `funds_received_at`, approved cash advances not received | Confirm Received — **listed, not counted in the badge** (owner) |
+
+2. **My Requests opens on "Needs your action"**, always the first tab; empty state "Nothing needs you right now." `?module=` links still open their own tab (owner).
+3. **Rejected records stay in "To fix" until resubmitted** — every module lets the requester edit Rejected records, so this is correct, not stale.
+4. **Rejected tab** (fifth status button) for Reimbursements, Travel Requests and Cash Advances only; Liquidations and Leave already list rejected records under To do / Open.
+5. **Drafts of new requests are not actions** (the user may still be filling them in); **draft liquidations are** (they are owed).
+6. **"Mark travel completed" appears only after the return date** (owner).
+
+## Investigation
+
+- **Badge:** `/api/nav/pending-summary` (`app.py:28283-28301`) counts `user_id == current_user.id` and status in `Rejected`/`Returned` on `ReimbursementHeader`, `TravelRequest`, `TravelLiquidationHeader`, `CashAdvanceHeader`, `CashAdvanceLiquidationHeader`; leave is missing and travel participants are missed. Consumers: sidebar `layout.html:1133` (label "needing attention"), staff dashboard `loadStaffWaiting()` `app-dashboard.js:1655` ("… need attention"), `tests/test_layout_sidebar.py:873` (only asserts an int). The endpoint runs on every page load and is shared code → full suite before publishing.
+- **Editable on rejection:** `REIMBURSEMENT_EDITABLE_STATUSES = {'Draft', 'Rejected'}` (`app.py:36876`), `TRAVEL_REQUEST_EDITABLE_STATUSES` (`:41952`), cash advance save allows draft/returned/rejected (`save_cash_advance`, `:68538`), `TRAVEL_LIQUIDATION_EDITABLE_STATUSES = {'draft', 'returned'}` (`:50217`), `CASH_ADVANCE_LIQUIDATION_EDITABLE_STATUSES = {'draft', 'returned', 'rejected'}` (`:69192`), leave `EDITABLE_STATUSES` (`leave_feature.py:26`). Note: a **rejected travel liquidation** is not in the editable set; it still goes to To fix (it is what the old badge counted) — the executor confirms on the liquidation page what the user can do with it and records the finding under this plan.
+- **Status normalisers:** reimbursement maps `returned` → Rejected (`:36880`); cash advance maps `returned` → Rejected (`:66884`); travel liquidation keeps Rejected and Returned (`:47687`); cash advance liquidation keeps both (`:69205`).
+- **Travel trip-over:** reminder logic uses `return_date` and `TRAVEL_LIQUIDATION_REMINDER_DAYS` (`run_travel_request_liquidation_reminder_check_for_current_user`, `:13273`). Batch B uses `return_date < today` combined with the existing `can_mark_ready_for_liquidation` rule (`accounting_center_travel_request_item_to_dict`, `:47040`: Funds Received, `funds_received_at` set, no liquidation started/completed).
+- **Completion rules to reuse:** cash advance liquidation `can_complete_liquidation` (owner, status Approved, not completed — `accounting_center_cash_advance_item_to_dict`, `:51130`); travel liquidation uses `can_complete_liquidation` from `travel_liquidation_to_dict` — reuse its rule, do not invent a new one.
+- **Record URLs:** `/reimbursement?reimbursement_id=` (`:10647`), `/travel_request?travel_request_id=`, `/cash_advance?cash_advance_id=`, `/travel_liquidation?liquidation_id=`, `/cash_advance_liquidation?liquidation_id=`, `/leave_request?open=`.
+- **Rejected filter:** travel (`:47218`) and cash advance (`:51190`) queues already accept `status=rejected`; the reimbursement queue (`:51530`) does not.
+- **Id clash:** `openCashAdvanceLiquidationDraft` looks up `accountingItems` by `row.id` or `row.cash_advance_id`; on a mixed list another module's id can match.
+- **Leave statuses:** confirm in `leave_feature.py` that Form to Follow and Provisional both mean "the employee still has to file/complete something" before listing them under Your next step; if Provisional means something else, drop it and note the finding here.
+
+## Execution steps
+
+1. **Shared helper** (`app.py`, beside the My Requests helpers): `my_requests_action_items(user=None)` returns a list of light dicts `{module, id, record_no, kind, group ('fix'|'next'|'confirm'), label (what to do), action, url, amount, currency, date_label, status}`. Queries use `apply_my_accounting_owner_filter` for reimbursements, travel requests (participants included), cash advances and travel liquidations; `user_id` for cash advance liquidations and leave. Each module is wrapped in its own try/except that logs and skips (as the badge does today). No full `*_to_dict` serialisers. Done = every rule in decision 1 produces an item; nothing for other users.
+2. **Badge** (`app.py` `pending-summary`): `my_requests_action` = count of `fix` + `next` items from the helper. `layout.html:1133` label → "needing your action"; `app-dashboard.js` `loadStaffWaiting()` text → "1 of your requests needs your action" / "N of your requests need your action". Done = badge equals the action tab's badge.
+3. **Queue and module** (`app.py`): `GET /get_accounting_action_queue` (`@login_required`, `require_accounting_center_access()`), returning `{success, queue: 'action', items, count, summary: {pending: fix, processing: next, paid: confirm}}`. Add `{'key': 'action', 'label': 'Needs your action', 'description': 'Everything waiting on you across your requests.', 'status': 'active', 'queue_endpoint': '/get_accounting_action_queue', 'order': 0}` to `ACCOUNTING_CENTER_MODULES`, an `action` branch in `accounting_center_module_to_dict` (badge = fix + next), and the route in the JSON route list near `app.py:1350`. Done = module listed first with its badge.
+4. **Page** (`templates/accounting_center.html`): `MODULE_VIEW.action` with KPI labels "To fix" / "Your next step" / "Confirm when received", headings Record · Type · Details · Amount · Date · Status · What to do · Actions, and no status buttons (hidden for this module). New `renderActionRows(items)` sorted fix → next → confirm; the button per `action`: `open` → link; `confirm_received` → `openPaidModal(id, module)`; `travel_completed` → `openTravelCompletedConfirm(id)`; `complete_travel_liquidation` → `openTravelLiquidationCompleteModal(id)`; `complete_cash_advance_liquidation` → `openCashAdvanceLiquidationCompleteModal(id)`; `create_cash_advance_liquidation` → `openCashAdvanceLiquidationDraft(id)`. `openCashAdvanceLiquidationDraft` matches rows by module as well as id. Initial `activeAccountingModule = 'action'` (URL params still win). Empty state "Nothing needs you right now." Done = each button acts on the right record and the list refreshes after an action.
+5. **Rejected tabs:** fifth button `data-status="rejected"`, shown only when `MODULE_VIEW[key].statusLabels.rejected` exists (Reimbursements, Travel Requests, Cash Advances; label "Rejected"). Add `'rejected'` to the status lists in `selectAccountingModule`, `setAccountingTab` and the URL parser. `get_accounting_reimbursement_queue` accepts `rejected` (status Rejected or Returned, normalised lower-case). Done = the tab lists the user's rejected records in all three modules.
+6. **Safe list loads:** `readAccountingJson(res)` — reads text, reports an HTML/redirect reply as "Your session has expired. Please log in again."; used by `loadAccountingModules` and `refreshAccountingQueue` instead of `res.json()`. Keep `fetchAccountingWithTimeout` and the timeout constant (pinned by `test_my_requests_reliability.py`).
+7. **Self-review:** every `onclick` target and delegated handler is defined; Batch A tests still pass; the badge and the action tab both use `my_requests_action_items`; no id used elsewhere removed.
+
+## Deliberately excluded
+
+- **Dismissing an abandoned rejected record** — it leaves the list when resubmitted or deleted on its own page.
+- **LPR** — not part of My Requests.
+- **Drafts of new requests** — decision 5.
+- **Email/notification changes.**
+- **Batch C** (restyle, phone cards), search box, "New request" button.
+
+## Verification
+
+- **Tests** — new `tests/test_my_requests_actions.py` on a seeded user: one record per rule lands in the right group; approved-unreceived money is listed but not counted; a funds-received trip appears only once `return_date` is past; another user's records never appear (travel participant does); `pending-summary` `my_requests_action` equals fix + next; reimbursement queue `status=rejected` returns rejected records; source tests — `action` module first and default, Rejected button and `'rejected'` in the status lists, the action → function map, `readAccountingJson` in both loads, kept-functions guard (Batch A list plus `renderActionRows`). Update the label assertions in `test_layout_sidebar.py` / `test_dashboard_*` if they pin "attention".
+  - **Positive control:** run the new tests in-process against `git show HEAD:<file>` (never `git stash`); all fail except the kept-functions guard.
+- **Focused run:** `tests/test_my_requests_*.py`, `test_layout_sidebar`, `tests/test_dashboard_*.py`, `test_leave_request_workflow`, `test_provisional_leave`, `test_changelog_coverage`, `test_dark_mode_readability`.
+- **Full suite once** before publishing (`venv/Scripts/python.exe scripts/run_suite.py`, main folder): `pending-summary` and `layout.html` are shared.
+- **Browser** on a copy of `scheduler.db` (temporary password on the copy only): an engineer account at 1366 px (light, graphite) and 375 px (AMOLED). Sidebar badge = action-tab badge; each action button opens the right dialog or record and the list refreshes; Rejected tabs work in all three modules; empty state when nothing is due; a staff account's dashboard card text; contrast ≥ 4.5:1, no horizontal scroll, tap targets ≥ 44 px, console clean. Clean up the copy, password and launch entry. One screenshot per theme as final proof.
+
+## After implementation
+
+1. `app.py` service worker `CACHE_VERSION` `…-v296-my-requests-actions` (v295 kept as a history comment).
+2. `static/changelog/releases.json`: release "Needs your action" (audience `everyone`).
+3. `changes.md` bullets; this plan's Status with the commit and any differences.
+4. Commit only `app.py`, `templates/accounting_center.html`, `templates/layout.html`, `static/js/app-dashboard.js`, `tests/test_my_requests_actions.py`, any updated test files, `static/changelog/releases.json`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **Badge slows every page:** about 10 small queries (5 today); per-module try/except keeps a failure to that module's count.
+- **Badge and list disagree:** one helper feeds both; a test pins equality.
+- **Wrong record acted on in the mixed list:** each item carries module + id; the cash advance lookup matches by module.
+- **Blast radius:** this page, the sidebar badge and the staff dashboard card; rollback = revert the commit.
+
+# My Requests — Batch A: Fixes and Cleanup
+
+**Status:** Executed 2026-10-12 (owner: "execute batch A in plans.md"), **not yet committed**; publish on "commit and push". Tests: 10 in `tests/test_my_requests_page.py`; 9 fail on `HEAD`, the kept-functions guard passes on both. Focused run: 51 tests OK. Browser check on a DB copy passed (engineer account; graphite and light at 1366 px, AMOLED at 375 px). Differences from the plan: the subtitle is built from `MODULE_VIEW[...].recordName` instead of a `subtitle(count)` function; `updateAccountingQueueHeaders` and `currentModuleRecordName` were removed (folded into `applyModuleView`); the account used for the browser check has no leave records, so the Leave badge is proven by the endpoint test.
+**Approved:** 2026-10-12 (owner: "plan batch A first", then "approved, write the plan" — including the label table in decision 1).
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+
+## Context
+
+A read-only scan of My Requests (`/accounting_center`, `templates/accounting_center.html`) on 2026-10-12 found wrong labels, a half-styled Leave tab, dialog errors hidden behind the dialog, unguarded JSON parsing and dead code. Batch A fixes these on this page only; behaviour is otherwise unchanged. Batch B ("Needs your action" tab, Rejected tabs, sidebar badge rule) and Batch C (restyle to the dashboard look, phone cards) are separate plans.
+
+## Decisions taken
+
+1. **Per-module labels.** `data-status` values stay `pending/processing/paid/all`; only the visible words change. The "All" button stays "All".
+
+   | Module | Status buttons (pending · processing · paid) | KPI labels |
+   | --- | --- | --- |
+   | Reimbursements | Pending · Processing · Paid | Waiting for payment · Processing · Paid |
+   | Travel Requests | Awaiting approval · Approved · Funds received | same as buttons |
+   | Cash Advances | Awaiting approval · Approved · Received | same as buttons |
+   | Liquidations | To do · Submitted · Completed | same as buttons |
+   | Leave | Open · Submitted · Approved | same as buttons |
+
+2. **"Engineer" column → "Requester"**, and every module gets column headings that match its data (step 2).
+3. **Record buttons say "Open"** everywhere. Travel Request and Cash Advance records open in the same tab (`target="_blank"` removed); the reimbursement Package download keeps its new tab.
+4. **URL memory moves from Batch B into A**: the page writes `?module=&status=` on every switch, so Back from a record (decision 3) returns to the same tab and status.
+5. **Server routes stay**: `/accounting_mark_processing` and `/get_accounting_travel_completion_queue` are kept (old cached pages or bookmarks may still call them). Only the hidden `travel_completion` entry leaves `ACCOUNTING_CENTER_MODULES`.
+
+## Investigation
+
+- **KPI captions are fixed text** (`accounting_center.html:393-413`) and only true for Reimbursements. Bucket meanings per module: reimbursements `app.py:46903` (pending = approved, not processing/paid), travel `:46947` (pending = Submitted), cash advances `:51043` (pending = Submitted), liquidations `:51354` (pending = draft/returned/rejected), leave `leave_feature.py:805` (pending = Draft/Form to Follow/Provisional/Rejected; processing = Submitted; paid = Approved).
+- **Column headings** switch only for Leave (`:851-854`). Liquidation rows put cash advance under "Amount", actual expenses under "Approved" and the balance under "Details / Reference" (`:1081-1094`); Cash Advance puts "Needed:" under "Period" (`:1216`).
+- **Leave tab:** status uses the undefined class `status-badge` (`:982`); Open is outside `.action-btns` (`:984`), so it is not right-aligned and not locked while busy; empty state differs from the other tabs (`:973`). `accounting_center_module_to_dict` (`app.py:47090`) has no leave branch, so the badge is always 0. The subtitle falls through to `data.message || "… module foundation ready"` (`:935-936`); the leave endpoint sends no `message`, so it reads "Leave Requests module foundation ready".
+- **Headings on direct link:** startup (`:1609-1618`) and `openLiquidationsModuleAfterTravelCompleted` (`:870-893`) never call `updateAccountingQueueHeaders()`. The module-switch logic is duplicated four times (`setAccountingModule` `:829`, `openLiquidationsModuleAfterTravelCompleted`, `applyAccountingUrlParams` `:1303`, startup).
+- **Dialog errors** go to `#accountingAlert` inside the page card, behind the modal backdrop, and auto-hide after 4.5 s (`:748-754`); e.g. "Please select a received method" (`:1560-1563`) is invisible.
+- **Session expiry:** `openCashAdvanceLiquidationDraft` (`:1136`), `confirmTravelCompletedReady` (`:1358`), `confirmMarkProcessing` (`:1511`) and `confirmMarkPaid` (`:1581`) call `res.json()` on what may be the login page's HTML ("Unexpected token <"). The two complete functions already parse text safely (`:1410-1416`, `:1468-1474`).
+- **Liquidation badge** counts `draft, returned` (`app.py:47101`), but the Pending list includes `rejected` (`app.py:51390`).
+- **Dead code (verified by search, no callers outside this file):** the `#processingModal` markup (`:464-483`), `processingModalInstance`, `openProcessingModal`, `confirmMarkProcessing`, `processingBtn = ''` (`:1003`); `currentModuleLabel` (defined, never called); `isTravelCompletionModule`, `visibleAccountingModules` (the list is already filtered in `loadAccountingModules`), `renderComingSoonQueue` and the `is_coming_soon` / `coming_soon` branches (no coming-soon module remains once `travel_completion` leaves the list); the `'liquidations'` branches in `openPaidModal` and `confirmMarkPaid` (no button opens the paid dialog for liquidations). CSS: six near-identical note pills `.liquidation-reminder-note`, `.ready-liquidation-note`, `.cash-advance-reference-note`, `.cash-advance-ready-note`, `.cash-advance-completed-note`, `.travel-liquidation-completed-note` (`:138-216`).
+- **Pinned by tests:** `tests/test_my_requests_reliability.py` requires `const ACCOUNTING_REQUEST_TIMEOUT_MS = 15000;`, `function fetchAccountingWithTimeout`, at least 3 `fetchAccountingWithTimeout(` occurrences and the timeout message. `tests/test_leave_request_workflow.py:83` requires `activeAccountingModule === 'leave_requests'`. Both must keep passing.
+- `LeaveRequest` is available in `app.py` (used at `:28272`). Changelog audiences: `CHANGELOG_DIGEST_AUDIENCES` (`app.py:28685`) includes `everyone`. Dark overrides for this page live in `static/css/app-dark-pages.css:714-770` (no rules for the note pills).
+
+## Execution steps
+
+1. **One module switch** (`accounting_center.html`): add `selectAccountingModule(key, status='pending')` that sets `activeAccountingModule`, `activeQueueEndpoint`, `accountingStatus`, the active status button, the status-button labels, KPI labels and captions, column headings, `#activeQueueTitle`, and writes `?module=<key>&status=<status>` with `history.replaceState`. `setAccountingModule`, `setAccountingTab`, `openLiquidationsModuleAfterTravelCompleted`, `applyAccountingUrlParams` and the `DOMContentLoaded` handler call it instead of their own copies. Keep the `activeAccountingModule === 'leave_requests'` check the leave test pins. Done = Leave headings correct on `?module=leave_requests`; a refresh keeps module and status.
+2. **Per-module view map**: one `MODULE_VIEW` object keyed by module with `statusLabels` (pending/processing/paid), `kpi` (label + caption ×3), `headers` (8), `subtitle(count)` and `recordName`. Give the three KPI captions ids (`kpiPendingCaption`, `kpiProcessingCaption`, `kpiPaidCaption`) and the KPI labels ids. Remove the `if` chain at `:930-939`, `updateAccountingQueueHeaders`'s inline arrays and `currentModuleRecordName`. Headings:
+   - Reimbursements: Record · Requester · Period · Amount · Approved · Status · Payment · Actions
+   - Travel Requests: Record · Requester · Travel dates · Amount · Approved · Status · Reference · Actions
+   - Cash Advances: Record · Requester · Needed by · Amount · Approved · Status · Reference · Actions
+   - Liquidations: Record · Requester · Trip · Cash advance · Actual expenses · Status · Balance · Actions
+   - Leave: Record · Requester · Leave dates · Leave type · Weekdays · Status · HR handoff · Actions
+   The Cash Advance Period cell drops its "Needed:" prefix (the heading says it). Done = every module shows its own labels, captions, headings and subtitle.
+3. **Leave tab**: `renderLeaveRequestRows` uses `status-pill` with the dot icon, wraps Open in `.action-btns`, and uses the shared `empty-state` markup ("No leave requests found"). `app.py` `accounting_center_module_to_dict`: add a `leave_requests` branch — counts per bucket with the same status sets as `leave_feature.py:810-827`, `badge_count` = pending + processing (Draft, Form to Follow, Provisional, Rejected, Submitted), filtered by `user_id == current_user.id`. Done = Leave badge equals the number of open leave records.
+4. **Liquidation badge**: `app.py:47101` counts `['draft', 'returned', 'rejected']`. Done = badge equals the Pending list length.
+5. **Errors inside dialogs**: each of the four dialogs (`paidModal`, `travelCompletedConfirmModal`, `cashAdvanceLiquidationCompleteModal`, `travelLiquidationCompleteModal`) gets a hidden `<div class="alert alert-danger d-none" data-dialog-error role="alert">` at the top of its body. Add `showDialogError(modalId, message)` and clear it whenever the dialog opens. Missing received method marks `#paymentMethod` `is-invalid` and shows the error in the dialog. Every confirm function shows failures in its dialog. `showAccountingAlert` auto-hides only `success` and `info`. Done = errors are readable while the dialog is open.
+6. **One POST helper**: `postAccountingAction(url, body={})` — POST with JSON, `Accept: application/json` and `X-CSRFToken: getCSRFToken()`; reads `res.text()`; if `res.redirected` or the text is not JSON, throws "Your session has expired. Please log in again." (HTML reply) or the server text; throws `data.error || data.message` when `!res.ok || data.success === false`; returns `data`. Used by `openCashAdvanceLiquidationDraft`, `confirmTravelCompletedReady`, `confirmCashAdvanceLiquidationComplete`, `confirmTravelLiquidationComplete`, `confirmMarkPaid`. `fetchAccountingWithTimeout` and its 15 s timeout stay for the GET loads. Done = no `res.json()` left in action functions.
+7. **Copy**: remove the "S12 My Requests" eyebrow; subtitle "Your reimbursements, travel, cash advances, liquidations and leave, and what each one is waiting for."; info box becomes one line "Only your own records are shown. Confirm money you've received and finish your liquidations here."; status group `aria-label="Status filter"`; Travel "View" and Cash Advance "Open" both read "Open" and lose `target="_blank"`. Done = no phase codes or "foundation ready" text reachable on the page.
+8. **Cleanup**: delete the dead code listed under Investigation; remove the `travel_completion` dict from `ACCOUNTING_CENTER_MODULES` (`app.py:46874-46882`; route, helper and the `:1356` list entry stay); replace the six note CSS rules with `.row-note` plus `.row-note--ok`, `.row-note--info`, `.row-note--warn` and update the render functions. Immediately before deleting each name, search `templates/`, `static/`, `app.py`, `leave_feature.py` and `tests/` again. Done = the searches return nothing for removed names.
+9. **Self-review**: read the diff; every function referenced by an `onclick`, `data-` handler or the click delegation is still defined — `openPaidModal`, `confirmMarkPaid`, `openTravelCompletedConfirm`, `confirmTravelCompletedReady`, `openCashAdvanceLiquidationCompleteModal`, `confirmCashAdvanceLiquidationComplete`, `openTravelLiquidationCompleteModal`, `confirmTravelLiquidationComplete`, `openCashAdvanceLiquidationDraft`, `refreshAccountingQueue`, `setAccountingModule`, `setAccountingTab`; no id used by other code removed; `getCSRFToken` still comes from `layout.html`.
+
+## Deliberately excluded
+
+- **Sidebar "needs attention" badge rule (scan B1), "Needs your action" tab, Rejected tabs** — Batch B; they change what the page lists, not just how.
+- **Restyle to the dashboard look and phone card layout** — Batch C (Impeccable).
+- **Removing `/accounting_mark_processing` and `/get_accounting_travel_completion_queue`** — decision 5.
+- **Access check on `/get_accounting_leave_request_queue` for approver-only accounts** — it only returns the caller's own records; a leave-module change, not this page.
+- **Liquidation due date countdown, search box, "New request" button** — scan ideas for later batches.
+
+## Verification
+
+- **Tests** — new `tests/test_my_requests_page.py`:
+  - Source: no `S12 My Requests`, no `status-badge`, no `processingModal`, no `foundation ready`; `MODULE_VIEW` has all five module keys and the Leave and Liquidations headings above; `postAccountingAction(` used by all five action functions and no `res.json()` inside them; four `data-dialog-error` slots; `history.replaceState` in `selectAccountingModule`; Travel/Cash Advance rows have no `target="_blank"`; kept-functions guard (step 9 list); `fetchAccountingWithTimeout` and the timeout constant unchanged.
+  - Endpoint: `/get_accounting_center_modules` for a test engineer — Leave badge equals that user's Draft + Form to Follow + Provisional + Rejected + Submitted leave count; a `rejected` travel liquidation is counted in the Liquidations badge; no `travel_completion` module in the list.
+  - **Positive control:** run the new tests in-process against `git show HEAD:<file>` (never `git stash`); all fail except the kept-functions guard.
+- **Focused run:** `tests/test_my_requests_*.py`, `test_leave_request_workflow`, `test_provisional_leave`, `test_changelog_coverage`, `test_dark_mode_readability`. Full suite not needed (one page plus two page-specific counts in `app.py`).
+- **Browser** on a copy of `scheduler.db` (temporary passwords on the copy only): an engineer account at 1366 px in light and graphite, and 375 px in AMOLED. Every module × status shows its labels, captions, headings, subtitle and badge; a refresh and a direct `?module=leave_requests` link keep the view; Confirm Received with no method shows the error inside the dialog; Open on a Travel and a Cash Advance record goes to it and Back returns to the same tab; notes readable in all themes (contrast ≥ 4.5:1); no horizontal scroll; tap targets ≥ 44 px on phones; console clean. Clean up the copy, passwords and launch entry. One screenshot per theme as final proof.
+
+## After implementation
+
+1. `app.py` service worker `CACHE_VERSION` `…-v295-my-requests-fixes` (v294 kept as a history comment).
+2. `static/changelog/releases.json`: release "Clearer My Requests" (audience `everyone`) — labels per tab, errors shown in the dialog, the page remembers your tab.
+3. `changes.md` bullets; this plan's Status with the commit and any differences.
+4. Commit only `templates/accounting_center.html`, `app.py`, `tests/test_my_requests_page.py`, `static/changelog/releases.json`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **Merging four module-switch copies breaks a tab or an action:** the kept-functions test plus a browser click-through of every module, status and dialog.
+- **Leave badge disagrees with the list:** the same status sets as `leave_feature.py`, pinned by an endpoint test.
+- **Same-tab Open loses context:** covered by URL memory (decision 4) and the Back check in the browser sequence.
+- **Blast radius:** one page plus two badge counts; rollback = revert the commit.
+
 # Manager Chart — Scheduled vs Completed
 
 **Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (commit `ea11c35`, together with Dashboard Style phase 2; owner: "go"). Tests: 5 source tests and 2 endpoint tests added to `tests/test_dashboard_style.py`; all 5 source tests fail on `HEAD`. Focused run: 192 tests OK. Browser check on a DB copy passed: `robert` (graphite and light, 1366 px), `rodito` (AMOLED, 375 px), `jonamar` (engineer chart still one line, no `company_scheduled` request).

@@ -27378,7 +27378,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v291-dashboard-style.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v292-dashboard-style-manager.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v293-manager-workload-chart.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v294-dashboard-style-scheduler';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v294-dashboard-style-scheduler.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v295-my-requests-fixes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -46872,15 +46873,6 @@ ACCOUNTING_CENTER_MODULES = [
         'order': 3
     },
     {
-        'key': 'travel_completion',
-        'label': 'Travel Completion',
-        'description': 'Completed travel requests ready for liquidation preparation.',
-        'status': 'coming_soon',
-        'queue_endpoint': '/get_accounting_travel_completion_queue',
-        'phase': 'S13',
-        'order': 4
-    },
-    {
         'key': 'liquidations',
         'label': 'Liquidations',
         'description': 'Liquidation draft creation, expense entry preparation, balances, and closure workflow.',
@@ -47127,13 +47119,24 @@ def accounting_center_module_to_dict(module_config):
         base_query = apply_my_accounting_owner_filter(TravelLiquidationHeader.query, TravelLiquidationHeader)
         normalized_status = func.lower(func.trim(func.coalesce(TravelLiquidationHeader.status, '')))
         counts = {
-            'draft': base_query.filter(normalized_status.in_(['draft', 'returned'])).count(),
+            'draft': base_query.filter(normalized_status.in_(['draft', 'returned', 'rejected'])).count(),
             'submitted': base_query.filter(normalized_status == 'submitted').count(),
             'approved': base_query.filter(normalized_status == 'approved').count(),
             'completed': base_query.filter(normalized_status == 'completed').count(),
             'total': base_query.count()
         }
         badge_count = counts.get('draft', 0) + counts.get('submitted', 0)
+    elif module_key == 'leave_requests':
+        # Same buckets as /get_accounting_leave_request_queue (leave_feature.py).
+        leave_rows = LeaveRequest.query.with_entities(LeaveRequest.status).filter_by(user_id=current_user.id).all()
+        statuses = [row.status for row in leave_rows]
+        counts = {
+            'pending': sum(status in {'Draft', 'Form to Follow', 'Provisional', 'Rejected'} for status in statuses),
+            'processing': sum(status == 'Submitted' for status in statuses),
+            'paid': sum(status == 'Approved' for status in statuses),
+            'total': len(statuses)
+        }
+        badge_count = counts['pending'] + counts['processing']
 
     return {
         'key': module_key,
@@ -47160,7 +47163,7 @@ def get_accounting_center_modules():
     - Travel Requests: active
     - Cash Advances: active standalone Cash Advance tracking
     - Liquidations: active
-    - Travel Completion: hidden/coming soon
+    - Leave Requests: active
     """
     denial = require_accounting_center_access()
     if denial:

@@ -135,85 +135,20 @@
     .status-processing{ background:#dbeafe; color:#1d4ed8; }
     .status-paid{ background:#dcfce7; color:#166534; }
     .status-other{ background:#e5e7eb; color:#374151; }
-    .liquidation-reminder-note{
+    .row-note{
         display: inline-flex;
         align-items: center;
         gap: 6px;
         margin-top: 4px;
         padding: 4px 8px;
         border-radius: 999px;
-        background: #fff7ed;
-        color: #9a3412;
         font-size: .72rem;
         font-weight: 900;
         white-space: nowrap;
     }
-    .ready-liquidation-note{
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 4px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: #ecfdf5;
-        color: #166534;
-        font-size: .72rem;
-        font-weight: 900;
-        white-space: nowrap;
-    }
-
-    .cash-advance-reference-note{
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 4px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: #eef2ff;
-        color: #3730a3;
-        font-size: .72rem;
-        font-weight: 900;
-        white-space: nowrap;
-    }
-    .cash-advance-ready-note{
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 4px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: #ecfdf5;
-        color: #166534;
-        font-size: .72rem;
-        font-weight: 900;
-        white-space: nowrap;
-    }
-    .cash-advance-completed-note{
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 4px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: #dcfce7;
-        color: #166534;
-        font-size: .72rem;
-        font-weight: 900;
-        white-space: nowrap;
-    }
-    .travel-liquidation-completed-note{
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-top: 4px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        background: #dcfce7;
-        color: #166534;
-        font-size: .72rem;
-        font-weight: 900;
-        white-space: nowrap;
-    }
+    .row-note--ok{ background:#dcfce7; color:#166534; }
+    .row-note--info{ background:#eef2ff; color:#3730a3; }
+    .row-note--warn{ background:#fff7ed; color:#9a3412; }
     .cash-advance-purpose{
         max-width: 320px;
         white-space: normal;
@@ -364,9 +299,8 @@
     <div class="accounting-hero mb-4">
         <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
             <div>
-                <div class="text-uppercase fw-bold small opacity-75 mb-1">S12 My Requests</div>
                 <h1 class="h3 mb-2">My Requests</h1>
-                <p class="mb-0 opacity-75">Track and monitor the status of all your submitted requests.</p>
+                <p class="mb-0 opacity-75">Your reimbursements, travel, cash advances, liquidations and leave, and what each one is waiting for.</p>
             </div>
             <button class="btn btn-light fw-bold" onclick="refreshAccountingQueue()">
                 <i class="fa-solid fa-rotate me-2"></i>Refresh
@@ -374,9 +308,8 @@
         </div>
     </div>
 
-    <div class="alert alert-info border-0 shadow-sm mb-4" style="border-radius:16px;">
-        <div class="fw-bold"><i class="fa-solid fa-user-check me-2"></i>Personal Request Tracking</div>
-        <div class="small mb-0">You are viewing only your own request records. Reimbursements, approved Travel Requests, and approved standalone Cash Advances can be confirmed as received here. Ready standalone Cash Advances can also be liquidated here.</div>
+    <div class="alert alert-info border-0 shadow-sm mb-4 small" style="border-radius:16px;">
+        <i class="fa-solid fa-user-check me-2"></i>Only your own records are shown. Confirm money you've received and finish your liquidations here.
     </div>
 
     <div class="module-tabs mb-4" id="accountingModuleTabs">
@@ -390,27 +323,27 @@
         <div class="col-12 col-md-4">
             <div class="card kpi-card">
                 <div class="card-body">
-                    <div class="kpi-label">Pending Confirmation</div>
+                    <div class="kpi-label" id="kpiPendingLabel">Waiting for payment</div>
                     <div class="kpi-value" id="kpiPending">0</div>
-                    <div class="text-muted small mt-2">Approved, not yet confirmed received</div>
+                    <div class="text-muted small mt-2" id="kpiPendingCaption">Approved, payment not yet confirmed</div>
                 </div>
             </div>
         </div>
         <div class="col-12 col-md-4">
             <div class="card kpi-card">
                 <div class="card-body">
-                    <div class="kpi-label">Processing</div>
+                    <div class="kpi-label" id="kpiProcessingLabel">Processing</div>
                     <div class="kpi-value" id="kpiProcessing">0</div>
-                    <div class="text-muted small mt-2">Approved or in release process</div>
+                    <div class="text-muted small mt-2" id="kpiProcessingCaption">Accounting is releasing the payment</div>
                 </div>
             </div>
         </div>
         <div class="col-12 col-md-4">
             <div class="card kpi-card">
                 <div class="card-body">
-                    <div class="kpi-label">Paid / Received</div>
+                    <div class="kpi-label" id="kpiPaidLabel">Paid</div>
                     <div class="kpi-value" id="kpiPaid">0</div>
-                    <div class="text-muted small mt-2">Received or completed records</div>
+                    <div class="text-muted small mt-2" id="kpiPaidCaption">You confirmed the money was received</div>
                 </div>
             </div>
         </div>
@@ -423,7 +356,7 @@
                     <h2 class="h5 fw-bold mb-1" id="activeQueueTitle">My Reimbursements</h2>
                     <div class="text-muted small" id="queueSubtitle">Loading queue...</div>
                 </div>
-                <div class="accounting-tabs btn-group flex-wrap" role="group" aria-label="Accounting queue tabs">
+                <div class="accounting-tabs btn-group flex-wrap" role="group" aria-label="Status filter">
                     <button class="btn btn-outline-dark active" data-status="pending">Pending</button>
                     <button class="btn btn-outline-dark" data-status="processing">Processing</button>
                     <button class="btn btn-outline-dark" data-status="paid">Paid</button>
@@ -438,12 +371,12 @@
                     <thead>
                         <tr id="accountingQueueHeaders">
                             <th>Record</th>
-                            <th>Engineer</th>
+                            <th>Requester</th>
                             <th>Period</th>
                             <th>Amount</th>
                             <th>Approved</th>
-                            <th>Request Status</th>
-                            <th>Details / Reference</th>
+                            <th>Status</th>
+                            <th>Payment</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
@@ -461,27 +394,6 @@
     </div>
 </div>
 
-<div class="modal fade" id="processingModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title fw-bold">Mark as Processing</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <input type="hidden" id="processingRecordId">
-                <p class="text-muted small mb-3">Internal processing status is retained for compatibility. Regular users only need to confirm received payment.</p>
-                <label class="form-label fw-bold">Remarks</label>
-                <textarea id="processingRemarks" class="form-control" rows="4" placeholder="Optional remarks"></textarea>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary fw-bold" id="confirmProcessingBtn" onclick="confirmMarkProcessing()">Confirm Processing</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <div class="modal fade" id="paidModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
@@ -490,6 +402,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-danger d-none" data-dialog-error role="alert"></div>
                 <input type="hidden" id="paidRecordId">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Received Method</label>
@@ -527,6 +440,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-danger d-none" data-dialog-error role="alert"></div>
                 <input type="hidden" id="travelCompletedRecordId">
                 <div class="fw-bold mb-2">Mark this Travel Request as Travel Completed / Ready for Liquidation?</div>
                 <div class="text-muted small">This will create or open the liquidation draft and stop liquidation reminder prompts for this request.</div>
@@ -549,6 +463,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-danger d-none" data-dialog-error role="alert"></div>
                 <input type="hidden" id="cashAdvanceLiquidationCompleteId">
                 <div class="fw-bold mb-2">Mark this Cash Advance Liquidation as completed?</div>
                 <div class="text-muted small mb-3">This will close the liquidation and mark the original Cash Advance as completed. This does not resend email or change the manager approval.</div>
@@ -573,6 +488,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-danger d-none" data-dialog-error role="alert"></div>
                 <input type="hidden" id="travelLiquidationCompleteId">
                 <div class="fw-bold mb-2">Mark this Travel Liquidation as completed?</div>
                 <div class="text-muted small mb-3">This will close the liquidation and mark the linked Travel Request as Liquidation Completed. This does not resend email or change the manager approval.</div>
@@ -595,7 +511,6 @@ let accountingItems = [];
 let accountingModules = [];
 let activeAccountingModule = 'reimbursements';
 let activeQueueEndpoint = '/get_accounting_reimbursement_queue';
-let processingModalInstance = null;
 let paidModalInstance = null;
 let travelCompletedConfirmModalInstance = null;
 let cashAdvanceLiquidationCompleteModalInstance = null;
@@ -608,6 +523,149 @@ let accountingActionBusy = false;
 let accountingQueueRequestSeq = 0;
 let accountingModuleRequestSeq = 0;
 const ACCOUNTING_REQUEST_TIMEOUT_MS = 15000;
+
+// Visible words per module; data-status values stay pending/processing/paid/all.
+const MODULE_VIEW = {
+    reimbursements: {
+        title: 'My Reimbursements',
+        statusLabels: { pending: 'Pending', processing: 'Processing', paid: 'Paid' },
+        kpi: {
+            pending: ['Waiting for payment', 'Approved, payment not yet confirmed'],
+            processing: ['Processing', 'Accounting is releasing the payment'],
+            paid: ['Paid', 'You confirmed the money was received']
+        },
+        headers: ['Record','Requester','Period','Amount','Approved','Status','Payment','Actions'],
+        recordName: 'reimbursement'
+    },
+    travel_requests: {
+        title: 'My Travel Requests',
+        statusLabels: { pending: 'Awaiting approval', processing: 'Approved', paid: 'Funds received' },
+        kpi: {
+            pending: ['Awaiting approval', 'Submitted, waiting for your manager'],
+            processing: ['Approved', 'Approved, funds not yet received'],
+            paid: ['Funds received', 'Received, travelling or liquidating']
+        },
+        headers: ['Record','Requester','Travel dates','Amount','Approved','Status','Reference','Actions'],
+        recordName: 'travel request'
+    },
+    cash_advances: {
+        title: 'My Cash Advances',
+        statusLabels: { pending: 'Awaiting approval', processing: 'Approved', paid: 'Received' },
+        kpi: {
+            pending: ['Awaiting approval', 'Submitted, waiting for your manager'],
+            processing: ['Approved', 'Approved, money not yet received'],
+            paid: ['Received', 'Received, ready for liquidation']
+        },
+        headers: ['Record','Requester','Needed by','Amount','Approved','Status','Reference','Actions'],
+        recordName: 'cash advance'
+    },
+    liquidations: {
+        title: 'My Liquidations',
+        statusLabels: { pending: 'To do', processing: 'Submitted', paid: 'Completed' },
+        kpi: {
+            pending: ['To do', 'Drafts, returned or rejected: yours to finish'],
+            processing: ['Submitted', 'Submitted or approved, not yet closed'],
+            paid: ['Completed', 'Closed liquidations']
+        },
+        headers: ['Record','Requester','Trip','Cash advance','Actual expenses','Status','Balance','Actions'],
+        recordName: 'liquidation'
+    },
+    leave_requests: {
+        title: 'My Leave Requests',
+        statusLabels: { pending: 'Open', processing: 'Submitted', paid: 'Approved' },
+        kpi: {
+            pending: ['Open', 'Drafts, forms to follow, provisional or rejected'],
+            processing: ['Submitted', 'Waiting for approval'],
+            paid: ['Approved', 'Approved leave']
+        },
+        headers: ['Record','Requester','Leave dates','Leave type','Weekdays','Status','HR handoff','Actions'],
+        recordName: 'leave request'
+    }
+};
+
+function moduleView(key=activeAccountingModule){
+    return MODULE_VIEW[key] || MODULE_VIEW.reimbursements;
+}
+
+function applyModuleView(){
+    const view = moduleView();
+    document.querySelectorAll('.accounting-tabs .btn[data-status]').forEach(btn => {
+        const status = btn.dataset.status;
+        btn.classList.toggle('active', status === accountingStatus);
+        btn.setAttribute('aria-pressed', status === accountingStatus ? 'true' : 'false');
+        if(view.statusLabels[status]) btn.textContent = view.statusLabels[status];
+    });
+    ['pending','processing','paid'].forEach(bucket => {
+        const key = bucket.charAt(0).toUpperCase() + bucket.slice(1);
+        document.getElementById(`kpi${key}Label`).textContent = view.kpi[bucket][0];
+        document.getElementById(`kpi${key}Caption`).textContent = view.kpi[bucket][1];
+    });
+    const row = document.getElementById('accountingQueueHeaders');
+    if(row){
+        row.innerHTML = view.headers.map((label, index) => `<th${index === view.headers.length - 1 ? ' class="text-end"' : ''}>${esc(label)}</th>`).join('');
+    }
+    document.getElementById('activeQueueTitle').textContent = view.title;
+}
+
+// The one place that switches module and status; also remembers both in the URL.
+function selectAccountingModule(key, status='pending'){
+    const selected = accountingModules.find(mod => mod.key === key);
+    if(selected){
+        activeAccountingModule = selected.key;
+        activeQueueEndpoint = selected.queue_endpoint || activeQueueEndpoint;
+    }
+    accountingStatus = ['pending','processing','paid','all'].includes(status) ? status : 'pending';
+    renderAccountingModuleTabs();
+    applyModuleView();
+    document.getElementById('queueSubtitle').textContent = 'Loading queue...';
+    try{
+        const url = new URL(window.location.href);
+        url.searchParams.delete('tab');
+        url.searchParams.set('module', activeAccountingModule);
+        url.searchParams.set('status', accountingStatus);
+        history.replaceState(history.state, '', url);
+    }catch(err){
+        console.warn('[My Requests] URL update skipped', err);
+    }
+}
+
+function showDialogError(modalId, message){
+    const slot = document.querySelector(`#${modalId} [data-dialog-error]`);
+    if(!slot){
+        if(message) showAccountingAlert(message, 'danger');
+        return;
+    }
+    slot.textContent = message || '';
+    slot.classList.toggle('d-none', !message);
+}
+
+// POST that turns a login-page reply (expired session) into a readable error.
+async function postAccountingAction(url, body={}){
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: JSON.stringify(body)
+    });
+    const text = await res.text();
+    let data = null;
+    try{
+        data = text ? JSON.parse(text) : {};
+    }catch(parseError){
+        data = null;
+    }
+    if(res.redirected || data === null){
+        const looksLikeHtml = /^\s*</.test(text || '');
+        throw new Error(res.redirected || looksLikeHtml ? 'Your session has expired. Please log in again.' : (text || 'Unexpected server response.'));
+    }
+    if(!res.ok || data.success === false){
+        throw new Error(data.error || data.message || 'The request could not be completed.');
+    }
+    return data;
+}
 
 function fetchAccountingWithTimeout(resource, options={}, timeoutMs=ACCOUNTING_REQUEST_TIMEOUT_MS){
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
@@ -666,19 +724,6 @@ function statusClass(status){
     return 'status-other';
 }
 
-function currentModuleLabel(){
-    const selectedModule = accountingModules.find(mod => mod.key === activeAccountingModule);
-    return selectedModule ? (selectedModule.label || 'Records') : 'Records';
-}
-
-function currentModuleRecordName(){
-    if(activeAccountingModule === 'travel_requests') return 'travel request';
-    if(activeAccountingModule === 'reimbursements') return 'reimbursement';
-    if(activeAccountingModule === 'liquidations') return 'liquidation';
-    if(isCashAdvanceModuleKey(activeAccountingModule)) return 'cash advance';
-    return 'record';
-}
-
 function isCashAdvanceModuleKey(value){
     const key = String(value || '').toLowerCase();
     return key === 'cash_advances' || key === 'cash_advance' || key.includes('cash_advance');
@@ -703,22 +748,6 @@ function cashAdvanceCanConfirmReceived(item){
     const alreadyReceived = Boolean(item.received_at || item.ready_for_liquidation_at || status.includes('received') || status.includes('ready for liquidation'));
     const isApprovedOrSent = status.includes('approved') || status.includes('sent to accounting') || status.includes('accounting email');
     return Boolean(item.can_confirm_received || item.can_mark_paid || item.can_mark_received || isApprovedOrSent) && !alreadyReceived;
-}
-
-function isTravelCompletionModule(mod){
-    const key = String(mod?.key || '').toLowerCase();
-    const label = String(mod?.label || '').toLowerCase();
-    const desc = String(mod?.description || '').toLowerCase();
-    return (
-        key.includes('travel_completion') ||
-        key.includes('completion') ||
-        label.includes('travel completion') ||
-        desc.includes('travel completion queue')
-    );
-}
-
-function visibleAccountingModules(){
-    return (accountingModules || []).filter(mod => !isTravelCompletionModule(mod));
 }
 
 function normalizeStatusLabel(value){
@@ -750,7 +779,9 @@ function showAccountingAlert(message, type='info'){
     box.className = `alert alert-${type} m-3`;
     box.textContent = message;
     box.classList.remove('d-none');
-    setTimeout(() => box.classList.add('d-none'), 4500);
+    if(type === 'success' || type === 'info'){
+        setTimeout(() => box.classList.add('d-none'), 4500);
+    }
 }
 
 async function refreshAccountingQueueAfterAction(){
@@ -785,7 +816,7 @@ async function loadAccountingModules(options={}){
         if(!res.ok || !data.success){
             throw new Error(data.error || 'Unable to load My Requests modules.');
         }
-        accountingModules = (data.modules || data.tabs || []).filter(mod => !isTravelCompletionModule(mod));
+        accountingModules = data.modules || data.tabs || [];
         const currentModule = accountingModules.find(mod => mod.key === activeAccountingModule);
         const previousModule = accountingModules.find(mod => mod.key === activeBeforeLoad);
         const defaultModule = (preserveActive && (currentModule || previousModule)) || accountingModules.find(mod => mod.is_active) || accountingModules[0];
@@ -812,11 +843,9 @@ function renderAccountingModuleTabs(){
     if(!accountingModules.length){
         return;
     }
-    box.innerHTML = visibleAccountingModules().map(mod => {
+    box.innerHTML = accountingModules.map(mod => {
         const active = mod.key === activeAccountingModule;
-        const badge = mod.is_coming_soon
-            ? `<span class="coming-soon-pill"><i class="fa-solid fa-clock"></i>${esc(mod.phase || 'Soon')}</span>`
-            : `<span class="module-badge">${esc(mod.badge_count ?? 0)}</span>`;
+        const badge = `<span class="module-badge">${esc(mod.badge_count ?? 0)}</span>`;
         return `
             <button class="module-tab ${active ? 'active' : ''}" type="button" data-module-key="${esc(mod.key)}">
                 <div class="module-title">${esc(mod.label)} ${badge}</div>
@@ -828,30 +857,11 @@ function renderAccountingModuleTabs(){
 
 function setAccountingModule(moduleKey){
     if(accountingActionBusy) return;
-    const selected = visibleAccountingModules().find(mod => mod.key === moduleKey);
-    if(!selected){
+    if(!accountingModules.some(mod => mod.key === moduleKey)){
         return;
     }
-    activeAccountingModule = selected.key;
-    activeQueueEndpoint = selected.queue_endpoint || '/get_accounting_reimbursement_queue';
-    accountingStatus = 'pending';
-    document.querySelectorAll('.accounting-tabs .btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.status === accountingStatus);
-    });
-    renderAccountingModuleTabs();
-    updateAccountingQueueHeaders();
-    document.getElementById('activeQueueTitle').textContent = selected.key === 'reimbursements' ? 'My Reimbursements' : `My ${selected.label}`;
-    document.getElementById('queueSubtitle').textContent = selected.is_coming_soon ? `${selected.phase || 'Future'} module foundation ready` : 'Loading queue...';
+    selectAccountingModule(moduleKey, 'pending');
     refreshAccountingQueue(true);
-}
-
-function updateAccountingQueueHeaders(){
-    const row=document.getElementById('accountingQueueHeaders');
-    if(!row)return;
-    const headers=activeAccountingModule==='leave_requests'
-        ? ['Record','Employee','Leave Dates','Leave Type','Weekdays','Status','HR Handoff','Actions']
-        : ['Record','Engineer','Period','Amount','Approved','Request Status','Details / Reference','Actions'];
-    row.innerHTML=headers.map((label,index)=>`<th${index===headers.length-1?' class="text-end"':''}>${esc(label)}</th>`).join('');
 }
 
 function setAccountingTab(status){
@@ -860,35 +870,16 @@ function setAccountingTab(status){
     if(!['pending','processing','paid','all'].includes(nextStatus)){
         return;
     }
-    accountingStatus = nextStatus;
-    document.querySelectorAll('.accounting-tabs .btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.status === accountingStatus);
-    });
+    selectAccountingModule(activeAccountingModule, nextStatus);
     refreshAccountingQueue(true);
 }
 
 async function openLiquidationsModuleAfterTravelCompleted(){
     await loadAccountingModules();
-    const liquidationModule = visibleAccountingModules().find(mod => {
-        const key = String(mod.key || '').toLowerCase();
-        const label = String(mod.label || '').toLowerCase();
-        return key.includes('liquidation') || label.includes('liquidation');
-    });
-
-    if(liquidationModule){
-        activeAccountingModule = liquidationModule.key;
-        activeQueueEndpoint = liquidationModule.queue_endpoint || activeQueueEndpoint || '/get_accounting_travel_liquidation_queue';
-        accountingStatus = 'pending';
-        document.querySelectorAll('.accounting-tabs .btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.status === accountingStatus);
-        });
-        renderAccountingModuleTabs();
-        document.getElementById('activeQueueTitle').textContent = `My ${liquidationModule.label || 'Travel Liquidations'}`;
+    if(accountingModules.some(mod => mod.key === 'liquidations')){
+        selectAccountingModule('liquidations', 'pending');
         document.getElementById('queueSubtitle').textContent = 'Loading liquidation draft...';
-        await refreshAccountingQueue(true);
-        return;
     }
-
     await refreshAccountingQueue(true);
 }
 
@@ -914,9 +905,7 @@ async function refreshAccountingQueue(forceRefresh=false){
         }
         accountingItems = data.items || [];
         updateSummary(data.summary || {});
-        if(data.status === 'coming_soon'){
-            renderComingSoonQueue(data);
-        }else if(activeAccountingModule === 'leave_requests' || data.queue === 'leave_requests'){
+        if(activeAccountingModule === 'leave_requests' || data.queue === 'leave_requests'){
             renderLeaveRequestRows(accountingItems);
         }else if(activeAccountingModule === 'travel_requests' || data.queue === 'travel_requests'){
             renderTravelRequestRows(accountingItems);
@@ -927,16 +916,7 @@ async function refreshAccountingQueue(forceRefresh=false){
         }else{
             renderReimbursementRows(accountingItems);
         }
-        const selectedModule = accountingModules.find(mod => mod.key === activeAccountingModule);
-        if(selectedModule && selectedModule.key === 'liquidations'){
-            document.getElementById('queueSubtitle').textContent = `${data.count || 0} of your liquidation record(s) shown • Draft, Submitted, Returned, and Approved records are tracked here`;
-        }else if(selectedModule && isCashAdvanceModuleKey(selectedModule.key)){
-            document.getElementById('queueSubtitle').textContent = `${data.count || 0} of your standalone cash advance request(s) shown • Approved records can be confirmed as received here`;
-        }else if(selectedModule && selectedModule.key !== 'reimbursements' && selectedModule.key !== 'travel_requests'){
-            document.getElementById('queueSubtitle').textContent = data.message || `${selectedModule.label} module foundation ready`;
-        }else{
-            document.getElementById('queueSubtitle').textContent = `${data.count || 0} of your ${currentModuleRecordName()} record(s) shown`;
-        }
+        document.getElementById('queueSubtitle').textContent = `${data.count ?? accountingItems.length} of your ${moduleView().recordName} record(s) shown`;
     }catch(err){
         if(requestSeq !== accountingQueueRequestSeq){
             return;
@@ -952,25 +932,11 @@ function updateSummary(summary){
 }
 
 
-function renderComingSoonQueue(data){
-    const body = document.getElementById('accountingQueueBody');
-    body.innerHTML = `
-        <tr>
-            <td colspan="8" class="empty-state">
-                <i class="fa-solid fa-screwdriver-wrench"></i>
-                <div class="fw-bold">${esc(data.label || 'Module')} Coming Soon</div>
-                <div class="small">${esc(data.description || data.message || 'This My Requests section is ready for future workflow integration.')}</div>
-                <div class="small mt-2 text-muted">${esc(data.phase || '')}</div>
-            </td>
-        </tr>
-    `;
-}
-
 function renderLeaveRequestRows(items){
     const target = document.getElementById('accountingQueueBody');
     if(!target) return;
     if(!items.length){
-        target.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No Leave Requests found.</td></tr>';
+        target.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-umbrella-beach"></i><div class="fw-bold">No leave requests found</div><div class="small">There are no leave records in this status.</div></td></tr>`;
         return;
     }
     target.innerHTML = items.map(item => `<tr>
@@ -979,9 +945,9 @@ function renderLeaveRequestRows(items){
         <td>${esc(item.date_range || '')}</td>
         <td>${esc(item.leave_type || '')}</td>
         <td>${esc(item.duration_label || `${Number(item.weekday_count || 0)} day(s)`)}</td>
-        <td><span class="status-badge ${statusClass(item.status)}">${esc(item.status || '')}</span></td>
+        <td><span class="status-pill ${statusClass(item.status)}"><i class="fa-solid fa-circle"></i>${esc(item.status || '')}</span></td>
         <td>${esc(item.hr_email_status || '—')}</td>
-        <td><a class="btn btn-sm btn-outline-primary fw-bold" href="/leave_request?open=${Number(item.id)||0}"><i class="fa-solid fa-folder-open me-1"></i>Open</a></td>
+        <td><div class="action-btns"><a class="btn btn-sm btn-outline-dark fw-bold" href="/leave_request?open=${Number(item.id)||0}"><i class="fa-solid fa-folder-open me-1"></i>Open</a></div></td>
     </tr>`).join('');
 }
 
@@ -1000,7 +966,6 @@ function renderReimbursementRows(items){
         const period = [item.start, item.end].filter(Boolean).join(' to ');
         const approvedLabel = item.approved_at_label || item.approved_at || '';
         const paymentLabel = [item.payment_method, item.payment_reference].filter(Boolean).join(' / ');
-        const processingBtn = '';
         const paidBtn = !isPaid ? `<button class="btn btn-sm btn-success fw-bold" onclick="openPaidModal(${item.id}, 'reimbursements')"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Confirm Received</button>` : '';
         return `
             <tr>
@@ -1014,7 +979,6 @@ function renderReimbursementRows(items){
                 <td>
                     <div class="action-btns">
                         <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(packageUrl)}" target="_blank"><i class="fa-solid fa-file-zipper me-1"></i>Package</a>
-                        ${processingBtn}
                         ${paidBtn}
                     </div>
                 </td>
@@ -1060,7 +1024,7 @@ function renderLiquidationRows(items){
             ? `<button class="btn btn-sm btn-success fw-bold" onclick="openTravelLiquidationCompleteModal(${Number(item.id) || 0})"><i class="fa-solid fa-circle-check me-1"></i>Mark Completed</button>`
             : '';
         const completedNote = completedLabel
-            ? `<div class="travel-liquidation-completed-note"><i class="fa-solid fa-circle-check"></i>Completed: ${esc(completedLabel)}</div>`
+            ? `<div class="row-note row-note--ok"><i class="fa-solid fa-circle-check"></i>Completed: ${esc(completedLabel)}</div>`
             : '';
         return `
             <tr class="liquidation-row">
@@ -1124,19 +1088,7 @@ async function openCashAdvanceLiquidationDraft(cashAdvanceId){
     const createUrl = item?.create_liquidation_url || `/create_cash_advance_liquidation_draft/${id}`;
     setAccountingActionBusy(true, '', 'Creating...');
     try{
-        const res = await fetch(createUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRFToken': getCSRFToken()
-            },
-            body: JSON.stringify({})
-        });
-        const data = await res.json();
-        if(!res.ok || !data.success){
-            throw new Error(data.error || data.message || 'Unable to create Cash Advance Liquidation draft.');
-        }
+        const data = await postAccountingAction(createUrl);
         const liquidationUrl = data?.liquidation?.liquidation_url || data?.liquidation?.detail_url || '';
         if(liquidationUrl){
             window.location.href = liquidationUrl;
@@ -1194,16 +1146,16 @@ function renderCashAdvanceRows(items){
             ? `<button class="btn btn-sm btn-success fw-bold" onclick="openCashAdvanceLiquidationCompleteModal(${Number(item.liquidation_id) || 0})"><i class="fa-solid fa-circle-check me-1"></i>Mark Completed</button>`
             : '';
         const readyNote = isReady || isReceived
-            ? `<div class="cash-advance-ready-note"><i class="fa-solid fa-circle-check"></i>Ready for Liquidation</div>`
+            ? `<div class="row-note row-note--ok"><i class="fa-solid fa-circle-check"></i>Ready for Liquidation</div>`
             : '';
         const liquidationNote = liquidationStatus
-            ? `<div class="cash-advance-reference-note"><i class="fa-solid fa-file-invoice-dollar"></i>Liquidation: ${esc(liquidationStatus)}</div>`
+            ? `<div class="row-note row-note--info"><i class="fa-solid fa-file-invoice-dollar"></i>Liquidation: ${esc(liquidationStatus)}</div>`
             : '';
         const completedNote = liquidationCompletedLabel
-            ? `<div class="cash-advance-completed-note"><i class="fa-solid fa-circle-check"></i>Completed: ${esc(liquidationCompletedLabel)}</div>`
+            ? `<div class="row-note row-note--ok"><i class="fa-solid fa-circle-check"></i>Completed: ${esc(liquidationCompletedLabel)}</div>`
             : '';
         const accountingNote = accountingLabel && !isReceived
-            ? `<div class="cash-advance-reference-note"><i class="fa-solid fa-envelope-circle-check"></i>${esc(accountingLabel)}</div>`
+            ? `<div class="row-note row-note--info"><i class="fa-solid fa-envelope-circle-check"></i>${esc(accountingLabel)}</div>`
             : '';
         return `
             <tr>
@@ -1213,7 +1165,7 @@ function renderCashAdvanceRows(items){
                 </td>
                 <td class="wrap-mobile"><div class="fw-bold">${esc(requester)}</div></td>
                 <td>
-                    <div class="fw-bold">Needed: ${esc(neededDate || 'N/A')}</div>
+                    <div class="fw-bold">${esc(neededDate || 'N/A')}</div>
                     <div class="small text-muted">Liquidation: ${esc(item.liquidation_days || 30)} day(s)</div>
                 </td>
                 <td class="amount-cell">${peso(amount)}</td>
@@ -1222,7 +1174,7 @@ function renderCashAdvanceRows(items){
                 <td><div class="small fw-bold">${esc(refLabel || '—')}</div><div class="small text-muted cash-advance-purpose">${esc(purpose)}</div></td>
                 <td>
                     <div class="action-btns">
-                        <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}" target="_blank"><i class="fa-solid fa-eye me-1"></i>Open</a>
+                        <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}"><i class="fa-solid fa-eye me-1"></i>Open</a>
                         ${paidBtn}
                         ${liquidationBtn}
                         ${completeLiquidationBtn}
@@ -1261,7 +1213,7 @@ function renderTravelRequestRows(items){
             String(reminderText).toLowerCase().includes('liquidation')
         );
         const reminderBadge = isLiquidationOverdue
-            ? `<div class="liquidation-reminder-note"><i class="fa-solid fa-bell"></i>${esc(reminderText || 'Liquidation reminder sent')}</div>`
+            ? `<div class="row-note row-note--warn"><i class="fa-solid fa-bell"></i>${esc(reminderText || 'Liquidation reminder sent')}</div>`
             : '';
         const isReadyForLiquidation = String(status).toLowerCase().includes('ready for liquidation') || Boolean(item.liquidation_started_at || item.liquidation_started_at_label);
         const isPaid = Boolean(item.paid_at || item.funds_received_at_label || String(status).toLowerCase().includes('received') || String(status).toLowerCase().includes('paid'));
@@ -1275,7 +1227,7 @@ function renderTravelRequestRows(items){
             ? `<a class="btn btn-sm btn-primary fw-bold" href="${esc(item.liquidation_url)}"><i class="fa-solid fa-file-invoice-dollar me-1"></i>Open Liquidation</a>`
             : '';
         const readyNote = isReadyForLiquidation
-            ? `<div class="ready-liquidation-note"><i class="fa-solid fa-circle-check"></i>Ready for Liquidation</div>`
+            ? `<div class="row-note row-note--ok"><i class="fa-solid fa-circle-check"></i>Ready for Liquidation</div>`
             : '';
         return `
             <tr class="${isLiquidationOverdue && !isReadyForLiquidation ? 'travel-row-overdue' : ''}">
@@ -1288,7 +1240,7 @@ function renderTravelRequestRows(items){
                 <td><div class="small fw-bold">${esc(refLabel || '—')}</div><div class="small text-muted">${esc(purpose)}</div>${isLiquidationOverdue && !isReadyForLiquidation ? '<div class="small text-warning fw-bold mt-1">Please update to Travel Completed / Ready for Liquidation.</div>' : ''}</td>
                 <td>
                     <div class="action-btns">
-                        <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}" target="_blank"><i class="fa-solid fa-eye me-1"></i>View</a>
+                        <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}"><i class="fa-solid fa-eye me-1"></i>Open</a>
                         ${paidBtn}
                         ${readyBtn}
                         ${liquidationBtn}
@@ -1301,30 +1253,25 @@ function renderTravelRequestRows(items){
 
 
 function applyAccountingUrlParams(){
+    let moduleKey = activeAccountingModule;
+    let status = 'pending';
     try{
         const params = new URLSearchParams(window.location.search || '');
         const moduleParam = String(params.get('module') || params.get('tab') || '').toLowerCase();
         const statusParam = String(params.get('status') || '').toLowerCase();
         if(moduleParam){
-            const selected = visibleAccountingModules().find(mod => {
+            const selected = accountingModules.find(mod => {
                 const key = String(mod.key || '').toLowerCase();
                 const label = String(mod.label || '').toLowerCase();
                 return key === moduleParam || key.includes(moduleParam) || label.includes(moduleParam);
             });
-            if(selected){
-                activeAccountingModule = selected.key;
-                activeQueueEndpoint = selected.queue_endpoint || activeQueueEndpoint;
-            }
+            if(selected) moduleKey = selected.key;
         }
-        if(['pending','processing','paid','all'].includes(statusParam)){
-            accountingStatus = statusParam;
-            document.querySelectorAll('.accounting-tabs .btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.status === accountingStatus);
-            });
-        }
+        if(['pending','processing','paid','all'].includes(statusParam)) status = statusParam;
     }catch(err){
         console.warn('[My Requests] URL parameter selection skipped', err);
     }
+    selectAccountingModule(moduleKey, status);
 }
 
 function openTravelCompletedConfirm(id){
@@ -1332,6 +1279,7 @@ function openTravelCompletedConfirm(id){
     pendingTravelCompletedId = id;
     const idInput = document.getElementById('travelCompletedRecordId');
     if(idInput) idInput.value = id;
+    showDialogError('travelCompletedConfirmModal', '');
     travelCompletedConfirmModalInstance = travelCompletedConfirmModalInstance || new bootstrap.Modal(document.getElementById('travelCompletedConfirmModal'));
     travelCompletedConfirmModalInstance.show();
 }
@@ -1340,32 +1288,20 @@ async function confirmTravelCompletedReady(){
     if(accountingActionBusy) return;
     const id = pendingTravelCompletedId || document.getElementById('travelCompletedRecordId')?.value;
     if(!id){
-        showAccountingAlert('No Travel Request selected.', 'warning');
+        showDialogError('travelCompletedConfirmModal', 'No Travel Request selected.');
         return;
     }
 
     setAccountingActionBusy(true, 'confirmTravelCompletedBtn', 'Saving...');
     try{
-        const res = await fetch(`/mark_travel_completed_ready_for_liquidation/${id}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRFToken': getCSRFToken()
-            },
-            body: JSON.stringify({})
-        });
-        const data = await res.json();
-        if(!res.ok || !data.success){
-            throw new Error(data.error || data.message || 'Unable to mark as ready for liquidation.');
-        }
+        const data = await postAccountingAction(`/mark_travel_completed_ready_for_liquidation/${id}`);
         if(travelCompletedConfirmModalInstance) travelCompletedConfirmModalInstance.hide();
         pendingTravelCompletedId = null;
         showAccountingAlert(data.message || 'Travel Request marked as ready for liquidation. Loading liquidation draft...', 'success');
         setAccountingActionBusy(false, 'confirmTravelCompletedBtn');
         await openLiquidationsModuleAfterTravelCompleted();
     }catch(err){
-        showAccountingAlert(err.message || String(err), 'danger');
+        showDialogError('travelCompletedConfirmModal', err.message || String(err));
         setAccountingActionBusy(false, 'confirmTravelCompletedBtn');
     }
 }
@@ -1383,6 +1319,7 @@ function openCashAdvanceLiquidationCompleteModal(liquidationId){
     const remarksInput = document.getElementById('cashAdvanceLiquidationCompleteRemarks');
     if(idInput) idInput.value = String(id);
     if(remarksInput) remarksInput.value = '';
+    showDialogError('cashAdvanceLiquidationCompleteModal', '');
     cashAdvanceLiquidationCompleteModalInstance = cashAdvanceLiquidationCompleteModalInstance || new bootstrap.Modal(document.getElementById('cashAdvanceLiquidationCompleteModal'));
     cashAdvanceLiquidationCompleteModalInstance.show();
 }
@@ -1392,38 +1329,20 @@ async function confirmCashAdvanceLiquidationComplete(){
     const id = Number(pendingCashAdvanceLiquidationCompleteId || document.getElementById('cashAdvanceLiquidationCompleteId')?.value || 0);
     const remarks = String(document.getElementById('cashAdvanceLiquidationCompleteRemarks')?.value || '').trim();
     if(!id){
-        showAccountingAlert('No Cash Advance Liquidation selected.', 'warning');
+        showDialogError('cashAdvanceLiquidationCompleteModal', 'No Cash Advance Liquidation selected.');
         return;
     }
 
     setAccountingActionBusy(true, 'confirmCashAdvanceLiquidationCompleteBtn', 'Saving...');
     try{
-        const res = await fetch(`/complete_cash_advance_liquidation/${encodeURIComponent(id)}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRFToken': getCSRFToken()
-            },
-            body: JSON.stringify({ remarks, completion_remarks: remarks })
-        });
-        const text = await res.text();
-        let data = {};
-        try{
-            data = text ? JSON.parse(text) : {};
-        }catch(parseError){
-            data = { success: false, error: text || 'Unexpected server response.' };
-        }
-        if(!res.ok || data.success === false){
-            throw new Error(data.error || data.message || 'Unable to mark Cash Advance Liquidation as completed.');
-        }
+        const data = await postAccountingAction(`/complete_cash_advance_liquidation/${encodeURIComponent(id)}`, { remarks, completion_remarks: remarks });
         if(cashAdvanceLiquidationCompleteModalInstance) cashAdvanceLiquidationCompleteModalInstance.hide();
         pendingCashAdvanceLiquidationCompleteId = null;
         showAccountingAlert(data.message || 'Cash Advance Liquidation marked completed.', 'success');
         setAccountingActionBusy(false, 'confirmCashAdvanceLiquidationCompleteBtn');
         await refreshAccountingQueueAfterAction();
     }catch(err){
-        showAccountingAlert(err.message || String(err), 'danger');
+        showDialogError('cashAdvanceLiquidationCompleteModal', err.message || String(err));
         setAccountingActionBusy(false, 'confirmCashAdvanceLiquidationCompleteBtn');
     }
 }
@@ -1441,6 +1360,7 @@ function openTravelLiquidationCompleteModal(liquidationId){
     const remarksInput = document.getElementById('travelLiquidationCompleteRemarks');
     if(idInput) idInput.value = String(id);
     if(remarksInput) remarksInput.value = '';
+    showDialogError('travelLiquidationCompleteModal', '');
     travelLiquidationCompleteModalInstance = travelLiquidationCompleteModalInstance || new bootstrap.Modal(document.getElementById('travelLiquidationCompleteModal'));
     travelLiquidationCompleteModalInstance.show();
 }
@@ -1450,74 +1370,21 @@ async function confirmTravelLiquidationComplete(){
     const id = Number(pendingTravelLiquidationCompleteId || document.getElementById('travelLiquidationCompleteId')?.value || 0);
     const remarks = String(document.getElementById('travelLiquidationCompleteRemarks')?.value || '').trim();
     if(!id){
-        showAccountingAlert('No Travel Liquidation selected.', 'warning');
+        showDialogError('travelLiquidationCompleteModal', 'No Travel Liquidation selected.');
         return;
     }
 
     setAccountingActionBusy(true, 'confirmTravelLiquidationCompleteBtn', 'Saving...');
     try{
-        const res = await fetch(`/complete_travel_liquidation/${encodeURIComponent(id)}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRFToken': getCSRFToken()
-            },
-            body: JSON.stringify({ remarks, completion_remarks: remarks })
-        });
-        const text = await res.text();
-        let data = {};
-        try{
-            data = text ? JSON.parse(text) : {};
-        }catch(parseError){
-            data = { success: false, error: text || 'Unexpected server response.' };
-        }
-        if(!res.ok || data.success === false){
-            throw new Error(data.error || data.message || 'Unable to mark Travel Liquidation as completed.');
-        }
+        const data = await postAccountingAction(`/complete_travel_liquidation/${encodeURIComponent(id)}`, { remarks, completion_remarks: remarks });
         if(travelLiquidationCompleteModalInstance) travelLiquidationCompleteModalInstance.hide();
         pendingTravelLiquidationCompleteId = null;
         showAccountingAlert(data.message || 'Travel Liquidation marked completed.', 'success');
         setAccountingActionBusy(false, 'confirmTravelLiquidationCompleteBtn');
         await refreshAccountingQueueAfterAction();
     }catch(err){
-        showAccountingAlert(err.message || String(err), 'danger');
+        showDialogError('travelLiquidationCompleteModal', err.message || String(err));
         setAccountingActionBusy(false, 'confirmTravelLiquidationCompleteBtn');
-    }
-}
-
-function openProcessingModal(id){
-    document.getElementById('processingRecordId').value = id;
-    document.getElementById('processingRemarks').value = '';
-    processingModalInstance = processingModalInstance || new bootstrap.Modal(document.getElementById('processingModal'));
-    processingModalInstance.show();
-}
-
-async function confirmMarkProcessing(){
-    if(accountingActionBusy) return;
-    const id = document.getElementById('processingRecordId').value;
-    const remarks = document.getElementById('processingRemarks').value.trim();
-    setAccountingActionBusy(true, 'confirmProcessingBtn', 'Saving...');
-    try{
-        const res = await fetch(`/accounting_mark_processing/${id}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRFToken': getCSRFToken()
-            },
-            body: JSON.stringify({ remarks })
-        });
-        const data = await res.json();
-        if(!res.ok || !data.success) throw new Error(data.error || 'Unable to mark as Processing.');
-        if(processingModalInstance) processingModalInstance.hide();
-        showAccountingAlert(data.message || 'Marked as Processing.', 'success');
-        setAccountingActionBusy(false, 'confirmProcessingBtn');
-        await refreshAccountingQueueAfterAction();
-    }catch(err){
-        showAccountingAlert(err.message || String(err), 'danger');
-    }finally{
-        setAccountingActionBusy(false, 'confirmProcessingBtn');
     }
 }
 
@@ -1527,23 +1394,21 @@ function openPaidModal(id, moduleKey=''){
     document.getElementById('paymentMethod').value = '';
     document.getElementById('paymentReference').value = '';
     document.getElementById('paymentRemarks').value = '';
+    document.getElementById('paymentMethod').classList.remove('is-invalid');
+    showDialogError('paidModal', '');
 
     const title = document.querySelector('#paidModal .modal-title');
     if(title){
         title.textContent = paidModalRecordModule === 'travel_requests'
             ? 'Confirm Travel Cash Advance Received'
-            : (paidModalRecordModule === 'liquidations'
-                ? 'Confirm Liquidation Payment Received'
-                : (isCashAdvanceModuleKey(paidModalRecordModule) ? 'Confirm Standalone Cash Advance Received' : 'Confirm Payment Received'));
+            : (isCashAdvanceModuleKey(paidModalRecordModule) ? 'Confirm Standalone Cash Advance Received' : 'Confirm Payment Received');
     }
 
     const referenceInput = document.getElementById('paymentReference');
     if(referenceInput){
         referenceInput.placeholder = paidModalRecordModule === 'travel_requests'
             ? 'Check No. / Bank Ref. / Cash voucher / Optional note'
-            : (paidModalRecordModule === 'liquidations'
-                ? 'OR / Bank Ref. / Check No. / Liquidation payment reference'
-                : (isCashAdvanceModuleKey(paidModalRecordModule) ? 'Check No. / Bank Ref. / Cash voucher / Transaction No. / Optional note' : 'OR / Check No. / Bank Ref. / Transaction No. / Optional note'));
+            : (isCashAdvanceModuleKey(paidModalRecordModule) ? 'Check No. / Bank Ref. / Cash voucher / Transaction No. / Optional note' : 'OR / Check No. / Bank Ref. / Transaction No. / Optional note');
     }
 
     paidModalInstance = paidModalInstance || new bootstrap.Modal(document.getElementById('paidModal'));
@@ -1557,35 +1422,26 @@ async function confirmMarkPaid(){
     const payment_reference = document.getElementById('paymentReference').value.trim();
     const payment_remarks = document.getElementById('paymentRemarks').value.trim();
 
+    const methodInput = document.getElementById('paymentMethod');
+    methodInput.classList.toggle('is-invalid', !payment_method);
     if(!payment_method){
-        showAccountingAlert('Please select a received method before confirming receipt.', 'warning');
-        document.getElementById('paymentMethod').focus();
+        showDialogError('paidModal', 'Please select a received method before confirming receipt.');
+        methodInput.focus();
         return;
     }
+    showDialogError('paidModal', '');
     setAccountingActionBusy(true, 'confirmPaidBtn', 'Saving...');
     try{
         const endpoint = paidModalRecordModule === 'travel_requests'
             ? `/accounting_mark_travel_request_paid/${id}`
-            : (paidModalRecordModule === 'liquidations'
-                ? `/accounting_mark_travel_liquidation_paid/${id}`
-                : (isCashAdvanceModuleKey(paidModalRecordModule) ? `/accounting_mark_cash_advance_received/${id}` : `/accounting_mark_paid/${id}`));
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRFToken': getCSRFToken()
-            },
-            body: JSON.stringify({ payment_method, payment_reference, payment_remarks })
-        });
-        const data = await res.json();
-        if(!res.ok || !data.success) throw new Error(data.error || 'Unable to confirm receipt.');
+            : (isCashAdvanceModuleKey(paidModalRecordModule) ? `/accounting_mark_cash_advance_received/${id}` : `/accounting_mark_paid/${id}`);
+        const data = await postAccountingAction(endpoint, { payment_method, payment_reference, payment_remarks });
         if(paidModalInstance) paidModalInstance.hide();
         showAccountingAlert(data.message || 'Marked as received.', 'success');
         setAccountingActionBusy(false, 'confirmPaidBtn');
         await refreshAccountingQueueAfterAction();
     }catch(err){
-        showAccountingAlert(err.message || String(err), 'danger');
+        showDialogError('paidModal', err.message || String(err));
     }finally{
         setAccountingActionBusy(false, 'confirmPaidBtn');
     }
@@ -1609,11 +1465,6 @@ document.addEventListener('click', (event) => {
 document.addEventListener('DOMContentLoaded', async () => {
     await loadAccountingModules();
     applyAccountingUrlParams();
-    renderAccountingModuleTabs();
-    const selectedModule = visibleAccountingModules().find(mod => mod.key === activeAccountingModule);
-    if(selectedModule){
-        document.getElementById('activeQueueTitle').textContent = selectedModule.key === 'reimbursements' ? 'My Reimbursements' : `My ${selectedModule.label}`;
-    }
     refreshAccountingQueue();
 });
 </script>
