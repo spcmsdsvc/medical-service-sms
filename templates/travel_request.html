@@ -15,6 +15,7 @@
     .travel-hero-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.35); border-radius: 999px; padding: 3px 12px; font-size: .78rem; font-weight: 900; }
     .travel-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .travel-hero-actions .travel-btn { background: rgba(255,255,255,.16); color: #fff; border: 1px solid rgba(255,255,255,.35); }
+    .travel-page .travel-hero-actions a.travel-btn { color: #fff; }
     .travel-card {
         background: #fff; border: 1px solid var(--app-primary-soft-border); border-radius: 16px;
         padding: 16px; margin-bottom: 14px;
@@ -40,7 +41,7 @@
     .travel-btn-primary { background: var(--app-primary); color: #fff; }
     .travel-btn-success { background: #198754; color: #fff; }
     .travel-btn-secondary { background: #e2e8f0; color: #334155; }
-    .travel-btn-warning { background: #f59e0b; color: #fff; }
+    .travel-page a.travel-btn.travel-btn-secondary { color: #334155; }
     .travel-btn-danger { background: #dc2626; color: #fff; }
     .travel-btn-danger-outline { background: #fff; color: #dc2626; border: 1px solid #fecaca; }
     .travel-btn-sm { padding: 6px 12px; min-height: 36px; font-size: .85rem; }
@@ -143,7 +144,9 @@
     .travel-status-chip { border-radius: 999px; padding: 2px 10px; font-size: .72rem; font-weight: 900; background: #e2e8f0; color: #334155; }
     .travel-status-chip.submitted { background: #fef3c7; color: #92400e; }
     .travel-status-chip.approved { background: #dcfce7; color: #166534; }
-    .travel-status-chip.rejected { background: #fee2e2; color: #991b1b; }
+    .travel-status-chip.rejected { background: #fde8ea; color: #a1121f; }
+    .travel-status-chip.accounting { background: #e0f2fe; color: #075985; }
+    :root[data-app-theme="dark"] .travel-status-chip.accounting { background: rgba(14,165,233,.2) !important; color: #bae6fd !important; }
     .travel-status-chip.liquidation { background: var(--app-primary-soft); color: var(--app-primary-text); }
     .travel-empty { color: #64748b; font-weight: 800; padding: 6px 0; }
 
@@ -176,7 +179,7 @@
     .travel-toast.success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
     .travel-toast.warning { border-color: #fde68a; background: #fffbeb; color: #92400e; }
     .travel-toast.error { border-color: #fecaca; background: #fff1f2; color: #991b1b; }
-    .travel-toast-close { border: 0; background: transparent; color: inherit; font-size: 1.05rem; font-weight: 950; cursor: pointer; }
+    .travel-toast-close { border: 0; background: transparent; color: inherit; font-size: 1.05rem; font-weight: 950; cursor: pointer; min-width: 44px; min-height: 44px; }
 
     .travel-dialog-backdrop { position: fixed; inset: 0; z-index: 9999; background: rgba(15,23,42,.55); display: none; align-items: center; justify-content: center; padding: 18px; }
     .travel-dialog-backdrop.show { display: flex; }
@@ -192,6 +195,8 @@
         .travel-history-actions { justify-content: flex-start; }
         .travel-dock-actions .travel-btn { flex: 1 1 auto; }
         .travel-page { padding-bottom: 150px; }
+        .travel-btn-sm { min-height: 44px; }
+        .travel-notification-close { width: 44px; height: 44px; }
     }
 </style>
 
@@ -206,7 +211,7 @@
             <a id="travel-preview-btn" class="travel-btn" target="_blank" rel="noopener" hidden><i class="fa-solid fa-file-pdf"></i> Preview Form</a>
             <button type="button" id="travel-open-timeline-btn" class="travel-btn" hidden onclick="openTimelineForTravelRequest(currentTravelRequest)"><i class="fa-solid fa-calendar-days"></i> Open Timeline</button>
             <button type="button" id="travel-restore-blocks-btn" class="travel-btn" hidden onclick="restoreTravelBlocksForRequest(currentTravelRequest?.id)"><i class="fa-solid fa-rotate-left"></i> Restore Travel Blocks</button>
-            <button type="button" class="travel-btn" onclick="resetTravelForm()"><i class="fa-solid fa-plus"></i> New Request</button>
+            <button type="button" class="travel-btn" onclick="startNewTravelRequest()"><i class="fa-solid fa-plus"></i> New Request</button>
         </div>
     </header>
 
@@ -237,10 +242,10 @@
         <section class="travel-card">
             <h2 class="travel-section-title"><i class="fa-solid fa-user"></i> Request Information</h2>
             <div class="row g-3">
-                <div class="col-md-3"><label class="travel-label">Request Date</label><input type="date" id="travel-date" class="travel-input" readonly></div>
-                <div class="col-md-3"><label class="travel-label">Department</label><input type="text" class="travel-input" value="Medical Service" readonly></div>
-                <div class="col-md-3"><label class="travel-label">Status</label><input type="text" id="travel-current-status" class="travel-input" value="Draft" readonly></div>
-                <div class="col-md-3"><label class="travel-label">Request No.</label><input type="text" id="travel-request-no" class="travel-input" value="Auto-generated" readonly></div>
+                <div class="col-md-3"><label class="travel-label" for="travel-date">Request Date</label><input type="date" id="travel-date" class="travel-input" readonly></div>
+                <div class="col-md-3"><label class="travel-label" for="travel-department">Department</label><input type="text" id="travel-department" class="travel-input" value="Medical Service" readonly></div>
+                <div class="col-md-3"><label class="travel-label" for="travel-current-status">Status</label><input type="text" id="travel-current-status" class="travel-input" value="Draft" readonly></div>
+                <div class="col-md-3"><label class="travel-label" for="travel-request-no">Request No.</label><input type="text" id="travel-request-no" class="travel-input" value="Auto-generated" readonly></div>
             </div>
         </section>
 
@@ -253,17 +258,17 @@
             </div>
             <div id="travel-training-panel" class="travel-dynamic-panel">
                 <div class="row g-3">
-                    <div class="col-md-6"><label class="travel-label">Training / Seminar Title</label><input type="text" id="travel-training-title" class="travel-input" maxlength="200" placeholder="Example: LCMS Advanced Service Training"></div>
-                    <div class="col-md-6"><label class="travel-label">Conducted By / Provider</label><input type="text" id="travel-training-provider" class="travel-input" maxlength="200" placeholder="Example: Shimadzu RHQ / GHQ / External Provider"></div>
-                    <div class="col-md-6"><label class="travel-label">Venue</label><input type="text" id="travel-training-venue" class="travel-input" maxlength="200" placeholder="Example: Singapore RHQ / Kyoto GHQ"></div>
-                    <div class="col-md-6"><label class="travel-label">Objective</label><textarea id="travel-training-objective" class="travel-textarea" placeholder="Training objective, certification, skills to be learned"></textarea></div>
+                    <div class="col-md-6"><label class="travel-label" for="travel-training-title">Training / Seminar Title</label><input type="text" id="travel-training-title" class="travel-input" maxlength="200" placeholder="Example: LCMS Advanced Service Training"></div>
+                    <div class="col-md-6"><label class="travel-label" for="travel-training-provider">Conducted By / Provider</label><input type="text" id="travel-training-provider" class="travel-input" maxlength="200" placeholder="Example: Shimadzu RHQ / GHQ / External Provider"></div>
+                    <div class="col-md-6"><label class="travel-label" for="travel-training-venue">Venue</label><input type="text" id="travel-training-venue" class="travel-input" maxlength="200" placeholder="Example: Singapore RHQ / Kyoto GHQ"></div>
+                    <div class="col-md-6"><label class="travel-label" for="travel-training-objective">Objective</label><textarea id="travel-training-objective" class="travel-textarea" placeholder="Training objective, certification, skills to be learned"></textarea></div>
                 </div>
             </div>
             <div id="travel-meeting-panel" class="travel-dynamic-panel">
                 <div class="row g-3">
-                    <div class="col-md-6"><label class="travel-label">Meeting Subject</label><input type="text" id="travel-meeting-subject" class="travel-input" maxlength="200" placeholder="Example: Service planning meeting"></div>
-                    <div class="col-md-6"><label class="travel-label">Meeting With</label><input type="text" id="travel-meeting-with" class="travel-input" maxlength="200" placeholder="Example: RHQ team / client / internal team"></div>
-                    <div class="col-12"><label class="travel-label">Meeting Objective</label><textarea id="travel-meeting-objective" class="travel-textarea" placeholder="Purpose and expected outcome of the meeting"></textarea></div>
+                    <div class="col-md-6"><label class="travel-label" for="travel-meeting-subject">Meeting Subject</label><input type="text" id="travel-meeting-subject" class="travel-input" maxlength="200" placeholder="Example: Service planning meeting"></div>
+                    <div class="col-md-6"><label class="travel-label" for="travel-meeting-with">Meeting With</label><input type="text" id="travel-meeting-with" class="travel-input" maxlength="200" placeholder="Example: RHQ team / client / internal team"></div>
+                    <div class="col-12"><label class="travel-label" for="travel-meeting-objective">Meeting Objective</label><textarea id="travel-meeting-objective" class="travel-textarea" placeholder="Purpose and expected outcome of the meeting"></textarea></div>
                 </div>
             </div>
         </section>
@@ -272,13 +277,13 @@
             <h2 class="travel-section-title"><i class="fa-solid fa-users"></i> Travel Team / Participants</h2>
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="travel-label">Original Requester / Lead</label>
+                    <label class="travel-label" for="travel-lead-requester">Original Requester / Lead</label>
                     <input type="text" id="travel-lead-requester" class="travel-input" value="{{ current_user.username }}" readonly>
                     <div id="travel-participant-view-note" class="travel-participant-view-note" hidden><i class="fa-solid fa-circle-info"></i> You are viewing this travel request as a participant.</div>
                 </div>
                 <div class="col-md-8">
-                    <label class="travel-label">Participants / Engineers</label>
-                    <div id="travel-participant-list" class="travel-participant-list"><div class="travel-empty">Loading personnel records...</div></div>
+                    <div class="travel-label" id="travel-participants-label">Participants / Engineers</div>
+                    <div id="travel-participant-list" class="travel-participant-list" role="group" aria-labelledby="travel-participants-label"><div class="travel-empty">Loading personnel records...</div></div>
                     <div class="travel-hint">Select other engineers when one Travel Request covers a team travel, training, seminar, or meeting.</div>
                 </div>
             </div>
@@ -294,9 +299,9 @@
         <section class="travel-card">
             <h2 class="travel-section-title"><i class="fa-solid fa-calendar-days"></i> Travel Period</h2>
             <div class="row g-3">
-                <div class="col-md-4"><label class="travel-label">Departure Date</label><input type="date" id="travel-departure-date" class="travel-input" onchange="onTravelDatesChanged()"></div>
-                <div class="col-md-4"><label class="travel-label">Return / Arrival Date</label><input type="date" id="travel-return-date" class="travel-input" onchange="onTravelDatesChanged()"></div>
-                <div class="col-md-4"><label class="travel-label">Duration</label><input type="text" id="travel-duration-label" class="travel-input" readonly placeholder="Auto-calculated"></div>
+                <div class="col-md-4"><label class="travel-label" for="travel-departure-date">Departure Date</label><input type="date" id="travel-departure-date" class="travel-input" onchange="onTravelDatesChanged()"></div>
+                <div class="col-md-4"><label class="travel-label" for="travel-return-date">Return / Arrival Date</label><input type="date" id="travel-return-date" class="travel-input" onchange="onTravelDatesChanged()"></div>
+                <div class="col-md-4"><label class="travel-label" for="travel-duration-label">Duration</label><input type="text" id="travel-duration-label" class="travel-input" readonly placeholder="Auto-calculated"></div>
             </div>
             <div class="travel-actions"><button type="button" class="travel-btn travel-btn-secondary" onclick="checkTravelRequestConflicts(false)"><i class="fa-solid fa-magnifying-glass"></i> Check Conflicts</button></div>
         </section>
@@ -322,9 +327,9 @@
                 <label class="travel-check"><input type="radio" name="travel-special-instruction" value="Check for deposit" onchange="updateDepositFieldsState()"> Check for deposit</label>
             </div>
             <div class="row g-3" style="margin-top:4px;">
-                <div class="col-md-6"><label class="travel-label">Account Number (BPI only)</label><input type="text" id="travel-account-number" class="travel-input travel-deposit-field" placeholder="Select check for deposit first" disabled></div>
-                <div class="col-md-6"><label class="travel-label">Health Condition</label><input type="text" id="travel-health-condition" class="travel-input" placeholder="Optional"></div>
-                <div class="col-12"><label class="travel-label">Notes / Special Instructions</label><textarea id="travel-special-notes" class="travel-textarea travel-deposit-field" placeholder="Select check for deposit to add deposit instructions" disabled></textarea></div>
+                <div class="col-md-6"><label class="travel-label" for="travel-account-number">Account Number (BPI only)</label><input type="text" id="travel-account-number" class="travel-input travel-deposit-field" placeholder="Select check for deposit first" disabled></div>
+                <div class="col-md-6"><label class="travel-label" for="travel-health-condition">Health Condition</label><input type="text" id="travel-health-condition" class="travel-input" placeholder="Optional"></div>
+                <div class="col-12"><label class="travel-label" for="travel-special-notes">Notes / Special Instructions</label><textarea id="travel-special-notes" class="travel-textarea travel-deposit-field" placeholder="Select check for deposit to add deposit instructions" disabled></textarea></div>
             </div>
             <div class="travel-hint">Liquidate this cash advance within 3 days after arrival. Submit the Travel Report to your immediate supervisor and/or approving officer.</div>
         </section>
@@ -360,7 +365,9 @@
                 <option value="submitted">Submitted</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
+                <option value="accounting">With Accounting</option>
                 <option value="liquidation">Liquidation</option>
+                <option value="completed">Completed</option>
             </select>
         </div>
         <div id="travel-history-list" class="travel-history-list"><div class="travel-empty">Loading travel requests...</div></div>
@@ -472,7 +479,7 @@ function travelConfirmDialog(options={}){
         $t('travel-dialog-message').textContent = options.message || 'Continue?';
         cancelBtn.textContent = options.cancelText || 'Cancel';
         confirmBtn.textContent = options.confirmText || 'Continue';
-        confirmBtn.className = 'travel-btn ' + (options.tone === 'danger' ? 'travel-btn-danger' : (options.tone === 'warning' ? 'travel-btn-warning' : 'travel-btn-primary'));
+        confirmBtn.className = 'travel-btn ' + (options.tone === 'danger' ? 'travel-btn-danger' : 'travel-btn-primary');
         const done = value => {
             backdrop.classList.remove('show');
             confirmBtn.onclick = cancelBtn.onclick = backdrop.onclick = null;
@@ -641,13 +648,20 @@ function guardTravelEditableAction(actionLabel='edit this travel request'){
     return false;
 }
 
-function travelStatusChipClass(status){
-    const value = normalizeTravelStatus(status);
+// One group per status, shared by the history filter and the chip colour.
+function travelStatusGroup(status){
+    const value = normalizeTravelStatus(status) || 'draft';
+    if(value.includes('rejected')) return 'rejected';
     if(value.includes('liquidation')) return 'liquidation';
-    if(value === 'submitted') return 'submitted';
-    if(value === 'approved') return 'approved';
-    if(value === 'rejected') return 'rejected';
-    return '';
+    if(['sent to accounting', 'accounting approved', 'funds received'].includes(value)) return 'accounting';
+    if(['travel completed', 'completed'].includes(value)) return 'completed';
+    if(['draft', 'submitted', 'approved'].includes(value)) return value;
+    return 'other';
+}
+
+function travelStatusChipClass(status){
+    const group = travelStatusGroup(status);
+    return ['draft', 'completed', 'other'].includes(group) ? '' : group;
 }
 
 // Disable every form control while locked; re-enable only what the lock disabled.
@@ -838,8 +852,10 @@ function copyTravelRoute(routeCard){
     showTravelStatus('Route plan copied. Adjust the copy if needed.', 'success');
 }
 
+let travelRouteCounter = 0;
 function addTravelRoute(data = {}, programmatic = false){
     if(!programmatic && !guardTravelEditableAction('add route')) return;
+    const n = ++travelRouteCounter;
     const card = document.createElement('div');
     card.className = 'travel-route-card';
     card.innerHTML = `
@@ -851,19 +867,19 @@ function addTravelRoute(data = {}, programmatic = false){
             </div>
         </div>
         <div class="travel-route-flow">
-            <div><label class="travel-label">From</label><input type="text" class="travel-input route-from-location" placeholder="Mandaluyong Office" value="${travelEscape(data.from_location || '')}"></div>
+            <div><label class="travel-label" for="route-${n}-from">From</label><input type="text" id="route-${n}-from" class="travel-input route-from-location" placeholder="Mandaluyong Office" value="${travelEscape(data.from_location || '')}"></div>
             <div class="d-flex justify-content-center"><button type="button" class="travel-icon-btn secondary" title="Swap From and To" aria-label="Swap From and To" onclick="swapRouteFromTo(this.closest('.travel-route-card'))"><i class="fa-solid fa-right-left"></i></button></div>
-            <div><label class="travel-label">To</label><input type="text" class="travel-input route-to-location" placeholder="Cebu Doctors Hospital" value="${travelEscape(data.to_location || '')}"></div>
-            <div><label class="travel-label">Travel Type</label>
-                <select class="travel-select route-travel-type">
+            <div><label class="travel-label" for="route-${n}-to">To</label><input type="text" id="route-${n}-to" class="travel-input route-to-location" placeholder="Cebu Doctors Hospital" value="${travelEscape(data.to_location || '')}"></div>
+            <div><label class="travel-label" for="route-${n}-type">Travel Type</label>
+                <select id="route-${n}-type" class="travel-select route-travel-type">
                     <option value="">Select Type</option>
                     ${['Air Travel','Land Travel','Sea Travel','Mixed'].map(type => `<option value="${type}" ${(data.travel_type || '') === type ? 'selected' : ''}>${type}</option>`).join('')}
                 </select>
             </div>
         </div>
         <div style="margin-top:12px;">
-            <label class="travel-label">Route Notes / Summary</label>
-            <textarea class="travel-textarea route-summary" data-manual-summary="${data.route_summary ? 'true' : 'false'}" placeholder="Auto-filled from From, To, and Travel Type. You can edit this.">${travelEscape(data.route_summary || '')}</textarea>
+            <label class="travel-label" for="route-${n}-summary">Route Notes / Summary</label>
+            <textarea id="route-${n}-summary" class="travel-textarea route-summary" data-manual-summary="${data.route_summary ? 'true' : 'false'}" placeholder="Auto-filled from From, To, and Travel Type. You can edit this.">${travelEscape(data.route_summary || '')}</textarea>
         </div>
         <div class="travel-visit-list travel-client-only"></div>
         <div class="travel-actions travel-client-only"><button type="button" class="travel-btn travel-btn-secondary" onclick="addTravelVisit(this.closest('.travel-route-card'))">+ Add Client Visit</button></div>`;
@@ -911,6 +927,7 @@ let travelVisitCounter = 0;
 function addTravelVisit(routeCard, data = {}, programmatic = false){
     if(!programmatic && !guardTravelEditableAction('add client visit')) return;
     travelVisitCounter += 1;
+    const v = travelVisitCounter;
     const visit = document.createElement('div');
     visit.className = 'travel-visit-card';
     visit.innerHTML = `
@@ -921,33 +938,33 @@ function addTravelVisit(routeCard, data = {}, programmatic = false){
         <input type="hidden" class="visit-client-id" value="${travelEscape(data.client_id || '')}">
         <div class="row g-3">
             <div class="col-md-6">
-                <label class="travel-label">Customer</label>
+                <label class="travel-label" for="visit-${v}-client">Customer</label>
                 <div class="travel-search-wrap">
-                    <input type="text" class="travel-input visit-client-name" placeholder="Search customer / medical center" autocomplete="off" value="${travelEscape(data.client_name || '')}">
+                    <input type="text" id="visit-${v}-client" class="travel-input visit-client-name" placeholder="Search customer / medical center" autocomplete="off" value="${travelEscape(data.client_name || '')}">
                     <div class="travel-search-results visit-client-results"></div>
                 </div>
             </div>
             <div class="col-md-6">
-                <label class="travel-label">Equipment</label>
+                <label class="travel-label" for="visit-${v}-equipment">Equipment</label>
                 <div class="travel-equipment-dropdown visit-product-dropdown">
-                    <button type="button" class="travel-equipment-toggle visit-product-toggle" disabled onclick="toggleEquipmentDropdown(this)">
+                    <button type="button" id="visit-${v}-equipment" class="travel-equipment-toggle visit-product-toggle" disabled onclick="toggleEquipmentDropdown(this)">
                         <span class="visit-product-toggle-text">Select customer first</span><i class="fa-solid fa-chevron-down"></i>
                     </button>
                     <div class="travel-equipment-menu">
-                        <input type="text" class="travel-input travel-equipment-search visit-product-search" placeholder="Search equipment..." oninput="filterEquipmentChecklist(this)">
+                        <input type="text" class="travel-input travel-equipment-search visit-product-search" placeholder="Search equipment..." aria-label="Search equipment" oninput="filterEquipmentChecklist(this)">
                         <div class="visit-product-box"></div>
                     </div>
                 </div>
                 <div class="travel-hint visit-product-hint">Select a customer to load its equipment.</div>
             </div>
             <div class="col-12">
-                <label class="travel-label">Purpose Tags</label>
-                <div class="travel-check-grid compact">
+                <div class="travel-label" id="visit-${v}-tags-label">Purpose Tags</div>
+                <div class="travel-check-grid compact" role="group" aria-labelledby="visit-${v}-tags-label">
                     ${['Warranty','Repair','PM','Installation','Others','Site Visit'].map(tag => `<label class="travel-check"><input type="checkbox" class="visit-purpose-check" name="visit-purpose-${travelVisitCounter}" value="${tag}"> ${tag}</label>`).join('')}
                 </div>
             </div>
-            <div class="col-md-6"><label class="travel-label">Visit Purpose</label><textarea class="travel-textarea visit-purpose" placeholder="Auto-filled from equipment and purpose tags" readonly>${travelEscape(data.visit_purpose || data.purpose || '')}</textarea></div>
-            <div class="col-md-6"><label class="travel-label">Visit Remarks</label><textarea class="travel-textarea visit-notes" placeholder="Optional remarks">${travelEscape(data.notes || '')}</textarea></div>
+            <div class="col-md-6"><label class="travel-label" for="visit-${v}-purpose">Visit Purpose</label><textarea id="visit-${v}-purpose" class="travel-textarea visit-purpose" placeholder="Auto-filled from equipment and purpose tags" readonly>${travelEscape(data.visit_purpose || data.purpose || '')}</textarea></div>
+            <div class="col-md-6"><label class="travel-label" for="visit-${v}-notes">Visit Remarks</label><textarea id="visit-${v}-notes" class="travel-textarea visit-notes" placeholder="Optional remarks">${travelEscape(data.notes || '')}</textarea></div>
         </div>`;
     routeCard.querySelector('.travel-visit-list').appendChild(visit);
     setupVisitClientSearch(visit);
@@ -1255,6 +1272,11 @@ async function uploadTravelRequestAttachments(){
     const files = Array.from(input.files || []);
     input.value = '';
     if(!files.length || !guardTravelEditableAction('upload attachments')) return;
+    const badType = files.filter(file => !/\.(pdf|jpe?g|png)$/i.test(file.name));
+    if(badType.length){
+        showTravelStatus(`Only PDF, JPG or PNG files can be attached: ${badType.map(file => file.name).join(', ')}.`, 'error');
+        return;
+    }
     if(travelRequestAttachments.length + files.length > 10){
         showTravelStatus('A Travel Request can contain up to 10 attachments.', 'error');
         return;
@@ -1356,7 +1378,30 @@ function applyTravelRequestRecord(item){
     $t('travel-date').value = item.request_date || TRAVEL_TODAY;
     renderTravelApprovalHistory(item);
     setTravelRequestLockedState(item.status || 'Draft');
+    travelSavedSnapshot = travelFormSnapshot();
 }
+
+/* ---------- unsaved-changes guard ---------- */
+let travelSavedSnapshot = '';
+function travelFormSnapshot(){ return JSON.stringify(collectTravelPayload()); }
+function isTravelFormDirty(){ return isCurrentTravelEditable() && travelFormSnapshot() !== travelSavedSnapshot; }
+
+async function confirmDiscardTravelChanges(){
+    return !isTravelFormDirty() || travelConfirmDialog({title: 'Discard unsaved changes?', message: 'Your changes to this travel request have not been saved.', confirmText: 'Discard Changes', cancelText: 'Keep Editing', tone: 'danger'});
+}
+
+async function startNewTravelRequest(){
+    if(await confirmDiscardTravelChanges()) resetTravelForm();
+}
+
+async function openTravelRequest(id){
+    if(await confirmDiscardTravelChanges()) return loadTravelRequestDetail(id);
+    return false;
+}
+
+window.addEventListener('beforeunload', event => {
+    if(isTravelFormDirty()){ event.preventDefault(); event.returnValue = ''; }
+});
 
 async function saveTravelRequestDraft(){
     if(!guardTravelEditableAction('save changes')) return null;
@@ -1498,10 +1543,7 @@ async function loadMyTravelRequests(){
 
 function renderMyTravelRequests(){
     const filter = $t('travel-history-filter').value;
-    const items = travelHistoryItems.filter(item => {
-        const status = normalizeTravelStatus(item.status);
-        return filter === 'all' || (filter === 'liquidation' ? status.includes('liquidation') : status === filter);
-    });
+    const items = travelHistoryItems.filter(item => filter === 'all' || travelStatusGroup(item.status) === filter);
     const list = $t('travel-history-list');
     if(!items.length){
         list.innerHTML = `<div class="travel-empty">${travelHistoryItems.length ? 'No travel requests with this status.' : 'No travel requests yet.'}</div>`;
@@ -1519,7 +1561,7 @@ function renderMyTravelRequests(){
                     <div class="travel-history-meta">${travelEscape(item.destination || 'No destination')}${dates ? ' • ' + travelEscape(dates) : ''} • ${travelEscape(item.currency_code || 'PHP')} ${formatTravelMoney(item.requested_amount)}</div>
                 </div>
                 <div class="travel-history-actions">
-                    <button type="button" class="travel-btn travel-btn-secondary travel-btn-sm" onclick="loadTravelRequestDetail(${id})">Open</button>
+                    <button type="button" class="travel-btn travel-btn-secondary travel-btn-sm" onclick="openTravelRequest(${id})">Open</button>
                     ${normalizeTravelStatus(status) === 'submitted' && isTravelOwner(item) ? `<button type="button" class="travel-btn travel-btn-danger-outline travel-btn-sm" onclick="openRequestRecall('travel_request', ${id}, 'Travel Request')"><i class="fa-solid fa-rotate-left"></i> Withdraw</button>` : ''}
                     ${approved ? `<button type="button" class="travel-btn travel-btn-secondary travel-btn-sm" onclick="openTimelineForTravelRequest({id: ${id}, departure_date: '${travelEscape(item.departure_date || '')}'})"><i class="fa-solid fa-calendar-days"></i> Timeline</button>` : ''}
                 </div>
@@ -1582,7 +1624,7 @@ async function openTravelNotification(element){
         const target = new URL(targetUrl, window.location.origin);
         const requestId = target.searchParams.get('travel_request_id') || target.searchParams.get('id');
         if(target.pathname === window.location.pathname && requestId){
-            await loadTravelRequestDetail(Number(requestId));
+            await openTravelRequest(Number(requestId));
             return;
         }
     }catch(err){}

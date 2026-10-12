@@ -84,5 +84,65 @@ class TravelRequestPageTests(unittest.TestCase):
         self.assertIn('"2026-10-05-travel-request-page"', (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
 
 
+
+class TravelRequestBatch1SourceTests(unittest.TestCase):
+    page = PAGE
+
+    def test_link_buttons_keep_readable_colours(self):
+        self.assertIn('.travel-page .travel-hero-actions a.travel-btn { color: #fff; }', self.page)
+        self.assertIn('.travel-page a.travel-btn.travel-btn-secondary { color: #334155; }', self.page)
+
+    def test_warning_tone_uses_accent_button(self):
+        self.assertNotIn('travel-btn-warning', self.page)
+        self.assertIn("(options.tone === 'danger' ? 'travel-btn-danger' : 'travel-btn-primary')", self.page)
+
+    def test_unsaved_changes_guard(self):
+        for name in ('function isTravelFormDirty', 'async function confirmDiscardTravelChanges',
+                     'async function startNewTravelRequest', 'async function openTravelRequest'):
+            with self.subTest(name=name):
+                self.assertIn(name, self.page)
+        self.assertIn("window.addEventListener('beforeunload'", self.page)
+        self.assertIn('onclick="startNewTravelRequest()"', self.page)
+        self.assertIn('onclick="openTravelRequest(${id})"', self.page)
+        self.assertIn('await openTravelRequest(Number(requestId))', block(self.page, 'async function openTravelNotification', '\n}\n'))
+        self.assertIn('travelSavedSnapshot = travelFormSnapshot();', block(self.page, 'function applyTravelRequestRecord', '\n}\n'))
+
+    def test_upload_checks_type_before_uploading(self):
+        upload = block(self.page, 'async function uploadTravelRequestAttachments', '\n}\n')
+        self.assertIn('/\.(pdf|jpe?g|png)$/i', upload)
+        self.assertLess(upload.index('badType'), upload.index('travelFetch'))
+
+    def test_status_groups_drive_filter_and_chip(self):
+        group = block(self.page, 'function travelStatusGroup', '\n}\n')
+        for value in ('rejected', 'liquidation', 'accounting', 'completed', 'draft', 'submitted', 'approved'):
+            with self.subTest(value=value):
+                self.assertIn(f"'{value}'", group)
+                self.assertIn(f'<option value="{value}">', self.page)
+        self.assertLess(group.index("'rejected'"), group.index("'accounting'"))
+        self.assertIn('travelStatusGroup(item.status) === filter', self.page)
+        self.assertIn('.travel-status-chip.rejected { background: #fde8ea; color: #a1121f; }', self.page)
+
+    def test_every_static_label_is_linked(self):
+        import re
+        labels = re.findall(r'<label class="travel-label"[^>]*>', self.page)
+        self.assertTrue(labels)
+        for label in labels:
+            with self.subTest(label=label):
+                self.assertIn(' for="', label)
+
+    def test_small_buttons_reach_44px_on_phones(self):
+        self.assertIn('.travel-btn-sm { min-height: 44px; }', self.page)
+        self.assertIn('.travel-notification-close { width: 44px; height: 44px; }', self.page)
+
+    def test_existing_functions_kept(self):
+        for name in ('saveTravelRequestDraft', 'submitTravelRequest', 'deleteTravelRequestDraft',
+                     'uploadTravelRequestAttachments', 'deleteTravelRequestAttachment',
+                     'deleteAllTravelRequestAttachments', 'restoreTravelBlocksForRequest',
+                     'loadTravelRequestDetail', 'resetTravelForm', 'toggleTravelReadiness',
+                     'checkTravelRequestConflicts', 'openRequestRecall'):
+            with self.subTest(name=name):
+                self.assertRegex(self.page, rf'function {name}\(|{name}\s*[=(]')
+
+
 if __name__ == '__main__':
     unittest.main()

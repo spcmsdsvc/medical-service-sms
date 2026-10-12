@@ -37,6 +37,101 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Travel Request — Batch 1: Page Fixes (Preview button, unsaved-changes guard, upload check, status filter, labels, taps)
+
+**Status:** Executed locally 2026-10-12 on the owner's "execute batch 1 in plans.md"; not committed (publish on "commit and push"). Tests: 8 added (7 fail on `HEAD`); focused run 70 OK. Browser check on a DB copy passed (1366 px and 375 px).
+**Differences from plan:** (1) the attachment-link rule needed `.travel-page a.travel-btn.travel-btn-secondary` (0,3,1); the planned `a.travel-btn-secondary` (0,2,1) lost to the theme link rule (0,2,2). (2) Preview Form is now white like the other hero buttons but measures about 3.5:1 at the hero's lighter end, not the planned 4.5:1; that limit belongs to the shared hero gradient (Batch 4).
+**Approved:** 2026-10-12 (owner: "plan batch 1", after the travel request page-scan and design scan; owner rule: at most 4 batches).
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Later batches (not this plan):** 2 server fixes + HTTP tests (needs owner answers: admin editing of others' drafts; 90-day trip limit), 3 dark-theme contrast in `app-dark-pages.css`, 4 DESIGN.md alignment. Critique record: `.impeccable/critique/2026-10-12T05-46-07Z__templates-travel-request-html.md`.
+
+## Context
+
+The 2026-10-12 scans of the Travel Request page (`/travel_request`, `templates/travel_request.html`) found page-only defects that need no server change:
+
+- **Preview Form is unreadable** (light 1.39:1, graphite/AMOLED 1.98:1): blue link text on the blue hero.
+- **Submit / Restore / Signature dialogs** confirm with an amber button carrying white text (2.15:1).
+- **Unsaved work is lost silently**: New Request, Open (My Travel Requests), opening a notification for another request, and leaving or refreshing the page all replace the form with no warning.
+- **Mixed uploads save partly**: files upload one by one, so a bad second file leaves the first uploaded and shows only the error.
+- **Status filter misses statuses**: Sent to Accounting, Accounting Approved/Rejected, Funds Received, Travel Completed and Completed show only under "All", with grey chips; the Rejected chip does not use the DESIGN.md `status-rejected` pair.
+- **27 fields' visible labels are not linked** to their inputs (screen readers announce nothing).
+- **Small taps on phones**: attachment Preview/Download and other `.travel-btn-sm` buttons are 36px tall; the toast close is 20px wide.
+
+Intended outcome: every action on the page is readable and safe, every status is findable, and the page passes the 44px and label checks — in one page-only commit.
+
+## Decisions taken
+
+1. One batch, one file (`templates/travel_request.html`) plus the service worker version, changelog and tests. No `app.py` logic, no shared CSS.
+2. Dialog "warning" tone becomes the accent primary button (One Variable Rule); `.travel-btn-warning` is deleted.
+3. Unsaved-changes guard: compare the form's payload with a snapshot taken when a record is applied; ask only when the form is editable and differs. Browser leave/refresh uses the native `beforeunload` prompt.
+4. Status groups for the filter and the chip: Draft, Submitted, Approved, Rejected (Rejected and Accounting Rejected), With Accounting (Sent to Accounting, Accounting Approved, Funds Received), Liquidation (any status containing "liquidation"), Completed (Travel Completed, Completed). Filter options follow the same groups.
+5. Chip colours: Rejected uses DESIGN.md `status-rejected` (`#fde8ea` / `#a1121f`); With Accounting gets an info pair (`#e0f2fe` / `#075985`, dark `rgba(14,165,233,.2)` / `#bae6fd`); Completed keeps the neutral chip. Dark pairs stay page-local.
+
+## Investigation
+
+- Preview Form: `templates/travel_request.html:206` is an `<a class="travel-btn">`. Its white comes from `.travel-hero-actions .travel-btn` (`:17`, specificity 0,2,0), beaten by `app-themes.css` `a:not(.btn):not(.sidebar a)` (0,2,2) → `var(--app-primary-text)`. The same rule recolours the attachment links `a.travel-btn-secondary` (`:1246-1247`) from `#334155` to the accent text. Measured in the browser via matched rules.
+- Dialog tone: `travelConfirmDialog()` `:466-490` maps `tone: 'warning'` to `.travel-btn-warning` (`:43`); callers `submitTravelRequest` `:1401`, signature prompt `:1424`, `restoreTravelBlocksForRequest` `:1471`. No other file uses `travel-btn-warning`.
+- Form replacement points: hero New Request `:209` → `resetTravelForm()`; history Open `:1522` → `loadTravelRequestDetail(id)`; `openTravelNotification()` `:1576-1590` → `loadTravelRequestDetail` or navigation; no `beforeunload` handler. `applyTravelRequestRecord()` `:1351` is the last call of `resetTravelForm` `:1645`, `loadTravelRequestDetail` `:1667` and `saveTravelRequestDraft` `:1376`, so it is the one place where the form equals the saved record. `collectTravelPayload()` `:1181` captures every editable field. `submitTravelRequest` resets after a successful submit (no guard needed: saved first).
+- Upload: `uploadTravelRequestAttachments()` `:1253-1293` checks count and size only; the server allows PDF/JPG/JPEG/PNG (`reimbursement_receipt_allowed`, `app.py:44134`).
+- Filter: options `:357-364`; `renderMyTravelRequests()` `:1499-1528`; `travelStatusChipClass()` `:644-651`. Status names: `travel_request_normalize_status` `app.py:41973`; the DB copy also has "Liquidation Approved".
+- Dark chips: `app-dark-pages.css:762-765` force `.travel-status-chip` (and submitted/approved/rejected) with `!important`; a page rule `:root[data-app-theme="dark"] .travel-status-chip.accounting { … !important }` is more specific, so no shared CSS change is needed.
+- Labels: static `.travel-label` elements `:240-327` have no `for`; dynamic route fields (`addTravelRoute` `:841`) and visit fields (`addTravelVisit` `:911`) likewise. Amount inputs and the history filter already have `aria-label`.
+- Taps: `.travel-btn-sm` `:46` (36px), `.travel-toast-close` `:179`, `.travel-notification-close` `:155` (32px).
+- Tests that pin this page: `tests/test_travel_request_page.py` (`id="travel-history-filter"` kept), `test_travel_request_draft_instructions.py`, `test_travel_request_site_visit.py`. None references the functions being changed.
+
+## Execution steps
+
+1. **Read first:** newest `changes.md` section; DESIGN.md Colors (Semantic Status Rule) and Do/Don't; load the Impeccable skill (`harden` for steps 4–5, `polish` for 2, 3, 6–8).
+2. **Readable link buttons** (`travel_request.html` CSS): add `.travel-page .travel-hero-actions a.travel-btn { color: #fff; }` and `.travel-page a.travel-btn-secondary { color: #334155; }` (dark keeps the existing `app-dark-pages.css:742` rule). Done = Preview Form ≥ 4.5:1 on the hero in light, graphite, AMOLED; attachment links grey in light.
+3. **Dialog tone**: in `travelConfirmDialog()` map `warning` to `travel-btn-primary`; delete `.travel-btn-warning`. Done = Submit, Signature Required and Restore dialogs confirm with the accent button; no `travel-btn-warning` in the file.
+4. **Unsaved-changes guard**:
+   - `let travelSavedSnapshot = '';` and `function travelFormSnapshot(){ return JSON.stringify(collectTravelPayload()); }`.
+   - `applyTravelRequestRecord()`: set `travelSavedSnapshot = travelFormSnapshot();` as its last line.
+   - `function isTravelFormDirty(){ return isCurrentTravelEditable() && travelFormSnapshot() !== travelSavedSnapshot; }`.
+   - `async function confirmDiscardTravelChanges(){ return !isTravelFormDirty() || travelConfirmDialog({title: 'Discard unsaved changes?', message: 'Your changes to this travel request have not been saved.', confirmText: 'Discard Changes', cancelText: 'Keep Editing', tone: 'danger'}); }`.
+   - New `async function startNewTravelRequest(){ if(await confirmDiscardTravelChanges()) resetTravelForm(); }` — hero button calls it.
+   - New `async function openTravelRequest(id){ if(await confirmDiscardTravelChanges()) return loadTravelRequestDetail(id); return false; }` — history Open and the same-page branch of `openTravelNotification()` call it. `loadTravelRequestDetail` itself is unchanged (still used on page load).
+   - `window.addEventListener('beforeunload', event => { if(isTravelFormDirty()){ event.preventDefault(); event.returnValue = ''; } });`
+   - Done = edits then New Request / Open / notification ask first; Keep Editing leaves the form untouched; a fresh, just-loaded or just-saved form never asks; locked (submitted/approved) records never ask; refresh with edits shows the browser prompt.
+5. **Upload type check**: in `uploadTravelRequestAttachments()`, before the count check, `const badType = files.filter(file => !/\.(pdf|jpe?g|png)$/i.test(file.name));` → error toast "Only PDF, JPG or PNG files can be attached: <names>." and return, nothing uploaded. Done = selecting a PNG and a TXT uploads nothing and names the TXT.
+6. **Status groups**: new `travelStatusGroup(status)` returning `draft|submitted|approved|rejected|accounting|liquidation|completed|other` (rejected check first so "Accounting Rejected" is red; "liquidation" before "completed" so "Liquidation Completed" is Liquidation). `travelStatusChipClass()` returns the group (empty for draft/completed/other). `renderMyTravelRequests()` filters by `filter === 'all' || travelStatusGroup(item.status) === filter`. Filter options: All statuses, Draft, Submitted, Approved, Rejected, With Accounting, Liquidation, Completed. CSS: `.travel-status-chip.rejected` → `#fde8ea` / `#a1121f`; new `.travel-status-chip.accounting` light pair and page-local dark pair (`!important`, see Investigation). Done = each status on the DB copy appears under exactly one option; chips ≥ 4.5:1 in light and dark.
+7. **Labels**: give every static `.travel-label` a `for` matching its field id (add `id="travel-department"` to the Department input). In `addTravelRoute()` add a `travelRouteCounter` and ids `route-<n>-from|to|type|summary` with matching `for`; in `addTravelVisit()` use `travelVisitCounter` for `visit-<n>-client|purpose|notes` with matching `for`; the Equipment and Participants/Purpose Tags labels become `aria-labelledby` targets or plain `<div class="travel-label">` with the group given `role="group"` + `aria-label`. Do not change any class name the JS queries (`.route-from-location`, `.visit-client-name`, …). Done = the browser scan for inputs/selects/textareas without a label returns 0.
+8. **Taps**: at `max-width: 768px` set `.travel-btn-sm { min-height: 44px; }`, `.travel-notification-close { width: 44px; height: 44px; }`; `.travel-toast-close` gets `min-width: 44px; min-height: 44px;` at all widths. Done = no visible button or link under 44px at 375px.
+9. **Kept-functions check**: every function, id and handler the page used before still exists (grep the diff for removed names; only `.travel-btn-warning` is removed on purpose). Save, Submit, Delete Draft, Upload, Delete/Delete All attachments, Preview, Restore, Withdraw, Readiness, conflict check still work.
+
+## Deliberately excluded
+
+- **Server changes** (preview title/footer wording, trip-length and amount limits, history paging, admin edit rights, unused payload keys, dead `elif`) and the HTTP tests — Batch 2, two owner decisions pending.
+- **Dark red outline buttons and the hero pill contrast** — Batch 3, needs shared `app-dark-pages.css` and the full suite.
+- **Weights, radii, gradient hero, green Submit, phone first screen and dock height** — Batch 4 (DESIGN.md alignment); changing them here would mix a restyle into a bug-fix commit.
+- **Autosave / draft recovery** — not requested; the guard is enough.
+
+## Verification
+
+- **Tests** (`tests/test_travel_request_page.py`, new class `TravelRequestBatch1SourceTests`): hero/secondary anchor colour rules present; no `travel-btn-warning`, warning tone maps to primary; `isTravelFormDirty`, `confirmDiscardTravelChanges`, `startNewTravelRequest`, `openTravelRequest` and a `beforeunload` listener exist, the hero button and history Open call the guarded functions, `applyTravelRequestRecord` sets the snapshot; upload type regex precedes the first `travelFetch` in `uploadTravelRequestAttachments`; `travelStatusGroup` exists with the seven groups and the filter has the seven option values; every static `class="travel-label"` label has `for=` (regex); `.travel-btn-sm` 44px phone rule; kept-functions guard (`saveTravelRequestDraft`, `submitTravelRequest`, `deleteTravelRequestDraft`, `uploadTravelRequestAttachments`, `deleteTravelRequestAttachment`, `deleteAllTravelRequestAttachments`, `restoreTravelBlocksForRequest`, `loadTravelRequestDetail`, `resetTravelForm`, `toggleTravelReadiness`, `checkTravelRequestConflicts`, `openRequestRecall`).
+  - **Positive control:** run the new class in-process with `PAGE` set from `git show HEAD:templates/travel_request.html` (never `git stash`); all fail except the kept guard.
+- **Focused run:** `tests/test_travel_request_*.py`, `test_dark_mode_readability`, `test_changelog_coverage`, `test_tsr_autosave_client_groups`. Full suite not needed (one page; no shell, shared CSS/JS, `app.py` helper or schema change).
+- **Browser** on a copy of `scheduler.db` with a temporary engineer account on the copy (as in the scan): 1366px light — Preview Form readable; edit then New Request / Open / notification → dialog, Keep Editing keeps edits, Discard replaces; just-saved form asks nothing; approved record asks nothing; refresh with edits → browser prompt. Upload PNG+TXT → nothing uploaded, TXT named. Filter: each option on the copy's 15 records. Graphite and AMOLED: Preview Form, chips ≥ 4.5:1. 375px: label scan 0, no control under 44px, no horizontal scroll, console clean. Save, Submit (signature dialog), Delete Draft, attachments, Withdraw still work. Clean up the copy, account and launch entry. One screenshot as proof.
+
+## After implementation
+
+1. Self-review the diff (no hardcoded accent hex; status colours semantic only; no class the JS queries renamed).
+2. `app.py` service worker `CACHE_VERSION` → next number `…-v301-travel-request-fixes` (v300 kept as a history comment).
+3. `static/changelog/releases.json`: release "Travel Request Fixes" (audience `everyone`; items: Preview Form readable, warning before unsaved changes are lost, every status in the filter).
+4. `DESIGN.md`: nothing (no new pattern; chip pairs follow the Semantic Status Rule).
+5. `changes.md` bullets; this plan's Status with the commit and any differences.
+6. Commit only `templates/travel_request.html`, `app.py` (service worker line), `static/changelog/releases.json`, `tests/test_travel_request_page.py`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/`, `.claude/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **Guard false positives** (asks on an untouched form) if `collectTravelPayload()` differs between snapshot and check, e.g. route summary auto-fill or async equipment lists: snapshot is taken after `applyTravelRequestRecord`, equipment lists are filled synchronously from preloaded data; the browser check opens several records and confirms no prompt. Fallback: exclude `routes[].route_summary` from the snapshot.
+- **Guard misses** a change outside the payload (attachments): attachments save immediately, so nothing is lost.
+- **Status grouping** puts a new or odd status under "other" (shown only in All): same as today.
+- **Blast radius:** one page plus the service worker string; rollback = revert the commit.
+
+---
+
 # Signal and Character — My Requests Urgency Colour + "Logbook" Record Numbers (My Requests, Dashboard)
 
 **Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (commit `37dfd14`). Tests: 7 added (6 source fail on `HEAD`); focused run 240 OK. Browser check on a DB copy passed (1366 px and 375 px).

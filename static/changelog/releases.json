@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-travel-request-fixes",
+      "release_date": "2026-10-12",
+      "title": "Travel Request Fixes",
+      "summary": "Preview Form is readable, unsaved changes are no longer lost, and every status can be filtered.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-travel-request-fixes-preview",
+          "category": "Travel Request",
+          "description": "The Preview Form button and attachment links are readable again.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-travel-request-fixes-unsaved",
+          "category": "Travel Request",
+          "description": "You are asked before unsaved changes are replaced by New Request, Open, a notification, or leaving the page.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-12-travel-request-fixes-filter",
+          "category": "Travel Request",
+          "description": "My Travel Requests can be filtered by every status, including With Accounting and Completed; only PDF, JPG or PNG files start uploading.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-signal-logbook",
       "release_date": "2026-10-12",
       "title": "Clearer Status on My Requests",
