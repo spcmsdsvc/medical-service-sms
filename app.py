@@ -27382,7 +27382,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v294-dashboard-style-scheduler.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v295-my-requests-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v296-my-requests-actions.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v297-my-requests-style';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v297-my-requests-style.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v298-my-requests-forms';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

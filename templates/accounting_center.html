@@ -78,11 +78,27 @@
     .row-note--ok{ background:#dcfce7; color:#166534; }
     .row-note--info{ background:#eef2ff; color:#3730a3; }
     .row-note--warn{ background:#fff7ed; color:#9a3412; }
-    .cash-advance-purpose{
+    /* Reference purpose: two lines, the full text in the title tooltip. */
+    .reference-purpose{
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
         max-width: 320px;
         white-space: normal;
         line-height: 1.35;
     }
+    /* Needs your action: one heading row per group (To fix, Your next step, Confirm when received). */
+    .table-accounting > tbody > tr.action-group-row{ --bs-table-hover-bg: transparent; }
+    .table-accounting > tbody > tr.action-group-row > th{
+        padding: 1.25rem .5rem .4rem;
+        font-size: .78rem;
+        font-weight: 600;
+        color: var(--app-muted);
+        border-bottom-color: var(--app-border);
+    }
+    .table-accounting > tbody > tr.action-group-row:first-child > th{ padding-top: .75rem; }
+    .phone-only{ display: none; }
     .travel-row-overdue > td{
         background: color-mix(in srgb, #f59e0b 10%, var(--app-surface));
     }
@@ -215,33 +231,60 @@
             white-space: normal !important;
             box-shadow: none;
         }
+        /* Label beside its value; the record is the card title and the actions need no label. */
+        .table-accounting > tbody > tr > td[data-label]{
+            position: relative;
+            padding-left: 6rem;
+        }
         .table-accounting td[data-label]::before{
             content: attr(data-label);
-            display: block;
-            margin-bottom: 2px;
+            position: absolute;
+            left: 0;
+            top: .55rem;
+            width: 5.5rem;
             font-size: .72rem;
             font-weight: 500;
+            line-height: 1.3;
             color: var(--app-muted);
         }
+        .table-accounting > tbody > tr > td[data-label]:first-child,
+        .table-accounting > tbody > tr > td[data-label]:last-child{ padding-left: 0; }
+        .table-accounting td[data-label]:is(:first-child, :last-child)::before{ content: none; }
         .table-accounting > tbody > tr > td.empty-state{ padding: 40px 8px; }
+        /* Compact cards: only Record, Amount, Status, the key column and Actions. */
+        .table-accounting > tbody > tr > td.cell-phone-hidden{ display: none; }
+        .phone-only{ display: block; }
+        .table-accounting > tbody > tr.action-group-row{
+            padding: .5rem 0 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+        }
+        .table-accounting > tbody > tr.action-group-row > th{
+            display: block;
+            padding: 0;
+            border: 0;
+            font-size: .82rem;
+        }
         .table-accounting > tbody > tr:has(> td.empty-state){ border-style: dashed; }
         .table-accounting > tbody > tr.travel-row-overdue{ border-color: #d97706; }
         .travel-row-overdue > td{ background: transparent; }
         .row-note,
         .liquidation-money-stack{ white-space: normal; }
         .action-btns{
-            flex-direction: column;
-            align-items: stretch;
+            justify-content: stretch;
             padding-top: .25rem;
         }
         .action-btns .btn{
             display: inline-flex;
+            flex: 1 1 auto;
             align-items: center;
             justify-content: center;
-            width: 100%;
             min-height: 44px;
         }
-        .liquidation-action-note{ text-align: center; }
+        /* Text alone on phones, so three actions fit one row. */
+        .action-btns .btn > i{ display: none; }
+        .liquidation-action-note{ flex-basis: 100%; text-align: center; }
     }
 </style>
 
@@ -264,29 +307,29 @@
 
     <div class="dash-stats accounting-stats">
         <div class="dash-stat">
-            <div class="dash-stat-top"><span class="dash-stat-name" id="kpiPendingLabel">Waiting for payment</span></div>
+            <div class="dash-stat-top"><span class="dash-stat-name" id="kpiPendingLabel">To fix</span></div>
             <div class="dash-stat-num" id="kpiPending">0</div>
-            <div class="dash-stat-help" id="kpiPendingCaption">Approved, payment not yet confirmed</div>
+            <div class="dash-stat-help" id="kpiPendingCaption">Rejected or returned: fix and resubmit</div>
         </div>
         <div class="dash-stat">
-            <div class="dash-stat-top"><span class="dash-stat-name" id="kpiProcessingLabel">Processing</span></div>
+            <div class="dash-stat-top"><span class="dash-stat-name" id="kpiProcessingLabel">Your next step</span></div>
             <div class="dash-stat-num" id="kpiProcessing">0</div>
-            <div class="dash-stat-help" id="kpiProcessingCaption">Accounting is releasing the payment</div>
+            <div class="dash-stat-help" id="kpiProcessingCaption">Liquidations, trips and forms owed</div>
         </div>
         <div class="dash-stat">
-            <div class="dash-stat-top"><span class="dash-stat-name" id="kpiPaidLabel">Paid</span></div>
+            <div class="dash-stat-top"><span class="dash-stat-name" id="kpiPaidLabel">Confirm when received</span></div>
             <div class="dash-stat-num" id="kpiPaid">0</div>
-            <div class="dash-stat-help" id="kpiPaidCaption">You confirmed the money was received</div>
+            <div class="dash-stat-help" id="kpiPaidCaption">Approved money not yet received</div>
         </div>
     </div>
 
     <section class="dash-card accounting-list" id="accountingQueuePanel" aria-labelledby="activeQueueTitle">
         <div class="dash-card-head accounting-list-head">
             <div>
-                <h2 class="dash-card-title" id="activeQueueTitle">My Reimbursements</h2>
+                <h2 class="dash-card-title" id="activeQueueTitle">Needs your action</h2>
                 <p class="dash-card-sub" id="queueSubtitle">Loading queue...</p>
             </div>
-            <div class="dash-segment" id="accountingStatusFilter" role="group" aria-label="Status filter">
+            <div class="dash-segment d-none" id="accountingStatusFilter" role="group" aria-label="Status filter">
                 <button class="dash-segment-btn" type="button" data-status="pending" aria-pressed="true">Pending</button>
                 <button class="dash-segment-btn" type="button" data-status="processing" aria-pressed="false">Processing</button>
                 <button class="dash-segment-btn" type="button" data-status="paid" aria-pressed="false">Paid</button>
@@ -301,18 +344,17 @@
                     <thead>
                         <tr id="accountingQueueHeaders">
                             <th>Record</th>
-                            <th>Requester</th>
-                            <th>Period</th>
+                            <th>Type</th>
                             <th>Amount</th>
-                            <th>Approved</th>
+                            <th>Date</th>
                             <th>Status</th>
-                            <th>Payment</th>
+                            <th>What to do</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="accountingQueueBody">
                         <tr>
-                            <td colspan="8" class="empty-state">
+                            <td colspan="7" class="empty-state">
                                 <i class="fa-solid fa-spinner fa-spin"></i>
                                 <div class="fw-bold">Loading Request Queue...</div>
                             </td>
@@ -466,7 +508,8 @@ const MODULE_VIEW = {
             processing: ['Your next step', 'Liquidations, trips and forms owed'],
             paid: ['Confirm when received', 'Approved money not yet received']
         },
-        headers: ['Record','Type','Details','Amount','Date','Status','What to do','Actions'],
+        headers: ['Record','Type','Amount','Date','Status','What to do','Actions'],
+        phoneHidden: [1, 3],
         recordName: 'action'
     },
     reimbursements: {
@@ -477,7 +520,8 @@ const MODULE_VIEW = {
             processing: ['Processing', 'Accounting is releasing the payment'],
             paid: ['Paid', 'You confirmed the money was received']
         },
-        headers: ['Record','Requester','Period','Amount','Approved','Status','Payment','Actions'],
+        headers: ['Record','Period','Amount','Approved','Status','Payment','Actions'],
+        phoneHidden: [3, 5],
         recordName: 'reimbursement'
     },
     travel_requests: {
@@ -488,7 +532,8 @@ const MODULE_VIEW = {
             processing: ['Approved', 'Approved, funds not yet received'],
             paid: ['Funds received', 'Received, travelling or liquidating']
         },
-        headers: ['Record','Requester','Travel dates','Amount','Approved','Status','Reference','Actions'],
+        headers: ['Record','Travel dates','Amount','Approved','Status','Reference','Actions'],
+        phoneHidden: [3, 5],
         recordName: 'travel request'
     },
     cash_advances: {
@@ -499,7 +544,8 @@ const MODULE_VIEW = {
             processing: ['Approved', 'Approved, money not yet received'],
             paid: ['Received', 'Received, ready for liquidation']
         },
-        headers: ['Record','Requester','Needed by','Amount','Approved','Status','Reference','Actions'],
+        headers: ['Record','Needed by','Amount','Approved','Status','Reference','Actions'],
+        phoneHidden: [3, 5],
         recordName: 'cash advance'
     },
     liquidations: {
@@ -510,7 +556,8 @@ const MODULE_VIEW = {
             processing: ['Submitted', 'Submitted or approved, not yet closed'],
             paid: ['Completed', 'Closed liquidations']
         },
-        headers: ['Record','Requester','Trip','Cash advance','Actual expenses','Status','Balance','Actions'],
+        headers: ['Record','Trip','Cash advance','Actual expenses','Status','Balance','Actions'],
+        phoneHidden: [1, 2],
         recordName: 'liquidation'
     },
     leave_requests: {
@@ -521,7 +568,8 @@ const MODULE_VIEW = {
             processing: ['Submitted', 'Waiting for approval'],
             paid: ['Approved', 'Approved leave']
         },
-        headers: ['Record','Requester','Leave dates','Leave type','Weekdays','Status','HR handoff','Actions'],
+        headers: ['Record','Leave dates','Leave type','Weekdays','Status','HR handoff','Actions'],
+        phoneHidden: [3, 5],
         recordName: 'leave request'
     }
 };
@@ -838,7 +886,7 @@ async function refreshAccountingQueue(forceRefresh=false){
     if(accountingActionBusy && !forceRefresh) return;
     const requestSeq = ++accountingQueueRequestSeq;
     const body = document.getElementById('accountingQueueBody');
-    body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><div class="fw-bold">Loading Request Queue...</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><div class="fw-bold">Loading Request Queue...</div></td></tr>`;
     try{
         const endpointAtRequest = activeQueueEndpoint;
         const statusAtRequest = accountingStatus;
@@ -871,13 +919,13 @@ async function refreshAccountingQueue(forceRefresh=false){
         }
         const shownCount = data.count ?? accountingItems.length;
         document.getElementById('queueSubtitle').textContent = activeAccountingModule === 'action'
-            ? `${shownCount} item(s) waiting on you`
+            ? actionSubtitle(accountingItems)
             : `${shownCount} of your ${moduleView().recordName} record(s) shown`;
     }catch(err){
         if(requestSeq !== accountingQueueRequestSeq){
             return;
         }
-        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><div class="fw-bold">${esc(err.message || err)}</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><div class="fw-bold">${esc(err.message || err)}</div></td></tr>`;
     }
 }
 
@@ -893,19 +941,69 @@ function updateSummary(summary){
     });
 }
 
-// Phone cards: each cell is labelled with its column heading for the stacked layout.
+// Phone cards: each cell is labelled with its column heading; secondary columns (phoneHidden) hide on phones.
 function labelQueueCells(){
     const headers = moduleView().headers;
+    const phoneHidden = moduleView().phoneHidden || [];
     document.querySelectorAll('#accountingQueueBody > tr').forEach(row => {
         row.querySelectorAll(':scope > td:not([colspan])').forEach((cell, index) => {
             if(headers[index]) cell.dataset.label = headers[index];
+            cell.classList.toggle('cell-phone-hidden', phoneHidden.includes(index));
         });
     });
+}
+
+// Liquidation forms exist once submitted: not Draft, Returned or Rejected.
+function liquidationFormReady(status){
+    return Boolean(status) && !['Draft', 'Returned', 'Rejected'].includes(normalizeStatusLabel(status));
+}
+
+// One download button per record that has a form and a status where it makes sense; '' otherwise.
+function formLink(module, item){
+    const id = Number(item.id) || 0;
+    const status = String(item.status || '').toLowerCase();
+    let href = '';
+    let label = 'Form';
+    switch(module){
+        case 'reimbursements':
+            if(!/reject|return/.test(status)){
+                href = item.package_download_url || `/download_reimbursement_package?reimbursement_id=${id}`;
+                label = 'Package';
+            }
+            break;
+        case 'travel_requests':
+            if(status && !/^(draft|submitted|pending.*|rejected|returned|accounting rejected|cancel.*)$/.test(status.trim())) href = `/download_travel_request_form/${id}?force_download=1`;
+            break;
+        case 'liquidations':
+            if(liquidationFormReady(item.status)) href = `/download_travel_liquidation_excel/${id}?force_download=1`;
+            break;
+        case 'cash_advance_liquidations':
+            if(liquidationFormReady(item.status)) href = `/download_cash_advance_liquidation_excel/${id}`;
+            break;
+        case 'cash_advances':
+            // No cash advance form exists; the row offers its liquidation's Excel once submitted.
+            if(item.liquidation_id && liquidationFormReady(item.liquidation_status)) href = `/download_cash_advance_liquidation_excel/${Number(item.liquidation_id) || 0}`;
+            break;
+        case 'leave_requests':
+            href = item.download_url || `/download_leave_request/${id}`;
+            break;
+    }
+    return href ? `<a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(href)}"><i class="fa-solid fa-download me-1" aria-hidden="true"></i>${label}</a>` : '';
 }
 
 
 const ACTION_GROUP_LABELS = { fix: 'To fix', next: 'Your next step', confirm: 'Confirm when received' };
 const ACTION_GROUP_ORDER = { fix: 0, next: 1, confirm: 2 };
+
+// The tab badge counts only To fix + Your next step (Batch B); the subtitle says why the list is longer.
+function actionSubtitle(items){
+    const confirmCount = items.filter(item => item.group === 'confirm').length;
+    const needCount = items.length - confirmCount;
+    const parts = [];
+    if(needCount) parts.push(`${needCount} ${needCount === 1 ? 'needs' : 'need'} your action`);
+    if(confirmCount) parts.push(`${confirmCount} to confirm when received`);
+    return parts.join(' · ') || 'Nothing needs you right now.';
+}
 
 function actionButton(item){
     const id = Number(item.id) || 0;
@@ -928,23 +1026,29 @@ function actionButton(item){
 function renderActionRows(items){
     const body = document.getElementById('accountingQueueBody');
     if(!items.length){
-        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-circle-check"></i><div class="fw-bold">Nothing needs you right now.</div><div class="small">Rejected records, liquidations owed and money to confirm will show here.</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-circle-check"></i><div class="fw-bold">Nothing needs you right now.</div><div class="small">Rejected records, liquidations owed and money to confirm will show here.</div></td></tr>`;
         return;
     }
     const sorted = [...items].sort((a, b) => (ACTION_GROUP_ORDER[a.group] ?? 9) - (ACTION_GROUP_ORDER[b.group] ?? 9));
+    const groupCounts = {};
+    sorted.forEach(item => { groupCounts[item.group] = (groupCounts[item.group] || 0) + 1; });
+    let lastGroup = null;
     body.innerHTML = sorted.map(item => {
+        const heading = item.group !== lastGroup
+            ? `<tr class="action-group-row"><th colspan="7" scope="colgroup">${esc(ACTION_GROUP_LABELS[item.group] || 'Other')} · ${groupCounts[item.group]}</th></tr>`
+            : '';
+        lastGroup = item.group;
         const openLink = item.url ? `<a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(item.url)}"><i class="fa-solid fa-folder-open me-1"></i>Open</a>` : '';
         const amount = item.amount === null || item.amount === undefined ? '—' : peso(item.amount, item.currency);
-        return `
+        return `${heading}
             <tr data-action-group="${esc(item.group)}">
-                <td><div class="fw-bold">${esc(item.record_no || '')}</div></td>
+                <td><div class="fw-bold">${esc(item.record_no || '')}</div><div class="small text-muted phone-only">${esc(item.kind || '')}</div></td>
                 <td class="wrap-mobile">${esc(item.kind || '')}</td>
-                <td><div class="small fw-bold">${esc(ACTION_GROUP_LABELS[item.group] || '')}</div></td>
                 <td class="amount-cell">${amount}</td>
                 <td>${esc(item.date_label || '—')}</td>
                 <td><span class="status-pill ${statusClass(item.status)}"><i class="fa-solid fa-circle"></i>${esc(item.status || '')}</span></td>
                 <td class="wrap-mobile">${esc(item.label || '')}</td>
-                <td><div class="action-btns">${openLink}${actionButton(item)}</div></td>
+                <td><div class="action-btns">${openLink}${formLink(item.module, item)}${actionButton(item)}</div></td>
             </tr>
         `;
     }).join('');
@@ -955,18 +1059,17 @@ function renderLeaveRequestRows(items){
     const target = document.getElementById('accountingQueueBody');
     if(!target) return;
     if(!items.length){
-        target.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-umbrella-beach"></i><div class="fw-bold">No leave requests found</div><div class="small">There are no leave records in this status.</div></td></tr>`;
+        target.innerHTML = `<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-umbrella-beach"></i><div class="fw-bold">No leave requests found</div><div class="small">There are no leave records in this status.</div></td></tr>`;
         return;
     }
     target.innerHTML = items.map(item => `<tr>
         <td><strong>${esc(item.request_no || ('LR-' + item.id))}</strong></td>
-        <td>${esc(item.requester_name || '')}</td>
         <td>${esc(item.date_range || '')}</td>
         <td>${esc(item.leave_type || '')}</td>
         <td>${esc(item.duration_label || `${Number(item.weekday_count || 0)} day(s)`)}</td>
         <td><span class="status-pill ${statusClass(item.status)}"><i class="fa-solid fa-circle"></i>${esc(item.status || '')}</span></td>
         <td>${esc(item.hr_email_status || '—')}</td>
-        <td><div class="action-btns"><a class="btn btn-sm btn-outline-dark fw-bold" href="/leave_request?open=${Number(item.id)||0}"><i class="fa-solid fa-folder-open me-1"></i>Open</a></div></td>
+        <td><div class="action-btns"><a class="btn btn-sm btn-outline-dark fw-bold" href="/leave_request?open=${Number(item.id)||0}"><i class="fa-solid fa-folder-open me-1"></i>Open</a>${formLink('leave_requests', item)}</div></td>
     </tr>`).join('');
     labelQueueCells();
 }
@@ -974,7 +1077,7 @@ function renderLeaveRequestRows(items){
 function renderReimbursementRows(items){
     const body = document.getElementById('accountingQueueBody');
     if(!items.length){
-        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-folder-open"></i><div class="fw-bold">No records found</div><div class="small">There are no reimbursement records in your queue.</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-folder-open"></i><div class="fw-bold">No records found</div><div class="small">There are no reimbursement records in your queue.</div></td></tr>`;
         return;
     }
 
@@ -982,15 +1085,13 @@ function renderReimbursementRows(items){
         const status = item.accounting_status || item.status || 'Pending Release';
         const isPaid = String(status).toLowerCase().includes('paid') || String(item.status || '').toLowerCase() === 'paid';
         const isProcessing = String(status).toLowerCase().includes('processing');
-        const packageUrl = item.package_download_url || `/download_reimbursement_package?reimbursement_id=${item.id}`;
         const period = [item.start, item.end].filter(Boolean).join(' to ');
         const approvedLabel = item.approved_at_label || item.approved_at || '';
         const paymentLabel = [item.payment_method, item.payment_reference].filter(Boolean).join(' / ');
         const paidBtn = !isPaid ? `<button class="btn btn-sm btn-success fw-bold" onclick="openPaidModal(${item.id}, 'reimbursements')"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Confirm Received</button>` : '';
         return `
             <tr>
-                <td><div class="fw-bold">Reimbursement #${esc(item.id)}</div><div class="small text-muted">${esc(item.username || '')}</div></td>
-                <td class="wrap-mobile"><div class="fw-bold">${esc(item.engineer_name || 'N/A')}</div></td>
+                <td><div class="fw-bold">Reimbursement #${esc(item.id)}</div></td>
                 <td>${esc(period || 'N/A')}</td>
                 <td class="amount-cell">${peso(item.grand_total)}</td>
                 <td><div class="small fw-bold">${esc(item.approved_by_name || '')}</div><div class="small text-muted">${esc(approvedLabel || '')}</div></td>
@@ -998,7 +1099,7 @@ function renderReimbursementRows(items){
                 <td><div class="small fw-bold">${esc(paymentLabel || '—')}</div><div class="small text-muted">${esc(item.paid_at_label || '')}</div></td>
                 <td>
                     <div class="action-btns">
-                        <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(packageUrl)}" target="_blank"><i class="fa-solid fa-file-zipper me-1"></i>Package</a>
+                        ${formLink('reimbursements', item)}
                         ${paidBtn}
                     </div>
                 </td>
@@ -1013,7 +1114,7 @@ function renderReimbursementRows(items){
 function renderLiquidationRows(items){
     const body = document.getElementById('accountingQueueBody');
     if(!items.length){
-        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-file-invoice-dollar"></i><div class="fw-bold">No travel liquidation records found</div><div class="small">After you submit a liquidation, it will return here for tracking.</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-file-invoice-dollar"></i><div class="fw-bold">No travel liquidation records found</div><div class="small">After you submit a liquidation, it will return here for tracking.</div></td></tr>`;
         return;
     }
 
@@ -1053,10 +1154,7 @@ function renderLiquidationRows(items){
                     <div class="liquidation-record-title">${esc(item.liquidation_no || `TL-${item.id}`)}</div>
                     <div class="liquidation-record-sub">TR: ${esc(item.travel_request_no || item.request_no || '—')}</div>
                     <div class="liquidation-record-sub">Rows: ${esc(rowCount)}</div>
-                </td>
-                <td class="wrap-mobile">
-                    <div class="fw-bold">${esc(item.requester_name || item.engineer_name || 'Me')}</div>
-                    <div class="small text-muted">${esc(item.submitted_at_label || item.updated_at_label || '')}</div>
+                    <div class="liquidation-record-sub">${esc(item.submitted_at_label || item.updated_at_label || '')}</div>
                 </td>
                 <td>
                     <div class="liquidation-trip-title">${esc(travelDates || 'N/A')}</div>
@@ -1080,6 +1178,7 @@ function renderLiquidationRows(items){
                 <td>
                     <div class="action-btns">
                         <a class="btn btn-sm btn-primary fw-bold" href="${esc(liquidationUrl)}"><i class="fa-solid fa-${actionIcon} me-1"></i>${esc(actionLabel)}</a>
+                        ${formLink('liquidations', item)}
                         ${completeTravelLiquidationBtn}
                         <span class="liquidation-action-note">${esc(status === 'Draft' ? 'Still editable' : (isLiquidationCompleted ? 'Completed' : 'Tracking only'))}</span>
                     </div>
@@ -1129,14 +1228,13 @@ async function openCashAdvanceLiquidationDraft(cashAdvanceId){
 function renderCashAdvanceRows(items){
     const body = document.getElementById('accountingQueueBody');
     if(!items.length){
-        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-money-bill-transfer"></i><div class="fw-bold">No cash advance requests found</div><div class="small">Standalone Cash Advance records will appear here after submission.</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-money-bill-transfer"></i><div class="fw-bold">No cash advance requests found</div><div class="small">Standalone Cash Advance records will appear here after submission.</div></td></tr>`;
         return;
     }
 
     body.innerHTML = items.map(item => {
         const status = cashAdvanceStatusLabel(item);
         const recordLabel = item.cash_advance_no || item.request_no || item.record_label || `CA-${item.id}`;
-        const requester = item.requester_name || item.engineer_name || item.username || 'Me';
         const requestDate = item.request_date_label || item.request_date || item.created_at_label || '';
         const neededDate = item.needed_date_label || item.needed_date || item.date_needed || '';
         const amount = item.approved_amount || item.amount_requested || item.amount || 0;
@@ -1148,7 +1246,8 @@ function renderCashAdvanceRows(items){
         const liquidationCompletedLabel = item.liquidation_completed_at_label || '';
         const canCompleteLiquidation = Boolean(item.can_complete_liquidation && item.liquidation_id);
         const paymentLabel = [item.payment_method, item.payment_reference].filter(Boolean).join(' / ');
-        const refLabel = paymentLabel || receivedLabel || accountingLabel || recordLabel;
+        const refLabel = paymentLabel || receivedLabel || accountingLabel;
+        const refLine = refLabel && refLabel !== recordLabel ? `<div class="small fw-bold">${esc(refLabel)}</div>` : '';
         const detailUrl = item.detail_url || item.cash_advance_url || `/cash_advance?cash_advance_id=${encodeURIComponent(item.id || '')}`;
         const purpose = item.purpose || item.description || 'Standalone Cash Advance';
         const canConfirmReceived = cashAdvanceCanConfirmReceived(item);
@@ -1186,7 +1285,6 @@ function renderCashAdvanceRows(items){
                     <div class="fw-bold">${esc(recordLabel)}</div>
                     <div class="small text-muted">${esc(requestDate || '')}</div>
                 </td>
-                <td class="wrap-mobile"><div class="fw-bold">${esc(requester)}</div></td>
                 <td>
                     <div class="fw-bold">${esc(neededDate || 'N/A')}</div>
                     <div class="small text-muted">Liquidation: ${esc(item.liquidation_days || 30)} day(s)</div>
@@ -1194,12 +1292,13 @@ function renderCashAdvanceRows(items){
                 <td class="amount-cell">${peso(amount)}</td>
                 <td><div class="small fw-bold">${esc(approvedBy || '—')}</div><div class="small text-muted">${esc(approvedLabel || '')}</div></td>
                 <td><span class="status-pill ${statusClass(status)}"><i class="fa-solid fa-circle"></i>${esc(status)}</span>${readyNote}${liquidationNote}${completedNote}${accountingNote}</td>
-                <td><div class="small fw-bold">${esc(refLabel || '—')}</div><div class="small text-muted cash-advance-purpose">${esc(purpose)}</div></td>
+                <td>${refLine}<div class="small text-muted reference-purpose" title="${esc(purpose)}">${esc(purpose)}</div></td>
                 <td>
                     <div class="action-btns">
                         <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}"><i class="fa-solid fa-eye me-1"></i>Open</a>
                         ${paidBtn}
                         ${liquidationBtn}
+                        ${formLink('cash_advances', item)}
                         ${completeLiquidationBtn}
                     </div>
                 </td>
@@ -1212,7 +1311,7 @@ function renderCashAdvanceRows(items){
 function renderTravelRequestRows(items){
     const body = document.getElementById('accountingQueueBody');
     if(!items.length){
-        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-plane-departure"></i><div class="fw-bold">No travel requests found</div><div class="small">There are no travel request records in this status.</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" class="empty-state"><i class="fa-solid fa-plane-departure"></i><div class="fw-bold">No travel requests found</div><div class="small">There are no travel request records in this status.</div></td></tr>`;
         return;
     }
 
@@ -1227,7 +1326,9 @@ function renderTravelRequestRows(items){
         const destination = item.destination || item.client_name || 'N/A';
         const purpose = item.purpose || 'Travel Request';
         const paymentLabel = [item.payment_method, item.payment_reference].filter(Boolean).join(' / ');
-        const refLabel = paymentLabel || item.funds_received_at_label || item.completed_at_label || item.request_no || item.record_label || `TR-${item.id}`;
+        const recordLabel = item.record_label || item.request_no || `TR-${item.id}`;
+        const refLabel = paymentLabel || item.funds_received_at_label || item.completed_at_label || '';
+        const refLine = refLabel && refLabel !== recordLabel ? `<div class="small fw-bold">${esc(refLabel)}</div>` : '';
         const reminderText = item.liquidation_reminder_label || item.liquidation_reminder_message || item.reminder_message || '';
         const isLiquidationOverdue = Boolean(
             item.liquidation_reminder_due ||
@@ -1255,19 +1356,19 @@ function renderTravelRequestRows(items){
             : '';
         return `
             <tr class="${isLiquidationOverdue && !isReadyForLiquidation ? 'travel-row-overdue' : ''}">
-                <td><div class="fw-bold">${esc(item.record_label || item.request_no || `TR-${item.id}`)}</div><div class="small text-muted">${esc(submittedLabel || '')}</div></td>
-                <td class="wrap-mobile"><div class="fw-bold">${esc(item.requester_name || item.engineer_name || item.username || 'Me')}</div></td>
+                <td><div class="fw-bold">${esc(recordLabel)}</div><div class="small text-muted">${esc(submittedLabel || '')}</div></td>
                 <td><div class="fw-bold">${esc(travelDates || 'N/A')}</div><div class="small text-muted">${esc(destination)}</div></td>
                 <td class="amount-cell">${peso(amount, currency)}</td>
                 <td><div class="small fw-bold">${esc(item.approved_by_name || '')}</div><div class="small text-muted">${esc(approvedLabel || '')}</div></td>
                 <td><span class="status-pill ${statusClass(status)}"><i class="fa-solid fa-circle"></i>${esc(status)}</span>${readyNote}${!isReadyForLiquidation ? reminderBadge : ''}</td>
-                <td><div class="small fw-bold">${esc(refLabel || '—')}</div><div class="small text-muted">${esc(purpose)}</div>${isLiquidationOverdue && !isReadyForLiquidation ? '<div class="small text-warning fw-bold mt-1">Please update to Travel Completed / Ready for Liquidation.</div>' : ''}</td>
+                <td>${refLine}<div class="small text-muted reference-purpose" title="${esc(purpose)}">${esc(purpose)}</div>${isLiquidationOverdue && !isReadyForLiquidation ? '<div class="small text-warning fw-bold mt-1">Please update to Travel Completed / Ready for Liquidation.</div>' : ''}</td>
                 <td>
                     <div class="action-btns">
                         <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}"><i class="fa-solid fa-eye me-1"></i>Open</a>
                         ${paidBtn}
                         ${readyBtn}
                         ${liquidationBtn}
+                        ${formLink('travel_requests', item)}
                     </div>
                 </td>
             </tr>

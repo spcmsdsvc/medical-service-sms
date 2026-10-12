@@ -1,4 +1,4 @@
-"""My Requests — Batch A (plans.md): per-module labels, Leave tab, dialog errors, safe POSTs, cleanup.
+"""My Requests — Batches A, C and D (plans.md): per-module labels, Leave tab, dialog errors, safe POSTs, cleanup.
 
 Source tests read templates/accounting_center.html; endpoint tests check the module badges
 returned by /get_accounting_center_modules.
@@ -64,8 +64,8 @@ class MyRequestsPageSourceTests(unittest.TestCase):
         self.assertIn('const MODULE_VIEW = {', self.source)
         for key in ('reimbursements', 'travel_requests', 'cash_advances', 'liquidations', 'leave_requests'):
             self.assertRegex(self.source, r'\n    ' + key + r': \{')
-        self.assertIn("['Record','Requester','Trip','Cash advance','Actual expenses','Status','Balance','Actions']", self.source)
-        self.assertIn("['Record','Requester','Leave dates','Leave type','Weekdays','Status','HR handoff','Actions']", self.source)
+        self.assertIn("['Record','Trip','Cash advance','Actual expenses','Status','Balance','Actions']", self.source)
+        self.assertIn("['Record','Leave dates','Leave type','Weekdays','Status','HR handoff','Actions']", self.source)
         for kpi_id in ('kpiPendingCaption', 'kpiProcessingCaption', 'kpiPaidCaption', 'kpiPendingLabel'):
             self.assertIn(f'id="{kpi_id}"', self.source)
 
@@ -129,7 +129,7 @@ class MyRequestsStyleSourceTests(unittest.TestCase):
         self.assertEqual(self.source.count('class="dash-stat"'), 3)
         for kpi_id in ('kpiPending', 'kpiProcessing', 'kpiPaid'):
             self.assertIn(f'class="dash-stat-num" id="{kpi_id}"', self.source)
-        self.assertIn('class="dash-segment" id="accountingStatusFilter"', self.source)
+        self.assertIn('class="dash-segment d-none" id="accountingStatusFilter"', self.source)
         self.assertEqual(self.source.count('class="dash-segment-btn'), 5)
         busy = _function_body(self.source, 'setAccountingActionBusy')
         self.assertIn('#accountingStatusFilter .dash-segment-btn', busy)
@@ -168,6 +168,98 @@ class MyRequestsStyleSourceTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', self.source, element_id)
         for status in ('pending', 'processing', 'paid', 'all', 'rejected'):
             self.assertIn(f'data-status="{status}"', self.source, status)
+
+
+MODULE_RENDERERS = {
+    'action': 'renderActionRows',
+    'reimbursements': 'renderReimbursementRows',
+    'travel_requests': 'renderTravelRequestRows',
+    'cash_advances': 'renderCashAdvanceRows',
+    'liquidations': 'renderLiquidationRows',
+    'leave_requests': 'renderLeaveRequestRows',
+}
+
+
+def _module_view_entry(source, key):
+    match = re.search(r'\n    ' + re.escape(key) + r': \{(.*?)\n    \}', source, re.S)
+    return match.group(1) if match else ''
+
+
+def _row_cell_count(body):
+    """Cells in the renderer's data row template (the <tr> after the last colspan/heading row)."""
+    rows = re.findall(r'<tr(?![^>]*action-group-row)[^>]*>(.*?)</tr>', body, re.S)
+    rows = [row for row in rows if 'colspan' not in row]
+    return len(re.findall(r'<td[\s>]', rows[-1])) if rows else 0
+
+
+class MyRequestsBatchDSourceTests(unittest.TestCase):
+    """Batch D (plans.md): form downloads, compact phone cards, action groups, starting state."""
+
+    source = MyRequestsPageSourceTests.source
+
+    def test_form_link_helper_used_by_every_renderer(self):
+        helper = _function_body(self.source, 'formLink')
+        self.assertTrue(helper, 'formLink missing')
+        for route in ('/download_reimbursement_package?reimbursement_id=',
+                      '/download_travel_request_form/${id}?force_download=1',
+                      '/download_travel_liquidation_excel/${id}?force_download=1',
+                      '/download_cash_advance_liquidation_excel/',
+                      '/download_leave_request/'):
+            self.assertIn(route, helper, route)
+        self.assertIn('item.liquidation_id', helper)
+        self.assertNotIn('target="_blank"', helper)
+        for name in MODULE_RENDERERS.values():
+            self.assertIn('formLink(', _function_body(self.source, name), name)
+        self.assertNotIn('fa-file-zipper', self.source)
+
+    def test_no_requester_and_headers_match_cells(self):
+        for key, renderer in MODULE_RENDERERS.items():
+            entry = _module_view_entry(self.source, key)
+            headers = re.search(r"headers: \[(.*?)\]", entry).group(1)
+            self.assertNotIn("'Requester'", headers, key)
+            self.assertNotIn("'Details'", headers, key)
+            self.assertEqual(headers.count("'"), 14, key)  # seven headings
+            self.assertEqual(_row_cell_count(_function_body(self.source, renderer)), 7, renderer)
+        self.assertNotIn('colspan="8"', self.source)
+
+    def test_action_group_headings_and_subtitle(self):
+        body = _function_body(self.source, 'renderActionRows')
+        self.assertIn('class="action-group-row"', body)
+        self.assertIn('scope="colgroup"', body)
+        subtitle = _function_body(self.source, 'actionSubtitle')
+        self.assertIn('your action', subtitle)
+        self.assertIn('to confirm when received', subtitle)
+        self.assertNotIn('item(s) waiting on you', self.source)
+        self.assertIn('.action-group-row', self.source)
+
+    def test_compact_phone_cards(self):
+        for key in MODULE_RENDERERS:
+            self.assertIn('phoneHidden: [', _module_view_entry(self.source, key), key)
+        self.assertIn("'cell-phone-hidden'", _function_body(self.source, 'labelQueueCells'))
+        self.assertIn('td.cell-phone-hidden{ display: none; }', self.source)
+
+    def test_reference_trimmed(self):
+        for name in ('renderTravelRequestRows', 'renderCashAdvanceRows'):
+            body = _function_body(self.source, name)
+            self.assertIn('refLabel !== recordLabel', body, name)
+            self.assertIn('reference-purpose', body, name)
+        self.assertIn('-webkit-line-clamp: 2', self.source)
+
+    def test_starting_state_is_action_tab(self):
+        markup = self.source.split('<script>')[0]
+        self.assertIn('id="activeQueueTitle">Needs your action</h2>', markup)
+        self.assertIn('id="kpiPendingLabel">To fix</span>', markup)
+        self.assertIn('class="dash-segment d-none" id="accountingStatusFilter"', markup)
+        self.assertNotIn('Waiting for payment</span>', markup)
+        self.assertIn('<th>What to do</th>', markup)
+
+    def test_kept_functions_guard(self):
+        for name in ('selectAccountingModule', 'setAccountingTab', 'renderActionRows', 'actionButton',
+                     'labelQueueCells', 'openPaidModal', 'openTravelCompletedConfirm',
+                     'openTravelLiquidationCompleteModal', 'openCashAdvanceLiquidationCompleteModal',
+                     'openCashAdvanceLiquidationDraft', 'postAccountingAction', 'readAccountingJson',
+                     'fetchAccountingWithTimeout', 'showDialogError', 'setAccountingActionBusy'):
+            self.assertRegex(self.source, r'function\s+' + name + r'\s*\(', name)
 
 
 class MyRequestsModuleBadgeTests(unittest.TestCase):

@@ -37,6 +37,103 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# My Requests — Batch D: Form Downloads, Compact Phone Cards, Action Groups
+
+**Status:** Executed locally 2026-10-12 (owner: "execute batch D in plans.md"); not committed — awaiting "commit and push".
+**Differences from the plan:** (1) Hiding `phoneHidden` columns alone left cards at ~455px (labels above values, three stacked 44px buttons), so the phone card also changed: labels sit beside values (`td[data-label]` padding-left 6rem, label absolutely placed), the record cell is the unlabelled card title, the Actions cell is unlabelled, and buttons share one row as text-only 44px buttons (icons hidden on phones). Result: action ~282px, reimbursement/leave ~261px, travel/cash advance ~330px, liquidations ~394px (status notes and the balance card kept); the 260px target is met only for the shortest cards. `DESIGN.md` records the new rule. (2) The travel form rule matches exact early statuses (`draft`, `submitted`, `pending…`, `rejected`, `returned`, `accounting rejected`, `cancel…`); a substring test hid the button on "Liquidation Submitted". (3) Liquidation forms show for any status after submission (not only Submitted/Approved/Completed), via `liquidationFormReady()`. (4) A test leave row was added to the browser copy, because the owner has no leave records.
+**Approved:** 2026-10-12 (owner: "approve batch D, write it to plans.md", after the post-Batch C scan).
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batches A (`2184b16`), B (`a7dca6c`) and C (`d33eba2`), all published.
+
+## Context
+
+The owner asked for a re-scan of My Requests (`templates/accounting_center.html`) after Batch C: can forms be downloaded, is design lacking, is navigation hard. The scan (browser, copy of `scheduler.db`, owner's account, 1366 px and 375 px) found:
+
+- **Downloads work but are hidden.** Every form route returns its file (reimbursement ZIP, travel request PDF, travel and cash advance liquidation Excel, leave PDF), but My Requests links only the Reimbursement Package, and only on the Reimbursements tab. Everything else needs Open → the record's own page.
+- **Phone list is too long.** Each phone card is about 554 px tall (every column becomes a labelled line), so the 19 action items make an 11,400 px page.
+- **Badge and list disagree.** The tab says "Needs your action 8" while the list says "19 item(s) waiting on you" (the badge counts To fix + Your next step; the 11 "Confirm when received" items are listed but not counted — a Batch B decision).
+- **No group headings** in Needs your action: the group name is repeated in every row's Details column.
+- **Wrong labels while loading:** the markup defaults are the Reimbursements ones ("My Reimbursements", "Waiting for payment", Reimbursement column headings, the status filter visible), shown for about a second before the default action tab replaces them.
+- **Clutter:** the Requester column always shows the signed-in user (only own records are listed); the travel and cash advance Reference column repeats the record number and dumps the full purpose text.
+
+Batch D fixes these on the one page, with no backend change except the service worker version.
+
+## Decisions taken
+
+1. **A download button in rows**, built in the page from module + id (one helper, no new server fields), only where a form exists and makes sense for the status:
+
+   | Module | Link | Label | Shown when |
+   | --- | --- | --- | --- |
+   | Reimbursements | `/download_reimbursement_package?reimbursement_id={id}` (ZIP) | Package (as today) | status not Rejected/Returned |
+   | Travel requests | `/download_travel_request_form/{id}?force_download=1` (PDF) | Form | approved or later (not Draft, Submitted/awaiting approval, Rejected) |
+   | Travel liquidations | `/download_travel_liquidation_excel/{id}?force_download=1` (Excel) | Form | Submitted, Approved or Completed |
+   | Cash advance liquidations | `/download_cash_advance_liquidation_excel/{id}` (Excel) | Form | Submitted, Approved or Completed (on the Cash Advances tab via the row's `liquidation_id` / `liquidation_status`) |
+   | Leave requests | `item.download_url`, else `/download_leave_request/{id}` (PDF) | Form | always (the employee may need to print and sign it) |
+   | Cash advances | none — no cash advance form exists in the app | — | never |
+
+   All are `btn-outline-dark` with `fa-download`, plain links (no `target="_blank"`; the routes send attachments). The same helper feeds the Needs your action tab, so every action row with a form gets the button.
+2. **Compact phone cards (≤768 px):** each module's `MODULE_VIEW` gains `phoneHidden` — the column indexes hidden on phones. Phones keep Record, Amount, Status, the module's key "what to do"/balance column and Actions; Type, Date/Approved, Reference, Payment and similar secondary columns hide. `labelQueueCells()` adds class `cell-phone-hidden` to those cells (one helper; desktop unchanged). Target: a typical card ≤ 260 px tall.
+3. **Action groups:** the Details column is removed from the action tab (headings become Record · Type · Amount · Date · Status · What to do · Actions). `renderActionRows` inserts a heading row per non-empty group: `<tr class="action-group-row"><th colspan="7" scope="colgroup">To fix · N</th></tr>` (same for Your next step, Confirm when received).
+4. **Badge stays as Batch B decided** (fix + next). The subtitle explains the difference instead: "N need your action · M to confirm when received" (drop a part when it is 0; "Nothing needs you right now." stays as the empty state).
+5. **Remove the Requester column** from Reimbursements, Travel Requests, Cash Advances, Liquidations and Leave (headers and cells). Info that lived only there moves to the Record cell's sub-line: the liquidation `submitted_at_label`/`updated_at_label`. The reimbursement `username` sub-line is dropped (it is the user).
+6. **Trim Reference** (travel requests, cash advances): show the reference line only when it differs from the record number; the purpose text is clamped to two lines (`-webkit-line-clamp: 2`) with the full text in `title`.
+7. **Correct starting state:** the markup defaults become the action tab's: KPI labels/captions To fix / Your next step / Confirm when received, title "Needs your action", the action headings, and `#accountingStatusFilter` starts with `d-none` (`applyModuleView` still shows it for other modules).
+
+## Investigation
+
+- Routes checked on the copy (owner's records): `/download_reimbursement_package?reimbursement_id=1` → 200 ZIP; `/download_travel_request_form/6?force_download=1` → 200 PDF (without the flag it returns an HTML preview page, `app.py:50211-50224`); `/download_travel_liquidation_excel/3` → HTML preview unless `force_download=1` (`app.py:49560-49568`), with it → 200 xlsx; `/download_cash_advance_liquidation_excel/3` → 200 xlsx; the RFP routes return 400 "RFP is not required because Due to Employee is zero." when nothing is due (not linked by this batch).
+- Travel form permission `can_current_user_view_approved_travel_request_form` (`app.py:49962`) allows the requester and participants; the route has no status check, so the page restricts the button to approved-or-later rows (decision 1).
+- Leave queue items carry `download_url` (`leave_feature.py:400`, via `to_dict` in `get_accounting_leave_request_queue`, `leave_feature.py:807-832`).
+- Cash advance rows carry `liquidation_id` and `liquidation_status` (`app.py` cash advance accounting serializer, around `:51346`); there is no cash advance form route (only attachments).
+- Action items (`my_requests_action_items`, `app.py:46831`) carry `module` (`reimbursements`, `travel_requests`, `cash_advances`, `liquidations`, `cash_advance_liquidations`, `leave_requests`), the `id` of that module's record, `group` and `status` — enough for the helper without server changes. Leave action items have no `download_url`; the helper uses `item.download_url || `/download_leave_request/${id}`` (route `leave_feature.py:1217`).
+- Page code: `MODULE_VIEW` `accounting_center.html:459-527`; `labelQueueCells()` `:897`; `renderActionRows` `:928`; `renderLeaveRequestRows` `:954`; `renderReimbursementRows` `:974` (Package at `:985`/`:1001`); `renderLiquidationRows` `:1013`; `renderCashAdvanceRows` `:1129`; `renderTravelRequestRows` `:1212`; subtitle `:872-875`; phone CSS `:188-235`; default markup `:261-312`; filter toggle in `applyModuleView` `:535`.
+- Tests pinning the page: `tests/test_my_requests_page.py` (ids, `MODULE_VIEW`, kept functions incl. `labelQueueCells`, `data-label` from every renderer), `tests/test_my_requests_actions.py`, `tests/test_my_requests_reliability.py`.
+- Current service worker: `…-v297-my-requests-style` (`app.py:27385`).
+
+## Execution steps
+
+1. **Impeccable:** load `impeccable:impeccable` (craft) and re-read `DESIGN.md` "My Requests" (`:218`). No new critique.
+2. **Form helper** (`accounting_center.html`): add `formLink(module, item)` returning the button HTML or `''` per decision 1 (status checks case-insensitive; liquidation status via `normalizeStatusLabel`). Use it in `renderActionRows` (by `item.module`), `renderReimbursementRows` (replaces the inline Package link), `renderTravelRequestRows`, `renderCashAdvanceRows` (uses `liquidation_id` / `liquidation_status`), `renderLiquidationRows` and `renderLeaveRequestRows`. Done = every row with a form shows one button; none on rejected/draft/pending rows or on cash advances without a submitted liquidation.
+3. **Remove Requester** (decision 5): drop `'Requester'` from five `MODULE_VIEW.headers` arrays and the matching `<td>` in the five renderers; move the liquidation submitted/updated label under the record. Done = header and cell counts match (7) in every module.
+4. **Trim Reference** (decision 6) in `renderTravelRequestRows` and `renderCashAdvanceRows`; add `.reference-purpose` (two-line clamp) to the page CSS. Done = no repeated record number; long purposes clamp with a full-text tooltip.
+5. **Action groups** (decisions 3, 4): remove Details from `MODULE_VIEW.action.headers` and its `<td>`; insert the group heading rows; style `.action-group-row th` (muted, 0.78rem, 600, top padding; on phones a plain heading above its cards, no card border). Rewrite the action subtitle. Make sure `labelQueueCells()` and the phone card CSS skip `.action-group-row`. Done = three headed groups; the subtitle explains badge vs list.
+6. **Compact phone cards** (decision 2): add `phoneHidden` to each `MODULE_VIEW` entry; `labelQueueCells()` adds `cell-phone-hidden`; phone CSS hides it. Record cell keeps its kind/sub-line so Type can hide. Done = typical card ≤ 260 px at 375 px; nothing an action needs is hidden.
+7. **Starting state** (decision 7): update the default markup at `:261-312` (KPI labels/captions, title, headings, `d-none` on the filter). Done = no Reimbursements labels flash on a cold load of `/accounting_center`; `?module=reimbursements` still shows its filter.
+8. **Self-review:** every id, `data-status`, `data-module-key` and function name from Batches A–C still exists (`selectAccountingModule`, `setAccountingTab`, `renderActionRows`, `actionButton`, `labelQueueCells`, `openPaidModal`, `openTravelCompletedConfirm`, both complete modals, `openCashAdvanceLiquidationDraft`, `postAccountingAction`, `readAccountingJson`, `fetchAccountingWithTimeout`, `showDialogError`, `setAccountingActionBusy`); empty/loading rows still span the table; no hardcoded accent hex; no `transition: all`.
+
+## Deliberately excluded
+
+- **Renaming "Reimbursement #1"** to a code — reimbursements have no record number; needs a backend numbering change.
+- **Renaming the travel `package_download_url` / `package_preview_url` fields** in `app.py` (they point to the travel page, not a download) — other pages may read them; a separate cleanup after a usage check.
+- **RFP downloads** — only relevant when money is due to the employee; reachable on the liquidation pages.
+- **A cash advance form** — does not exist; building one is a new feature.
+- **Changing what the badge counts** — Batch B decision; the subtitle explains it instead.
+- **Search, sort, "New request" button, liquidation due-date countdown** — scan ideas for a later batch.
+- **The record pages** (reimbursement, travel, cash advance, liquidation, leave).
+
+## Verification
+
+- **Tests** — `tests/test_my_requests_page.py` gains `MyRequestsBatchDSourceTests`: `formLink` exists and is called by all six renderers; the download routes appear in it, with `force_download=1` on the travel form and the travel liquidation Excel; no `'Requester'` in any `MODULE_VIEW.headers`; each module's headers length equals its renderer's cell count (count `<td` in each renderer's row template, excluding colspan rows); `action-group-row` rendered; `phoneHidden` on every module and `cell-phone-hidden` set in `labelQueueCells`; default markup has "Needs your action", "To fix" and `d-none` on `#accountingStatusFilter`; kept ids/functions guard. Update any existing assertion that pins the old headings or the Package link.
+  - **Positive control:** run the new tests in-process against `git show HEAD:templates/accounting_center.html` (never `git stash`); all fail except the kept guard.
+- **Focused run:** `tests/test_my_requests_*.py`, `test_dark_mode_readability`, `test_changelog_coverage`. Full suite not needed (one page plus the service worker version string).
+- **Browser** on a copy of `scheduler.db` (temporary password on the copy only), owner's engineer-view account: at 1366 px light and graphite, check each module's download link with `fetch` in the page (status 200 and content type PDF / xlsx / ZIP); no button on rejected/pending/draft rows or plain cash advances; the action tab shows group headings and the new subtitle; every tab's headings align with its cells; a cold load shows no Reimbursements labels; every dialog action from Batches B–C still opens. At 375 px AMOLED: typical card ≤ 260 px, no horizontal scroll, taps ≥ 44 px, contrast ≥ 4.5:1 on group headings and labels; console clean. Clean up the copy, password and launch entry. One screenshot per theme as proof.
+
+## After implementation
+
+1. `app.py` service worker `CACHE_VERSION` `…-v298-my-requests-forms` (v297 kept as a history comment).
+2. `static/changelog/releases.json`: release "Download Forms from My Requests" (audience `everyone`; items: form buttons, shorter phone cards, grouped action list).
+3. `DESIGN.md` "My Requests" entry: download buttons, phone cards show only key columns (`phoneHidden`), action group headings, no Requester column.
+4. `changes.md` bullets; this plan's Status with the commit and any differences.
+5. Commit only `templates/accounting_center.html`, `app.py`, `static/changelog/releases.json`, `DESIGN.md`, `tests/test_my_requests_page.py` (and any other test file whose pins changed), `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/`, `.claude/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **A download link errors for some status** (e.g. travel liquidation Excel with an invalid USD rate on a submitted record): the button opens a JSON error page. Safety net: buttons only on submitted-or-later records; the browser check tests one per module; the record page remains the fallback.
+- **Hiding columns on phones hides something needed:** Actions, Status, Amount and the key column always stay; checked per module at 375 px.
+- **Column count mismatch after removing Requester/Details** misaligns desktop headings: a source test compares header and cell counts per module.
+- **Blast radius:** one template plus the service worker string; rollback = revert the commit.
+
 # My Requests — Batch C: Dashboard Look and Phone Cards
 
 **Status:** Executed — `d33eba2` (published to `main` 2026-10-12).

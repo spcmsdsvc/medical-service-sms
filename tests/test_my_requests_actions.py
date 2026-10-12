@@ -51,7 +51,7 @@ class MyRequestsActionSourceTests(unittest.TestCase):
         self.assertIn("let activeAccountingModule = 'action';", self.source)
         self.assertIn("let activeQueueEndpoint = '/get_accounting_action_queue';", self.source)
         self.assertRegex(self.source, r'\n    action: \{')
-        self.assertIn("['Record','Type','Details','Amount','Date','Status','What to do','Actions']", self.source)
+        self.assertIn("['Record','Type','Amount','Date','Status','What to do','Actions']", self.source)
         self.assertIn('Nothing needs you right now.', self.source)
 
     def test_action_buttons_map_to_existing_dialogs(self):

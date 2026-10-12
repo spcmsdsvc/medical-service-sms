@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-my-requests-forms",
+      "release_date": "2026-10-12",
+      "title": "Download Forms from My Requests",
+      "summary": "Download your forms straight from My Requests, with shorter cards on phones and a grouped action list.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-my-requests-forms-download",
+          "category": "My Requests",
+          "description": "Rows now have a Form button: the travel request PDF once approved, the travel and cash advance liquidation Excel once submitted, and the leave PDF. Reimbursements keep their Package button, now also on Needs your action.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-my-requests-forms-phone",
+          "category": "My Requests",
+          "description": "Phone cards show only the key details with the label beside each value, and the buttons share one row, so the list is much shorter.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-12-my-requests-forms-groups",
+          "category": "My Requests",
+          "description": "Needs your action is split under To fix, Your next step and Confirm when received, and its subtitle explains why the tab count leaves out money to confirm.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-my-requests-style",
       "release_date": "2026-10-12",
       "title": "A Cleaner My Requests",
