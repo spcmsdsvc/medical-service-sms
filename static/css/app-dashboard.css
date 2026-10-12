@@ -2581,3 +2581,27 @@ a.dashboard-mobile-task-card.is-late {
 :root[data-app-theme="dark"] .dash-chart-key { color: var(--dark-muted); }
 :root[data-app-theme="dark"] .dash-chart-swatch { border-top-color: color-mix(in srgb, var(--app-primary) 70%, #ffffff); }
 :root[data-app-theme="dark"] .dash-chart-swatch.is-compare { border-top-color: var(--dark-muted); }
+
+/* Dashboard Style phase 3 (scheduler and staff landing): the queue filter counts are stat
+   cards (.scheduler-metric.dash-stat keeps the hover tint and the active underline), the
+   board's regions and the staff "Waiting on you" list use the hairline card surface. */
+.scheduler-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.scheduler-metric.dash-stat { text-align: left; }
+
+.scheduler-board .scheduler-risk {
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+}
+
+@media (min-width: 768px) {
+    .scheduler-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+}
+
+@media (min-width: 1200px) {
+    .scheduler-stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}

@@ -195,6 +195,67 @@ class ManagerWorkloadChartSourceTests(unittest.TestCase):
         self.assertIn('v293-manager-workload-chart', self.app_source)
 
 
+class DashboardStyleSchedulerSourceTests(unittest.TestCase):
+    """Phase 3: scheduler dispatch board and staff landing."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dashboard = _read('templates', 'dashboard.html')
+        cls.js = _read('static', 'js', 'app-dashboard.js')
+        cls.app_source = _read('app.py')
+        cls.board = cls.dashboard.split('data-dashboard-section="scheduler-board"')[1].split('{% if dashboard_effective_manager_view')[0]
+        cls.strip = cls.board.split('id="scheduler-metric-strip"')[1].split('<div class="scheduler-board-grid">')[0]
+
+    def test_filter_counts_are_stat_cards_that_keep_their_filters(self):
+        self.assertEqual(self.strip.count('class="scheduler-metric dash-stat'), 5)
+        for name in ('all', 'overdue', 'unassigned', 'waiting', 'tsr'):
+            self.assertRegex(self.strip, rf'data-scheduler-filter="{name}" aria-pressed="(true|false)" onclick="setSchedulerQueueFilter\(\'{name}\'\)"')
+        self.assertIn('class="scheduler-metric-static dash-stat"', self.strip)
+        self.assertNotIn('dashboard-metric-divider', self.strip)
+        self.assertNotIn('dash-stat-badge', self.strip)
+
+    def test_counts_are_coloured_only_above_zero(self):
+        self.assertNotIn('dashboard-metric-alert', self.strip)
+        self.assertNotIn('dashboard-metric-warn', self.strip)
+        renderer = self.js.split('function renderSchedulerMetrics(')[1].split('\n    function ')[0]
+        for count_id in ('scheduler-overdue-count', 'scheduler-unassigned-count',
+                         'scheduler-waiting-count', 'scheduler-pending-tsr-count'):
+            self.assertIn(f'data-metric-tone=', self.strip.split(f'id="{count_id}"')[1].split('>')[0])
+            self.assertIn(f"setMetricValue('{count_id}'", renderer)
+
+    def test_board_heading_and_regions_take_the_card_look(self):
+        head = self.board.split('id="scheduler-risk"')[0]
+        self.assertIn('<h2 class="dash-card-title">Dispatch Board</h2>', head)
+        self.assertIn('loadSchedulerDispatchIntelligence(); loadSchedulerCoordinationTools();', head)
+        # Open calendar is the page header's primary button only.
+        self.assertNotIn('href="/timeline"', head)
+        for region in ('queue', 'lanes', 'selected'):
+            self.assertIn(f'class="scheduler-board-{region} card dash-panel overflow-hidden"', self.board)
+            self.assertIn(f'class="dash-card-title" id="scheduler-{region}-heading"', self.board)
+        self.assertNotIn('shadow-sm rounded-4', self.board)
+
+    def test_staff_landing_has_the_header_and_a_card(self):
+        self.assertIn('{% set dashboard_subtitle = "What\'s waiting on you" %}', self.dashboard)
+        staff = self.dashboard.split('{% if dashboard_staff_landing %}')[1].split('{% endif %}')[0]
+        self.assertIn('class="dashboard-today dash-panel mb-4" id="staff-waiting"', staff)
+        self.assertIn('<h2 class="dash-card-title">Waiting on you</h2>', staff)
+        self.assertIn('id="staff-waiting-list"', staff)
+
+    def test_scheduler_functions_survive(self):
+        for function in ('setSchedulerBoardView', 'renderSchedulerAvailabilityStrip', 'setSchedulerQueueFilter',
+                         'renderSchedulerMetrics', 'dropOnSchedulerLane', 'confirmSchedulerLaneAssign',
+                         'loadSchedulerDispatchIntelligence', 'loadSchedulerCoordinationTools',
+                         'setMetricValue', 'loadStaffWaiting'):
+            self.assertRegex(self.js, rf'function {function}\(', function)
+
+    def test_assets_and_cache_bumped(self):
+        css_version = int(re.search(r"app-dashboard\.css'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        js_version = int(re.search(r"app-dashboard\.js'\) \}\}\?v=(\d+)", self.dashboard).group(1))
+        self.assertGreaterEqual(css_version, 15)
+        self.assertGreaterEqual(js_version, 14)
+        self.assertIn("'medical-service-pwa-offline-navigation-v294-dashboard-style-scheduler'", self.app_source)
+
+
 class DashboardSeriesEndpointTests(unittest.TestCase):
     ENGINEER_USER = 'dash_style_test_engineer'
     OTHER_USER = 'dash_style_test_other'

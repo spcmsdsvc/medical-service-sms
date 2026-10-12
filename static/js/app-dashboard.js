@@ -1075,11 +1075,12 @@
         // so each button's number equals the rows its filter produces. counts.* holds the
         // raw bucket totals, where a schedule can appear in two buckets at once.
         const queueCounts = (schedulerDispatchData || {}).queue_counts || {};
+        // setMetricValue colours a count only above zero (data-metric-tone on the card).
         setTextIfPresent('scheduler-queue-count', (schedulerDispatchData || {}).priority_queue_total || 0);
-        setTextIfPresent('scheduler-overdue-count', queueCounts.overdue || 0);
-        setTextIfPresent('scheduler-unassigned-count', queueCounts.unassigned || 0);
-        setTextIfPresent('scheduler-waiting-count', queueCounts.waiting || 0);
-        setTextIfPresent('scheduler-pending-tsr-count', queueCounts.tsr || 0);
+        setMetricValue('scheduler-overdue-count', queueCounts.overdue || 0);
+        setMetricValue('scheduler-unassigned-count', queueCounts.unassigned || 0);
+        setMetricValue('scheduler-waiting-count', queueCounts.waiting || 0);
+        setMetricValue('scheduler-pending-tsr-count', queueCounts.tsr || 0);
         setTextIfPresent('scheduler-next7-count', counts.upcoming_7_days || 0);
 
         document.querySelectorAll('#scheduler-metric-strip [data-scheduler-filter]').forEach(button => {

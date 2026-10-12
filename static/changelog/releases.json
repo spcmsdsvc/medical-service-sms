@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-dashboard-style-scheduler",
+      "release_date": "2026-10-12",
+      "title": "A Cleaner Dispatch Board",
+      "summary": "The dispatch counts sit in cards, and the board's panels share one card look.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-dashboard-style-scheduler-cards",
+          "category": "Dashboard",
+          "description": "In queue, overdue, unassigned, waiting, pending TSR and next 7 days are now number cards. Tap one to filter the priority queue, as before. Overdue and unassigned turn red only when there is something to do.",
+          "audiences": [
+            "schedulers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-manager-workload-chart",
       "release_date": "2026-10-12",
       "title": "Scheduled vs Completed",

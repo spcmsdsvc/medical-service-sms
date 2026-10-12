@@ -27377,7 +27377,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v290-dashboard-trends.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v291-dashboard-style.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v292-dashboard-style-manager.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v293-manager-workload-chart';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v293-manager-workload-chart.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v294-dashboard-style-scheduler';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
