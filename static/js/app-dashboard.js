@@ -1666,7 +1666,7 @@
             if (requests) {
                 rows.push({
                     accent: 'is-warning',
-                    title: requests === 1 ? '1 of your requests needs attention' : `${requests} of your requests need attention`,
+                    title: requests === 1 ? '1 of your requests needs your action' : `${requests} of your requests need your action`,
                     hint: 'My Requests',
                     action: 'Open',
                     href: '/accounting_center'

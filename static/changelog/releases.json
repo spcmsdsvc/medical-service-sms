@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-my-requests-actions",
+      "release_date": "2026-10-12",
+      "title": "Needs your action",
+      "summary": "My Requests opens on one list of everything waiting on you, and the sidebar badge counts exactly that list.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-my-requests-actions-tab",
+          "category": "My Requests",
+          "description": "A new first tab, Needs your action, lists what to fix (rejected or returned records), your next steps (liquidations to finish or complete, trips to mark completed after the return date, leave forms to file) and money to confirm when you receive it. Each row has the same buttons as its own tab.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-my-requests-actions-badge",
+          "category": "My Requests",
+          "description": "The red My Requests badge in the sidebar now counts what to fix and your next steps. Approved money you are still waiting for is listed but not counted.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-12-my-requests-actions-rejected",
+          "category": "My Requests",
+          "description": "Reimbursements, Travel Requests and Cash Advances have a Rejected filter.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-my-requests-fixes",
       "release_date": "2026-10-12",
       "title": "Clearer My Requests",

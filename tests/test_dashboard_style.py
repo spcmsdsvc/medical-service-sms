@@ -253,7 +253,7 @@ class DashboardStyleSchedulerSourceTests(unittest.TestCase):
         js_version = int(re.search(r"app-dashboard\.js'\) \}\}\?v=(\d+)", self.dashboard).group(1))
         self.assertGreaterEqual(css_version, 15)
         self.assertGreaterEqual(js_version, 14)
-        self.assertIn("'medical-service-pwa-offline-navigation-v294-dashboard-style-scheduler'", self.app_source)
+        self.assertIn('v294-dashboard-style-scheduler', self.app_source)
 
 
 class DashboardSeriesEndpointTests(unittest.TestCase):

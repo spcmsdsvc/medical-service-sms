@@ -1130,7 +1130,7 @@
         async function refreshSidebarPendingBadges(){
             const targets = [
                 {id: 'nav-badge-approvals', key: 'approvals_pending', label: 'pending approval'},
-                {id: 'nav-badge-my-requests', key: 'my_requests_action', label: 'needing attention'}
+                {id: 'nav-badge-my-requests', key: 'my_requests_action', label: 'needing your action'}
             ].map(entry => Object.assign(entry, {node: document.getElementById(entry.id)}))
              .filter(entry => entry.node);
 

@@ -361,6 +361,7 @@
                     <button class="btn btn-outline-dark" data-status="processing">Processing</button>
                     <button class="btn btn-outline-dark" data-status="paid">Paid</button>
                     <button class="btn btn-outline-dark" data-status="all">All</button>
+                    <button class="btn btn-outline-dark d-none" data-status="rejected">Rejected</button>
                 </div>
             </div>
         </div>
@@ -509,8 +510,8 @@
 let accountingStatus = 'pending';
 let accountingItems = [];
 let accountingModules = [];
-let activeAccountingModule = 'reimbursements';
-let activeQueueEndpoint = '/get_accounting_reimbursement_queue';
+let activeAccountingModule = 'action';
+let activeQueueEndpoint = '/get_accounting_action_queue';
 let paidModalInstance = null;
 let travelCompletedConfirmModalInstance = null;
 let cashAdvanceLiquidationCompleteModalInstance = null;
@@ -524,11 +525,24 @@ let accountingQueueRequestSeq = 0;
 let accountingModuleRequestSeq = 0;
 const ACCOUNTING_REQUEST_TIMEOUT_MS = 15000;
 
-// Visible words per module; data-status values stay pending/processing/paid/all.
+// Visible words per module; data-status values stay pending/processing/paid/all/rejected.
+const ACCOUNTING_STATUSES = ['pending','processing','paid','all','rejected'];
 const MODULE_VIEW = {
+    action: {
+        title: 'Needs your action',
+        statusLabels: {},
+        noStatusFilter: true,
+        kpi: {
+            pending: ['To fix', 'Rejected or returned: fix and resubmit'],
+            processing: ['Your next step', 'Liquidations, trips and forms owed'],
+            paid: ['Confirm when received', 'Approved money not yet received']
+        },
+        headers: ['Record','Type','Details','Amount','Date','Status','What to do','Actions'],
+        recordName: 'action'
+    },
     reimbursements: {
         title: 'My Reimbursements',
-        statusLabels: { pending: 'Pending', processing: 'Processing', paid: 'Paid' },
+        statusLabels: { pending: 'Pending', processing: 'Processing', paid: 'Paid', rejected: 'Rejected' },
         kpi: {
             pending: ['Waiting for payment', 'Approved, payment not yet confirmed'],
             processing: ['Processing', 'Accounting is releasing the payment'],
@@ -539,7 +553,7 @@ const MODULE_VIEW = {
     },
     travel_requests: {
         title: 'My Travel Requests',
-        statusLabels: { pending: 'Awaiting approval', processing: 'Approved', paid: 'Funds received' },
+        statusLabels: { pending: 'Awaiting approval', processing: 'Approved', paid: 'Funds received', rejected: 'Rejected' },
         kpi: {
             pending: ['Awaiting approval', 'Submitted, waiting for your manager'],
             processing: ['Approved', 'Approved, funds not yet received'],
@@ -550,7 +564,7 @@ const MODULE_VIEW = {
     },
     cash_advances: {
         title: 'My Cash Advances',
-        statusLabels: { pending: 'Awaiting approval', processing: 'Approved', paid: 'Received' },
+        statusLabels: { pending: 'Awaiting approval', processing: 'Approved', paid: 'Received', rejected: 'Rejected' },
         kpi: {
             pending: ['Awaiting approval', 'Submitted, waiting for your manager'],
             processing: ['Approved', 'Approved, money not yet received'],
@@ -589,11 +603,13 @@ function moduleView(key=activeAccountingModule){
 
 function applyModuleView(){
     const view = moduleView();
+    document.querySelector('.accounting-tabs')?.classList.toggle('d-none', Boolean(view.noStatusFilter));
     document.querySelectorAll('.accounting-tabs .btn[data-status]').forEach(btn => {
         const status = btn.dataset.status;
         btn.classList.toggle('active', status === accountingStatus);
         btn.setAttribute('aria-pressed', status === accountingStatus ? 'true' : 'false');
         if(view.statusLabels[status]) btn.textContent = view.statusLabels[status];
+        if(status === 'rejected') btn.classList.toggle('d-none', !view.statusLabels.rejected);
     });
     ['pending','processing','paid'].forEach(bucket => {
         const key = bucket.charAt(0).toUpperCase() + bucket.slice(1);
@@ -614,7 +630,9 @@ function selectAccountingModule(key, status='pending'){
         activeAccountingModule = selected.key;
         activeQueueEndpoint = selected.queue_endpoint || activeQueueEndpoint;
     }
-    accountingStatus = ['pending','processing','paid','all'].includes(status) ? status : 'pending';
+    const view = moduleView();
+    accountingStatus = ACCOUNTING_STATUSES.includes(status) && (status !== 'rejected' || view.statusLabels.rejected) ? status : 'pending';
+    if(view.noStatusFilter) accountingStatus = 'all';
     renderAccountingModuleTabs();
     applyModuleView();
     document.getElementById('queueSubtitle').textContent = 'Loading queue...';
@@ -663,6 +681,22 @@ async function postAccountingAction(url, body={}){
     }
     if(!res.ok || data.success === false){
         throw new Error(data.error || data.message || 'The request could not be completed.');
+    }
+    return data;
+}
+
+// GET reply reader: a login page (expired session) becomes a readable error.
+async function readAccountingJson(res){
+    const text = await res.text();
+    let data = null;
+    try{
+        data = text ? JSON.parse(text) : {};
+    }catch(parseError){
+        data = null;
+    }
+    if(res.redirected || data === null){
+        const looksLikeHtml = /^\s*</.test(text || '');
+        throw new Error(res.redirected || looksLikeHtml ? 'Your session has expired. Please log in again.' : (text || 'Unexpected server response.'));
     }
     return data;
 }
@@ -809,7 +843,7 @@ async function loadAccountingModules(options={}){
         const res = await fetchAccountingWithTimeout(`/get_accounting_center_modules?_=${Date.now()}`, {
             headers: { 'Accept': 'application/json' }
         });
-        const data = await res.json();
+        const data = await readAccountingJson(res);
         if(requestSeq !== accountingModuleRequestSeq){
             return;
         }
@@ -867,7 +901,7 @@ function setAccountingModule(moduleKey){
 function setAccountingTab(status){
     if(accountingActionBusy) return;
     const nextStatus = String(status || '').toLowerCase();
-    if(!['pending','processing','paid','all'].includes(nextStatus)){
+    if(!ACCOUNTING_STATUSES.includes(nextStatus)){
         return;
     }
     selectAccountingModule(activeAccountingModule, nextStatus);
@@ -896,7 +930,7 @@ async function refreshAccountingQueue(forceRefresh=false){
         const res = await fetchAccountingWithTimeout(`${endpointAtRequest}${separator}status=${encodeURIComponent(statusAtRequest)}&_=${Date.now()}`, {
             headers: { 'Accept': 'application/json' }
         });
-        const data = await res.json();
+        const data = await readAccountingJson(res);
         if(requestSeq !== accountingQueueRequestSeq || moduleAtRequest !== activeAccountingModule || statusAtRequest !== accountingStatus){
             return;
         }
@@ -905,7 +939,9 @@ async function refreshAccountingQueue(forceRefresh=false){
         }
         accountingItems = data.items || [];
         updateSummary(data.summary || {});
-        if(activeAccountingModule === 'leave_requests' || data.queue === 'leave_requests'){
+        if(activeAccountingModule === 'action' || data.queue === 'action'){
+            renderActionRows(accountingItems);
+        }else if(activeAccountingModule === 'leave_requests' || data.queue === 'leave_requests'){
             renderLeaveRequestRows(accountingItems);
         }else if(activeAccountingModule === 'travel_requests' || data.queue === 'travel_requests'){
             renderTravelRequestRows(accountingItems);
@@ -916,7 +952,10 @@ async function refreshAccountingQueue(forceRefresh=false){
         }else{
             renderReimbursementRows(accountingItems);
         }
-        document.getElementById('queueSubtitle').textContent = `${data.count ?? accountingItems.length} of your ${moduleView().recordName} record(s) shown`;
+        const shownCount = data.count ?? accountingItems.length;
+        document.getElementById('queueSubtitle').textContent = activeAccountingModule === 'action'
+            ? `${shownCount} item(s) waiting on you`
+            : `${shownCount} of your ${moduleView().recordName} record(s) shown`;
     }catch(err){
         if(requestSeq !== accountingQueueRequestSeq){
             return;
@@ -931,6 +970,52 @@ function updateSummary(summary){
     document.getElementById('kpiPaid').textContent = summary.paid || 0;
 }
 
+
+const ACTION_GROUP_LABELS = { fix: 'To fix', next: 'Your next step', confirm: 'Confirm when received' };
+const ACTION_GROUP_ORDER = { fix: 0, next: 1, confirm: 2 };
+
+function actionButton(item){
+    const id = Number(item.id) || 0;
+    switch(item.action){
+        case 'confirm_received':
+            return `<button class="btn btn-sm btn-success fw-bold" onclick="openPaidModal(${id}, '${esc(item.module || '')}')"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Confirm Received</button>`;
+        case 'travel_completed':
+            return `<button class="btn btn-sm btn-warning fw-bold" onclick="openTravelCompletedConfirm(${id})"><i class="fa-solid fa-clipboard-check me-1"></i>Travel Completed</button>`;
+        case 'complete_travel_liquidation':
+            return `<button class="btn btn-sm btn-success fw-bold" onclick="openTravelLiquidationCompleteModal(${id})"><i class="fa-solid fa-circle-check me-1"></i>Mark Completed</button>`;
+        case 'complete_cash_advance_liquidation':
+            return `<button class="btn btn-sm btn-success fw-bold" onclick="openCashAdvanceLiquidationCompleteModal(${id})"><i class="fa-solid fa-circle-check me-1"></i>Mark Completed</button>`;
+        case 'create_cash_advance_liquidation':
+            return `<button class="btn btn-sm btn-warning fw-bold" onclick="openCashAdvanceLiquidationDraft(${id})"><i class="fa-solid fa-file-circle-plus me-1"></i>Create Liquidation</button>`;
+        default:
+            return '';
+    }
+}
+
+function renderActionRows(items){
+    const body = document.getElementById('accountingQueueBody');
+    if(!items.length){
+        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-circle-check"></i><div class="fw-bold">Nothing needs you right now.</div><div class="small">Rejected records, liquidations owed and money to confirm will show here.</div></td></tr>`;
+        return;
+    }
+    const sorted = [...items].sort((a, b) => (ACTION_GROUP_ORDER[a.group] ?? 9) - (ACTION_GROUP_ORDER[b.group] ?? 9));
+    body.innerHTML = sorted.map(item => {
+        const openLink = item.url ? `<a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(item.url)}"><i class="fa-solid fa-folder-open me-1"></i>Open</a>` : '';
+        const amount = item.amount === null || item.amount === undefined ? '—' : peso(item.amount, item.currency);
+        return `
+            <tr data-action-group="${esc(item.group)}">
+                <td><div class="fw-bold">${esc(item.record_no || '')}</div></td>
+                <td class="wrap-mobile">${esc(item.kind || '')}</td>
+                <td><div class="small fw-bold">${esc(ACTION_GROUP_LABELS[item.group] || '')}</div></td>
+                <td class="amount-cell">${amount}</td>
+                <td>${esc(item.date_label || '—')}</td>
+                <td><span class="status-pill ${statusClass(item.status)}"><i class="fa-solid fa-circle"></i>${esc(item.status || '')}</span></td>
+                <td class="wrap-mobile">${esc(item.label || '')}</td>
+                <td><div class="action-btns">${openLink}${actionButton(item)}</div></td>
+            </tr>
+        `;
+    }).join('');
+}
 
 function renderLeaveRequestRows(items){
     const target = document.getElementById('accountingQueueBody');
@@ -1078,7 +1163,8 @@ async function openCashAdvanceLiquidationDraft(cashAdvanceId){
         return;
     }
 
-    const item = (accountingItems || []).find(row => Number(row.id) === id || Number(row.cash_advance_id) === id);
+    // Match by module too: the "Needs your action" list mixes ids from every module.
+    const item = (accountingItems || []).find(row => (!row.module || row.module === 'cash_advances') && (Number(row.id) === id || Number(row.cash_advance_id) === id));
     const existingUrl = item?.liquidation_url || item?.open_liquidation_url || '';
     if(existingUrl){
         window.location.href = existingUrl;
@@ -1267,7 +1353,7 @@ function applyAccountingUrlParams(){
             });
             if(selected) moduleKey = selected.key;
         }
-        if(['pending','processing','paid','all'].includes(statusParam)) status = statusParam;
+        if(ACCOUNTING_STATUSES.includes(statusParam)) status = statusParam;
     }catch(err){
         console.warn('[My Requests] URL parameter selection skipped', err);
     }

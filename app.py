@@ -1348,6 +1348,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_manager_overview',
     '/get_manager_approvals',
     '/get_accounting_center_modules',
+    '/get_accounting_action_queue',
     '/get_accounting_reimbursement_queue',
     '/get_accounting_travel_request_queue',
     '/get_accounting_travel_requests_queue',
@@ -27379,7 +27380,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v292-dashboard-style-manager.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v293-manager-workload-chart.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v294-dashboard-style-scheduler.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v295-my-requests-fixes';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v295-my-requests-fixes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v296-my-requests-actions';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28279,26 +28281,8 @@ def get_nav_pending_summary():
         summary['approvals_pending'] = pending_total
 
     if can_access_accounting_center():
-        # "Needs your attention": returned to the requester to fix and resubmit.
-        returned_total = 0
-        requester_models = (
-            ReimbursementHeader,
-            TravelRequest,
-            TravelLiquidationHeader,
-            CashAdvanceHeader,
-            CashAdvanceLiquidationHeader,
-        )
-
-        for model_cls in requester_models:
-            try:
-                returned_total += db.session.query(model_cls.id).filter(
-                    model_cls.user_id == current_user.id,
-                    model_cls.status.in_(['Rejected', 'Returned'])
-                ).count()
-            except Exception as count_error:
-                print(f"[Nav] Requester count unavailable for {model_cls.__name__}: {count_error}", flush=True)
-
-        summary['my_requests_action'] = returned_total
+        # Same list as the My Requests "Needs your action" tab: To fix + Your next step.
+        summary['my_requests_action'] = my_requests_action_summary(my_requests_action_items())['action_count']
 
     return jsonify(summary)
 
@@ -46840,11 +46824,196 @@ def travel_liquidation_page():
     return render_template('travel_liquidation.html', liquidation_id=liquidation_id, liq_settings=LIQUIDATION_PAGE_SETTINGS['travel'])
 
 
+MY_REQUESTS_ACTION_GROUP_ORDER = {'fix': 0, 'next': 1, 'confirm': 2}
+
+
+def my_requests_action_items():
+    """Everything waiting on the signed-in user across My Requests (Batch B).
+
+    One source for the "Needs your action" tab and the sidebar badge, which counts
+    only the 'fix' and 'next' groups. 'confirm' (approved money not yet received)
+    is listed but not counted. Light dicts only; each module fails on its own.
+    """
+    items = []
+    today = get_manila_today()
+
+    def add(module, kind, record_id, record_no, group, label, action, url, status, amount=None, currency='PHP', date_value=None):
+        items.append({
+            'module': module,
+            'kind': kind,
+            'id': record_id,
+            'record_no': record_no,
+            'group': group,
+            'label': label,
+            'action': action,
+            'url': url,
+            'status': status,
+            'amount': amount,
+            'currency': currency or 'PHP',
+            'date_label': date_value.strftime('%m/%d/%Y') if date_value else ''
+        })
+
+    def lower_status(model_cls):
+        return func.lower(func.trim(func.coalesce(model_cls.status, '')))
+
+    try:
+        ensure_reimbursement_payment_columns()
+        status = lower_status(ReimbursementHeader)
+        accounting = func.lower(func.trim(func.coalesce(ReimbursementHeader.accounting_status, '')))
+        query = apply_my_accounting_owner_filter(ReimbursementHeader.query, ReimbursementHeader).filter(or_(
+            status.in_(['rejected', 'returned', 'returned for correction']),
+            and_(status == 'approved', accounting != 'paid')
+        ))
+        for header in query.all():
+            url = f'/reimbursement?reimbursement_id={header.id}'
+            total = reimbursement_total_snapshot(header)['grand_total']
+            if reimbursement_normalize_status(header.status) == 'Rejected':
+                add('reimbursements', 'Reimbursement', header.id, f'Reimbursement #{header.id}', 'fix', 'Fix and resubmit', 'open', url, 'Rejected', total, date_value=header.rejected_at or header.updated_at)
+            else:
+                add('reimbursements', 'Reimbursement', header.id, f'Reimbursement #{header.id}', 'confirm', 'Confirm when you receive the payment', 'confirm_received', url, reimbursement_accounting_status_label(header), total, date_value=header.approved_at)
+    except Exception as action_error:
+        print(f"[MyRequests] Action items unavailable for reimbursements: {action_error}", flush=True)
+
+    try:
+        ensure_travel_request_tables()
+        status = lower_status(TravelRequest)
+        query = apply_my_accounting_owner_filter(TravelRequest.query, TravelRequest).filter(or_(
+            status.in_(['rejected', 'returned', 'approved']),
+            and_(status.in_(['funds received', 'funds_received']), TravelRequest.return_date < today)
+        ))
+        for rec in query.all():
+            current = travel_request_normalize_status(rec.status)
+            record_no = clean_str(rec.request_no) or f'TR-{rec.id}'
+            url = f'/travel_request?travel_request_id={rec.id}'
+            amount = travel_request_money(rec.approved_amount or rec.requested_amount)
+            currency = clean_str(getattr(rec, 'currency_code', None)) or 'PHP'
+            if current == 'Rejected' or current.strip().lower() == 'returned':
+                add('travel_requests', 'Travel request', rec.id, record_no, 'fix', 'Fix and resubmit', 'open', url, 'Rejected', amount, currency, rec.rejected_at or rec.updated_at)
+            elif current == 'Approved' and not rec.funds_received_at:
+                add('travel_requests', 'Travel request', rec.id, record_no, 'confirm', 'Confirm when you receive the funds', 'confirm_received', url, 'Approved', amount, currency, rec.approved_at)
+            elif current == 'Funds Received' and rec.funds_received_at and not rec.liquidation_started_at and not rec.liquidation_completed_at:
+                add('travel_requests', 'Travel request', rec.id, record_no, 'next', 'Trip is over: mark travel completed', 'travel_completed', url, 'Funds Received', amount, currency, rec.return_date)
+    except Exception as action_error:
+        print(f"[MyRequests] Action items unavailable for travel requests: {action_error}", flush=True)
+
+    try:
+        ensure_cash_advance_tables()
+        ensure_cash_advance_liquidation_tables()
+        status = lower_status(CashAdvanceHeader)
+        query = apply_my_accounting_owner_filter(CashAdvanceHeader.query, CashAdvanceHeader).filter(or_(
+            status.in_(['rejected', 'returned', 'approved', 'ready for liquidation', 'ready_for_liquidation', 'received']),
+            CashAdvanceHeader.received_at.isnot(None)
+        ))
+        headers = query.all()
+        with_liquidation = {
+            row.cash_advance_id for row in
+            CashAdvanceLiquidationHeader.query.with_entities(CashAdvanceLiquidationHeader.cash_advance_id)
+            .filter(CashAdvanceLiquidationHeader.cash_advance_id.in_([h.id for h in headers] or [0])).all()
+        }
+        for header in headers:
+            current = cash_advance_normalize_status(header.status)
+            bucket = cash_advance_my_requests_status_bucket(header)
+            record_no = clean_str(header.cash_advance_no) or f'CA-{header.id}'
+            url = f'/cash_advance?cash_advance_id={header.id}'
+            amount = cash_advance_money(header.approved_amount or header.amount_requested)
+            if current == 'Rejected':
+                add('cash_advances', 'Cash advance', header.id, record_no, 'fix', 'Fix and resubmit', 'open', url, 'Rejected', amount, date_value=header.rejected_at or header.updated_at)
+            elif bucket == 'processing' and current == 'Approved':
+                add('cash_advances', 'Cash advance', header.id, record_no, 'confirm', 'Confirm when you receive the money', 'confirm_received', url, 'Approved', amount, date_value=header.approved_at)
+            elif bucket == 'paid' and header.id not in with_liquidation:
+                add('cash_advances', 'Cash advance', header.id, record_no, 'next', 'Create the liquidation', 'create_cash_advance_liquidation', url, 'Received', amount, date_value=header.received_at)
+    except Exception as action_error:
+        print(f"[MyRequests] Action items unavailable for cash advances: {action_error}", flush=True)
+
+    try:
+        ensure_travel_liquidation_tables()
+        status = lower_status(TravelLiquidationHeader)
+        query = apply_my_accounting_owner_filter(TravelLiquidationHeader.query, TravelLiquidationHeader).filter(
+            status.in_(['rejected', 'returned', 'draft', 'approved'])
+        )
+        for liq in query.all():
+            current = normalize_travel_liquidation_status(liq.status)
+            record_no = clean_str(liq.liquidation_no) or f'TL-{liq.id}'
+            url = f'/travel_liquidation?liquidation_id={liq.id}'
+            amount = travel_request_money(liq.total_actual_expenses)
+            currency = clean_str(liq.currency_code) or 'PHP'
+            if current in {'Rejected', 'Returned'}:
+                # A rejected travel liquidation is read-only (can_edit_travel_liquidation); it stays here as before.
+                label = 'Fix and resubmit' if current == 'Returned' else 'Rejected: open it to see why'
+                add('liquidations', 'Travel liquidation', liq.id, record_no, 'fix', label, 'open', url, current, amount, currency, liq.rejected_at or liq.updated_at)
+            elif current == 'Draft':
+                add('liquidations', 'Travel liquidation', liq.id, record_no, 'next', 'Finish and submit the liquidation', 'open', url, 'Draft', amount, currency, liq.updated_at)
+            elif current == 'Approved' and not liq.completed_at:
+                add('liquidations', 'Travel liquidation', liq.id, record_no, 'next', 'Approved: mark it completed', 'complete_travel_liquidation', url, 'Approved', amount, currency, liq.approved_at)
+    except Exception as action_error:
+        print(f"[MyRequests] Action items unavailable for travel liquidations: {action_error}", flush=True)
+
+    try:
+        ensure_cash_advance_liquidation_tables()
+        status = lower_status(CashAdvanceLiquidationHeader)
+        query = CashAdvanceLiquidationHeader.query.filter(
+            CashAdvanceLiquidationHeader.user_id == current_user.id,
+            status.in_(['rejected', 'returned', 'draft', 'liquidation draft', 'approved', 'manager approved'])
+        )
+        for liq in query.all():
+            current = cash_advance_liquidation_normalize_status(liq.status)
+            record_no = clean_str(liq.liquidation_no) or f'CAL-{liq.id}'
+            url = f'/cash_advance_liquidation?liquidation_id={liq.id}'
+            amount = cash_advance_money(liq.total_actual_expenses)
+            if current in {'Rejected', 'Returned'}:
+                add('cash_advance_liquidations', 'Cash advance liquidation', liq.id, record_no, 'fix', 'Fix and resubmit', 'open', url, current, amount, date_value=liq.rejected_at or liq.updated_at)
+            elif current == 'Draft':
+                add('cash_advance_liquidations', 'Cash advance liquidation', liq.id, record_no, 'next', 'Finish and submit the liquidation', 'open', url, 'Draft', amount, date_value=liq.updated_at)
+            elif current == 'Approved' and not liq.completed_at:
+                add('cash_advance_liquidations', 'Cash advance liquidation', liq.id, record_no, 'next', 'Approved: mark it completed', 'complete_cash_advance_liquidation', url, 'Approved', amount, date_value=liq.approved_at)
+    except Exception as action_error:
+        print(f"[MyRequests] Action items unavailable for cash advance liquidations: {action_error}", flush=True)
+
+    try:
+        query = LeaveRequest.query.filter(
+            LeaveRequest.user_id == current_user.id,
+            LeaveRequest.status.in_(['Rejected', 'Form to Follow', 'Provisional'])
+        )
+        for leave in query.all():
+            url = f'/leave_request?open={leave.id}'
+            if leave.status == 'Rejected':
+                add('leave_requests', 'Leave request', leave.id, leave.request_no, 'fix', 'Fix and resubmit', 'open', url, 'Rejected', date_value=leave.start_date)
+            else:
+                add('leave_requests', 'Leave request', leave.id, leave.request_no, 'next', 'Complete and submit the signed form', 'open', url, leave.status, date_value=leave.start_date)
+    except Exception as action_error:
+        print(f"[MyRequests] Action items unavailable for leave requests: {action_error}", flush=True)
+
+    items.sort(key=lambda item: MY_REQUESTS_ACTION_GROUP_ORDER.get(item['group'], 9))
+    return items
+
+
+def my_requests_action_summary(items):
+    fix_count = sum(item['group'] == 'fix' for item in items)
+    next_count = sum(item['group'] == 'next' for item in items)
+    confirm_count = sum(item['group'] == 'confirm' for item in items)
+    return {
+        'pending': fix_count,
+        'processing': next_count,
+        'paid': confirm_count,
+        'action_count': fix_count + next_count,
+        'total': len(items)
+    }
+
+
 # S12B2 Accounting Center permanent module/tab foundation.
 # Reimbursements is the only live module today. The other modules are exposed as
 # stable placeholders so the frontend can use the final Accounting Center layout
 # now, then plug S13/S14 workflows into the same structure later.
 ACCOUNTING_CENTER_MODULES = [
+    {
+        'key': 'action',
+        'label': 'Needs your action',
+        'description': 'Everything waiting on you across your requests.',
+        'status': 'active',
+        'queue_endpoint': '/get_accounting_action_queue',
+        'phase': 'Batch B',
+        'order': 0
+    },
     {
         'key': 'reimbursements',
         'label': 'Reimbursements',
@@ -47105,7 +47274,10 @@ def accounting_center_module_to_dict(module_config):
     counts = {}
     badge_count = 0
 
-    if module_key == 'reimbursements':
+    if module_key == 'action':
+        counts = my_requests_action_summary(my_requests_action_items())
+        badge_count = counts['action_count']
+    elif module_key == 'reimbursements':
         counts = get_reimbursement_accounting_summary_counts()
         badge_count = counts.get('total_active', 0)
     elif module_key == 'travel_requests':
@@ -47147,7 +47319,7 @@ def accounting_center_module_to_dict(module_config):
         'is_coming_soon': (module_config.get('status') or '') != 'active',
         'queue_endpoint': module_config.get('queue_endpoint') or '',
         'phase': module_config.get('phase') or '',
-        'order': module_config.get('order') or 100,
+        'order': module_config.get('order', 100),
         'counts': counts,
         'badge_count': badge_count
     }
@@ -47170,13 +47342,13 @@ def get_accounting_center_modules():
         return denial
 
     modules = [accounting_center_module_to_dict(module) for module in ACCOUNTING_CENTER_MODULES]
-    modules.sort(key=lambda item: item.get('order') or 100)
+    modules.sort(key=lambda item: item.get('order', 100))
 
     return jsonify({
         'success': True,
         'module': 'accounting_center',
         'phase': 'F4A4',
-        'active_module': 'reimbursements',
+        'active_module': 'action',
         'modules': modules,
         'tabs': modules,
         'message': 'My Accounting Center modules loaded.'
@@ -47202,6 +47374,26 @@ def accounting_center_coming_soon_payload(module_key, label, phase, description)
             'total': 0
         },
         'message': f'{label} module is coming soon.'
+    })
+
+
+@app.route('/get_accounting_action_queue')
+@login_required
+def get_accounting_action_queue():
+    """Batch B: the "Needs your action" list across every My Requests module."""
+    denial = require_accounting_center_access()
+    if denial:
+        return denial
+
+    items = my_requests_action_items()
+    return jsonify({
+        'success': True,
+        'module': 'accounting_center',
+        'queue': 'action',
+        'status': 'all',
+        'items': items,
+        'count': len(items),
+        'summary': my_requests_action_summary(items)
     })
 
 
@@ -51535,7 +51727,7 @@ def get_accounting_reimbursement_queue():
 
     ensure_reimbursement_payment_columns()
     requested_status = (request.args.get('status') or 'pending').strip().lower()
-    if requested_status not in {'pending', 'processing', 'paid', 'all'}:
+    if requested_status not in {'pending', 'processing', 'paid', 'rejected', 'all'}:
         requested_status = 'pending'
 
     query = apply_my_accounting_owner_filter(ReimbursementHeader.query, ReimbursementHeader)
@@ -51544,6 +51736,8 @@ def get_accounting_reimbursement_queue():
 
     if requested_status == 'paid':
         query = query.filter(or_(normalized_status == 'paid', normalized_accounting_status == 'paid'))
+    elif requested_status == 'rejected':
+        query = query.filter(normalized_status.in_(['rejected', 'returned', 'returned for correction']))
     elif requested_status == 'processing':
         query = query.filter(normalized_status == 'approved').filter(normalized_accounting_status == 'processing')
     elif requested_status == 'all':
