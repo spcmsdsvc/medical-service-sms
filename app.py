@@ -10403,7 +10403,7 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
             draw_text(426, 181, f"Approved: {approved_at.strftime('%m/%d/%Y %I:%M %p')}", size=6.7, max_width=150, align='center')
 
         # Small reference footer inside unused lower margin for traceability.
-        draw_text(31, 59, f"System Ref: {ctx.get('request_no')} | Approved Amount: {format_travel_currency_amount(total_amount, ctx.get('currency_code') or getattr(request_rec, 'currency_code', None) or 'PHP')}", size=6.5, max_width=360)
+        draw_text(31, 59, f"System Ref: {ctx.get('request_no')} | {travel_request_amount_label(request_rec)}: {format_travel_currency_amount(total_amount, ctx.get('currency_code') or getattr(request_rec, 'currency_code', None) or 'PHP')}", size=6.5, max_width=360)
 
         c.save()
         overlay_buffer.seek(0)
@@ -27386,7 +27386,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v298-my-requests-forms.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v299-liquidation-excel-download.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v300-signal-logbook.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v301-travel-request-fixes';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v301-travel-request-fixes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v302-travel-request-limits';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -29108,7 +29109,9 @@ def travel_request_page():
     return render_template(
         'travel_request.html',
         logged_in_engineer_id=(profile.id if profile else None),
-        today=get_manila_today().isoformat()
+        today=get_manila_today().isoformat(),
+        travel_max_days=TRAVEL_REQUEST_MAX_DAYS,
+        travel_max_amount=TRAVEL_REQUEST_MAX_AMOUNT
     )
 
 
@@ -41939,6 +41942,21 @@ def approval_center_reimbursement_counts():
 
 
 TRAVEL_REQUEST_EDITABLE_STATUSES = {'Draft', 'Rejected'}
+TRAVEL_REQUEST_MAX_DAYS = 90
+TRAVEL_REQUEST_MAX_DAYS_ERROR = f'A travel request can cover at most {TRAVEL_REQUEST_MAX_DAYS} days. Split longer trips into separate requests.'
+TRAVEL_REQUEST_MAX_AMOUNT = 10_000_000
+
+
+def travel_request_exceeds_max_days(departure_date, return_date):
+    return bool(departure_date and return_date and (return_date - departure_date).days + 1 > TRAVEL_REQUEST_MAX_DAYS)
+
+
+def travel_request_is_approved_or_later(request_rec):
+    return travel_request_normalize_status(getattr(request_rec, 'status', None)) not in {'Draft', 'Submitted', 'Rejected'}
+
+
+def travel_request_amount_label(request_rec):
+    return 'Approved Amount' if travel_request_is_approved_or_later(request_rec) else 'Requested Amount'
 TRAVEL_REQUEST_PENDING_MANAGER_STATUS = 'Submitted'
 
 # S12B6E: Supported Travel Request purpose types.
@@ -42516,8 +42534,6 @@ def build_travel_visit_purpose(product_names, purpose_tags):
     purpose = f"{action} of {equipment_label}" if equipment_label else action
     if suffix_tags:
         purpose += f" - {', '.join(suffix_tags)}"
-    elif primary_actions and len(tags) > len(primary_actions):
-        purpose += f" - {', '.join(tags[len(primary_actions):])}"
     return purpose
 
 
@@ -43099,8 +43115,7 @@ def can_current_user_edit_travel_request_attachments(request_rec):
         return False
     return bool(
         clean_int(request_rec.user_id) == clean_int(getattr(current_user, 'id', None)) or
-        is_current_user_travel_request_participant(request_rec) or
-        is_admin_authorized()
+        is_current_user_travel_request_participant(request_rec)
     )
 
 
@@ -43559,8 +43574,7 @@ def save_travel_request_draft():
     if request_rec:
         can_edit_existing_request = (
             request_rec.user_id == current_user.id or
-            is_current_user_travel_request_participant(request_rec) or
-            is_admin_authorized()
+            is_current_user_travel_request_participant(request_rec)
         )
         if not can_edit_existing_request:
             return jsonify({'success': False, 'error': 'You are not allowed to edit this travel request.'}), 403
@@ -43578,6 +43592,8 @@ def save_travel_request_draft():
     draft_return = travel_request_date(payload.get('return_date') or payload.get('end_date'))
     if draft_departure and draft_return and draft_return < draft_departure:
         return jsonify({'success': False, 'error': 'Return date cannot be before the departure date.'}), 400
+    if travel_request_exceeds_max_days(draft_departure, draft_return):
+        return jsonify({'success': False, 'error': TRAVEL_REQUEST_MAX_DAYS_ERROR}), 400
     for line_item in (payload.get('lines') if isinstance(payload.get('lines'), list) else []):
         if isinstance(line_item, dict) and travel_request_money(line_item.get('source_amount', line_item.get('amount'))) < 0:
             return jsonify({'success': False, 'error': 'Amounts cannot be negative.'}), 400
@@ -43678,6 +43694,9 @@ def save_travel_request_draft():
                 remarks=remarks
             ))
             calculated_request_total = travel_request_money(calculated_request_total + amount)
+    if calculated_request_total > TRAVEL_REQUEST_MAX_AMOUNT:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': f"The total cannot exceed {format_travel_currency_amount(TRAVEL_REQUEST_MAX_AMOUNT, request_rec.currency_code)}."}), 400
     if calculated_request_total or isinstance(lines_payload, list):
         request_rec.requested_amount = calculated_request_total
 
@@ -43850,6 +43869,8 @@ def submit_travel_request(travel_request_id):
         return jsonify({'success': False, 'error': 'Please set the departure and return dates before submitting.'}), 400
     if request_rec.return_date < request_rec.departure_date:
         return jsonify({'success': False, 'error': 'Return date cannot be before the departure date.'}), 400
+    if travel_request_exceeds_max_days(request_rec.departure_date, request_rec.return_date):
+        return jsonify({'success': False, 'error': TRAVEL_REQUEST_MAX_DAYS_ERROR}), 400
     if not (getattr(request_rec, 'routes', None) or []):
         return jsonify({'success': False, 'error': 'Please add at least one route plan before submitting.'}), 400
 
@@ -44046,6 +44067,7 @@ def get_my_travel_requests():
     requested_status = clean_str(request.args.get('status')) or 'all'
     limit = clean_int(request.args.get('limit')) or 50
     limit = min(max(limit, 1), 100)
+    offset = max(clean_int(request.args.get('offset')) or 0, 0)
 
     my_engineer_id = clean_int(getattr(travel_request_current_profile(), 'id', None))
     participant_subquery = TravelRequestParticipant.query.with_entities(TravelRequestParticipant.travel_request_id).filter(or_(
@@ -44063,14 +44085,18 @@ def get_my_travel_requests():
     items = (
         query
         .order_by(TravelRequest.updated_at.desc(), TravelRequest.id.desc())
-        .limit(limit)
+        .offset(offset)
+        .limit(limit + 1)
         .all()
     )
+    has_more = len(items) > limit
+    items = items[:limit]
 
     return jsonify({
         'success': True,
         'items': [travel_request_to_dict(item, include_lines=False) for item in items],
-        'count': len(items)
+        'count': len(items),
+        'has_more': has_more
     })
 
 
@@ -44438,7 +44464,7 @@ def create_or_get_travel_blocks_for_approved_request(request_rec, approved_by_us
         end_date = start_date
 
     # Safety guard: prevent accidental creation of very large date ranges.
-    max_travel_days = 90
+    max_travel_days = TRAVEL_REQUEST_MAX_DAYS
     total_days = (end_date - start_date).days + 1
     if total_days > max_travel_days:
         end_date = start_date + timedelta(days=max_travel_days - 1)
@@ -44551,7 +44577,7 @@ def restore_missing_travel_blocks_for_request(request_rec, restored_by_user=None
     if not end_date or end_date < start_date:
         end_date = start_date
 
-    max_travel_days = 90
+    max_travel_days = TRAVEL_REQUEST_MAX_DAYS
     total_days = (end_date - start_date).days + 1
     if total_days > max_travel_days:
         end_date = start_date + timedelta(days=max_travel_days - 1)
@@ -50223,7 +50249,7 @@ def preview_approved_travel_request_form(travel_request_id):
             )
 
         return render_embedded_pdf_preview_shell(
-            title=f"Approved Travel Request Form - {clean_str(getattr(request_rec, 'request_no', None)) or f'TR-{travel_request_id}'}",
+            title=f"{'Approved ' if travel_request_is_approved_or_later(request_rec) else ''}Travel Request Form - {clean_str(getattr(request_rec, 'request_no', None)) or f'TR-{travel_request_id}'}",
             pdf_bytes=pdf_bytes,
             filename=filename
         )

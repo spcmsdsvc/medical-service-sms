@@ -371,6 +371,7 @@
             </select>
         </div>
         <div id="travel-history-list" class="travel-history-list"><div class="travel-empty">Loading travel requests...</div></div>
+        <button type="button" id="travel-history-more" class="travel-btn travel-btn-secondary mt-2" onclick="loadMyTravelRequests(true)" hidden>Show more</button>
     </section>
 
     <section class="travel-card">
@@ -404,6 +405,8 @@
 <script>
 const TRAVEL_CURRENT_USER_ID = Number('{{ current_user.id }}') || 0;
 const TRAVEL_ENGINEER_ID = Number('{{ logged_in_engineer_id or 0 }}') || 0;
+const TRAVEL_MAX_DAYS = {{ travel_max_days }};
+const TRAVEL_MAX_AMOUNT = {{ travel_max_amount }};
 const TRAVEL_TODAY = '{{ today }}';
 const TRAVEL_CURRENT_USERNAME = {{ current_user.username|tojson }};
 const TRAVEL_AMOUNT_FIELDS = [
@@ -428,6 +431,7 @@ let travelProductsData = [];
 let travelEngineersData = [];
 let travelRequestAttachments = [];
 let travelHistoryItems = [];
+let travelHistoryOffset = 0;
 let travelConflictCheckTimer = null;
 let currentTravelRequest = null;
 
@@ -708,6 +712,11 @@ function setTravelRequestLockedState(statusValue){
 }
 
 /* ---------- readiness ---------- */
+function travelTripTooLong(departure, returnDate){
+    if(!departure || !returnDate) return false;
+    return (Date.parse(returnDate) - Date.parse(departure)) / 86400000 + 1 > TRAVEL_MAX_DAYS;
+}
+
 function travelReadinessItems(){
     const departure = $t('travel-departure-date').value;
     const returnDate = $t('travel-return-date').value;
@@ -717,6 +726,8 @@ function travelReadinessItems(){
         ? {ok: true, text: 'Departure and return dates set'}
         : {blocking: true, text: 'Set the departure and return dates'});
     if(departure && returnDate && returnDate < departure) items.push({blocking: true, text: 'Return date is before the departure date'});
+    if(travelTripTooLong(departure, returnDate)) items.push({blocking: true, text: `Trip is longer than ${TRAVEL_MAX_DAYS} days`});
+    if(calculateTravelTotal() > TRAVEL_MAX_AMOUNT) items.push({blocking: true, text: `Total is over ${formatTravelMoney(TRAVEL_MAX_AMOUNT)}`});
     items.push(hasRoute ? {ok: true, text: 'Route plan added'} : {blocking: true, text: 'Add at least one route (From / To)'});
     items.push(calculateTravelTotal() > 0
         ? {ok: true, text: 'Cash advance amount entered'}
@@ -1210,19 +1221,13 @@ function collectTravelPayload(){
         id: $t('travel-request-id').value,
         department: 'Medical Service',
         request_type: requestType,
-        travel_type: requestType,
         participants,
-        participant_names: participants.map(item => item.name).join(', '),
         purpose: shortenTravelText(buildTravelPurpose(requestType, routes)),
         ...details,
-        client_id: isClientVisitTravel() ? (firstVisit.client_id || '') : '',
         client_name: isClientVisitTravel() ? (firstVisit.client_name || '') : requestType,
-        product_id: isClientVisitTravel() ? (firstVisit.product_id || '') : '',
-        equipment: isClientVisitTravel() ? (firstVisit.product_name || '') : '',
         destination: isClientVisitTravel() ? routeLabels : (details.training_venue || routeLabels || details.meeting_with),
         departure_date: $t('travel-departure-date').value,
         return_date: $t('travel-return-date').value,
-        arrival_date: $t('travel-return-date').value,
         currency_code: currency,
         requested_amount: calculateTravelTotal(),
         special_instruction: specialInstruction,
@@ -1414,6 +1419,14 @@ async function saveTravelRequestDraft(){
         showTravelStatus('Return date cannot be before the departure date.', 'error');
         return null;
     }
+    if(travelTripTooLong(payload.departure_date, payload.return_date)){
+        showTravelStatus(`A travel request can cover at most ${TRAVEL_MAX_DAYS} days. Split longer trips into separate requests.`, 'error');
+        return null;
+    }
+    if(payload.requested_amount > TRAVEL_MAX_AMOUNT){
+        showTravelStatus(`The total cannot exceed ${payload.currency_code} ${formatTravelMoney(TRAVEL_MAX_AMOUNT)}.`, 'error');
+        return null;
+    }
     setTravelBusy(true);
     try{
         const data = await travelFetch('/save_travel_request_draft', {method:'POST', json: payload}, 'Unable to save travel request.');
@@ -1531,10 +1544,14 @@ async function restoreTravelBlocksForRequest(requestId){
 }
 
 /* ---------- my travel requests ---------- */
-async function loadMyTravelRequests(){
+async function loadMyTravelRequests(append = false){
     try{
-        const data = await travelFetch(`/get_my_travel_requests?_=${Date.now()}`, {}, 'Unable to load travel requests.');
-        travelHistoryItems = Array.isArray(data.items) ? data.items : [];
+        const offset = append ? travelHistoryOffset : 0;
+        const data = await travelFetch(`/get_my_travel_requests?offset=${offset}&_=${Date.now()}`, {}, 'Unable to load travel requests.');
+        const items = Array.isArray(data.items) ? data.items : [];
+        travelHistoryItems = append ? travelHistoryItems.concat(items) : items;
+        travelHistoryOffset = offset + items.length;
+        $t('travel-history-more').hidden = !data.has_more;
         renderMyTravelRequests();
     }catch(err){
         $t('travel-history-list').innerHTML = `<div class="travel-empty">${travelEscape(err.message)}</div>`;

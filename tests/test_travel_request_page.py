@@ -144,5 +144,36 @@ class TravelRequestBatch1SourceTests(unittest.TestCase):
                 self.assertRegex(self.page, rf'function {name}\(|{name}\s*[=(]')
 
 
+class TravelRequestBatch2SourceTests(unittest.TestCase):
+    page = PAGE
+
+    def test_limits_reach_page_and_readiness(self):
+        self.assertIn('const TRAVEL_MAX_DAYS = {{ travel_max_days }};', self.page)
+        self.assertIn('const TRAVEL_MAX_AMOUNT = {{ travel_max_amount }};', self.page)
+        readiness = block(self.page, 'function travelReadinessItems', '\n}\n')
+        self.assertIn('travelTripTooLong(departure, returnDate)', readiness)
+        self.assertIn('calculateTravelTotal() > TRAVEL_MAX_AMOUNT', readiness)
+        save = block(self.page, 'async function saveTravelRequestDraft', '\n}\n')
+        self.assertLess(save.index('travelTripTooLong('), save.index('travelFetch'))
+        self.assertLess(save.index('TRAVEL_MAX_AMOUNT'), save.index('travelFetch'))
+        self.assertIn('travel_max_days=TRAVEL_REQUEST_MAX_DAYS', APP_SOURCE)
+
+    def test_history_show_more(self):
+        self.assertIn('id="travel-history-more"', self.page)
+        self.assertIn('onclick="loadMyTravelRequests(true)"', self.page)
+        load = block(self.page, 'async function loadMyTravelRequests', '\n}\n')
+        self.assertIn('offset=${offset}', load)
+        self.assertIn("$t('travel-history-more').hidden = !data.has_more;", load)
+
+    def test_payload_drops_ignored_keys(self):
+        payload = block(self.page, 'function collectTravelPayload', '\n}\n')
+        for key in ('travel_type', 'arrival_date', 'participant_names', 'client_id', 'product_id', 'equipment'):
+            with self.subTest(key=key):
+                self.assertNotRegex(payload, rf'\n        {key}:')
+        for key in ('client_name', 'destination', 'request_type', 'routes'):
+            with self.subTest(key=key):
+                self.assertRegex(payload, rf'\n        {key}[:,\n]')
+
+
 if __name__ == '__main__':
     unittest.main()

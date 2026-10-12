@@ -37,6 +37,105 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Travel Request — Batch 2: Server Fixes + HTTP Tests (edit rights, trip and amount limits, form wording, history paging, cleanup)
+
+**Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (owner: "execute batch 2" the same day). Tests: 10 endpoint tests (7 fail against `HEAD`'s `app.py`, 3 pin existing behaviour) + 3 page source tests; focused run 81 OK; full suite no new failures (14 known). Browser check on a DB copy passed (1366 px and 375 px).
+**Differences from the plan:** (1) the two local `max_travel_days` variables stay, now set from `TRAVEL_REQUEST_MAX_DAYS` (smaller change, same effect). (2) Admin tests patch `is_admin_authorized` to `True`: role `superadmin` alone is not admin (the username must be in `SUPERADMIN_USERNAMES`). (3) The over-limit check ran on the local `scheduler.db` copy (0 editable records over 90 days or 10,000,000), not a production copy.
+**Approved:** 2026-10-12 (owner: "write batch 2 in plans.md"; decisions answered the same day — see Decisions taken).
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Travel Request — Batch 1 (below), executed and published (`ccd6f8b`). Line numbers here were taken before Batch 1 landed — find code by function name, not line.
+
+## Context
+
+The 2026-10-12 page-scan of `/travel_request` found server-side gaps the page cannot fix alone:
+
+- **Admins can edit anyone's draft through the API.** `save_travel_request_draft` and the attachment routes accept any `is_admin_authorized()` user, while the page and `get_travel_request` deny admins who are not on the request (`can_user_access_travel_request` docstring: admin status is "intentionally not a substitute").
+- **No trip-length limit.** A 2026-11-02 → 2031-11-02 trip saved (tested on a DB copy) and would submit; approval silently creates Timeline blocks for only the first 90 days.
+- **No amount limit.** A 1e15 line saved.
+- **Draft forms say "Approved".** The preview page title is always "Approved Travel Request Form - …" and the PDF footer always prints "Approved Amount", even for a Draft (tested).
+- **My Travel Requests shows only the newest 50** with no way to see older ones.
+- **Cleanup:** the page sends six payload keys the server ignores whenever routes exist; `build_travel_visit_purpose` has an unreachable branch.
+- **Test gap:** save/submit/delete/attachment/restore routes have no HTTP tests (existing travel tests mostly read source text).
+
+Intended outcome: the server enforces the same rules the page shows, generated wording matches the status, older requests are reachable, and the routes are covered by real HTTP tests.
+
+## Decisions taken
+
+1. **Edit rights:** only the requester and listed participants may save a draft or change its attachments; admins who are not on the request get 403. **Delete Draft keeps its documented rule** (requester or admin, `delete_travel_request_draft` docstring) — unchanged.
+2. **Trip limit: 90 days** inclusive (departure to return), the same number approval already uses for Timeline blocks. One constant serves both.
+3. **Amount limit: 10,000,000** per request total, in the request's currency (PHP or USD), checked on save.
+4. **Wording:** "Approved" appears only once a request is approved or later; before that the title is "Travel Request Form" and the footer "Requested Amount".
+5. **History paging:** "Show more" loads the next 50; the status filter still works on the loaded items.
+
+## Investigation
+
+- Save rights: `app.py` `save_travel_request_draft` (`:43559-43565`) — `request_rec.user_id == current_user.id or is_current_user_travel_request_participant(request_rec) or is_admin_authorized()`. Attachments: `can_current_user_edit_travel_request_attachments` (`:43096-43103`), used by upload (`:44118`), delete one (`:44251`) and delete all (`:44294`). View rule: `can_user_access_travel_request` (`:43308`). Delete draft: `:43757` (kept).
+- Trip length: save validates only order (`:43578`); submit validates presence and order (`:43848-43851`). `create_or_get_travel_blocks_for_approved_request` and `restore_missing_travel_blocks_for_request` each define `max_travel_days = 90` locally (`:44440`, `:44553`) and silently cut the range.
+- Amounts: save rejects negatives only (`:43580-43582`); total is `calculated_request_total` (`:43653-43681`), line amounts already converted to the request currency by `normalize_travel_request_line_payload`.
+- Wording: `preview_approved_travel_request_form` (`:50182`) passes `title=f"Approved Travel Request Form - …"` (`:50225`) to `render_embedded_pdf_preview_shell`; the PDF footer is drawn in `build_travel_request_accounting_pdf_bytes` (`:10406`). The form route has no status gate (My Requests links it only for approved-or-later rows).
+- History: `get_my_travel_requests` (`:44040-44073`) — `limit` default 50, max 100, no offset. Page: `loadMyTravelRequests()` / `renderMyTravelRequests()` in `templates/travel_request.html`.
+- Payload keys the server ignores when `routes` is non-empty (the page always sends routes; save refuses without one): `travel_type` (only a fallback after `request_type`), `arrival_date` (falls back to `return_date`), `participant_names` (no reader in `app.py`), `client_id`, `product_id`, `equipment` (only read by the legacy no-routes branch of `normalize_travel_request_routes_payload`, `:42531-42535`). **Keep** `client_name` and `destination`: save uses them when the route summary is empty (training/meeting trips), `:43613-43614`. Built in `collectTravelPayload()`.
+- Dead code: `build_travel_visit_purpose` (`:42494`) — the `elif primary_actions and len(tags) > len(primary_actions)` branch (`:42518`) can never run: whenever it would, `suffix_tags` is non-empty and the `if` above takes it.
+- Test pattern to copy: `tests/test_my_requests_actions.py` `MyRequestsActionEndpointTests` — temp DB via `MEDICAL_SERVICE_TEST_DB`, `setUpClass` with `create_all` + `ensure_travel_request_tables()`, seeded users/engineer, `_client(user_id)` setting `_user_id` in `session_transaction`, cleanup by username/prefix.
+
+## Execution steps
+
+1. **Read first:** newest `changes.md` section; this plan's Investigation (re-find lines by function name — Batch 1 shifted the template and `app.py`).
+2. **Edit rights** (`app.py`): remove `is_admin_authorized()` from the save check and from `can_current_user_edit_travel_request_attachments`. Leave `delete_travel_request_draft` as is. Done = an admin not on the request gets 403 on save and 409/403 on upload/delete attachment; requester and participants unchanged.
+3. **Trip limit** (`app.py`, `templates/travel_request.html`):
+   - Add `TRAVEL_REQUEST_MAX_DAYS = 90` beside `TRAVEL_REQUEST_EDITABLE_STATUSES`; replace both local `max_travel_days = 90` with it.
+   - Save and submit: when both dates exist and `(return - departure).days + 1 > TRAVEL_REQUEST_MAX_DAYS` → 400 "A travel request can cover at most 90 days. Split longer trips into separate requests."
+   - Page: `TRAVEL_MAX_DAYS = {{ travel_max_days }}` passed from `travel_request_page()`; readiness gets a blocking item "Trip is longer than 90 days"; `saveTravelRequestDraft()` shows the same message before posting.
+   - Done = 90 days saves; 91 days is refused on save, submit and in the readiness list; approval block creation unchanged.
+4. **Amount limit** (`app.py`, page): `TRAVEL_REQUEST_MAX_AMOUNT = 10_000_000`; after the lines loop, `calculated_request_total > TRAVEL_REQUEST_MAX_AMOUNT` → rollback and 400 "The total cannot exceed 10,000,000." (formatted with the currency). Page: `TRAVEL_MAX_AMOUNT` from the route; readiness blocking item and a save-time check. Done = 10,000,000.00 saves, 10,000,000.01 is refused with nothing written.
+5. **Wording** (`app.py`): helper `travel_request_is_approved_or_later(request_rec)` = normalized status not in {Draft, Submitted, Rejected}. Preview title "Approved Travel Request Form - …" only when true, else "Travel Request Form - …". PDF footer label "Approved Amount" when true, else "Requested Amount". Done = a Draft preview and PDF say "Travel Request Form" / "Requested Amount"; an Approved one unchanged.
+6. **History paging** (`app.py`, page): `get_my_travel_requests` accepts `offset` (≥ 0), queries `limit + 1`, returns `has_more`. Page: `travelHistoryOffset`; `loadMyTravelRequests(append=false)` resets or appends; a "Show more" button (`id="travel-history-more"`, `travel-btn-secondary`, 44px) under the list, hidden unless `has_more`. Saves, submits and deletes keep calling `loadMyTravelRequests()` (reset). Done = with 55 seeded requests the list shows 50, Show more adds 5 and hides.
+7. **Cleanup:** in `collectTravelPayload()` drop `travel_type`, `arrival_date`, `participant_names`, `client_id`, `product_id`, `equipment` (keep `client_name`, `destination`, everything else). In `build_travel_visit_purpose` delete the unreachable `elif`. Done = save/reload round trip identical for client-visit, training and meeting trips (browser), site-visit tests pass.
+8. **Kept-functions check:** every route, helper and page function used before still exists; only the two local `max_travel_days` variables and the six payload keys are removed on purpose.
+
+## Deliberately excluded
+
+- **Delete Draft for admins** — owner kept the documented rule.
+- **Form route status gate** (refusing previews of drafts) — the requester may want to preview a draft; only the wording changes.
+- **Server-side status-group filtering for history** — client filtering over loaded pages is enough at current volumes (15 requests in production data).
+- **Dark contrast and DESIGN.md alignment** — Batches 3 and 4.
+- **Approval-time block cap behaviour** — unchanged; the new limit makes it unreachable for new requests, and older long requests keep today's behaviour.
+
+## Verification
+
+- **Tests** — new `tests/test_travel_request_endpoints.py` (pattern from `MyRequestsActionEndpointTests`; own temp DB, users `tr_endpoints_owner`, `tr_endpoints_participant`, `tr_endpoints_admin` (role `superadmin`, not on the request), `tr_endpoints_other`, prefix `TRE-TEST-`):
+  - save: owner creates and updates a draft (200, routes and lines stored); participant updates (200); admin and unrelated user get 403; Submitted record → 409; return before departure → 400; 91-day trip → 400, 90-day → 200; total 10,000,000.01 → 400 and no row changed; negative line → 400.
+  - submit: missing dates → 400; 91 days → 400; no signature → 428 with `requires_signature`.
+  - delete draft: owner 200 (record and attachments gone); unrelated user 403; Submitted → 409.
+  - attachments: owner uploads a 1×1 PNG (200), `.txt` refused (400); admin not on the request refused; delete one and delete all (200, list empty); refused once Submitted.
+  - restore blocks: Draft → 400 "Only approved…"; unrelated user on an Approved request → 400 "not authorized".
+  - history: 55 seeded → first page 50 with `has_more`, `offset=50` gives 5 without.
+  - form wording: Draft preview HTML contains "Travel Request Form -" and not "Approved Travel Request Form"; footer label helper returns "Requested Amount" for Draft, "Approved Amount" for Approved.
+  - **Positive control:** run the module with `app.py` at `HEAD` (copy `git show HEAD:app.py` to a scratch folder and point the import there, never `git stash`): the admin, 91-day, amount, paging and wording tests fail; the others pass (they pin existing behaviour).
+- `tests/test_travel_request_page.py`: source checks for `TRAVEL_MAX_DAYS`/`TRAVEL_MAX_AMOUNT` readiness items, `travel-history-more`, and that `collectTravelPayload` no longer sends the six keys.
+- **Focused run:** `tests/test_travel_request_*.py`, `test_my_requests_actions`, `test_approval_center_wording`, `test_request_recall`, `test_accounting_attachment_management`, `test_changelog_coverage`. **Full suite once before publishing** (changes `app.py` permission helpers shared with the approval and accounting pages).
+- **Browser** on a copy of `scheduler.db` with a temporary engineer account: 91-day trip blocked in readiness and on save; 10,000,000.01 blocked; Draft preview says "Travel Request Form"; Show more (seed 55 drafts on the copy); client-visit, training and meeting drafts save and reload unchanged; console clean. Clean up the copy, account and launch entry.
+
+## After implementation
+
+1. Self-review the diff (messages plain for field engineers; no permission widened).
+2. `app.py` service worker `CACHE_VERSION` → `…-v302-travel-request-limits` (Batch 1 took v301; use the next free number if another change took v302), previous kept as a history comment.
+3. `static/changelog/releases.json`: release "Travel Request Checks" (audience `everyone`; items: trips up to 90 days, total up to 10,000,000, older requests via Show more, draft forms no longer say Approved).
+4. `DESIGN.md`: nothing.
+5. `changes.md` bullets; this plan's Status with the commit and any differences.
+6. Commit only `app.py`, `templates/travel_request.html`, `static/changelog/releases.json`, `tests/test_travel_request_endpoints.py`, `tests/test_travel_request_page.py`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/`, `.claude/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **An admin who relied on editing others' drafts** loses that: owner decision; requester or a participant can still edit, and admins can still delete.
+- **Existing records over 90 days or 10,000,000** can no longer be re-saved without fixing them: checked only on save/submit of editable records; approved records untouched. Check the production copy for such drafts before publishing (query in the browser step).
+- **Removing payload keys** breaks a reader missed in Investigation: the round-trip browser check for all three trip types and the existing site-visit tests guard it; rollback = revert.
+- **Test DB collisions:** own temp DB file and prefix, cleaned in `setUpClass`/`tearDownClass`.
+- **Blast radius:** travel request routes, two shared travel helpers, one page; rollback = revert the commit.
+
+---
+
 # Travel Request — Batch 1: Page Fixes (Preview button, unsaved-changes guard, upload check, status filter, labels, taps)
 
 **Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (commit `ccd6f8b`). Tests: 8 added (7 fail on `HEAD`); focused run 70 OK. Browser check on a DB copy passed (1366 px and 375 px).

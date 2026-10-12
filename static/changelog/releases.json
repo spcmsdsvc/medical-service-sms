@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-travel-request-checks",
+      "release_date": "2026-10-12",
+      "title": "Travel Request Checks",
+      "summary": "Clear limits on trip length and total, older requests within reach, and draft forms that no longer say Approved.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-travel-request-checks-limits",
+          "category": "Travel Request",
+          "description": "A travel request can cover up to 90 days, with a total of up to 10,000,000; the readiness list warns you before saving.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-travel-request-checks-history",
+          "category": "Travel Request",
+          "description": "Show more in My Travel Requests loads your older requests.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-12-travel-request-checks-wording",
+          "category": "Travel Request",
+          "description": "Draft and submitted forms say Travel Request Form and Requested Amount; Approved appears only after approval.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-travel-request-fixes",
       "release_date": "2026-10-12",
       "title": "Travel Request Fixes",
