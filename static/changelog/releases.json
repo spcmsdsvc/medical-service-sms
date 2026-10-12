@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-travel-request-design",
+      "release_date": "2026-10-12",
+      "title": "Cleaner Travel Request Page",
+      "summary": "The Travel Request page now looks like My Requests, with clearer buttons and a shorter phone layout.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-travel-request-design-header",
+          "category": "Travel Request",
+          "description": "The top of the page uses the same header as My Requests, with the status shown as a coloured chip.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-travel-request-design-buttons",
+          "category": "Travel Request",
+          "description": "Submit for Approval is the main button; Save Draft is a lighter outline button.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-12-travel-request-design-phone",
+          "category": "Travel Request",
+          "description": "On phones the form starts sooner and the bottom bar takes less space.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-travel-request-contrast",
       "release_date": "2026-10-12",
       "title": "Easier-to-Read Travel Request Buttons",

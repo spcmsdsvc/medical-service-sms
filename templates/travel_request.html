@@ -1,135 +1,127 @@
 {% extends "layout.html" %}
 
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=16">
 <style>
     .travel-page { max-width: 1220px; margin: 0 auto; padding-bottom: 90px; }
     .travel-page [hidden], .travel-btn[hidden] { display: none !important; }
-    .travel-hero {
-        background: linear-gradient(135deg, var(--app-primary-strong), var(--app-primary));
-        color: #fff; border-radius: 18px; padding: 16px 20px; margin-bottom: 14px;
-        display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap;
-    }
-    .travel-hero-eyebrow { font-size: .74rem; font-weight: 800; opacity: .85; text-transform: uppercase; letter-spacing: .05em; }
-    .travel-hero h1 { margin: 2px 0 0; font-size: 1.45rem; font-weight: 900; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .travel-hero p { margin: 4px 0 0; opacity: .9; font-weight: 700; font-size: .85rem; }
-    .travel-hero-pill { background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.35); border-radius: 999px; padding: 3px 12px; font-size: .78rem; font-weight: 900; }
-    .travel-hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .travel-hero-actions .travel-btn { background: rgba(255,255,255,.16); color: #fff; border: 1px solid rgba(255,255,255,.35); }
-    .travel-page .travel-hero-actions a.travel-btn { color: #fff; }
+    .travel-page .dash-page-h1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .travel-page .dash-page-h1 .travel-status-chip { font-size: .78rem; }
     .travel-card {
-        background: #fff; border: 1px solid var(--app-primary-soft-border); border-radius: 16px;
+        background: var(--app-surface); border: 1px solid var(--app-primary-soft-border); border-radius: 10px;
         padding: 16px; margin-bottom: 14px;
     }
-    .travel-section-title { margin: 0 0 12px; color: var(--app-primary-text); font-size: 1.05rem; font-weight: 900; display: flex; align-items: center; gap: 8px; }
-    .travel-label { font-weight: 900; color: #334155; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 5px; }
+    .travel-section-title { margin: 0 0 12px; color: var(--app-primary-text); font-size: 1.05rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .travel-label { font-weight: 600; color: var(--app-text); font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 5px; }
     .travel-input, .travel-select, .travel-textarea {
-        width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px 12px;
-        font-weight: 700; color: #0f172a; background: #fff; min-height: 44px;
+        width: 100%; border: 1px solid var(--app-border); border-radius: 6px; padding: 10px 12px;
+        font-weight: 400; color: var(--app-text); background: var(--app-surface); min-height: 44px;
     }
-    .travel-input[readonly], .travel-input:disabled, .travel-select:disabled, .travel-textarea:disabled { background: #f1f5f9; color: #64748b; cursor: not-allowed; }
+    .travel-input[readonly], .travel-input:disabled, .travel-select:disabled, .travel-textarea:disabled { background: var(--app-surface-raised); color: var(--app-muted); cursor: not-allowed; }
     .travel-textarea { min-height: 86px; resize: vertical; }
-    .travel-hint { color: #64748b; font-size: .78rem; font-weight: 800; margin-top: 5px; }
+    .travel-hint { color: var(--app-muted); font-size: .78rem; font-weight: 400; margin-top: 5px; }
     .travel-check-grid { display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 8px; }
     .travel-check-grid.compact { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
     .travel-check {
-        border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px; padding: 10px;
-        font-weight: 800; color: #334155; display: flex; align-items: center; gap: 8px; min-height: 44px;
+        border: 1px solid var(--app-border); background: var(--app-surface-raised); border-radius: 6px; padding: 10px;
+        font-weight: 600; color: var(--app-text); display: flex; align-items: center; gap: 8px; min-height: 44px;
     }
     .travel-check input, .travel-purpose-type-card input, .travel-participant-chip input, .travel-equipment-row input { width: 18px; height: 18px; min-height: 18px !important; }
-    .travel-btn { border: none; border-radius: 12px; padding: 10px 16px; min-height: 44px; font-weight: 900; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; justify-content: center; text-decoration: none; }
+    .travel-btn { border: none; border-radius: 6px; padding: 10px 16px; min-height: 44px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; justify-content: center; text-decoration: none; }
     .travel-btn:disabled { opacity: .55; cursor: not-allowed; }
     .travel-btn-primary { background: var(--app-primary); color: #fff; }
-    .travel-btn-success { background: #198754; color: #fff; }
-    .travel-btn-secondary { background: #e2e8f0; color: #334155; }
-    .travel-page a.travel-btn.travel-btn-secondary { color: #334155; }
+    .travel-btn-outline { background: var(--app-surface); color: var(--app-primary-text); border: 1px solid var(--app-primary); }
+    .travel-btn-outline:hover { background: var(--app-primary-soft); }
+    .travel-btn-secondary { background: var(--app-surface-raised); color: var(--app-text); border: 1px solid var(--app-border); }
+    .travel-page a.travel-btn.travel-btn-secondary { color: var(--app-text); }
     .travel-btn-danger { background: #dc2626; color: #fff; }
-    .travel-btn-danger-outline { background: #fff; color: #dc2626; border: 1px solid #fecaca; }
+    .travel-btn-danger-outline { background: var(--app-surface); color: #dc2626; border: 1px solid #fecaca; }
     .travel-btn-sm { padding: 6px 12px; min-height: 36px; font-size: .85rem; }
     .travel-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 
-    .travel-banner { border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; font-weight: 800; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; }
+    .travel-banner { border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-weight: 400; border: 1px solid var(--app-border); background: var(--app-surface-raised); color: var(--app-muted); }
     .travel-banner[hidden] { display: none; }
     .travel-banner.rejected { border-color: #fecaca; background: #fff1f2; color: #991b1b; }
-    .travel-banner-title { font-weight: 950; margin-bottom: 4px; }
+    .travel-banner-title { font-weight: 600; margin-bottom: 4px; }
     .travel-banner-reason { white-space: pre-wrap; }
 
     .travel-purpose-type-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; }
     .travel-purpose-type-card {
-        border: 1px solid var(--app-primary-soft-border); background: #f8fafc; border-radius: 14px; padding: 12px;
-        font-weight: 900; color: #334155; display: flex; align-items: center; gap: 8px; min-height: 56px; cursor: pointer;
+        border: 1px solid var(--app-primary-soft-border); background: var(--app-surface-raised); border-radius: 10px; padding: 12px;
+        font-weight: 600; color: var(--app-text); display: flex; align-items: center; gap: 8px; min-height: 56px; cursor: pointer;
     }
     .travel-purpose-type-card:has(input:checked) { border-color: var(--app-primary); background: var(--app-primary-soft); color: var(--app-primary-text); }
     .travel-dynamic-panel { display: none; margin-top: 12px; }
     .travel-dynamic-panel.show { display: block; }
 
     .travel-participant-list { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 8px; max-height: 260px; overflow: auto; }
-    .travel-participant-chip { border: 1px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 9px 10px; display: flex; align-items: center; gap: 8px; font-weight: 850; color: #334155; min-height: 44px; }
-    .travel-participant-view-note { margin-top: 10px; border: 1px solid var(--app-primary-soft-border); background: var(--app-primary-soft); color: var(--app-primary-text); border-radius: 12px; padding: 9px 11px; font-weight: 850; font-size: .82rem; }
+    .travel-participant-chip { border: 1px solid var(--app-border); background: var(--app-surface); border-radius: 6px; padding: 9px 10px; display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--app-text); min-height: 44px; }
+    .travel-participant-view-note { margin-top: 10px; border: 1px solid var(--app-primary-soft-border); background: var(--app-primary-soft); color: var(--app-primary-text); border-radius: 10px; padding: 9px 11px; font-weight: 400; font-size: .82rem; }
     .travel-participant-view-note[hidden] { display: none; }
 
     .travel-route-list, .travel-visit-list { display: grid; gap: 12px; }
     .travel-visit-list { margin-top: 12px; }
-    .travel-route-card { border: 1px solid var(--app-primary-soft-border); background: var(--app-primary-soft); border-radius: 16px; padding: 14px; }
+    .travel-route-card { border: 1px solid var(--app-primary-soft-border); background: var(--app-primary-soft); border-radius: 10px; padding: 14px; }
     .travel-route-header, .travel-visit-header { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 12px; }
-    .travel-route-title { font-weight: 950; color: var(--app-primary-text); font-size: 1rem; }
-    .travel-visit-card { border: 1px solid #e2e8f0; background: #fff; border-radius: 14px; padding: 12px; }
-    .travel-visit-title { font-weight: 950; color: #0f172a; font-size: .9rem; }
-    .travel-icon-btn { border: none; border-radius: 12px; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-    .travel-icon-btn.secondary { background: #e2e8f0; color: #334155; }
+    .travel-route-title { font-weight: 600; color: var(--app-primary-text); font-size: 1rem; }
+    .travel-visit-card { border: 1px solid var(--app-border); background: var(--app-surface); border-radius: 10px; padding: 12px; }
+    .travel-visit-title { font-weight: 600; color: var(--app-text); font-size: .9rem; }
+    .travel-icon-btn { border: none; border-radius: 6px; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+    .travel-icon-btn.secondary { background: var(--app-surface-raised); color: var(--app-text); border: 1px solid var(--app-border); }
     .travel-icon-btn.danger { background: #fee2e2; color: #b91c1c; }
     .travel-route-flow { display: grid; grid-template-columns: minmax(180px, 1fr) 52px minmax(180px, 1fr) minmax(150px, 220px); gap: 12px; align-items: end; }
     .travel-client-only.is-hidden { display: none !important; }
 
     .travel-search-wrap { position: relative; }
     .travel-search-results {
-        position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); background: #fff;
-        border: 1px solid #cbd5e1; border-radius: 12px; box-shadow: 0 16px 40px rgba(15,23,42,.16); overflow: hidden; display: none;
+        position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); background: var(--app-surface);
+        border: 1px solid var(--app-border); border-radius: 6px; box-shadow: 0 16px 40px rgba(15,23,42,.16); overflow: hidden; display: none;
     }
-    .travel-search-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #e2e8f0; font-weight: 800; color: #0f172a; }
-    .travel-search-item small { display: block; color: #64748b; font-weight: 700; margin-top: 2px; }
+    .travel-search-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--app-border); font-weight: 600; color: var(--app-text); }
+    .travel-search-item small { display: block; color: var(--app-muted); font-weight: 400; margin-top: 2px; }
     .travel-search-item:hover { background: var(--app-primary-soft); }
 
     .travel-equipment-dropdown { position: relative; }
     .travel-equipment-toggle {
-        width: 100%; border: 1px solid #cbd5e1; border-radius: 12px; background: #fff; padding: 10px 12px; min-height: 44px;
-        font-weight: 800; color: #0f172a; display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; text-align: left;
+        width: 100%; border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-surface); padding: 10px 12px; min-height: 44px;
+        font-weight: 600; color: var(--app-text); display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; text-align: left;
     }
-    .travel-equipment-toggle:disabled { background: #f1f5f9; color: #475569; cursor: not-allowed; }
+    .travel-equipment-toggle:disabled { background: var(--app-surface-raised); color: #475569; cursor: not-allowed; }
     .travel-equipment-menu {
-        display: none; position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 5px); border: 1px solid #cbd5e1;
-        border-radius: 12px; background: #fff; box-shadow: 0 18px 45px rgba(15,23,42,.18); padding: 10px; max-height: 270px; overflow-y: auto;
+        display: none; position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 5px); border: 1px solid var(--app-border);
+        border-radius: 6px; background: var(--app-surface); box-shadow: 0 18px 45px rgba(15,23,42,.18); padding: 10px; max-height: 270px; overflow-y: auto;
     }
     .travel-equipment-dropdown.open .travel-equipment-menu { display: block; }
     .travel-equipment-search { margin-bottom: 8px; }
-    .travel-equipment-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 6px; border-bottom: 1px dashed #e2e8f0; font-weight: 800; color: #0f172a; }
+    .travel-equipment-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 6px; border-bottom: 1px dashed var(--app-border); font-weight: 600; color: var(--app-text); }
     .travel-equipment-row:last-child { border-bottom: none; }
-    .travel-equipment-row.all-row { background: var(--app-primary-soft); border-radius: 10px; color: var(--app-primary-text); margin-bottom: 6px; }
+    .travel-equipment-row.all-row { background: var(--app-primary-soft); border-radius: 6px; color: var(--app-primary-text); margin-bottom: 6px; }
 
     .travel-money-options { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-    .travel-money-option { border: 1px solid var(--app-primary-soft-border); border-radius: 12px; background: #fff; color: var(--app-primary-text); padding: 10px 12px; min-height: 44px; font-weight: 900; cursor: pointer; }
+    .travel-money-option { border: 1px solid var(--app-primary-soft-border); border-radius: 6px; background: var(--app-surface); color: var(--app-primary-text); padding: 10px 12px; min-height: 44px; font-weight: 600; cursor: pointer; }
     .travel-money-option.active { background: var(--app-primary); border-color: var(--app-primary); color: #fff; }
-    .travel-amount-row { display: grid; grid-template-columns: 1fr 200px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; }
-    .travel-total { background: var(--app-primary-soft); border-radius: 14px; padding: 12px; display: flex; justify-content: space-between; align-items: center; color: var(--app-primary-text); font-weight: 900; font-size: 1.1rem; margin-top: 10px; }
+    .travel-amount-row { display: grid; grid-template-columns: 1fr 200px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--app-border); }
+    .travel-total { background: var(--app-primary-soft); border-radius: 10px; padding: 12px; display: flex; justify-content: space-between; align-items: center; color: var(--app-primary-text); font-weight: 600; font-size: 1.1rem; margin-top: 10px; }
 
-    .travel-conflict-panel { margin-bottom: 14px; border: 1px solid #fed7aa; background: #fff7ed; color: #9a3412; border-radius: 14px; padding: 12px 14px; font-weight: 800; }
+    .travel-conflict-panel { margin-bottom: 14px; border: 1px solid #fed7aa; background: #fff7ed; color: #9a3412; border-radius: 10px; padding: 12px 14px; font-weight: 400; }
     .travel-conflict-panel[hidden] { display: none; }
     .travel-conflict-panel.blocking { border-color: #fecaca; background: #fff1f2; color: #991b1b; }
     .travel-conflict-panel.verified { border-color: #86efac; background: #f0fdf4; color: #166534; }
-    .travel-conflict-title { font-weight: 950; margin-bottom: 6px; }
+    .travel-conflict-title { font-weight: 600; margin-bottom: 6px; }
     .travel-conflict-list { display: grid; gap: 6px; margin-top: 8px; }
-    .travel-conflict-item { background: rgba(255,255,255,.72); border: 1px solid rgba(251,146,60,.35); border-radius: 10px; padding: 8px 10px; font-size: .82rem; }
+    .travel-conflict-item { background: rgba(255,255,255,.72); border: 1px solid rgba(251,146,60,.35); border-radius: 6px; padding: 8px 10px; font-size: .82rem; }
 
     .travel-attachment-list, .travel-history-list, .travel-audit-list, .travel-notification-list { display: grid; gap: 8px; }
     .travel-attachment-list { margin-top: 12px; }
-    .travel-attachment-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #dbe4ee; background: #f8fafc; border-radius: 10px; }
-    .travel-attachment-name { min-width: 0; font-weight: 850; color: #0f172a; overflow-wrap: anywhere; }
-    .travel-attachment-meta { color: #64748b; font-size: .8rem; font-weight: 700; }
+    .travel-attachment-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--app-border); background: var(--app-surface-raised); border-radius: 10px; }
+    .travel-attachment-name { min-width: 0; font-weight: 600; color: var(--app-text); overflow-wrap: anywhere; }
+    .travel-attachment-meta { color: var(--app-muted); font-size: .8rem; font-weight: 400; }
     .travel-attachment-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
     .travel-audit-item { border-left: 3px solid var(--app-primary-soft-border); padding: 6px 12px; }
-    .travel-audit-item strong { color: #0f172a; }
-    .travel-audit-meta { color: #64748b; font-size: .8rem; font-weight: 700; }
-    .travel-audit-remarks { color: #475569; font-size: .85rem; white-space: pre-wrap; margin-top: 2px; }
+    .travel-audit-item strong { color: var(--app-text); font-weight: 600; }
+    .travel-audit-meta { color: var(--app-muted); font-size: .8rem; font-weight: 400; }
+    .travel-audit-remarks { color: var(--app-muted); font-size: .85rem; white-space: pre-wrap; margin-top: 2px; }
     .travel-approval-signature { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
     .travel-approval-signature[hidden] { display: none; }
     .travel-approval-signature img { max-width: 200px; max-height: 64px; object-fit: contain; }
@@ -137,81 +129,91 @@
     .travel-history-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
     .travel-history-head .travel-section-title { margin: 0; }
     .travel-history-head .travel-select { width: auto; min-width: 170px; }
-    .travel-history-item { border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
-    .travel-history-title { font-weight: 900; color: #0f172a; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .travel-history-meta { color: #64748b; font-size: .82rem; font-weight: 700; }
+    .travel-history-item { border: 1px solid var(--app-border); background: var(--app-surface-raised); border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    .travel-history-title { font-weight: 600; color: var(--app-text); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .travel-history-meta { color: var(--app-muted); font-size: .82rem; font-weight: 400; }
     .travel-history-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-    .travel-status-chip { border-radius: 999px; padding: 2px 10px; font-size: .72rem; font-weight: 900; background: #e2e8f0; color: #334155; }
+    .travel-status-chip { border-radius: 999px; padding: 2px 10px; font-size: .75rem; font-weight: 600; background: var(--app-border); color: var(--app-text); }
     .travel-status-chip.submitted { background: #fef3c7; color: #92400e; }
     .travel-status-chip.approved { background: #dcfce7; color: #166534; }
     .travel-status-chip.rejected { background: #fde8ea; color: #a1121f; }
     .travel-status-chip.accounting { background: #e0f2fe; color: #075985; }
     :root[data-app-theme="dark"] .travel-status-chip.accounting { background: rgba(14,165,233,.2) !important; color: #bae6fd !important; }
     .travel-status-chip.liquidation { background: var(--app-primary-soft); color: var(--app-primary-text); }
-    .travel-empty { color: #64748b; font-weight: 800; padding: 6px 0; }
+    .travel-empty { color: var(--app-muted); font-weight: 400; padding: 6px 0; }
 
-    .travel-notification-item { border: 1px solid var(--app-primary-soft-border); background: var(--app-primary-soft); border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; cursor: pointer; }
-    .travel-notification-item-title { color: #0f172a; font-weight: 950; font-size: .88rem; }
-    .travel-notification-item-message { color: #475569; font-weight: 750; font-size: .78rem; }
-    .travel-notification-item-time { color: #64748b; font-size: .7rem; font-weight: 900; white-space: nowrap; }
-    .travel-notification-badge { min-width: 22px; padding: 2px 8px; border-radius: 999px; background: #dc2626; color: #fff; font-size: .74rem; font-weight: 950; }
-    .travel-notification-close { width: 32px; height: 32px; border: 0; border-radius: 999px; background: #e2e8f0; color: #475569; font-weight: 950; cursor: pointer; }
+    .travel-notification-item { border: 1px solid var(--app-primary-soft-border); background: var(--app-primary-soft); border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; cursor: pointer; }
+    .travel-notification-item-title { color: var(--app-text); font-weight: 600; font-size: .88rem; }
+    .travel-notification-item-message { color: var(--app-muted); font-weight: 400; font-size: .78rem; }
+    .travel-notification-item-time { color: var(--app-muted); font-size: .75rem; font-weight: 400; white-space: nowrap; }
+    .travel-notification-badge { min-width: 22px; padding: 2px 8px; border-radius: 999px; background: #dc2626; color: #fff; font-size: .75rem; font-weight: 600; }
+    .travel-notification-close { width: 32px; height: 32px; border: 0; border-radius: 999px; background: var(--app-surface-raised); color: var(--app-muted); font-weight: 600; cursor: pointer; }
 
     .travel-dock { position: fixed; left: var(--shell-offset, var(--sidebar-width, 240px)); right: 0; bottom: 0; z-index: 1030; background: var(--app-surface, #fff); border-top: 1px solid var(--app-border, #e2e8f0); box-shadow: 0 -8px 20px rgba(15,23,42,.08); padding: 10px 16px; }
     .travel-dock[hidden] { display: none; }
     .travel-dock-inner { max-width: 1220px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
-    .travel-dock-total { font-weight: 950; color: var(--app-primary-text); font-size: 1.05rem; }
-    .travel-dock-total small { display: block; color: #64748b; font-size: .72rem; font-weight: 800; text-transform: uppercase; }
+    .travel-dock-total { font-weight: 600; color: var(--app-primary-text); font-size: 1.05rem; }
+    .travel-dock-total small { display: block; color: var(--app-muted); font-size: .75rem; font-weight: 600; text-transform: uppercase; }
     .travel-dock-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .travel-readiness { position: fixed; right: 16px; bottom: 76px; z-index: 1031; width: min(380px, calc(100vw - 32px)); background: var(--app-surface, #fff); border: 1px solid var(--app-border, #e2e8f0); border-radius: 14px; padding: 14px; box-shadow: 0 12px 30px rgba(15,23,42,.18); }
+    .travel-readiness { position: fixed; right: 16px; bottom: 76px; z-index: 1031; width: min(380px, calc(100vw - 32px)); background: var(--app-surface, #fff); border: 1px solid var(--app-border, #e2e8f0); border-radius: 10px; padding: 14px; box-shadow: 0 12px 30px rgba(15,23,42,.18); }
     .travel-readiness ul { margin: 8px 0 0; padding-left: 18px; }
-    .travel-readiness li { margin-bottom: 6px; font-size: .88rem; font-weight: 700; }
+    .travel-readiness li { margin-bottom: 6px; font-size: .88rem; font-weight: 400; }
     .travel-readiness .blocking { color: #c2410c; }
     .travel-readiness .warning { color: #a16207; }
     .travel-readiness .ok { color: #166534; }
 
     .travel-toast-stack { position: fixed; top: 18px; right: 18px; z-index: 9998; display: grid; gap: 10px; width: min(360px, calc(100vw - 32px)); pointer-events: none; }
     .travel-toast {
-        pointer-events: auto; border-radius: 14px; padding: 12px 14px; border: 1px solid var(--app-primary-soft-border); background: #fff; color: #0f172a;
+        pointer-events: auto; border-radius: 10px; padding: 12px 14px; border: 1px solid var(--app-primary-soft-border); background: var(--app-surface); color: var(--app-text);
         box-shadow: 0 18px 50px rgba(15,23,42,.22); display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start;
-        font-weight: 800; font-size: .86rem; white-space: pre-wrap;
+        font-weight: 400; font-size: .86rem; white-space: pre-wrap;
     }
     .travel-toast.success { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
     .travel-toast.warning { border-color: #fde68a; background: #fffbeb; color: #92400e; }
     .travel-toast.error { border-color: #fecaca; background: #fff1f2; color: #991b1b; }
-    .travel-toast-close { border: 0; background: transparent; color: inherit; font-size: 1.05rem; font-weight: 950; cursor: pointer; min-width: 44px; min-height: 44px; }
+    .travel-toast-close { border: 0; background: transparent; color: inherit; font-size: 1.05rem; font-weight: 600; cursor: pointer; min-width: 44px; min-height: 44px; }
 
     .travel-dialog-backdrop { position: fixed; inset: 0; z-index: 9999; background: rgba(15,23,42,.55); display: none; align-items: center; justify-content: center; padding: 18px; }
     .travel-dialog-backdrop.show { display: flex; }
-    .travel-dialog { width: min(440px, 100%); background: #fff; border-radius: 20px; box-shadow: 0 28px 90px rgba(15,23,42,.38); border: 1px solid var(--app-primary-soft-border); padding: 18px; }
-    .travel-dialog-title { margin: 0; color: #0f172a; font-weight: 950; font-size: 1.08rem; }
-    .travel-dialog-message { margin-top: 6px; color: #475569; font-weight: 800; line-height: 1.45; white-space: pre-wrap; }
+    .travel-dialog { width: min(440px, 100%); background: var(--app-surface); border-radius: 12px; box-shadow: 0 28px 90px rgba(15,23,42,.38); border: 1px solid var(--app-primary-soft-border); padding: 18px; }
+    .travel-dialog-title { margin: 0; color: var(--app-text); font-weight: 600; font-size: 1.08rem; }
+    .travel-dialog-message { margin-top: 6px; color: var(--app-muted); font-weight: 400; line-height: 1.45; white-space: pre-wrap; }
     .travel-dialog-actions { margin-top: 14px; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 
     @media (max-width: 992px) { .travel-dock { left: 0; } }
     @media (max-width: 768px) {
         .travel-check-grid, .travel-check-grid.compact, .travel-amount-row, .travel-history-item, .travel-purpose-type-grid, .travel-participant-list, .travel-route-flow { grid-template-columns: 1fr; }
+        .travel-card { border-radius: 16px; }
+        .travel-page .dash-page-actions .btn { min-height: 44px; }
         .travel-attachment-item { flex-direction: column; align-items: stretch; }
         .travel-history-actions { justify-content: flex-start; }
-        .travel-dock-actions .travel-btn { flex: 1 1 auto; }
-        .travel-page { padding-bottom: 150px; }
+        .travel-dock { padding: 8px 12px; }
+        .travel-dock-inner { display: grid; grid-template-columns: 1fr 1fr 44px 44px; gap: 8px; }
+        .travel-dock-actions { display: contents; }
+        .travel-dock-total { grid-column: 1 / 3; grid-row: 1; }
+        .travel-dock-readiness { grid-column: 3; grid-row: 1; }
+        #travel-delete-draft-btn { grid-column: 4; grid-row: 1; }
+        #travel-save-btn { grid-column: 1; grid-row: 2; }
+        #travel-submit-btn { grid-column: 2 / 5; grid-row: 2; }
+        .travel-dock-readiness, #travel-delete-draft-btn { width: 44px; padding: 0; }
+        .travel-dock-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+        .travel-page { padding-bottom: 130px; }
         .travel-btn-sm { min-height: 44px; }
         .travel-notification-close { width: 44px; height: 44px; }
     }
 </style>
 
 <div class="travel-page">
-    <header class="travel-hero">
+    <header class="dash-page-header">
         <div>
-            <div class="travel-hero-eyebrow">Travel Request / Order Form</div>
-            <h1><span id="travel-hero-title">New Travel Request</span> <span id="travel-hero-status" class="travel-hero-pill">Draft</span></h1>
-            <p>Shimadzu Philippines Corporation · Form SPCAcctgtravelrequest 002-2016 · Cash advance subject to liquidation within 3 days after arrival.</p>
+            <h1 class="dash-page-h1"><span id="travel-hero-title">New Travel Request</span> <span id="travel-hero-status" class="travel-status-chip">Draft</span></h1>
+            <p class="dash-page-sub">Travel Request / Order Form · Shimadzu Philippines Corporation · Form SPCAcctgtravelrequest 002-2016 · Cash advance subject to liquidation within 3 days after arrival.</p>
         </div>
-        <div class="travel-hero-actions">
-            <a id="travel-preview-btn" class="travel-btn" target="_blank" rel="noopener" hidden><i class="fa-solid fa-file-pdf"></i> Preview Form</a>
-            <button type="button" id="travel-open-timeline-btn" class="travel-btn" hidden onclick="openTimelineForTravelRequest(currentTravelRequest)"><i class="fa-solid fa-calendar-days"></i> Open Timeline</button>
-            <button type="button" id="travel-restore-blocks-btn" class="travel-btn" hidden onclick="restoreTravelBlocksForRequest(currentTravelRequest?.id)"><i class="fa-solid fa-rotate-left"></i> Restore Travel Blocks</button>
-            <button type="button" class="travel-btn" onclick="startNewTravelRequest()"><i class="fa-solid fa-plus"></i> New Request</button>
+        <div class="dash-page-actions">
+            <a id="travel-preview-btn" class="btn btn-outline-primary" target="_blank" rel="noopener" hidden><i class="fa-solid fa-file-pdf me-2"></i>Preview Form</a>
+            <button type="button" id="travel-open-timeline-btn" class="btn btn-outline-primary" hidden onclick="openTimelineForTravelRequest(currentTravelRequest)"><i class="fa-solid fa-calendar-days me-2"></i>Open Timeline</button>
+            <button type="button" id="travel-restore-blocks-btn" class="btn btn-outline-primary" hidden onclick="restoreTravelBlocksForRequest(currentTravelRequest?.id)"><i class="fa-solid fa-rotate-left me-2"></i>Restore Travel Blocks</button>
+            <button type="button" class="btn btn-outline-primary" onclick="startNewTravelRequest()"><i class="fa-solid fa-plus me-2"></i>New Request</button>
         </div>
     </header>
 
@@ -242,10 +244,10 @@
         <section class="travel-card">
             <h2 class="travel-section-title"><i class="fa-solid fa-user"></i> Request Information</h2>
             <div class="row g-3">
-                <div class="col-md-3"><label class="travel-label" for="travel-date">Request Date</label><input type="date" id="travel-date" class="travel-input" readonly></div>
-                <div class="col-md-3"><label class="travel-label" for="travel-department">Department</label><input type="text" id="travel-department" class="travel-input" value="Medical Service" readonly></div>
-                <div class="col-md-3"><label class="travel-label" for="travel-current-status">Status</label><input type="text" id="travel-current-status" class="travel-input" value="Draft" readonly></div>
-                <div class="col-md-3"><label class="travel-label" for="travel-request-no">Request No.</label><input type="text" id="travel-request-no" class="travel-input" value="Auto-generated" readonly></div>
+                <div class="col-6 col-md-3"><label class="travel-label" for="travel-date">Request Date</label><input type="date" id="travel-date" class="travel-input" readonly></div>
+                <div class="col-6 col-md-3"><label class="travel-label" for="travel-department">Department</label><input type="text" id="travel-department" class="travel-input" value="Medical Service" readonly></div>
+                <div class="col-6 col-md-3"><label class="travel-label" for="travel-current-status">Status</label><input type="text" id="travel-current-status" class="travel-input" value="Draft" readonly></div>
+                <div class="col-6 col-md-3"><label class="travel-label" for="travel-request-no">Request No.</label><input type="text" id="travel-request-no" class="travel-input" value="Auto-generated" readonly></div>
             </div>
         </section>
 
@@ -390,10 +392,10 @@
     <div class="travel-dock-inner">
         <div class="travel-dock-total"><small>Total Requested</small><span id="travel-dock-total">PHP 0.00</span></div>
         <div class="travel-dock-actions">
-            <button type="button" class="travel-btn travel-btn-secondary" onclick="toggleTravelReadiness()"><i class="fa-solid fa-list-check"></i> Readiness</button>
-            <button type="button" class="travel-btn travel-btn-danger-outline" id="travel-delete-draft-btn" onclick="deleteTravelRequestDraft()" hidden><i class="fa-solid fa-trash"></i> Delete Draft</button>
-            <button type="button" class="travel-btn travel-btn-primary" id="travel-save-btn" onclick="saveTravelRequestDraft()">Save Draft</button>
-            <button type="button" class="travel-btn travel-btn-success" id="travel-submit-btn" onclick="submitTravelRequest()"><i class="fa-solid fa-paper-plane"></i> Submit for Approval</button>
+            <button type="button" class="travel-btn travel-btn-secondary travel-dock-readiness" onclick="toggleTravelReadiness()" aria-label="Readiness"><i class="fa-solid fa-list-check"></i> <span class="travel-dock-label">Readiness</span></button>
+            <button type="button" class="travel-btn travel-btn-danger-outline" id="travel-delete-draft-btn" onclick="deleteTravelRequestDraft()" aria-label="Delete Draft" hidden><i class="fa-solid fa-trash"></i> <span class="travel-dock-label">Delete Draft</span></button>
+            <button type="button" class="travel-btn travel-btn-outline" id="travel-save-btn" onclick="saveTravelRequestDraft()">Save Draft</button>
+            <button type="button" class="travel-btn travel-btn-primary" id="travel-submit-btn" onclick="submitTravelRequest()"><i class="fa-solid fa-paper-plane"></i> Submit for Approval</button>
         </div>
     </div>
 </div>
@@ -697,6 +699,7 @@ function setTravelRequestLockedState(statusValue){
     $t('travel-hero-title').textContent = item.request_no || 'New Travel Request';
     const pill = $t('travel-hero-status');
     pill.textContent = status;
+    pill.className = ('travel-status-chip ' + travelStatusChipClass(status)).trim();
     const preview = $t('travel-preview-btn');
     preview.hidden = !item.id;
     if(item.id) preview.href = `/preview_approved_travel_request_form/${encodeURIComponent(item.id)}`;

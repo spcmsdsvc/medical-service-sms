@@ -37,6 +37,131 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Travel Request — Batch 4: DESIGN.md Alignment (Page Header, weights, radii, Submit colour, theme variables, phone first screen and dock)
+
+**Status:** Executed locally on 2026-10-12 (owner: "execute batch 4"); not committed — awaiting "commit and push". Tests: 7 added (6 style tests fail on `HEAD`, guard passes); focused run 148 OK. Browser check on a DB copy passed (1366 px light/graphite/AMOLED, 375 px).
+**Differences from plan:** (1) the status-chip line lives in `setTravelRequestLockedState`, not `applyTravelRequestRecord`; the test targets that function. (2) Batch 3's `test_disabled_equipment_toggle_text` also pinned the `#f1f5f9` background and was updated to `var(--app-surface-raised)`. (3) The default (Draft) chip moved off slate hex to `--app-border` / `--app-text`, and the chip/badge/time sizes were raised to 0.75rem. (4) At 375 px the Request Information card ends at 63% of the screen, not ~55%, because the subtitle wraps to four lines; the Travel Purpose Type title is still in the first screen. (5) Submit on the purple accent measures 4.23:1, from the shared `--app-primary` token that every primary button uses; it is outside this closed list and was left unchanged.
+**Approved:** 2026-10-12 (owner: "plan batch 4"; scope agreed with the 2026-10-12 scan batches).
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batches 1–3 published (`ccd6f8b`, `331a24a`, `910db7f`). Find code by selector, not line number.
+
+## Context
+
+The 2026-10-12 design scan of `/travel_request` (critique snapshot `.impeccable/critique/2026-10-12T05-46-07Z__templates-travel-request-html.md`, closed list) left two P2 items after Batches 1–3. This batch fixes exactly those; nothing new is added (critique-loop rule).
+
+1. **Off-system styling** (P2): font weights 700–950 (Fira Sans renders anything above 600 as 600; DESIGN.md says body 400, labels 600); radii 10–20px (DESIGN.md: controls 6px, cards 10–12px, phone cards 16px); a gradient accent hero instead of the Page Header; Submit in success green (green is only for Add / create); neutral greys hardcoded as slate hex instead of theme variables (part of the detector's 26 design-system-color findings).
+2. **Phone first screen and dock** (P2): at 375 px the hero (205 px) and four stacked read-only fields fill the first screen; the fixed dock is 169 px (21% of 812 px).
+
+Leftover from Batch 1: Preview Form is only ~3.5:1 on the gradient's light end. Removing the gradient fixes it.
+
+Intended outcome: the page reads like My Requests and the Dashboard (same Page Header, same weights, radii and button roles). It works in every theme and accent with no change to behaviour, and on a phone the form starts on the first screen with a dock of at most ~120 px.
+
+## Decisions taken
+
+1. Scope: the two P2 items and the Preview Form leftover only (closed list). Detector-only findings outside them (off-ramp font sizes, dialog/toast shadows, the dialog radius beyond the shape mapping below) stay out.
+2. **Page Header by reuse, not copy:** the page links `static/css/app-dashboard.css?v=16` (as My Requests does) and uses `.dash-page-header`, `.dash-page-h1`, `.dash-page-sub` and `.dash-page-actions`. That keeps one source of truth for the header; `app-dashboard.css` itself is not edited.
+3. **Button roles:** Submit for Approval becomes the accent primary (the one primary on the page). Save Draft becomes an accent outline button. Header buttons (Preview Form, Open Timeline, Restore Travel Blocks, New Request) are Bootstrap `btn btn-outline-primary`, as on My Requests. Danger buttons keep their red (Batch 3).
+4. **Hero status pill → status chip:** the header's status uses the existing `travel-status-chip` + `travelStatusChipClass()` pairs (same colours as My Travel Requests), not a white pill.
+5. **Theme variables for neutrals only:** neutral text, surfaces and borders move to `--app-text`, `--app-muted`, `--app-surface`, `--app-surface-raised` and `--app-border`. Semantic status colours (banners, toasts, conflict panel, readiness, chips, red badge, danger buttons) stay fixed hex pairs (Semantic Status Rule). The disabled equipment toggle keeps Batch 3's `#475569`, because the token pair would drop it from 6.92:1 to 4.55:1.
+6. **Phone (≤768 px):** Request Information shows two fields per row. The dock becomes two rows: the total with icon-only Readiness and Delete Draft (labels kept for screen readers), then Save Draft and Submit side by side. Buttons stay 44 px.
+7. Page-local change: `templates/travel_request.html` only (plus the service worker version, changelog, DESIGN.md note and tests). No shared CSS is edited, so focused tests only (AGENTS.md "Keep It Simple"). The existing dark rules in `app-dark-pages.css` stay; trimming them is not part of this batch.
+
+## Investigation
+
+Measured 2026-10-12 in `templates/travel_request.html` (page `<style>` block) and the shared CSS:
+
+- **Hero:** `<header class="travel-hero">` with `.travel-hero-eyebrow`, `h1` holding `#travel-hero-title` and `#travel-hero-status.travel-hero-pill`, the form-number `<p>`, and `.travel-hero-actions` holding `#travel-preview-btn` (an `<a>`), `#travel-open-timeline-btn`, `#travel-restore-blocks-btn`, and New Request (`startNewTravelRequest()`). CSS `.travel-hero` = accent gradient, white text, 18px radius; `.travel-page .travel-hero-actions a.travel-btn { color: #fff; }` (Batch 1). JS (`applyTravelRequestRecord`) only uses the ids: `$t('travel-hero-title')`, `$t('travel-hero-status')` (`pill.textContent = status`), `travel-preview-btn` (`hidden` / `href`), the timeline and restore buttons (`hidden`). Nothing outside this template uses `travel-hero*` or `travel-btn-success` (grep of `templates/` and `static/`; `app-dark-pages.css` has no `travel-hero` rule).
+- **Page Header:** `static/css/app-dashboard.css` `.dash-page-header` (flex, `align-items: flex-end`, wrap, gap 1rem, margin-bottom 1.5rem), `.dash-page-h1` (1.75rem/600, `--app-text`; 1.5rem at ≤575.98px), `.dash-page-sub` (0.9rem, `--app-muted`), `.dash-page-actions` (flex, gap .5rem), `.dash-page-actions .btn` (min-height 38px, 600; 44px only at ≤575.98px). Used by `templates/accounting_center.html` with `app-dashboard.css?v=16`. Its generic phone rules target `.row.mb-4.g-3`, `.card-header` and `.table-responsive table`; the travel page uses `row g-3` (no `mb-4`), no `.card-header` and no `.table-responsive`, so nothing else on the page changes. `.btn` anchors escape the theme's `a:not(.btn)` link colour, so Preview Form no longer needs the Batch 1 rule.
+- **Buttons:** `.travel-btn` (12px radius, 900); `.travel-btn-primary` (accent); `.travel-btn-success` (`#198754`), used only by `#travel-submit-btn`; `#travel-save-btn` is `.travel-btn-primary`; `.travel-btn-secondary` (`#e2e8f0` / `#334155`) plus Batch 1's `.travel-page a.travel-btn.travel-btn-secondary { color: #334155; }`; confirm dialog `confirmBtn.className = 'travel-btn ' + (… 'travel-btn-danger' : 'travel-btn-primary')` (unchanged). `--app-primary-text` = strong accent in light, accent mixed 60% with white in dark (`static/css/app-themes.css`), so an outline button on `--app-surface` is readable in every theme.
+- **Weights in use:** 700, 750, 800, 850, 900, 950 across titles, labels, inputs, hints, meta, chips, buttons, banners, toasts, dialog, dock and notifications.
+- **Radii in use:** 18 (hero), 16 (`.travel-card`, `.travel-route-card`), 14 (banner, purpose-type card, visit card, total, conflict panel, readiness, toast), 12 (inputs, checks, buttons, participant chip, note, icon buttons, search results, equipment toggle/menu, money option, history item, notification item), 10 (conflict item, attachment item, equipment all-row), 20 (dialog), 999 (chips, close buttons).
+- **Neutral hex:** `#fff` (card, input, visit card, search results, equipment toggle/menu, money option, participant chip, toast, dialog, danger-outline light), `#0f172a` / `#334155` (input, labels, titles, items), `#64748b` / `#475569` (hints, meta, empty, readonly, messages), `#e2e8f0` / `#cbd5e1` / `#dbe4ee` (borders), `#f8fafc` / `#f1f5f9` (check, purpose card, attachment and history items, readonly). Token contrast: `--app-text` on `--app-surface-raised` 15.55:1; `--app-muted` on `--app-surface` 4.76:1, on `--app-surface-raised` 4.55:1 (readonly inputs improve from 4.34:1 today).
+- **Phone:** Request Information is four `col-md-3` read-only fields (`#travel-date`, `#travel-department`, `#travel-current-status`, `#travel-request-no`; JS fills them by id), stacked one per row below 768 px. The dock (`#travel-dock`): `.travel-dock-total` then `.travel-dock-actions` with Readiness (`toggleTravelReadiness()`), `#travel-delete-draft-btn`, `#travel-save-btn` and `#travel-submit-btn`; at ≤768 px the buttons are `flex: 1 1 auto` and wrap to three rows. `.travel-page` bottom padding is 150px at ≤768 px.
+- **Tests that pin current styles** (`tests/test_travel_request_page.py`): Batch 1 `test_link_buttons_keep_readable_colours` (the hero anchor rule and the `#334155` secondary anchor) and Batch 3 `test_hero_pill_dark_tint`. Both are replaced on purpose (step 9). `tests/test_layout_sidebar.py` pins the dock's `left: var(--shell-offset, …)` (kept). `tests/test_appearance_themes.py` lists the travel classes that `app-dark-pages.css` covers (unchanged).
+
+## Execution steps
+
+1. **Read first:** newest `changes.md` section; DESIGN.md Typography, Shapes, Buttons, Page Header, Do/Don't; load the Impeccable skill (`polish` / `normalize` for steps 2–6, `adapt` for 7–8).
+2. **Page Header** (markup + JS):
+   - Add `<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=16">` at the top of the content block, as in `accounting_center.html`.
+   - Replace `<header class="travel-hero">` with `<header class="dash-page-header">`. Inside it: a `<div>` with `<h1 class="dash-page-h1">` holding `#travel-hero-title` and `#travel-hero-status` (class `travel-status-chip`), and `<p class="dash-page-sub">` with the existing form-number sentence. The "Travel Request / Order Form" eyebrow becomes the start of that sentence ("Travel Request / Order Form · Shimadzu Philippines Corporation · …"). Add `.dash-page-actions` with the four buttons, ids and handlers unchanged, classes `btn btn-outline-primary` (icons get `me-2`, as on My Requests).
+   - JS in `applyTravelRequestRecord`: after `pill.textContent = status;`, set `pill.className = ('travel-status-chip ' + travelStatusChipClass(status)).trim();`.
+   - CSS: delete `.travel-hero`, `.travel-hero-eyebrow`, `.travel-hero h1`, `.travel-hero p`, `.travel-hero-pill`, `.travel-hero-actions`, `.travel-hero-actions .travel-btn` and `.travel-page .travel-hero-actions a.travel-btn`. Add `.travel-page .dash-page-h1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }` and `.travel-page .dash-page-h1 .travel-status-chip { font-size: .78rem; }` (≥0.75rem, DESIGN chip rule). At ≤768 px add `.travel-page .dash-page-actions .btn { min-height: 44px; }`, because the shared rule only applies at ≤575 px.
+   - Done = no gradient. The title and status chip match My Requests. Preview Form is accent text on the surface (≥4.5:1 in every theme and accent). All four buttons still work.
+3. **Button roles:** `#travel-submit-btn` `travel-btn-success` → `travel-btn-primary`; `#travel-save-btn` `travel-btn-primary` → new `travel-btn-outline`. Add `.travel-btn-outline { background: var(--app-surface); color: var(--app-primary-text); border: 1px solid var(--app-primary); }` and `.travel-btn-outline:hover { background: var(--app-primary-soft); }`. Delete `.travel-btn-success`. `.travel-btn-secondary` → `background: var(--app-surface-raised); color: var(--app-text); border: 1px solid var(--app-border);`. The Batch 1 anchor rule becomes `.travel-page a.travel-btn.travel-btn-secondary { color: var(--app-text); }` (same selector, so it still beats the theme link rule). Done = one primary on the page (Submit), Save Draft clearly secondary, no green.
+4. **Weights:** in the page `<style>` block:
+   - **600** for titles and labels: section title, label, check, purpose-type card, participant chip, route/visit/banner/conflict/dialog/notification titles, history title, attachment name, search item, equipment toggle/row, money option, total, dock total, chips, badges, buttons, close buttons.
+   - **400** for body and help text: input/select/textarea values, hint, attachment/audit/history meta, search-item small, banner text, conflict panel text, readiness items, toast text, dialog message, notification message/time, empty text, participant view note.
+   - Done = no `font-weight` above 600 in the block; nothing below 600 on a title, label or button.
+5. **Radii:**
+   - **6px** for controls: inputs, select, textarea, buttons, icon buttons, checks, participant chip, money option, equipment toggle/menu, search results, equipment all-row, conflict item.
+   - **10px** for cards and panels: `.travel-card`, route card, visit card, purpose-type card, banner, total, conflict panel, readiness, toast, history item, attachment item, notification item, participant view note.
+   - **12px** for the dialog.
+   - Pills (999px) unchanged.
+   - At ≤768 px: `.travel-card` 16px (phone cards). Done = no other radius values in the block.
+6. **Neutral hex → theme variables** (decision 5):
+   - `#fff` surfaces → `var(--app-surface)`.
+   - `#0f172a` / `#334155` text → `var(--app-text)`.
+   - `#64748b` / `#475569` muted text → `var(--app-muted)`, except `.travel-equipment-toggle:disabled`, which keeps `#475569`.
+   - `#e2e8f0` / `#cbd5e1` / `#dbe4ee` borders → `var(--app-border)`.
+   - `#f8fafc` / `#f1f5f9` fills → `var(--app-surface-raised)`. That includes readonly/disabled inputs, which follow DESIGN.md (`surface-raised` + muted text).
+   - The light `.travel-btn-danger-outline` background `#fff` → `var(--app-surface)`. Semantic pairs are untouched.
+   - Done = the only hex left in the block are semantic status pairs, danger red, the disabled-toggle `#475569`, and shadows/scrims.
+7. **Phone first screen:** Request Information columns `col-md-3` → `col-6 col-md-3` (two per row below 768 px; ids unchanged). Done = at 375×812 the header and the Request Information card end above ~55% of the screen, and the Travel Purpose Type title is visible without scrolling.
+8. **Phone dock** (≤768 px):
+   - Wrap the Readiness and Delete Draft texts in `<span class="travel-dock-label">` and give both buttons `aria-label` ("Readiness", "Delete Draft").
+   - CSS: `.travel-dock-inner { display: grid; grid-template-columns: 1fr 1fr 44px 44px; gap: 8px; }`, `.travel-dock-actions { display: contents; }`, `.travel-dock-total { grid-column: 1 / 3; }`, Readiness in column 3, Delete Draft in column 4, `#travel-save-btn` on row 2 in column 1, `#travel-submit-btn` on row 2 in columns 2–4.
+   - The `.travel-dock-label` text is visually hidden on phones (clip pattern, not `display: none`). Readiness and Delete Draft are 44×44 icon buttons. Lower `.travel-page` bottom padding to match the dock.
+   - Done = dock ≤ ~120 px at 375 px, all four actions reachable and 44 px. Desktop dock unchanged apart from steps 3–5.
+9. **Tests updated on purpose:** in `tests/test_travel_request_page.py`, Batch 1 `test_link_buttons_keep_readable_colours` now asserts the secondary rule with `var(--app-text)` and that the hero anchor rule is gone. Batch 3 `test_hero_pill_dark_tint` is replaced by asserting that `.travel-hero-pill` is gone and that the header status uses `travelStatusChipClass`.
+10. **Kept-functions check:** every id and handler listed in Investigation is still present. `travelConfirmDialog`, `applyTravelRequestRecord`, `toggleTravelReadiness`, `saveTravelRequestDraft`, `submitTravelRequest`, `deleteTravelRequestDraft`, `startNewTravelRequest`, `openTimelineForTravelRequest` and `restoreTravelBlocksForRequest` are still defined and wired. Only the `travel-hero*`, `travel-btn-success` and Batch 1 hero-anchor CSS is removed, on purpose.
+
+## Deliberately excluded
+
+- **Trimming the Travel Request rules in `app-dark-pages.css`** (61 `!important` overrides): they stay correct over the new variables. Removing them edits shared CSS and needs the full suite; that would be a separate cleanup, not a scan item.
+- **Off-ramp font sizes, dialog/toast shadow and thin border** (detector only, not in the closed list).
+- **Semantic status hex** (banners, toasts, conflict panel, readiness, chips, red badge): kept by the Semantic Status Rule.
+- **Editing `app-dashboard.css`** (for example to make `.dash-page-actions .btn` 44 px at ≤768 px for every page): a page-local rule covers this page; other pages were not scanned.
+- **Wording, field order, behaviour, server code:** unchanged.
+
+## Verification
+
+- **Tests:** `tests/test_travel_request_page.py` new class `TravelRequestBatch4SourceTests`:
+  - the page links `app-dashboard.css` and uses `dash-page-header` / `dash-page-h1` / `dash-page-sub` / `dash-page-actions`; no `travel-hero` class remains;
+  - the header status gets `travelStatusChipClass` in `applyTravelRequestRecord`;
+  - `#travel-submit-btn` is `travel-btn-primary`, `#travel-save-btn` is `travel-btn-outline`, and `travel-btn-success` is gone;
+  - the `<style>` block has no `font-weight` above 600 and no `border-radius` outside {6px, 10px, 12px, 16px, 999px};
+  - none of the neutral hex values `#0f172a`, `#334155`, `#64748b`, `#e2e8f0`, `#cbd5e1`, `#dbe4ee`, `#f8fafc`, `#f1f5f9` remain in the block (allow-listed exceptions as step 6);
+  - Request Information uses `col-6 col-md-3`; the phone dock rules and `.travel-dock-label` exist, with `aria-label` on Readiness and Delete Draft;
+  - kept-hooks guard: every id/handler from step 10.
+  - **Positive control:** run the class against `git show HEAD:templates/travel_request.html` in the scratchpad (never `git stash`). Every style test fails; the guard passes.
+- **Focused run:** `tests/test_travel_request_*.py`, `test_appearance_themes`, `test_dark_mode_readability`, `test_layout_sidebar`, `test_accounting_attachment_management`, `test_request_recall`, `test_changelog_coverage`. No full suite (page-local, decision 7).
+- **Browser** on a copy of `scheduler.db` with a temporary engineer account, a seeded Draft (attachment, client visit) and a Submitted and an Approved request:
+  - At 1366 px in light, graphite and AMOLED with the classic and purple accents: the header matches My Requests. Preview Form, Open Timeline, Restore Travel Blocks and New Request open or act as before (New Request with edits still shows the Batch 1 discard prompt).
+  - Measure text vs background with `javascript_tool` for the header buttons, status chip, Save Draft outline, Submit, secondary buttons and readonly inputs (≥4.5:1 each).
+  - Save, Submit (cancel at the confirm), Delete Draft (cancel), upload/delete attachment, Remove Visit and Withdraw still work.
+  - At 375 px: Request Information two-up, Travel Purpose Type title in the first screen, dock ≤ ~120 px with all four actions 44 px, no horizontal scroll. Console clean.
+  - One final screenshot pair (desktop light, phone). Clean up the copy, the account and the launch entry.
+
+## After implementation
+
+1. Self-review the diff: only the page template (plus versions, changelog, DESIGN.md note and tests); no shared CSS touched; every removed selector listed in step 10.
+2. `app.py` service worker `CACHE_VERSION` → `…-v304-travel-request-design` (next free number), previous kept as a history comment.
+3. `static/changelog/releases.json`: release "Cleaner Travel Request Page" (audience `everyone`; items: a header like My Requests; Submit is the main button and Save Draft is secondary; on phones the form starts sooner and the bottom bar is smaller).
+4. `DESIGN.md`: under My Requests / Page Header note that Travel Request also links `app-dashboard.css` for the Page Header (one line), so a later header change is known to reach it.
+5. `changes.md` bullets; this plan's Status with the commit and any differences.
+6. Commit only `templates/travel_request.html`, `app.py`, `static/changelog/releases.json`, `DESIGN.md`, `tests/test_travel_request_page.py`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/`, `.claude/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **`app-dashboard.css` side effects on this page:** its generic rules were checked (Investigation). The browser pass at 1366 and 375 px catches anything missed. Rollback = remove the link.
+- **Dark themes:** neutral variables are already dark-aware, and the existing `app-dark-pages.css` travel rules still apply. Checked in graphite and AMOLED.
+- **Phone dock grid:** if Delete Draft is hidden (not the owner, or not saved yet), column 4 is empty; Readiness stays in column 3. Checked with and without a saved draft.
+- **Blast radius:** one template's CSS and header markup plus one JS line; rollback = revert the commit.
+
+---
+
 # Travel Request — Batch 3: Contrast Fixes (dark red outline buttons, hero status pill, "No equipment found")
 
 **Status:** Executed locally on 2026-10-12 (owner: "execute batch 3"); not committed — publish on "commit and push". Tests: 4 added (3 fail on `HEAD`, guard passes); focused run 81 OK; full suite no new failures (14 known). Browser check on a DB copy passed. Difference from plan: `app-dark-pages.css?v=32` was pinned five times, not twice — three in `tests/test_appearance_themes.py`, one each in `tests/test_timeline_desktop_collapse.py` and `tests/test_tsr_page_design.py`; all moved to `?v=33` (commit those two files too).

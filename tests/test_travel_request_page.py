@@ -89,8 +89,9 @@ class TravelRequestBatch1SourceTests(unittest.TestCase):
     page = PAGE
 
     def test_link_buttons_keep_readable_colours(self):
-        self.assertIn('.travel-page .travel-hero-actions a.travel-btn { color: #fff; }', self.page)
-        self.assertIn('.travel-page a.travel-btn.travel-btn-secondary { color: #334155; }', self.page)
+        # Batch 4: the hero anchor rule left with the hero; the secondary anchor uses the theme text colour.
+        self.assertNotIn('.travel-hero-actions a.travel-btn', self.page)
+        self.assertIn('.travel-page a.travel-btn.travel-btn-secondary { color: var(--app-text); }', self.page)
 
     def test_warning_tone_uses_accent_button(self):
         self.assertNotIn('travel-btn-warning', self.page)
@@ -184,12 +185,13 @@ class TravelRequestBatch3SourceTests(unittest.TestCase):
                       'color: #fca5a5 !important;', self.dark_css)
         self.assertIn(':root[data-app-theme="dark"] .travel-btn-danger-outline:is(:hover, :focus-visible)', self.dark_css)
 
-    def test_hero_pill_dark_tint(self):
-        self.assertIn('.travel-hero-pill { background: rgba(0,0,0,.2);', self.page)
-        self.assertNotIn('.travel-hero-pill { background: rgba(255,255,255,.2);', self.page)
+    def test_hero_pill_replaced_by_status_chip(self):
+        # Batch 4: the white hero pill became a status chip in the Page Header.
+        self.assertNotIn('.travel-hero-pill', self.page)
+        self.assertIn("pill.className = ('travel-status-chip ' + travelStatusChipClass(status)).trim();", self.page)
 
     def test_disabled_equipment_toggle_text(self):
-        self.assertIn('.travel-equipment-toggle:disabled { background: #f1f5f9; color: #475569;', self.page)
+        self.assertIn('.travel-equipment-toggle:disabled { background: var(--app-surface-raised); color: #475569;', self.page)
 
     def test_kept_hooks(self):
         for hook in ('id="travel-delete-all-attachments-btn"', 'id="travel-delete-draft-btn"',
@@ -197,6 +199,73 @@ class TravelRequestBatch3SourceTests(unittest.TestCase):
                      "openRequestRecall('travel_request'"):
             with self.subTest(hook=hook):
                 self.assertIn(hook, self.page)
+
+
+class TravelRequestBatch4SourceTests(unittest.TestCase):
+    page = PAGE
+
+    def style(self):
+        return block(self.page, '<style>', '</style>')
+
+    def test_page_header_reused(self):
+        self.assertIn("filename='css/app-dashboard.css') }}?v=16", self.page)
+        for cls in ('dash-page-header', 'dash-page-h1', 'dash-page-sub', 'dash-page-actions'):
+            with self.subTest(cls=cls):
+                self.assertIn(f'class="{cls}"', self.page)
+        self.assertNotIn('travel-hero"', self.page)
+        self.assertNotIn('.travel-hero', self.page)
+        self.assertEqual(self.page.count('class="btn btn-outline-primary"'), 4)
+
+    def test_header_status_uses_chip_classes(self):
+        locked = block(self.page, 'function setTravelRequestLockedState', '\n}\n')
+        self.assertIn("pill.className = ('travel-status-chip ' + travelStatusChipClass(status)).trim();", locked)
+        self.assertIn('id="travel-hero-status" class="travel-status-chip"', self.page)
+
+    def test_button_roles(self):
+        self.assertIn('class="travel-btn travel-btn-primary" id="travel-submit-btn"', self.page)
+        self.assertIn('class="travel-btn travel-btn-outline" id="travel-save-btn"', self.page)
+        self.assertNotIn('travel-btn-success', self.page)
+
+    def test_weights_and_radii_follow_design(self):
+        import re
+        weights = {int(w) for w in re.findall(r'font-weight:\s*(\d+)', self.style())}
+        self.assertTrue(weights)
+        self.assertLessEqual(max(weights), 600)
+        radii = set(re.findall(r'border-radius:\s*([^;]+);', self.style()))
+        self.assertLessEqual(radii, {'6px', '10px', '12px', '16px', '999px'})
+
+    def test_neutral_hex_moved_to_theme_variables(self):
+        style = self.style().lower()
+        for value in ('#0f172a', '#334155', '#64748b', '#e2e8f0', '#cbd5e1', '#dbe4ee', '#f8fafc', '#f1f5f9'):
+            with self.subTest(value=value):
+                self.assertNotIn(value, style.replace('var(--app-border, #e2e8f0)', ''))
+
+    def test_phone_first_screen_and_dock(self):
+        for field in ('travel-date', 'travel-department', 'travel-current-status', 'travel-request-no'):
+            with self.subTest(field=field):
+                self.assertIn(f'<div class="col-6 col-md-3"><label class="travel-label" for="{field}">', self.page)
+        self.assertIn('.travel-dock-inner { display: grid; grid-template-columns: 1fr 1fr 44px 44px; gap: 8px; }', self.page)
+        self.assertIn('.travel-dock-actions { display: contents; }', self.page)
+        self.assertIn('.travel-dock-label { position: absolute;', self.page)
+        self.assertIn('onclick="toggleTravelReadiness()" aria-label="Readiness"', self.page)
+        self.assertIn('onclick="deleteTravelRequestDraft()" aria-label="Delete Draft"', self.page)
+
+    def test_kept_hooks(self):
+        for hook in ('id="travel-hero-title"', 'id="travel-hero-status"', 'id="travel-preview-btn"',
+                     'id="travel-open-timeline-btn"', 'id="travel-restore-blocks-btn"', 'onclick="startNewTravelRequest()"',
+                     'onclick="openTimelineForTravelRequest(currentTravelRequest)"',
+                     'onclick="restoreTravelBlocksForRequest(currentTravelRequest?.id)"',
+                     'id="travel-dock"', 'id="travel-dock-total"', 'id="travel-save-btn"', 'id="travel-submit-btn"',
+                     'id="travel-delete-draft-btn"', 'onclick="saveTravelRequestDraft()"', 'onclick="submitTravelRequest()"',
+                     'onclick="deleteTravelRequestDraft()"', 'onclick="toggleTravelReadiness()"',
+                     'id="travel-date"', 'id="travel-department"', 'id="travel-current-status"', 'id="travel-request-no"'):
+            with self.subTest(hook=hook):
+                self.assertIn(hook, self.page)
+        for name in ('travelConfirmDialog', 'applyTravelRequestRecord', 'toggleTravelReadiness', 'saveTravelRequestDraft',
+                     'submitTravelRequest', 'deleteTravelRequestDraft', 'startNewTravelRequest',
+                     'openTimelineForTravelRequest', 'restoreTravelBlocksForRequest', 'travelStatusChipClass'):
+            with self.subTest(name=name):
+                self.assertRegex(self.page, rf'function {name}\(|{name}\s*=')
 
 
 if __name__ == '__main__':
