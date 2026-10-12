@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-12
 
+- Published **My Requests — Batch A** to `origin/main` on the owner's "commit and push" (`2184b16`: `app.py`, `templates/accounting_center.html`, `static/changelog/releases.json`, `tests/test_my_requests_page.py`, `plans.md`, `changes.md`). Not staged: `scheduler.db`, the handoff, `changes-archive.md`, `.impeccable/`, `.claude/`, `output/`, `tmp/`.
+
 - Recorded the approved plan **My Requests — Batch B: "Needs your action" Tab, Rejected Tabs, Sidebar Badge** at the top of `plans.md` (awaiting go-ahead; no code changed). Planned: one `my_requests_action_items()` helper feeding a new first tab on My Requests (To fix / Your next step / Confirm when you receive it) and the sidebar `my_requests_action` badge (counting only To fix + Your next step); a Rejected status tab for Reimbursements, Travel Requests and Cash Advances; safe JSON reading for the two list loads. Batch A was checked first: code matches its plan and the 51 focused tests pass.
 
 - Executed **My Requests — Batch A: Fixes and Cleanup** (`plans.md`) on the owner's "execute batch A in plans.md"; not committed.
