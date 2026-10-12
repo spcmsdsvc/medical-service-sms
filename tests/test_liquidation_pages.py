@@ -98,6 +98,14 @@ class LiquidationTemplateTests(unittest.TestCase):
         self.assertNotIn('previewTemplateTopBtn', buttons)
         self.assertNotIn('downloadFormBtn', buttons)
 
+    def test_download_form_gets_the_real_excel_file(self):
+        # Without force_download=1 the travel route answers with its HTML preview, which Excel cannot open.
+        download = block(BASE, 'function downloadLiquidationForm', '\n}')
+        self.assertIn("liqUrl('download_*_excel', LIQUIDATION_ID)}?force_download=1", download)
+        self.assertIn("res.headers.get('Content-Type')", download)
+        preview = block(APP_SOURCE, 'def travel_liquidation_preview_html', '@app.route')
+        self.assertIn('/download_travel_liquidation_excel/{clean_int(getattr(liquidation, \'id\', None)) or 0}?force_download=1"', preview)
+
     def test_release_and_cache_version(self):
         self.assertIn('medical-service-pwa-offline-navigation-v240-liquidation-receipts', APP_SOURCE)
         self.assertIn('"2026-10-04-liquidation-receipts"', (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))

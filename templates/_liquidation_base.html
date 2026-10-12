@@ -567,11 +567,15 @@ async function submitLiquidation(){
 
 function downloadLiquidationForm(){
     runBusy('downloadFormBtn', 'Preparing…', async () => {
-        const res = await fetch(liqUrl('download_*_excel', LIQUIDATION_ID), { credentials: 'same-origin' });
+        // force_download=1: without it the travel route returns its HTML preview, which saved as .xlsx will not open.
+        const res = await fetch(`${liqUrl('download_*_excel', LIQUIDATION_ID)}?force_download=1`, { credentials: 'same-origin' });
         if (!res.ok){
             let message = 'Unable to download the form.';
             try { const data = await res.json(); message = data.error || data.message || message; } catch (_) {}
             throw new Error(message);
+        }
+        if (!/spreadsheetml|ms-excel/i.test(res.headers.get('Content-Type') || '')){
+            throw new Error('The server did not return an Excel file. Please refresh the page and try again.');
         }
         const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(res.headers.get('Content-Disposition') || '');
         const filename = match ? decodeURIComponent(match[1]) : `${currentLiquidation?.liquidation_no || 'liquidation'}.xlsx`;

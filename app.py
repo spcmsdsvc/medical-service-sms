@@ -27383,7 +27383,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v295-my-requests-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v296-my-requests-actions.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v297-my-requests-style.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v298-my-requests-forms';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v298-my-requests-forms.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v299-liquidation-excel-download';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -49484,7 +49485,7 @@ def travel_liquidation_preview_html(liquidation):
                 <div class="preview-title">Liquidation Form Preview</div>
                 <div class="preview-note">Preview only. This is not the editable Excel file.</div>
             </div>
-            <a class="download-btn" href="/download_travel_liquidation_excel/{clean_int(getattr(liquidation, 'id', None)) or 0}" target="_blank" rel="noopener">Download Excel</a>
+            <a class="download-btn" href="/download_travel_liquidation_excel/{clean_int(getattr(liquidation, 'id', None)) or 0}?force_download=1" target="_blank" rel="noopener">Download Excel</a>
         </div>
         <div class="sheet-wrap">
             {sheet_pages_html}

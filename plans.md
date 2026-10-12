@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # My Requests — Batch D: Form Downloads, Compact Phone Cards, Action Groups
 
-**Status:** Executed locally 2026-10-12 (owner: "execute batch D in plans.md"); not committed — awaiting "commit and push".
+**Status:** Executed — `502a0f4` (published to `main` 2026-10-12).
 **Differences from the plan:** (1) Hiding `phoneHidden` columns alone left cards at ~455px (labels above values, three stacked 44px buttons), so the phone card also changed: labels sit beside values (`td[data-label]` padding-left 6rem, label absolutely placed), the record cell is the unlabelled card title, the Actions cell is unlabelled, and buttons share one row as text-only 44px buttons (icons hidden on phones). Result: action ~282px, reimbursement/leave ~261px, travel/cash advance ~330px, liquidations ~394px (status notes and the balance card kept); the 260px target is met only for the shortest cards. `DESIGN.md` records the new rule. (2) The travel form rule matches exact early statuses (`draft`, `submitted`, `pending…`, `rejected`, `returned`, `accounting rejected`, `cancel…`); a substring test hid the button on "Liquidation Submitted". (3) Liquidation forms show for any status after submission (not only Submitted/Approved/Completed), via `liquidationFormReady()`. (4) A test leave row was added to the browser copy, because the owner has no leave records.
 **Approved:** 2026-10-12 (owner: "approve batch D, write it to plans.md", after the post-Batch C scan).
 **Detailed:** 2026-10-12.

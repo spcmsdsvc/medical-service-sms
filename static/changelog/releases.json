@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-liquidation-excel-download",
+      "release_date": "2026-10-12",
+      "title": "Liquidation Excel Opens Again",
+      "summary": "The travel liquidation Download Form button saves a real Excel file again.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-liquidation-excel-download-fix",
+          "category": "Liquidations",
+          "description": "Download Form on a travel liquidation, and Download Excel on its preview, now give the real Excel file. Before, Excel said the file format or extension was not valid.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-my-requests-forms",
       "release_date": "2026-10-12",
       "title": "Download Forms from My Requests",
