@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-travel-request-contrast",
+      "release_date": "2026-10-12",
+      "title": "Easier-to-Read Travel Request Buttons",
+      "summary": "Delete and withdraw buttons are readable in dark themes, and small status text is clearer.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-travel-request-contrast-buttons",
+          "category": "Travel Request",
+          "description": "Delete, Delete All, Delete Draft, Remove Visit and Withdraw buttons are easier to read in dark themes.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-travel-request-contrast-labels",
+          "category": "Travel Request",
+          "description": "The status pill at the top of the form and the \"No equipment found\" label are easier to read.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-travel-request-checks",
       "release_date": "2026-10-12",
       "title": "Travel Request Checks",

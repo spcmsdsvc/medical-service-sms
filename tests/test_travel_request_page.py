@@ -175,5 +175,29 @@ class TravelRequestBatch2SourceTests(unittest.TestCase):
                 self.assertRegex(payload, rf'\n        {key}[:,\n]')
 
 
+class TravelRequestBatch3SourceTests(unittest.TestCase):
+    page = PAGE
+    dark_css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+
+    def test_dark_red_outline_readable(self):
+        self.assertIn(':root[data-app-theme="dark"] .travel-btn-danger-outline { background: transparent !important; '
+                      'color: #fca5a5 !important;', self.dark_css)
+        self.assertIn(':root[data-app-theme="dark"] .travel-btn-danger-outline:is(:hover, :focus-visible)', self.dark_css)
+
+    def test_hero_pill_dark_tint(self):
+        self.assertIn('.travel-hero-pill { background: rgba(0,0,0,.2);', self.page)
+        self.assertNotIn('.travel-hero-pill { background: rgba(255,255,255,.2);', self.page)
+
+    def test_disabled_equipment_toggle_text(self):
+        self.assertIn('.travel-equipment-toggle:disabled { background: #f1f5f9; color: #475569;', self.page)
+
+    def test_kept_hooks(self):
+        for hook in ('id="travel-delete-all-attachments-btn"', 'id="travel-delete-draft-btn"',
+                     'onclick="removeTravelVisit(this)"', 'onclick="deleteTravelRequestAttachment(',
+                     "openRequestRecall('travel_request'"):
+            with self.subTest(hook=hook):
+                self.assertIn(hook, self.page)
+
+
 if __name__ == '__main__':
     unittest.main()

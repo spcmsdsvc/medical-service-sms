@@ -27387,7 +27387,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v299-liquidation-excel-download.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v300-signal-logbook.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v301-travel-request-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v302-travel-request-limits';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v302-travel-request-limits.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v303-travel-request-contrast';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

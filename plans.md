@@ -37,6 +37,86 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Travel Request — Batch 3: Contrast Fixes (dark red outline buttons, hero status pill, "No equipment found")
+
+**Status:** Executed locally on 2026-10-12 (owner: "execute batch 3"); not committed — publish on "commit and push". Tests: 4 added (3 fail on `HEAD`, guard passes); focused run 81 OK; full suite no new failures (14 known). Browser check on a DB copy passed. Difference from plan: `app-dark-pages.css?v=32` was pinned five times, not twice — three in `tests/test_appearance_themes.py`, one each in `tests/test_timeline_desktop_collapse.py` and `tests/test_tsr_page_design.py`; all moved to `?v=33` (commit those two files too).
+**Approved:** 2026-10-12 (owner: "plan travel request batch 3"; scope agreed with the 2026-10-12 scan batches).
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batches 1 (`ccd6f8b`) and 2 (`331a24a`), both published. Find code by selector, not line number.
+
+## Context
+
+The 2026-10-12 design scan of `/travel_request` (critique snapshot `.impeccable/critique/2026-10-12T05-46-07Z__templates-travel-request-html.md`, closed list) found three text-contrast failures left after Batches 1–2. This batch fixes exactly those three; nothing new is added (critique-loop rule).
+
+1. **Red outline buttons in dark themes** (P1) — Delete Draft, Delete (attachment), Delete All, Remove Visit, and Withdraw (same class, in My Travel Requests) use `#dc2626` text on the dark surfaces.
+2. **Hero status pill** (P3) — the status text at 0.78rem, white on a 20% white tint over the accent gradient; below the DESIGN.md Small-Text Contrast Rule (4.5:1 under ~0.8rem).
+3. **"No equipment found"** (P3) — the disabled equipment toggle in light theme, `#64748b` on `#f1f5f9`.
+
+Intended outcome: each reaches at least 4.5:1 in light, graphite and AMOLED and in every accent theme, with no change to layout or behaviour.
+
+## Decisions taken
+
+1. Scope is the three items above only (closed list). DESIGN.md alignment (weights, radii, Page Header hero, green Submit, hardcoded hex) is Batch 4.
+2. The dark fix goes in the existing travel rule in shared `static/css/app-dark-pages.css` — the one place for Travel Request dark rules — not a page-local copy. That makes it shared code: bump the stylesheet version and run the full suite once before publishing.
+3. Red outline buttons stay red in dark (they mark a destructive action), using the light red of the page's dark rejected banner/chip family, not the neutral grey the Reimbursement page uses.
+
+## Investigation
+
+Re-measured 2026-10-12 (WCAG ratio from the CSS values; the browser step re-checks the rendered colours):
+
+- **Red outline:** `templates/travel_request.html` `.travel-btn-danger-outline { background: #fff; color: #dc2626; border: 1px solid #fecaca; }` (light 4.83:1, passes). Dark: `static/css/app-dark-pages.css` `:root[data-app-theme="dark"] .travel-btn-danger-outline { background: transparent !important; }` is the only rule, so the text stays `#dc2626`. `#dc2626` on panel / card / card-hover: AMOLED (`#101010` / `#191919` / `#242424`) 3.94 / 3.64 / 3.21; graphite (`#292a2d` / `#333438` / `#3b3c40`) 2.97 / 2.57 / 2.28. Proposed `#fca5a5`: AMOLED 10.03 / 9.26 / 8.18, graphite 7.56 / 6.55 / 5.80. No hover rule exists for the class in either file. Used by: Delete All (`#travel-delete-all-attachments-btn`), Delete Draft (`#travel-delete-draft-btn`), Remove Visit (visit card template, `removeTravelVisit`), attachment Delete (`deleteTravelRequestAttachment`), Withdraw (history row, `openRequestRecall('travel_request', …)`).
+- **Hero pill:** `.travel-hero-pill { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.35); … font-size: .78rem; font-weight: 900; }` on `.travel-hero` `linear-gradient(135deg, var(--app-primary-strong), var(--app-primary))` (`--app-primary-strong` = 78% primary + black, `static/css/app-themes.css`). White on the 20% white tint, strong end / light end: classic `#0d6efd` 4.38 / 3.33; green 4.28 / 3.24; violet 4.09 / 3.08; teal 4.77 / 3.73; blue 4.71 / 3.63; pink 5.70 / 4.46; red 5.79 / 4.52. With a 20% **black** tint: worst case 6.07 (violet light end), classic 8.92 / 6.44. The hero has no dark override (same gradient in every theme).
+- **Equipment toggle:** `.travel-equipment-toggle:disabled { background: #f1f5f9; color: #64748b; }` → 4.34:1 light. Proposed `#475569` → 6.92:1. Dark already passes through `app-dark-pages.css` `.travel-equipment-toggle:disabled` (`--dark-muted` on `--dark-card-hover`); unchanged. The text comes from `toggleText.textContent = 'No equipment found'` in the equipment loader; the other disabled-state texts benefit too.
+- **Version pins:** `templates/layout.html` links `css/app-dark-pages.css?v=32`; pinned by two `?v=32` asserts in `tests/test_appearance_themes.py` (graphite and AMOLED classes). The service worker precache lists the path without a version (`app.py`); `CACHE_VERSION` is `…-v302-travel-request-limits`.
+
+## Execution steps
+
+1. **Read first:** newest `changes.md` section; this plan. Grep that `.travel-btn-danger-outline` is used only in `templates/travel_request.html`.
+2. **Dark red outline** (`static/css/app-dark-pages.css`): replace the travel rule with
+   `:root[data-app-theme="dark"] .travel-btn-danger-outline { background: transparent !important; color: #fca5a5 !important; border-color: rgba(248, 113, 113, .55) !important; }`
+   and add `:hover, :focus-visible` → `background: rgba(220, 38, 38, .16) !important; color: #fecaca !important;`. Done = all five buttons ≥ 4.5:1 on every dark surface they sit on, still visibly red.
+3. **Hero pill** (`templates/travel_request.html`, `.travel-hero-pill`): `background: rgba(0,0,0,.2)`; border, size and weight unchanged. Done = white text ≥ 4.5:1 on both gradient ends for all seven accents.
+4. **"No equipment found"** (`templates/travel_request.html`, `.travel-equipment-toggle:disabled`): `color: #475569`. Done = 6.9:1 in light; dark unchanged.
+5. **Version bump:** `templates/layout.html` `app-dark-pages.css?v=33`; change both `?v=32` asserts for that file in `tests/test_appearance_themes.py` to `?v=33`.
+6. **Kept-functions check:** no id, class, handler or function renamed or removed; only three declarations changed and one hover rule added.
+
+## Deliberately excluded
+
+- **Hero → Page Header, weights, radii, green Submit, hardcoded hex, phone first screen, Preview Form ~3.5:1 on the gradient's light end** — Batch 4 (DESIGN.md alignment). Batch 4 may restyle the pill again; this one-declaration fix keeps it compliant until then.
+- **Red outline buttons in light** — already 4.83:1.
+- **Other pages' danger-outline buttons** (`reim-btn-danger-outline` etc.) — not in this scan.
+- **Disabled toggle in dark** — already passes.
+
+## Verification
+
+- **Tests** — `tests/test_travel_request_page.py` new class `TravelRequestBatch3SourceTests`:
+  - the dark `.travel-btn-danger-outline` rule in `app-dark-pages.css` sets `color: #fca5a5` and has a hover rule;
+  - `.travel-hero-pill` uses `rgba(0,0,0,.2)`, not `rgba(255,255,255,.2)`;
+  - `.travel-equipment-toggle:disabled` uses `#475569`;
+  - kept-hooks guard: `travel-delete-all-attachments-btn`, `travel-delete-draft-btn`, `removeTravelVisit`, `deleteTravelRequestAttachment`, `openRequestRecall('travel_request'` still present.
+  - **Positive control:** run the class against `HEAD` copies of the two files (`git show HEAD:…` into the scratchpad, never `git stash`): the three style tests fail, the guard passes.
+- **Focused run:** `tests/test_travel_request_*.py`, `test_appearance_themes`, the dark-mode readability module, `test_changelog_coverage`.
+- **Full suite once before publishing** (`venv/Scripts/python.exe scripts/run_suite.py`, main folder) — shared stylesheet and `layout.html` changed.
+- **Browser** on a copy of `scheduler.db` with a temporary engineer account: a draft with an attachment and a client visit, plus a Submitted request (Withdraw). Measure computed text vs. background with `javascript_tool`: all five red buttons in graphite and AMOLED (rest and hover), the pill in light with classic and violet accents and in dark, "No equipment found" in light. Bar ≥ 4.5:1 each. 375 px: no layout change, no horizontal scroll, taps still 44 px; console clean. One final screenshot (graphite, red buttons visible). Clean up the copy, account and launch entry.
+
+## After implementation
+
+1. Self-review the diff (only the declarations above; the dark rule stays in the Travel Request block of `app-dark-pages.css`).
+2. `app.py` service worker `CACHE_VERSION` → `…-v303-travel-request-contrast` (next free number), previous kept as a history comment.
+3. `static/changelog/releases.json`: release "Easier-to-Read Travel Request Buttons" (audience `everyone`; items: delete and withdraw buttons readable in dark themes; status pill and "No equipment found" easier to read).
+4. `DESIGN.md`: nothing (applies existing rules).
+5. `changes.md` bullets; this plan's Status with the commit and any differences.
+6. Commit only `static/css/app-dark-pages.css`, `templates/travel_request.html`, `templates/layout.html`, `app.py`, `static/changelog/releases.json`, `tests/test_travel_request_page.py`, `tests/test_appearance_themes.py`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/`, `.claude/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **Stale stylesheet on phones** — the `?v=33` bump and the service worker version force the new CSS.
+- **Pill looks heavier** on light accents — a 20% black tint matches the gradient's own dark end; checked in the browser on classic and violet.
+- **Blast radius:** three CSS declarations plus one hover rule; rollback = revert the commit.
+
+---
+
 # Travel Request — Batch 2: Server Fixes + HTTP Tests (edit rights, trip and amount limits, form wording, history paging, cleanup)
 
 **Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (owner: "execute batch 2" the same day). Tests: 10 endpoint tests (7 fail against `HEAD`'s `app.py`, 3 pin existing behaviour) + 3 page source tests; focused run 81 OK; full suite no new failures (14 known). Browser check on a DB copy passed (1366 px and 375 px).

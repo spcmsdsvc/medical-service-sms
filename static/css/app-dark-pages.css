@@ -765,7 +765,8 @@
 :root[data-app-theme="dark"] .travel-status-chip.rejected { background: rgba(220, 38, 38, .2) !important; color: #fecaca !important; }
 :root[data-app-theme="dark"] :is(.travel-audit-item strong, .travel-dock-total) { color: var(--dark-text) !important; }
 :root[data-app-theme="dark"] :is(.travel-audit-meta, .travel-audit-remarks, .travel-empty, .travel-dock-total small) { color: var(--dark-muted) !important; }
-:root[data-app-theme="dark"] .travel-btn-danger-outline { background: transparent !important; }
+:root[data-app-theme="dark"] .travel-btn-danger-outline { background: transparent !important; color: #fca5a5 !important; border-color: rgba(248, 113, 113, .55) !important; }
+:root[data-app-theme="dark"] .travel-btn-danger-outline:is(:hover, :focus-visible) { background: rgba(220, 38, 38, .16) !important; color: #fecaca !important; }
 :root[data-app-theme="dark"] .approval-status-summary-card small {
     color: var(--dark-muted) !important;
 }
