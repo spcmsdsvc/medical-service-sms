@@ -710,67 +710,6 @@
     opacity: .78;
 }
 
-/* My Requests / Accounting Center */
-:root[data-app-theme="dark"] .accounting-shell .module-tab {
-    background: var(--dark-card) !important;
-    color: var(--dark-text) !important;
-    border-color: var(--dark-border) !important;
-    box-shadow: 0 8px 22px rgba(0,0,0,.2) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .module-tab:hover,
-:root[data-app-theme="dark"] .accounting-shell .module-tab:focus-visible {
-    background: var(--dark-card-hover) !important;
-    border-color: var(--dark-border-strong) !important;
-    box-shadow: 0 12px 28px rgba(0,0,0,.3) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .module-tab.active {
-    background: color-mix(in srgb, var(--app-primary) 24%, var(--dark-input)) !important;
-    border-color: color-mix(in srgb, var(--app-primary) 72%, var(--dark-border-strong)) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .module-tab .module-title {
-    color: var(--dark-text) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .module-tab .module-desc {
-    color: var(--dark-muted) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .module-tab.active .module-desc {
-    color: var(--dark-text) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .module-badge {
-    background: var(--dark-card-hover) !important;
-    color: var(--dark-text) !important;
-    border: 1px solid var(--dark-border);
-}
-:root[data-app-theme="dark"] .accounting-shell .module-tab.active .module-badge {
-    background: #e8eef6 !important;
-    color: #162235 !important;
-    border-color: #e8eef6;
-}
-:root[data-app-theme="dark"] .accounting-shell :is(.kpi-card, .queue-card) {
-    background: var(--dark-panel) !important;
-    color: var(--dark-text) !important;
-    border-color: var(--dark-border) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell :is(.kpi-value, .amount-cell, .liquidation-record-title, .liquidation-trip-title, .liquidation-money-main) {
-    color: var(--dark-text) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell :is(.kpi-label, .liquidation-record-sub, .liquidation-trip-sub, .liquidation-money-sub, .liquidation-action-note, .empty-state) {
-    color: var(--dark-muted) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .table-accounting th {
-    background: var(--dark-card) !important;
-    color: var(--dark-text) !important;
-    border-color: var(--dark-border) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .liquidation-row td {
-    background: var(--dark-panel) !important;
-}
-:root[data-app-theme="dark"] .accounting-shell .liquidation-balance-card:not(.employee):not(.shimadzu) {
-    background: var(--dark-card) !important;
-    color: var(--dark-text) !important;
-    border-color: var(--dark-border) !important;
-}
-
 /* Requests and accounting forms with custom, light-only local components. */
 :root[data-app-theme="dark"] :is(
     .cash-page, .cash-notification-list, .cash-notification-item, .cash-attachment-panel,

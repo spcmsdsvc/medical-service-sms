@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-my-requests-style",
+      "release_date": "2026-10-12",
+      "title": "A Cleaner My Requests",
+      "summary": "My Requests now looks like the dashboard, and on phones each request is its own card.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-my-requests-style-look",
+          "category": "My Requests",
+          "description": "The page has the dashboard's header, request-type tabs with their counts, three summary cards and a status switch above the list. The two counts on Needs your action turn red or amber only when something is waiting.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-my-requests-style-phone",
+          "category": "My Requests",
+          "description": "On phones each request is a card with a label above every value and full-width buttons, so nothing scrolls sideways.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-my-requests-actions",
       "release_date": "2026-10-12",
       "title": "Needs your action",

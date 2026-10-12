@@ -37,6 +37,81 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# My Requests — Batch C: Dashboard Look and Phone Cards
+
+**Status:** Executed 2026-10-12 on "execute batch C in plans.md" — not committed (publish on "commit and push").
+**Differences from the plan:** (1) The Investigation was wrong on one point: `app-dashboard.css:1201` hides every `.table-responsive table` at ≤768px (the dashboard swaps in its own phone lists), which hid the whole My Requests list on phones; the page's phone rule uses `.accounting-list .table-responsive .table-accounting` to win, and a source test guards it. (2) Stat cards on phones are one compact row each (label and caption left, number right; 213px for all three instead of ~370px) rather than plain stacked cards. (3) Refresh is `btn-outline-primary`, not `btn-outline-secondary`: Dashboard Style phase 3 measured the secondary outline at 4.48:1 on AMOLED. (4) `?v=31` was also pinned in `tests/test_timeline_desktop_collapse.py` and `tests/test_tsr_page_design.py`; both bumped to `?v=32` and added to the commit list. (5) `data-label` is set by one helper, `labelQueueCells()`, called at the end of each of the six row renderers (it reads `moduleView().headers`), so no render function repeats heading strings. (6) The whole `.accounting-shell` block in `app-dark-pages.css` (14 rules) was removed, not only the four tested selectors: the page now styles those parts on theme variables and carries its own dark pairs for pills, notes and balance cards.
+**Approved:** 2026-10-12 (owner: "plan batch C", then "approved, write the plan" — including decision 1, load `app-dashboard.css` rather than move styles into the shell).
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batches A (`2184b16`) and B (`a7dca6c`), both published. Batch C restyles B's "Needs your action" tab and Rejected button.
+
+## Context
+
+After Batches A and B, My Requests (`templates/accounting_center.html`) works correctly but still has the old look: a dark gradient hero, five large module cards, uppercase KPI cards with heavy shadows, a rounded `btn-group` status filter and coloured dialog headers. The dashboard moved to the shadcn-style cards in Dashboard Style phases 1–3, recorded in `DESIGN.md`. On phones the page is an 8-column table that scrolls sideways, while `DESIGN.md` requires stacked cards at ≤768px. Batch C gives My Requests the dashboard's look and phone cards, without changing behaviour.
+
+## Decisions taken
+
+1. **One source for the styles:** My Requests links `static/css/app-dashboard.css` (as `analytics.html` already does) and reuses `.dash-page-header`, `.dash-stat`, `.dash-card`, `.dash-panel`, `.dash-segment` and the pill tabs `.work-orders-tab`. No copies. Moving these into `app-shell.css` as shared components is a later option, not this batch.
+2. **Layout, top to bottom:**
+   - Page header: "My Requests" title, the one-line subtitle, Refresh as a quiet outline button. The gradient hero and the blue info box are removed; the "Only your own records are shown…" sentence becomes the header subtitle.
+   - Module tabs: pill tabs with their count; they scroll sideways on phones. "Needs your action" stays first.
+   - Three stat cards (label, number, the Batch A caption). Tone (amber/red) only above zero and only on the action tab's To fix / Your next step cards; never the accent.
+   - List card: title and subtitle left; the status filter as a segmented control right (the per-module words from `MODULE_VIEW`, plus Rejected where B shows it, plus All).
+3. **Phone cards (≤768px):** each row becomes a stacked card (16px radius) with a small label before each value — the `data-label` pattern already used in `templates/_liquidation_base.html:73`. Action buttons go full width; every control at least 44px tall.
+4. **Plain dialogs:** dialog headers lose their green/blue/yellow bars (default close button); the colour stays on the confirm button (success green for Confirm Received and Mark Completed, accent for Travel Completed).
+5. **Status pills stay semantic** (not re-themed by the accent), each with a dark pair at least 4.5:1.
+
+## Investigation
+
+- **Page CSS:** page-local styles at `accounting_center.html:3-360` (hero, kpi, module-tab, queue-card, accounting-tabs, status pills, `.row-note`, liquidation cells, empty state, media queries).
+- **Reusable classes** in `app-dashboard.css`: `.dash-page-header` / `.dash-page-h1` / `.dash-page-sub` / `.dash-page-actions` (`:2158-2195`), `.dash-stats` / `.dash-stat*` (`:2197-2270`, four columns by default — My Requests needs three), `.dash-card` (`:2272`), `.work-orders-tabs` / `.work-orders-tab` (`:2408-2430`, overriding the older block at `:1745`), `.dash-panel` (`:2516`), `.dash-segment` (chart switch). The file's rules are class-scoped (checked: no global `body`/`.table`/`.card`/`.btn` selectors), so linking it on another page is safe. Current link: `dashboard.html:4` `?v=15`.
+- **Dark rules that become dead:** `app-dark-pages.css:714-770` (`.accounting-shell .module-tab`, `.module-badge`, `:is(.kpi-card, .queue-card)`, `:is(.kpi-value, …)`, `.table-accounting th`, `.liquidation-row td`, `.liquidation-balance-card…`). `tests/test_appearance_themes.py:599-603` asserts `.accounting-shell .module-tab`, `.module-title`, `.module-desc` and `.accounting-shell :is(.kpi-value`, and pins `app-dark-pages.css?v=31` (`layout.html:531`). Rules still matching live markup (e.g. balance cards, table header) stay unless replaced.
+- **Pinned by tests:** `tests/test_my_requests_page.py` (KPI ids `kpiPending*`/`kpiProcessing*`/`kpiPaid*`, `MODULE_VIEW`, kept functions including `renderActionRows`), `tests/test_my_requests_actions.py`, `tests/test_my_requests_reliability.py` (timeout helper). Ids, `data-status`, `data-module-key` and every JS function name stay.
+- **Current versions:** service worker `…-v296-my-requests-actions` (`app.py:27384`); `app-dark-pages.css?v=31`.
+
+## Execution steps
+
+1. **Impeccable:** load the `impeccable:impeccable` skill (craft) and read `DESIGN.md` Page Header, Stat Cards, Tabs, Chips. No new critique this session.
+2. **Header** (`accounting_center.html`): add `<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=15">`; replace the hero and info box with `.dash-page-header` → `h1.dash-page-h1` "My Requests", `p.dash-page-sub` (subtitle + own-records sentence), `.dash-page-actions` with Refresh (`btn btn-outline-secondary`, `onclick="refreshAccountingQueue()"`). Done = no gradient, no info box.
+3. **Module tabs:** `#accountingModuleTabs` gets `class="work-orders-tabs" role="tablist" aria-label="Request type"`; `renderAccountingModuleTabs` outputs `button.work-orders-tab[role=tab][aria-selected][data-module-key]` with the label and a `.work-orders-tab-count`. Click delegation and `setAccountingModule` unchanged; the busy lock still disables the tabs (update the selector in `setAccountingActionBusy`). Done = pill tabs, horizontal scroll on phones.
+4. **Stat cards:** the three KPI cards become `.dash-stat` inside `.dash-stats` with a page rule for three columns (one column ≤576px if it reads better; check in the browser). Keep every `kpi*` id on the matching `.dash-stat-name` / `.dash-stat-num` / `.dash-stat-help`. `updateSummary` sets `dashboard-metric-alert` (To fix) / `dashboard-metric-warn` (Your next step) only on the action tab and only above zero. Done = numbers neutral elsewhere.
+5. **List card and filter:** the queue card becomes `.dash-card` with `.dash-card-title#activeQueueTitle` and `.dash-card-sub#queueSubtitle`; the status buttons become `.dash-segment` buttons with `aria-pressed` (keep `data-status`, the Rejected button's show/hide, and the hidden filter on the action tab). Update `selectAccountingModule` / `setAccountingTab` to set `aria-pressed` instead of `.active`, and the busy-lock selector. Done = filter works in all modules.
+6. **Phone cards:** every render function (`renderActionRows`, `renderReimbursementRows`, `renderTravelRequestRows`, `renderCashAdvanceRows`, `renderLiquidationRows`, `renderLeaveRequestRows`) adds `data-label` to each `<td>`, taken from `MODULE_VIEW[module].headers` (one helper, no repeated strings). Page CSS at `max-width: 768px`: hide `thead`, each `tr` a card (16px radius, hairline border, surface), each `td` a block with `td[data-label]::before` label (muted, 0.72rem, 4.5:1), `.action-btns` stacked full width, buttons ≥44px, wrapping text (override the shell's `nowrap`). Empty and loading rows stay full width without a label. Done = no horizontal scroll at 375px.
+7. **Dialogs:** the four modals drop `bg-success` / `bg-warning` / `text-white` / `btn-close-white` from their headers; confirm buttons keep `btn-success` (Confirm Received, both Mark Completed) and Travel Completed becomes `btn-primary`. Dialog error slots from Batch A unchanged.
+8. **CSS cleanup:** delete page-local rules replaced by the shared classes (hero, kpi-card/label/value, queue-card, module-tabs/tab/title/desc/badge, coming-soon pill if unused, accounting-tabs, old media queries); keep `.status-pill` (+ tones with dark pairs), `.row-note`, liquidation money/balance cells, `.travel-row-overdue`, phone-card rules — all on theme variables. In `app-dark-pages.css` remove the `.accounting-shell` rules that no longer match any markup (search each class first), bump `layout.html` to `app-dark-pages.css?v=32`, and update `test_appearance_themes.py` (drop the four removed selectors, keep `[class*="-kpi-value"]` and `[class*="-stat-value"]`, new version). Done = no dead selectors for this page.
+9. **DESIGN.md:** a "My Requests" component entry — dashboard header, pill module tabs, three stat cards with tone only on the action tab, segmented status filter, phone row cards with `data-label`, plain dialog headers.
+10. **Self-review:** every function and id Batches A and B rely on still exists (`selectAccountingModule`, `setAccountingTab`, `renderActionRows`, all open/confirm pairs, `postAccountingAction`, `readAccountingJson`, `fetchAccountingWithTimeout`, `showDialogError`); no hardcoded accent hex; no `transition: all`; no `-stat-value` / `-kpi-value` class names introduced.
+
+## Deliberately excluded
+
+- **Moving the dashboard styles into `app-shell.css`** — decision 1; a later refactor if a third page needs them.
+- **Charts or trend badges** — no recorded history for requests.
+- **New features** (search, "New request" button) — not part of the restyle.
+- **The record pages My Requests links to** (reimbursement, travel, cash advance, liquidations, leave) — separate pages.
+
+## Verification
+
+- **Tests** — `tests/test_my_requests_page.py` gains source tests: `app-dashboard.css` linked; no `accounting-hero` and no info box; `work-orders-tab` and `dash-stat` used; `data-label` produced by every render function (via the helper); no `bg-success` / `bg-primary` / `bg-warning` in modal headers; kept ids and functions guard. `tests/test_appearance_themes.py` updated for the removed selectors and `?v=32`.
+  - **Positive control:** run the new tests in-process against `git show HEAD:<file>` (never `git stash`); all fail except the kept guard.
+- **Focused run:** `tests/test_my_requests_*.py`, `test_appearance_themes`, `test_dark_mode_readability`, `test_dashboard_style`, `test_changelog_coverage`.
+- **Full suite once** before publishing (`venv/Scripts/python.exe scripts/run_suite.py`, main folder): `app-dark-pages.css` and `layout.html` are shared.
+- **Browser** on a copy of `scheduler.db` (temporary password on the copy only), engineer account: 1366px light and graphite, 375px AMOLED. Every module tab and status filter; every dialog action (Confirm Received, Travel Completed, both Mark Completed, Create Liquidation) still works and refreshes; the action tab's tone only above zero; phone rows are cards with labels, no horizontal scroll, taps ≥44px; contrast ≥4.5:1 for pills, notes, labels and muted text; console clean. Clean up the copy, password and launch entry. One screenshot per theme as final proof.
+
+## After implementation
+
+1. `app.py` service worker `CACHE_VERSION` `…-v297-my-requests-style` (v296 kept as a history comment).
+2. `static/changelog/releases.json`: release "A Cleaner My Requests" (audience `everyone`).
+3. `DESIGN.md` (step 9), `changes.md` bullets, this plan's Status with the commit and any differences.
+4. Commit only `templates/accounting_center.html`, `templates/layout.html`, `static/css/app-dark-pages.css`, `app.py`, `tests/test_my_requests_page.py`, `tests/test_appearance_themes.py`, `tests/test_timeline_desktop_collapse.py`, `tests/test_tsr_page_design.py`, `static/changelog/releases.json`, `DESIGN.md`, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **A future dashboard CSS change alters My Requests:** the trade-off of one source; `DESIGN.md` records the classes as shared so changes are deliberate.
+- **Dark contrast drops when old overrides go:** the shared classes have dark pairs; the browser check measures contrast in graphite and AMOLED.
+- **Busy lock or filter state breaks when classes change:** selectors in `setAccountingActionBusy`, `selectAccountingModule` and `setAccountingTab` are updated in the same step, and every action is clicked in the browser check.
+- **Blast radius:** one page plus one shared dark CSS file; rollback = revert the commit.
+
 # My Requests — Batch B: "Needs your action" Tab, Rejected Tabs, Sidebar Badge
 
 **Status:** Executed — `a7dca6c` (published to `main` 2026-10-12).

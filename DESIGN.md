@@ -215,6 +215,14 @@ Gently rounded, never sharp and never bubbly. Controls and small buttons use 6px
 - **Tabs** (`.work-orders-tab`): pill tabs with their count (36px, 44px on phones), hairline border and muted text; the selected tab gets a 9% ink wash and `--app-text`. They scroll sideways on phones rather than wrap.
 - **Detail panel** (`.work-order-panel`): a 22rem column right of the list at 992px and up; below that a full-screen sheet on `surface` with a sticky header and a 44px Close. It opens from a row, closes with Esc or Close, and returns focus to the row. One primary action at its foot.
 
+### My Requests (`templates/accounting_center.html`)
+- **Shared classes:** links `app-dashboard.css` and reuses the Page Header, the pill tabs, Stat Cards, `.dash-card` and `.dash-segment`; changes to those classes reach this page too. Only the list's own parts are page-local, on theme variables.
+- **Layout:** header (title, one-line subtitle, Refresh as an outline button), request-type pill tabs with counts ("Needs your action" first), three stat cards (one compact row each on phones: label and caption left, number right), then one list card with title, subtitle and the status filter as a segmented control (`aria-pressed`; hidden on Needs your action).
+- **Tone:** To fix (alert) and Your next step (warn) only on Needs your action and only above zero; never the accent.
+- **Phone rows (≤768px):** each table row is a 16px-radius card with a muted 0.72rem label above every value (`data-label` from the module's column headings, set by `labelQueueCells()`), full-width 44px buttons. The page outranks `app-dashboard.css`'s phone rule that hides `.table-responsive table`.
+- **Pills:** status pills and row notes keep fixed semantic pairs with dark-theme pairs, at least 4.5:1.
+- **Dialogs:** plain headers with the default close button; colour only on the confirm button (green for Confirm Received and Mark Completed, accent for Travel Completed).
+
 ### KPI Tiles (manager dashboard)
 - **Tile** (`.manager-kpi.dash-stat`): a Stat Card (see Stat Cards) that keeps the tile's link or filter button; number class `.manager-kpi-num` plus `.dash-stat-num`. Auto-fit grid of 12rem cards, 1rem gap; two columns on phones.
 - **Tone:** the number takes the existing alert (overdue) or warn (TSR, waiting) colour, light and dark pairs; a tile at zero stays neutral (`.is-zero`). Never the accent.

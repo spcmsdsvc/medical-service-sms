@@ -102,6 +102,74 @@ class MyRequestsPageSourceTests(unittest.TestCase):
         self.assertIn('My Requests is taking too long to respond.', self.source)
 
 
+ROW_RENDERERS = (
+    'renderActionRows', 'renderReimbursementRows', 'renderTravelRequestRows',
+    'renderCashAdvanceRows', 'renderLiquidationRows', 'renderLeaveRequestRows',
+)
+
+
+class MyRequestsStyleSourceTests(unittest.TestCase):
+    """Batch C (plans.md): dashboard look and phone cards, same behaviour."""
+
+    source = MyRequestsPageSourceTests.source
+
+    def test_dashboard_styles_linked_and_hero_removed(self):
+        self.assertIn("filename='css/app-dashboard.css') }}?v=15", self.source)
+        for text in ('accounting-hero', 'alert alert-info', 'kpi-card', 'queue-card', 'module-tab ', 'module-badge'):
+            self.assertNotIn(text, self.source, text)
+        self.assertIn('class="dash-page-header"', self.source)
+        self.assertIn('class="dash-page-h1">My Requests</h1>', self.source)
+
+    def test_pill_tabs_stat_cards_and_segmented_filter(self):
+        self.assertIn('class="work-orders-tabs" id="accountingModuleTabs" role="tablist"', self.source)
+        tabs = _function_body(self.source, 'renderAccountingModuleTabs')
+        self.assertIn('class="work-orders-tab"', tabs)
+        self.assertIn('aria-selected=', tabs)
+        self.assertIn('work-orders-tab-count', tabs)
+        self.assertEqual(self.source.count('class="dash-stat"'), 3)
+        for kpi_id in ('kpiPending', 'kpiProcessing', 'kpiPaid'):
+            self.assertIn(f'class="dash-stat-num" id="{kpi_id}"', self.source)
+        self.assertIn('class="dash-segment" id="accountingStatusFilter"', self.source)
+        self.assertEqual(self.source.count('class="dash-segment-btn'), 5)
+        busy = _function_body(self.source, 'setAccountingActionBusy')
+        self.assertIn('#accountingStatusFilter .dash-segment-btn', busy)
+        self.assertIn('#accountingModuleTabs .work-orders-tab', busy)
+
+    def test_tone_only_on_action_tab_above_zero(self):
+        body = _function_body(self.source, 'updateSummary')
+        self.assertIn("activeAccountingModule === 'action'", body)
+        self.assertIn('count > 0', body)
+        self.assertIn('dashboard-metric-alert', body)
+        self.assertIn('dashboard-metric-warn', body)
+
+    def test_every_row_renderer_labels_cells(self):
+        helper = _function_body(self.source, 'labelQueueCells')
+        self.assertIn('moduleView().headers', helper)
+        self.assertIn('dataset.label', helper)
+        for name in ROW_RENDERERS:
+            self.assertIn('labelQueueCells();', _function_body(self.source, name), name)
+        self.assertIn('td[data-label]::before', self.source)
+        # app-dashboard.css hides ".table-responsive table" on phones; the page must win.
+        self.assertIn('.accounting-list .table-responsive .table-accounting', self.source)
+
+    def test_dialog_headers_are_plain(self):
+        for header in re.findall(r'<div class="modal-header[^"]*"', self.source):
+            for colour in ('bg-success', 'bg-primary', 'bg-warning', 'text-white'):
+                self.assertNotIn(colour, header)
+        self.assertNotIn('btn-close-white', self.source)
+        self.assertIn('class="btn btn-primary fw-bold" id="confirmTravelCompletedBtn"', self.source)
+
+    def test_kept_ids_and_functions_guard(self):
+        for name in ('selectAccountingModule', 'setAccountingTab', 'renderActionRows', 'postAccountingAction',
+                     'readAccountingJson', 'fetchAccountingWithTimeout', 'showDialogError', 'setAccountingActionBusy'):
+            self.assertRegex(self.source, r'function\s+' + name + r'\s*\(', name)
+        for element_id in ('accountingModuleTabs', 'activeQueueTitle', 'queueSubtitle', 'accountingAlert',
+                           'accountingQueueHeaders', 'accountingQueueBody', 'kpiPaidCaption'):
+            self.assertIn(f'id="{element_id}"', self.source, element_id)
+        for status in ('pending', 'processing', 'paid', 'all', 'rejected'):
+            self.assertIn(f'data-status="{status}"', self.source, status)
+
+
 class MyRequestsModuleBadgeTests(unittest.TestCase):
     USERNAME = 'my_requests_page_test_user'
     EMPLOYEE_ID = 'MRP-E1'
