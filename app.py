@@ -27384,7 +27384,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v296-my-requests-actions.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v297-my-requests-style.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v298-my-requests-forms.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v299-liquidation-excel-download';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v299-liquidation-excel-download.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v300-signal-logbook';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -46853,7 +46854,8 @@ def my_requests_action_items():
             'status': status,
             'amount': amount,
             'currency': currency or 'PHP',
-            'date_label': date_value.strftime('%m/%d/%Y') if date_value else ''
+            'date_label': date_value.strftime('%m/%d/%Y') if date_value else '',
+            'date_iso': date_value.strftime('%Y-%m-%d') if date_value else ''
         })
 
     def lower_status(model_cls):

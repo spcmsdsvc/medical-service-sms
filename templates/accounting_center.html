@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=15">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=16">
 <style>
     /* My Requests: header, pill tabs, stat cards and segmented filter come from
        app-dashboard.css; only the list's own parts live here, on theme variables. */
@@ -64,6 +64,10 @@
     .status-processing{ background:#dbeafe; color:#1d4ed8; }
     .status-paid{ background:#dcfce7; color:#166534; }
     .status-other{ background:#e5e7eb; color:#374151; }
+    .status-rejected{ background:#fde8ea; color:#a1121f; }
+    /* Waiting time on To fix / next-step rows (ageChip); late past 30 days. */
+    .age-chip{ display:inline-block; margin-left:6px; padding:2px 8px; border-radius:999px; background:#f1f5f9; color:#475569; font-size:.72rem; font-weight:700; white-space:nowrap; }
+    .age-chip--late{ background:#fde8ea; color:#a1121f; }
     .row-note{
         display: inline-flex;
         align-items: center;
@@ -181,6 +185,8 @@
     :root[data-app-theme="dark"] .accounting-shell .row-note--info{ background: rgba(129,140,248,.18); color: #c7d2fe; }
     :root[data-app-theme="dark"] .accounting-shell :is(.status-paid, .row-note--ok){ background: rgba(74,222,128,.16); color: #86efac; }
     :root[data-app-theme="dark"] .accounting-shell .status-other{ background: rgba(255,255,255,.1); color: #e5e7eb; }
+    :root[data-app-theme="dark"] .accounting-shell :is(.status-rejected, .age-chip--late){ background: rgba(248,113,113,.16); color: #fca5a5; }
+    :root[data-app-theme="dark"] .accounting-shell .age-chip:not(.age-chip--late){ background: rgba(255,255,255,.08); color: #cbd5e1; }
     :root[data-app-theme="dark"] .accounting-shell .liquidation-balance-card.employee{ background: rgba(74,222,128,.12); border-color: rgba(74,222,128,.35); color: #86efac; }
     :root[data-app-theme="dark"] .accounting-shell .liquidation-balance-card.shimadzu{ background: rgba(251,146,60,.12); border-color: rgba(251,146,60,.35); color: #fdba74; }
 
@@ -728,6 +734,7 @@ function esc(value){
 
 function statusClass(status){
     const key = String(status || '').toLowerCase();
+    if(key.includes('rejected') || key.includes('returned')) return 'status-rejected';
     if(key.includes('paid') || key.includes('received') || key.includes('completed')) return 'status-paid';
     if(key.includes('approved') || key.includes('processing') || key.includes('accounting')) return 'status-processing';
     if(key.includes('pending') || key.includes('submitted') || key.includes('sent')) return 'status-pending';
@@ -1023,6 +1030,17 @@ function actionButton(item){
     }
 }
 
+// "N days" once a To fix / next-step item has waited a week (local dates, so no timezone shift).
+function ageChip(item){
+    if(!['fix', 'next'].includes(item.group) || !item.date_iso) return '';
+    const [y, m, d] = String(item.date_iso).split('-').map(Number);
+    if(!y || !m || !d) return '';
+    const now = new Date();
+    const days = Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(y, m - 1, d)) / 86400000);
+    if(days < 7) return '';
+    return `<span class="age-chip${days > 30 ? ' age-chip--late' : ''}">${days} days</span>`;
+}
+
 function renderActionRows(items){
     const body = document.getElementById('accountingQueueBody');
     if(!items.length){
@@ -1042,11 +1060,11 @@ function renderActionRows(items){
         const amount = item.amount === null || item.amount === undefined ? '—' : peso(item.amount, item.currency);
         return `${heading}
             <tr data-action-group="${esc(item.group)}">
-                <td><div class="fw-bold">${esc(item.record_no || '')}</div><div class="small text-muted phone-only">${esc(item.kind || '')}</div></td>
+                <td><div class="fw-bold logbook-ref">${esc(item.record_no || '')}</div><div class="small text-muted phone-only">${esc(item.kind || '')}</div></td>
                 <td class="wrap-mobile">${esc(item.kind || '')}</td>
                 <td class="amount-cell">${amount}</td>
                 <td>${esc(item.date_label || '—')}</td>
-                <td><span class="status-pill ${statusClass(item.status)}"><i class="fa-solid fa-circle"></i>${esc(item.status || '')}</span></td>
+                <td><span class="status-pill ${statusClass(item.status)}"><i class="fa-solid fa-circle"></i>${esc(item.status || '')}</span>${ageChip(item)}</td>
                 <td class="wrap-mobile">${esc(item.label || '')}</td>
                 <td><div class="action-btns">${openLink}${formLink(item.module, item)}${actionButton(item)}</div></td>
             </tr>
@@ -1063,7 +1081,7 @@ function renderLeaveRequestRows(items){
         return;
     }
     target.innerHTML = items.map(item => `<tr>
-        <td><strong>${esc(item.request_no || ('LR-' + item.id))}</strong></td>
+        <td><strong class="logbook-ref">${esc(item.request_no || ('LR-' + item.id))}</strong></td>
         <td>${esc(item.date_range || '')}</td>
         <td>${esc(item.leave_type || '')}</td>
         <td>${esc(item.duration_label || `${Number(item.weekday_count || 0)} day(s)`)}</td>
@@ -1091,7 +1109,7 @@ function renderReimbursementRows(items){
         const paidBtn = !isPaid ? `<button class="btn btn-sm btn-success fw-bold" onclick="openPaidModal(${item.id}, 'reimbursements')"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Confirm Received</button>` : '';
         return `
             <tr>
-                <td><div class="fw-bold">Reimbursement #${esc(item.id)}</div></td>
+                <td><div class="fw-bold">Reimbursement <span class="logbook-ref">#${esc(item.id)}</span></div></td>
                 <td>${esc(period || 'N/A')}</td>
                 <td class="amount-cell">${peso(item.grand_total)}</td>
                 <td><div class="small fw-bold">${esc(item.approved_by_name || '')}</div><div class="small text-muted">${esc(approvedLabel || '')}</div></td>
@@ -1151,7 +1169,7 @@ function renderLiquidationRows(items){
         return `
             <tr class="liquidation-row">
                 <td>
-                    <div class="liquidation-record-title">${esc(item.liquidation_no || `TL-${item.id}`)}</div>
+                    <div class="liquidation-record-title logbook-ref">${esc(item.liquidation_no || `TL-${item.id}`)}</div>
                     <div class="liquidation-record-sub">TR: ${esc(item.travel_request_no || item.request_no || '—')}</div>
                     <div class="liquidation-record-sub">Rows: ${esc(rowCount)}</div>
                     <div class="liquidation-record-sub">${esc(item.submitted_at_label || item.updated_at_label || '')}</div>
@@ -1282,7 +1300,7 @@ function renderCashAdvanceRows(items){
         return `
             <tr>
                 <td>
-                    <div class="fw-bold">${esc(recordLabel)}</div>
+                    <div class="fw-bold logbook-ref">${esc(recordLabel)}</div>
                     <div class="small text-muted">${esc(requestDate || '')}</div>
                 </td>
                 <td>
@@ -1356,7 +1374,7 @@ function renderTravelRequestRows(items){
             : '';
         return `
             <tr class="${isLiquidationOverdue && !isReadyForLiquidation ? 'travel-row-overdue' : ''}">
-                <td><div class="fw-bold">${esc(recordLabel)}</div><div class="small text-muted">${esc(submittedLabel || '')}</div></td>
+                <td><div class="fw-bold logbook-ref">${esc(recordLabel)}</div><div class="small text-muted">${esc(submittedLabel || '')}</div></td>
                 <td><div class="fw-bold">${esc(travelDates || 'N/A')}</div><div class="small text-muted">${esc(destination)}</div></td>
                 <td class="amount-cell">${peso(amount, currency)}</td>
                 <td><div class="small fw-bold">${esc(item.approved_by_name || '')}</div><div class="small text-muted">${esc(approvedLabel || '')}</div></td>

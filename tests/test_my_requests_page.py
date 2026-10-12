@@ -114,7 +114,7 @@ class MyRequestsStyleSourceTests(unittest.TestCase):
     source = MyRequestsPageSourceTests.source
 
     def test_dashboard_styles_linked_and_hero_removed(self):
-        self.assertIn("filename='css/app-dashboard.css') }}?v=15", self.source)
+        self.assertIn("filename='css/app-dashboard.css') }}?v=16", self.source)
         for text in ('accounting-hero', 'alert alert-info', 'kpi-card', 'queue-card', 'module-tab ', 'module-badge'):
             self.assertNotIn(text, self.source, text)
         self.assertIn('class="dash-page-header"', self.source)
@@ -342,6 +342,35 @@ class MyRequestsModuleBadgeTests(unittest.TestCase):
 
     def test_travel_completion_module_hidden(self):
         self.assertNotIn('travel_completion', self._modules())
+
+
+class MyRequestsSignalSourceTests(unittest.TestCase):
+    """Signal and Character (plans.md): red rejected pill, aging chip, logbook record numbers."""
+
+    source = MyRequestsPageSourceTests.source
+
+    def test_rejected_and_returned_map_to_red_before_accounting(self):
+        body = _function_body(self.source, 'statusClass')
+        rejected = body.index("return 'status-rejected'")
+        self.assertLess(rejected, body.index("key.includes('accounting')"))
+        self.assertIn("key.includes('rejected') || key.includes('returned')", body)
+
+    def test_rejected_pill_has_light_and_dark_colours(self):
+        self.assertIn('.status-rejected{ background:#fde8ea; color:#a1121f; }', self.source)
+        self.assertIn('.accounting-shell :is(.status-rejected, .age-chip--late)', self.source)
+
+    def test_age_chip_only_on_old_fix_and_next_rows(self):
+        body = _function_body(self.source, 'ageChip')
+        self.assertIn("['fix', 'next'].includes(item.group)", body)
+        self.assertIn('item.date_iso', body)
+        self.assertIn('if(days < 7)', body)
+        self.assertIn('days > 30', body)
+        self.assertIn('ageChip(item)', _function_body(self.source, 'renderActionRows'))
+        self.assertIn('.age-chip{', self.source)
+
+    def test_every_renderer_marks_its_record_number(self):
+        for name in ROW_RENDERERS:
+            self.assertIn('logbook-ref', _function_body(self.source, name), name)
 
 
 if __name__ == '__main__':

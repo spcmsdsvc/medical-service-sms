@@ -132,7 +132,7 @@ A cool, low-chroma neutral system with one user-selectable accent; colour signal
 
 **The White Paper Rule.** Document canvases, PDF and TSR previews, signature pads and print output are always `#fff` on `#000`, in every theme — they represent the official paper form.
 
-**The Semantic Status Rule.** Schedule and status colours stay semantic and are not re-themed by the accent.
+**The Semantic Status Rule.** Schedule and status colours stay semantic and are not re-themed by the accent. Rejected and Returned are red (`status-rejected`, light `#fde8ea`/`#a1121f`), never grey; waiting time is a text chip ("N days", slate, red past 30 days; dashboard "N days late"), never colour alone.
 
 ## Typography
 
@@ -142,6 +142,8 @@ A cool, low-chroma neutral system with one user-selectable accent; colour signal
 **Shell scale:** the sidebar, flyouts and phone bar use three steps from `app-shell.css`: `--shell-text-row` 0.9rem (rows, flyout rows, phone bar title), `--shell-text-subrow` 0.84rem (sub-rows, account name, hover name label), `--shell-text-micro` 0.72rem (group labels, flyout titles, role, count badges, initials); the rail's icon captions use micro too and wrap to a second line rather than shorten a label; the pinned brand name is 1rem.
 
 **Character:** One humanist sans, close to the logo's subline, across app and sign-in; a serif only where it mirrors the official printed form.
+
+**Logbook detail:** record numbers (My Requests) and entry dates (Dashboard) use `.logbook-ref` in `app-dashboard.css`: a system monospace stack (ui-monospace, Consolas) with tabular numbers and 0.02em tracking, so they read like logbook entries and line up. It is the one signature detail; no logo, brand red or greeting in work areas.
 
 ### Hierarchy
 - **Title** (700, ~1.05rem): card, panel and section titles; Bootstrap headings for page titles.

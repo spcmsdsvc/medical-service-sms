@@ -1983,7 +1983,7 @@
             <a class="dashboard-mobile-task-card${late ? ' is-late' : ''}" href="${escapeHtml(dashboardTimelineHref(task))}"${options.workOrder ? ` data-work-order-id="${escapeHtml(task.id)}"` : ''}>
                 <div class="dashboard-mobile-card-top">
                     <div>
-                        <div class="dashboard-mobile-card-date">${escapeHtml(dashboardTaskDateLabel(task))} ${dashboardLateChip(task)} ${workOrderTsrChip(task)}</div>
+                        <div class="dashboard-mobile-card-date"><span class="logbook-ref">${escapeHtml(dashboardTaskDateLabel(task))}</span> ${dashboardLateChip(task)} ${workOrderTsrChip(task)}</div>
                         <div class="dashboard-mobile-card-title">${escapeHtml(task.client || 'No facility')}</div>
                     </div>
                     ${dashboardStatusChip(task.status)}
@@ -2444,7 +2444,7 @@
             targetBody.innerHTML = tasks.map(task => `
                 <tr class="small dashboard-my-task-row work-order-row${dashboardDaysLate(task) ? ' dashboard-row-late' : ''}" data-work-order-id="${escapeHtml(task.id)}">
                     <td class="ps-3">
-                        <a class="fw-bold dashboard-row-link" href="${escapeHtml(dashboardTimelineHref(task))}" data-work-order-id="${escapeHtml(task.id)}">${escapeHtml(dashboardTaskDateLabel(task))}</a>
+                        <a class="fw-bold dashboard-row-link logbook-ref" href="${escapeHtml(dashboardTimelineHref(task))}" data-work-order-id="${escapeHtml(task.id)}">${escapeHtml(dashboardTaskDateLabel(task))}</a>
                         <div class="xsmall text-muted">${escapeHtml(workOrderTimeLabel(task))}</div>
                         ${dashboardLateChip(task)}
                     </td>
@@ -2695,14 +2695,14 @@
                 return `
                     <tr class="small${dashboardDaysLate(task) ? ' dashboard-row-late' : ''}">
                         <td class="ps-4">
-                            <a class="fw-bold dashboard-row-link" href="${escapeHtml(dashboardTimelineHref(task))}">${escapeHtml(task.display_range)}</a>
+                            <a class="fw-bold dashboard-row-link logbook-ref" href="${escapeHtml(dashboardTimelineHref(task))}">${escapeHtml(task.display_range)}</a>
                             ${dashboardLateChip(task)}
                         </td>
                         <td><strong>${escapeHtml(task.engineer)}</strong></td>
                         <td>${escapeHtml(task.client)}</td>
                         <td class="text-muted">${escapeHtml(task.task)}</td>
                         <td>${dashboardStatusChip(task.status)}</td>
-                        <td class="text-end pe-4 text-muted font-monospace">${escapeHtml(formatCreatedOn(task.created_at))}</td>
+                        <td class="text-end pe-4 text-muted logbook-ref">${escapeHtml(formatCreatedOn(task.created_at))}</td>
                     </tr>`;
             }).join('');
         }

@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=15">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=16">
 {% endblock %}
 
 {% block content %}
@@ -874,7 +874,7 @@
         staffLanding: {{ (dashboard_staff_landing|default(false))|tojson }}
     };
 </script>
-<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=15"></script>
+<script src="{{ url_for('static', filename='js/app-dashboard.js') }}?v=16"></script>
 
 
 {% if session.get('force_pw_change') %}

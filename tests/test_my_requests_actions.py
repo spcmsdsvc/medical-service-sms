@@ -253,6 +253,14 @@ class MyRequestsActionEndpointTests(unittest.TestCase):
         }
         self.assertEqual({k: (v['group'], v['action']) for k, v in items.items()}, expected)
 
+    def test_items_carry_a_machine_readable_date(self):
+        for item in self._items()['items']:
+            if item['date_label']:
+                month, day, year = item['date_label'].split('/')
+                self.assertEqual(item['date_iso'], f'{year}-{month}-{day}', item['record_no'])
+            else:
+                self.assertEqual(item['date_iso'], '', item['record_no'])
+
     def test_future_trip_drafts_and_other_users_excluded(self):
         records = set(self._by_record(self._items()['items']))
         for absent in ('TR-FUTURE', 'TR-DRAFT', 'TR-OTHER', 'CA-DRAFT', 'CA-OTHER', 'TL-DONE', 'LV-Draft', 'LV-Submitted'):

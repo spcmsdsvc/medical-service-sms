@@ -37,6 +37,93 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Signal and Character — My Requests Urgency Colour + "Logbook" Record Numbers (My Requests, Dashboard)
+
+**Status:** Executed 2026-10-12 (owner: "execute"), **not yet committed**; publish on "commit and push". Tests: 7 added (6 source fail on `HEAD`); focused run 240 OK. Browser check on a DB copy passed (1366 px and 375 px).
+**Differences from the plan:** (1) The dashboard shows no record numbers (rows are identified by date), so `logbook-ref` went on the entry dates: engineer task rows and phone cards (`dashboardTaskDateLabel`), the range column, and the created-on date (was `font-monospace`). (2) The aging chip sits in the Status cell, not the Date cell, because Date is hidden on phones (Batch D `phoneHidden`). (3) Service worker is `v300-signal-logbook` (v299 was taken by the liquidation Excel fix); `app-dashboard.js` pin also bumped to `?v=16`. (4) The owner's data has no rejected items, so the red pill was checked by rendering samples in the page (6.8:1 light, 6.6:1 dark).
+**Approved:** 2026-10-12 (owner: "go write up the plan in plans.md", after the design discussion on personalization, colour and branding).
+**Detailed:** 2026-10-12.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Dashboard Critique Fixes (`e55deb2`) and My Requests Batches A–D (`502a0f4`), all published.
+
+## Context
+
+The owner felt the redesigned Dashboard and My Requests pages were missing something, possibly personalization or colour. The design review concluded:
+
+- **More decoration is not the answer.** DESIGN.md: colour "signals action and state, never decoration"; the 10-11 critique found the greeting, clock and customize chrome pushed work below the fold. Personalization already exists (4 modes, 7 accents, saved layout), and the useful kind — "your" work first — already ships as Needs You Today (dashboard) and Needs your action (My Requests).
+- **Branding stays where it is.** The logo and Logo Red rule already sit in the sidebar header and phone top bar on every page; sign-in is the one branded screen; generated forms carry the brand outward. Red inside the work area would compete with "overdue / rejected" signals.
+- **What is actually missing:** (1) on My Requests, colour does not yet do its job — Rejected and Returned read as neutral grey and nothing shows how long an item has waited; (2) both pages read as generic Bootstrap (critique: "category-interchangeable") with no detail tying them to the North Star "The Service Logbook".
+
+Intended outcome: on My Requests a rejected item reads as a problem at a glance and stale items show their age; record numbers on both pages look like logbook entries — one small, repeated signature detail, no new colours, no logos.
+
+## Decisions taken
+
+1. **No logo, brand red, greeting, banner or new accent** in either page's work area. Blue stays the default accent; Shimadzu Red stays an opt-in accent.
+2. **Dashboard colour is done.** Semantic status chips, past-due tint + "N days late" chip, and quiet zeros shipped in `e55deb2`; this plan does not touch dashboard colour.
+3. **My Requests status colour:** a new `status-rejected` pill (semantic red, not the accent) for Rejected, Returned and Accounting rejected; text label kept (never colour alone). Draft stays neutral.
+4. **My Requests aging:** in Needs your action, the To fix and Your next step rows show a text chip "N days" when the item's date is ≥ 7 days in the past; past 30 days it uses the late tone. No chip for Confirm when received, for future dates (leave start dates) or under 7 days. Same pill shape as the dashboard's `dashboard-late-chip`.
+5. **"Logbook" signature:** one shared class `logbook-ref` — record numbers (and the dashboard's created-on date) set in a system monospace stack with tabular numbers and slight letter-spacing, as one span (no separate prefix styling). Applied to record numbers on every My Requests tab and to work-order / record identifiers on the dashboard tables and phone cards. Replaces the dashboard's `'Courier New'` `.font-monospace` override.
+6. Run with the Impeccable skill: `colorize` for steps 2–3, `bolder` (restrained — one detail only) for step 4.
+
+## Investigation
+
+- `templates/accounting_center.html:729` `statusClass()` maps paid/received/completed → `status-paid`, approved/processing/accounting → `status-processing`, pending/submitted/sent → `status-pending`, everything else → `status-other` (grey `#e5e7eb`/`#374151`, line 66). So **Rejected and Returned render grey**. Note "Accounting rejected" contains "accounting" and currently maps to `status-processing` (blue) — the rejected check must come first.
+- Pill colours live in the page: light `accounting_center.html:63-66`, dark `:179-183` (`:root[data-app-theme="dark"] .accounting-shell …`).
+- `renderActionRows()` `accounting_center.html:1026` renders the action tab; the Date cell is `item.date_label` only (string `%m/%d/%Y`).
+- `app.py:46843` `my_requests_action_items().add()` builds each item; `date_value` is `rejected_at`/`updated_at` for fixes, received/approved dates for next steps, and `leave.start_date` for leave (can be in the future). No machine-readable date is sent today.
+- `static/css/app-dashboard.css:11` overrides `.font-monospace` to `'Courier New'`; used for the created-on date at `static/js/app-dashboard.js:2705`. `.dashboard-late-chip` at `app-dashboard.css:1586` (light `#fde8ea` / `#a1121f`).
+- My Requests already links `app-dashboard.css` (Batch C), so a class defined there reaches both pages without touching the shell.
+- Late/aging already exists on the dashboard (`dashboardDaysLate`, `app-dashboard.js:1959`); not reusable directly (different page script), so My Requests gets its own small helper.
+
+## Execution steps
+
+1. **Read first:** newest `changes.md` section; DESIGN.md Colors and "My Requests"; load the Impeccable skill.
+2. **Rejected pill** (`templates/accounting_center.html`): in `statusClass()` add a first check — `rejected`, `returned` → `status-rejected`. Add `.status-rejected` light (red-50 fill, red-800 text) beside line 66 and its dark rule beside line 183 (translucent red fill, light red text). Done = Rejected, Returned and Accounting rejected pills are red with ≥ 4.5:1 in light, graphite and AMOLED; no other status changes class.
+3. **Aging chip** (`app.py`, `templates/accounting_center.html`):
+   - `my_requests_action_items().add()`: add `'date_iso': date_value.strftime('%Y-%m-%d') if date_value else ''` (keep `date_label`).
+   - New `ageChip(item)` in the page: returns '' unless `item.group` is `fix` or `next` and `date_iso` is ≥ 7 days before today (local date); returns `<span class="age-chip">N days</span>`, plus `age-chip--late` at > 30 days. Call it in the Date cell of `renderActionRows()`.
+   - CSS `.age-chip` (muted slate pill, same size as `dashboard-late-chip`) and `.age-chip--late` (late tone); dark rules beside the others.
+   - Done = an item rejected 12 days ago shows "12 days", 45 days shows the late-tone chip, a future leave and Confirm rows show none.
+4. **Logbook record numbers** (`static/css/app-dashboard.css`, `templates/accounting_center.html`, `static/js/app-dashboard.js`, `templates/dashboard.html` if server-rendered ids exist):
+   - Define `.logbook-ref { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-variant-numeric: tabular-nums; letter-spacing: .02em; }` and point the `.font-monospace` override at the same stack (drop `'Courier New'`). Bump the `app-dashboard.css?v=` pin in both templates and the tests that pin it.
+   - My Requests: wrap the record number in every renderer (action, reimbursement, travel request, cash advance, liquidation, leave) in `<span class="logbook-ref">`.
+   - Dashboard: apply to the record/work-order identifier in the engineer, scheduler and manager tables and phone task cards (find them in `renderMyTasks` and neighbours; list the exact functions in the plan notes when executing).
+   - Done = record numbers on both pages render in the mono stack at 1366 px and 375 px; no layout shift > 4 px in card heights; nothing else changes font.
+5. **Kept-functions check:** every id, `data-*` attribute and function name the two pages used before still exists (grep the diff for removals).
+
+## Deliberately excluded
+
+- **Logo, brand red, greeting, hero, banners, new accents** — rejected in the design review (noise for a daily tool; red would compete with status signals).
+- **Dashboard colour changes** — already shipped in `e55deb2`.
+- **New personalization features** (custom greetings, avatars, per-user colours) — the useful personalization ("your" work first) already exists.
+- **Other pages** — apply the logbook detail elsewhere only after the owner sees it on these two.
+- **Changing the action badge count or groups** — settled in Batch B.
+
+## Verification
+
+- **Tests:** `tests/test_my_requests_page.py` new `MyRequestsSignalSourceTests`: `statusClass` maps Rejected/Returned/Accounting rejected to `status-rejected` before the accounting rule; `.status-rejected` has light and dark rules; `ageChip` exists, is called in `renderActionRows`, and gates on `fix`/`next` and 7/30 days; all six renderers emit `logbook-ref`. `tests/test_my_requests_actions.py`: an endpoint test asserts `date_iso` on a seeded rejected item. `tests/test_dashboard_style.py` (or the module that pins `app-dashboard.css`): `logbook-ref` defined, no `'Courier New'`, the dashboard renderers emit it; update the `?v=` pins.
+  - **Positive control:** run the new source tests in-process against `git show HEAD:<file>` (never `git stash`); all fail except kept guards.
+- **Focused run:** `tests/test_my_requests_*.py`, `tests/test_dashboard_*.py`, `test_dark_mode_readability`, `test_changelog_coverage`. Full suite not needed (two pages, one page-level CSS file, one field added to one helper's output).
+- **Browser** on a copy of `scheduler.db` (temporary password on the copy only), owner's engineer-view account plus a scheduler account: My Requests at 1366 px light, graphite and AMOLED — rejected pills red, aging chips on old To fix / next rows only, record numbers mono; dashboard at 1366 px and 375 px — record numbers mono, nothing else changed. 375 px: no horizontal scroll, taps ≥ 44 px, chips ≥ 4.5:1, console clean. Every Batch A–D dialog action still opens. Clean up the copy, password and launch entry. One screenshot per page as proof.
+
+## After implementation
+
+1. Self-review the diff (no hardcoded accent hex; status colours semantic only).
+2. `app.py` service worker `CACHE_VERSION` `…-v299-signal-logbook` (v298 kept as a history comment).
+3. `static/changelog/releases.json`: release "Clearer Status on My Requests" (audience `everyone`; items: rejected items in red, waiting time shown, record numbers easier to scan).
+4. `DESIGN.md`: Colors — `status-rejected` and the aging chip under the Semantic Status Rule; Typography — `logbook-ref` as the North Star signature detail.
+5. `changes.md` bullets; this plan's Status with the commit and any differences.
+6. Commit only `templates/accounting_center.html`, `templates/dashboard.html` (if touched), `static/css/app-dashboard.css`, `static/js/app-dashboard.js`, `app.py`, `static/changelog/releases.json`, `DESIGN.md`, the test files changed, `plans.md`, `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/`, `.claude/` or other dirty files. Publish only on "commit and push".
+
+## Risks
+
+- **Status text variants** (e.g. "Returned for revision", "Accounting Rejected") miss the red rule or hit the blue one: the rejected check runs first on substrings; the test covers all three spellings.
+- **Timezone off-by-one on aging**: compare local date strings, not timestamps; thresholds of 7/30 days make a one-day error harmless.
+- **Mono font widens record numbers** and wraps phone cards: checked at 375 px; fallback is `font-size: .95em` on `.logbook-ref`.
+- **Blast radius:** two pages and one page-level CSS file plus one extra JSON field; rollback = revert the commit.
+
+---
+
 # My Requests — Batch D: Form Downloads, Compact Phone Cards, Action Groups
 
 **Status:** Executed — `502a0f4` (published to `main` 2026-10-12).

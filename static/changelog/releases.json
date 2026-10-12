@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-12-signal-logbook",
+      "release_date": "2026-10-12",
+      "title": "Clearer Status on My Requests",
+      "summary": "Rejected items stand out, waiting items show how long they have waited, and record numbers are easier to scan.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-12-signal-logbook-rejected",
+          "category": "My Requests",
+          "description": "Rejected and returned requests now show a red status, so they stand out from the rest.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-12-signal-logbook-aging",
+          "category": "My Requests",
+          "description": "On Needs your action, items to fix or finish show how many days they have waited once it is a week or more.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-12-signal-logbook-logbook",
+          "category": "Dashboard",
+          "description": "Record numbers on My Requests and visit dates on the Dashboard use an even-width font, so they line up and are easier to scan.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-liquidation-excel-download",
       "release_date": "2026-10-12",
       "title": "Liquidation Excel Opens Again",

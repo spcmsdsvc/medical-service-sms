@@ -8,7 +8,9 @@
         background-color: #f8f9ff; 
         transition: 0.2s ease-in-out;
     }
-    .font-monospace { font-family: 'Courier New', Courier, monospace; }
+    /* The Service Logbook signature: record numbers and entry dates read like logbook entries. */
+    .font-monospace,
+    .logbook-ref { font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
     .transition-hover { transition: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
     .transition-hover:hover { 
         transform: translateY(-5px); 

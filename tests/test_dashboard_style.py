@@ -88,6 +88,26 @@ class DashboardStyleSourceTests(unittest.TestCase):
         self.assertIn('v291-dashboard-style', self.app_source)
 
 
+class DashboardLogbookSourceTests(unittest.TestCase):
+    """Signal and Character (plans.md): entry dates use the shared logbook style."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dashboard = _read('templates', 'dashboard.html')
+        cls.js = _read('static', 'js', 'app-dashboard.js')
+        cls.css = _read('static', 'css', 'app-dashboard.css')
+
+    def test_logbook_style_replaces_courier(self):
+        self.assertNotIn('Courier', self.css)
+        self.assertRegex(self.css, r'\.logbook-ref \{ font-family: ui-monospace[^}]*tabular-nums')
+
+    def test_entry_dates_use_it(self):
+        self.assertGreaterEqual(self.js.count('logbook-ref'), 4)
+        self.assertNotIn('font-monospace', self.js)
+        self.assertIn("css/app-dashboard.css') }}?v=16", self.dashboard)
+        self.assertIn("js/app-dashboard.js') }}?v=16", self.dashboard)
+
+
 class DashboardStyleManagerSourceTests(unittest.TestCase):
     """Phase 2: manager and hybrid."""
 
