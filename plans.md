@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Signal and Character — My Requests Urgency Colour + "Logbook" Record Numbers (My Requests, Dashboard)
 
-**Status:** Executed 2026-10-12 (owner: "execute"), **not yet committed**; publish on "commit and push". Tests: 7 added (6 source fail on `HEAD`); focused run 240 OK. Browser check on a DB copy passed (1366 px and 375 px).
+**Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (commit `37dfd14`). Tests: 7 added (6 source fail on `HEAD`); focused run 240 OK. Browser check on a DB copy passed (1366 px and 375 px).
 **Differences from the plan:** (1) The dashboard shows no record numbers (rows are identified by date), so `logbook-ref` went on the entry dates: engineer task rows and phone cards (`dashboardTaskDateLabel`), the range column, and the created-on date (was `font-monospace`). (2) The aging chip sits in the Status cell, not the Date cell, because Date is hidden on phones (Batch D `phoneHidden`). (3) Service worker is `v300-signal-logbook` (v299 was taken by the liquidation Excel fix); `app-dashboard.js` pin also bumped to `?v=16`. (4) The owner's data has no rejected items, so the red pill was checked by rendering samples in the page (6.8:1 light, 6.6:1 dark).
 **Approved:** 2026-10-12 (owner: "go write up the plan in plans.md", after the design discussion on personalization, colour and branding).
 **Detailed:** 2026-10-12.

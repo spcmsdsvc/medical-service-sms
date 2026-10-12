@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-12
 
+- Published **Signal and Character** to `origin/main` on the owner's "commit and push" (`37dfd14`: `templates/accounting_center.html`, `templates/dashboard.html`, `static/css/app-dashboard.css`, `static/js/app-dashboard.js`, `app.py`, `static/changelog/releases.json`, `DESIGN.md`, three test files, `plans.md`, `changes.md`); `scheduler.db` and other dirty files not included.
+
 - Executed **Signal and Character** (`plans.md`) on the owner's "execute"; not committed. Every existing id, `data-*` attribute and function name kept.
 - `templates/accounting_center.html` (My Requests): `statusClass()` maps Rejected, Returned and Accounting rejected to the new red `status-rejected` pill (checked before the "accounting" rule, which made Accounting rejected blue; other statuses unchanged), with a dark pair. New `ageChip(item)` adds an "N days" chip in the Status cell of Needs your action rows in To fix / Your next step once the item's date is 7+ days old (local dates), late tone past 30 days; none on Confirm rows or future dates. Record numbers in all six renderers use `logbook-ref`. `app-dashboard.css` pin `?v=16`.
 - `app.py`: `my_requests_action_items()` items gain `date_iso` (YYYY-MM-DD beside `date_label`). Service worker `CACHE_VERSION` `…-v300-signal-logbook` (v299 kept as a history comment).
