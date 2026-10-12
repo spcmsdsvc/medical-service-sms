@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Travel Request — Batch 4: DESIGN.md Alignment (Page Header, weights, radii, Submit colour, theme variables, phone first screen and dock)
 
-**Status:** Executed locally on 2026-10-12 (owner: "execute batch 4"); not committed — awaiting "commit and push". Tests: 7 added (6 style tests fail on `HEAD`, guard passes); focused run 148 OK. Browser check on a DB copy passed (1366 px light/graphite/AMOLED, 375 px).
+**Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (commit `25a0b00`; owner: "execute batch 4" the same day). Tests: 7 added (6 style tests fail on `HEAD`, guard passes); focused run 148 OK. Browser check on a DB copy passed (1366 px light/graphite/AMOLED, 375 px).
 **Differences from plan:** (1) the status-chip line lives in `setTravelRequestLockedState`, not `applyTravelRequestRecord`; the test targets that function. (2) Batch 3's `test_disabled_equipment_toggle_text` also pinned the `#f1f5f9` background and was updated to `var(--app-surface-raised)`. (3) The default (Draft) chip moved off slate hex to `--app-border` / `--app-text`, and the chip/badge/time sizes were raised to 0.75rem. (4) At 375 px the Request Information card ends at 63% of the screen, not ~55%, because the subtitle wraps to four lines; the Travel Purpose Type title is still in the first screen. (5) Submit on the purple accent measures 4.23:1, from the shared `--app-primary` token that every primary button uses; it is outside this closed list and was left unchanged.
 **Approved:** 2026-10-12 (owner: "plan batch 4"; scope agreed with the 2026-10-12 scan batches).
 **Detailed:** 2026-10-12.
