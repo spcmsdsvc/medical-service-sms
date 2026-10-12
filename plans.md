@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # My Requests — Batch B: "Needs your action" Tab, Rejected Tabs, Sidebar Badge
 
-**Status:** Executed 2026-10-12, not yet committed (owner said "execute batch B in plans.md").
+**Status:** Executed — `a7dca6c` (published to `main` 2026-10-12).
 **Differences from the plan:** `templates/dashboard.html` bumped to `app-dashboard.js?v=15` (so the new staff-card text is not cached) and `tests/test_dashboard_style.py` cache assertion fixed (already failing on `HEAD`) — add both to the commit list. Rejected travel liquidations are read-only (`can_edit_travel_liquidation`: draft/returned only); kept under To fix as planned but labelled "Rejected: open it to see why". Leave Provisional confirmed as "employee still owes the signed form". The kept-functions guard fails on `HEAD` too, since it now lists the new `renderActionRows`. Action subtitle reads "N item(s) waiting on you".
 **Approved:** 2026-10-12 (owner chose: approved-but-unreceived money listed without counting in the badge; "Mark travel completed" only after the return date; My Requests opens on "Needs your action"; then "approved, write the plan").
 **Detailed:** 2026-10-12.
