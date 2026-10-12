@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-12
 
+- Published **Travel Request — Batch 1** to `origin/main` on the owner's "commit and push" (`ccd6f8b`: `templates/travel_request.html`, `app.py`, `static/changelog/releases.json`, `tests/test_travel_request_page.py`, `plans.md`, `changes.md`); Railway accepted it and was deploying. `scheduler.db` and other dirty files not included.
+
 - Executed **Travel Request — Batch 1: Page Fixes** (`plans.md`) on the owner's "execute batch 1"; not committed. `templates/travel_request.html` only (plus service worker, changelog, tests); every existing function, id and handler kept, only `.travel-btn-warning` removed on purpose.
 - Readable link buttons: `.travel-page .travel-hero-actions a.travel-btn` stays white (Preview Form was accent text on the blue hero, 1.39:1; now matches the other hero buttons) and `.travel-page a.travel-btn.travel-btn-secondary` keeps attachment Preview/Download grey in light (0,3,1 beats the theme's `a:not(.btn)` link rule; dark keeps the `app-dark-pages.css` rule).
 - Confirm dialogs: `travelConfirmDialog()` maps `tone: 'warning'` to the accent primary button (Submit, Signature Required, Restore Travel Blocks); `.travel-btn-warning` (white on amber, 2.15:1) deleted.

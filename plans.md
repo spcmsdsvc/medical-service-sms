@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Travel Request — Batch 1: Page Fixes (Preview button, unsaved-changes guard, upload check, status filter, labels, taps)
 
-**Status:** Executed locally 2026-10-12 on the owner's "execute batch 1 in plans.md"; not committed (publish on "commit and push"). Tests: 8 added (7 fail on `HEAD`); focused run 70 OK. Browser check on a DB copy passed (1366 px and 375 px).
+**Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (commit `ccd6f8b`). Tests: 8 added (7 fail on `HEAD`); focused run 70 OK. Browser check on a DB copy passed (1366 px and 375 px).
 **Differences from plan:** (1) the attachment-link rule needed `.travel-page a.travel-btn.travel-btn-secondary` (0,3,1); the planned `a.travel-btn-secondary` (0,2,1) lost to the theme link rule (0,2,2). (2) Preview Form is now white like the other hero buttons but measures about 3.5:1 at the hero's lighter end, not the planned 4.5:1; that limit belongs to the shared hero gradient (Batch 4).
 **Approved:** 2026-10-12 (owner: "plan batch 1", after the travel request page-scan and design scan; owner rule: at most 4 batches).
 **Detailed:** 2026-10-12.
