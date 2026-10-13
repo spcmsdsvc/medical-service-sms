@@ -260,7 +260,8 @@ This batch covers critique closed-list items 1, 3, 4, 6 and 8 (snapshot `.impecc
 
 # Reimbursement — Batch 2: Server Cleanup (schedule load in one query, unused status counts, duplicate status key)
 
-**Status:** Approved — awaiting go-ahead
+**Status:** Executed locally 2026-10-13 (owner: "execute batch 2"); awaiting "commit and push". Tests: 4 added (3 fail on `HEAD`; the row-rule test passes on both, as intended); focused run 179 OK. Old and new code returned identical rows for 28 engineers × 4 ranges on a DB copy.
+**Differences from plan:** (1) Tests went in a new file `tests/test_reimbursement_batch2_cleanup.py` (HTTP client style of `test_reimbursement_pc_code.py`). (2) The query-count test makes one warm-up request first (the first request runs ~1,900 one-time setup queries), then compares 4 vs 10 shifts in range with the same 3 shifts for the user. (3) The browser "before" count was replaced by an in-process comparison of `HEAD` and the new code over every linked engineer, which is stricter.
 **Approved:** 2026-10-13 (owner chose batches 1–4 after the 2026-10-13 page scan).
 **Detailed:** 2026-10-13.
 **Branch:** `main` (local first; publish only on "commit and push").

@@ -36881,7 +36881,6 @@ def reimbursement_normalize_status(status_value):
         'approved': 'Approved',
         'paid': 'Paid',
         'rejected': 'Rejected',
-        'paid': 'Paid',
         'released': 'Paid',
         'payment released': 'Paid',
         'returned': 'Rejected',
@@ -39316,6 +39315,10 @@ def get_reimbursement_schedule_rows():
             )
             .filter(Shift.start_time >= start_dt)
             .filter(Shift.start_time < end_dt)
+            .filter(or_(
+                Shift.engineer_id == profile.id,
+                Shift.id.in_(db.select(ShiftEngineer.shift_id).where(ShiftEngineer.engineer_id == profile.id))
+            ))
             .order_by(Shift.start_time.asc(), Shift.id.asc())
             .all()
         )
@@ -40548,17 +40551,9 @@ def get_my_reimbursement_statuses():
     )
 
     items = []
-    status_counts = {
-        'Draft': 0,
-        'Submitted': 0,
-        'Approved': 0,
-        'Rejected': 0
-    }
 
     for header in headers:
         status_value = (header.status or 'Draft').strip() or 'Draft'
-        if status_value in status_counts:
-            status_counts[status_value] += 1
 
         items.append({
             'id': header.id,
@@ -40574,33 +40569,11 @@ def get_my_reimbursement_statuses():
             **reimbursement_header_approval_meta(header)
         })
 
-    # Counts should represent all of the user's records, not only the limited list.
-    try:
-        all_status_rows = (
-            db.session.query(ReimbursementHeader.status, func.count(ReimbursementHeader.id))
-            .filter(
-                ReimbursementHeader.user_id == current_user.id,
-                ReimbursementHeader.engineer_id == profile.id
-            )
-            .group_by(ReimbursementHeader.status)
-            .all()
-        )
-        status_counts = {'Draft': 0, 'Submitted': 0, 'Approved': 0, 'Rejected': 0}
-        for raw_status, count_value in all_status_rows:
-            normalized_status = (raw_status or 'Draft').strip() or 'Draft'
-            for known_status in list(status_counts.keys()):
-                if normalized_status.lower() == known_status.lower():
-                    status_counts[known_status] += int(count_value or 0)
-                    break
-    except Exception as count_error:
-        print(f"[Reimbursement] Status count fallback used: {count_error}", flush=True)
-
     return jsonify({
         'success': True,
         'items': items,
         'count': len(items),
-        'status_filter': requested_status,
-        'status_counts': status_counts
+        'status_filter': requested_status
     })
 
 @app.route('/save_reimbursement_draft', methods=['POST'])
