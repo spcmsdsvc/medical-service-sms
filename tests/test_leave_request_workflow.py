@@ -52,7 +52,9 @@ class LeaveRequestSourceTests(unittest.TestCase):
         self.assertIn('get_user_signature_snapshot(current_user)', self.feature_source)
         self.assertIn("get_assigned_approvers_for_requester(header.user_id, 'leave_request')", self.feature_source)
         self.assertIn('Approval blocked because a new Calendar conflict was found.', self.feature_source)
-        self.assertIn("header.user_id != current_user.id", self.feature_source)
+        # Submit is owner-only through find_header (can_manage); the old inline check was unreachable.
+        submit = self.feature_source.split('def submit_leave_request', 1)[1].split('@app.route', 1)[0]
+        self.assertIn('header = find_header(leave_id)', submit)
 
     def test_leave_creation_is_strictly_self_service(self):
         self.assertIn('header.user_id == target.id', self.feature_source)

@@ -37,6 +37,378 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Leave Request — Batch 4: Dark Mode (pills, danger buttons, selected segment, Form to Follow box, notices)
+
+**Status:** Approved — awaiting go-ahead.
+**Approved:** 2026-10-13. The owner answered the scan's open questions ("65 calendar days, allow past dates, no provisional delete, block self-approval") after the read-only page scan and design scan of `/leave_request`.
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch 3 executed. It rewrites the same `<style>` block, so find code by selector, not by line number.
+
+## Context
+
+Design scan snapshot: `.impeccable/critique/2026-10-13T06-30-23Z__templates-leave-request-html.md` (22/40, closed-list item 4). Measured in graphite and AMOLED on a copy of the database:
+- Delete and Withdraw (`.leave-danger`, `#b42318` text): 1.89:1 graphite, 2.67:1 AMOLED.
+- Selected duration segment (`.leave-segment input:checked+label`, `#1769e0`): 2.82:1 and 3.75:1.
+- Every `.leave-status` pill keeps its light fill (`#e8eef5`, `#d7f7e5`, `#fff2c7`, `#fee2e2`, `#e0f2fe`). The Form to Follow box `.leave-check` is a light blue-grey block.
+- The notices (`.leave-notice.ok/.error/.info`) and the conflicts panel (`.leave-conflicts.good/.bad`) have light fills only.
+
+`static/css/app-dark-pages.css` has no `leave-` rules (grep: only calendar-leave tokens).
+
+Intended outcome: every text reaches at least 4.5:1 in light, graphite and AMOLED, and nothing on the page stays a light block in dark mode. These are the Tonal Dark Rule and the Small-Text Contrast Rule.
+
+## Decisions taken
+
+1. Page-local rules in `templates/leave_request.html` under `:root[data-app-theme="dark"]`. Graphite is `data-app-palette="graphite"`. `app-dark-pages.css` is not touched. This is the same approach as Cash Advance Batch 4.
+2. Dark pills: 16% tints of the semantic colour with light text. Rejected stays red (Semantic Status Rule).
+3. Notices and the conflicts panel: `var(--app-surface)` ground, `var(--app-text)` text and a 4px semantic left border, the same as the Cash Advance toasts.
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section, the DESIGN.md Colors and Elevation sections, and the Cash Advance Batch 4 dark rules in `templates/cash_advance.html` (copy their form).
+2. **Pills:** dark pairs for `.leave-status` and the variants `draft`, `submitted`, `approved`, `rejected`, `form-to-follow`, `provisional` and `superseded`. Done = each is at least 4.5:1 on both dark grounds.
+3. **Buttons:** `.leave-danger` gets a transparent ground, `#fca5a5` text, a red 45% border and a red-tint hover. The selected segment label uses `var(--app-primary-text)` on `var(--app-surface-raised)`. Done = both are at least 4.5:1.
+4. **Blocks:** apply decision 3 to `.leave-check`, `.leave-notice.*` and `.leave-conflicts.*`. Also cover `.leave-signature-note` if it survives Batch 3. Done = no element in `.leave-page` has a computed background with luminance above 0.4 in either dark palette.
+5. **Kept functions:** `showLeave`, `statusClass`, `applyLeave`, `checkConflicts` and `loadLeaveRequests` are still defined, and their class names are unchanged.
+
+## Deliberately excluded
+
+- Edits to `app-dark-pages.css`, because it is a shared file.
+- Light-theme changes, which belong to Batch 3.
+
+## Verification
+
+- **Tests:** add `LeaveBatch4DarkTests` to `tests/test_leave_request_design.py`. It checks that a dark rule exists for each pill variant, `.leave-danger`, `.leave-check`, `.leave-notice` and `.leave-conflicts`. Add a kept-functions guard. **Positive control:** run against `git show HEAD:templates/leave_request.html` in the scratchpad (never `git stash`). The dark tests fail and the guard passes.
+- **Focused run:** `tests/test_leave_request_*.py`, `test_provisional_leave`, `test_appearance_themes`, `test_dark_mode_readability` and `test_changelog_coverage`.
+- **Browser** (copy of `scheduler.db`, temporary password on the copy, one record seeded in each status):
+  - Measure every pill, button, notice and the selected segment in light, graphite and AMOLED with the classic, green and purple accents.
+  - At 375px AMOLED: no horizontal scroll.
+  - Console clean.
+  - One screenshot per theme as proof.
+  - Clean up the copy and restore `launch.json`.
+
+## After implementation
+
+1. Self-review the diff (template, version, changelog and tests only).
+2. Service worker `CACHE_VERSION` in `app.py` → the next free number, suffix `-leave-dark` (keep the previous value as a history comment).
+3. `static/changelog/releases.json`: release "Leave Request in Dark Mode" (everyone).
+4. Add `changes.md` bullets, and update this Status line with any differences.
+5. Commit only those files plus `plans.md` and `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or `.claude/`.
+
+## Risks
+
+- **Specificity:** a shared dark rule could win over the page rules. The browser measurements catch this.
+- **Blast radius:** one template's CSS. Rollback = revert the commit.
+
+# Leave Request — Batch 3: Design System (Page Header, form first, weights, radii, buttons, focus, phone overflow)
+
+**Status:** Approved — awaiting go-ahead.
+**Approved:** 2026-10-13 (see Batch 4).
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch 2 executed (it adds ids and the status note this batch places). Find code by selector or id.
+
+## Context
+
+Design scan snapshot `.impeccable/critique/2026-10-13T06-30-23Z__templates-leave-request-html.md`, closed-list items 1, 2, 3, 5, 6 and 7:
+- **Request pages rule (DESIGN.md Page Header):** the page uses the old gradient `.leave-hero` (CSS L6–7, markup L24–27) instead of `.request-page` and the Page Header. The column is 1239px wide (max 1320) instead of 1220. The status chip `#leaveStatus` sits in the form card, not beside the title. There is no New Request button.
+- **Form buried:** the list card is first. At 1366×768 the form card is at y=682, the first input at 786 and Submit at 1128. On a phone the form is at 1233, Submit at 2378, and the page is 3027px tall.
+- **Phone scroll sideways:** at 375px `scrollWidth` is 409. The hidden radios `#leaveDurationFull/Half/OneAndHalf` are `position:absolute` with `width:100%` from `.leave-field input`, and `.leave-segment` has no `position:relative`. The segment labels are 36px tall.
+- **Buttons:** 8 equal buttons (L63–70). Save Draft and Upload use `#1769e0`, Submit is green `#168458`, Form to Follow is amber `#f4b400`. `var(--app-accent,#1769e0)` resolves to the hex because `--app-accent` is undefined.
+- **Type and shape:**
+  - Weights are 700/800/900/950 across 51 elements.
+  - Radii are 9px on controls, 7px on segments, 11px on items and 14px on cards.
+  - Cards have a 1px border in light mode.
+  - The Rejected pill is `#fee2e2/#991b1b`, where the Semantic Status pair is `#fde8ea/#a1121f`.
+- **Accessibility:**
+  - There is no focus rule for fields or `.leave-btn`. The fields lack `.form-control`, so the shell's focus ring does not apply.
+  - The labels have no `for`.
+  - The icon-only attachment download has no `aria-label`.
+- **List:** request numbers do not use `.logbook-ref`.
+
+## Decisions taken
+
+1. Same pattern as Cash Advance Batch 3 and the Request Pages plan. The wrapper becomes `leave-page request-page`, linking `app-dashboard.css?v=17`, with the shared Page Header.
+2. **Order:** header, Leave Form card, Supporting Attachments card, My Leave Requests card.
+3. **Buttons:**
+   - Submit is the one accent button.
+   - Save Draft, Check Conflicts, Preview, Download and Upload are outline buttons.
+   - Clear is a quiet outline button.
+   - Delete and Withdraw are a red outline (semantic danger).
+   - Record Form to Follow is an outline button. Amber is dropped (One Variable Rule).
+   - Footer layout: Clear and Delete on the left; Check Conflicts, Preview, Download, Save Draft and Submit on the right.
+   - Preview and Download are hidden (not disabled) until the record is saved.
+4. The status chip keeps id `leaveStatus` and moves beside the H1. The New Request button (`#leaveNewRequestBtn`, outline, `fa-plus`) calls `clearLeaveForm()`, which already confirms on unsaved values after Batch 2.
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section; DESIGN.md Typography, Shapes, Buttons, Page Header and Inputs; `templates/cash_advance.html` header markup and `.cash-btn-*` rules as the model; load the Impeccable skill (`polish`). Then read `reference/craft-floor.md`.
+2. **Header:**
+   - Link `{{ url_for('static', filename='css/app-dashboard.css') }}?v=17` (match the version the other request pages use at that time).
+   - Replace `<section class="leave-hero">` with `<header class="dash-page-header">`. Inside: `<h1 class="dash-page-h1">Leave Request <span id="leaveStatus" class="leave-status">Draft</span></h1>`, the existing subtitle in `.dash-page-sub`, and `.dash-page-actions` holding `#leaveNewRequestBtn`.
+   - Remove the old `#leaveStatus` span from the form card head (one id only).
+   - Delete the `.leave-hero` rules. Grep afterwards: `leave-hero` = 0.
+   - The wrapper becomes `leave-page request-page`. Remove `max-width:1320px; margin:0 auto` from `.leave-page`.
+   - Done = the header matches Cash Advance at 1366 and 375px.
+3. **Order:** move the My Leave Requests `<section>` below the attachments card. Keep the `#leaveList` id and the Refresh button. Done = the first input is above y=400 at 1366×768.
+4. **Type, shape and surfaces:**
+   - Weights: 600 at most, and 400 for body, meta, muted and input text.
+   - Radii: 6px for controls, buttons and segments; 10px for cards, items, the check box and notices; 16px for phone cards; 999px for pills.
+   - Card shadow: card rest. The card border appears only in dark themes.
+   - Status pairs: Rejected `#fde8ea/#a1121f`. Add `provisional` and `superseded` classes (slate).
+   - Request numbers in the list get `class="logbook-ref"`.
+5. **Buttons:**
+   - Replace `.leave-primary/.leave-success/.leave-warning/.leave-secondary` with `.leave-btn-primary` (accent `var(--app-primary)`, white text), `.leave-btn-outline` and `.leave-danger`.
+   - Change `var(--app-accent,…)` to `var(--app-primary)`.
+   - Reorder the footer per decision 3.
+   - `applyLeave` / `clearLeaveForm` toggle the `hidden` attribute on Preview and Download instead of `disabled`.
+   - Grep afterwards: `#1769e0`, `#168458` and `#f4b400` = 0.
+6. **Focus and labels:**
+   - `.leave-field :is(input,select,textarea):focus-visible` and `.leave-btn:focus-visible` get an accent border plus `0 0 0 .25rem var(--app-focus)`.
+   - Add `for=` to every `.leave-field` label (ids exist).
+   - Add `aria-label="Download <filename>"` to the icon-only attachment link.
+7. **Phone:**
+   - `.leave-segment { position: relative }` and `.leave-segment input { width: 1px; height: 1px }`.
+   - At max-width 800px: segment labels, `.leave-btn` and the header button are at least 44px tall.
+   - Done = `scrollWidth` is 375 at 375px.
+8. **Kept functions and ids:** every `onclick` target is still defined. The ids `leaveStatus`, `leaveList`, `leaveFormCard`, `leaveSubmitBtn`, `leaveDeleteBtn`, `leavePreviewBtn`, `leaveDownloadBtn`, `leaveDeleteAllBtn` and `leaveFormToFollowBtn` still exist once each.
+
+## Deliberately excluded
+
+- Auto-running Check Conflicts on date change, and moving Form to Follow to its own entry point. These are the critique's open questions; the owner did not ask for them.
+- List filters or search.
+- Dark mode, which is Batch 4.
+
+## Verification
+
+- **Tests:** new `tests/test_leave_request_design.py` with these classes:
+  - `LeaveKeptFunctionsTests`: functions, ids and the onclick guard.
+  - `LeaveBatch3DesignTests`:
+    - `request-page` and `dash-page-header` present, `leave-hero` absent;
+    - the form card comes before the list card in the source;
+    - weights ≤600, allowed radii only, and no hardcoded accent hex;
+    - focus rules exist and labels have `for`;
+    - the segment overflow fix is in place;
+    - `.logbook-ref` is used in the list.
+  - Positive control against `HEAD`'s template: the Batch 3 tests fail and the guard passes.
+- **Focused run:** `tests/test_leave_request_*.py`, `test_provisional_leave`, `test_request_pages_header`, `test_appearance_themes`, `test_dark_mode_readability` and `test_changelog_coverage`. Add Leave to `test_request_pages_header.py`'s page list if it parametrises pages.
+- **Browser** (copy of `scheduler.db`):
+  - At 1366×768 and 375px, measure the header left edge and width against Cash Advance, and the first-input and Submit positions.
+  - At 375px: no horizontal scroll and every visible tap target is at least 44px.
+  - Tab through the form and check the focus ring shows.
+  - Check that New Request, Save Draft, Submit (blocked without a signature is fine), Open, Upload, Delete Draft, Clear and Preview/Download still work.
+  - Console clean.
+
+## After implementation
+
+1. Self-review: no used id or function removed.
+2. Service worker `CACHE_VERSION` → the next free number, suffix `-leave-design`.
+3. `releases.json`: release "Leave Request Form Comes First" (everyone).
+4. DESIGN.md Page Header "Request pages" line: add Leave Request.
+5. Update `changes.md` and this Status line.
+6. Commit only the intended files.
+
+## Risks
+
+- `app-dashboard.css` header rules may clash with the page's old `.leave-head`. Keep `.leave-head` for card heads only.
+- Moving the list changes where Open scrolls (`#leaveFormCard`, unchanged id). The browser check covers this.
+- Blast radius: one template. Rollback = revert.
+
+# Leave Request — Batch 2: Page Behaviour (busy lock, read-only records, Form to Follow saves first, rejection remarks, confirms)
+
+**Status:** Executed locally 2026-10-13 (owner: "execute batch 1 then 2"); not yet committed, awaiting "commit and push".
+**Outcome differences:** `saveLeaveDraft` (guarded) now catches and returns `null` instead of rethrowing, so the Save button no longer leaves an unhandled promise rejection; inner callers use `saveLeaveDraftCore`, which still throws. `uploadLeaveAttachments` checks for selected files before it saves a new draft. A new `renderLeaveStatusNote` fills `#leaveStatusNote` via `textContent`; Rejected adds a red left edge (`.leave-status-note.rejected`). `.leave-btn[hidden]{display:none}` added so `hidden` beats `.leave-btn`'s `inline-flex`.
+**Approved:** 2026-10-13 (see Batch 4).
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch 1 executed. The page relies on Batch 1's server messages and its Provisional delete block.
+
+## Context
+
+Page scan of `/leave_request` (2026-10-13). Confirmed on a copy of the database:
+- Two quick Saves created two drafts (`saveLeaveDraft`, `templates/leave_request.html:103`, has no lock).
+- Record Form to Follow on an opened record posts without saving, so it uses the saved type and dates and ignores the edits on screen (`:108`).
+- Save Draft stays enabled on a Submitted record, and the server answers "This Leave Request is locked." (`applyLeave`, `:105`, disables only the inputs, Submit and Delete).
+- The rejection remarks (`approval_remarks`, sent by `to_dict`, `leave_feature.py:396`) are never shown.
+- Submit saves before it asks for confirmation (`:109`), so Cancel leaves the edits saved.
+- Clear wipes the form with no confirm (`:116`).
+- `showLeave` hides every notice after 7s and scrolls the page to it (`:90`).
+- "Delete Draft" is shown for every editable status, including Provisional, which Batch 1 makes undeletable.
+
+## Decisions taken
+
+1. Owner: no deleting Provisional records, so the Delete button is hidden on Provisional.
+2. Delete label by status: Draft → "Delete Draft"; Form to Follow and Rejected → "Delete Request".
+3. Same busy-lock pattern as Cash Advance Batch 2 (`cashAdvanceBusy` / `setCashBusy` / `saveCashAdvanceDraftCore`).
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section, and Cash Advance Batch 2's lock code in `templates/cash_advance.html` (copy the pattern).
+2. **Busy lock:**
+   - Add `let leaveBusy=false` and `setLeaveBusy(on, button, label)`. It disables every `.leave-btn` in `#leaveFormCard`, the Upload button and the list Open buttons, and shows a spinner label on the clicked button.
+   - Split `saveLeaveDraft` into an unguarded `saveLeaveDraftCore(silent)` and the guarded `saveLeaveDraft(silent)`.
+   - `submitLeave`, `recordFormToFollow`, `uploadLeaveAttachments`, `deleteLeaveAttachment`, `deleteAllLeaveAttachments` and `deleteLeaveDraft` return early when busy, set busy, and call the Core version inside, with `finally` clearing busy.
+   - Done = a double click creates one record.
+3. **Form to Follow saves first:** `recordFormToFollow` always calls `saveLeaveDraftCore(true)` when the record is editable, then posts. Done = the on-screen dates and type are what get recorded.
+4. **Submit confirms first:** in `submitLeave`, call `confirm(...)` before the save.
+5. **Read-only records:** new `applyLeaveEditState(editable, status)`, called from `applyLeave` and `clearLeaveForm`:
+   - When not editable: disable Save Draft, Check Conflicts, Form to Follow, the file input and Upload. Keep Preview, Download and Clear.
+   - Delete: hidden when not editable or when the status is Provisional, with the label from decision 2.
+   - Give the footer buttons ids where they lack one: `leaveSaveDraftBtn`, `leaveCheckConflictsBtn`, `leaveClearBtn`, `leaveUploadBtn`.
+6. **Status note:** add `<div id="leaveStatusNote" class="leave-status-note" role="status">` under the form head, filled by new `leaveStatusSentence(item)`:
+   - Rejected: "Rejected by {rejected_by}: {approval_remarks}. Fix and resubmit."
+   - Submitted: "Waiting for approval. Use Withdraw in the list to change it."
+   - Approved: "Approved by {approved_by}." plus the HR handoff status.
+   - Provisional: "Recorded on the Calendar by an administrator. Complete the form and submit it."
+   - Form to Follow: "On the Calendar. Submit the signed form when you are back."
+   - Draft or new: empty (note hidden).
+   - Escape all text.
+7. **Clear confirm:** `clearLeaveForm(silent)` asks "Discard the unsaved form?" only when there is no saved record and the reason, verbal notes or dates differ from the defaults. `deleteLeaveDraft` and the start-up call pass `silent=true`.
+8. **Notices:** in `showLeave`, errors stay until the next notice (only `ok` and `info` auto-hide after 7s). Scroll only when the notice is outside the viewport.
+9. **Kept functions:** every existing function name is still defined (the `onclick` guard), and `openRequestRecall` is still called from the list.
+
+## Deliberately excluded
+
+- Automatic conflict checks, and moving Form to Follow to its own entry point (not requested).
+- Layout and colour (Batches 3–4).
+
+## Verification
+
+- **Tests:** new `tests/test_leave_request_page.py` (source checks plus a guard):
+  - the lock exists and wraps every action;
+  - `recordFormToFollow` calls `saveLeaveDraftCore`;
+  - in `submitLeave`, `confirm(` comes before the save;
+  - `applyLeaveEditState` disables Save Draft and hides Delete on Provisional;
+  - `leaveStatusSentence` reads `approval_remarks`;
+  - `clearLeaveForm` confirms;
+  - errors do not auto-hide;
+  - kept functions and onclick targets are defined.
+  - Positive control against `HEAD`'s template: the checks fail and the guard passes.
+- **Focused run:** `tests/test_leave_request_*.py`, `test_provisional_leave` and `test_request_recall`.
+- **Browser** (copy of `scheduler.db`; seed Submitted, Rejected-with-remarks, Provisional and Form to Follow records on the copy):
+  - double Save → 1 record;
+  - Form to Follow after editing the dates on screen → the new dates are recorded;
+  - Submitted → Save, Check Conflicts and Upload disabled, Delete hidden;
+  - Rejected → the remarks are shown;
+  - Provisional → no Delete;
+  - Submit then Cancel → nothing saved;
+  - Clear asks for confirmation only on an unsaved new form;
+  - an error notice stays;
+  - console clean.
+
+## After implementation
+
+1. Self-review.
+2. Service worker → the next free number, suffix `-leave-page`.
+3. `releases.json`: release "Leave Request Fixes" (everyone).
+4. Update `changes.md` and this Status line.
+5. Commit only the intended files.
+
+## Risks
+
+- A lock left on after an exception would freeze the page. Use `finally` everywhere; the browser check forces an error path (a bad date range).
+- Blast radius: one template. Rollback = revert.
+
+# Leave Request — Batch 1: Server Checks (65-day range, reason length, Form to Follow conflicts, no Provisional delete, no self-approval)
+
+**Status:** Executed locally 2026-10-13 (owner: "execute batch 1 then 2"); not yet committed, awaiting "commit and push".
+**Outcome differences:** the save-time conflict check also runs for Rejected-with-emergency records (they rewrite the calendar too, as the plan said). The unknown-id 404 also covers another user's id (`find_header` returns `None`). Test users for provisional/approval are the named superadmins `jonamar`/`robert` on the module's own temp DB, because `create_provisional_leave_request` needs a named superadmin. `tests/test_leave_request_workflow.py` pinned the removed dead owner check; it now checks that submit uses `find_header(leave_id)`.
+**Approved:** 2026-10-13 (see Batch 4).
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+
+## Context
+
+Page scan of `/leave_request` (2026-10-13). Confirmed on a copy of the database:
+- **No range or length limit:** a 2026-11-02 → 2036-11-02 range with a 5,000-character reason saved (`apply_payload`, `leave_feature.py:564`). Recording Form to Follow on it wrote 2,610 `Shift` rows. The PDF silently cuts the reason at 260 characters (`fill_pdf`, `:645-646`).
+- **Form to Follow re-save skips the conflict check:** re-saving with new dates moves the calendar block (`save_leave_request`, `:873-876`) with no conflict check. It landed on a day with an existing "System Installation" shift, which `check-conflicts` reported.
+- **Provisional re-save leaves the calendar stale:** saving a Provisional record with new dates does not move its calendar blocks (`:873` handles only Form to Follow and Rejected+emergency).
+- **Employee can delete Provisional:** an employee can delete an admin-recorded Provisional record and its calendar blocks (`delete_leave_request_draft`, `:1341`, because `EDITABLE_STATUSES` includes Provisional).
+- **Superadmin self-approval:** `can_approve` (`:335-339`) falls back to `role == 'superadmin'` without checking `header.user_id`. The approval routing settings refuse self-approval (`app.py:30233`).
+- **Unknown id creates a draft:** saving with an id that does not exist or is not yours creates a new draft (`:851`) instead of returning 404.
+- **HR resend too wide:** any scheduler, manager or admin role can resend the HR email for any approved leave (`resend_leave_request_hr`, `:1201`, via `is_management_user`, `:326`, used only there).
+- **List queries grow per row:** `list_leave_requests` (`:798`) builds full `to_dict` per row: two `User` gets, a lazy attachments load and `can_approve` (an approver-routing query).
+- **Dead code:** the unreachable owner check in submit (`:1056-1057`; `find_header` already requires the owner), and the unused `import json` (`:10`).
+
+## Decisions taken (owner, 2026-10-13)
+
+1. **Range:** at most **65 calendar days** (`end - start + 1 ≤ 65`), for every leave type.
+2. **Past dates stay allowed** (sick leave filed after the fact).
+3. **Provisional records cannot be deleted** from the Leave Request page.
+4. **Self-approval is blocked for everyone**, superadmins included.
+5. **Reason:** at most 260 characters, the space on the official form (`fill_pdf` fields `Textfield` + `Textfield1`).
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section; `leave_feature.py` in full around the lines above; `tests/test_cash_advance_server.py` for the in-memory app/DB test setup to copy.
+2. **Limits:**
+   - Add the constants `MAX_LEAVE_CALENDAR_DAYS = 65` and `MAX_LEAVE_REASON_CHARS = 260` next to `MAX_ATTACHMENTS`.
+   - Add a helper `leave_range_error(start_date, end_date)` that returns "Leave can cover at most 65 calendar days." when the range is longer, else `None`.
+   - Call it in `apply_payload`, in `create_provisional_leave_request` (after the date checks) and in `check_leave_request_conflicts`.
+   - `apply_payload` raises "Reason for leave can be at most 260 characters." when the reason is too long.
+   - Done = the 10-year range and the 5,000-character reason return 400.
+3. **Calendar edits re-check conflicts:**
+   - In `save_leave_request`, when the record's calendar will be rewritten, run `conflicts(...)` with `exclude_leave_id=header.id` before `update_calendar`. That applies to status Form to Follow, Rejected with emergency, and **Provisional** (new: `update_calendar(header, 'Pending Approval')`).
+   - On `blocking_schedules` or `overlapping_leave_requests`: roll back and return 409 with the conflict lists, matching `mark_leave_form_to_follow`.
+   - Done = the re-save onto the System Installation day returns 409, and a Provisional date change moves its blocks.
+4. **No Provisional delete:** in `delete_leave_request_draft`, return 409 "Provisional leave cannot be deleted. Complete and submit the form." when `header.status == 'Provisional'`.
+5. **No self-approval:** `can_approve` returns `False` when `header.user_id == target.id`, before the role checks.
+   - This also hides the approve buttons in `to_dict['can_approve']`, used by `templates/approvals.html:6364`.
+   - The owner still sees and downloads their own record through `can_manage`.
+6. **Unknown id:** in `save_leave_request`, when `payload.id` is given but `find_header` returns `None`, return 404 "Leave Request not found."
+7. **HR resend:** the check becomes `can_approve(header) or is_superadmin_user()`. Delete `is_management_user` after a grep confirms zero other callers.
+8. **Lighter list:**
+   - Add `list_item_to_dict(header)` with `id`, `request_no`, `status`, `leave_type`, `date_range`, `duration_label`, `weekday_count`, `start_date` and `end_date`.
+   - Use it in `list_leave_requests` only; the page list reads only these fields (`leave_request.html:102`).
+   - `get_accounting_leave_request_queue`, the approvals routes and `to_dict` stay unchanged.
+   - Done = the query count is the same for 2 and 10 records.
+9. **Dead code:** remove `leave_feature.py:1056-1057` and `import json` (grep first).
+10. **Kept functions:** every route and endpoint name is unchanged, and `ctx` keys (`leave_request_to_dict`, `can_approve_leave_request`, `update_leave_request_calendar`, …) are still set.
+
+## Deliberately excluded
+
+- Blocking past dates (owner decision 2).
+- A limit on `verbal_approval_notes` (not a confirmed problem).
+- `get_accounting_leave_request_queue`'s full-table summary. It belongs to My Requests, not this page.
+- Who can remove a mistaken Provisional record. Approval of the formal request supersedes it, as today.
+
+## Verification
+
+- **Tests:** new `tests/test_leave_request_server.py` (copy the setup from `tests/test_cash_advance_server.py`):
+  - 66-day range → 400 and 65-day → 200, on save, provisional and check-conflicts;
+  - 261-character reason → 400;
+  - a Form to Follow re-save onto a seeded shift → 409, with the calendar unchanged;
+  - a Provisional re-save moves its `Shift` rows;
+  - deleting Provisional → 409;
+  - a superadmin approving their own Submitted leave → 404, with `can_approve` False;
+  - another approver can still approve;
+  - an unknown id on save → 404, with no new row;
+  - HR resend by a plain scheduler → 404;
+  - equal list query count for 2 and 10 records;
+  - dead code gone;
+  - a kept-functions/routes guard.
+- **Positive control:** run against `git show HEAD:leave_feature.py` (load it in-process in the scratchpad; never `git stash`). The checks fail and the guard passes.
+- **Focused run:** `tests/test_leave_request_*.py`, `test_provisional_leave`, `test_request_recall`, `test_approval_center_wording` and `test_my_requests_*`.
+- **Full suite:** this changes an approval permission (AGENTS.md "Keep It Simple"). Run `venv/Scripts/python.exe scripts/run_suite.py` from the main folder; expect no new failures against `tests/known_failures.txt`.
+- **Browser** (copy of `scheduler.db`, temporary password on the copy):
+  - the scan's repro cases now return the server message on the page;
+  - Save, Upload, Preview and Download still work;
+  - console clean except the expected 4xx.
+
+## After implementation
+
+1. Self-review the diff: `leave_feature.py`, tests, version, changelog only.
+2. Service worker `CACHE_VERSION` → the next free number, suffix `-leave-server`.
+3. `releases.json`: release "Safer Leave Requests" (everyone).
+4. Update `changes.md` and this Status line.
+5. Commit only the intended files.
+
+## Risks
+
+- **Existing long records:** records already longer than 65 days or with reasons over 260 characters can no longer be re-saved until shortened. The error message says why.
+- **Superadmin approvals:** a superadmin who relied on approving their own leave now needs another approver. This is intended (owner decision 4).
+- **Blast radius:** the leave module only. Rollback = revert the commit.
+
 # Request Pages — Uniform Header, New Request Button and Page Width (Travel, Cash Advance, Reimbursement)
 
 **Status:** Executed — `ae3e2e0` on `main` (2026-10-13; owner: "execute", then "commit and push").

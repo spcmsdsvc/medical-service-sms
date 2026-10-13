@@ -7,7 +7,6 @@ email helpers as the other Field Operations workflows.
 
 import hashlib
 import io
-import json
 import os
 import secrets
 import tempfile
@@ -26,6 +25,8 @@ LEAVE_PARTIAL_DAY_POSITIONS = {'first', 'last'}
 EDITABLE_STATUSES = {'Draft', 'Form to Follow', 'Provisional', 'Rejected'}
 ACTIVE_CONFLICT_STATUSES = {'Submitted', 'Approved'}
 MAX_ATTACHMENTS = 10
+MAX_LEAVE_CALENDAR_DAYS = 65
+MAX_LEAVE_REASON_CHARS = 260
 
 
 def leave_request_cc_group_for_branch(branch):
@@ -207,6 +208,11 @@ def register_leave_feature(ctx):
             current += timedelta(days=1)
         return result
 
+    def leave_range_error(start_date, end_date):
+        if start_date and end_date and (end_date - start_date).days + 1 > MAX_LEAVE_CALENDAR_DAYS:
+            return f'Leave can cover at most {MAX_LEAVE_CALENDAR_DAYS} calendar days.'
+        return None
+
     def normalized_duration(duration_type=None, half_day_period=None, partial_day_position=None):
         duration = (clean_str(duration_type) or 'full_day').lower()
         period = (clean_str(half_day_period) or '').upper()
@@ -323,11 +329,6 @@ def register_leave_feature(ctx):
             sequence += 1
         return f'{prefix}{sequence:02d}'
 
-    def is_management_user(user=None):
-        target = user or current_user
-        role = (clean_str(getattr(target, 'role', None)) or '').lower()
-        return role in {'superadmin', 'regional_admin', 'admin', 'scheduler', 'manager'} or bool(getattr(target, 'can_approve_requests', False))
-
     def can_manage(header, user=None):
         target = user or current_user
         return bool(target and getattr(target, 'is_authenticated', False) and header.user_id == target.id)
@@ -335,6 +336,8 @@ def register_leave_feature(ctx):
     def can_approve(header, user=None):
         target = user or current_user
         if not target or not getattr(target, 'is_authenticated', False):
+            return False
+        if header.user_id == target.id:
             return False
         return can_user_approve_for_requester(target, header.user_id, 'leave_request') or (clean_str(getattr(target, 'role', None)) or '').lower() == 'superadmin'
 
@@ -408,6 +411,20 @@ def register_leave_feature(ctx):
         return result
 
     ctx['leave_request_to_dict'] = to_dict
+
+    def list_item_to_dict(header):
+        """Only the fields the Leave Request page list reads; no user or approver lookups."""
+        return {
+            'id': header.id,
+            'request_no': header.request_no,
+            'status': header.status,
+            'leave_type': header.leave_type,
+            'date_range': header.start_date.strftime('%b %d, %Y') if header.start_date == header.end_date else f"{header.start_date.strftime('%b %d, %Y')} - {header.end_date.strftime('%b %d, %Y')}",
+            'duration_label': duration_label(header),
+            'weekday_count': effective_day_count(header),
+            'start_date': header.start_date.isoformat(),
+            'end_date': header.end_date.isoformat(),
+        }
 
     def assigned_shift_ids(engineer_id):
         linked = [row.shift_id for row in ShiftEngineer.query.filter_by(engineer_id=engineer_id).all()]
@@ -570,8 +587,14 @@ def register_leave_feature(ctx):
         if not start_date or not end_date or end_date < start_date:
             raise ValueError('Select a valid leave date range.')
         leave_days = weekdays(start_date, end_date)
+        range_error = leave_range_error(start_date, end_date)
+        if range_error:
+            raise ValueError(range_error)
         if not leave_days:
             raise ValueError('The selected range contains no weekdays.')
+        reason = clean_str(payload.get('reason')) or ''
+        if len(reason) > MAX_LEAVE_REASON_CHARS:
+            raise ValueError(f'Reason for leave can be at most {MAX_LEAVE_REASON_CHARS} characters.')
         duration, period, position = normalized_duration(
             payload.get('duration_type'),
             payload.get('half_day_period'),
@@ -594,7 +617,7 @@ def register_leave_feature(ctx):
         header.duration_type = duration
         header.half_day_period = period
         header.partial_day_position = position
-        header.reason = clean_str(payload.get('reason')) or ''
+        header.reason = reason
         header.emergency_form_to_follow = emergency
         header.verbal_approval_notes = clean_str(payload.get('verbal_approval_notes')) or ''
         header.updated_at = get_manila_time()
@@ -800,7 +823,7 @@ def register_leave_feature(ctx):
     def list_leave_requests():
         query = LeaveRequest.query.filter_by(user_id=current_user.id)
         rows = query.order_by(LeaveRequest.updated_at.desc(), LeaveRequest.id.desc()).limit(300).all()
-        return jsonify({'success': True, 'items': [to_dict(row, include_attachments=False) for row in rows]})
+        return jsonify({'success': True, 'items': [list_item_to_dict(row) for row in rows]})
 
     @app.route('/get_accounting_leave_request_queue', methods=['GET'])
     @login_required
@@ -849,6 +872,8 @@ def register_leave_feature(ctx):
     def save_leave_request():
         payload = request.get_json(silent=True) or {}
         header = find_header(payload.get('id')) if clean_int(payload.get('id')) else None
+        if clean_int(payload.get('id')) and not header:
+            return jsonify({'success': False, 'error': 'Leave Request not found.'}), 404
         if header and not editable(header):
             return jsonify({'success': False, 'error': 'This Leave Request is locked.'}), 409
         if not header:
@@ -870,10 +895,20 @@ def register_leave_feature(ctx):
             audit(header, 'draft_created')
         try:
             apply_payload(header, payload)
-            if header.status == 'Form to Follow':
-                update_calendar(header, 'Form to Follow')
-            elif header.status == 'Rejected' and header.emergency_form_to_follow:
-                update_calendar(header, 'Unapproved / Rejected')
+            calendar_state = {
+                'Form to Follow': 'Form to Follow',
+                'Provisional': 'Pending Approval',
+            }.get(header.status)
+            if header.status == 'Rejected' and header.emergency_form_to_follow:
+                calendar_state = 'Unapproved / Rejected'
+            if calendar_state:
+                # The calendar block moves with the new dates, so check them first.
+                duration, period, position = header_duration(header)
+                result = conflicts(header.engineer_id, header.start_date, header.end_date, header.id, duration, period, position)
+                if result['blocking_schedules'] or result['overlapping_leave_requests']:
+                    db.session.rollback()
+                    return jsonify({'success': False, 'error': 'The requested dates conflict with an existing commitment.', **result}), 409
+                update_calendar(header, calendar_state)
             audit(header, 'draft_saved')
             db.session.add(ActivityLog(user=current_user.username, action=f'Leave Request Draft Saved: {header.request_no}'))
             db.session.commit()
@@ -931,6 +966,9 @@ def register_leave_feature(ctx):
             return jsonify({'success': False, 'error': 'Half-day leave must use the same weekday for From and To.'}), 400
         if duration == 'one_and_half_day' and len(leave_days) != 2:
             return jsonify({'success': False, 'error': '1.5-day leave must contain exactly two weekdays.'}), 400
+        range_error = leave_range_error(start_date, end_date)
+        if range_error:
+            return jsonify({'success': False, 'error': range_error}), 400
 
         result = conflicts(engineer.id, start_date, end_date, None, duration, period, position)
         if result['blocking_schedules'] or result['overlapping_leave_requests'] or result['supersedable_provisionals']:
@@ -1004,6 +1042,9 @@ def register_leave_feature(ctx):
         end_date = parse_date(payload.get('end_date'))
         if not engineer_id or not start_date or not end_date:
             return jsonify({'success': False, 'error': 'Employee and leave dates are required.'}), 400
+        range_error = leave_range_error(start_date, end_date)
+        if range_error:
+            return jsonify({'success': False, 'error': range_error}), 400
         try:
             duration, period, position = normalized_duration(
                 payload.get('duration_type'),
@@ -1053,8 +1094,6 @@ def register_leave_feature(ctx):
         if not clean_str(header.reason):
             return jsonify({'success': False, 'error': 'Reason for leave is required.'}), 400
         signature = get_user_signature_snapshot(current_user)
-        if header.user_id != current_user.id:
-            return jsonify({'success': False, 'error': 'Only the employee can formally submit and sign this Leave Request.'}), 403
         if not signature:
             return jsonify({'success': False, 'error': 'Your saved signature is required. Add it in Settings before submitting.', 'requires_signature': True}), 400
         duration, period, position = header_duration(header)
@@ -1198,7 +1237,7 @@ def register_leave_feature(ctx):
     @login_required
     def resend_leave_request_hr(leave_id):
         header = db.session.get(LeaveRequest, leave_id)
-        if not header or header.status != 'Approved' or not (can_approve(header) or is_management_user()):
+        if not header or header.status != 'Approved' or not (can_approve(header) or is_superadmin_user()):
             return jsonify({'success': False, 'error': 'Approved Leave Request not found or inaccessible.'}), 404
         header.hr_email_status = 'queued'
         header.hr_email_remarks = 'Manual resend queued.'
@@ -1344,6 +1383,8 @@ def register_leave_feature(ctx):
         header = find_header(leave_id)
         if not header or not editable(header):
             return jsonify({'success': False, 'error': 'Only editable Leave Requests can be deleted.'}), 409
+        if header.status == 'Provisional':
+            return jsonify({'success': False, 'error': 'Provisional leave cannot be deleted. Complete and submit the form.'}), 409
         paths = [attachment_path(item) for item in header.attachments]
         for shift in Shift.query.filter_by(leave_request_id=header.id).all():
             ShiftEngineer.query.filter_by(shift_id=shift.id).delete(synchronize_session=False)

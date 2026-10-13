@@ -1,6 +1,78 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-leave-page",
+      "release_date": "2026-10-13",
+      "title": "Leave Request Fixes",
+      "summary": "The Leave Request page is steadier and explains each status.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-leave-page-buttons",
+          "category": "Leave Request",
+          "description": "Buttons wait for the current action to finish, so a double click no longer creates two requests, and Submit asks before saving.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-leave-page-status",
+          "category": "Leave Request",
+          "description": "Opened requests that can no longer be edited lock their buttons, and a rejected request shows the approver's remarks.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-13-leave-page-form-to-follow",
+          "category": "Leave Request",
+          "description": "Record Form to Follow saves the dates on screen first, and Clear asks before discarding an unsaved form.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-13-leave-server",
+      "release_date": "2026-10-13",
+      "title": "Safer Leave Requests",
+      "summary": "Leave Request checks dates, reasons and approvals more carefully.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-leave-server-limits",
+          "category": "Leave Request",
+          "description": "A leave can cover at most 65 calendar days, and the reason can be up to 260 characters (the space on the form).",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-leave-server-calendar",
+          "category": "Leave Request",
+          "description": "Changing the dates of a leave already on the Calendar now checks for conflicts first, and Provisional leave moves with the new dates.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-13-leave-server-approval",
+          "category": "Leave Request",
+          "description": "Provisional leave can no longer be deleted, and nobody can approve their own leave.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-request-page-header",
       "release_date": "2026-10-13",
       "title": "Same Header on Request Pages",
