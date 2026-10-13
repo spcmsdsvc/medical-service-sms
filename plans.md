@@ -336,7 +336,7 @@ Intended outcome: the same rows, returned with one shift query, and less dead wo
 
 # Reimbursement — Batch 1: Bugs (upload date-range check, status list refresh after Save and Submit)
 
-**Status:** Executed locally 2026-10-13 (owner: "execute it"); awaiting "commit and push". Tests: 6 added (4 fail on `HEAD`); focused run 175 OK. Browser check on a DB copy passed.
+**Status:** Executed — published to `main` on 2026-10-13 on the owner's "commit and push" (commit `8300000`; owner: "execute it" the same day). Tests: 6 added (4 fail on `HEAD`); focused run 175 OK. Browser check on a DB copy passed.
 **Differences from plan:** (1) tests went in a new file `tests/test_reimbursement_batch1_fixes.py` with the `test_client` + `session['_user_id']` style of `tests/test_reimbursement_pc_code.py` (the range-reuse file has no HTTP client); upload root and `managed_storage_write_bytes` are patched so the valid upload writes nothing. (2) The browser Submit ran with `EMAIL_NOTIFICATIONS_ENABLED=false` and an empty `BREVO_API_KEY` in the temporary launch entry, because the local `.env` holds a live mail key.
 **Approved:** 2026-10-13 (owner chose batches 1–4 after the 2026-10-13 page scan).
 **Detailed:** 2026-10-13.

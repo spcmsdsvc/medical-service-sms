@@ -2,7 +2,7 @@
 
 codex changes - 2026-10-13
 
-- Executed **Reimbursement — Batch 1: Bugs** (`plans.md`) on the owner's "execute it"; not committed. No function, id or handler renamed or removed.
+- Executed **Reimbursement — Batch 1: Bugs** (`plans.md`) on the owner's "execute it"; published to `main` as `8300000` on "commit and push". No function, id or handler renamed or removed.
 - `app.py` `upload_reimbursement_receipt`: after the date parse and before any header lookup or creation, returns 400 "End date must be after start date" for a reversed range and 400 "Date range is limited to 63 days for performance" for ranges over 63 days (same rules and messages as `save_reimbursement_draft`). Previously a reversed range with `additional_receipt=1` created a Draft and stored the file.
 - `templates/reimbursement.html`: `loadMyReimbursementStatuses()` (not awaited) now runs after a successful manual Save Draft (inside the `save_source === 'manual'` toast branch, so autosaves do not fetch) and after the Submit success notice in `submitReimbursement`, so "My Reimbursement Status" and the Withdraw button update without Refresh Status.
 - Service worker `CACHE_VERSION` → `medical-service-pwa-offline-navigation-v305-reimbursement-fixes` (v304 kept as a history comment). `static/changelog/releases.json`: release "Reimbursement Status Updates Right Away" (everyone).
