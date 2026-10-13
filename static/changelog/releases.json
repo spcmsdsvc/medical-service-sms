@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-cash-advance-dark",
+      "release_date": "2026-10-13",
+      "title": "Cash Advance in Dark Mode",
+      "summary": "Cash Advance is easier to read in the dark themes.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-cash-advance-dark-labels",
+          "category": "Cash Advance",
+          "description": "Status labels and buttons are readable in the dark themes.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-13-cash-advance-design",
+      "release_date": "2026-10-13",
+      "title": "Cash Advance Form Comes First",
+      "summary": "The Cash Advance form now sits at the top of the page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-cash-advance-design-form-first",
+          "category": "Cash Advance",
+          "description": "The request form is at the top of the page.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-cash-advance-design-matches-app",
+          "category": "Cash Advance",
+          "description": "The page matches the rest of the app.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-cash-advance-page",
       "release_date": "2026-10-13",
       "title": "Cash Advance Fixes",

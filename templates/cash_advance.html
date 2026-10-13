@@ -1,43 +1,24 @@
 {% extends "layout.html" %}
 
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=16">
 <style>
     .cash-page {
         max-width: none;
         width: 100%;
         margin: 0 auto;
         padding: 6px 0 20px;
-        color: #0f172a;
+        color: var(--app-text);
     }
 
-    .cash-hero {
-        background: linear-gradient(135deg, #14213d, var(--app-primary));
-        color: #ffffff;
-        border-radius: 22px;
-        padding: 24px 26px;
-        box-shadow: 0 16px 34px rgba(37, 99, 235, 0.18);
-        margin-bottom: 16px;
-    }
-
-    .cash-hero h1 {
-        margin: 0;
-        font-size: 2rem;
-        font-weight: 950;
-        letter-spacing: 0.01em;
-    }
-
-    .cash-hero p {
-        margin: 8px 0 0;
-        font-size: 1.02rem;
-        font-weight: 750;
-        opacity: 0.94;
-    }
+    .cash-page [hidden] { display: none !important; }
+    .cash-page .dash-page-h1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
     .cash-card {
-        background: #ffffff;
-        border: 1px solid var(--app-primary-soft-border);
-        border-radius: 22px;
-        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        background: var(--app-surface);
+        border: 1px solid transparent;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, .05);
         padding: 20px;
         margin-bottom: 16px;
     }
@@ -53,19 +34,23 @@
 
     .cash-section-title {
         margin: 0;
-        font-size: 1.35rem;
-        font-weight: 950;
-        color: #0f172a;
-        display: flex;
-        align-items: center;
-        gap: 9px;
+        font-size: 1.05rem;
+        font-weight: 600;
+        color: var(--app-text);
     }
 
     .cash-muted {
-        color: #64748b;
+        color: var(--app-muted);
         font-size: .92rem;
-        font-weight: 750;
-        line-height: 1.35;
+        font-weight: 400;
+        line-height: 1.4;
+    }
+
+    .cash-form-meta {
+        margin-top: 4px;
+        color: var(--app-muted);
+        font-size: .86rem;
+        font-weight: 400;
     }
 
     .cash-actions {
@@ -76,92 +61,102 @@
     }
 
     .cash-btn {
-        border: 0;
-        border-radius: 14px;
-        padding: 11px 16px;
-        font-weight: 950;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 10px 16px;
+        font-weight: 600;
         cursor: pointer;
-        min-height: 46px;
+        min-height: 44px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
-        transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+        text-decoration: none;
+        transition: background-color .12s ease, opacity .12s ease;
     }
 
-    .cash-btn:active { transform: translateY(1px); }
+    .cash-btn:focus-visible { outline: none; box-shadow: 0 0 0 .25rem var(--app-focus); }
+    .cash-btn:disabled { opacity: .6; cursor: not-allowed; }
 
     .cash-btn-primary {
         background: var(--app-primary);
         color: #ffffff;
-        box-shadow: 0 10px 22px rgba(37, 99, 235, .22);
     }
+
+    .cash-btn-primary:hover { background: color-mix(in srgb, var(--app-primary) 84%, #000); color: #ffffff; }
 
     .cash-btn-secondary {
-        background: #e9eef6;
-        color: #24364f;
+        background: var(--app-surface-raised);
+        color: var(--app-text);
+        border-color: var(--app-border);
     }
 
-    .cash-btn-warning {
-        background: #facc15;
-        color: #172033;
-        box-shadow: 0 10px 22px rgba(250, 204, 21, .2);
+    .cash-btn-outline {
+        background: transparent;
+        color: var(--app-text);
+        border-color: var(--app-border);
     }
 
+    .cash-btn-outline:hover { background: var(--app-surface-raised); }
+
+    /* Withdraw can be undone, so it is an outline like Delete, never a solid red. */
+    .cash-btn-danger,
     .cash-btn-danger-outline {
-        background: #ffffff;
-        color: #dc2626;
-        border: 1px solid #fecaca;
+        background: transparent;
+        color: #b91c1c;
+        border-color: #fecaca;
     }
+
+    .cash-btn-danger:hover,
+    .cash-btn-danger-outline:hover { background: #fef2f2; }
 
     .cash-notification-list {
-        border: 1px solid var(--app-primary-soft-border);
-        background: #f8fafc;
-        border-radius: 16px;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface-raised);
+        border-radius: 10px;
         padding: 14px 16px;
-        color: #475569;
-        font-weight: 900;
+        color: var(--app-muted);
+        font-weight: 400;
         display: grid;
         gap: 10px;
     }
 
     .cash-notification-item {
-        border: 1px solid var(--app-primary-soft-border);
-        background: #ffffff;
-        border-radius: 14px;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface);
+        border-radius: 10px;
         padding: 12px;
         display: grid;
         grid-template-columns: 1fr auto;
         gap: 10px;
         align-items: flex-start;
-        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.045);
     }
 
     .cash-notification-item.unread {
         border-color: var(--app-primary-soft-border);
-        background: linear-gradient(135deg, var(--app-primary-soft) 0%, var(--app-surface) 100%);
+        background: var(--app-primary-soft);
     }
 
     .cash-notification-title {
-        color: #0f172a;
-        font-weight: 950;
+        color: var(--app-text);
+        font-weight: 600;
         font-size: .94rem;
         line-height: 1.25;
     }
 
     .cash-notification-message {
         margin-top: 4px;
-        color: #475569;
+        color: var(--app-text);
         font-size: .86rem;
-        font-weight: 750;
-        line-height: 1.38;
+        font-weight: 400;
+        line-height: 1.4;
     }
 
     .cash-notification-time {
         margin-top: 5px;
-        color: #64748b;
-        font-size: .74rem;
-        font-weight: 850;
+        color: var(--app-muted);
+        font-size: .76rem;
+        font-weight: 400;
     }
 
     .cash-notification-actions {
@@ -174,13 +169,13 @@
 
     .cash-notification-action-btn {
         border: 1px solid var(--app-primary-soft-border);
-        background: #ffffff;
+        background: var(--app-surface);
         color: var(--app-primary-text);
         border-radius: 999px;
         min-height: 34px;
         padding: 6px 10px;
-        font-size: .76rem;
-        font-weight: 950;
+        font-size: .78rem;
+        font-weight: 600;
         cursor: pointer;
         display: inline-flex;
         align-items: center;
@@ -198,10 +193,10 @@
         height: 34px;
         border: 0;
         border-radius: 999px;
-        background: #e2e8f0;
-        color: #475569;
+        background: var(--app-surface-raised);
+        color: var(--app-muted);
         font-size: 1.05rem;
-        font-weight: 950;
+        font-weight: 600;
         cursor: pointer;
         display: inline-flex;
         align-items: center;
@@ -214,43 +209,9 @@
         color: #b91c1c;
     }
 
-    .cash-kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
+    .cash-stats {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         margin-bottom: 16px;
-    }
-
-    .cash-kpi-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 18px;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
-        padding: 16px;
-        min-height: 112px;
-    }
-
-    .cash-kpi-label {
-        font-size: .78rem;
-        font-weight: 950;
-        letter-spacing: .06em;
-        color: #64748b;
-        text-transform: uppercase;
-    }
-
-    .cash-kpi-value {
-        font-size: 2rem;
-        font-weight: 950;
-        line-height: 1.05;
-        color: #0f172a;
-        margin-top: 8px;
-    }
-
-    .cash-kpi-note {
-        color: #64748b;
-        font-weight: 750;
-        font-size: .86rem;
-        margin-top: 6px;
     }
 
     .cash-form-grid {
@@ -260,7 +221,7 @@
     }
 
     .cash-field {
-        grid-column: span 4;
+        grid-column: span 3;
     }
 
     .cash-field.wide {
@@ -273,9 +234,9 @@
 
     .cash-field label {
         display: block;
-        color: #334155;
-        font-size: .88rem;
-        font-weight: 900;
+        color: var(--app-text);
+        font-size: .86rem;
+        font-weight: 600;
         margin-bottom: 7px;
     }
 
@@ -283,15 +244,23 @@
     .cash-field textarea,
     .cash-field select {
         width: 100%;
-        border: 1px solid #d7e2ee;
-        background: #ffffff;
-        color: #0f172a;
-        border-radius: 14px;
-        min-height: 48px;
-        padding: 11px 14px;
+        border: 1px solid var(--app-border);
+        background: var(--app-input);
+        color: var(--app-text);
+        border-radius: 6px;
+        min-height: 46px;
+        padding: 10px 12px;
         font-size: 1rem;
-        font-weight: 750;
+        font-weight: 400;
         outline: none;
+        transition: border-color .12s ease, box-shadow .12s ease;
+    }
+
+    .cash-field input:focus-visible,
+    .cash-field textarea:focus-visible,
+    .cash-field select:focus-visible {
+        border-color: var(--app-primary);
+        box-shadow: 0 0 0 .25rem var(--app-focus);
     }
 
     .cash-field textarea {
@@ -300,20 +269,20 @@
     }
 
     .cash-field input[readonly] {
-        background: #f8fafc;
-        color: #475569;
+        background: var(--app-surface-raised);
+        color: var(--app-muted);
     }
 
     .cash-signature-box {
-        border: 1px dashed #94a3b8;
-        border-radius: 16px;
-        background: #f8fafc;
+        border: 1px dashed var(--app-border);
+        border-radius: 10px;
+        background: var(--app-surface-raised);
         min-height: 98px;
         display: flex;
         align-items: center;
         padding: 14px;
-        color: #64748b;
-        font-weight: 850;
+        color: var(--app-muted);
+        font-weight: 400;
     }
 
     .cash-form-actions {
@@ -323,26 +292,28 @@
         flex-wrap: wrap;
         padding-top: 16px;
         margin-top: 12px;
-        border-top: 1px solid #e2e8f0;
+        border-top: 1px solid var(--app-border);
     }
+
+    .cash-form-actions #cashClearFormBtn { margin-right: auto; }
 
     .cash-attachment-panel {
         margin-top: 18px;
         padding: 16px;
-        border: 1px solid var(--app-primary-soft-border);
-        background: #f8fafc;
-        border-radius: 16px;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface-raised);
+        border-radius: 10px;
     }
 
     .cash-attachment-list { display: grid; gap: 9px; margin-top: 12px; }
     .cash-attachment-item {
         display: flex; align-items: center; justify-content: space-between; gap: 12px;
-        padding: 11px 12px; border: 1px solid #dbe3ef; border-radius: 12px; background: #fff;
+        padding: 11px 12px; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface);
     }
-    .cash-attachment-name { min-width: 0; font-weight: 900; color: #172033; overflow-wrap: anywhere; }
-    .cash-attachment-meta { color: #64748b; font-size: .8rem; font-weight: 750; margin-top: 3px; }
+    .cash-attachment-name { min-width: 0; font-weight: 600; color: var(--app-text); overflow-wrap: anywhere; }
+    .cash-attachment-meta { color: var(--app-muted); font-size: .8rem; font-weight: 400; margin-top: 3px; }
     .cash-attachment-actions { display: flex; gap: 7px; flex-wrap: wrap; }
-    .cash-attachment-actions .cash-btn { min-height: 38px; padding: 8px 11px; border-radius: 10px; font-size: .82rem; }
+    .cash-attachment-actions .cash-btn { min-height: 38px; padding: 8px 11px; border-radius: 6px; font-size: .82rem; }
 
     .cash-request-list {
         display: grid;
@@ -350,9 +321,9 @@
     }
 
     .cash-request-item {
-        border: 1px solid #dbe3ef;
-        background: #f8fafc;
-        border-radius: 16px;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface-raised);
+        border-radius: 10px;
         padding: 14px;
         display: grid;
         grid-template-columns: 1fr auto;
@@ -361,15 +332,19 @@
     }
 
     .cash-request-title {
-        font-weight: 950;
+        font-weight: 600;
         font-size: 1.05rem;
-        color: #0f172a;
+        color: var(--app-text);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
     }
 
     .cash-request-meta {
-        color: #52637a;
+        color: var(--app-muted);
         font-size: .9rem;
-        font-weight: 800;
+        font-weight: 400;
         line-height: 1.45;
         margin-top: 4px;
     }
@@ -378,18 +353,19 @@
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 6px 10px;
+        padding: 4px 10px;
         border-radius: 999px;
         font-size: .78rem;
-        font-weight: 950;
-        background: #e2e8f0;
-        color: #334155;
+        font-weight: 600;
+        background: var(--app-border);
+        color: var(--app-text);
     }
 
+    .cash-status-pill i { font-size: .5rem; }
     .cash-status-pill.draft { background: #e0f2fe; color: #075985; }
     .cash-status-pill.submitted { background: #fef3c7; color: #92400e; }
     .cash-status-pill.approved { background: #dcfce7; color: #166534; }
-    .cash-status-pill.returned { background: #fee2e2; color: #991b1b; }
+    .cash-status-pill.returned { background: #fde8ea; color: #a1121f; }
 
     .cash-toast-stack {
         position: fixed;
@@ -404,12 +380,12 @@
 
     .cash-toast {
         pointer-events: auto;
-        border-radius: 16px;
+        border-radius: 10px;
         padding: 12px 14px;
         border: 1px solid var(--app-primary-soft-border);
-        background: #ffffff;
-        color: #0f172a;
-        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+        background: var(--app-surface);
+        color: var(--app-text);
+        box-shadow: var(--app-shadow);
         display: grid;
         grid-template-columns: 28px 1fr auto;
         gap: 10px;
@@ -427,18 +403,18 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(37, 99, 235, .12);
+        background: var(--app-primary-soft);
         color: var(--app-primary-text);
     }
 
     .cash-toast-title {
-        font-weight: 950;
+        font-weight: 600;
         margin-bottom: 2px;
     }
 
     .cash-toast-message {
-        font-weight: 800;
-        line-height: 1.35;
+        font-weight: 400;
+        line-height: 1.4;
         font-size: .86rem;
         white-space: pre-wrap;
     }
@@ -448,15 +424,34 @@
         background: transparent;
         color: inherit;
         font-size: 1.05rem;
-        font-weight: 950;
+        font-weight: 600;
         cursor: pointer;
         line-height: 1;
     }
 
+    /* Dark themes (graphite and AMOLED): semantic 16% tints with light text, no light blocks. */
+    :root[data-app-theme="dark"] .cash-status-pill { background: var(--app-surface-raised); color: var(--app-text); }
+    :root[data-app-theme="dark"] .cash-status-pill.draft { background: rgba(14, 165, 233, .16); color: #bae6fd; }
+    :root[data-app-theme="dark"] .cash-status-pill.submitted { background: rgba(217, 119, 6, .16); color: #fde68a; }
+    :root[data-app-theme="dark"] .cash-status-pill.approved { background: rgba(22, 163, 74, .16); color: #bbf7d0; }
+    :root[data-app-theme="dark"] .cash-status-pill.returned { background: rgba(220, 38, 38, .16); color: #fecaca; }
+    :root[data-app-theme="dark"] :is(.cash-btn-danger, .cash-btn-danger-outline) { background: transparent; color: #fca5a5; border-color: rgba(248, 113, 113, .45); }
+    :root[data-app-theme="dark"] :is(.cash-btn-danger, .cash-btn-danger-outline):hover,
+    :root[data-app-theme="dark"] .cash-notification-close-btn:hover { background: rgba(220, 38, 38, .16); color: #fecaca; }
+    :root[data-app-theme="dark"] .cash-toast { background: var(--app-surface); color: var(--app-text); border-color: var(--app-border); border-left-width: 4px; }
+    :root[data-app-theme="dark"] .cash-toast.ok { background: var(--app-surface); color: var(--app-text); border-color: var(--app-border); border-left-color: #22c55e; }
+    :root[data-app-theme="dark"] .cash-toast.error { background: var(--app-surface); color: var(--app-text); border-color: var(--app-border); border-left-color: #f87171; }
+    :root[data-app-theme="dark"] .cash-toast.warn { background: var(--app-surface); color: var(--app-text); border-color: var(--app-border); border-left-color: #f59e0b; }
+    :root[data-app-theme="dark"] .cash-toast-icon { background: var(--app-surface-raised); color: var(--app-primary-text); }
+    :root[data-app-theme="dark"] .cash-toast.ok .cash-toast-icon { color: #86efac; }
+    :root[data-app-theme="dark"] .cash-toast.error .cash-toast-icon { color: #fca5a5; }
+    :root[data-app-theme="dark"] .cash-toast.warn .cash-toast-icon { color: #fcd34d; }
+
+    @media (max-width: 1199.98px) {
+        .cash-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
     @media (max-width: 1100px) {
-        .cash-kpi-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
         .cash-field,
         .cash-field.half {
             grid-column: span 6;
@@ -465,13 +460,11 @@
 
     @media (max-width: 768px) {
         .cash-page { padding: 0 0 16px; }
-        .cash-hero {
-            border-radius: 18px;
-            padding: 20px;
-        }
-        .cash-hero h1 { font-size: 1.55rem; }
-        .cash-card { border-radius: 18px; padding: 16px; }
-        .cash-kpi-grid { grid-template-columns: 1fr; }
+        .cash-page .dash-page-h1 { font-size: 1.5rem; }
+        .cash-page .dash-page-actions .btn { min-height: 44px; }
+        .cash-card { border-radius: 16px; padding: 16px; }
+        .cash-stats .dash-stat { padding: 1rem; }
+        .cash-stats .dash-stat-num { font-size: 1.6rem; }
         .cash-field,
         .cash-field.half,
         .cash-field.wide {
@@ -483,6 +476,7 @@
         .cash-form-actions .cash-btn {
             width: 100%;
         }
+        .cash-form-actions #cashClearFormBtn { margin-right: 0; }
         .cash-request-item,
         .cash-notification-item {
             grid-template-columns: 1fr;
@@ -494,104 +488,48 @@
         .cash-request-item .cash-btn,
         .cash-notification-action-btn {
             width: 100%;
+            min-height: 44px;
         }
         .cash-notification-close-btn {
             width: 100%;
+            height: 44px;
         }
         .cash-attachment-item { align-items: stretch; flex-direction: column; }
-        .cash-attachment-actions .cash-btn { flex: 1; }
+        .cash-attachment-actions .cash-btn { flex: 1; min-height: 44px; }
     }
 </style>
 
 <div class="cash-page">
-    <section class="cash-hero">
-        <h1>Request for Cash Advance</h1>
-        <p>Create standalone cash advance requests subject to manager approval, accounting release, and liquidation.</p>
-    </section>
+    <header class="dash-page-header">
+        <div>
+            <h1 class="dash-page-h1">Cash Advance <span class="cash-status-pill draft" id="cashStatusPill"><i class="fa-solid fa-circle"></i> Draft</span></h1>
+            <p class="dash-page-sub">Request cash for a job, subject to manager approval, accounting release and liquidation.</p>
+        </div>
+        <div class="dash-page-actions">
+            <button type="button" class="btn btn-outline-primary" onclick="clearCashAdvanceForm()"><i class="fa-solid fa-plus me-2"></i>New Request</button>
+        </div>
+    </header>
 
     <div id="cash-toast-stack" class="cash-toast-stack" aria-live="polite" aria-atomic="true"></div>
-
-    <section class="cash-card">
-        <div class="cash-section-head">
-            <div>
-                <h2 class="cash-section-title"><i class="fa-solid fa-bell text-warning"></i> Notifications</h2>
-                <div class="cash-muted">Cash advance approval updates and accounting notices assigned to you.</div>
-            </div>
-            <div class="cash-actions">
-                <button type="button" class="cash-btn cash-btn-secondary" onclick="loadCashAdvanceNotifications()"><i class="fa-solid fa-rotate"></i> Refresh</button>
-                <button type="button" class="cash-btn cash-btn-secondary" onclick="markAllCashAdvanceNotificationsRead()">Mark All Read</button>
-            </div>
-        </div>
-        <div id="cashNotificationList" class="cash-notification-list">No unread notifications.</div>
-    </section>
-
-    <section class="cash-card">
-        <div class="cash-section-head">
-            <div>
-                <h2 class="cash-section-title"><i class="fa-solid fa-clock-rotate-left text-primary"></i> My Cash Advances</h2>
-                <div class="cash-muted">Draft, submitted, approved, released, and liquidation-ready cash advance records.</div>
-            </div>
-            <div class="cash-actions">
-                <button type="button" class="cash-btn cash-btn-secondary" onclick="loadCashAdvances()"><i class="fa-solid fa-rotate"></i> Refresh</button>
-            </div>
-        </div>
-
-        <div class="cash-request-list" id="cashAdvanceList">
-            <div class="cash-notification-list">Loading cash advances...</div>
-        </div>
-    </section>
-
-    <section class="cash-kpi-grid">
-        <div class="cash-kpi-card">
-            <div class="cash-kpi-label">Draft</div>
-            <div class="cash-kpi-value" id="cashDraftCount">0</div>
-            <div class="cash-kpi-note">Editable requests</div>
-        </div>
-        <div class="cash-kpi-card">
-            <div class="cash-kpi-label">Submitted</div>
-            <div class="cash-kpi-value" id="cashSubmittedCount">0</div>
-            <div class="cash-kpi-note">Waiting for approval</div>
-        </div>
-        <div class="cash-kpi-card">
-            <div class="cash-kpi-label">Approved</div>
-            <div class="cash-kpi-value" id="cashApprovedCount">0</div>
-            <div class="cash-kpi-note">For accounting release</div>
-        </div>
-        <div class="cash-kpi-card">
-            <div class="cash-kpi-label">Ready for Liquidation</div>
-            <div class="cash-kpi-value" id="cashReadyCount">0</div>
-            <div class="cash-kpi-note">Received cash advances</div>
-        </div>
-        <div class="cash-kpi-card">
-            <div class="cash-kpi-label">Rejected</div>
-            <div class="cash-kpi-value" id="cashRejectedCount">0</div>
-            <div class="cash-kpi-note">Edit and submit again</div>
-        </div>
-    </section>
 
     <section class="cash-card" id="cashFormCard">
         <div class="cash-section-head">
             <div>
-                <h2 class="cash-section-title"><i class="fa-solid fa-money-bill-transfer text-primary"></i> Cash Advance Request</h2>
+                <h2 class="cash-section-title">Cash Advance Request</h2>
                 <div class="cash-muted" id="cashFormStatusText">Draft request. Fill out the details then save or submit.</div>
-            </div>
-            <div class="cash-actions">
-                <span class="cash-status-pill draft" id="cashStatusPill"><i class="fa-solid fa-circle"></i> Draft</span>
+                <div class="cash-form-meta">Requested <span id="cashRequestDateText"></span></div>
             </div>
         </div>
 
         <form id="cashAdvanceForm" onsubmit="event.preventDefault(); submitCashAdvance();">
             <input type="hidden" id="cashAdvanceId" value="">
+            <input type="hidden" id="cashAdvanceStatus" value="Draft">
+            <input type="hidden" id="cashRequestDate" value="">
 
             <div class="cash-form-grid">
                 <div class="cash-field">
                     <label for="cashAdvanceNo">Cash Advance No.</label>
-                    <input type="text" id="cashAdvanceNo" readonly placeholder="Auto-generated after save">
-                </div>
-
-                <div class="cash-field">
-                    <label for="cashAdvanceStatus">Status</label>
-                    <input type="text" id="cashAdvanceStatus" readonly value="Draft">
+                    <input type="text" id="cashAdvanceNo" class="logbook-ref" readonly placeholder="Auto-generated after save">
                 </div>
 
                 <div class="cash-field">
@@ -607,11 +545,6 @@
                 <div class="cash-field">
                     <label for="cashLiquidationDays">Liquidation Period (Days)</label>
                     <input type="number" id="cashLiquidationDays" min="1" step="1" value="30">
-                </div>
-
-                <div class="cash-field">
-                    <label for="cashRequestDate">Request Date</label>
-                    <input type="date" id="cashRequestDate" readonly>
                 </div>
 
                 <div class="cash-field wide">
@@ -640,7 +573,7 @@
             <div class="cash-attachment-panel">
                 <div class="cash-section-head" style="margin-bottom:8px;">
                     <div>
-                        <h3 class="cash-section-title" style="font-size:1.05rem;"><i class="fa-solid fa-paperclip text-primary"></i> Uploaded Attachments</h3>
+                        <h3 class="cash-section-title">Uploaded Attachments</h3>
                         <div class="cash-muted">Optional PDF or image documents. Up to 10 files, 35MB each; optimized to 2MB when possible.</div>
                     </div>
                     <div class="cash-actions" id="cashAttachmentActions">
@@ -657,13 +590,71 @@
             </div>
 
             <div class="cash-form-actions">
-                <button type="button" class="cash-btn cash-btn-danger-outline" id="cashClearFormBtn" onclick="clearCashAdvanceForm()"><i class="fa-solid fa-eraser"></i> Clear Form</button>
+                <button type="button" class="cash-btn cash-btn-outline" id="cashClearFormBtn" onclick="clearCashAdvanceForm()"><i class="fa-solid fa-eraser"></i> Clear Form</button>
                 <button type="button" class="cash-btn cash-btn-danger-outline" id="cashDeleteDraftBtn" onclick="deleteCashAdvanceDraft()" style="display:none;"><i class="fa-solid fa-trash"></i> Delete Draft</button>
                 <button type="button" class="cash-btn cash-btn-primary" id="cashLiquidationBtn" onclick="openOrCreateCashAdvanceLiquidation(cashAdvanceCurrentRecord)" style="display:none;"><i class="fa-solid fa-file-invoice-dollar"></i> Start Liquidation</button>
                 <button type="button" class="cash-btn cash-btn-secondary" id="cashSaveDraftBtn" onclick="saveCashAdvanceDraft()"><i class="fa-solid fa-floppy-disk"></i> Save Draft</button>
-                <button type="submit" class="cash-btn cash-btn-warning" id="cashSubmitBtn"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
+                <button type="submit" class="cash-btn cash-btn-primary" id="cashSubmitBtn"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
             </div>
         </form>
+    </section>
+
+    <section class="cash-card" id="cashNotificationCard" hidden>
+        <div class="cash-section-head">
+            <div>
+                <h2 class="cash-section-title">Notifications</h2>
+                <div class="cash-muted">Cash advance approval updates and accounting notices assigned to you.</div>
+            </div>
+            <div class="cash-actions">
+                <button type="button" class="cash-btn cash-btn-secondary" onclick="loadCashAdvanceNotifications()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                <button type="button" class="cash-btn cash-btn-secondary" onclick="markAllCashAdvanceNotificationsRead()">Mark All Read</button>
+            </div>
+        </div>
+        <div id="cashNotificationList" class="cash-notification-list">No unread notifications.</div>
+    </section>
+
+    <section class="dash-stats cash-stats" aria-label="Cash advance counts">
+        <div class="dash-stat">
+            <div class="dash-stat-top"><span class="dash-stat-name">Draft</span></div>
+            <div class="dash-stat-num" id="cashDraftCount">0</div>
+            <div class="dash-stat-help">Editable requests</div>
+        </div>
+        <div class="dash-stat">
+            <div class="dash-stat-top"><span class="dash-stat-name">Submitted</span></div>
+            <div class="dash-stat-num" id="cashSubmittedCount">0</div>
+            <div class="dash-stat-help">Waiting for approval</div>
+        </div>
+        <div class="dash-stat">
+            <div class="dash-stat-top"><span class="dash-stat-name">Approved</span></div>
+            <div class="dash-stat-num" id="cashApprovedCount">0</div>
+            <div class="dash-stat-help">For accounting release</div>
+        </div>
+        <div class="dash-stat">
+            <div class="dash-stat-top"><span class="dash-stat-name">Ready for Liquidation</span></div>
+            <div class="dash-stat-num" id="cashReadyCount">0</div>
+            <div class="dash-stat-help">Received cash advances</div>
+        </div>
+        <div class="dash-stat">
+            <div class="dash-stat-top"><span class="dash-stat-name">Rejected</span></div>
+            <div class="dash-stat-num" id="cashRejectedCount">0</div>
+            <div class="dash-stat-help">Edit and submit again</div>
+        </div>
+    </section>
+
+    <section class="cash-card">
+        <div class="cash-section-head">
+            <div>
+                <h2 class="cash-section-title">My Cash Advances</h2>
+                <div class="cash-muted">Draft, submitted, approved, released, and liquidation-ready cash advance records.</div>
+            </div>
+            <div class="cash-actions">
+                <button type="button" class="cash-btn cash-btn-secondary" onclick="loadCashAdvances()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+        </div>
+
+        <div class="cash-request-list" id="cashAdvanceList">
+            <div class="cash-notification-list">Loading cash advances...</div>
+        </div>
     </section>
 </div>
 
@@ -782,6 +773,16 @@
         const files = Array.from(document.getElementById('cashAttachmentFiles')?.files || []);
         const label = document.getElementById('cashAttachmentSelection');
         if (label) label.textContent = files.length ? `${files.length} file(s) selected: ${files.map(file => file.name).join(', ')}` : 'No files selected.';
+    }
+
+    // Request Date is set by the server; the form shows it as text and keeps the value for the payload.
+    function setCashRequestDate(value) {
+        const input = document.getElementById('cashRequestDate');
+        const text = document.getElementById('cashRequestDateText');
+        const iso = String(value || todayInputValue());
+        if (input) input.value = iso;
+        const parts = iso.split('-');
+        if (text) text.textContent = parts.length === 3 ? `${parts[1]}-${parts[2]}-${parts[0]}` : iso;
     }
 
     function cashNotificationRecordId(item) {
@@ -956,7 +957,7 @@
         document.getElementById('cashAdvanceId').value = id;
         document.getElementById('cashAdvanceNo').value = no || (id ? `CA-${id}` : '');
         document.getElementById('cashNeededDate').value = item.needed_date || '';
-        document.getElementById('cashRequestDate').value = item.request_date || todayInputValue();
+        setCashRequestDate(item.request_date);
         document.getElementById('cashAmountRequested').value = item.amount_requested || item.amount || '';
         document.getElementById('cashLiquidationDays').value = item.liquidation_days || 30;
         document.getElementById('cashPurpose').value = item.purpose || '';
@@ -1017,7 +1018,7 @@
         document.getElementById('cashAmountRequested').value = '';
         document.getElementById('cashLiquidationDays').value = '30';
         document.getElementById('cashPurpose').value = '';
-        document.getElementById('cashRequestDate').value = todayInputValue();
+        setCashRequestDate();
         setCashStatus('Draft');
         renderCashAdvanceAttachments([]);
         const attachmentInput = document.getElementById('cashAttachmentFiles');
@@ -1157,7 +1158,7 @@
                 <div class="cash-request-item">
                     <div>
                         <div class="cash-request-title">
-                            ${cashEscape(item.cash_advance_no || ('CA-' + (item.id || '')))}
+                            <span class="logbook-ref">${cashEscape(item.cash_advance_no || ('CA-' + (item.id || '')))}</span>
                             <span class="cash-status-pill ${pillClass}"><i class="fa-solid fa-circle"></i> ${cashEscape(status)}</span>
                         </div>
                         <div class="cash-request-meta">
@@ -1190,7 +1191,9 @@
         document.getElementById('cashSubmittedCount').textContent = counts.submitted;
         document.getElementById('cashApprovedCount').textContent = counts.approved;
         document.getElementById('cashReadyCount').textContent = counts.ready;
-        document.getElementById('cashRejectedCount').textContent = counts.rejected;
+        const rejected = document.getElementById('cashRejectedCount');
+        rejected.textContent = counts.rejected;
+        rejected.classList.toggle('dashboard-metric-alert', counts.rejected > 0);
     }
 
     async function loadCashAdvances() {
@@ -1227,6 +1230,12 @@
         }
     }
 
+    // The Notifications card shows only while there are unread Cash Advance notifications.
+    function setCashNotificationCardVisible(visible) {
+        const card = document.getElementById('cashNotificationCard');
+        if (card) card.hidden = !visible;
+    }
+
     function renderCashAdvanceNotifications(items) {
         const list = document.getElementById('cashNotificationList');
         if (!list) return;
@@ -1235,6 +1244,7 @@
             return cashNotificationBelongsToCashAdvance(item) && !item.is_read;
         });
         cashAdvanceNotificationItems = unreadItems;
+        setCashNotificationCardVisible(unreadItems.length > 0);
 
         if (!unreadItems.length) {
             list.innerHTML = '<div>No unread notifications.</div>';
@@ -1277,6 +1287,7 @@
         } catch (error) {
             console.warn('[CashAdvance] Notifications unavailable', error);
             list.textContent = 'No unread notifications.';
+            setCashNotificationCardVisible(false);
         }
     }
 
@@ -1308,6 +1319,7 @@
         const list = document.getElementById('cashNotificationList');
         if (list && !list.querySelector('.cash-notification-item')) {
             list.innerHTML = '<div>No unread notifications.</div>';
+            setCashNotificationCardVisible(false);
         }
     }
 
@@ -1390,7 +1402,7 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        document.getElementById('cashRequestDate').value = todayInputValue();
+        setCashRequestDate();
         setCashStatus('Draft');
         renderCashAdvanceAttachments([]);
         document.getElementById('cashAttachmentFiles')?.addEventListener('change', updateCashAttachmentSelection);
