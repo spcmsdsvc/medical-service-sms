@@ -495,13 +495,12 @@
 
 
     .reim-grand-total-cell {
-        background: linear-gradient(135deg, #0f5132, #198754) !important;
-        color: #ffffff !important;
+        background: var(--app-primary-soft) !important;
+        color: var(--app-text) !important;
         font-size: 1.08rem;
         font-weight: 900;
         letter-spacing: 0.2px;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 -2px 8px rgba(15,81,50,0.16);
-        border-top: 2px solid #0f5132 !important;
+        border-top: 2px solid var(--app-primary) !important;
     }
 
     .reim-grand-total-cell::before {
@@ -627,7 +626,7 @@
 
     .reim-dock-total {
         min-width: 150px;
-        color: var(--app-primary, #0f5132);
+        color: var(--app-primary-text);
         font-size: 1.1rem;
         font-weight: 950;
         font-variant-numeric: tabular-nums;
@@ -1238,7 +1237,7 @@
     }
 
     .reim-summary-total .reim-summary-value {
-        color: var(--app-primary, #198754);
+        color: var(--app-primary-text);
         font-size: 1.1rem;
     }
 
@@ -1700,6 +1699,34 @@
     .reim-lifecycle-banner.rejected {
         border-color: #fecaca;
         background: #fff1f2;
+    }
+
+    :root[data-app-theme="dark"] .reim-lifecycle-banner.submitted {
+        background: rgba(245, 158, 11, 0.12) !important;
+        border-color: rgba(245, 158, 11, 0.45) !important;
+    }
+
+    :root[data-app-theme="dark"] .reim-lifecycle-banner.approved {
+        background: rgba(34, 197, 94, 0.12) !important;
+        border-color: rgba(34, 197, 94, 0.45) !important;
+    }
+
+    :root[data-app-theme="dark"] .reim-lifecycle-banner.rejected {
+        background: rgba(239, 68, 68, 0.12) !important;
+        border-color: rgba(239, 68, 68, 0.45) !important;
+    }
+
+    :root[data-app-theme="dark"] .reim-lifecycle-banner:is(.submitted, .approved, .rejected),
+    :root[data-app-theme="dark"] .reim-lifecycle-banner:is(.submitted, .approved, .rejected) :is(h3, p, .reim-lifecycle-meta) {
+        color: var(--app-text) !important;
+    }
+
+    .reim-page.reim-locked .reim-row-selection-control,
+    .reim-page.reim-locked #reimSelectedRowsStatus,
+    .reim-page.reim-locked #reimDeleteSelectedBtn,
+    .reim-page.reim-locked .reim-row-select,
+    .reim-page.reim-locked .reim-mobile-select {
+        display: none !important;
     }
 
     .reim-locked-field {
@@ -3422,9 +3449,8 @@
                     <footer class="reim-view-popover-status" id="reimViewPopoverStatus" role="status" aria-live="polite">Showing 0 of 0 rows</footer>
                 </aside>
             <div class="reim-zoom-control" aria-label="Worksheet zoom">
-                <span class="reim-zoom-label">Worksheet zoom</span>
+                <label class="reim-zoom-label" for="reimZoomLevel">Worksheet zoom</label>
                 <button type="button" class="reim-btn reim-btn-secondary" id="reimZoomOutBtn" onclick="changeReimbursementZoom(-1)" aria-label="Zoom out">−</button>
-                <label class="visually-hidden" for="reimZoomLevel">Worksheet zoom</label>
                 <select id="reimZoomLevel" aria-label="Worksheet zoom level" onchange="handleReimbursementZoomChange(this)">
                     <option value="60">60%</option>
                     <option value="70">70%</option>
@@ -5558,6 +5584,9 @@ function renderReimbursementRows(rows) {
                 ? 'Manual item'
                 : [row.start_time, row.end_time].filter(Boolean).join(' - ') || 'Scheduled visit';
             const expanded = reimbursementMobileExpandedRowKeys.has(String(rowKey));
+            const manualCategoryOption = row.manual
+                ? reimbursementManualCategoryOptions.find(function(option) { return option.key === getReimbursementManualCategory(row); })
+                : null;
             return `
                 <div class="reim-mobile-card${expanded ? ' is-expanded' : ''}" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}">
                     <div class="reim-mobile-card-summary">
@@ -5570,7 +5599,7 @@ function renderReimbursementRows(rows) {
                             <div class="reim-mobile-card-summary-meta">
                                 <span>${reimEscape(formatExpenseDate(row.date))}</span>
                                 <span>${reimEscape(scheduleLine)}</span>
-                                <span>${reimEscape(row.manual ? (row.task || row.item_name || 'Manual item') : (row.task || 'Scheduled task'))}</span>
+                                <span>${reimEscape(row.manual ? (manualCategoryOption ? manualCategoryOption.label : 'Manual item') : (row.task || 'Scheduled task'))}</span>
                             </div>
                         </div>
                         <div class="reim-mobile-card-total">Row Total: ₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></div>
@@ -5837,7 +5866,6 @@ function renderReimbursementRows(rows) {
         const manualBtn = document.getElementById('reimAddManualBtn');
         const deleteBtn = document.getElementById('reimDeleteDraftBtn');
         const focusManualBtn = document.getElementById('reimFocusAddManualBtn');
-        const statusText = document.getElementById('reimStatusText');
         const page = document.querySelector('.reim-page');
         if (page) {
             page.classList.toggle('reim-locked', !editable);
@@ -5911,17 +5939,7 @@ function renderReimbursementRows(rows) {
 
         refreshReimbursementReceiptCells();
 
-        if (statusText) {
-            statusText.textContent = lifecycle.lock_reason || (
-                normalized === 'approved'
-                    ? 'Approved by manager. This reimbursement is locked, but Download Form remains available.'
-                    : (normalized === 'submitted'
-                        ? 'Submitted for manager review. This reimbursement is locked until manager action.'
-                        : (normalized === 'rejected'
-                            ? 'Returned by manager. You may edit and resubmit this reimbursement.'
-                            : 'Draft reimbursement. You may edit, save, and submit.'))
-            );
-        }
+        // The lock reason is shown in the lifecycle banner; #reimStatusText keeps progress messages only.
         syncReimbursementWorksheetSummary();
         updateReimbursementReadiness();
     }
@@ -7568,9 +7586,15 @@ async function saveReimbursementDraft(silent, options) {
         const zeroRowMessage = zeroRowCount > 0
             ? `\n\n${zeroRowCount} zero-total row${zeroRowCount === 1 ? '' : 's'} will be excluded from the submitted reimbursement.`
             : '';
+        const submitTotal = rowsForSubmit.reduce(function(sum, row) {
+            const rowTotal = getReimbursementPayloadRowTotal(row);
+            return rowTotal > 0 ? sum + rowTotal : sum;
+        }, 0);
+        const submitContext = reimbursementActiveContext || {};
+        const submitSummaryLine = `Period: ${formatExpenseDate(submitContext.start || start)} – ${formatExpenseDate(submitContext.end || end)} · Total: ₱${formatMoney(submitTotal)}`;
         const shouldSubmit = await reimConfirmDialog({
             title: 'Submit Reimbursement?',
-            message: `This will submit your reimbursement for review. You cannot edit it as draft after submission unless it is returned/rejected.${zeroRowMessage}`,
+            message: `${submitSummaryLine}\n\nThis will submit your reimbursement for review. You cannot edit it as draft after submission unless it is returned/rejected.${zeroRowMessage}`,
             confirmText: 'Submit for Review',
             cancelText: 'Review Again',
             tone: 'warning',

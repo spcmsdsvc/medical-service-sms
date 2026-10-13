@@ -156,7 +156,8 @@ Intended outcome:
 
 # Reimbursement — Batch 3: Design Fixes (dark banners, total contrast, Submit confirm, duplicates, locked selection)
 
-**Status:** Approved — awaiting go-ahead
+**Status:** Executed locally 2026-10-13 (owner: "execute batch 3"); awaiting "commit and push". Tests: 6 added (5 fail on `HEAD`, guard passes); focused run 323, only the known TSR failure. Browser check on a DB copy passed (lowest contrast 5.97:1).
+**Differences from plan:** the "0 selected" count is also hidden on locked records (otherwise it stood alone); the zoom duplicate was the hidden `<label>` — the visible span became the label instead; the phone-card `<span>` shows the category (the date is already in the first span).
 **Approved:** 2026-10-13 (owner chose batches 1–4 after the 2026-10-13 page scan and design scan).
 **Detailed:** 2026-10-13.
 **Branch:** `main` (local first; publish only on "commit and push").

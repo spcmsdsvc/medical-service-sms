@@ -1,6 +1,7 @@
 """Focused source contracts for the Reimbursement page design package."""
 
 import json
+import re
 import pathlib
 import subprocess
 import textwrap
@@ -807,6 +808,83 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+
+class ReimbursementBatch3SourceTests(unittest.TestCase):
+    """Batch 3 design fixes. `source` is a class attribute so a positive control can swap it."""
+
+    source = TEMPLATE
+
+    def _rule(self, selector):
+        start = self.source.index(selector + ' {')
+        return self.source[start:self.source.index('}', start)]
+
+    def _function(self, name):
+        start = self.source.index(f'function {name}(')
+        end = self.source.find('\n    function ', start + 1)
+        return self.source[start:end]
+
+    def test_dark_banners_for_locked_statuses(self):
+        for status, rgb in (('submitted', '245, 158, 11'), ('approved', '34, 197, 94'), ('rejected', '239, 68, 68')):
+            rule = self._rule(f':root[data-app-theme="dark"] .reim-lifecycle-banner.{status}')
+            self.assertIn(f'rgba({rgb}, 0.12)', rule)
+            self.assertIn(f'rgba({rgb}, 0.45)', rule)
+        self.assertRegex(
+            self.source,
+            r':root\[data-app-theme="dark"\] \.reim-lifecycle-banner:is\(\.submitted, \.approved, \.rejected\) '
+            r':is\(h3, p, \.reim-lifecycle-meta\) \{\s*color: var\(--app-text\) !important;',
+        )
+
+    def test_totals_use_dark_aware_accent_text_without_gradient(self):
+        self.assertIn('color: var(--app-primary-text);', self._rule('    .reim-dock-total'))
+        self.assertIn('color: var(--app-primary-text);', self._rule('    .reim-summary-total .reim-summary-value'))
+        cell = self._rule('    .reim-grand-total-cell')
+        self.assertIn('background: var(--app-primary-soft) !important;', cell)
+        self.assertIn('color: var(--app-text) !important;', cell)
+        self.assertIn('border-top: 2px solid var(--app-primary) !important;', cell)
+        self.assertNotIn('gradient', cell)
+        self.assertNotIn('#0f5132', cell)
+        self.assertNotIn('#198754', cell)
+
+    def test_submit_confirm_shows_period_and_total(self):
+        body = self._function('submitReimbursement')
+        self.assertIn('Period: ${formatExpenseDate(submitContext.start || start)}', body)
+        self.assertIn('Total: ₱${formatMoney(submitTotal)}', body)
+        self.assertIn('message: `${submitSummaryLine}\\n\\nThis will submit', body)
+
+    def test_duplicate_texts_removed(self):
+        body = self._function('applyReimbursementStatusUi')
+        self.assertNotIn("getElementById('reimStatusText')", body)
+        self.assertEqual(self.source.count('>Worksheet zoom</'), 1)
+        self.assertIn('<label class="reim-zoom-label" for="reimZoomLevel">Worksheet zoom</label>', self.source)
+        self.assertNotIn("row.manual ? (row.task || row.item_name || 'Manual item')", self.source)
+        self.assertIn("manualCategoryOption ? manualCategoryOption.label : 'Manual item'", self.source)
+
+    def test_locked_records_hide_selection_controls(self):
+        for selector in ('.reim-row-selection-control', '#reimDeleteSelectedBtn', '.reim-row-select', '.reim-mobile-select'):
+            self.assertRegex(
+                self.source,
+                rf'\.reim-page\.reim-locked {re.escape(selector)},?[\s\S]{{0,260}}display: none !important;',
+            )
+
+    def test_kept_functions_and_ids(self):
+        for name in (
+            'renderReimbursementLifecycleBanner',
+            'submitReimbursement',
+            'reimConfirmDialog',
+            'setReimbursementSubmitInputsBusy',
+            'handleReimbursementSelectAllRows',
+            'handleReimbursementRowSelection',
+            'applyReimbursementStatusUi',
+        ):
+            self.assertRegex(self.source, rf'function {name}\(')
+        for token in (
+            'id="reimLifecycleBanner"', 'id="reimLifecycleReason"', 'id="reimStatusText"',
+            'id="reimSelectAllRows"', 'id="reimDeleteSelectedBtn"', 'id="reimZoomLevel"',
+            'id="reimDockTotal"', 'id="reimGrandTotal"', 'id="reimSummaryGrandTotal"',
+            'onchange="handleReimbursementSelectAllRows(this)"', 'onchange="handleReimbursementRowSelection(this)"',
+        ):
+            self.assertIn(token, self.source)
 
 
 if __name__ == '__main__':

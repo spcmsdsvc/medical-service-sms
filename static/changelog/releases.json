@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-reimbursement-contrast",
+      "release_date": "2026-10-13",
+      "title": "Clearer Reimbursement Status and Totals",
+      "summary": "Reimbursement status banners and totals are easier to read, and Submit shows what you are sending.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-reimbursement-contrast-dark",
+          "category": "Reimbursement",
+          "description": "Submitted, Approved and Returned banners and the totals are readable in dark mode.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-reimbursement-contrast-submit",
+          "category": "Reimbursement",
+          "description": "The Submit check shows the period and the total being submitted.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-13-reimbursement-contrast-locked",
+          "category": "Reimbursement",
+          "description": "Submitted, Approved and Paid records no longer show row selection or Delete selected.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-reimbursement-fixes",
       "release_date": "2026-10-13",
       "title": "Reimbursement Status Updates Right Away",
