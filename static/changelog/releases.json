@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-my-calibrations",
+      "release_date": "2026-10-13",
+      "title": "My Calibrations",
+      "summary": "A new page that shows every calibration report you created and where it is.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-my-calibrations-status",
+          "category": "My Calibrations",
+          "description": "See each of your calibration reports as Draft, Failed to send, Pending, Returned, Approved or Sent to client, with search and status filters.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-my-calibrations-action",
+          "category": "My Calibrations",
+          "description": "Returned reports show the approver's remarks with Fix & resubmit, and reports that did not reach the approver show the reason with Retry.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-13-my-calibrations-due",
+          "category": "My Calibrations",
+          "description": "Due for recalibration lists the machines you calibrated whose calibration expires within a month or has expired.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-13-my-calibrations-admin-label",
+          "category": "Sidebar",
+          "description": "The admin Calibration Center is now labelled Calibration Center (Admin).",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-lpr-hidden",
       "release_date": "2026-10-13",
       "title": "LPR Hidden from the Sidebar",

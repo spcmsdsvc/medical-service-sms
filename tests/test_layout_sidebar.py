@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -108,7 +109,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('overflow: hidden;', label)
         self.assertIn('text-overflow: ellipsis;', label)
         self.assertIn("'Reimburse / Liquidation'", self.layout)
-        self.assertIn("'Calibration Center'", self.layout)
+        self.assertIn("'Calibration Center (Admin)'", self.layout)
         self.assertIn('font-size: var(--shell-text-subrow);', subnav)
         self.assertIn('--shell-text-subrow: 0.84rem;', self.shell_css)
 
@@ -820,6 +821,8 @@ class SidebarRenderTests(unittest.TestCase):
         self.assertIn('href="/clients_page"', engineer)
         self.assertNotIn('aria-label="Clients"', engineer)
         self.assertIn('href="/offline-tsr"', engineer)
+        self.assertIn('href="/calibration-center"', engineer)
+        self.assertNotIn('href="/admin/calibration-center"', engineer)
         # Two office permissions: the Office group holds both links.
         both = self._render_dashboard_as(self._make_user(
             'layout_office_both', 'accounting', po_admin_access=True, reimbursement_tracker_access=True))
@@ -830,6 +833,15 @@ class SidebarRenderTests(unittest.TestCase):
         one = self._render_dashboard_as(self._make_user('layout_office_one', 'accounting', po_admin_access=True))
         self.assertIn('href="/po_details"', one)
         self.assertNotIn('aria-label="Office"', one)
+
+    def test_admin_sees_my_calibrations_and_admin_center(self):
+        user_id = self._make_user('layout_calibration_admin', 'engineer')
+        with patch.object(app_module, 'can_access_calibration_center', return_value=True):
+            html = self._render_dashboard_as(user_id)
+        self.assertIn('href="/calibration-center"', html)
+        self.assertIn('href="/admin/calibration-center"', html)
+        self.assertIn('Calibration Center (Admin)', html)
+        self.assertIn('My Calibrations', html)
 
     def test_superadmin_role_without_username_allowlist_gets_no_admin_links(self):
         """The headline divergence this work fixes.

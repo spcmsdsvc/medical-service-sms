@@ -37,6 +37,159 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# My Calibrations — Engineer Calibration Center (3 batches)
+
+**Status:** Executed locally, not yet committed (owner: "execute all in order", 2026-10-13). Awaiting "commit and push".
+**Differences:**
+- Batch 1 step 3: the certificate preview/download routes already allow the requester (`calibration_certificate_requester_can_view`), so no permission question remains.
+- Batch 2 step 4: the cold-tab `fix_url` opens the returned report as-is, so no sessionStorage fallback was needed.
+- The app-wide `a:not(.btn)` link colour overrode the link-buttons. A higher-specificity page rule was added.
+- All three batches were built together, so they use one `CACHE_VERSION` bump (`v318-my-calibrations`) and one release entry instead of one per batch. They can still be one commit, or split by file if wanted.
+- Admin browser check: not done with a real admin login (it needs a superadmin username). It is covered by `test_admin_sees_my_calibrations_and_admin_center`, and the admin page code is unchanged.
+- Known limit: "Due for recalibration" uses only the engineer's own approvals, so a machine since recalibrated by someone else can still show as due.
+**Approved:** 2026-10-13. The owner said "yes, write the plan" after settling the questions below in chat.
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Batches:** 1 = server (failure record + data endpoint + page route), 2 = page + sidebar, 3 = "Due for recalibration" panel. Each batch is one commit and can be published on its own. Batch 2 depends on 1; batch 3 depends on 2.
+
+## Context
+
+The existing Calibration Center (`/admin/calibration-center`, `templates/calibration_center.html`) is an admin tool: it lists **Approved** certificates and lets admins email them to clients and repair reports. Engineers have no single place to see the state of the calibration reports **they** created. Today they only see it one schedule at a time on the Calendar (the red "returned" button) or from notifications.
+
+The intended outcome is a new page, **My Calibrations** (`/calibration-center`), where each engineer sees only their own calibration reports with a clear status. Returned reports with remarks come first, each with a way to fix and resubmit. Submissions that failed to reach the approver are now recorded and shown with a Retry button.
+
+## Decisions taken (owner, 2026-10-13)
+
+1. **The admin Calibration Center is not changed** except for its sidebar label. Routes, template, data and permissions stay as they are.
+2. **It is a separate page**, not a tab on the admin page, so admin-only actions (repair, send email) never need per-button permission checks.
+3. **Own reports only.** No team or manager view. `requester_user_id` / `submitted_by_user_id` must equal `current_user.id`.
+4. **Admins and superadmins see both pages.** Their My Calibrations shows only reports they made themselves, with an empty state when there are none. Managers see My Calibrations like any engineer, and their access to the admin page does not change (it remains `can_access_calibration_center()` = `is_admin_authorized()`).
+5. **Sidebar labels:** "My Calibrations" (new) and "Calibration Center (Admin)" (renamed label only; the URL is unchanged).
+6. **The label stays "Returned"**, not "Rejected".
+7. **"Failed to send" means it failed to reach the approver**, not a client email failure. It covers:
+   a. the submit to approval did not happen (catalog error, missing values, exception during background TSR sync), and
+   b. it was submitted but **no approver is assigned** (today's derived "Awaiting approver assignment").
+8. **Statuses shown** (one per report, in this priority):
+
+| Status | Rule |
+| --- | --- |
+| Returned | latest approval `status == 'Returned'`; show `return_remarks` |
+| Failed to send | no approval (or Returned) **and** a failure marker newer than the last submit/return; **or** `Pending` with no assigned approver |
+| Pending | latest approval `status == 'Pending'` with an approver assigned |
+| Approved | latest approval `status == 'Approved'`, not yet emailed to client (or only one of the two files emailed) |
+| Sent to client | Approved and both report and certificate files have `last_emailed_at` |
+| Draft | TSR saved with a generated calibration report, but no approval and no failure marker |
+
+`Superseded` and non-latest approvals are history and are never listed as rows.
+
+## Investigation
+
+- Admin access: `can_access_calibration_center()` at `app.py:11654` = `is_admin_authorized()` only. Manager and approver flags deliberately do not grant it.
+- Admin page route/data: `app.py:25055` (`calibration_center_page`) and `app.py:25077` (`calibration_center_data`, Approved + `is_latest` only, paginated by 10, `?q=` search and `?delivery=` filter). The row builder is `_calibration_center_record` (ends at `app.py:25045`). It includes `delivery_state` (`sent`/`partial`/`unsent`), report/certificate preview and download URLs, and `unavailable_reason` (e.g. PDF conversion failed), plus admin-only repair fields.
+- Approval model: `CalibrationCertificateApproval` (`app.py:3766`), with `requester_user_id`, `online_tsr_submission_id`, `status` (`Pending`/`Returned`/`Approved`/`Superseded`), `is_latest`, `return_remarks`, `returned_at`, `submitted_at`, `approved_at`.
+- Submission: `OnlineTsrSubmission` (`app.py:3688`), with `submitted_by_user_id`, `status`, `is_latest`, and `payload_json`. The payload already carries server-owned markers such as `_generated_calibration_report` (`app.py:22604`).
+- Submit path: `submit_calibration_certificate_for_submission` (`app.py:25902`). It returns `{'ok': False, 'code', 'message'}` for `catalog_unavailable`, `catalog_validation` and `missing_values`, and **re-raises** other exceptions after rollback.
+  - The route `/api/calibration-certificates/submit/<submission_id>` (`app.py:26105`) returns the error to the browser once. **Nothing is persisted.**
+  - The background TSR-sync callers at `app.py:26675` and `app.py:26783` only `print` the exception. **The engineer never learns it failed.** This is the core "failed to send" gap.
+- No approver assigned: `get_calibration_certificate_status` (`app.py:26145`) derives "Awaiting approver assignment" from `get_assigned_approvers_for_requester(requester_user_id, 'calibration_certificate')`.
+- Requester can already view and download their Approved report: `calibration_report_approval_can_view` (`app.py:24567`) allows `calibration_certificate_requester_can_view(approval)` (`app.py:26078`). **Not verified:** that the certificate preview/download routes (`calibration_certificate_preview`, `calibration_certificate_pdf`) also allow the requester. Batch 1 step 3 checks this.
+- Fix & resubmit target: the Calendar opens a returned report with `/offline-tsr?schedule_id=<shift>&submission_id=<sub>&mode=calibration_report` (`buildCreateTSRPageUrlFromContext`, `templates/timeline.html:20609`). It also stores session context first (`redirectToCreateTSRPage`, `:20647`). `templates/offline_tsr.html:5383` reads `mode=calibration_report` from the URL. **Not verified:** that the URL alone (no sessionStorage context) opens the report. Batch 2 step 4 checks this.
+- Timeline data: `record_universal_approval_audit` (`app.py:8928`) writes `UniversalApprovalAuditTrail` rows (`app.py:1815`) for module `calibration_certificate` (submitted, resubmitted, returned, approved).
+- Recalibration status: `calibration_summary_for_approval` (`app.py:24187`) and `calibration_status_for_summary` (`app.py:24137`) give keys `expired`, `due_today`, `due_1_month`, `due_2_months`, `due_3_months` and `valid`.
+- Sidebar: `templates/layout.html:241-244` (Create TSR, shown when `not is_approver_only_user`), `:273-294` (Clients group with the admin Calibration Center link for `can_access_calibration_center`), and `clients_paths` at `:207`.
+- Existing tests to keep green: `tests/test_calibration_center.py`, `test_calibration_certificate_approval_workflow.py`, `test_calibration_report_returned_fix.py`, `test_calibration_temporary_model.py`, `test_tsr_sync_reliability.py` (patches `submit_calibration_certificate_for_submission`) and `test_layout_sidebar.py`.
+
+## Execution steps
+
+### Batch 1 — Server: failure record, data endpoint, page route
+
+1. **Read first:** the newest `changes.md` section, and `app.py` from `25902` to `26150`.
+2. **Failure marker (no schema change).** Add `record_calibration_submit_failure(submission, code, message)` and `clear_calibration_submit_failure(submission)` near `submit_calibration_certificate_for_submission`.
+   - They write or remove `payload['_calibration_submit_failure'] = {'code', 'message', 'at': get_manila_time().isoformat()}` in `payload_json` and commit.
+   - The message is the user-safe text only, with no exception repr or stack trace. Unknown exceptions are recorded as `code='unexpected'` with "Could not reach the approver. Retry, or contact admin if it keeps failing."
+   - Call `record_…` from the route at `app.py:26124` when `ok` is false, and from the two sync callers at `:26675` and `:26783` both on `ok: False` and inside their `except`. Keep the existing `print` lines.
+   - Call `clear_…` inside `submit_calibration_certificate_for_submission` just before each successful `db.session.commit()` (new submit and resubmit). Do not add it to the duplicate path.
+   - The marker write must never raise into the caller: wrap it in `try/except` with rollback.
+   - Done = a forced failure leaves the marker; a later success removes it; existing return values and HTTP codes are unchanged.
+3. **Status helper.** Add `my_calibration_status(submission, approval)`, which returns `{key, label, reason}` following the table in Decisions 8. The keys are `draft`, `failed`, `pending`, `returned`, `approved` and `sent`. For `failed` because no approver is assigned, the reason is "No approver assigned to you. Contact admin." A failure marker on a `Returned` row only counts when its `at` is later than `approval.returned_at`.
+   - Check the certificate preview/download routes for requester access. If the requester is blocked, **do not widen that permission in this plan**: the row shows the report download only, and a note is added under this plan.
+4. **Routes.**
+   - `GET /calibration-center` → `my_calibrations_page`, rendering `my_calibrations.html` with `no-store`. It needs only `@login_required` and `can_back_up_tsr_drafts()` (the same gate as Create TSR, `app.py:8222`); everyone else is redirected to the dashboard like `offline_tsr_page`.
+   - `GET /calibration-center/data` → `my_calibrations_data`. It loads the latest `OnlineTsrSubmission` rows with `submitted_by_user_id == current_user.id`, `is_latest`, and a `_generated_calibration_report` marker, together with their latest `CalibrationCertificateApproval` (filtered by `requester_user_id == current_user.id`, `is_latest`). Each row has: submission id, shift id, approval id, certificate number, client, equipment, model, serial, TSR number, status `{key, label, reason}`, `return_remarks`, dates (saved, submitted, returned, approved, emailed), download URLs for Approved/Sent only (reuse the URL logic from `_calibration_center_record`, **without** its repair fields), `unavailable_reason`, and `fix_url` (the `/offline-tsr?...&mode=calibration_report` URL).
+   - It supports `?q=` (same fields as `_calibration_center_search_text` minus requester), `?status=` (`all` or one key), and pagination by 10. The `summary` is counts per status key, computed before filtering.
+   - Order: `returned`, then `failed`, then everything else by newest activity.
+   - `GET /calibration-center/<approval_id>/timeline` returns the audit rows for that approval **only if** `approval.requester_user_id == current_user.id` (403 otherwise), plus the two `last_emailed_at` dates.
+   - Done = an engineer gets only their rows; another engineer's approval id gives 403.
+5. **Kept functions:** `submit_calibration_certificate_for_submission`, `submit_calibration_certificate`, `get_calibration_certificate_status`, `calibration_center_page`, `calibration_center_data` and `_calibration_center_record` keep their names, signatures and return shapes.
+
+### Batch 2 — Page and sidebar
+
+1. **Read first:** DESIGN.md, the Impeccable skill (UI change), and `templates/calibration_center.html` for the existing summary-card, toolbar and table patterns (copy the form; do not import its JS).
+2. **Template `templates/my_calibrations.html`** (extends `layout.html`):
+   - A page header "My Calibrations".
+   - A **Needs your action** block listing every `returned` row (remarks + "Fix & resubmit") and every `failed` row (reason + "Retry"; no Retry when the reason is "No approver assigned"). It is hidden when empty.
+   - Status chips with counts: All · Draft · Failed to send · Pending · Returned · Approved · Sent to client.
+   - Search.
+   - The list: a table on desktop and cards at ≤ 768px. Each row has a status pill, the details, and a "Timeline" disclosure that lazy-loads `/calibration-center/<approval_id>/timeline`.
+   - Pagination.
+   - Empty states: "No calibrations created by you yet." for no rows at all, and "No reports with this status." for a filtered result with no rows.
+3. **Retry** POSTs to the existing `/api/calibration-certificates/submit/<submission_id>` (CSRF-exempt today). It shows a busy state while running, then reloads the list and shows the server `message` inline on failure.
+4. **Fix & resubmit** links to `fix_url`. Verify in the browser that it opens the returned report from a cold tab. If it does not, build the link the way `redirectToCreateTSRPage` does (store the context, then navigate) using a small page-local function, and note the change under this plan.
+5. **Dark mode:** page-local `:root[data-app-theme="dark"]` rules for the pills, following the Leave Request Batch 4 form. Done = every text ≥ 4.5:1 in light, graphite and AMOLED.
+6. **Sidebar** (`templates/layout.html`): add `{{ nav_link('/calibration-center', 'fa-certificate', 'My Calibrations') }}` right after Create TSR (same `not is_approver_only_user` block). Change the admin link label at `:290` to "Calibration Center (Admin)". Add a page description for `/calibration-center` next to the `/admin/calibration-center` entry at `:155`. Done = an engineer sees one calibration link and an admin sees both.
+
+### Batch 3 — Due for recalibration
+
+1. In `my_calibrations_data`, add `due_soon`: a list of the engineer's own latest Approved approvals whose `calibration_summary_for_approval(approval)` status key is `expired`, `due_today` or `due_1_month`, de-duplicated per machine (shift equipment / serial), with client, equipment, serial and valid-until. It is computed once per request and not filtered by `?status=`.
+2. In the template, add a compact **Due for recalibration** panel under "Needs your action". It is hidden when empty, read-only, and has no scheduling actions.
+
+## Deliberately excluded
+
+- **Any change to the admin Calibration Center** beyond its sidebar label (owner decision 1).
+- **Engineers emailing clients.** That stays an admin action.
+- **Editing from this page.** Fix & resubmit goes to the existing Create TSR / calibration report form.
+- **Team or manager views** (owner decision 3).
+- **Schema changes.** Failure state lives in the existing `payload_json` marker pattern, so there is no migration.
+- **Widening certificate download permission** if the requester is blocked (Batch 1 step 3). That is a security decision for the owner.
+- **Bulk actions, export, and notifications for failed sends.** Not asked for. The page itself is the signal.
+- **Client-email failures.** "Failed to send" here means failed to reach the approver (owner decision 7).
+
+## Verification
+
+- **Tests:** new `tests/test_my_calibrations.py`.
+  - Batch 1:
+    - The marker is written on `ok: False` and on an exception in the sync caller (patch `submit_calibration_certificate_for_submission` like `test_tsr_sync_reliability.py` does) and cleared on success.
+    - The status for each row in the Decisions 8 table, including Returned + newer failure → failed and Pending + no approver → failed.
+    - `/calibration-center/data` returns only the current user's rows, and an admin gets only their own.
+    - Timeline returns 403 for another user's approval.
+    - Approver-only and non-TSR accounts are redirected from `/calibration-center`.
+    - The kept-functions guard (Batch 1 step 5).
+  - Batch 2: the page renders for an engineer, and the sidebar shows "My Calibrations" for an engineer and both labels for an admin (extend `test_layout_sidebar.py`).
+  - Batch 3: a `due_1_month` approval appears in `due_soon`, and a `valid` one does not.
+  - **Positive control:** run the new tests against `git show HEAD:app.py` / `HEAD:templates/layout.html` copied into the scratchpad (never `git stash`). They fail before the change. The kept-functions guard passes.
+- **Focused run:** `test_my_calibrations`, `test_calibration_center`, `test_calibration_certificate_approval_workflow`, `test_calibration_report_returned_fix`, `test_calibration_temporary_model`, `test_tsr_sync_reliability`, `test_layout_sidebar`, `test_appearance_themes`, `test_dark_mode_readability` and `test_changelog_coverage`.
+- **Full suite** once before publishing Batch 2. It touches `layout.html` (shared shell) and `app.py` submit helpers: `venv/Scripts/python.exe scripts/run_suite.py` from the main project folder.
+- **Browser** (copy of `scheduler.db`, temporary password on a test engineer and an admin on the copy, one record seeded per status):
+  - As the engineer: every chip count matches, Retry on a failed row succeeds and the row moves to Pending, Fix & resubmit opens the report from a cold tab, Timeline loads, and downloads work on Approved.
+  - As the admin: both sidebar links, My Calibrations shows only the admin's own rows (or the empty state), and the admin Calibration Center still loads, filters and opens Send Email.
+  - 375px: cards, no horizontal scroll, tap targets ≥ 44px. Light, graphite and AMOLED contrast. Console clean.
+  - Clean up the DB copy, the test passwords and the `launch.json` entry.
+
+## After implementation
+
+1. Self-review each batch's diff. Confirm every function the admin Calibration Center, Create TSR and Approvals pages call is still defined.
+2. Service worker `CACHE_VERSION` in `app.py` (currently `…-v317-lpr-hidden`) → the next free number per batch, with suffixes `-my-calibrations-server`, `-my-calibrations` and `-my-calibrations-due`. Keep the previous value as a history comment.
+3. `static/changelog/releases.json`: one release for Batch 2, "My Calibrations" (engineers), and one for Batch 3, "Due for recalibration" (engineers). Batch 1 has no visible change, so it gets no release entry unless the changelog coverage test requires one.
+4. Add `changes.md` bullets per batch, and update this Status line with the commits and any differences.
+5. Commit only the touched files plus `plans.md` and `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or `.claude/`.
+
+## Risks
+
+- **Marker write inside a failing transaction:** the exception path has already rolled back, so the marker commit must be a fresh, guarded write, or it could mask the original error. The safety net is the `try/except` in step 2 and the exception-path test.
+- **Data leakage between engineers:** every query filters by `current_user.id`, and the timeline route re-checks ownership. The safety net is the cross-user tests.
+- **Performance:** building rows per submission calls file and storage checks (`_calibration_center_storage_exists`). Limit those to Approved rows on the current page only.
+- **Blast radius:** a new page and route. The shared touches are the sidebar (one link plus one label) and the submit helpers (additive calls only). Rollback = revert the batch commit.
+
 # Leave Request — Batch 4: Dark Mode (pills, danger buttons, selected segment, Form to Follow box, notices)
 
 **Status:** Executed — `5be2ee7` on `main` (2026-10-13; owner: "execute batch 3 then 4", then "commit and push").

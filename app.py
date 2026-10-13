@@ -25132,6 +25132,297 @@ def calibration_center_data():
     })
 
 
+# --- My Calibrations: the engineer's own calibration reports (plans.md) ---
+MY_CALIBRATION_STATUS_LABELS = {
+    'returned': 'Returned',
+    'failed': 'Failed to send',
+    'pending': 'Pending',
+    'approved': 'Approved',
+    'sent': 'Sent to client',
+    'draft': 'Draft',
+}
+MY_CALIBRATION_NO_APPROVER_REASON = 'No approver assigned to you. Contact admin.'
+
+
+def _my_calibration_parse_at(value):
+    """Naive Manila datetime (stored rows are naive; get_manila_time() is UTC-aware +8h)."""
+    if not isinstance(value, datetime):
+        try:
+            value = datetime.fromisoformat(clean_str(value) or '')
+        except (TypeError, ValueError):
+            return None
+    return value.replace(tzinfo=None)
+
+
+def _my_calibration_iso(value):
+    return value.isoformat() if isinstance(value, datetime) else ''
+
+
+def _my_calibration_sent(approval):
+    """Both approved files emailed to the client (no storage checks)."""
+    try:
+        report_file = calibration_certificate_generated_report_file(approval)
+    except Exception:
+        report_file = None
+    signed_id = clean_int(getattr(approval, 'signed_shift_file_id', None))
+    certificate_file = db.session.get(ShiftFile, signed_id) if signed_id else None
+    return bool(
+        getattr(report_file, 'last_emailed_at', None) and
+        getattr(certificate_file, 'last_emailed_at', None)
+    )
+
+
+def my_calibration_status(submission, approval, has_approver=True):
+    """Return {key, label, reason} for one engineer report (plans.md Decisions 8)."""
+    failure = parse_online_tsr_payload_json(submission).get(CALIBRATION_SUBMIT_FAILURE_MARKER)
+    failure = failure if isinstance(failure, dict) else None
+    failure_at = _my_calibration_parse_at(failure.get('at')) if failure else None
+    failure_reason = (clean_str(failure.get('message')) or CALIBRATION_SUBMIT_FAILURE_UNEXPECTED) if failure else ''
+    status = clean_str(getattr(approval, 'status', None)) if approval else ''
+    if not (approval and bool(getattr(approval, 'is_latest', False))) or status not in {'Pending', 'Returned', 'Approved'}:
+        approval = None
+    key, reason = 'draft', ''
+    if approval is None:
+        if failure:
+            key, reason = 'failed', failure_reason
+    elif status == 'Returned':
+        returned_at = _my_calibration_parse_at(getattr(approval, 'returned_at', None))
+        if failure_at and (not returned_at or failure_at > returned_at):
+            key, reason = 'failed', failure_reason
+        else:
+            key, reason = 'returned', clean_str(getattr(approval, 'return_remarks', None)) or ''
+    elif status == 'Pending':
+        key, reason = ('pending', '') if has_approver else ('failed', MY_CALIBRATION_NO_APPROVER_REASON)
+    else:
+        key = 'sent' if _my_calibration_sent(approval) else 'approved'
+    return {'key': key, 'label': MY_CALIBRATION_STATUS_LABELS[key], 'reason': reason}
+
+
+def _my_calibration_rows(user):
+    """Every latest calibration report the user created, with its approval."""
+    ensure_online_tsr_submission_table()
+    ensure_calibration_certificate_approval_table()
+    submissions = (
+        OnlineTsrSubmission.query
+        .filter(
+            OnlineTsrSubmission.submitted_by_user_id == user.id,
+            OnlineTsrSubmission.is_latest.is_(True),
+            OnlineTsrSubmission.payload_json.like('%_generated_calibration_report%'),
+        )
+        .order_by(OnlineTsrSubmission.id.desc())
+        .all()
+    )
+    submissions = [
+        item for item in submissions
+        if isinstance(parse_online_tsr_payload_json(item).get('_generated_calibration_report'), dict)
+    ]
+    approvals = {}
+    if submissions:
+        for approval in (
+            CalibrationCertificateApproval.query
+            .filter(
+                CalibrationCertificateApproval.requester_user_id == user.id,
+                CalibrationCertificateApproval.online_tsr_submission_id.in_([item.id for item in submissions]),
+            )
+            .order_by(CalibrationCertificateApproval.id.asc())
+            .all()
+        ):
+            approvals[approval.online_tsr_submission_id] = approval
+    has_approver = bool(get_assigned_approvers_for_requester(user.id, 'calibration_certificate'))
+    rows = []
+    for submission in submissions:
+        approval = approvals.get(submission.id)
+        try:
+            mapped = json.loads(approval.mapped_data_json or '{}') if approval else {}
+        except (TypeError, ValueError):
+            mapped = {}
+        mapped = mapped if isinstance(mapped, dict) else {}
+        status = my_calibration_status(submission, approval, has_approver=has_approver)
+        live_approval = approval if (
+            approval is not None and bool(approval.is_latest)
+            and clean_str(approval.status) in {'Pending', 'Returned', 'Approved'}
+        ) else None
+        dates = [
+            submission.created_at,
+            getattr(live_approval, 'submitted_at', None),
+            getattr(live_approval, 'returned_at', None),
+            getattr(live_approval, 'approved_at', None),
+        ]
+        last_activity = max([_my_calibration_parse_at(item) for item in dates if isinstance(item, datetime)], default=None)
+        rows.append({
+            'submission_id': submission.id,
+            'shift_id': submission.shift_id,
+            'approval_id': live_approval.id if live_approval else None,
+            'certificate_number': (live_approval.certificate_number if live_approval else '') or '',
+            'client_name': mapped.get('Text6', '') or submission.client_name or '',
+            'equipment': mapped.get('Text1', '') or submission.product_name or '',
+            'model': mapped.get('Text2', '') or '',
+            'serial_number': mapped.get('Text3', '') or submission.serial_number or '',
+            'tsr_number': mapped.get('Textfield-0', '') or submission.tsr_number or '',
+            'status': status,
+            'saved_at': _my_calibration_iso(submission.created_at),
+            'submitted_at': _my_calibration_iso(getattr(live_approval, 'submitted_at', None)),
+            'returned_at': _my_calibration_iso(getattr(live_approval, 'returned_at', None)),
+            'approved_at': _my_calibration_iso(getattr(live_approval, 'approved_at', None)),
+            'last_activity_at': _my_calibration_iso(last_activity),
+            'fix_url': url_for(
+                'offline_tsr_page',
+                schedule_id=submission.shift_id,
+                submission_id=submission.id,
+                mode='calibration_report',
+            ),
+            '_approval': live_approval,
+        })
+    priority = {'returned': 0, 'failed': 1}
+    rows.sort(key=lambda row: row['last_activity_at'], reverse=True)
+    rows.sort(key=lambda row: priority.get(row['status']['key'], 2))
+    return rows
+
+
+def _my_calibration_search_text(row):
+    return ' '.join(str(row.get(key) or '') for key in (
+        'certificate_number', 'client_name', 'equipment', 'model', 'serial_number', 'tsr_number',
+    )).casefold()
+
+
+@app.route('/calibration-center')
+@login_required
+def my_calibrations_page():
+    if not can_back_up_tsr_drafts():
+        return redirect(url_for('dashboard_page'))
+    response = make_response(render_template(
+        'my_calibrations.html',
+        no_approver_reason=MY_CALIBRATION_NO_APPROVER_REASON,
+    ))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return response
+
+
+@app.route('/calibration-center/data')
+@login_required
+def my_calibrations_data():
+    if not can_back_up_tsr_drafts():
+        return denied('Calibration reports are only available to engineers.')
+    rows = _my_calibration_rows(current_user)
+    summary = {key: 0 for key in MY_CALIBRATION_STATUS_LABELS}
+    for row in rows:
+        summary[row['status']['key']] += 1
+    summary['all'] = len(rows)
+    needs_action = [row for row in rows if row['status']['key'] in {'returned', 'failed'}]
+    # Due for recalibration: newest own approved calibration per machine.
+    newest_per_machine = {}
+    for row in rows:
+        if row['status']['key'] not in {'approved', 'sent'}:
+            continue
+        calibration = calibration_summary_for_approval(row['_approval'], include_urls=False)
+        machine = (row['serial_number'] or f"shift-{row['shift_id']}").casefold()
+        kept = newest_per_machine.get(machine)
+        if kept is None or calibration['calibration_date'] > kept[1]['calibration_date']:
+            newest_per_machine[machine] = (row, calibration)
+    due_soon = sorted(
+        (
+            {
+                'client_name': row['client_name'],
+                'equipment': row['equipment'],
+                'serial_number': row['serial_number'],
+                'valid_until': calibration['valid_until'],
+                'status_key': calibration['status_key'],
+                'status_label': calibration['status'],
+            }
+            for row, calibration in newest_per_machine.values()
+            if calibration['status_key'] in {'expired', 'due_today', 'due_1_month'}
+        ),
+        key=lambda item: item['valid_until'],
+    )
+    search = (clean_str(request.args.get('q')) or '').strip().casefold()
+    if search:
+        rows = [row for row in rows if search in _my_calibration_search_text(row)]
+    status_filter = (clean_str(request.args.get('status')) or 'all').strip().lower()
+    if status_filter not in MY_CALIBRATION_STATUS_LABELS:
+        status_filter = 'all'
+    if status_filter != 'all':
+        rows = [row for row in rows if row['status']['key'] == status_filter]
+    try:
+        page = max(int(request.args.get('page') or 1), 1)
+    except (TypeError, ValueError):
+        page = 1
+    per_page = 10
+    total = len(rows)
+    pages = max(1, (total + per_page - 1) // per_page) if total else 0
+    page = min(page, pages) if pages else 1
+    page_rows = rows[(page - 1) * per_page:page * per_page]
+    for row in page_rows:
+        approval = row['_approval']
+        row.update({
+            'report_preview_url': '', 'report_download_url': '',
+            'certificate_preview_url': '', 'certificate_download_url': '',
+            'report_last_emailed_at': '', 'certificate_last_emailed_at': '',
+            'unavailable_reason': '',
+        })
+        if approval is not None and row['status']['key'] in {'approved', 'sent'}:
+            record = _calibration_center_record(approval)
+            for key in (
+                'report_preview_url', 'report_download_url', 'certificate_preview_url',
+                'certificate_download_url', 'report_last_emailed_at',
+                'certificate_last_emailed_at', 'unavailable_reason',
+            ):
+                row[key] = record.get(key) or ''
+
+    def public(row):
+        return {key: value for key, value in row.items() if not key.startswith('_')}
+
+    return no_store_jsonify({
+        'status': 'success',
+        'records': [public(row) for row in page_rows],
+        'needs_action': [public(row) for row in needs_action],
+        'due_soon': due_soon,
+        'page': page,
+        'per_page': per_page,
+        'total': total,
+        'pages': pages,
+        'summary': summary,
+        'status_filter': status_filter,
+    })
+
+
+@app.route('/calibration-center/<int:approval_id>/timeline')
+@login_required
+def my_calibration_timeline(approval_id):
+    ensure_calibration_certificate_approval_table()
+    approval = db.session.get(CalibrationCertificateApproval, approval_id)
+    if not approval or approval.requester_user_id != getattr(current_user, 'id', None):
+        return denied('You can only view the timeline of your own calibration reports.')
+    ensure_universal_approval_audit_table()
+    events = (
+        UniversalApprovalAuditTrail.query
+        .filter_by(module='calibration_certificate', record_id=approval.id)
+        .order_by(UniversalApprovalAuditTrail.created_at.asc(), UniversalApprovalAuditTrail.id.asc())
+        .all()
+    )
+    try:
+        report_file = calibration_certificate_generated_report_file(approval)
+    except Exception:
+        report_file = None
+    signed_id = clean_int(approval.signed_shift_file_id)
+    certificate_file = db.session.get(ShiftFile, signed_id) if signed_id else None
+    return no_store_jsonify({
+        'status': 'success',
+        'events': [
+            {
+                'action': event.action or '',
+                'status_from': event.status_from or '',
+                'status_to': event.status_to or '',
+                'remarks': event.remarks or '',
+                'actor': event.actor_display_name or event.actor_username or '',
+                'at': _my_calibration_iso(event.created_at),
+            }
+            for event in events
+        ],
+        'report_last_emailed_at': _calibration_center_file_timestamp(report_file),
+        'certificate_last_emailed_at': _calibration_center_file_timestamp(certificate_file),
+    })
+
+
 def _calibration_repair_registry_candidate(repair_key, candidate_id):
     """Resolve one record's candidate from its own source file, without scanning the others."""
     key = clean_str(repair_key) or ''
@@ -25899,6 +26190,45 @@ def calibration_certificate_mapped_snapshot(raw_snapshot):
     return {name: snapshot[name] for name in CALIBRATION_CERTIFICATE_FIELDS}
 
 
+CALIBRATION_SUBMIT_FAILURE_MARKER = '_calibration_submit_failure'
+CALIBRATION_SUBMIT_FAILURE_UNEXPECTED = 'Could not reach the approver. Retry, or contact admin if it keeps failing.'
+
+
+def record_calibration_submit_failure(submission, code, message=''):
+    """Remember that this TSR's report did not reach the approver (My Calibrations).
+
+    Never raises: the caller is already handling the original failure."""
+    if not submission:
+        return
+    code = clean_str(code) or 'unexpected'
+    if code == 'missing_values':
+        message = f'Missing values: {clean_str(message)}' if clean_str(message) else 'Some report values are missing.'
+    elif code in {'catalog_validation'} and clean_str(message):
+        message = clean_str(message)
+    else:
+        message = CALIBRATION_SUBMIT_FAILURE_UNEXPECTED
+    try:
+        payload = parse_online_tsr_payload_json(submission)
+        payload[CALIBRATION_SUBMIT_FAILURE_MARKER] = {
+            'code': code,
+            'message': message[:500],
+            'at': get_manila_time().isoformat(),
+        }
+        submission.payload_json = json.dumps(payload, ensure_ascii=False)
+        db.session.commit()
+    except Exception as marker_error:
+        db.session.rollback()
+        print(f'[CalibrationCertificate] Could not record submit failure for TSR {getattr(submission, "id", None)}: {marker_error}', flush=True)
+
+
+def clear_calibration_submit_failure(submission):
+    """Drop the failure marker inside the caller's transaction (no commit)."""
+    payload = parse_online_tsr_payload_json(submission)
+    if CALIBRATION_SUBMIT_FAILURE_MARKER in payload:
+        payload.pop(CALIBRATION_SUBMIT_FAILURE_MARKER, None)
+        submission.payload_json = json.dumps(payload, ensure_ascii=False)
+
+
 def submit_calibration_certificate_for_submission(submission):
     """Create one queued certificate request after TSR/DOCX persistence."""
     ensure_calibration_certificate_approval_table()
@@ -25999,6 +26329,7 @@ def submit_calibration_certificate_for_submission(submission):
             for approver_user in approvers:
                 create_system_notification(approver_user.id, 'Calibration Report & Certificate resubmitted', f'{approval.certificate_number} was corrected and is ready for report and certificate review.', module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': model_resolution['source']})
             db.session.add(ActivityLog(user=clean_str(getattr(submission, 'submitted_by_name', None)) or 'System', action=f'Resubmitted corrected Calibration Report & Certificate {approval.certificate_number}'))
+            clear_calibration_submit_failure(submission)
             db.session.commit()
             return {'ok': True, 'duplicate': False, 'resubmitted': True, 'approval': approval}
         for older in CalibrationCertificateApproval.query.filter_by(shift_id=shift.id, is_latest=True).all():
@@ -26054,6 +26385,7 @@ def submit_calibration_certificate_for_submission(submission):
             create_system_notification(approver_user.id, approval_subject, approval_message, module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': approval.model_source})
         if requester:
             create_system_notification(requester.id, 'Calibration Report & Certificate submitted', requester_message, module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': approval.model_source})
+        clear_calibration_submit_failure(submission)
         db.session.commit()
         return {'ok': True, 'duplicate': False, 'approval': approval}
     except IntegrityError:
@@ -26121,8 +26453,13 @@ def submit_calibration_certificate(submission_id):
     generated = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
     if not isinstance(generated, dict) or not clean_int(generated.get('file_id')):
         return jsonify({'success': False, 'status': 'error', 'code': 'report_not_uploaded', 'message': 'Upload the finalized Calibration Report before submitting its certificate.', 'retryable': True}), 409
-    result = submit_calibration_certificate_for_submission(submission)
+    try:
+        result = submit_calibration_certificate_for_submission(submission)
+    except Exception:
+        record_calibration_submit_failure(submission, 'unexpected')
+        raise
     if not result.get('ok'):
+        record_calibration_submit_failure(submission, result.get('code'), result.get('message'))
         return jsonify({'success': False, 'status': 'error', 'code': result.get('code'), 'message': result.get('message'), 'missing': result.get('missing') or [], 'retryable': True}), 400
     approval = result['approval']
     return jsonify({'success': True, 'status': 'success', 'duplicate': bool(result.get('duplicate')), 'approval': calibration_certificate_approval_to_dict(approval)})
@@ -26673,8 +27010,11 @@ def upload_online_tsr_attachment(submission_id):
                 print(f'[CalibrationReport] Conversion scheduling skipped for source {existing_file.id}: {conversion_schedule_error}', flush=True)
             try:
                 certificate_result = submit_calibration_certificate_for_submission(submission)
+                if not certificate_result.get('ok'):
+                    record_calibration_submit_failure(submission, certificate_result.get('code'), certificate_result.get('message'))
             except Exception as certificate_error:
                 print(f'[CalibrationCertificate] Submission retry failed for TSR {submission.id}: {certificate_error}', flush=True)
+                record_calibration_submit_failure(submission, 'unexpected')
         return jsonify({
             'status': 'success',
             'success': True,
@@ -26781,8 +27121,11 @@ def upload_online_tsr_attachment(submission_id):
         if attachment_source == 'generated_calibration_report':
             try:
                 certificate_result = submit_calibration_certificate_for_submission(submission)
+                if not certificate_result.get('ok'):
+                    record_calibration_submit_failure(submission, certificate_result.get('code'), certificate_result.get('message'))
             except Exception as certificate_error:
                 print(f'[CalibrationCertificate] Submission failed after TSR {submission.id} remained saved: {certificate_error}', flush=True)
+                record_calibration_submit_failure(submission, 'unexpected')
                 certificate_result = {'ok': False, 'code': 'retryable_submission_failure', 'message': 'Certificate submission can be retried.'}
         return jsonify({
             'status': 'success',
@@ -27403,7 +27746,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v314-leave-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v315-leave-design.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v316-leave-dark.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v317-lpr-hidden';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v317-lpr-hidden.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v318-my-calibrations';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

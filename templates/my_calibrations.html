@@ -1,0 +1,214 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=17">
+<style>
+    .mycal-page{padding:0 0 28px;color:var(--app-text)}
+    .mycal-card{background:var(--app-surface);border:1px solid transparent;border-radius:10px;padding:18px;margin-bottom:16px;box-shadow:0 4px 6px rgba(0,0,0,.05)}
+    .mycal-title{margin:0 0 4px;font-size:1.05rem;font-weight:600}.mycal-muted{color:var(--app-muted-text);font-weight:400;font-size:.88rem}
+    .mycal-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+    .mycal-chip{min-height:44px;border:1px solid var(--app-border);border-radius:999px;padding:6px 14px;background:var(--app-surface);color:var(--app-text);font-weight:600;font-size:.86rem;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+    .mycal-chip .count{font-variant-numeric:tabular-nums;color:var(--app-muted-text);font-weight:600}
+    .mycal-chip[aria-pressed="true"]{border-color:var(--app-primary);box-shadow:inset 0 0 0 1px var(--app-primary);color:var(--app-primary-text)}
+    .mycal-chip:focus-visible,.mycal-btn:focus-visible,.mycal-search:focus-visible,.mycal-timeline summary:focus-visible{outline:none;border-color:var(--app-primary);box-shadow:0 0 0 .25rem var(--app-focus)}
+    .mycal-search{width:100%;max-width:420px;min-height:44px;border:1px solid var(--app-border);border-radius:6px;padding:10px 11px;background:var(--app-input-bg);color:var(--app-text);margin-bottom:14px}
+    .mycal-list{display:grid;gap:9px}
+    .mycal-item{border:1px solid var(--app-border);border-radius:10px;padding:12px;background:var(--app-surface-muted);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 14px;align-items:start}
+    .mycal-item strong{font-weight:600}.mycal-meta{font-size:.83rem;color:var(--app-muted-text);margin-top:3px}
+    .mycal-reason{grid-column:1/-1;font-size:.88rem;border-left:3px solid var(--app-border);padding:4px 0 4px 10px}
+    .mycal-reason.returned{border-left-color:#a1121f}.mycal-reason.failed{border-left-color:#b45309}
+    .mycal-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .mycal-btn{border:1px solid var(--app-border);border-radius:6px;min-height:44px;padding:9px 13px;font-weight:600;font-size:.88rem;display:inline-flex;align-items:center;gap:7px;background:var(--app-surface);color:var(--app-text);text-decoration:none;cursor:pointer}
+    .mycal-btn:hover{background:var(--app-surface-raised);color:var(--app-text)}.mycal-btn:disabled{opacity:.48;cursor:not-allowed}
+    .mycal-btn-primary{background:var(--app-primary);border-color:var(--app-primary);color:#fff}.mycal-btn-primary:hover{background:color-mix(in srgb,var(--app-primary) 84%,#000);color:#fff}
+    /* Beats the app-wide `a:not(.btn)` link colour for the link-buttons. */
+    .mycal-page .mycal-actions .mycal-btn{color:var(--app-text)}.mycal-page .mycal-actions .mycal-btn-primary,.mycal-page .mycal-actions .mycal-btn-primary:hover{color:#fff}
+    .mycal-status{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:.75rem;font-weight:600;background:#e8eef5;color:#334155;margin-right:6px}
+    .mycal-status.returned{background:#fde8ea;color:#a1121f}.mycal-status.failed{background:#fff2c7;color:#7a5100}.mycal-status.pending{background:#e0f2fe;color:#075985}.mycal-status.approved{background:#d7f7e5;color:#11623e}.mycal-status.sent{background:#ccfbf1;color:#115e59}
+    .mycal-timeline{grid-column:1/-1;font-size:.86rem}.mycal-timeline summary{cursor:pointer;color:var(--app-primary-text);font-weight:600;min-height:32px;display:inline-flex;align-items:center;border-radius:6px}
+    .mycal-timeline ol{margin:8px 0 0;padding-left:20px}.mycal-timeline li{margin-bottom:4px}
+    .mycal-pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:14px}
+    .mycal-empty{padding:18px;text-align:center;color:var(--app-muted-text)}
+    .mycal-error{color:#a1121f;font-size:.86rem;grid-column:1/-1}
+    :root[data-app-theme="dark"] .mycal-card{border-color:var(--app-border)}
+    :root[data-app-theme="dark"] .mycal-reason.returned{border-left-color:#f87171}:root[data-app-theme="dark"] .mycal-reason.failed{border-left-color:#f59e0b}
+    :root[data-app-theme="dark"] .mycal-status{background:rgba(148,163,184,.16);color:#e2e8f0}
+    :root[data-app-theme="dark"] .mycal-status.returned{background:rgba(220,38,38,.16);color:#fecaca}:root[data-app-theme="dark"] .mycal-status.failed{background:rgba(217,119,6,.16);color:#fde68a}:root[data-app-theme="dark"] .mycal-status.pending{background:rgba(14,165,233,.16);color:#bae6fd}:root[data-app-theme="dark"] .mycal-status.approved{background:rgba(22,163,74,.16);color:#bbf7d0}:root[data-app-theme="dark"] .mycal-status.sent{background:rgba(20,184,166,.16);color:#99f6e4}
+    :root[data-app-theme="dark"] .mycal-error{color:#fca5a5}
+    @media(max-width:768px){.mycal-card{border-radius:16px;padding:14px}.mycal-item{grid-template-columns:minmax(0,1fr)}.mycal-actions{justify-content:stretch}.mycal-actions .mycal-btn{flex:1 1 140px;justify-content:center}.mycal-search{max-width:none}.mycal-timeline summary{min-height:44px}}
+</style>
+
+<div class="mycal-page">
+    <header class="dash-page-header">
+        <div>
+            <h1 class="dash-page-h1">My Calibrations</h1>
+            <p class="dash-page-sub">The calibration reports you created and where each one is.</p>
+        </div>
+    </header>
+
+    <section id="mycalActionCard" class="mycal-card mycal-action" hidden>
+        <h2 class="mycal-title">Needs your action</h2>
+        <p class="mycal-muted mb-3">Returned reports and reports that did not reach the approver.</p>
+        <div id="mycalActionList" class="mycal-list"></div>
+    </section>
+
+    <section id="mycalDueCard" class="mycal-card mycal-due" hidden>
+        <h2 class="mycal-title">Due for recalibration</h2>
+        <p class="mycal-muted mb-3">Machines you calibrated whose calibration expires within a month or has expired.</p>
+        <div id="mycalDueList" class="mycal-list"></div>
+    </section>
+
+    <section class="mycal-card">
+        <div id="mycalChips" class="mycal-chips" role="group" aria-label="Filter by status"></div>
+        <label for="mycalSearch" class="visually-hidden">Search</label>
+        <input id="mycalSearch" class="mycal-search" type="search" placeholder="Search client, equipment, serial, TSR or certificate no." autocomplete="off">
+        <div id="mycalList" class="mycal-list" aria-live="polite"><div class="mycal-empty">Loading…</div></div>
+        <div id="mycalPager" class="mycal-pager"></div>
+    </section>
+</div>
+
+<script>
+(function(){
+    const STATUSES = [['all','All'],['draft','Draft'],['failed','Failed to send'],['pending','Pending'],['returned','Returned'],['approved','Approved'],['sent','Sent to client']];
+    const state = {status:'all', q:'', page:1};
+    let searchTimer = null;
+
+    function esc(value){
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+    function when(iso){
+        if(!iso) return '';
+        const date = new Date(iso);
+        return isNaN(date) ? iso : date.toLocaleString('en-PH', {dateStyle:'medium', timeStyle:'short'});
+    }
+    function canRetry(row){
+        return row.status.key === 'failed' && row.status.reason !== {{ no_approver_reason|tojson }};
+    }
+
+    function rowHtml(row){
+        const key = row.status.key;
+        const title = [row.client_name, row.equipment].filter(Boolean).join(' · ') || 'Calibration report';
+        const refs = [
+            row.tsr_number ? `TSR <span class="logbook-ref">${esc(row.tsr_number)}</span>` : '',
+            row.certificate_number ? `Cert <span class="logbook-ref">${esc(row.certificate_number)}</span>` : '',
+            row.serial_number ? `S/N <span class="logbook-ref">${esc(row.serial_number)}</span>` : '',
+        ].filter(Boolean).join(' · ');
+        const actions = [];
+        if(canRetry(row)) actions.push(`<button type="button" class="mycal-btn mycal-btn-primary" data-retry="${row.submission_id}"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Retry</button>`);
+        if(key === 'returned') actions.push(`<a class="mycal-btn mycal-btn-primary" href="${esc(row.fix_url)}"><i class="fa-solid fa-pen" aria-hidden="true"></i>Fix &amp; resubmit</a>`);
+        else if(key === 'draft' || key === 'failed') actions.push(`<a class="mycal-btn" href="${esc(row.fix_url)}"><i class="fa-solid fa-file-pen" aria-hidden="true"></i>Open report</a>`);
+        if(row.report_download_url) actions.push(`<a class="mycal-btn" href="${esc(row.report_download_url)}"><i class="fa-solid fa-download" aria-hidden="true"></i>Report</a>`);
+        if(row.certificate_download_url) actions.push(`<a class="mycal-btn" href="${esc(row.certificate_download_url)}"><i class="fa-solid fa-download" aria-hidden="true"></i>Certificate</a>`);
+        const reason = row.status.reason ? `<div class="mycal-reason ${esc(key)}">${key === 'returned' ? '<strong>Approver remarks:</strong> ' : ''}${esc(row.status.reason)}</div>` : '';
+        const unavailable = row.unavailable_reason ? `<div class="mycal-meta" style="grid-column:1/-1">${esc(row.unavailable_reason)}</div>` : '';
+        const timeline = row.approval_id ? `<details class="mycal-timeline" data-approval="${row.approval_id}"><summary>Timeline</summary><div class="mycal-muted">Loading…</div></details>` : '';
+        return `<article class="mycal-item">
+            <div><span class="mycal-status ${esc(key)}">${esc(row.status.label)}</span><strong>${esc(title)}</strong>
+                <div class="mycal-meta">${refs}${refs ? ' · ' : ''}Last update ${esc(when(row.last_activity_at))}</div></div>
+            <div class="mycal-actions">${actions.join('')}</div>
+            ${reason}${unavailable}${timeline}
+            <div class="mycal-error" hidden></div>
+        </article>`;
+    }
+
+    function dueHtml(item){
+        return `<article class="mycal-item"><div><span class="mycal-status ${item.status_key === 'expired' ? 'returned' : 'failed'}">${esc(item.status_label)}</span><strong>${esc([item.client_name, item.equipment].filter(Boolean).join(' · '))}</strong>
+            <div class="mycal-meta">${item.serial_number ? `S/N <span class="logbook-ref">${esc(item.serial_number)}</span> · ` : ''}Valid until ${esc(item.valid_until || '—')}</div></div></article>`;
+    }
+
+    function renderChips(summary){
+        document.getElementById('mycalChips').innerHTML = STATUSES.map(([key, label]) =>
+            `<button type="button" class="mycal-chip" data-status="${key}" aria-pressed="${state.status === key}">${label}<span class="count">${summary[key] ?? 0}</span></button>`
+        ).join('');
+    }
+
+    function renderPager(data){
+        const pager = document.getElementById('mycalPager');
+        if(!data.pages || data.pages < 2){ pager.innerHTML = ''; return; }
+        pager.innerHTML = `<button type="button" class="mycal-btn" data-page="${data.page - 1}" ${data.page <= 1 ? 'disabled' : ''}>Previous</button>
+            <span class="mycal-muted">Page ${data.page} of ${data.pages}</span>
+            <button type="button" class="mycal-btn" data-page="${data.page + 1}" ${data.page >= data.pages ? 'disabled' : ''}>Next</button>`;
+    }
+
+    async function load(){
+        const list = document.getElementById('mycalList');
+        const params = new URLSearchParams({status: state.status, q: state.q, page: state.page});
+        let data;
+        try{
+            const response = await fetch(`/calibration-center/data?${params}`, {credentials:'same-origin', headers:{'Accept':'application/json'}});
+            data = await response.json();
+            if(!response.ok || data.status !== 'success') throw new Error(data.message || 'Could not load your calibrations.');
+        }catch(error){
+            list.innerHTML = `<div class="mycal-empty">${esc(error.message || 'Could not load your calibrations.')} <button type="button" class="mycal-btn" data-reload>Try again</button></div>`;
+            return;
+        }
+        renderChips(data.summary);
+        const action = document.getElementById('mycalActionCard');
+        action.hidden = !data.needs_action.length;
+        document.getElementById('mycalActionList').innerHTML = data.needs_action.map(rowHtml).join('');
+        const due = document.getElementById('mycalDueCard');
+        const dueSoon = data.due_soon || [];
+        due.hidden = !dueSoon.length;
+        document.getElementById('mycalDueList').innerHTML = dueSoon.map(dueHtml).join('');
+        list.innerHTML = data.records.length ? data.records.map(rowHtml).join('') : `<div class="mycal-empty">${
+            data.summary.all ? 'No reports with this status.' : 'No calibrations created by you yet.'}</div>`;
+        renderPager(data);
+    }
+
+    async function retry(button){
+        const item = button.closest('.mycal-item');
+        const errorBox = item.querySelector('.mycal-error');
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        errorBox.hidden = true;
+        try{
+            const response = await fetch(`/api/calibration-certificates/submit/${button.dataset.retry}`, {method:'POST', credentials:'same-origin', headers:{'Accept':'application/json'}});
+            const data = await response.json().catch(() => ({}));
+            if(!response.ok || data.success === false) throw new Error(data.message || 'Could not reach the approver. Try again.');
+            await load();
+        }catch(error){
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+        }
+    }
+
+    async function loadTimeline(details){
+        if(details.dataset.loaded) return;
+        details.dataset.loaded = '1';
+        const box = details.querySelector('div');
+        try{
+            const response = await fetch(`/calibration-center/${details.dataset.approval}/timeline`, {credentials:'same-origin', headers:{'Accept':'application/json'}});
+            const data = await response.json();
+            if(!response.ok || data.status !== 'success') throw new Error(data.message || 'Timeline unavailable.');
+            const steps = data.events.map(event => `<li>${esc(when(event.at))}: ${esc(event.action)}${event.status_to ? ` → ${esc(event.status_to)}` : ''}${event.actor ? ` (${esc(event.actor)})` : ''}${event.remarks ? ` · ${esc(event.remarks)}` : ''}</li>`);
+            if(data.report_last_emailed_at) steps.push(`<li>${esc(when(data.report_last_emailed_at))}: report emailed to client</li>`);
+            if(data.certificate_last_emailed_at) steps.push(`<li>${esc(when(data.certificate_last_emailed_at))}: certificate emailed to client</li>`);
+            box.outerHTML = steps.length ? `<ol>${steps.join('')}</ol>` : '<div class="mycal-muted">No history recorded yet.</div>';
+        }catch(error){
+            delete details.dataset.loaded;
+            box.textContent = error.message;
+        }
+    }
+
+    document.addEventListener('click', event => {
+        const chip = event.target.closest('.mycal-chip');
+        if(chip){ state.status = chip.dataset.status; state.page = 1; load(); return; }
+        const pageBtn = event.target.closest('[data-page]');
+        if(pageBtn && !pageBtn.disabled){ state.page = Number(pageBtn.dataset.page) || 1; load(); return; }
+        const retryBtn = event.target.closest('[data-retry]');
+        if(retryBtn && !retryBtn.disabled){ retry(retryBtn); return; }
+        if(event.target.closest('[data-reload]')) load();
+    });
+    document.addEventListener('toggle', event => {
+        if(event.target.matches && event.target.matches('.mycal-timeline') && event.target.open) loadTimeline(event.target);
+    }, true);
+    document.getElementById('mycalSearch').addEventListener('input', event => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => { state.q = event.target.value.trim(); state.page = 1; load(); }, 250);
+    });
+    load();
+})();
+</script>
+{% endblock %}
