@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-lpr-hidden",
+      "release_date": "2026-10-13",
+      "title": "LPR Hidden from the Sidebar",
+      "summary": "The LPR link is hidden while LPR is not in use.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-lpr-hidden-sidebar",
+          "category": "Sidebar",
+          "description": "LPR no longer shows under Forms in the sidebar.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-leave-dark",
       "release_date": "2026-10-13",
       "title": "Leave Request in Dark Mode",

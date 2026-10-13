@@ -266,7 +266,7 @@
                     {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
                     {{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}
                     {{ nav_link('/leave_request', 'fa-calendar-check', 'Leave Request') }}
-                    {% if lpr_enabled %}{{ nav_link('/lpr', 'fa-file-invoice', 'LPR') }}{% endif %}
+                    {#- LPR link hidden from the sidebar for everyone until LPR is in use (2026-10-13). -#}
                 </div>
             {% endif %}
 
