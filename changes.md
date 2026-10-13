@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-13
 
+- Added `.claude/skills/page-scan/SKILL.md` to git (previously untracked, local only) on the owner's request, so the page-scan skill is backed up with the project alongside page-design-scan. Only that file; the rest of `.claude/` stays untracked.
+
 - Added `.claude/skills/page-design-scan/SKILL.md` to git (previously untracked, local only) on the owner's request, so the design-scan skill and its new Request pages consistency check are backed up with the project. Only that file; the rest of `.claude/` (including `launch.json`) stays untracked.
 
 - Executed **Request Pages — Uniform Header, New Request Button and Page Width** (`plans.md`) on the owner's "execute"; published to `main` as `ae3e2e0` on "commit and push" (Railway deployment building; full suite rerun after the dark fix, 1930 tests, no new failures). No used function, handler or element id renamed or removed.
