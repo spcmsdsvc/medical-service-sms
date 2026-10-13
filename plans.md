@@ -39,7 +39,9 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Reimbursement — Batch 4: Design System + Worksheet Above the Fold (weights, radii, sizes, shadows, collapsed date card)
 
-**Status:** Approved — awaiting go-ahead
+**Status:** Executed locally 2026-10-13 (owner: "execute batch 4"); awaiting "commit and push". Tests: 6 added (5 fail on `HEAD`, guard passes); focused run 264 OK. Browser check on a DB copy passed except the fold target below.
+**Measured outcome (steps 5–6):** at 1366×768 the first Draft row moved from y≈962 to 726 with the collapsed card (58px) and the Draft reason hidden; the dock is at 692, so a Draft is still 34px short. A Submitted record's first row is at 689 (above the dock). The remaining height is the worksheet top bar, summary, Manual Adjustments card and row-selection toolbar; per step 6 the scope was not widened.
+**Differences from plan:** controls that were 10px (inputs, selects, `.reim-btn`) also went to 6px under decision 3; a 0.7rem focus-mode label went to 0.72rem (done criterion); the toast, focus More panel, focus panels and readiness sheet were over 28px blur too and were brought in (readiness sheet keeps an upward `0 -8px 24px` because it sits on the dock).
 **Approved:** 2026-10-13 (owner chose batches 1–4 after the 2026-10-13 page scan and design scan; layout: "Collapse after load").
 **Detailed:** 2026-10-13.
 **Branch:** `main` (local first; publish only on "commit and push").

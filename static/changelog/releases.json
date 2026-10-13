@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-reimbursement-design",
+      "release_date": "2026-10-13",
+      "title": "Reimbursement Worksheet Comes First",
+      "summary": "After loading, the date range folds into one line so more of the worksheet is in view.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-reimbursement-design-range",
+          "category": "Reimbursement",
+          "description": "The date range folds into one line after loading. Press Change to pick another range.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-reimbursement-design-style",
+          "category": "Reimbursement",
+          "description": "Text weights, corners and shadows now match the rest of the app.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-reimbursement-contrast",
       "release_date": "2026-10-13",
       "title": "Clearer Reimbursement Status and Totals",

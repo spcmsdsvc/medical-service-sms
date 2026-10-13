@@ -887,5 +887,64 @@ class ReimbursementBatch3SourceTests(unittest.TestCase):
             self.assertIn(token, self.source)
 
 
+class ReimbursementBatch4SourceTests(unittest.TestCase):
+    """Batch 4 design system and collapsed date card. `source` can be swapped for a positive control."""
+
+    source = TEMPLATE
+
+    def test_no_font_weight_above_600(self):
+        weights = {int(w) for w in re.findall(r'font-weight:\s*(\d+)', self.source)}
+        self.assertTrue(weights)
+        self.assertLessEqual(max(weights), 600, sorted(weights))
+        self.assertNotRegex(self.source, r'font-weight:\s*(bold|bolder)')
+
+    def test_only_design_system_radii(self):
+        allowed = {'0', '6px', '10px', '12px', '16px', '999px', '50%'}
+        for value in re.findall(r'border-radius:\s*([^;"!]+)', self.source):
+            for part in value.split():
+                self.assertIn(part, allowed, value)
+
+    def test_no_font_size_below_micro_step(self):
+        sizes = [float(s) for s in re.findall(r'font-size:\s*(\d*\.?\d+)rem', self.source)]
+        self.assertGreaterEqual(min(sizes), 0.72)
+
+    def test_no_wide_shadow_blur(self):
+        for shadow in re.findall(r'box-shadow:\s*([^;]+);', self.source):
+            for blur in re.findall(r'-?\d+px\s+-?\d+px\s+(\d+)px', shadow):
+                self.assertLessEqual(int(blur), 28, shadow)
+        self.assertRegex(
+            self.source,
+            r':root\[data-app-theme="dark"\] :is\(\.reim-manual-card, \.reim-dialog, \.reim-view-popover, '
+            r'\.reim-row-details-card\) \{\s*border: 1px solid var\(--app-border\);',
+        )
+
+    def test_range_card_collapses_after_load(self):
+        self.assertIn('id="reimRangeSummary"', self.source)
+        self.assertIn('onclick="expandReimbursementRangeCard()"', self.source)
+        self.assertRegex(self.source, r'function collapseReimbursementRangeCard\(\)')
+        self.assertRegex(self.source, r'function expandReimbursementRangeCard\(moveFocus\)')
+        self.assertIn('.reim-range-collapsed .reim-filter-grid {\n        display: none;', self.source)
+        self.assertIn('.reim-range-collapsed #reimRangeSummary {\n        display: flex;', self.source)
+        load_start = self.source.index('async function loadReimbursementRows(')
+        load_body = self.source[load_start:self.source.index('\n    }\n', self.source.index('} catch (error) {', load_start))]
+        self.assertIn('collapseReimbursementRangeCard();\n            return true;', load_body)
+        toggle = self.source[self.source.index('function toggleReimbursementFocusPanel('):]
+        self.assertIn("if (normalizedId === 'reimFilterCard') expandReimbursementRangeCard(false);", toggle[:1200])
+
+    def test_kept_functions_and_ids(self):
+        for name in (
+            'loadReimbursementRows', 'setReimbursementThisWeek', 'setReimbursementThisMonth',
+            'openReimbursementStatusRecord', 'closeReimbursementFocusPanel', 'toggleReimbursementFocusPanel',
+        ):
+            self.assertRegex(self.source, rf'function {name}\(')
+        for token in (
+            'id="reimFilterCard"', 'id="reimStartDate"', 'id="reimEndDate"', 'id="reimLifecycleBanner"',
+            'id="reimSubmitNotice"', 'id="reimNotificationCard"', 'id="reimStatusWindowCard"',
+            'onclick="loadReimbursementRows()"', 'onclick="setReimbursementThisWeek()"',
+            'onclick="setReimbursementThisMonth()"', 'onclick="closeReimbursementFocusPanel()"',
+        ):
+            self.assertIn(token, self.source)
+
+
 if __name__ == '__main__':
     unittest.main()
