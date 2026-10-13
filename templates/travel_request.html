@@ -1,9 +1,9 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=16">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=17">
 <style>
-    .travel-page { max-width: 1220px; margin: 0 auto; padding-bottom: 90px; }
+    .travel-page { padding-bottom: 90px; }
     .travel-page [hidden], .travel-btn[hidden] { display: none !important; }
     .travel-page .dash-page-h1 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .travel-page .dash-page-h1 .travel-status-chip { font-size: .78rem; }
@@ -203,7 +203,7 @@
     }
 </style>
 
-<div class="travel-page">
+<div class="travel-page request-page">
     <header class="dash-page-header">
         <div>
             <h1 class="dash-page-h1"><span id="travel-hero-title">New Travel Request</span> <span id="travel-hero-status" class="travel-status-chip">Draft</span></h1>

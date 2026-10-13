@@ -114,7 +114,7 @@ class MyRequestsStyleSourceTests(unittest.TestCase):
     source = MyRequestsPageSourceTests.source
 
     def test_dashboard_styles_linked_and_hero_removed(self):
-        self.assertIn("filename='css/app-dashboard.css') }}?v=16", self.source)
+        self.assertIn("filename='css/app-dashboard.css') }}?v=17", self.source)
         for text in ('accounting-hero', 'alert alert-info', 'kpi-card', 'queue-card', 'module-tab ', 'module-badge'):
             self.assertNotIn(text, self.source, text)
         self.assertIn('class="dash-page-header"', self.source)

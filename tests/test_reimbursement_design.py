@@ -120,8 +120,10 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         )
         self.assertRegex(
             TEMPLATE,
-            r'\.reim-page\s*:is\([^}]*\.reim-hero[^}]*\)\s*\{[\s\S]{0,420}background:\s*var\(--app-surface',
+            r'\.reim-page\s*:is\([^}]*\.reim-filter-card[^}]*\)\s*\{[\s\S]{0,420}background:\s*var\(--app-surface',
         )
+        # The old reim-hero banner was replaced by the shared Page Header (Request Pages plan).
+        self.assertNotIn('reim-hero', TEMPLATE)
         self.assertIn('box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);', TEMPLATE)
         self.assertRegex(
             TEMPLATE,
@@ -464,7 +466,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         self.assertIn('.reim-focus-active .reim-table-wrap', TEMPLATE)
         self.assertNotIn('requestFullscreen', TEMPLATE)
         for selector in (
-            '.reim-focus-active .reim-hero',
+            '.reim-focus-active .reim-page-header',
             '.reim-focus-active #sidebar',
             '.reim-focus-active .reim-notification-card',
             '.reim-focus-active .reim-status-window-card',

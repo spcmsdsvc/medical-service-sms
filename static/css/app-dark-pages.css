@@ -712,7 +712,7 @@
 
 /* Requests and accounting forms with custom, light-only local components. */
 :root[data-app-theme="dark"] :is(
-    .cash-page, .cash-notification-list, .cash-notification-item, .cash-attachment-panel,
+    .cash-notification-list, .cash-notification-item, .cash-attachment-panel,
     .cash-attachment-item, .cash-request-item,
     .travel-history-item, .travel-search-results, .travel-search-item,
     .travel-notification-item, .travel-attachment-item, .travel-dialog,

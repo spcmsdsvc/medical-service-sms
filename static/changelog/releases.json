@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-request-page-header",
+      "release_date": "2026-10-13",
+      "title": "Same Header on Request Pages",
+      "summary": "Travel Request, Cash Advance and Reimbursement now share one header and page width.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-request-page-header-layout",
+          "category": "Cash Advance",
+          "description": "The New Request button sits under the page title on Travel Request and Cash Advance, and the pages have the same width.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-request-page-header-reimbursement",
+          "category": "Reimbursement",
+          "description": "Reimbursement shows its status beside the title and has a New Period button to pick other dates.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-cash-advance-dark",
       "release_date": "2026-10-13",
       "title": "Cash Advance in Dark Mode",
@@ -6032,7 +6059,7 @@
         },
         {
           "item_key": "2026-08-05-request-recall",
-          "category": "Requests",
+          "category": "Cash Advance",
           "description": "Requesters can now withdraw their own Submitted Leave Requests, Reimbursements, Travel Requests, Cash Advances, and LPRs with a required reason before approval. The request returns to an editable state, pending approval notices are cleared, and the recall is recorded in the audit trail.",
           "audiences": [
             "everyone"

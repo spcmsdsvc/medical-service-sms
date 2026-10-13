@@ -208,7 +208,7 @@ class TravelRequestBatch4SourceTests(unittest.TestCase):
         return block(self.page, '<style>', '</style>')
 
     def test_page_header_reused(self):
-        self.assertIn("filename='css/app-dashboard.css') }}?v=16", self.page)
+        self.assertIn("filename='css/app-dashboard.css') }}?v=17", self.page)
         for cls in ('dash-page-header', 'dash-page-h1', 'dash-page-sub', 'dash-page-actions'):
             with self.subTest(cls=cls):
                 self.assertIn(f'class="{cls}"', self.page)

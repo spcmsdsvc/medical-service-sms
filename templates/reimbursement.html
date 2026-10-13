@@ -1,33 +1,35 @@
 {% extends "layout.html" %}
 
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=17">
 <style>
     .reim-page {
-        max-width: none;
-        width: 100%;
-        margin: 0 auto;
-        padding: 10px 12px;
+        padding: 0 0 10px;
     }
 
-    .reim-hero {
-        background: linear-gradient(135deg, var(--app-primary-strong, #0f5132), var(--app-primary, #198754));
-        color: #fff;
-        border-radius: 10px;
-        padding: 16px 18px;
-        box-shadow: 0 10px 22px rgba(var(--app-primary-rgb, 15, 81, 50), 0.16);
-        margin-bottom: 10px;
+    .reim-page .dash-page-h1 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
     }
 
-    .reim-hero h1 {
-        margin: 0;
-        font-size: 1.35rem;
+    .reim-status-chip {
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 0.78rem;
         font-weight: 600;
+        background: var(--app-border, #dbe3ea);
+        color: var(--app-text, #172033);
     }
 
-    .reim-hero p {
-        margin: 5px 0 0;
-        opacity: 0.92;
-    }
+    .reim-status-chip.submitted { background: #fef3c7; color: #92400e; }
+    .reim-status-chip.approved { background: #dcfce7; color: #166534; }
+    .reim-status-chip.rejected { background: #fde8ea; color: #a1121f; }
+    :root[data-app-theme="dark"] .reim-status-chip { background: var(--app-surface-raised); color: var(--app-text); }
+    :root[data-app-theme="dark"] .reim-status-chip.submitted { background: rgba(217, 119, 6, .16); color: #fde68a; }
+    :root[data-app-theme="dark"] .reim-status-chip.approved { background: rgba(22, 163, 74, .16); color: #bbf7d0; }
+    :root[data-app-theme="dark"] .reim-status-chip.rejected { background: rgba(220, 38, 38, .16); color: #fecaca; }
 
     .reim-filter-card,
     .reim-table-card {
@@ -477,7 +479,7 @@
 
     @media (max-width: 820px) {
         .reim-page {
-            padding: 12px;
+            padding: 0 0 12px;
         }
 
         .reim-filter-grid {
@@ -497,8 +499,8 @@
             display: none !important;
         }
 
-        .reim-hero {
-            padding: 18px;
+        .reim-page .dash-page-actions .btn {
+            min-height: 44px;
         }
     }
 
@@ -2083,7 +2085,6 @@
     }
 
     .reim-page :is(
-        .reim-hero,
         .reim-filter-card,
         .reim-table-card,
         .reim-notification-card,
@@ -2097,11 +2098,6 @@
         box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
     }
 
-    .reim-page .reim-hero {
-        background: var(--app-surface-raised, #f8fafc);
-        border: 1px solid var(--app-border, #dbe3ea);
-    }
-
     .reim-page :is(
         .reim-status-window-item,
         .reim-removed-item
@@ -2113,7 +2109,6 @@
     }
 
     .reim-page :is(
-        .reim-hero p,
         .reim-muted,
         .reim-status-window-meta,
         .reim-notification-message,
@@ -2714,7 +2709,7 @@
         }
 
         body.reim-focus-active #sidebar,
-        body.reim-focus-active .reim-hero,
+        body.reim-focus-active .reim-page-header,
         body.reim-focus-active .reim-filter-card,
         body.reim-focus-active .reim-utility-card,
         body.reim-focus-active .reim-notification-card,
@@ -3289,11 +3284,16 @@
 
 </style>
 
-<div class="reim-page">
-    <section class="reim-hero">
-        <h1>Reimbursement</h1>
-        <p>Choose a date range to load your assigned schedules as reimbursement rows.</p>
-    </section>
+<div class="reim-page request-page">
+    <header class="dash-page-header reim-page-header">
+        <div>
+            <h1 class="dash-page-h1">Reimbursement <span id="reimStatusChip" class="reim-status-chip draft">Draft</span></h1>
+            <p class="dash-page-sub">Choose a date range to load your assigned schedules as reimbursement rows.</p>
+        </div>
+        <div class="dash-page-actions">
+            <button type="button" class="btn btn-outline-primary" id="reimNewPeriodBtn" onclick="expandReimbursementRangeCard(true)"><i class="fa-solid fa-plus me-2"></i>New Period</button>
+        </div>
+    </header>
 
     <div id="reim-toast-stack" class="reim-toast-stack" aria-live="polite" aria-atomic="true"></div>
 
@@ -5945,6 +5945,11 @@ function renderReimbursementRows(rows) {
         const page = document.querySelector('.reim-page');
         if (page) {
             page.classList.toggle('reim-locked', !editable);
+        }
+        const statusChip = document.getElementById('reimStatusChip');
+        if (statusChip) {
+            statusChip.textContent = status;
+            statusChip.className = `reim-status-chip ${normalized}`;
         }
 
         renderReimbursementLifecycleBanner();

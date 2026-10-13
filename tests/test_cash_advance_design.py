@@ -48,7 +48,7 @@ class CashAdvanceKeptFunctionsTests(unittest.TestCase):
 class CashAdvanceBatch3DesignTests(unittest.TestCase):
     def test_page_header_replaces_hero(self):
         self.assertIn('class="dash-page-header"', TEMPLATE)
-        self.assertIn("css/app-dashboard.css') }}?v=16", TEMPLATE)
+        self.assertIn("css/app-dashboard.css') }}?v=17", TEMPLATE)
         self.assertNotIn('cash-hero', TEMPLATE)
         self.assertNotIn('linear-gradient', TEMPLATE)
 

@@ -37,6 +37,131 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Request Pages — Uniform Header, New Request Button and Page Width (Travel, Cash Advance, Reimbursement)
+
+**Status:** Executed — local on `main`, not yet committed (2026-10-13; owner: "execute"). Awaiting "commit and push".
+**Outcome differences:** `.cash-page` top padding 6px → 0 and `.reim-page` padding → `0 0 10px` (phone `0 0 12px`) so all three titles share the same top and left edge (measured identical at 1366, 1920 and 375px). `app-dashboard.css?v=` bumped 16 → 17 on the four pages that pinned 16 (`accounting_center`, `cash_advance`, `dashboard`, `travel_request`) plus Reimbursement, with the four pinned tests updated; `analytics.html` (`?v=75`) left as is. Release category "Cash Advance" (no shared "Requests" category exists). Owner spotted a grey block behind the Cash Advance header in dark mode: shared `app-dark-pages.css` painted `.cash-page` as a panel; removed from that list (`?v=34`), with a guard test.
+**Approved:** 2026-10-13. The owner sent a Travel Request screenshot ("i like the format of travel request… apply this to reimbursement and cash advance"), narrowed the scope to "the header and also the new request button, placement and all… and also the margin on the left and right", then answered "a, approved". Option (a) caps Reimbursement's width like the other two pages.
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Size:** one batch, one commit.
+
+## Context
+
+The owner wants Travel Request, Cash Advance and Reimbursement to look the same at the top of the page:
+- the same Page Header: the title with a status chip beside it, and a muted subtitle;
+- the New Request button in the same place: under the subtitle, on the left;
+- the same left and right margins: a page column capped at 1220px and centred.
+
+Today the three pages differ. Travel matches the screenshot. Cash Advance has the same header, but its button sits on the far right and the page is full width. Reimbursement still has the old `reim-hero` banner, no header button, and is full width with 12px padding.
+
+## Decisions taken
+
+1. **Scope is the header, the header button and the page width only.** No Request Information card, no section-title icons, and no Cash Advance Status field. The owner narrowed the request; these were offered and declined.
+2. **Option (a):** Reimbursement is capped at 1220px like the others. The worksheet table, which already scrolls sideways, gets narrower on wide screens. The owner accepted this.
+3. **One source of truth:** a shared `.request-page` class in `static/css/app-dashboard.css`. It sets the width and the stacked header for all three pages, so there are no three page-local copies. This makes it shared code, so the full suite runs.
+4. **Reimbursement has no "new request"** (each record is a date period). Its header button is **New Period** (`fa-plus`, outline). It calls the existing `expandReimbursementRangeCard(true)`, which reopens the date inputs and focuses Start Date.
+5. **Reimbursement status chip:** mirrors the existing lifecycle status (Draft / Submitted / Approved / Rejected). It is set from `applyReimbursementStatusUi()`, so no new data or route is needed.
+
+## Investigation
+
+- `static/css/app-dashboard.css:2160` `.dash-page-header` is `display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap`. Its actions go right when there is room and wrap below when there isn't.
+- Travel's button is below the subtitle only because the long subtitle forces a wrap (`templates/travel_request.html:210`). Cash Advance's short subtitle (`templates/cash_advance.html:506`) leaves room, so its button sits on the right. A wrap that depends on text length is the inconsistency.
+- `templates/travel_request.html:6` `.travel-page { max-width: 1220px; margin: 0 auto; padding-bottom: 90px; }` is the margin the owner likes. Phone override: `travel_request.html:200`.
+- `templates/cash_advance.html:6` `.cash-page { max-width: none; width: 100%; margin: 0 auto; padding: 6px 0 20px; }`. Cash Advance already links `app-dashboard.css?v=16` (line 4) and uses `.dash-page-header` (line 503).
+- `templates/reimbursement.html`:
+  - The page does not link `app-dashboard.css`.
+  - `.reim-page` is `max-width:none; padding:10px 12px` (line 5; phone `padding:12px` at line 479).
+  - `.reim-hero` markup is at line 3293. Its rules are at lines 12–30 (gradient, h1, p), 500 (phone padding), 2086 (in the shared `:is()` surface list), 2100 (raised surface override) and 2116 (`.reim-hero p` muted list).
+  - Focus mode hides it at line 2717 (`body.reim-focus-active .reim-hero`).
+- `expandReimbursementRangeCard(moveFocus)` is at `reimbursement.html:4633`. `applyReimbursementStatusUi()` is at `reimbursement.html:5935` (computes `status`).
+- Tests that name `.reim-hero`: `tests/test_reimbursement_design.py:123` (surface `:is()` list) and `:467` (focus-mode selector). These are updated in step 5, deliberately, with the reason recorded.
+- The service worker `CACHE_VERSION` is in `app.py` (checked by `tests/test_sw_cache_version.py`).
+
+## Execution steps
+
+1. **Shared rule:** in `static/css/app-dashboard.css`, after the `.dash-page-actions .btn` block, add:
+   - `.request-page { max-width: 1220px; margin-left: auto; margin-right: auto; }`
+   - `.request-page .dash-page-header { flex-direction: column; align-items: flex-start; }`
+   - Bump the `app-dashboard.css?v=` query on every page that links it (grep `app-dashboard.css?v=` and bump all of them together).
+   - Done: the rules exist once, and the header button sits under the subtitle at every width.
+2. **Travel Request** (`templates/travel_request.html`):
+   - The wrapper becomes `<div class="travel-page request-page">`.
+   - Remove `max-width: 1220px; margin: 0 auto;` from `.travel-page`. Keep `padding-bottom` (it reserves space for the dock).
+   - Done: no visible change, and the width now comes from the shared rule.
+3. **Cash Advance** (`templates/cash_advance.html`):
+   - The wrapper becomes `<div class="cash-page request-page">`.
+   - Remove `max-width: none; width: 100%; margin: 0 auto;` from `.cash-page`. Keep the padding and colour.
+   - Done: the page is centred at 1220px and New Request sits under the subtitle. No id or handler changes.
+4. **Reimbursement** (`templates/reimbursement.html`):
+   - a. Link `app-dashboard.css` with the same `?v=` as the other pages.
+   - b. Replace `<section class="reim-hero">…</section>` with `<header class="dash-page-header reim-page-header">`. Inside it:
+     - `<h1 class="dash-page-h1">Reimbursement <span id="reimStatusChip" class="reim-status-chip draft">Draft</span></h1>`;
+     - the existing subtitle text in `<p class="dash-page-sub">`;
+     - `<div class="dash-page-actions">` holding `<button type="button" class="btn btn-outline-primary" id="reimNewPeriodBtn" onclick="expandReimbursementRangeCard(true)"><i class="fa-solid fa-plus me-2"></i>New Period</button>`.
+   - c. The wrapper becomes `<div class="reim-page request-page">`. Remove `max-width:none; width:100%; margin:0 auto` from `.reim-page`, and keep its padding.
+   - d. Delete the now-unused `.reim-hero` visual rules (lines 12–30 and 500, plus the `.reim-hero` entries at 2086, 2100 and 2116).
+     - Change the focus-mode selector at 2717 to `body.reim-focus-active .reim-page-header`, so focus mode still hides the header.
+     - Grep afterwards: `reim-hero` must appear 0 times.
+   - e. Add `.reim-page .dash-page-h1 { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }` and a small `.reim-status-chip` pill (999px radius, 0.78rem, weight 600). Use the same Semantic Status colours Travel's `travel-status-chip` uses for draft, submitted, approved and rejected, with dark-theme pairs like Cash Advance Batch 4.
+   - f. In `applyReimbursementStatusUi()`, set `#reimStatusChip` text to `status` and its class to `reim-status-chip <normalized>`, null-guarded.
+   - g. Phone (`max-width: 820px`): `.reim-page .dash-page-actions .btn { min-height: 44px; }`.
+   - Done: the header matches the other two pages, New Period opens the date inputs, the chip follows the status, and focus mode hides the header.
+5. **Tests:**
+   - Update `tests/test_reimbursement_design.py:123`: the surface `:is()` list no longer includes `.reim-hero`; assert `.reim-hero` is absent instead.
+   - Update `:467` to `.reim-focus-active .reim-page-header`.
+   - Add a new `tests/test_request_pages_header.py`:
+     - the shared `.request-page` rule (1220px, column header) exists once in `app-dashboard.css`;
+     - each of the three templates has `request-page` on its wrapper and no page-local `max-width` on `.travel-page`, `.cash-page` or `.reim-page`;
+     - Reimbursement has `dash-page-header`, `#reimStatusChip`, `#reimNewPeriodBtn` calling `expandReimbursementRangeCard(true)` and links `app-dashboard.css`;
+     - kept-functions guard: every `onclick` function on the three pages is still defined, and `expandReimbursementRangeCard`, `collapseReimbursementRangeCard`, `applyReimbursementStatusUi`, `clearCashAdvanceForm` and `startNewTravelRequest` exist.
+6. **Docs and skill:**
+   - `DESIGN.md` Page Header section: add "Request pages (Travel Request, Cash Advance, Reimbursement): wrapper carries `.request-page` (1220px centred column, header button stacked under the subtitle on the left); Reimbursement's header button is New Period."
+   - `.claude/skills/page-design-scan/SKILL.md`, Check item 3 (Consistency): add "Request pages (Travel Request, Cash Advance, Reimbursement, and any new request form) use the `.request-page` wrapper and the Page Header with status chip and the New Request / New Period button under the subtitle."
+
+## Deliberately excluded
+
+- **The Request Information card, section-title icons and the Cash Advance Status field.** The owner limited the scope to the header, the button and the margins.
+- **Liquidation pages** (`travel_liquidation.html`, `cash_advance_liquidation.html`) and `reimbursement_tracker.html`. They were not requested; a later design scan can flag them using the new skill check.
+- **The Reimbursement worksheet, its dock and the date card.** Only the width changes. Batch 4's collapse behaviour is untouched.
+- **Changing `.dash-page-header` itself.** The dashboard and other pages keep the right-aligned actions; only `.request-page` stacks them.
+
+## Verification
+
+- **Positive control:** run the new test module and the two updated tests against `HEAD`'s templates and CSS. The structure tests must fail; the kept-functions guard must pass.
+- **Focused tests:** `test_request_pages_header`, all `test_reimbursement_*`, all `test_cash_advance_*`, the travel request tests, appearance themes, dark-mode readability, layout sidebar, changelog coverage and the service worker tests.
+- **Full suite** (this touches shared `app-dashboard.css`): `venv/Scripts/python.exe scripts/run_suite.py` from the main project folder. No new failures against `tests/known_failures.txt`.
+- **Browser** (copy of `scheduler.db`, per AGENTS.md and the browser-check-setup memory):
+  - At 1366×768 and 1920×1080, all three pages have the same column width and left edge (measure `getBoundingClientRect()` of `.dash-page-header`), and the header button's top is below the subtitle's bottom with the same left x as the title.
+  - **Reimbursement:**
+    - New Period reopens the date inputs with focus on Start Date;
+    - the chip shows Draft, then Submitted or Rejected on such records;
+    - focus mode hides the header;
+    - Load, Save Draft, Submit, Upload and Change still work.
+  - **Cash Advance:** New Request, Save and Submit still work.
+  - **Travel Request:** New Request still works.
+  - **375px:** no horizontal scroll, the header button is at least 44px tall, and the chip wraps cleanly.
+  - **Dark (graphite and AMOLED):** chip text ≥4.5:1.
+  - The console is clean.
+
+## After implementation
+
+1. Self-review the diff:
+   - no removed id or function that is still used;
+   - `reim-hero` is fully gone;
+   - only the intended files are changed.
+2. Service worker `CACHE_VERSION` in `app.py` → next `vNNN-request-page-header` (keep the previous version as a history comment).
+3. `static/changelog/releases.json`: add a release "Same Header on Request Pages" (everyone).
+4. `changes.md`: add an entry under today's date.
+5. On "commit and push": commit only the intended files (never `scheduler.db`, `output/`, `tmp/` or handoffs), push `main`, and verify `git ls-remote` and Railway.
+6. Update this Status line with the commit hash.
+
+## Risks
+
+- **Reimbursement worksheet on wide screens:** at 1220px, more columns need sideways scrolling. The owner accepted this (option a). Safety net: one rule to revert.
+- **Shared CSS:** `.request-page` is new and opt-in, so other pages using `.dash-page-header` are unaffected. The full suite covers this.
+- **Removing `reim-hero`:** a missed selector could leave focus mode showing the header. Covered by the grep in step 4d, the updated test and the browser check.
+
 # Cash Advance — Batch 4: Dark Mode (pills, buttons, KPI note contrast, header and toasts on theme colours)
 
 **Status:** Executed — `9f932cb` on `main` (2026-10-13; owner: "execute batch 3 and 4", then "commit and push").

@@ -104,7 +104,7 @@ class DashboardLogbookSourceTests(unittest.TestCase):
     def test_entry_dates_use_it(self):
         self.assertGreaterEqual(self.js.count('logbook-ref'), 4)
         self.assertNotIn('font-monospace', self.js)
-        self.assertIn("css/app-dashboard.css') }}?v=16", self.dashboard)
+        self.assertIn("css/app-dashboard.css') }}?v=17", self.dashboard)
         self.assertIn("js/app-dashboard.js') }}?v=16", self.dashboard)
 
 
