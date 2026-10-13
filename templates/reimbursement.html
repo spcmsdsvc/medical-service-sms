@@ -6496,7 +6496,10 @@ function renderReimbursementRows(rows) {
             }
             if (reimbursementEditVersion === entry.version && reimbursementSaveContextMatches(entry)) {
                 setReimbursementDraftStatus(saveStatus, warning ? 'warn' : 'ok', 'saved');
-                if (entry.payload.save_source === 'manual') reimToast('Draft saved.', warning ? 'warn' : 'ok');
+                if (entry.payload.save_source === 'manual') {
+                    reimToast('Draft saved.', warning ? 'warn' : 'ok');
+                    loadMyReimbursementStatuses();
+                }
             } else {
                 setReimbursementDraftStatus('Unsaved changes', 'warn', 'unsaved');
             }
@@ -7633,6 +7636,7 @@ async function saveReimbursementDraft(silent, options) {
                 ? ` ${excludedCount} zero-total row${excludedCount === 1 ? '' : 's'} excluded.`
                 : '';
             setReimbursementSubmitNotice(`${message} Reimbursement #${payload.reimbursement_id || payload.id || ''} is now in the manager's approval queue.${excludedNote}`, 'ok');
+            loadMyReimbursementStatuses();
 
             const statusText = document.getElementById('reimStatusText');
             if (statusText) {

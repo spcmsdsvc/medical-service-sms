@@ -27389,7 +27389,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v301-travel-request-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v302-travel-request-limits.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v303-travel-request-contrast.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v304-travel-request-design';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v304-travel-request-design.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v305-reimbursement-fixes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -40899,6 +40900,12 @@ def upload_reimbursement_receipt():
         end_date = reimbursement_parse_date(request.form.get('end') or request.form.get('end_date'), 'end')
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
+
+    if end_date < start_date:
+        return jsonify({'success': False, 'error': 'End date must be after start date'}), 400
+
+    if (end_date - start_date).days > 62:
+        return jsonify({'success': False, 'error': 'Date range is limited to 63 days for performance'}), 400
 
     shift_id = clean_int(request.form.get('shift_id'))
     manual_row_id = clean_int(

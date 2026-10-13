@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-reimbursement-fixes",
+      "release_date": "2026-10-13",
+      "title": "Reimbursement Status Updates Right Away",
+      "summary": "Your reimbursement status list now updates as soon as you save or submit.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-reimbursement-fixes-status-refresh",
+          "category": "Reimbursement",
+          "description": "My Reimbursement Status updates after Save Draft and Submit, without pressing Refresh Status.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-reimbursement-fixes-upload-range",
+          "category": "Reimbursement",
+          "description": "Receipt upload now rejects a date range that ends before it starts or is longer than 63 days.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-12-travel-request-design",
       "release_date": "2026-10-12",
       "title": "Cleaner Travel Request Page",

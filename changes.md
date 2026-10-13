@@ -1,5 +1,21 @@
 # Project Change Log
 
+codex changes - 2026-10-13
+
+- Executed **Reimbursement — Batch 1: Bugs** (`plans.md`) on the owner's "execute it"; not committed. No function, id or handler renamed or removed.
+- `app.py` `upload_reimbursement_receipt`: after the date parse and before any header lookup or creation, returns 400 "End date must be after start date" for a reversed range and 400 "Date range is limited to 63 days for performance" for ranges over 63 days (same rules and messages as `save_reimbursement_draft`). Previously a reversed range with `additional_receipt=1` created a Draft and stored the file.
+- `templates/reimbursement.html`: `loadMyReimbursementStatuses()` (not awaited) now runs after a successful manual Save Draft (inside the `save_source === 'manual'` toast branch, so autosaves do not fetch) and after the Submit success notice in `submitReimbursement`, so "My Reimbursement Status" and the Withdraw button update without Refresh Status.
+- Service worker `CACHE_VERSION` → `medical-service-pwa-offline-navigation-v305-reimbursement-fixes` (v304 kept as a history comment). `static/changelog/releases.json`: release "Reimbursement Status Updates Right Away" (everyone).
+- Tests: new `tests/test_reimbursement_batch1_fixes.py` (HTTP on a temporary SQLite DB: reversed and 64-day uploads return 400 with no header created, a valid one-day upload returns 200 with storage patched; source checks for both refresh calls; kept-functions guard). Against `HEAD`'s `app.py` and template the four fix tests fail, the valid-upload and guard tests pass. Focused run (all `test_reimbursement_*`, request recall, changelog coverage) 175 OK; service-worker/offline/tracker/dark-mode tests pass apart from the listed known TSR failure. No full suite (one route plus page JS).
+- Browser check on a copy of `scheduler.db` (temporary password on the copy, email disabled for the test server; copy removed and `.claude/launch.json` restored): reversed-range upload 400 with the status count unchanged; Save Draft fetched `/get_my_reimbursement_statuses` and the list showed the new updated time; Submit moved #7 to "Submitted / Waiting for Approval" with Withdraw, without Refresh; no new files in `static/uploads/reimbursements/`; console clean apart from the deliberate 400.
+
+- Ran the read-only page scan and design scan of `/reimbursement` (`templates/reimbursement.html`) on a copy of `scheduler.db` (copy, temporary password, test receipt file and test draft removed afterwards; `.claude/launch.json` restored). Impeccable critique snapshot saved to `.impeccable/critique/2026-10-13T00-28-28Z__templates-reimbursement-html.md` (23/40, closed list of 8 items).
+- Recorded four approved plans at the top of `plans.md` (awaiting go-ahead; no code changed):
+  - **Batch 1 (Bugs):** add Save's date checks to `upload_reimbursement_receipt` (a reversed range currently creates a draft); refresh the status list after manual Save and Submit.
+  - **Batch 2 (Server cleanup):** schedule rows filtered in SQL instead of one `ShiftEngineer` query per shift; remove the unused `status_counts`; remove the duplicate `'paid'` key.
+  - **Batch 3 (Design fixes):** dark Submitted/Approved/Rejected banners, total contrast via `--app-primary-text`, period and total in the Submit confirm, duplicate texts removed, selection hidden on locked records.
+  - **Batch 4 (Design system + layout):** weights ≤600, DESIGN.md radii, sizes and shadows; the date card collapses to a one-line period bar after loading.
+
 codex changes - 2026-10-12
 
 - Executed **Travel Request — Batch 4: DESIGN.md Alignment** (`plans.md`) on the owner's "execute batch 4"; published to `main` as `25a0b00` on "commit and push". No id, handler or JS function renamed or removed; only the `travel-hero*`, `travel-btn-success` and Batch 1 hero-anchor CSS removed on purpose.

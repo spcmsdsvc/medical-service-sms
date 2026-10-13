@@ -37,6 +37,381 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Reimbursement — Batch 4: Design System + Worksheet Above the Fold (weights, radii, sizes, shadows, collapsed date card)
+
+**Status:** Approved — awaiting go-ahead
+**Approved:** 2026-10-13 (owner chose batches 1–4 after the 2026-10-13 page scan and design scan; layout: "Collapse after load").
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch 3 executed (same `<style>` block). Find code by selector, not line number.
+
+## Context
+
+The closed list of the 2026-10-13 design scan (snapshot `.impeccable/critique/2026-10-13T00-28-28Z__templates-reimbursement-html.md`, 23/40) leaves three items for this batch:
+
+- **Item 2 (P1).** The worksheet starts below the fold. With a record loaded at 1366×768, the table top is at y≈668 and the dock at y=692, so no rows are visible. On a phone the first row card is at y=1366. The page is 4249px tall.
+- **Item 5 (P2).** Font weights 750–950 are used, with 31 declarations of 800/900. DESIGN.md Typography says Fira Sans ships 400/500/600 and anything above renders as 600.
+- **Item 7 (P3).** Off-system values: radii 8px (`.reim-amount`), 9px (`.reim-readiness-item`) and 22px (`.reim-dialog`). Font sizes 0.6rem (focus-mode `.reim-summary-label`) and 0.68rem (focus-mode column-view label). Four cards pair a hairline border with a wide shadow: `.reim-manual-card` (70px blur), `.reim-dialog` (90px), `.reim-view-popover` (46px), `.reim-row-details-card` (70px).
+
+Intended outcome:
+- Once a record or range is loaded, the worksheet's first row is visible at 1366×768 without scrolling.
+- The page's type and shape follow DESIGN.md.
+- Behaviour is unchanged.
+
+## Decisions taken
+
+1. **Layout (owner):** collapse after load. After a successful load, the date card shrinks to a one-line period bar ("07-01-2026 – 07-31-2026" plus a Change button). Change reopens the full card. The Notifications and Status (history) cards already sit below the worksheet (Investigation), so they stay where they are.
+2. Weights: **600** for titles, labels, buttons, chips and totals; **400** for body, help and meta text. Nothing above 600.
+3. Radii:
+   - 6px for controls.
+   - 10px for cards and panels.
+   - 12px for the dialog and popovers.
+   - 16px for cards on phones (≤768px).
+   - 999px for pills.
+4. Sizes:
+   - 0.6rem and 0.68rem → 0.72rem (the micro step; Small-Text Contrast Rule).
+   - Off-ramp title sizes (1.35, 1.22, 1.15, 1.1rem) stay. They are not in the closed list.
+5. The four wide shadows become the DESIGN.md Panel shadow (`var(--app-shadow)`). The hairline border stays only in dark themes, per Cards.
+6. Page-local: `templates/reimbursement.html` only, so focused tests. The Page Header (`.dash-page-header`) is **not** adopted. It was not in the closed list.
+
+## Investigation
+
+- **Section order** (`templates/reimbursement.html`):
+  1. `section.reim-hero` (:3217, 143px tall)
+  2. `#reimFilterCard` (:3252, 275px): Start/End inputs plus Load Schedules, This Week and This Month.
+  3. `section.reim-table-card` (:3274). It holds:
+     - the lifecycle banner `#reimLifecycleBanner` (138px)
+     - `#reimSubmitNotice`
+     - the signature panel
+     - the worksheet top bar
+     - the table and receipts
+  4. `#reimNotificationCard` (:3531)
+  5. `#reimStatusWindowCard` (:3548)
+
+  History is already below the worksheet.
+- **Who uses `#reimFilterCard`:** it is also a focus-mode panel (`reim-focus-managed-panel`, with Close via `closeReimbursementFocusPanel()`). The collapse must not break focus mode: the focus toolbar's Dates button opens this panel.
+- **Successful loads** set `reimbursementActiveContext = reimbursementCurrentContext()` in `loadReimbursementRows` (:7818; assignments at :7883, :8003, :8037). That is the hook for collapsing.
+- **Weights** above 600 are found throughout the `<style>` block (Assessment A count). DESIGN.md Typography confirms the 400/500/600 rule.
+
+## Execution steps
+
+1. **Read first:**
+   - the newest `changes.md` section
+   - DESIGN.md Typography, Shapes, Cards and Elevation
+   - load the Impeccable skill (`polish`, and `layout` for step 5)
+2. **Weights:** apply decision 2 across the page `<style>` block and the inline styles. Done = no `font-weight` above 600 in the template, and nothing below 600 on a title, label, button or total.
+3. **Radii:** apply decision 3. Done = no `border-radius` outside {6px, 10px, 12px, 16px, 999px, 50%}.
+4. **Sizes and shadows:**
+   - 0.6rem and 0.68rem → 0.72rem.
+   - Replace the four wide shadows with `var(--app-shadow)`, and keep their border only under the dark theme selectors.
+   - Done = no font size below 0.72rem, and no `box-shadow` blur above 28px in the block.
+5. **Collapsed date card:**
+   - Add `#reimRangeSummary` inside `#reimFilterCard`, hidden by default. It holds the period text and a `Change` button (`reim-btn reim-btn-secondary`, 44px on phones) wired to `expandReimbursementRangeCard()`.
+   - After a successful load, call `collapseReimbursementRangeCard()`. It adds `.reim-range-collapsed` and fills the period with `formatExpenseDate(start) – formatExpenseDate(end)`.
+   - CSS: `.reim-range-collapsed .reim-filter-grid { display: none; }` and `.reim-range-collapsed #reimRangeSummary { display: flex; }`.
+   - Focus mode's Dates panel calls `expandReimbursementRangeCard()` when it opens.
+   - Done = after Open Record at 1366×768, the first worksheet row's top is above the dock. Change shows the inputs again with their values, and Load Schedules still works.
+6. **If step 5 alone does not bring the first row above the dock at 1366×768:** compact the lifecycle banner for Draft only (hide `#reimLifecycleReason` when the status is Draft). Record the measured outcome under this plan, whichever it is. Do not widen the scope further.
+7. **Kept functions:** `loadReimbursementRows`, `setReimbursementThisWeek`, `setReimbursementThisMonth`, `openReimbursementStatusRecord`, `closeReimbursementFocusPanel`, `toggleReimbursementFocusPanel`, and every id in Investigation are still defined and wired.
+
+## Deliberately excluded
+
+- **Page Header adoption, the red filled Withdraw button, and help text for PC codes and categories:** critique observations outside the closed list.
+- **Off-ramp title sizes and the ~40 page-local status tints** (detector-only).
+- **The history list's 20-item limit** (page-scan finding): the 20 newest cover normal use. It can be raised later if the owner asks.
+
+## Verification
+
+- **Tests:** new class `ReimbursementBatch4SourceTests` in `tests/test_reimbursement_design.py`. It checks:
+  - no weight above 600
+  - only the allowed radii
+  - no font size below 0.72rem
+  - no shadow blur above 28px
+  - `#reimRangeSummary`, `collapseReimbursementRangeCard` and `expandReimbursementRangeCard` exist, and the load path calls the collapse
+  - a kept-functions guard (step 7)
+
+  **Positive control:** run the class against `git show HEAD:templates/reimbursement.html` in the scratchpad (never `git stash`). The style and collapse tests fail; the guard passes. Update any existing design test that pins old weights or radii on purpose, and list it in `changes.md`.
+- **Focused run:** `tests/test_reimbursement_*.py`, `test_appearance_themes`, `test_dark_mode_readability`, `test_layout_sidebar`, `test_changelog_coverage`.
+- **Browser** on a copy of `scheduler.db` (temporary password on the copy only):
+  - At 1366×768 light: open a record. The first row is above the dock (measure `getBoundingClientRect`). Change, This Week, This Month, Load Schedules and the focus-mode Dates panel all work.
+  - Graphite and AMOLED: cards show their hairline with no wide shadow.
+  - At 375px: no horizontal scroll, Change is 44px, and the collapsed bar is one line.
+  - Console clean. One screenshot per width. Clean up the copy and the launch entry.
+
+## After implementation
+
+1. **Self-review the diff.** Only the template, plus versions, changelog, DESIGN.md (if needed) and tests.
+2. **Service worker:** `CACHE_VERSION` in `app.py` → the next free number, with suffix `-reimbursement-design`. Keep the previous value as a history comment.
+3. **`static/changelog/releases.json`:** release "Reimbursement Worksheet Comes First" (everyone). Items: the date range folds into one line after loading, so the worksheet is in view; text and corners match the rest of the app.
+4. **`changes.md`:** add the bullets. Update this plan's Status and record any differences.
+5. **Commit** only the files above plus `plans.md` and `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or `.claude/`. Publish only on "commit and push".
+
+## Risks
+
+- **Focus mode and the date card:** the Dates panel shares `#reimFilterCard`, so a collapsed card could open empty. Step 5 expands it on open; the browser pass checks it.
+- **Weight changes flatten hierarchy:** the 600/400 split keeps titles distinct. Checked visually in the final screenshot.
+- **Blast radius:** one template's CSS plus two small JS functions. Rollback = revert the commit.
+
+---
+
+# Reimbursement — Batch 3: Design Fixes (dark banners, total contrast, Submit confirm, duplicates, locked selection)
+
+**Status:** Approved — awaiting go-ahead
+**Approved:** 2026-10-13 (owner chose batches 1–4 after the 2026-10-13 page scan and design scan).
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batches 1–2 executed. Find code by selector, not line number.
+
+## Context
+
+This batch covers critique closed-list items 1, 3, 4, 6 and 8 (snapshot `.impeccable/critique/2026-10-13T00-28-28Z__templates-reimbursement-html.md`):
+
+1. **(P1) Light banners in dark mode.** The Submitted, Approved and Rejected banners hardcode light fills (`.reim-lifecycle-banner.submitted/.approved/.rejected`, `templates/reimbursement.html:1690-1703`). Only `.draft` has a dark override (`static/css/app-dark-pages.css:1087`). Measured in dark: `#fffbeb` on a `#292a2d` page. This breaks the Tonal Dark Rule.
+3. **(P2) Accent used as money text, below 4.5:1.**
+   - `#reimDockTotal` (`.reim-dock-total`, `color: var(--app-primary, #0f5132)`, :628) measures 3.17:1 in dark.
+   - `#reimSummaryGrandTotal` (`.reim-summary-total .reim-summary-value`, `color: var(--app-primary, #198754)`, :1240) measures 4.33:1 in light.
+   - `.reim-grand-total-cell` (:497) hardcodes a `#0f5132 → #198754` gradient. That breaks the One Variable Rule for other accents.
+4. **(P2) The Submit confirm** (`submitReimbursement`, the `reimConfirmDialog` call at :7568) shows neither the ₱ total nor the period being committed.
+6. **(P3) Duplicate text:**
+   - The lock sentence appears both in `#reimLifecycleReason` and in the worksheet subtitle `#reimStatusText`.
+   - "Worksheet zoom" is visible twice.
+   - Manual rows' phone cards print the task twice: the `<h3>` at :5569 and the `<span>` at :5573.
+8. **(P3) Selection controls on locked records:** Select all, Delete selected (0) and the row checkboxes still show on a Submitted, Approved or Paid record.
+
+## Decisions taken
+
+1. **Dark banner pairs, page-local:** add them to the template's `<style>` block under the same `:root[data-app-theme="dark"]` selector the draft rule uses, rather than editing shared `app-dark-pages.css`. Colours are semantic (Semantic Status Rule), not the accent:
+   - Submitted: amber `rgba(245,158,11,.12)` fill, `rgba(245,158,11,.45)` border.
+   - Approved: green `rgba(34,197,94,.12)` / `rgba(34,197,94,.45)`.
+   - Rejected: red `rgba(239,68,68,.12)` / `rgba(239,68,68,.45)`.
+   - Banner text `var(--app-text)`.
+2. **Money totals** use `var(--app-primary-text)`, which is dark-aware.
+3. **Grand-total cell:** `background: var(--app-primary-soft); color: var(--app-text); border-top: 2px solid var(--app-primary)`. No gradient.
+4. **Confirm dialog** adds one line before the existing message: "Period: <start> – <end> · Total: ₱<amount>".
+5. **Locked records** hide the selection controls. They are not just disabled.
+
+## Investigation
+
+- **Banner class switching:** `renderReimbursementLifecycleBanner()` (:5770) sets `banner.className = 'reim-lifecycle-banner show <cssClass>'` and writes `#reimLifecycleReason`.
+- **Lock-state function:** it sits just above, around :5836. It toggles `.reim-page.reim-locked` (:5843) and also writes `#reimStatusText`. That is where the duplicate sentence comes from; the executor confirms the exact assignment.
+- **`--app-primary-text`** (`static/css/app-themes.css`) is the strong accent in light, and the accent mixed 60% with white in dark (Travel Request Batch 4 investigation).
+- **Selection controls:** `#reimSelectAllRows` (:3444), `.reim-row-select` (:5528, :5566) and the Delete selected button. `setReimbursementSubmitInputsBusy` (:7165) lists these selectors and must keep working.
+- **Zoom control (:3424-3428):**
+  - visible span `.reim-zoom-label`
+  - `visually-hidden` label `for="reimZoomLevel"`
+  - `aria-label` attributes
+
+  The executor measures which copy is actually visible twice (Assessment A counted two visible copies) and keeps one visible label plus the accessible name.
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section, and DESIGN.md Colors (Tonal Dark, One Variable, Semantic Status, Small-Text Contrast).
+2. **Dark banners** (decision 1). Done = in graphite and AMOLED, Submitted, Approved and Rejected banners sit on dark tints, and their text is ≥4.5:1.
+3. **Totals** (decisions 2–3) on `.reim-dock-total` (including the focus-mode and phone variants at :828 and :861), `.reim-summary-total .reim-summary-value`, and `.reim-grand-total-cell` (including the variant at :522). Done = ≥4.5:1 in light, graphite and AMOLED with the classic, green and purple accents. No `#0f5132` or `#198754` is left in these rules.
+4. **Confirm dialog** (decision 4). In `submitReimbursement`, build the line from `reimbursementActiveContext.start/end` (formatted with `formatExpenseDate`) and the same total the dock shows (`#reimDockTotal` text, or the function that fills it near :3864). Done = the dialog reads "Period: 07-01-2026 – 07-31-2026 · Total: ₱123.45" before the existing text.
+5. **Duplicates:**
+   - The lock-state function stops writing the lock reason into `#reimStatusText`. Its own progress messages (loading, saved, submitted) stay.
+   - Keep one visible "Worksheet zoom" label.
+   - On manual rows' phone cards, the `<span>` at :5573 shows the date or category instead of repeating the task.
+   - Done = each text appears once (measure with `innerText` counts).
+6. **Locked selection:** add `.reim-page.reim-locked` rules that hide `.reim-row-selection-control`, the Delete selected button and `.reim-row-select`. Done = hidden on a Submitted record, and visible again on a Draft.
+7. **Kept functions:** `renderReimbursementLifecycleBanner`, `submitReimbursement`, `reimConfirmDialog`, `setReimbursementSubmitInputsBusy`, `handleReimbursementSelectAllRows` and `handleReimbursementRowSelection` are still defined and wired. No ids are removed.
+
+## Deliberately excluded
+
+- **Editing `app-dark-pages.css`:** a shared file, which would need the full suite. Page-local rules cover this page.
+- **The red filled Withdraw button and the "Submit cancelled by user." wording:** observations outside the closed list.
+- **Weights, radii, sizes and layout:** Batch 4.
+
+## Verification
+
+- **Tests:** new class `ReimbursementBatch3SourceTests` in `tests/test_reimbursement_design.py`. It checks:
+  - dark rules exist for `.submitted`, `.approved` and `.rejected`
+  - totals use `--app-primary-text`, and there is no gradient in `.reim-grand-total-cell`
+  - the confirm message contains `Period:` and `Total:`
+  - the lock-state function no longer assigns the lock reason to `reimStatusText`
+  - locked rules hide the selection controls
+  - a kept-functions guard
+
+  **Positive control** against `HEAD`'s template in the scratchpad: the style tests fail and the guard passes.
+- **Focused run:** `tests/test_reimbursement_*.py`, `test_appearance_themes`, `test_dark_mode_readability`, `test_changelog_coverage`.
+- **Browser** on a DB copy, with a Draft, a Submitted, an Approved and a Rejected record (seed the missing statuses on the copy):
+  - Measure banner and total contrast in light, graphite and AMOLED.
+  - Open Submit and cancel at the confirm, checking the period and total line.
+  - Count the duplicate texts at 375px.
+  - Selection controls are hidden on the locked records.
+  - Console clean. Clean up.
+
+## After implementation
+
+1. Self-review the diff.
+2. Service worker `CACHE_VERSION` → the next free number, with suffix `-reimbursement-contrast`.
+3. `releases.json`: "Clearer Reimbursement Status and Totals" (everyone). Items: readable status banners and totals in dark mode; the Submit check shows the period and total; locked records hide row selection.
+4. `changes.md` and this plan's Status.
+5. Commit only the template, `app.py` (version), `releases.json`, tests, `plans.md` and `changes.md`. Publish only on "commit and push".
+
+## Risks
+
+- **Status text loses information:** only the duplicate sentence is removed, and the banner keeps it. Checked by reading both on each status.
+- **Accent-mixed totals on light accents:** measured across accents in step 3.
+- **Blast radius:** CSS plus a few JS lines on one page. Rollback = revert the commit.
+
+---
+
+# Reimbursement — Batch 2: Server Cleanup (schedule load in one query, unused status counts, duplicate status key)
+
+**Status:** Approved — awaiting go-ahead
+**Approved:** 2026-10-13 (owner chose batches 1–4 after the 2026-10-13 page scan).
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch 1 executed (both touch `app.py`). Find code by function name.
+
+## Context
+
+Three findings from the 2026-10-13 page scan of `/reimbursement`:
+
+- **Schedule load runs one query per schedule (Medium, speed).** `get_reimbursement_schedule_rows` (`app.py:39270`) loads every engineer's shifts in the range (up to 63 days). For each shift it then calls `get_shift_assigned_engineer_ids(shift)`, which runs its own `ShiftEngineer` query, and only then skips shifts that are not the user's.
+- **`status_counts` is unused.** `get_my_reimbursement_statuses` (`app.py:40492`) computes `status_counts` twice: once in the loop, then with an extra GROUP BY query. The page never reads it (`templates/reimbursement.html` only uses `items`), and it leaves out Paid.
+- **Duplicate `'paid'` key** in `reimbursement_normalize_status`'s map (`app.py:36880` and `:36883`).
+
+Intended outcome: the same rows, returned with one shift query, and less dead work. No visible change.
+
+## Decisions taken
+
+1. **Filter in SQL with exactly today's rule.** A shift belongs to the user when its `engineer_id` is the user's, **or** the user is linked in `ShiftEngineer`. That is the same as `profile.id in get_shift_assigned_engineer_ids(shift) or shift.engineer_id == profile.id`. The shared helper `get_shift_assigned_engineer_ids` is **not** changed (other pages use it).
+2. **Remove `status_counts`** from the response and both of its computations. Grep `templates/`, `static/` and `tests/` for `status_counts` first. On 2026-10-13 nothing read it; if a reader exists, stop and record it here instead.
+3. Remove the second `'paid': 'Paid'` line. Behaviour is identical.
+
+## Investigation
+
+- `get_shift_assigned_engineer_ids` (grep `def get_shift_assigned_engineer_ids`) returns the `ShiftEngineer` ids for the shift, or `[shift.engineer_id]` when none are linked.
+- The schedule route's check is `profile.id not in assigned_ids and shift.engineer_id != profile.id → skip`. Equivalent SQL: `or_(Shift.engineer_id == profile.id, Shift.id.in_(select(ShiftEngineer.shift_id).where(ShiftEngineer.engineer_id == profile.id)))`.
+- `reimbursement_is_work_expense_schedule(shift)` and the claimed-shift exclusion stay in Python, unchanged.
+- **Data:** the local DB has 557 shifts; production has more. The page calls the route on every Load Schedules, This Week and This Month.
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section.
+2. **`get_reimbursement_schedule_rows`:**
+   - Add the `or_` filter (Investigation) to the `Shift.query`.
+   - Keep the Python `assigned_ids` check as it is (a cheap safety net, now only over the user's shifts).
+   - Done = same rows and order as before for an engineer who is assigned through `ShiftEngineer` only, through `engineer_id` only, or both. Another engineer's shifts are never returned.
+3. **`get_my_reimbursement_statuses`:** delete the in-loop `status_counts` dict and increment, the GROUP BY block with its try/except, and the `'status_counts'` response key. Done = the response has `success`, `items`, `count` and `status_filter`; the page's status list renders as before.
+4. **`reimbursement_normalize_status`:** delete the duplicate `'paid'` line.
+
+## Deliberately excluded
+
+- **Changing `get_shift_assigned_engineer_ids`:** it is a shared helper used by the Calendar and other pages, and would need the full suite.
+- **Deleting `/mark_reimbursement_processing` and `/accounting_mark_processing`:** they have no caller, but they belong to Accounting Center, which was not scanned.
+- **The 20-item status list limit:** not in the agreed batches.
+
+## Verification
+
+- **Tests:** a new HTTP test in `tests/test_reimbursement_range_reuse.py` style (temporary SQLite engine, as in `test_locked_range_does_not_replace_editable_record_and_zero_rows_do_not_claim`). Seed two engineers and three shifts in one range:
+  - one linked to A through `ShiftEngineer`
+  - one with `engineer_id = A`
+  - one for B only
+
+  `/get_reimbursement_schedule_rows` for A returns the first two, not the third. Count the queries with a SQLAlchemy `before_cursor_execute` listener: at most a small constant, independent of the shift count (assert that 3 and 10 shifts give the same count).
+
+  A source test asserts that `status_counts` is gone from `get_my_reimbursement_statuses` and that `'paid'` appears once in the normaliser map.
+
+  **Positive control:** run the query-count test against `HEAD`'s `app.py` in-process (scratchpad copy, never `git stash`). It fails on the count.
+- **Focused run:** `tests/test_reimbursement_*.py`, `test_request_recall`. No full suite: one route plus one page-scoped helper, and the shared helper is untouched.
+- **Browser** on a DB copy: This Month and an old month load the same row count as before (note the before count first). The status list renders. Console clean. Clean up.
+
+## After implementation
+
+1. Self-review the diff (`app.py` and tests only).
+2. No service worker bump or release entry: nothing user-visible. Run `test_changelog_coverage` to confirm it does not require one.
+3. `changes.md` and this plan's Status.
+4. Commit `app.py`, tests, `plans.md` and `changes.md` only. Publish only on "commit and push".
+
+## Risks
+
+- **A rule mismatch drops or adds rows:** covered by the three-shift test and the before/after row count in the browser.
+- **Blast radius:** one read-only route and one response key. Rollback = revert the commit.
+
+---
+
+# Reimbursement — Batch 1: Bugs (upload date-range check, status list refresh after Save and Submit)
+
+**Status:** Executed locally 2026-10-13 (owner: "execute it"); awaiting "commit and push". Tests: 6 added (4 fail on `HEAD`); focused run 175 OK. Browser check on a DB copy passed.
+**Differences from plan:** (1) tests went in a new file `tests/test_reimbursement_batch1_fixes.py` with the `test_client` + `session['_user_id']` style of `tests/test_reimbursement_pc_code.py` (the range-reuse file has no HTTP client); upload root and `managed_storage_write_bytes` are patched so the valid upload writes nothing. (2) The browser Submit ran with `EMAIL_NOTIFICATIONS_ENABLED=false` and an empty `BREVO_API_KEY` in the temporary launch entry, because the local `.env` holds a live mail key.
+**Approved:** 2026-10-13 (owner chose batches 1–4 after the 2026-10-13 page scan).
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** nothing. Execute first.
+
+## Context
+
+Two bugs reproduced on a copy of `scheduler.db` during the 2026-10-13 page scan:
+
+1. **Receipt upload accepts a backwards or unbounded date range and creates a draft.**
+   - Cause: `upload_reimbursement_receipt` (`app.py:40892`) parses start and end, then calls `reimbursement_find_owned_header_or_404(..., create=True)`. It has no "end before start" check and no 63-day limit, unlike `save_reimbursement_draft` (:40625-40629) and `get_reimbursement_schedule_rows`.
+   - Reproduced: POST `start=2026-12-31&end=2026-01-01&additional_receipt=1` with a PNG returned 200 and created Draft #9 with that reversed range, plus a stored file.
+   - With `additional_receipt=1` the shift check is skipped, so nothing else stops it.
+2. **"My Reimbursement Status" goes stale after Save and Submit.**
+   - Cause: `loadMyReimbursementStatuses()` runs only on page load (`templates/reimbursement.html:8481`) and after Delete (:7256).
+   - Reproduced: after submitting #7 the list still showed "Draft ₱123.45" with no Withdraw button until Refresh Status was clicked. The overlap notice (`renderReimbursementOverlapNotice`, :8125) uses the same stale list.
+
+Intended outcome: the server rejects bad ranges on upload the same way Save does, and the status list reflects Save and Submit right away.
+
+## Decisions taken
+
+1. **Upload uses Save's rules and messages:** 400 "End date must be after start date" and 400 "Date range is limited to 63 days for performance". The checks run before any header lookup or creation.
+2. **Status list refresh:**
+   - After a successful **manual** Save: refresh, so autosaves don't trigger a fetch every few seconds.
+   - After a successful Submit: refresh.
+   - Not awaited, so the buttons don't wait on it.
+
+## Investigation
+
+- **`save_reimbursement_draft` checks** at `app.py:40625-40629`. Copy them as-is.
+- **Manual Save success:** the toast `reimToast('Draft saved.', …)` runs only when `entry.payload.save_source === 'manual'` (`templates/reimbursement.html:6499`). That is the place to add the manual-only refresh.
+- **Submit success path:** `setReimbursementSubmitNotice(\`${message} Reimbursement #… is now in the manager's approval queue…\`)` at :7635 in `submitReimbursement` (:7494).
+- **Withdraw button:** `renderMyReimbursementStatuses` shows Withdraw only for `submitted` items (:8116). The refresh makes it appear.
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section.
+2. **`upload_reimbursement_receipt`:** right after the date parse, add the two checks from decision 1. Done = a reversed range and a 64-day range each return 400 with nothing created; a valid range uploads as before.
+3. **Template, after the manual-save toast (:6499):** call `loadMyReimbursementStatuses();` (not awaited). Done = after Save Draft the list shows the new updated time and total.
+4. **Template, after the Submit success notice (:7635):** call `loadMyReimbursementStatuses();` (not awaited). Done = after Submit the record shows "Submitted / Waiting for Approval" and Withdraw without Refresh.
+5. **Kept functions:** `uploadReimbursementReceipt` (or the page's upload function), `saveReimbursementDraft`, `submitReimbursement`, `loadMyReimbursementStatuses` and `renderReimbursementOverlapNotice` are still defined and wired.
+
+## Deliberately excluded
+
+- **Refreshing after autosave:** too many requests. A manual save or submit is the meaningful change.
+- **Paging the status list beyond 20:** not in the agreed batches.
+
+## Verification
+
+- **Tests:**
+  - **HTTP**, in the temporary-SQLite style of `tests/test_reimbursement_range_reuse.py`: log in as a seeded engineer. POST `/upload_reimbursement_receipt` with a reversed range and with a 64-day range (additional receipt, small PNG). Expect 400 each, and `ReimbursementHeader` count unchanged. A valid one-day range returns 200.
+  - **Source:** `loadMyReimbursementStatuses()` is called in the manual-save branch and in the submit success branch of `submitReimbursement`.
+  - **Positive control:** run both against `HEAD`'s files (scratchpad, in-process; never `git stash`). Both fail.
+- **Focused run:** `tests/test_reimbursement_*.py`, `test_request_recall`, `test_changelog_coverage`. No full suite: one route plus page JS.
+- **Browser** on a DB copy (temporary password on the copy only):
+  - Repeat the reversed-range upload: 400, no new record.
+  - Open the Draft: Save Draft updates the list; Submit shows Submitted and Withdraw in the list.
+  - Console clean. Delete any test receipt file in `static/uploads/reimbursements/`, the copy and the launch entry.
+
+## After implementation
+
+1. Self-review the diff.
+2. Service worker `CACHE_VERSION` → the next free number, with suffix `-reimbursement-fixes`. Keep the previous value as a history comment.
+3. `releases.json`: "Reimbursement Status Updates Right Away" (everyone). Items: your status list updates after Save and Submit; receipt upload rejects an invalid date range.
+4. `changes.md` and this plan's Status.
+5. Commit only `app.py`, `templates/reimbursement.html`, `static/changelog/releases.json`, tests, `plans.md` and `changes.md`. Publish only on "commit and push".
+
+## Risks
+
+- **Existing uploads with an unusual range:** the client always sends the loaded range, which Save has already validated, so normal use is unaffected. The checks only reject requests Save would reject too.
+- **Blast radius:** one route guard and two JS calls. Rollback = revert the commit.
+
+---
+
 # Travel Request — Batch 4: DESIGN.md Alignment (Page Header, weights, radii, Submit colour, theme variables, phone first screen and dock)
 
 **Status:** Executed — published to `main` on 2026-10-12 on the owner's "commit and push" (commit `25a0b00`; owner: "execute batch 4" the same day). Tests: 7 added (6 style tests fail on `HEAD`, guard passes); focused run 148 OK. Browser check on a DB copy passed (1366 px light/graphite/AMOLED, 375 px).
