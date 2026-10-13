@@ -216,7 +216,7 @@ Design scan snapshot `.impeccable/critique/2026-10-13T06-30-23Z__templates-leave
 
 # Leave Request — Batch 2: Page Behaviour (busy lock, read-only records, Form to Follow saves first, rejection remarks, confirms)
 
-**Status:** Executed locally 2026-10-13 (owner: "execute batch 1 then 2"); not yet committed, awaiting "commit and push".
+**Status:** Executed — `56c75c8` on `main` (2026-10-13; owner: "execute batch 1 then 2", then "commit and push").
 **Outcome differences:** `saveLeaveDraft` (guarded) now catches and returns `null` instead of rethrowing, so the Save button no longer leaves an unhandled promise rejection; inner callers use `saveLeaveDraftCore`, which still throws. `uploadLeaveAttachments` checks for selected files before it saves a new draft. A new `renderLeaveStatusNote` fills `#leaveStatusNote` via `textContent`; Rejected adds a red left edge (`.leave-status-note.rejected`). `.leave-btn[hidden]{display:none}` added so `hidden` beats `.leave-btn`'s `inline-flex`.
 **Approved:** 2026-10-13 (see Batch 4).
 **Detailed:** 2026-10-13.
@@ -311,7 +311,7 @@ Page scan of `/leave_request` (2026-10-13). Confirmed on a copy of the database:
 
 # Leave Request — Batch 1: Server Checks (65-day range, reason length, Form to Follow conflicts, no Provisional delete, no self-approval)
 
-**Status:** Executed locally 2026-10-13 (owner: "execute batch 1 then 2"); not yet committed, awaiting "commit and push".
+**Status:** Executed — `56c75c8` on `main` (2026-10-13; owner: "execute batch 1 then 2", then "commit and push").
 **Outcome differences:** the save-time conflict check also runs for Rejected-with-emergency records (they rewrite the calendar too, as the plan said). The unknown-id 404 also covers another user's id (`find_header` returns `None`). Test users for provisional/approval are the named superadmins `jonamar`/`robert` on the module's own temp DB, because `create_provisional_leave_request` needs a named superadmin. `tests/test_leave_request_workflow.py` pinned the removed dead owner check; it now checks that submit uses `find_header(leave_id)`.
 **Approved:** 2026-10-13 (see Batch 4).
 **Detailed:** 2026-10-13.
