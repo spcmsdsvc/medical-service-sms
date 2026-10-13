@@ -204,7 +204,7 @@ Intended outcome: the page reads like Travel Request and My Requests. The form i
 
 # Cash Advance — Batch 2: Page Behaviour (double-submit lock, deep link, read-only records, counts, Liquidation and Delete Draft buttons)
 
-**Status:** Executed locally 2026-10-13 (owner: "execute batch 1 then 2") — not committed; awaiting "commit and push".
+**Status:** Executed — `897e193` on `main` (2026-10-13; owner: "execute batch 1 then 2", then "commit and push").
 **Outcome differences:** "Received" also gets the "Received. Start or open the liquidation." sentence (it has a liquidation button); Liquidation Completed is not counted as Ready (treated as completed). Batch 1 and 2 browser checks were one combined pass; Submit was not exercised in the browser (no test signature; covered by server tests). The browser seed needed an Engineer profile with a Manila branch for Start Liquidation.
 **Approved:** 2026-10-13 (owner: "all approved"; Delete Draft: "Yes, drafts only").
 **Detailed:** 2026-10-13.
@@ -321,7 +321,7 @@ Intended outcome: the page cannot create duplicates, opens the linked record, sh
 
 # Cash Advance — Batch 1: Server Checks (amount/days/date validation, server request date, CSRF on attachments, draft delete route, lighter list, dead code)
 
-**Status:** Executed locally 2026-10-13 (owner: "execute batch 1 then 2") — not committed; awaiting "commit and push".
+**Status:** Executed — `897e193` on `main` (2026-10-13; owner: "execute batch 1 then 2", then "commit and push").
 **Outcome differences:** added `cash_advance_amount_error` and a shared `cash_advance_liquidation_fields` (used by both `cash_advance_to_dict` and the new list builder, so the liquidation rule has one source). The list query-count test warms up once first (the first request runs one-time table checks). Full suite: no new failures.
 **Approved:** 2026-10-13 (owner: "all approved"; Delete Draft: "Yes, drafts only").
 **Detailed:** 2026-10-13.
