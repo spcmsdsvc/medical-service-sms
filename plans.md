@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # My Calibrations — Engineer Calibration Center (3 batches)
 
-**Status:** Executed locally, not yet committed (owner: "execute all in order", 2026-10-13). Awaiting "commit and push".
+**Status:** Executed — `8ae5441` on `main` (2026-10-13; owner: "execute all in order", then "commit and push"; Railway deploying).
 **Differences:**
 - Batch 1 step 3: the certificate preview/download routes already allow the requester (`calibration_certificate_requester_can_view`), so no permission question remains.
 - Batch 2 step 4: the cold-tab `fix_url` opens the returned report as-is, so no sessionStorage fallback was needed.
