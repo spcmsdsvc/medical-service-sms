@@ -39,7 +39,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Leave Request — Batch 4: Dark Mode (pills, danger buttons, selected segment, Form to Follow box, notices)
 
-**Status:** Approved — awaiting go-ahead.
+**Status:** Executed locally — not yet committed (2026-10-13; owner: "execute batch 3 then 4").
+**Differences:** none in scope. Measured: every text ≥4.5:1 in light, graphite and AMOLED with classic, green and purple accents, except Submit with purple at 4.23:1 (app-wide accent fill, same as Cash Advance; left unchanged). Desktop proof screenshots were not possible (pane 320px wide); AMOLED phone screenshots taken and every theme measured numerically.
 **Approved:** 2026-10-13. The owner answered the scan's open questions ("65 calendar days, allow past dates, no provisional delete, block self-approval") after the read-only page scan and design scan of `/leave_request`.
 **Detailed:** 2026-10-13.
 **Branch:** `main` (local first; publish only on "commit and push").
@@ -102,7 +103,8 @@ Intended outcome: every text reaches at least 4.5:1 in light, graphite and AMOLE
 
 # Leave Request — Batch 3: Design System (Page Header, form first, weights, radii, buttons, focus, phone overflow)
 
-**Status:** Approved — awaiting go-ahead.
+**Status:** Executed locally — not yet committed (2026-10-13; owner: "execute batch 3 then 4").
+**Differences:** the three segment group titles (Duration, Half-day on, Half-Day Period) have no single target id, so they became `.leave-label` divs with `role="radiogroup"`/`aria-labelledby` instead of `for=`; the icon-only attachment Delete also got an `aria-label`; buttons are 44px at every width, not only on phones. Found during the Batch 4 measurements and fixed here: muted text in the light Form to Follow box (4.36:1) and the light selected segment with the purple accent (4.23:1, now `--app-primary-text`).
 **Approved:** 2026-10-13 (see Batch 4).
 **Detailed:** 2026-10-13.
 **Branch:** `main` (local first; publish only on "commit and push").

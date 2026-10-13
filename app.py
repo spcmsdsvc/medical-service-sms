@@ -27400,7 +27400,9 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v311-cash-advance-dark.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v312-request-page-header.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v313-leave-server.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v314-leave-page';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v314-leave-page.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v315-leave-design.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v316-leave-dark';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

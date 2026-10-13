@@ -1,6 +1,69 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-leave-dark",
+      "release_date": "2026-10-13",
+      "title": "Leave Request in Dark Mode",
+      "summary": "Leave Request is easy to read in the dark themes.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-leave-dark-pills",
+          "category": "Leave Request",
+          "description": "Status labels, Delete and Withdraw, and the chosen duration are readable in Graphite and AMOLED.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-leave-dark-blocks",
+          "category": "Leave Request",
+          "description": "Notices, the conflict check and the Form to Follow box no longer show as light blocks in dark mode.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-13-leave-design",
+      "release_date": "2026-10-13",
+      "title": "Leave Request Form Comes First",
+      "summary": "The Leave Request form is now at the top of the page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-leave-design-header",
+          "category": "Leave Request",
+          "description": "Leave Request uses the same header as the other request pages, with the status beside the title and a New Request button.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-leave-design-order",
+          "category": "Leave Request",
+          "description": "The form comes first, then attachments, then My Leave Requests; Submit is the one highlighted button.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-13-leave-design-phone",
+          "category": "Leave Request",
+          "description": "On a phone the page no longer scrolls sideways, and buttons are easier to tap.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-leave-page",
       "release_date": "2026-10-13",
       "title": "Leave Request Fixes",

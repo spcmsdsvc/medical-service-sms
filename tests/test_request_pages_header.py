@@ -1,5 +1,5 @@
 """Request Pages plan: one header, header button placement and page width on
-Travel Request, Cash Advance and Reimbursement (source checks)."""
+Travel Request, Cash Advance, Reimbursement and Leave Request (source checks)."""
 
 import os
 import pathlib
@@ -11,9 +11,9 @@ ROOT = pathlib.Path(os.environ.get('REQUEST_PAGES_ROOT', pathlib.Path(__file__).
 CSS = (ROOT / 'static' / 'css' / 'app-dashboard.css').read_text(encoding='utf-8')
 PAGES = {
     name: (ROOT / 'templates' / f'{name}.html').read_text(encoding='utf-8')
-    for name in ('travel_request', 'cash_advance', 'reimbursement')
+    for name in ('travel_request', 'cash_advance', 'reimbursement', 'leave_request')
 }
-WRAPPERS = {'travel_request': 'travel-page', 'cash_advance': 'cash-page', 'reimbursement': 'reim-page'}
+WRAPPERS = {'travel_request': 'travel-page', 'cash_advance': 'cash-page', 'reimbursement': 'reim-page', 'leave_request': 'leave-page'}
 KEPT_FUNCTIONS = {
     'travel_request': ('startNewTravelRequest', 'submitTravelRequest'),
     'cash_advance': ('clearCashAdvanceForm', 'saveCashAdvanceDraft', 'submitCashAdvance'),
@@ -21,6 +21,7 @@ KEPT_FUNCTIONS = {
         'expandReimbursementRangeCard', 'collapseReimbursementRangeCard',
         'applyReimbursementStatusUi', 'loadReimbursementRows',
     ),
+    'leave_request': ('clearLeaveForm', 'saveLeaveDraft', 'submitLeave'),
 }
 
 
