@@ -2,6 +2,7 @@
 
 codex changes - 2026-10-14
 
+- Published the Calibration Report draft-save fix (2026-10-13) and the false "Different saved copies" fix together to `main` as `a917bea` on "commit and push" (service worker v320). `scheduler.db` and the unrelated dirty files (`.impeccable/`, handoffs, `changes-archive.md`, the pre-existing LPR line edit in `changes.md`) were left out.
 - Executed **TSR drafts — false "Different saved copies" after account backup** (`plans.md`) on the owner's "execute"; not committed, to be published together with the 2026-10-13 Calibration Report fix. No function renamed or removed.
 - `templates/offline_tsr.html` `standaloneTSRDraftComparableSignature`: object fields that are `null`/`undefined`, and the keys `blob`, `file`, `data_url`, `pdf_blob` and `pdf_data_url` at any depth, are now ignored in the comparison. This matches what `project_tsr_draft_payload_for_server` keeps in the account backup. Identical device and account drafts no longer trigger "Different saved copies were found", and page loads no longer archive them as history versions (`save_tsr_draft_version`). Real edits and attachment changes (compared by name and `blob_id`) still raise the prompt.
 - Service worker `CACHE_VERSION` → `medical-service-pwa-offline-navigation-v320-draft-conflict-compare` (v319 kept as a history comment; both unpublished fixes ship under v320). `static/changelog/releases.json`: engineer release "No more false 'Different saved copies'".

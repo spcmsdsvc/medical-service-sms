@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # TSR drafts — false "Different saved copies" after account backup (1 batch)
 
-**Status:** Executed locally 2026-10-14 (owner: "APPROVED PARTNER", then "execute. we publish them together later on"); not committed. It is published together with the Calibration Report fix below under service worker v320.
+**Status:** Executed — `a917bea` on `main` (2026-10-14; owner: "APPROVED PARTNER", then "execute. we publish them together later on", then "commit and push"). Published together with the Calibration Report fix below under service worker v320.
 
 Outcome notes: executed as planned. The new test also asserts that the server projection really drops `parent_shift_id` and the attachment `data_url`, so a future server change is caught. The focused run's only failures were the known `test_offline_resilience` address test and `test_changelog_workflow.test_manifest_entries_cannot_be_deleted`, which passes on its own and with its module (order-dependent in the combined run, not caused by this change).
 
@@ -130,7 +130,7 @@ are not cleaned up; they expire under the 30-day / five-version cap.
 
 # Calibration Report — draft save blocked after the TSR was saved (1 batch)
 
-**Status:** Executed locally 2026-10-13 (owner: "approve all four", then "execute"); not committed yet, awaiting "commit and push".
+**Status:** Executed — `a917bea` on `main` (executed 2026-10-13, owner: "approve all four", then "execute"; published 2026-10-14 on "commit and push", together with the draft-conflict fix above under service worker v320).
 
 ### Amendments during execution
 
