@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Request Pages — Uniform Header, New Request Button and Page Width (Travel, Cash Advance, Reimbursement)
 
-**Status:** Executed — local on `main`, not yet committed (2026-10-13; owner: "execute"). Awaiting "commit and push".
+**Status:** Executed — `ae3e2e0` on `main` (2026-10-13; owner: "execute", then "commit and push").
 **Outcome differences:** `.cash-page` top padding 6px → 0 and `.reim-page` padding → `0 0 10px` (phone `0 0 12px`) so all three titles share the same top and left edge (measured identical at 1366, 1920 and 375px). `app-dashboard.css?v=` bumped 16 → 17 on the four pages that pinned 16 (`accounting_center`, `cash_advance`, `dashboard`, `travel_request`) plus Reimbursement, with the four pinned tests updated; `analytics.html` (`?v=75`) left as is. Release category "Cash Advance" (no shared "Requests" category exists). Owner spotted a grey block behind the Cash Advance header in dark mode: shared `app-dark-pages.css` painted `.cash-page` as a panel; removed from that list (`?v=34`), with a guard test.
 **Approved:** 2026-10-13. The owner sent a Travel Request screenshot ("i like the format of travel request… apply this to reimbursement and cash advance"), narrowed the scope to "the header and also the new request button, placement and all… and also the margin on the left and right", then answered "a, approved". Option (a) caps Reimbursement's width like the other two pages.
 **Detailed:** 2026-10-13.
