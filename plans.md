@@ -37,6 +37,230 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# TSR drafts — false "Different saved copies" after account backup (1 batch)
+
+**Status:** Executed locally 2026-10-14 (owner: "APPROVED PARTNER", then "execute. we publish them together later on"); not committed. It is published together with the Calibration Report fix below under service worker v320.
+
+Outcome notes: executed as planned. The new test also asserts that the server projection really drops `parent_shift_id` and the attachment `data_url`, so a future server change is caught. The focused run's only failures were the known `test_offline_resilience` address test and `test_changelog_workflow.test_manifest_entries_cannot_be_deleted`, which passes on its own and with its module (order-dependent in the combined run, not caused by this change).
+
+## Context
+
+Found while verifying the Calibration Report draft-save fix (plan below). After a TSR draft is backed
+up to the account, reloading Create TSR reports "Different saved copies were found. Choose Use this
+copy in Continue Saved Work first." even when both copies hold identical content. The engineer must
+pick a copy before continuing or saving, and the Calendar Calibration Report reopen
+(`openCalibrationReportHandoff`) stops at that prompt instead of reopening the report. Intended
+outcome: identical copies compare equal; real differences still raise the prompt.
+
+## Decisions taken (owner, 2026-10-14)
+
+Fix the browser comparison only, so it matches what the server keeps. The server projection stays
+unchanged (it deliberately keeps file bytes out of account backups). Existing extra history versions
+are not cleaned up; they expire under the 30-day / five-version cap.
+
+## Investigation
+
+- `project_tsr_draft_payload_for_server` (`app.py:18585`) drops every `None` value inside objects
+  (keeps `None` inside lists) and drops the keys `blob`, `file`, `data_url`, `pdf_blob`, `pdf_data_url`
+  at any depth. The account copy therefore lacks those fields.
+- The device copy keeps them: schedule options carry nulls (`selectedSchedule.parent_shift_id`,
+  `selectedSchedule.calibration_summary.approval_id/approved_at/revision_no`), and every stored
+  attachment keeps `data_url: ''` (`convertQueuedAttachmentToBlobReference`, `offline_tsr.html:6852–6857`).
+- `standaloneTSRDraftComparableSignature` (`offline_tsr.html:4044`) treats null vs missing and
+  `data_url:''` vs missing as different. Running it in Node on a device-style payload and its server
+  projection gave `nullField_sameToday:false`, `attachment_sameToday:false`.
+- Side effect: `mergeServerStandaloneTSRDrafts` (`offline_tsr.html:4945–4952`) archives each "divergent" device copy
+  to `POST /save_tsr_draft_version` on every page load. These were the repeated POSTs seen in the 2026-10-13 browser
+  check, and they crowd out genuine history versions (cap: 5 versions / 30 days).
+- Prototype of the fix (skip null/undefined object values and the five server-dropped keys inside
+  `normalize`): identical copies match (`nullSame`, `attachmentSame` true) and real differences still conflict
+  (`realEditStillDiffers`, `attachmentRenameStillDiffers` true). No existing test relies on file bytes in the comparison
+  (`__blob`, non-empty `data_url` and `new Blob` are absent from `tests/test_tsr_draft_sync.py`).
+
+## Execution steps
+
+1. **Comparison.** In `standaloneTSRDraftComparableSignature` (`templates/offline_tsr.html`), add
+   `const serverDroppedKeys = new Set(['blob','file','data_url','pdf_blob','pdf_data_url']);` and, inside `normalize`
+   for object keys, skip a key when its value is `null`/`undefined` or the key is in `serverDroppedKeys` (any depth).
+   Arrays and the existing top-level `storageOnlyKeys` handling are unchanged. Add a one-line comment naming the server
+   projection it mirrors. Done: the Node prototype results above hold against the real function.
+2. **Kept functions.** `standaloneTSRDraftComparableSignature`, `standaloneTSRDraftRecordsHaveSameContent`,
+   `groupStandaloneTSRDraftVersions`, `rememberStandaloneTSRDraftConflict`, `mergeServerStandaloneTSRDrafts` and
+   `useStandaloneTSRDraftCopy` keep their names and signatures.
+
+## Deliberately excluded
+
+- **Server projection changes.** Dropping file bytes from account backups is intended.
+- **Purging history versions already created** by the false conflicts. They age out under the existing cap.
+- **The Calibration Report fix** (plan below). It is separate and may be published before or with this one.
+
+## Verification
+
+- **Tests** (`tests/test_tsr_draft_sync.py`, Node run against the real function extracted from the template):
+  null-vs-missing nested fields compare equal; attachment `data_url:''` / `blob` vs missing compare equal; a text edit
+  and an attachment rename still differ. **Positive control:** the same test run against
+  `git show HEAD:templates/offline_tsr.html` copied to the scratchpad (never `git stash`) fails.
+- **Focused run:** `test_tsr_draft_sync`, `test_calibration_report_tombstone`, `test_tsr_calibration_report`,
+  `test_offline_resilience` (its known failure stays the only one), `test_tsr_autosave_client_groups`,
+  `test_changelog_coverage`, `test_sw_cache_version`. No shared-shell change, so no full suite.
+- **Browser** (copy of `scheduler.db`, temporary password on the test engineer):
+  - Save a draft with one attachment, wait for the account backup, reload: no "Different saved copies" prompt and no
+    `save_tsr_draft_version` POSTs on load.
+  - Edit the account copy differently (second tab) and reload: the prompt still appears.
+  - The Calendar Calibration Report link reopens the saved report directly.
+  - Console clean except expected 404 lookups. Clean up the DB copy, password, `launch.json` entry and pane storage.
+
+## After implementation
+
+1. Self-review against step 2.
+2. Service worker `CACHE_VERSION` → `…-v320-draft-conflict-compare` (keep v319 as a history comment; if the
+   Calibration Report fix is not yet published, both ship under v320).
+3. `static/changelog/releases.json`: engineer item "Saved TSR drafts no longer ask you to choose between identical copies".
+4. `changes.md` bullets. Update this Status line with the commit.
+5. Commit only `templates/offline_tsr.html`, `app.py` (cache version), `static/changelog/releases.json`,
+   `tests/test_tsr_draft_sync.py`, `plans.md` and `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs,
+   `.impeccable/` or `.claude/`.
+
+## Risks
+
+- **Hiding a real difference:** only empty values and file-byte keys are ignored, which are exactly what the server
+  never stores, so it could not have kept such a difference anyway. Attachments are still compared by name and `blob_id`.
+  The safety net is the still-differs tests.
+- **Blast radius:** draft conflict detection on Create TSR only. Rollback = revert the commit.
+
+# Calibration Report — draft save blocked after the TSR was saved (1 batch)
+
+**Status:** Executed locally 2026-10-13 (owner: "approve all four", then "execute"); not committed yet, awaiting "commit and push".
+
+### Amendments during execution
+
+- **Step 1 moved from `saveStandaloneTSRDraft` to the deliberate actions.** `tests/test_tsr_draft_sync.py` enforces that background saves never clear a tombstone (only a deliberate open or Save Draft may). So `releaseCalibrationReportDraftDeletion()` (new, in `offline_tsr.html`) runs when the report is opened (`createReport`), on Save Draft and on Save Final Report. Autosave never calls it; it works because opening already released the key. The late-report id now comes from one helper, `getStandaloneLateCalibrationDraftId`, which `prepareStandaloneLateCalibrationDraft` also uses.
+- **Added: reopen the saved report from Calendar.** The browser check showed that after a successful save, the Calendar link (`open_calibration_report=1`) still opened a blank report under the same draft key, so its first autosave would overwrite the saved report. The new `openCalibrationReportHandoff` opens the device's saved draft first (`openStandaloneTSRDraft`) when it holds an active report. When two differing saved copies exist (`openStandaloneTSRDraft` returns `false`), it stops and leaves the existing "Use this copy" prompt in charge instead of opening a blank report.
+- **Added: script version bump.** `app-calibration-report.js?v=46` → `?v=47` in `offline_tsr.html`, `calibration_center.html`, the service worker precache list in `app.py`, and the pinned tests (`test_tsr_calibration_report.py`, `test_calibration_center.py`). Without it the service worker kept serving the old script.
+- **Found, not fixed (follow-up):** after a reload, a draft that has an account backup is reported as "Different saved copies" even when the content is identical. The backup round-trip drops `null` fields (`selectedSchedule.calibration_summary.*`, `parent_shift_id`), and `standaloneTSRDraftComparableSignature` treats `null` and a missing field as different. This was already happening before this change; the report is safe and comes back via Use this copy.
+
+## Context
+
+Engineer Daniel Nopre had a multi-day schedule (Sept 30 – Oct 2, one shift per day sharing a
+`group_id`). He saved the TSR on the Sept 30 card, then pressed **Create Calibration Report** on
+the same card. Every save showed "Calibration Report draft could not be saved on this device."
+After a page refresh the whole report was blank: nothing had ever been stored. Intended outcome:
+the report saves, a failed save can never silently lose work, and a report for a schedule that
+already has a saved TSR attaches to that TSR.
+
+## Decisions taken (owner, 2026-10-13)
+
+All four fixes in one batch: (1) release the stale deletion mark before a Calibration Report
+save, (2) warn before leaving while a report save has failed, (3) say what blocked the save,
+(4) when the report is opened from a schedule that already has a saved online TSR, open it
+against that TSR instead of a new draft.
+
+## Investigation
+
+Reproduced locally (DB copy, test copy of Daniel, 3-day group, shifts 878–880):
+
+- Saving a TSR online calls `clearStandaloneTSRDraftLocally()` (`templates/offline_tsr.html:9116`;
+  also 9105, 9143, 9181 and Clear page at 1423). It writes a **permanent** tombstone for the draft key
+  (`markStandaloneTSRDraftDeletionPending` 4565, then `markStandaloneTSRDraftDeletionConfirmed` 4553,
+  status `deleted`). Tombstones are never pruned.
+- An ordinary draft key is `standalone_tsr_draft_<scheduleId>-<serviceDate>` (`resolveStandaloneTSRDraftId`, 3664),
+  so a new draft for the same schedule and date reuses the tombstoned key.
+- `saveStandaloneTSRDraftLocally` (5608) refuses any tombstoned key: `{ skipped:true, reason:'draft_deletion_pending' }` (5623–5626).
+- `saveReportDraft` in `static/js/app-calibration-report.js:1778` treats any `skipped` result as
+  "Calibration Report draft could not be saved on this device." (1800–1803). Autosave (around 939) fails the same way, silently.
+- The TSR page's own Save Draft already releases the tombstone first via
+  `clearStandaloneTSRDraftDeletionForExplicitAction` (4583; called at 9306 and 6490). The Calibration Report path
+  (`saveStandaloneTSRDraft(true)`, 9226) does not. **This is the bug.**
+- Repro: tombstone `standalone_tsr_draft_878-2026-09-30` as a TSR save leaves it, then reopen
+  `/offline-tsr?schedule_id=878&date=2026-09-30&open_calibration_report=1` → `saveStandaloneTSRDraft(true)` returns
+  `draft_deletion_pending`, the toast matches Daniel's exactly, and a reload shows an empty report.
+- Checked and **not** the cause: the multi-day layout itself. With the TSR on Sept 30 and the card carrying
+  `online_tsr_submission_id`, the button opens `mode=calibration_report` (late draft key
+  `late_calibration_<account>_<submission>`, not tombstoned), and Save Draft and Save Final Report both succeeded (upload 200, card "Uploaded").
+- So Daniel's card took the pre-TSR path (`redirectToCalibrationReportFromSchedule`, `templates/timeline.html:20750`,
+  `open_calibration_report=1`), which only happens when the card had no `online_tsr_submission_id` at click time
+  (TSR still queued or syncing, a stale offline Timeline snapshot, or a TSR that was uploaded as a PDF file rather than saved through Create TSR). The exact reason is unconfirmed (no production read access).
+  Fix 4 covers it from the TSR page side.
+- Existing pieces reused by fix 4: `getOnlineTSRCalibrationRequestFromUrl` (5381) already accepts `mode=calibration_report` +
+  `schedule_id` (type `latest`), and `GET /get_latest_online_tsr_for_shift/<id>` (`app.py:27226`) returns the latest
+  saved submission or 404. The load chain is at `offline_tsr.html:11038–11051` (calibration load, then `applyCreateTSRHandoffToStandaloneTSR`).
+
+## Execution steps
+
+All changes are in `templates/offline_tsr.html` and `static/js/app-calibration-report.js`. No server or schema change.
+
+1. **Release the tombstone for Calibration Report saves.** In `saveStandaloneTSRDraft` (`offline_tsr.html:9226`), in the
+   non-calibration-mode branch, when the Calibration Report is active (`collectTSRData().calibration_report` status is not
+   `not_started`), call `await clearStandaloneTSRDraftDeletionForExplicitAction(resolveStandaloneTSRDraftId(data))` before
+   `saveStandaloneTSRDraftLocally(data)`. Do the same in the calibration-mode branch for the late draft id (from
+   `prepareStandaloneLateCalibrationDraft`) so a late draft deleted from the drafts list can be saved again.
+   If the release write fails, return `{ skipped:true, reason:'deletion_release_failed' }`.
+   Done: the repro above saves, and a reload restores the report.
+2. **Warn before leaving after a failed save.** In `app-calibration-report.js`, keep a module flag `unsavedAfterFailure`: set it
+   wherever `saveReportDraft`, autosave (around 939) or `saveFinalReport` reports a failed or skipped local save; clear it on the next
+   successful save, on Clear Form, on Remove, and after an upload. Add one `beforeunload` listener that calls `preventDefault()` and
+   sets `returnValue` only while the flag is set. Done: after a forced failure the browser asks before reload. After a successful save it does not.
+3. **Say what blocked the save.** In `saveReportDraft`, map `result.reason` to a message:
+   `draft_deletion_pending` / `deletion_release_failed` → "This report could not be saved because an older deleted draft is blocking it. Keep this page open and press Save Draft again."
+   `source:'none'` / `failed` (storage) → "This device's browser storage is full or unavailable. Keep this page open; free up storage or use another browser."
+   `empty_tsr_draft` → keep the generic message. `calibration_context_unavailable` keeps its existing message. Every message keeps the
+   "Keep this page open" instruction, and `console.warn('[Calibration Report] Draft save skipped', result)` logs the reason.
+4. **Open against the saved TSR when one exists.** In the load chain (`offline_tsr.html:11041–11049`), before
+   `applyCreateTSRHandoffToStandaloneTSR()`: if the handoff context has `open_calibration_report`, has a numeric `schedule_id`, and
+   `navigator.onLine`, fetch `/get_latest_online_tsr_for_shift/<id>` (no-store). On `status:'success'`, `location.replace` the same
+   `/offline-tsr` URL with `mode=calibration_report&submission_id=<id>` and without `open_calibration_report`, then stop. On 404,
+   offline, or any error, continue with the current pre-TSR path unchanged. Done: opening the pre-TSR URL for a schedule with a saved
+   TSR lands in calibration mode for that submission.
+5. **Kept functions.** Confirm `saveStandaloneTSRDraft`, `saveStandaloneTSRLocalDraft`, `clearStandaloneTSRDraftLocally`,
+   `applyCreateTSRHandoffToStandaloneTSR`, `loadOnlineTSRCalibrationFromUrl` and every `window.calibrationReport` method are still defined
+   with unchanged names. Also confirm the TSR page buttons (Save Draft, Final save, attachments, Clear page) still work.
+
+## Deliberately excluded
+
+- **Pruning or redesigning tombstones.** They protect against a deleted draft coming back from the server copy; only the explicit
+  Calibration Report save releases one, which is the same rule the TSR Save Draft already follows.
+- **Server or Timeline changes**, including why Daniel's card lacked `online_tsr_submission_id`. Step 4 handles it on the TSR page,
+  and confirming the cause needs production data.
+- **An extra emergency copy of the report in localStorage.** Once step 1 lands, the normal draft saves. A storage-broken device would fail that copy too, and step 2 covers it.
+- **Recovering Daniel's lost report.** Nothing was ever stored, so there is nothing to recover; he re-enters it after the fix.
+
+## Verification
+
+- **Tests** (extend `tests/test_tsr_calibration_report.py`, Node harness style already used there, or a new
+  `tests/test_calibration_report_tombstone.py` if cleaner):
+  - The pre-TSR save releases a `deleted` tombstone for the active key and returns a saved record (not `draft_deletion_pending`).
+  - `saveReportDraft` shows the tombstone-specific message for `draft_deletion_pending` and the storage message for `source:'none'`.
+  - The `beforeunload` guard is registered and only blocks while a failed save is unresolved.
+  - The load chain fetches `/get_latest_online_tsr_for_shift/` for `open_calibration_report` and replaces the URL with `mode=calibration_report&submission_id=`.
+  - **Positive control:** run the new tests against `git show HEAD:templates/offline_tsr.html` / `HEAD:static/js/app-calibration-report.js` copied to the scratchpad (never `git stash`). They fail before the change.
+- **Focused run:** `test_tsr_calibration_report`, `test_tsr_offline_followup`, `test_tsr_without_equipment`, `test_calibration_report_returned_fix`, `test_changelog_coverage`
+  (plus the new module). There is no shared-shell change, so no full suite.
+- **Browser** (copy of `scheduler.db`, temporary password on the test engineer, 3-day group seeded):
+  - Tombstone repro → Save Draft succeeds → reload restores the report.
+  - Force a failure (stub `saveStandaloneTSRDraftLocally` to return `source:'none'`) → storage message shown → reload asks first.
+  - A schedule with a seeded saved TSR opened via the pre-TSR URL → lands in calibration mode → Save Final Report uploads.
+  - A schedule without a TSR still opens the report inside the new TSR draft.
+  - 375px: the toast is readable, with no horizontal scroll. Console clean.
+  - Clean up the DB copy, the test password, the `launch.json` entry and the pane's IndexedDB/localStorage.
+
+## After implementation
+
+1. Self-review the diff against step 5.
+2. Service worker `CACHE_VERSION` in `app.py` (currently `…-v318-my-calibrations`) → `…-v319-calibration-draft-save`, keeping v318 as a history comment.
+3. `static/changelog/releases.json`: one engineer-facing release, "Calibration Report drafts save reliably".
+4. `changes.md` bullets. Update this Status line with the commit.
+5. Commit only `templates/offline_tsr.html`, `static/js/app-calibration-report.js`, `app.py` (cache version), `static/changelog/releases.json`,
+   the test file, `plans.md` and `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or `.claude/`.
+
+## Risks
+
+- **Releasing a tombstone too eagerly** could let a server copy of a deleted draft come back. This is limited to an active Calibration Report save by the
+  engineer on that page, the same rule the TSR Save Draft uses. The safety net is the server merge's revision/hash checks, which are unchanged.
+- **Step 4 redirect loop or wrong TSR:** only runs when `open_calibration_report` is set and the replacement URL drops it, so it cannot loop.
+  The server endpoint already enforces `can_work_on_existing_schedule_shift`.
+- **`beforeunload` nagging:** set only after a failed save and cleared on any success, so a normal session never sees it.
+- **Blast radius:** Create TSR page and the Calibration Report editor only. Rollback = revert the commit.
+
 # My Calibrations — Engineer Calibration Center (3 batches)
 
 **Status:** Executed — `8ae5441` on `main` (2026-10-13; owner: "execute all in order", then "commit and push"; Railway deploying).

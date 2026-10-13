@@ -44,6 +44,7 @@
   var editorBuilt = false;
   var activePage = 1;
   var saveTimer = null;
+  var unsavedAfterFailure = false;
   var signatureDrawing = false;
   var generatedBlobState = 'none';
   var overlayScrollTop = 0;
@@ -929,12 +930,36 @@
       generatedBlobState = 'missing'; renderCard(); syncAutoDocument();
     });
   }
+  function draftSaveFailed(result){
+    return !result || result.skipped || result.failed || String(result.source || '').toLowerCase() === 'none';
+  }
+  function draftSaveFailureMessage(result){
+    var reason = String(result?.reason || '');
+    if(reason === 'calibration_context_unavailable') return result.message || 'Saved TSR could not be loaded for Calibration Report.';
+    if(['draft_deletion_pending', 'draft_deleted_before_save', 'deletion_release_failed'].indexOf(reason) >= 0) return 'Calibration Report could not be saved because an older deleted draft is blocking it. Keep this page open and press Save Draft again.';
+    if(result && (result.failed || String(result.source || '').toLowerCase() === 'none')) return 'Calibration Report could not be saved: this browser\'s storage is full or unavailable. Keep this page open, free up storage, or use another browser.';
+    return 'Calibration Report draft could not be saved on this device. Keep this page open and try again.';
+  }
+  // Records the outcome of every local report save. While the last save failed, leaving the page
+  // asks first, because nothing of the report would survive a reload.
+  function trackDraftSave(result){
+    unsavedAfterFailure = draftSaveFailed(result);
+    if(unsavedAfterFailure) console.warn('[Calibration Report] Draft save skipped', result);
+    return !unsavedAfterFailure;
+  }
+  async function releaseDraftDeletion(){
+    if(typeof window.releaseCalibrationReportDraftDeletion !== 'function') return true;
+    try{ return (await window.releaseCalibrationReportDraftDeletion()) !== false; }catch(err){ return false; }
+  }
   function scheduleDraftSave(){
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){
       if(!isActive(state) || typeof window.saveStandaloneTSRDraft !== 'function') return;
       setCalibrationSaveStatus('saving');
-      Promise.resolve(window.saveStandaloneTSRDraft(true)).catch(function(err){
+      Promise.resolve(window.saveStandaloneTSRDraft(true)).then(function(result){
+        if(result !== undefined && !trackDraftSave(result)) setCalibrationSaveStatus('failed', { message:draftSaveFailureMessage(result) });
+      }).catch(function(err){
+        unsavedAfterFailure = true;
         setCalibrationSaveStatus('failed');
         console.warn('[Calibration Report] Autosave failed', err);
       });
@@ -954,7 +979,7 @@
     mappings.forEach(function(pair){ var value = String(pair[1] || '').trim(); if(!value) return; var existing = String(getPath(state, pair[0]) || '').trim(); if(pair[0] === 'certificate.bsid' || !existing){ setPath(state, pair[0], normalizeCertificateBsid(value)); if(!applied.includes(pair[0])) applied.push(pair[0]); } });
     state.auto_fill = { applied:true, fields:applied };
   }
-  function createReport(){ if(!isActive(state)){ state = blankState(); state.status = 'draft'; autofill(currentSchedule()); } syncAutoDocument(); ensureEditor(); applyDomFromState(); renderCard(); open(); }
+  function createReport(){ if(!isActive(state)){ state = blankState(); state.status = 'draft'; autofill(currentSchedule()); } releaseDraftDeletion(); syncAutoDocument(); ensureEditor(); applyDomFromState(); renderCard(); open(); }
   function dialogFocusableElements(){
     var overlay = q('#calibration-report-overlay');
     if(!overlay || typeof overlay.querySelectorAll !== 'function') return [];
@@ -1679,16 +1704,19 @@
     try{
       var calibrationOnly = typeof window.isOnlineTSRCalibrationMode === 'function' && window.isOnlineTSRCalibrationMode();
       var ready = await preparePayload(calibrationOnly ? currentTSRData() : await ensureAuthoritativeTSRNumber(currentTSRData(), 'Final Calibration Report'), 'calibration-final', { regenerate:true, finalize:true });
+      if(!(await releaseDraftDeletion())){ unsavedAfterFailure = true; throw new Error(draftSaveFailureMessage({ skipped:true, reason:'deletion_release_failed' })); }
       if(calibrationOnly){
         if(typeof window.saveStandaloneCalibrationReport !== 'function') throw new Error('The late Calibration Report upload handler is unavailable. Reload Create TSR and try again.');
         var lateResult = await window.saveStandaloneCalibrationReport(ready);
         if(lateResult?.local_saved){
+          unsavedAfterFailure = false;
           showStatus('Calibration Report saved locally but not uploaded. Retry Save Final Report when you are online.', 'warning');
           renderCard();
           return;
         }
         if(lateResult?.status !== 'success' && lateResult?.success !== true) throw new Error(lateResult?.message || 'Calibration Report upload was not confirmed.');
         markUploaded(lateResult);
+        unsavedAfterFailure = false;
         showStatus('Calibration Report uploaded to the existing TSR. No new TSR revision was created.', 'success');
         renderCard();
         close();
@@ -1697,7 +1725,7 @@
       state.certificate_approval = Object.assign({}, state.certificate_approval || {}, { status: String(state.certificate?.bsid || '').trim() ? 'queued' : 'not_ready', error: '' });
       var persisted = typeof window.saveStandaloneTSRDraft === 'function' ? await window.saveStandaloneTSRDraft(true) : null;
       var persistenceSource = String(persisted?.source || '').toLowerCase();
-      if(!persisted || persisted.skipped || persisted.failed || persistenceSource === 'none') throw new Error('Calibration Report final attachment was created locally, but the TSR draft was not saved. Try Save Final Report again.');
+      if(!trackDraftSave(persisted)) throw new Error('Calibration Report final attachment was created locally, but the TSR draft was not saved. ' + draftSaveFailureMessage(persisted));
       var durableIndexedDB = persistenceSource === 'offline_tsr_page' || persistenceSource === 'indexeddb';
       if(!durableIndexedDB || persisted.attachments_not_durable){ var storageError = new Error('Calibration Report final attachment was created, but it was not saved durably in IndexedDB. Keep this editor open and try Save Final Report again when durable browser storage is available.'); storageError.code = 'calibration_report_attachment_not_durable'; throw storageError; }
       showStatus('Final Calibration Report saved and attached to the TSR draft. The certificate will queue after TSR sync.', 'success'); renderCard(); close();
@@ -1796,15 +1824,13 @@
           return;
         }
       }
-      var result = await window.saveStandaloneTSRDraft(true);
-      if(!result || result.skipped || result.failed || String(result.source || '').toLowerCase() === 'none'){
-        showStatus(result?.reason === 'calibration_context_unavailable'
-          ? (result.message || 'Saved TSR could not be loaded for Calibration Report.')
-          : 'Calibration Report draft could not be saved on this device.','danger');
+      var result = (await releaseDraftDeletion()) ? await window.saveStandaloneTSRDraft(true) : { skipped:true, reason:'deletion_release_failed' };
+      if(!trackDraftSave(result)){
+        showStatus(draftSaveFailureMessage(result),'danger');
         return;
       }
       showStatus('Calibration Report draft saved with the TSR draft.', 'success');
-    }catch(err){ showStatus('Calibration Report draft could not be saved on this device.','danger'); }
+    }catch(err){ unsavedAfterFailure = true; showStatus(draftSaveFailureMessage(null),'danger'); }
   }
   async function clearForm(){
     var confirmed = typeof window.offlineTSRConfirm === 'function' ? await window.offlineTSRConfirm({ title:'Clear Calibration Report form?', message:'Clear only the Calibration Report values and generated file. The ordinary TSR, signatures, documents, and manual attachments will remain unchanged.', confirmText:'Clear Form', cancelText:'Keep Report', tone:'warning', icon:'eraser' }) : false;
@@ -1817,7 +1843,8 @@
     state.generated_cleanup = { blob_ids:cleanupFailures };
     applyDomFromState(); renderCard(); syncAutoDocument();
     var persisted = typeof window.saveStandaloneTSRDraft === 'function' ? await window.saveStandaloneTSRDraft(true).catch(function(){ return null; }) : null;
-    if(!persisted || persisted.skipped || persisted.failed || String(persisted.source || '').toLowerCase() === 'none') showStatus('Calibration Report was cleared, but the cleared draft could not be saved on this device.','danger');
+    unsavedAfterFailure = false;
+    if(draftSaveFailed(persisted)) showStatus('Calibration Report was cleared, but the cleared draft could not be saved on this device.','danger');
     else if(cleanupFailures.length) showStatus('Calibration Report cleared, but old generated-file cleanup remains pending on this device.','danger');
     else showStatus('Calibration Report form cleared. The ordinary TSR remains unchanged.','info');
   }
@@ -1826,6 +1853,7 @@
     if(!confirmed) return;
     var cleanupIds = reportBlobIdsForCleanup(state);
     reset({ removeAutoDocument:true });
+    unsavedAfterFailure = false;
     var cleanupFailures = await cleanupGeneratedBlobIds(cleanupIds);
     state.generated_cleanup = { blob_ids:cleanupFailures };
     renderCard(); syncAutoDocument();
@@ -1836,5 +1864,12 @@
   function ensureEditor(){ if(!editorBuilt) buildEditor(); }
 
   window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, setSaveStatusFromTSR:setCalibrationSaveStatus, markUploaded:markUploaded, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, buildRepairDocx:function(payload, report, filename){ var normalized = normalizeState(report || payload?.calibration_report || {}); return buildDocx(payload || { calibration_report:normalized }, normalized, filename || filenameFor(payload || {}, normalized)); }, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); } };
+  function warnBeforeLeavingUnsaved(event){
+    if(!unsavedAfterFailure || !isActive(state)) return;
+    event.preventDefault();
+    event.returnValue = 'Calibration Report is not saved. Leave anyway?';
+    return event.returnValue;
+  }
+  if(typeof window.addEventListener === 'function') window.addEventListener('beforeunload', warnBeforeLeavingUnsaved);
   document.addEventListener('DOMContentLoaded', function(){ ensureEditor(); renderCard(); q('#calibration-report-close')?.addEventListener('click', close); q('#calibration-report-save')?.addEventListener('click', saveReportDraft); q('#calibration-report-generate')?.addEventListener('click', generateSample); q('#calibration-report-certificate-generate')?.addEventListener('click', generateCertificateSample); q('#calibration-report-final-save')?.addEventListener('click', saveFinalReport); q('#calibration-report-download')?.addEventListener('click', download); q('#calibration-report-clear')?.addEventListener('click', clearForm); q('#calibration-report-create-btn')?.addEventListener('click', createReport); q('#calibration-report-toolbar-remove')?.addEventListener('click', removeReport); document.addEventListener('keydown', handleDialogKeydown); });
 })();

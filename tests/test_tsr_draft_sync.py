@@ -466,6 +466,49 @@ console.log(JSON.stringify({
         self.assertEqual(output['sourceOrder'], 'Device version,Account version,Earlier backup')
         self.assertEqual(output['validPayloadTime'], 1790237400000)
 
+    def test_account_backup_projection_does_not_create_a_false_draft_conflict(self):
+        """The account copy lacks null values and attachment file keys; identical drafts must still match."""
+        if app_module is None:
+            self.skipTest(f'app import failed: {APP_IMPORT_ERROR}')
+        template_path = os.environ.get('DRAFT_SYNC_TEMPLATE_PATH')
+        source = pathlib.Path(template_path).read_text(encoding='utf-8') if template_path else self.template_source
+        signature = 'function standaloneTSRDraftComparableSignature' + source.split(
+            'function standaloneTSRDraftComparableSignature', 1
+        )[1].split('function standaloneTSRDraftRecordsHaveSameContent', 1)[0]
+        device = {
+            'tsr-complaint': 'No exposure',
+            'selectedSchedule': {
+                'id': 879, 'parent_shift_id': None,
+                'calibration_summary': {'approval_id': None, 'approved_at': None, 'revision_no': None},
+            },
+            'attachments': [{
+                'id': 'a1', 'name': 'photo.jpg', 'blob_id': 'b1', 'data_url': '',
+                'stored_as': 'indexeddb_blob', 'size': 10, 'type': 'image/jpeg',
+            }],
+        }
+        account = app_module.project_tsr_draft_payload_for_server(device)
+        self.assertNotIn('parent_shift_id', account['selectedSchedule'], 'server projection changed; revisit the comparison')
+        self.assertNotIn('data_url', account['attachments'][0], 'server projection changed; revisit the comparison')
+        script = signature + r"""
+const device = """ + json.dumps(device) + r""";
+const account = """ + json.dumps(account) + r""";
+device.attachments[0].blob = undefined;
+const sig = payload => standaloneTSRDraftComparableSignature({ payload });
+const edited = Object.assign({}, account, { 'tsr-complaint':'Tube replaced' });
+const renamed = Object.assign({}, account, { attachments:[Object.assign({}, account.attachments[0], { name:'other.jpg' })] });
+console.log(JSON.stringify({
+  identical: sig(device) === sig(account),
+  editDiffers: sig(device) !== sig(edited),
+  renameDiffers: sig(device) !== sig(renamed)
+}));
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertTrue(output['identical'], 'identical device and account copies were reported as different')
+        self.assertTrue(output['editDiffers'])
+        self.assertTrue(output['renameDiffers'])
+
     def test_source_grouping_and_copy_selection_keep_original_reservation_without_saving(self):
         grouping_helpers = self.template_source.split(
             'function standaloneTSRDraftComparableSignature', 1

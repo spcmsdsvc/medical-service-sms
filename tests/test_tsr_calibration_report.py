@@ -954,9 +954,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('?v=12', self.template_source)
         self.assertIn("app-calibration-report.css?v=12", self.app_source)
         self.assertIn('app-calibration-report.js', self.template_source)
-        self.assertIn('?v=46', self.template_source)
+        self.assertIn('?v=47', self.template_source)
         self.assertIn("app-calibration-report.css?v=12", self.app_source)
-        self.assertIn("app-calibration-report.js?v=46", self.app_source)
+        self.assertIn("app-calibration-report.js?v=47", self.app_source)
         assert_cache_version_at_least(self, 208, self.app_source)
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
         paste_release = next(item for item in releases if item['release_key'] == '2026-09-26-calibration-report-paste-criteria')
@@ -1027,8 +1027,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=12", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=46", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=46'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=47", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=47'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1069,8 +1069,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=46", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=46'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=47", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=47'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
@@ -1298,11 +1298,14 @@ context.saveStandaloneTSRDraft = async silent => {
   if (statuses.at(-1)?.message !== 'Calibration Report draft saved with the TSR draft.' || statuses.at(-1)?.tone !== 'success') throw new Error('successful save did not show the success status');
 
   const failureModes = ['skipped', 'failed', 'none', 'missing'];
+  const generic = 'Calibration Report draft could not be saved on this device. Keep this page open and try again.';
+  const storage = "Calibration Report could not be saved: this browser's storage is full or unavailable. Keep this page open, free up storage, or use another browser.";
+  const expected = { skipped:generic, failed:storage, none:storage, missing:generic };
   for (const mode of failureModes) {
     saveMode = mode;
     await api.saveDraft();
     const status = statuses.at(-1);
-    if (status?.message !== 'Calibration Report draft could not be saved on this device.' || status?.tone !== 'danger') throw new Error(mode + ' save incorrectly showed success');
+    if (status?.message !== expected[mode] || status?.tone !== 'danger') throw new Error(mode + ' save showed the wrong status: ' + status?.message);
   }
   console.log(JSON.stringify({ meaningful:true, persistenceInvoked:true, reportValueRestored:true, successStatus:true, failureStatuses:failureModes }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

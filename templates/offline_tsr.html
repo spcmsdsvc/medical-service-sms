@@ -33,7 +33,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=46"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=47"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page offline-tsr-layout">
   <div class="offline-tsr-hero no-print">
@@ -1919,10 +1919,51 @@ function applyCreateTSRHandoffToStandaloneTSR(){
       return true;
     }
     calibrationReportHandoffOpened = true;
-    createCalibrationReport();
+    openCalibrationReportHandoff(createCalibrationReport);
   }
 
   return true;
+}
+
+// A report already saved on this device for this schedule reopens instead of a blank one. A blank
+// report shares the same draft key, so its first autosave would overwrite the saved report.
+async function openCalibrationReportHandoff(createCalibrationReport){
+  try{
+    const draftId = resolveStandaloneTSRDraftId(collectTSRData());
+    const record = draftId ? await loadStandaloneTSRDraftRecordById(draftId) : null;
+    const reportStatus = String(record?.payload?.calibration_report?.status || 'not_started');
+    // false = two differing saved copies; the engineer picks one in Continue Saved Work first.
+    if(record?.payload && reportStatus !== 'not_started' && await openStandaloneTSRDraft(draftId) === false) return;
+  }catch(err){
+    console.warn('[Offline TSR] Saved Calibration Report lookup failed', err);
+  }
+  createCalibrationReport();
+}
+
+// Calendar opens a pre-TSR Calibration Report when its card has no saved-TSR link, which can be
+// stale (a TSR still syncing or an old offline snapshot). If the schedule already has a saved TSR,
+// reopen in calibration mode so the report attaches to that TSR instead of a new draft.
+async function redirectCalibrationHandoffToSavedTSR(){
+  const params = new URLSearchParams(window.location.search || '');
+  const wantsReport = ['1', 'true', 'yes'].includes(String(params.get('open_calibration_report') || '').toLowerCase());
+  const scheduleId = String(params.get('schedule_id') || '').trim();
+  if(!wantsReport || !/^\d+$/.test(scheduleId) || !navigator.onLine) return false;
+  try{
+    const response = await fetch(`/get_latest_online_tsr_for_shift/${encodeURIComponent(scheduleId)}`, { cache:'no-store', credentials:'same-origin' });
+    if(!response.ok) return false;
+    const result = await response.json().catch(() => ({}));
+    const submissionId = String(result?.submission?.submission_id || result?.submission?.id || '').trim();
+    if(result?.status !== 'success' || !/^\d+$/.test(submissionId)) return false;
+    params.delete('open_calibration_report');
+    params.set('mode', 'calibration_report');
+    params.set('submission_id', submissionId);
+    try{ sessionStorage.removeItem('create_tsr_schedule_context'); }catch(err){}
+    window.location.replace(`${window.location.pathname}?${params.toString()}`);
+    return true;
+  }catch(err){
+    console.warn('[Offline TSR] Saved TSR lookup for Calibration Report failed', err);
+    return false;
+  }
 }
 
 function normalizeStandaloneScheduleOptions(schedules){
@@ -3671,11 +3712,28 @@ function resolveStandaloneTSRDraftId(data){
   return `${OFFLINE_TSR_DRAFT_PREFIX}${normalizeStandaloneTSRDraftKey(source)}`;
 }
 
-function prepareStandaloneLateCalibrationDraft(data, submissionId){
+function getStandaloneLateCalibrationDraftId(submissionId){
   const targetId = String(submissionId || '').trim();
   const accountId = String(STANDALONE_TSR_ACCOUNT_SCOPE || '').trim();
-  if(!accountId || !targetId) throw new Error('The signed-in engineer or saved TSR is unavailable for this Calibration Report.');
-  const draftId = `${OFFLINE_TSR_DRAFT_PREFIX}late_calibration_${normalizeStandaloneTSRDraftKey(accountId)}_${normalizeStandaloneTSRDraftKey(targetId)}`;
+  if(!accountId || !targetId) return '';
+  return `${OFFLINE_TSR_DRAFT_PREFIX}late_calibration_${normalizeStandaloneTSRDraftKey(accountId)}_${normalizeStandaloneTSRDraftKey(targetId)}`;
+}
+
+// Opening, Save Draft and Save Final Report on a Calibration Report are deliberate actions, like the
+// TSR's own Save Draft. Saving a TSR leaves a deletion tombstone on its schedule+date draft key, so
+// a report started later for that schedule would otherwise be refused on every save.
+async function releaseCalibrationReportDraftDeletion(){
+  const draftId = isOnlineTSRCalibrationMode()
+    ? getStandaloneLateCalibrationDraftId(onlineTSRCalibrationContext?.submission_id)
+    : (hasStandaloneScheduleSelection() ? resolveStandaloneTSRDraftId(collectTSRData()) : '');
+  if(!draftId) return true;
+  return await clearStandaloneTSRDraftDeletionForExplicitAction(draftId);
+}
+
+function prepareStandaloneLateCalibrationDraft(data, submissionId){
+  const targetId = String(submissionId || '').trim();
+  const draftId = getStandaloneLateCalibrationDraftId(targetId);
+  if(!draftId) throw new Error('The signed-in engineer or saved TSR is unavailable for this Calibration Report.');
   if(standaloneCurrentDraftId !== draftId){
     advanceStandaloneTSRActiveContext();
     standaloneCurrentDraftId = draftId;
@@ -3996,6 +4054,9 @@ function standaloneTSRDraftComparableSignature(record){
     '_server_draft_attachment_count', '_server_draft_attachment_names',
     '_server_revision', '_server_hash'
   ]);
+  // The account backup (project_tsr_draft_payload_for_server) drops null object values and these
+  // file-byte keys, so an identical draft must compare equal without them.
+  const serverDroppedKeys = new Set(['blob', 'file', 'data_url', 'pdf_blob', 'pdf_data_url']);
   const normalize = (value, topLevel=false) => {
     if(typeof Blob !== 'undefined' && value instanceof Blob){
       return { __blob:true, size:Number(value.size || 0), type:String(value.type || '') };
@@ -4005,6 +4066,7 @@ function standaloneTSRDraftComparableSignature(record){
       const result = {};
       Object.keys(value).sort().forEach(key => {
         if(topLevel && storageOnlyKeys.has(key)) return;
+        if(value[key] === null || value[key] === undefined || serverDroppedKeys.has(key)) return;
         result[key] = normalize(value[key]);
       });
       return result;
@@ -11041,8 +11103,12 @@ document.addEventListener('DOMContentLoaded',()=>{
   }).then((calibrationLoaded)=>{
     if(calibrationLoaded) return true;
     return loadOnlineTSRRevisionFromUrl();
-  }).then((contextLoaded)=>{
+  }).then(async (contextLoaded)=>{
     if(contextLoaded){
+      return;
+    }
+
+    if(await redirectCalibrationHandoffToSavedTSR()){
       return;
     }
 

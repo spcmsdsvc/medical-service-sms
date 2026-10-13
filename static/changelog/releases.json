@@ -1,6 +1,60 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-14-draft-conflict-compare",
+      "release_date": "2026-10-14",
+      "title": "No more false \"Different saved copies\"",
+      "summary": "Saved TSR drafts no longer ask you to choose between identical copies.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-14-draft-conflict-compare-fix",
+          "category": "Create TSR",
+          "description": "Reopening a TSR draft that is backed up to your account no longer shows \"Different saved copies were found\" when both copies are the same. Real differences still ask you to choose.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-13-calibration-draft-save",
+      "release_date": "2026-10-13",
+      "title": "Calibration Report drafts save reliably",
+      "summary": "Calibration Reports started after the TSR was saved now save, and an unsaved report is no longer lost on refresh.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-calibration-draft-save-fix",
+          "category": "Calibration Report",
+          "description": "A Calibration Report started for a schedule whose TSR was already saved now saves normally instead of showing \"could not be saved on this device\".",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-calibration-draft-save-guard",
+          "category": "Calibration Report",
+          "description": "If a report cannot be saved, the message says why, and the browser asks before you refresh or close the page.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-13-calibration-draft-save-reopen",
+          "category": "Calibration Report",
+          "description": "Opening a Calibration Report from Calendar attaches it to the schedule's saved TSR when there is one, and reopens a report already saved on your device instead of a blank one.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-my-calibrations",
       "release_date": "2026-10-13",
       "title": "My Calibrations",

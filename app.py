@@ -27747,7 +27747,9 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v315-leave-design.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v316-leave-dark.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v317-lpr-hidden.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v318-my-calibrations';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v318-my-calibrations.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v319-calibration-draft-save.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v320-draft-conflict-compare';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27777,7 +27779,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=46',
+  '/static/js/app-calibration-report.js?v=47',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
