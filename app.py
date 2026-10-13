@@ -108,6 +108,7 @@ import os
 import re
 import difflib
 import calendar
+import math
 import io
 import csv
 import secrets
@@ -27392,7 +27393,9 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v304-travel-request-design.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v305-reimbursement-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v306-reimbursement-contrast.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v307-reimbursement-design';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v307-reimbursement-design.
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v308-cash-advance-server.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v309-cash-advance-page';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -67076,19 +67079,30 @@ def cash_advance_money(value):
         return 0.0
 
 
+CASH_ADVANCE_MAX_AMOUNT = 10_000_000
+
+
+def cash_advance_parse_amount(value):
+    """Return a finite amount rounded to 2 places, or None (nan/inf/text)."""
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(amount, 2) if math.isfinite(amount) else None
+
+
+def cash_advance_amount_error(amount):
+    if amount is None or amount <= 0:
+        return 'Amount Requested must be greater than zero.'
+    if amount > CASH_ADVANCE_MAX_AMOUNT:
+        return f'Amount Requested cannot exceed {CASH_ADVANCE_MAX_AMOUNT:,.2f}.'
+    return ''
+
+
 def cash_advance_generate_no(record_id=None):
     today = get_manila_today().strftime('%Y%m%d')
     suffix = str(record_id or '').strip() or 'NEW'
     return f"CA-{today}-{suffix}"
-
-
-def cash_advance_user_display_name(user_obj=None):
-    user_obj = user_obj or current_user
-    for attr in ['full_name', 'name', 'display_name', 'username']:
-        value = getattr(user_obj, attr, None)
-        if value:
-            return str(value)
-    return 'User'
 
 
 def cash_advance_normalize_status(status_value):
@@ -67123,13 +67137,6 @@ def cash_advance_requester_user(header):
     if not header or not clean_int(getattr(header, 'user_id', None)):
         return None
     return db.session.get(User, clean_int(header.user_id))
-
-
-def cash_advance_requester_profile(header):
-    user_obj = cash_advance_requester_user(header)
-    if not user_obj:
-        return None
-    return getattr(user_obj, 'engineer_profile', None)
 
 
 def cash_advance_requester_name(header):
@@ -68309,6 +68316,52 @@ def cash_advance_supporting_attachments_filename(header):
     return f'{request_no}_Supporting_Attachments.pdf'
 
 
+def cash_advance_liquidation_fields(header, status, liquidation):
+    """Liquidation link fields shared by the full and list payloads."""
+    ready_for_liquidation = bool(
+        getattr(header, 'received_at', None) or
+        status in {
+            'Ready for Liquidation',
+            'Liquidation Draft',
+            'Liquidation Submitted',
+            'Liquidation Approved',
+            'Liquidation Returned',
+            'Liquidation Completed'
+        }
+    )
+    return {
+        'liquidation_id': clean_int(getattr(liquidation, 'id', None)) if liquidation else None,
+        'liquidation_no': clean_str(getattr(liquidation, 'liquidation_no', None)) if liquidation else '',
+        'liquidation_status': cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None)) if liquidation else '',
+        'liquidation_url': f'/cash_advance_liquidation?liquidation_id={liquidation.id}' if liquidation else '',
+        'can_create_liquidation': bool(ready_for_liquidation and not liquidation),
+        'can_open_liquidation': bool(liquidation),
+        'create_liquidation_url': f'/create_cash_advance_liquidation_draft/{header.id}' if ready_for_liquidation and not liquidation else '',
+        'open_liquidation_url': f'/cash_advance_liquidation?liquidation_id={liquidation.id}' if liquidation else ''
+    }
+
+
+def cash_advance_list_item_to_dict(header, liquidation_by_ca):
+    """Light row for the requester's list: only the fields the page reads."""
+    status = cash_advance_normalize_status(getattr(header, 'status', None))
+    amount = cash_advance_money(header.amount_requested)
+    payload = {
+        'id': header.id,
+        'cash_advance_id': header.id,
+        'cash_advance_no': header.cash_advance_no or cash_advance_generate_no(header.id),
+        'status': status,
+        'needed_date': cash_advance_format_date(header.needed_date),
+        'amount_requested': amount,
+        'amount': amount,
+        'purpose': header.purpose or '',
+        'editable': status in ['Draft', 'Rejected'],
+        'locked': status not in ['Draft', 'Rejected'],
+        'detail_url': f'/cash_advance?cash_advance_id={header.id}'
+    }
+    payload.update(cash_advance_liquidation_fields(header, status, liquidation_by_ca.get(header.id)))
+    return payload
+
+
 def cash_advance_to_dict(header, include_audit=False, include_attachments=False):
     if not header:
         return {}
@@ -68389,27 +68442,7 @@ def cash_advance_to_dict(header, include_audit=False, include_attachments=False)
         liquidation = CashAdvanceLiquidationHeader.query.filter_by(cash_advance_id=header.id).first()
     except Exception:
         liquidation = None
-    ready_for_liquidation = bool(
-        getattr(header, 'received_at', None) or
-        status in {
-            'Ready for Liquidation',
-            'Liquidation Draft',
-            'Liquidation Submitted',
-            'Liquidation Approved',
-            'Liquidation Returned',
-            'Liquidation Completed'
-        }
-    )
-    payload.update({
-        'liquidation_id': clean_int(getattr(liquidation, 'id', None)) if liquidation else None,
-        'liquidation_no': clean_str(getattr(liquidation, 'liquidation_no', None)) if liquidation else '',
-        'liquidation_status': cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None)) if liquidation else '',
-        'liquidation_url': f'/cash_advance_liquidation?liquidation_id={liquidation.id}' if liquidation else '',
-        'can_create_liquidation': bool(ready_for_liquidation and not liquidation),
-        'can_open_liquidation': bool(liquidation),
-        'create_liquidation_url': f'/create_cash_advance_liquidation_draft/{header.id}' if ready_for_liquidation and not liquidation else '',
-        'open_liquidation_url': f'/cash_advance_liquidation?liquidation_id={liquidation.id}' if liquidation else ''
-    })
+    payload.update(cash_advance_liquidation_fields(header, status, liquidation))
 
     if include_audit:
         payload['audit_trail'] = [
@@ -68477,7 +68510,6 @@ def get_authorized_cash_advance_attachment(attachment_id):
 
 
 @app.route('/upload_cash_advance_attachments/<int:cash_advance_id>', methods=['POST'])
-@csrf.exempt
 @login_required
 def upload_cash_advance_attachments(cash_advance_id):
     ensure_cash_advance_tables()
@@ -68589,7 +68621,6 @@ def download_cash_advance_attachment(attachment_id):
 
 
 @app.route('/delete_cash_advance_attachment/<int:attachment_id>', methods=['POST'])
-@csrf.exempt
 @login_required
 def delete_cash_advance_attachment(attachment_id):
     ensure_cash_advance_tables()
@@ -68623,7 +68654,6 @@ def delete_cash_advance_attachment(attachment_id):
 
 
 @app.route('/delete_all_cash_advance_attachments/<int:cash_advance_id>', methods=['POST'])
-@csrf.exempt
 @login_required
 def delete_all_cash_advance_attachments(cash_advance_id):
     ensure_cash_advance_tables()
@@ -68687,7 +68717,18 @@ def get_cash_advance_list():
             .limit(100)
             .all()
         )
-        items = [cash_advance_to_dict(record) for record in records]
+        liquidation_by_ca = {}
+        record_ids = [record.id for record in records]
+        if record_ids:
+            try:
+                ensure_cash_advance_liquidation_tables()
+                liquidation_by_ca = {
+                    row.cash_advance_id: row
+                    for row in CashAdvanceLiquidationHeader.query.filter(CashAdvanceLiquidationHeader.cash_advance_id.in_(record_ids)).all()
+                }
+            except Exception:
+                liquidation_by_ca = {}
+        items = [cash_advance_list_item_to_dict(record, liquidation_by_ca) for record in records]
         return jsonify({
             'success': True,
             'items': items,
@@ -68716,6 +68757,55 @@ def get_cash_advance(cash_advance_id):
     })
 
 
+@app.route('/delete_cash_advance_draft/<int:cash_advance_id>', methods=['POST'])
+@login_required
+def delete_cash_advance_draft(cash_advance_id):
+    """Delete the requester's own Draft Cash Advance with its attachments and linked LPRs."""
+    ensure_cash_advance_tables()
+    header = db.session.get(CashAdvanceHeader, cash_advance_id)
+    if not can_user_manage_own_cash_advance(header):
+        return jsonify({'success': False, 'error': 'Cash advance request not found or access denied.'}), 404
+    status = cash_advance_normalize_status(header.status)
+    if status != 'Draft':
+        return jsonify({'success': False, 'error': f'Only Draft cash advances can be deleted. This one is {status}.'}), 409
+
+    request_no = header.cash_advance_no or f'CA-{header.id}'
+    attachments = cash_advance_attachment_records(header.id)
+    stored_filenames = [cash_advance_attachment_stored_filename(item) for item in attachments]
+    try:
+        for attachment in attachments:
+            db.session.delete(attachment)
+        linked_lpr_count, _ = delete_linked_lprs_for_parent('cash_advance', header.id)
+        for audit in CashAdvanceAudit.query.filter_by(cash_advance_id=header.id).all():
+            db.session.delete(audit)
+        db.session.delete(header)
+        add_activity_log_entry(f"Deleted Cash Advance draft: {request_no}")
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[CashAdvance] Draft delete failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete cash advance draft.'}), 500
+
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCES, os.path.join(cash_advance_attachment_upload_root(), stored_filename))
+        except Exception as file_error:
+            cleanup_failures += 1
+            print(f'[CashAdvance] Draft attachment storage cleanup failed: {file_error}', flush=True)
+    return jsonify({
+        'success': True,
+        'deleted': True,
+        'id': cash_advance_id,
+        'cash_advance_no': request_no,
+        'linked_lprs_removed': linked_lpr_count,
+        'message': f'Draft {request_no} deleted.',
+        'cleanup_warning': f'{cleanup_failures} stored file(s) need administrator cleanup.' if cleanup_failures else ''
+    })
+
+
 @app.route('/save_cash_advance', methods=['POST'])
 @login_required
 def save_cash_advance():
@@ -68725,15 +68815,23 @@ def save_cash_advance():
     data = request.get_json(silent=True) or {}
     cash_advance_id = clean_int(data.get('id') or data.get('cash_advance_id')) if 'clean_int' in globals() else None
     needed_date = cash_advance_parse_date(data.get('needed_date'))
-    request_date = cash_advance_parse_date(data.get('request_date')) or get_manila_today()
-    amount_requested = cash_advance_money(data.get('amount_requested') or data.get('amount'))
-    liquidation_days = int(cash_advance_money(data.get('liquidation_days') or 30) or 30)
+    amount_requested = cash_advance_parse_amount(data.get('amount_requested') or data.get('amount'))
+    try:
+        liquidation_days_raw = float(data.get('liquidation_days') or 30)
+    except (TypeError, ValueError):
+        liquidation_days_raw = None
+    liquidation_days = int(liquidation_days_raw) if liquidation_days_raw is not None and math.isfinite(liquidation_days_raw) else None
     purpose = str(data.get('purpose') or '').strip()
 
     if not needed_date:
         return jsonify({'success': False, 'error': 'Date Needed is required.'}), 400
-    if amount_requested <= 0:
-        return jsonify({'success': False, 'error': 'Amount Requested must be greater than zero.'}), 400
+    if needed_date < get_manila_today():
+        return jsonify({'success': False, 'error': 'Date Needed cannot be in the past. Pick today or a later date.'}), 400
+    amount_error = cash_advance_amount_error(amount_requested)
+    if amount_error:
+        return jsonify({'success': False, 'error': amount_error}), 400
+    if liquidation_days is None or not 1 <= liquidation_days <= 365:
+        return jsonify({'success': False, 'error': 'Liquidation period must be 1 to 365 days.'}), 400
     if not purpose:
         return jsonify({'success': False, 'error': 'Purpose is required.'}), 400
 
@@ -68746,21 +68844,23 @@ def save_cash_advance():
             if not can_user_manage_own_cash_advance(header):
                 return jsonify({'success': False, 'error': 'Cash advance request not found or access denied.'}), 404
             if str(header.status or 'Draft').strip().lower() not in ['draft', 'returned', 'rejected']:
-                return jsonify({'success': False, 'error': 'Only Draft or Returned cash advances can be edited.'}), 409
+                return jsonify({'success': False, 'error': 'Only Draft or Rejected cash advances can be edited.'}), 409
         else:
             header = CashAdvanceHeader(
                 user_id=current_user.id,
                 status='Draft',
+                request_date=get_manila_today(),
                 created_at=now
             )
             db.session.add(header)
             db.session.flush()
             header.cash_advance_no = cash_advance_generate_no(header.id)
 
-        header.request_date = request_date
+        if not header.request_date:
+            header.request_date = get_manila_today()
         header.needed_date = needed_date
         header.amount_requested = amount_requested
-        header.liquidation_days = max(1, liquidation_days)
+        header.liquidation_days = liquidation_days
         header.purpose = purpose
         header.updated_at = now
 
@@ -68797,10 +68897,15 @@ def submit_cash_advance(cash_advance_id):
         return jsonify({'success': False, 'error': 'Cash advance request not found or access denied.'}), 404
 
     if str(header.status or 'Draft').strip().lower() not in ['draft', 'returned', 'rejected']:
-        return jsonify({'success': False, 'error': 'Only Draft or Returned cash advances can be submitted.'}), 409
+        return jsonify({'success': False, 'error': 'Only Draft or Rejected cash advances can be submitted.'}), 409
 
-    if cash_advance_money(header.amount_requested) <= 0 or not header.needed_date or not (header.purpose or '').strip():
+    if not header.needed_date or not (header.purpose or '').strip():
         return jsonify({'success': False, 'error': 'Please complete Date Needed, Amount Requested, and Purpose before submitting.'}), 400
+    amount_error = cash_advance_amount_error(cash_advance_parse_amount(header.amount_requested))
+    if amount_error:
+        return jsonify({'success': False, 'error': f'{amount_error} Correct the amount and save before submitting.'}), 400
+    if header.needed_date < get_manila_today():
+        return jsonify({'success': False, 'error': 'Date Needed is in the past. Pick a new date and save before submitting.'}), 400
 
     signature_response = cash_advance_signature_required_response(current_user)
     if signature_response:

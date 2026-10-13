@@ -37,6 +37,396 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Cash Advance — Batch 4: Dark Mode (pills, buttons, KPI note contrast, header and toasts on theme colours)
+
+**Status:** Approved — awaiting go-ahead.
+**Approved:** 2026-10-13 (owner: "all approved" after the 2026-10-13 page scan and design scan of `/cash_advance`).
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch 3 executed (it rewrites the same `<style>` block and replaces the hero and KPI cards). Find code by selector, not line number.
+
+## Context
+
+The design scan (snapshot `.impeccable/critique/2026-10-13T03-12-30Z__templates-cash-advance-html.md`, 21/40, closed-list item 4) measured these problems in graphite and AMOLED:
+- The status pills keep their light fills (`#dcfce7`, `#fee2e2`, `#fef3c7`, `#e0f2fe`).
+- Clear Form stays `#fff` and Submit stays `#facc15`. Batch 3 changes Submit to the accent; this batch checks it.
+- `.cash-kpi-note` stays `#64748b`: 3.69:1 on AMOLED `#191919` and 2.61:1 on graphite `#333438`. If Batch 3 has replaced the KPI cards with `.dash-stat`, this checks the replacement instead.
+- The toasts keep their light fills.
+
+Intended outcome: every text and pill reaches 4.5:1 in light, graphite and AMOLED, and nothing on the page stays a light block in dark mode (Tonal Dark Rule, Small-Text Contrast Rule).
+
+## Decisions taken
+
+1. Page-local: dark rules go in `templates/cash_advance.html` under the theme selectors that `app-dark-pages.css` already uses (`:root[data-app-theme="dark"]`, with graphite via `data-app-palette="graphite"`). `static/css/app-dark-pages.css` is not touched (shared file), the same as Reimbursement Batch 3.
+2. Dark status pills: 16% tints of the semantic colour, with light text (green, red, amber, slate/blue), at least 4.5:1 on both dark grounds. Rejected stays red (Semantic Status Rule).
+3. Toasts: `var(--app-surface)` ground with a semantic left border and `var(--app-text)` text in dark themes.
+
+## Investigation
+
+- `app-dark-pages.css` covers `.cash-card`, `.cash-page`, the notification, attachment and request items, titles, meta text and `.cash-btn-secondary` (lines ~560–860). It has no rule for `.cash-status-pill`, `.cash-btn-warning`, `.cash-btn-danger-outline`, `.cash-kpi-note` or `.cash-toast` (Assessment B, and a grep for `cash-` in `static/css/`).
+- The theme attributes: `data-app-theme="dark"`, with graphite selected by `data-app-palette="graphite"` (`static/css/app-themes.css`).
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section; DESIGN.md Colors (Semantic Status Rule), Typography (Small-Text Contrast Rule) and Elevation (Tonal Dark Rule); load the Impeccable skill (`polish`).
+2. **Pills:** add dark pairs for `.cash-status-pill` and its `.draft`, `.submitted`, `.approved`, `.returned` variants, plus the Batch 3 Rejected KPI tone if present. Done = each pill ≥ 4.5:1 on both dark grounds.
+3. **Buttons:** dark Clear Form (`.cash-btn-danger-outline`: transparent ground, red text ≥ 4.5:1, red 45% border) and the Batch 3 Withdraw style. Check Submit (accent) at 4.5:1. Done = no button keeps a `#fff` or `#facc15` ground in dark mode.
+4. **Muted text:** `.cash-kpi-note` (or its `.dash-stat` replacement) and any other muted text below 4.5:1 → `var(--app-text-muted)` or the dark ink token. Done = every muted text ≥ 4.5:1 in graphite and AMOLED.
+5. **Toasts and remaining light blocks:** apply decision 3, and fix the toast icon ground. Then walk the page in both dark palettes for any element whose computed background is still light. Done = none left.
+6. **Kept functions:** `cashToast`, `setCashStatus`, `renderCashAdvanceList` and `renderCashAdvanceAttachments` are still defined, and their class names are unchanged.
+
+## Deliberately excluded
+
+- `app-dark-pages.css` edits (shared file; page-local rules are enough).
+- Light-theme changes; those are Batch 3.
+
+## Verification
+
+- **Tests:** add class `CashAdvanceBatch4DarkTests` to `tests/test_cash_advance_design.py`. Source checks: a dark rule exists for each pill variant, `.cash-btn-danger-outline` and `.cash-toast`, and no `#facc15` remains. Add a kept-functions guard. **Positive control:** run against `git show HEAD:templates/cash_advance.html` in the scratchpad (never `git stash`); the dark-rule tests fail and the guard passes.
+- **Focused run:** `tests/test_cash_advance_*.py`, `test_appearance_themes`, `test_dark_mode_readability`, `test_changelog_coverage`.
+- **Browser** on a copy of `scheduler.db` (temporary test account on the copy only; seed one record in each status):
+  - Measure the contrast of every pill, button, muted text and toast in light, graphite and AMOLED with the classic, green and purple accents.
+  - At 375px AMOLED: no horizontal scroll, tap targets ≥ 44px.
+  - Console clean. One screenshot per theme as proof. Clean up the copy, the account and the launch entry.
+
+## After implementation
+
+1. Self-review the diff: template, version, changelog and tests only.
+2. Service worker `CACHE_VERSION` in `app.py` → the next free number, suffix `-cash-advance-dark`. Keep the previous value as a history comment.
+3. `static/changelog/releases.json`: release "Cash Advance in Dark Mode" (everyone). Item: status labels and buttons are readable in the dark themes.
+4. `changes.md` bullets, and update this plan's Status with any differences.
+5. Commit only the files above plus `plans.md` and `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or `.claude/`.
+
+## Risks
+
+- **Selector specificity against `app-dark-pages.css`:** page rules may lose to its `!important` overrides. The browser measurements catch it; match its selector form if needed.
+- **Blast radius:** one template's CSS. Rollback = revert the commit.
+
+---
+
+# Cash Advance — Batch 3: Design System (Page Header, form first, Stat Cards, weights, radii, accent Submit, focus ring)
+
+**Status:** Approved — awaiting go-ahead.
+**Approved:** 2026-10-13 (owner: "all approved"; page order "Form on top"; Submit colour "Accent primary").
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch 2 executed (same template; Batch 2 adds the read-only mode, the Liquidation button, the Delete Draft button and the Rejected count, which this batch styles). Find code by selector, not line number.
+
+## Context
+
+The design scan (21/40) found the page was never moved onto DESIGN.md:
+- **Gradient hero:** `.cash-hero`, 2rem / weight 950, sits where the Page Header belongs.
+- **Weights:** 750–950 are used (35 elements at 950). Fira ships 400/500/600.
+- **Radii:** 14, 18 and 22px are used. DESIGN.md says 6px for controls, 10–12px for cards and 16px for phone cards.
+- **KPI cards:** custom, not the `.dash-stat` Stat Card.
+- **Yellow Submit:** `#facc15`. The toast icon and the shadows use a fixed blue `rgba(37,99,235)` (One Variable Rule).
+- **Unstyled Withdraw:** `.cash-btn-danger` has no CSS, so it renders as a browser-default button.
+- **No focus ring on fields:** `outline: none`, no `:focus` rule, and no `.form-control` class.
+- **Form buried:** at 1366×768 the form card is at y=1044 and Submit at y=1916; on a phone they are at y=2013 and y=3634, on a 3757px page.
+- **Noise:**
+  - read-only Status and Request Date inputs repeat the status pill and today's date
+  - the empty Notifications card is always shown
+  - section icons mix yellow and blue
+  - CA numbers are not in `.logbook-ref`
+
+Closed-list items 1 (the lock behaviour is done in Batch 2), 2, 3, 5, 6 and 8.
+
+Intended outcome: the page reads like Travel Request and My Requests. The form is the first thing under the header, and type, shape and colour follow DESIGN.md.
+
+## Decisions taken
+
+1. **Page order (owner): form on top.** Page Header, then the form card, then the Notifications card (only when there are unread notifications), then the Stat Cards and the "My Cash Advances" list.
+2. **Submit (owner): accent primary.** `btn btn-primary`-style accent fill from `--app-primary`; the yellow is removed.
+3. **Header:** `.dash-page-header`, with `.dash-page-h1` "Cash Advance" plus a status chip (the same pattern as Travel Request), and `.dash-page-sub` "Request cash for a job, subject to manager approval, accounting release and liquidation." Outline action "New Request", which calls `clearCashAdvanceForm()`.
+4. **Stat Cards:** the four KPIs become `.dash-stat` cards (label, number, sentence). The Batch 2 Rejected count becomes a fifth card, toned red only above zero (Stat Cards tone rule). Linked through `app-dashboard.css?v=16`, as Travel Request does.
+5. **Weights** 600 for titles, labels, buttons, chips and numbers; 400 for body, meta and help text. **Radii:** 6px controls, 10px cards and panels, 16px phone cards, 999px pills. **Shadows:** `var(--app-shadow)` or the card rest shadow; no `rgba(37,99,235,…)`.
+6. **Remove duplicates:** the Status input goes (the chip shows status) and Request Date becomes plain text in the form meta ("Requested 10-13-2026"). The `cashAdvanceStatus` element id is kept as a hidden input, because `isCashAdvanceEditable()` and `setCashStatus()` read it.
+7. Section-title icons are removed (the DESIGN.md card headings have no icon). CA numbers in the list and form use `.logbook-ref`.
+8. Page-local: `templates/cash_advance.html`, so focused tests only.
+
+## Investigation
+
+- Travel Request's header pattern is at `templates/travel_request.html:207`; it links `app-dashboard.css?v=16` (`:4`). `.dash-page-header` is at `static/css/app-dashboard.css:2160` and `.dash-stat` at `:2205`.
+- `cashAdvanceStatus` is read by `isCashAdvanceEditable()` and written by `setCashStatus()`, so it must survive as a hidden input.
+- The page has 18 buttons on load (Assessment B), and phone tap targets already meet 44px. Keep `min-height: 44px` on phone buttons.
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section; DESIGN.md Page Header, Stat Cards, Typography, Shapes, Buttons, Inputs and the One Variable Rule; load the Impeccable skill (`polish`, `layout`). Read `craft-floor.md` before editing.
+2. **Header:** replace `section.cash-hero` with the `.dash-page-header` markup from decision 3, and link `app-dashboard.css`. Remove the `.cash-hero` CSS. Done = no `.cash-hero` and no gradient in the template.
+3. **Order:** move `#cashFormCard` directly under the header. Then the Notifications card, hidden while the list is empty (`renderCashAdvanceNotifications` toggles a `hidden` attribute on the card). Then the stats and the list. Done = at 1366×768 the first form input is above y=768. Record the measured value.
+4. **Stat Cards:** apply decision 4. `updateCashCounts` keeps its ids (`cashDraftCount` and the others, plus the Batch 2 Rejected id). Done = the cards use `.dash-stat` classes, and none of the forbidden class names (`-stat-value`, `-kpi-value`) are used.
+5. **Type, shape and shadows:** apply decision 5 across the `<style>` block and any inline styles. Done = no `font-weight` above 600, no `border-radius` outside {6, 10, 16, 999px, 50%}, and no `rgba(37, 99, 235` in the file.
+6. **Buttons:** Submit → accent (decision 2). Add a `.cash-btn-danger` rule for Withdraw: outline red, the same as Clear Form, because Withdraw can be undone. Order the footer as Clear Form (quiet outline, left), Delete Draft (Batch 2, red outline), Save Draft, Submit. Done = no `#facc15`, and Withdraw has a style.
+7. **Focus:** `.cash-field input, textarea, select:focus-visible` → accent border plus `0 0 0 .25rem var(--app-focus)`. Remove `outline: none`, or pair it with the ring. Done = a keyboard tab shows a ring on every field.
+8. **Duplicates and details:** apply decisions 6–7. Done = one status display, CA numbers in `.logbook-ref`, no `text-warning` / `text-primary` icons in section titles.
+9. **Kept functions:** every function listed in Batch 2 step 9 is still defined, and every `onclick` target exists. Ids kept: `cashAdvanceId`, `cashAdvanceNo`, `cashAdvanceStatus` (hidden), `cashNeededDate`, `cashAmountRequested`, `cashLiquidationDays`, `cashRequestDate`, `cashPurpose`, `cashFormCard`, `cashAdvanceList`, `cashNotificationList`, the attachment ids and the count ids.
+
+## Deliberately excluded
+
+- Removing the list or the counts (owner chose form on top).
+- Dark-theme pairs (Batch 4).
+- A list filter or search (critique observation outside the closed list; My Requests already filters).
+
+## Verification
+
+- **Tests:** add class `CashAdvanceBatch3DesignTests` to `tests/test_cash_advance_design.py`. Source checks:
+  - `dash-page-header` present and `cash-hero` gone
+  - the form card comes before `#cashAdvanceList` in the markup
+  - `dash-stat` classes present
+  - weights ≤ 600, the allowed radii only, no `rgba(37, 99, 235`, no `#facc15`
+  - a `.cash-btn-danger` rule and a `:focus-visible` field rule
+  - `.logbook-ref` on CA numbers
+  - a kept-functions and kept-ids guard
+
+  **Positive control:** run against `HEAD`'s template in the scratchpad. The style tests fail and the guard passes.
+- **Focused run:** `tests/test_cash_advance_*.py`, `test_appearance_themes`, `test_dark_mode_readability`, `test_layout_sidebar`, `test_changelog_coverage`.
+- **Browser** on a copy of `scheduler.db`:
+  - At 1366×768 light: the first input is above the fold. Save, Submit (with a test signature on the copy), Open, Withdraw, New Request, Upload, Delete and Delete All all work. Tab through the fields and see the ring.
+  - At 375px: no horizontal scroll, taps ≥ 44px, the form near the top.
+  - Console clean. One screenshot per width. Clean up the copy, the account and the launch entry.
+
+## After implementation
+
+1. Self-review the diff: template, version, changelog, tests, and DESIGN.md (add Cash Advance to the "Also used by" line under Page Header).
+2. Service worker `CACHE_VERSION` → the next free number, suffix `-cash-advance-design`. Keep the previous value as a history comment.
+3. `static/changelog/releases.json`: release "Cash Advance Form Comes First" (everyone). Items: the form is at the top, and the page matches the rest of the app.
+4. `changes.md` bullets, and update this plan's Status.
+5. Commit only those files plus `plans.md` and `changes.md`.
+
+## Risks
+
+- **Moving markup breaks a handler:** step 9's guard and the browser pass cover every button.
+- **`app-dark-pages.css` targets `[class*="cash-"][class*="-card"]`:** renamed classes lose their dark overrides until Batch 4. Ship Batch 4 together with this batch, or check dark mode before publishing this batch alone.
+- **Blast radius:** one template. Rollback = revert the commit.
+
+---
+
+# Cash Advance — Batch 2: Page Behaviour (double-submit lock, deep link, read-only records, counts, Liquidation and Delete Draft buttons)
+
+**Status:** Executed locally 2026-10-13 (owner: "execute batch 1 then 2") — not committed; awaiting "commit and push".
+**Outcome differences:** "Received" also gets the "Received. Start or open the liquidation." sentence (it has a liquidation button); Liquidation Completed is not counted as Ready (treated as completed). Batch 1 and 2 browser checks were one combined pass; Submit was not exercised in the browser (no test signature; covered by server tests). The browser seed needed an Engineer profile with a Manila branch for Start Liquidation.
+**Approved:** 2026-10-13 (owner: "all approved"; Delete Draft: "Yes, drafts only").
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+**Depends on:** Batch 1 executed (the new `delete_cash_advance_draft` route belongs to Batch 1). Find code by selector, not line number.
+
+## Context
+
+The 2026-10-13 page scan confirmed these in the browser:
+- **Double-submit:** two quick Save Draft clicks on a new form created two drafts (CA-…-6 and CA-…-7). `saveCashAdvanceDraft` and `submitCashAdvance` have no in-flight lock, and the id only arrives after the response.
+- **Deep link ignored:** `?cash_advance_id=N`, used by notifications and `detail_url`, is never read, so the form stays empty.
+- **Withdraw on the wrong status:** Withdraw shows for "Liquidation Submitted", because the check is `statusKey.includes('submitted')`, but the server only recalls "Submitted".
+- **Locked records editable:** a Submitted or Approved record opens with editable fields and live Save/Submit buttons; the server answers 409.
+- **Wrong counts:** Rejected counts as Draft and Liquidation Submitted as Submitted.
+- **Wrong status text:** a Rejected record reads "Submitted record loaded for review." (`lock_reason` is never sent).
+- **No liquidation start:** there is no Start/Open Liquidation button, although `can_create_liquidation`, `create_liquidation_url` and `liquidation_url` are in the payload.
+- **Clear Form:** clears without a confirm.
+- **No draft delete:** there is no way to remove the duplicate drafts.
+
+Intended outcome: the page cannot create duplicates, opens the linked record, shows only actions the server allows, and counts correctly.
+
+## Decisions taken
+
+1. **Delete Draft (owner): drafts only.** It is shown only when the opened record's status is Draft, needs a confirm, and calls the Batch 1 route. Rejected records are not deletable; they are corrections in progress with an audit trail.
+2. **One busy flag** (`cashAdvanceBusy`) guards Save, Submit, Upload and Delete Draft. While it is set, the footer buttons are disabled and the clicked one shows a spinner label.
+3. **Editable** means Draft or Rejected (the server's `editable` flag). Non-editable records:
+   - Fields become `readOnly` (the date input becomes `disabled`).
+   - Save Draft, Submit and Delete Draft are hidden.
+   - A status sentence explains what happens next.
+4. **Status sentences** by status:
+   - Draft: "Draft. You can edit, save and submit."
+   - Rejected: "Rejected by the approver. Edit and submit again." plus the approver's remarks when present.
+   - Submitted: "Waiting for manager approval. You can withdraw it from the list."
+   - Approved or Released: "Approved. Waiting for Accounting to release the cash."
+   - Ready for Liquidation and the Liquidation statuses: "Received. Start or open the liquidation."
+   - Anything else: "This request is locked."
+5. **Counts:** Draft = Draft only. Submitted = Submitted only. Approved = Approved, Released or Received. Ready = Ready for Liquidation and the Liquidation statuses. A new **Rejected** count (Rejected or Returned). Completed is not counted.
+6. **Liquidation button:** shown in the form when `can_open_liquidation` (link to `liquidation_url`) or `can_create_liquidation` (POST `create_liquidation_url`, then go to the returned `liquidation.liquidation_url`), using the same flow as `openCashAdvanceLiquidationDraft` in `accounting_center.html:1212`. List rows get the same button.
+
+## Investigation
+
+- **Save and submit:** `saveCashAdvanceDraft` (cash_advance.html:835) and `submitCashAdvance` (:867, which calls save first). The form id is set in `applyCashAdvanceRecord` (:904).
+- **Load:** the `DOMContentLoaded` handler (:1241) calls `loadCashAdvances()` and `loadCashAdvanceNotifications()` and never reads `location.search`.
+- **Withdraw:** rendered at :1022 and calls `openRequestRecall` from `_request_recall_modal.html`. Server rule: `recall_submitted_request` accepts status `submitted` only (`app.py` ~76885).
+- **Counts:** `updateCashCounts` (:1030). The status values on a CA header include Liquidation Draft (`app.py` ~69802) and Liquidation Submitted (~70568).
+- **Liquidation create:** `create_cash_advance_liquidation_draft/<id>` is POST and CSRF-exempt (`app.py` ~69902). The payload fields are in `cash_advance_to_dict` (~68403).
+- **Existing pattern:** `accounting_center.html:1212` `openCashAdvanceLiquidationDraft` (create, then redirect).
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section and Batch 1's outcome. Grep every function below before editing.
+2. **Busy lock:**
+   - Add `let cashAdvanceBusy = false;` and a `setCashBusy(isBusy, buttonEl, label)` that disables the footer and attachment action buttons.
+   - Wrap `saveCashAdvanceDraft` (when not called from submit or upload), `submitCashAdvance`, `uploadCashAdvanceAttachments` and the new delete with an early return when busy, and use `try/finally`. `submitCashAdvance` sets busy once, around both its save and its submit.
+   - Done = firing Save twice at once creates one record.
+3. **Deep link:** in `DOMContentLoaded`, read `URLSearchParams(location.search).get('cash_advance_id')`; when it is a positive integer, `openCashAdvance(id)` after the list loads. Done = `/cash_advance?cash_advance_id=N` opens N.
+4. **Withdraw:** change the condition to `statusKey === 'submitted'`. Done = no Withdraw on Liquidation Submitted.
+5. **Read-only mode:** add `applyCashAdvanceEditState(item)`, called from `applyCashAdvanceRecord` and `clearCashAdvanceForm`, applying decision 3 to `cashNeededDate`, `cashAmountRequested`, `cashLiquidationDays` and `cashPurpose` and to the footer buttons. Use `item.editable` when present, else `isCashAdvanceEditable()`. Done = a Submitted record shows no Save or Submit and its fields cannot be typed in.
+6. **Status sentence and counts:** replace the `lock_reason` line with decision 4. Rewrite `updateCashCounts` per decision 5, adding a `cashRejectedCount` card (markup next to the existing four; Batch 3 restyles it). Done = with one record in each status, each count is 1 and Rejected is not counted as Draft.
+7. **Liquidation button:** add `#cashLiquidationBtn` to the form footer and a list-row button per decision 6, with `openOrCreateCashAdvanceLiquidation(item)`. Done = a Ready for Liquidation record shows "Start Liquidation", and one with a liquidation shows "Open Liquidation".
+8. **Delete Draft and Clear Form:**
+   - Add `#cashDeleteDraftBtn` (red outline, Draft only) with `deleteCashAdvanceDraft()`: a confirm "Delete draft CA-…? Its attachments are deleted too.", then POST to `/delete_cash_advance_draft/<id>`, then `clearCashAdvanceForm(true)` and `loadCashAdvances()`.
+   - `clearCashAdvanceForm(silent)` asks "Clear the form? Unsaved changes are lost." when the form has values and no id. With `silent`, there is no confirm and no toast.
+   - Done = the delete removes the row; Clear asks first.
+9. **Kept functions:** every existing function stays defined, and every `onclick` target exists: `cashEscape`, `cashToast`, `getCashCsrfToken`, `todayInputValue`, `formatMoney`, `isCashAdvanceEditable`, `cashFileSize`, `renderCashAdvanceAttachments`, `updateCashAttachmentSelection`, `setCashStatus`, `collectCashAdvancePayload`, `validateCashAdvancePayload`, `parseCashJson`, `saveCashAdvanceDraft`, `submitCashAdvance`, `applyCashAdvanceRecord`, `clearCashAdvanceForm`, `uploadCashAdvanceAttachments`, `deleteCashAdvanceAttachment`, `deleteAllCashAdvanceAttachments`, `renderCashAdvanceList`, `updateCashCounts`, `loadCashAdvances`, `openCashAdvance`, the notification functions, `openEmbeddedLprModal`, `openRequestRecall`.
+
+## Deliberately excluded
+
+- Styling of the new buttons and the Rejected card beyond reusing existing classes (Batch 3).
+- Deleting Rejected records (decision 1).
+- A list filter or search (My Requests covers it).
+
+## Verification
+
+- **Tests:** new `tests/test_cash_advance_page.py` with source checks:
+  - `cashAdvanceBusy` is guarded in the four functions
+  - `cash_advance_id` is read from `location.search`
+  - the Withdraw condition is an exact match
+  - `applyCashAdvanceEditState` exists and is called from both places
+  - `updateCashCounts` has a Rejected bucket and `cashRejectedCount` exists
+  - `#cashLiquidationBtn` and `openOrCreateCashAdvanceLiquidation` exist
+  - `#cashDeleteDraftBtn`, `deleteCashAdvanceDraft` and its route path exist
+  - a confirm in `clearCashAdvanceForm`
+  - the kept-functions guard (step 9)
+
+  **Positive control:** run against `HEAD`'s template in the scratchpad (never `git stash`). The new checks fail and the guard passes.
+- **Focused run:** `tests/test_cash_advance_*.py`, `test_request_recall`, `test_liquidation_pages`, `test_changelog_coverage`.
+- **Browser** on a copy of `scheduler.db` (temporary engineer account; seed Draft, Submitted, Rejected, Approved, Ready for Liquidation and Liquidation Submitted records, and a test signature on the copy):
+  - Fire Save twice at once: one record.
+  - The deep link opens the record.
+  - Withdraw appears only on Submitted.
+  - Submitted and Approved records open read-only.
+  - The counts are right.
+  - Start Liquidation creates a draft and redirects.
+  - Delete Draft removes a draft.
+  - Clear asks first.
+  - Console clean. Clean up the copy, the account and the launch entry.
+
+## After implementation
+
+1. Self-review the diff: template, tests, version and changelog.
+2. Service worker `CACHE_VERSION` → the next free number, suffix `-cash-advance-page`. Keep the previous value as a history comment.
+3. `static/changelog/releases.json`: release "Cash Advance Fixes" (everyone). Items: no duplicate requests from double clicks; links from notifications open the request; submitted requests open read-only; start liquidation from the page; delete drafts.
+4. `changes.md` bullets, and update this plan's Status.
+5. Commit only those files plus `plans.md` and `changes.md`.
+
+## Risks
+
+- **Submit calls save, and save must not deadlock on the busy flag:** use an internal `saveCashAdvanceDraftCore()` that skips the guard when called from submit or upload. The test checks a single guard per entry point.
+- **Deep link to someone else's record:** the server already returns 404, and the page shows the error toast.
+- **Blast radius:** one template's JS. Rollback = revert the commit.
+
+---
+
+# Cash Advance — Batch 1: Server Checks (amount/days/date validation, server request date, CSRF on attachments, draft delete route, lighter list, dead code)
+
+**Status:** Executed locally 2026-10-13 (owner: "execute batch 1 then 2") — not committed; awaiting "commit and push".
+**Outcome differences:** added `cash_advance_amount_error` and a shared `cash_advance_liquidation_fields` (used by both `cash_advance_to_dict` and the new list builder, so the liquidation rule has one source). The list query-count test warms up once first (the first request runs one-time table checks). Full suite: no new failures.
+**Approved:** 2026-10-13 (owner: "all approved"; Delete Draft: "Yes, drafts only").
+**Detailed:** 2026-10-13.
+**Branch:** `main` (local first; publish only on "commit and push").
+
+## Context
+
+The 2026-10-13 page scan found these on a database copy:
+- **`inf` amount:** saved and returned as `Infinity`, which is invalid JSON. The user's list then fails to load and prints raw JSON. Once submitted, it would also break the approver's queue.
+- **`nan` amount:** saved as 0 (NULL), skipping the "greater than zero" check.
+- **`inf` liquidation days:** a 500 error (`OverflowError` at `int()`).
+- **Past dates:** a Date Needed of 2020-01-01 is accepted.
+- **Request Date:** taken from the client.
+- **Wording:** the error text says "Draft or Returned", but the status is "Rejected".
+- **CSRF:** upload, delete and delete-all attachment routes are `@csrf.exempt` although the page sends the token.
+- **No delete-draft route.**
+- **Slow list:** `get_cash_advance_list` builds every record with `cash_advance_to_dict`, about 6 extra queries per record (approvers twice, three users, the liquidation table check and lookup), and sends signature images the list never shows.
+- **Dead code:** `cash_advance_requester_profile` and `cash_advance_user_display_name` have no callers.
+
+## Decisions taken
+
+1. **Amount:** must be finite, > 0 and ≤ 10,000,000.00 (an upper bound against typos; one place, `CASH_ADVANCE_MAX_AMOUNT`). Liquidation days: an integer 1–365; anything else → 400 "Liquidation period must be 1 to 365 days."
+2. **Date Needed:** must be today (Manila) or later when saving or submitting. Existing older drafts get the same message on save, which tells the user to pick a new date.
+3. **Request Date:** set by the server: today on create, and kept on update (never taken from the client).
+4. **CSRF:** remove `@csrf.exempt` from `upload_cash_advance_attachments`, `delete_cash_advance_attachment` and `delete_all_cash_advance_attachments`. The page already sends `X-CSRFToken`.
+5. **New route** `POST /delete_cash_advance_draft/<id>` (not exempt):
+   - Owner only, status Draft only (409 otherwise).
+   - Deletes the attachments (DB plus storage, as `delete_all_cash_advance_attachments` does), the linked LPRs (`delete_linked_lprs_for_parent('cash_advance', id)`), the audit rows and the header in one commit.
+   - Writes an activity log entry.
+   - Pattern: `delete_travel_request_draft` (`app.py` ~43760).
+6. **List payload:** a new `cash_advance_list_item_to_dict(header, liquidation_by_ca)` with the fields the page reads (`id`, `cash_advance_no`, `status`, `needed_date`, `amount_requested`, `purpose`, `editable`, the liquidation fields). Liquidations are loaded in one query for all listed ids. `ensure_cash_advance_liquidation_tables()` runs once per request. `cash_advance_to_dict` is unchanged for the other callers.
+7. **Wording:** "Only Draft or Rejected cash advances can be edited." / "…submitted."
+
+## Investigation
+
+- **Helpers and routes in `app.py`:**
+  - `cash_advance_money` (~67072): `round(float(...))` lets nan/inf through.
+  - `save_cash_advance` (~68719): the checks at ~68733 and the `liquidation_days` parse at ~68730.
+  - `submit_cash_advance` (~68789): re-checks only `> 0`.
+- **`cash_advance_money` callers:** used widely (the liquidation, accounting and PDF code). Do **not** change it. Add a separate `cash_advance_parse_amount(value)` that returns `None` for non-finite input, and use it only in save.
+- **Old records:** `submit_cash_advance` should also reject a non-finite stored amount, for records saved before the fix.
+- **CSRF setup:** global `CSRFProtect` (`app.py:881`); `save_cash_advance` and `submit_cash_advance` already enforce the token (confirmed 400 without it).
+- **List fields:** read by the page (`renderCashAdvanceList`, `updateCashCounts`) and by the Batch 2 liquidation button: `id`, `cash_advance_no`, `status`, `needed_date`, `amount_requested`, `amount`, `purpose`, `editable`, `can_create_liquidation`, `can_open_liquidation`, `create_liquidation_url`, `liquidation_url`. Grep `templates/` and `static/` for other `/get_cash_advance_list` readers before trimming.
+- **Dead functions:** zero callers confirmed by grep across `app.py`, `templates/` and `tests/`.
+
+## Execution steps
+
+1. **Read first:** the newest `changes.md` section. Grep each function before editing.
+2. **Parsing:** add `CASH_ADVANCE_MAX_AMOUNT = 10_000_000` and `cash_advance_parse_amount(value)` (finite float rounded to 2 places, else `None`) next to `cash_advance_money`. In `save_cash_advance`:
+   - Use it for the amount.
+   - Parse `liquidation_days` with `try: int(float(...))` plus `math.isfinite` and the 1–365 range.
+   - Add the Date Needed ≥ `get_manila_today()` check.
+   - Set `request_date` per decision 3.
+   - Fix the wording.
+
+   Done = `nan`, `inf`, `-5` and `20000000` amounts → 400; `inf` days → 400; yesterday → 400; a client `request_date` is ignored.
+3. **Submit:** reject a non-finite or out-of-range stored amount and a past Date Needed with 400 and clear messages; fix the wording. Done = an old `inf` record cannot be submitted.
+4. **CSRF:** apply decision 4. Done = the three routes return 400 without the token and 200 with it.
+5. **Delete route:** apply decision 5. Done = a Draft is deleted with its attachments and linked LPRs; non-owner → 404; non-Draft → 409; no token → 400.
+6. **List:** apply decision 6 in `get_cash_advance_list`. Done = the query count for 10 records is the same as for 2 (within a fixed constant), and the response has no signature fields.
+7. **Dead code:** delete `cash_advance_requester_profile` and `cash_advance_user_display_name` after a final grep shows zero callers.
+8. **Kept functions:** `cash_advance_money`, `cash_advance_to_dict`, `can_user_manage_own_cash_advance`, every existing cash advance route and endpoint name are unchanged.
+
+## Deliberately excluded
+
+- Changing `cash_advance_money` (shared by liquidation, accounting and PDF code).
+- The approval-side routes (`approve_cash_advance`, `reject_cash_advance`, `resend_…`): outside the page's scope, and they work.
+- A Date Needed rule beyond "not in the past" (no business rule given).
+
+## Verification
+
+- **Tests:** new `tests/test_cash_advance_server.py`, HTTP on a temporary SQLite DB with the test client, the same setup as `tests/test_reimbursement_batch1_fixes.py`. It covers:
+  - the save rejections in step 2 (and that `request_date` is the server's today)
+  - submit rejecting an `inf` stored record
+  - the CSRF on/off cases for the three attachment routes, with storage patched
+  - delete-draft: success, non-owner, non-Draft and no token
+  - the list query count being equal for 2 and 10 records, with no `requester_signature_snapshot` key
+  - a source check that the two dead functions are gone, and a kept-functions guard
+
+  **Positive control:** run the module against `HEAD`'s `app.py` in the scratchpad (never `git stash`). The fix tests fail and the guard passes.
+- **Focused run:** `tests/test_cash_advance_*.py`, `test_liquidation_pages`, `test_accounting_attachment_management`, `test_request_recall`, `test_changelog_coverage`.
+- **Full suite** once before publishing: removing the CSRF exemptions changes the request-protection behaviour (auth/permissions, per AGENTS.md). Run it in the main folder: `venv/Scripts/python.exe scripts/run_suite.py`.
+- **Browser** on a copy of `scheduler.db`:
+  - Save, Upload, Delete and Delete All still work from the page (token sent).
+  - Bad amounts show the server message in the toast.
+  - The list loads.
+  - Console clean. Clean up the copy, the account and the launch entry.
+
+## After implementation
+
+1. Self-review the diff: `app.py` and the tests only (plus the version, changelog and journals).
+2. Service worker `CACHE_VERSION` → the next free number, suffix `-cash-advance-server`. Keep the previous value as a history comment.
+3. `static/changelog/releases.json`: release "Safer Cash Advance Saving" (everyone). Item: amounts, dates and liquidation days are checked before saving.
+4. `changes.md` bullets, and update this plan's Status.
+5. Commit only `app.py`, the tests, `releases.json`, `plans.md` and `changes.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/` or `.claude/`.
+
+## Risks
+
+- **Existing drafts with a past Date Needed** can no longer be saved without a new date. The message says so, and this is intended (decision 2).
+- **CSRF removal:** any other caller of the three attachment routes without the token would break. Grep `templates/` and `static/` for those paths first; only `cash_advance.html` is expected.
+- **List payload trim:** a reader of a dropped field would break. The grep in Investigation and the browser pass cover it.
+- **Blast radius:** the cash advance save, submit, attachment and list routes. Rollback = revert the commit.
+
+---
+
 # Reimbursement — Batch 4: Design System + Worksheet Above the Fold (weights, radii, sizes, shadows, collapsed date card)
 
 **Status:** Executed — published to `main` on 2026-10-13 on the owner's "commit and push" (commit `87fbe7c`; owner: "execute batch 4" the same day). Tests: 6 added (5 fail on `HEAD`, guard passes); focused run 264 OK. Browser check on a DB copy passed except the fold target below.

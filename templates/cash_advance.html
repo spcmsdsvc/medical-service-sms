@@ -562,6 +562,11 @@
             <div class="cash-kpi-value" id="cashReadyCount">0</div>
             <div class="cash-kpi-note">Received cash advances</div>
         </div>
+        <div class="cash-kpi-card">
+            <div class="cash-kpi-label">Rejected</div>
+            <div class="cash-kpi-value" id="cashRejectedCount">0</div>
+            <div class="cash-kpi-note">Edit and submit again</div>
+        </div>
     </section>
 
     <section class="cash-card" id="cashFormCard">
@@ -652,9 +657,11 @@
             </div>
 
             <div class="cash-form-actions">
-                <button type="button" class="cash-btn cash-btn-danger-outline" onclick="clearCashAdvanceForm()"><i class="fa-solid fa-eraser"></i> Clear Form</button>
-                <button type="button" class="cash-btn cash-btn-secondary" onclick="saveCashAdvanceDraft()"><i class="fa-solid fa-floppy-disk"></i> Save Draft</button>
-                <button type="submit" class="cash-btn cash-btn-warning"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
+                <button type="button" class="cash-btn cash-btn-danger-outline" id="cashClearFormBtn" onclick="clearCashAdvanceForm()"><i class="fa-solid fa-eraser"></i> Clear Form</button>
+                <button type="button" class="cash-btn cash-btn-danger-outline" id="cashDeleteDraftBtn" onclick="deleteCashAdvanceDraft()" style="display:none;"><i class="fa-solid fa-trash"></i> Delete Draft</button>
+                <button type="button" class="cash-btn cash-btn-primary" id="cashLiquidationBtn" onclick="openOrCreateCashAdvanceLiquidation(cashAdvanceCurrentRecord)" style="display:none;"><i class="fa-solid fa-file-invoice-dollar"></i> Start Liquidation</button>
+                <button type="button" class="cash-btn cash-btn-secondary" id="cashSaveDraftBtn" onclick="saveCashAdvanceDraft()"><i class="fa-solid fa-floppy-disk"></i> Save Draft</button>
+                <button type="submit" class="cash-btn cash-btn-warning" id="cashSubmitBtn"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
             </div>
         </form>
     </section>
@@ -709,6 +716,25 @@
 
     let cashAdvanceNotificationItems = [];
     let cashAdvanceAttachments = [];
+    let cashAdvanceListItems = [];
+    let cashAdvanceCurrentRecord = null;
+    let cashAdvanceBusy = false;
+
+    // One lock for Save, Submit, Upload and Delete Draft so a double click cannot create two records.
+    function setCashBusy(isBusy, buttonEl, label) {
+        cashAdvanceBusy = !!isBusy;
+        document.querySelectorAll('.cash-form-actions button').forEach(btn => { btn.disabled = cashAdvanceBusy; });
+        if (buttonEl) {
+            if (cashAdvanceBusy) {
+                buttonEl.dataset.cashBusyLabel = buttonEl.innerHTML;
+                buttonEl.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> ${cashEscape(label || 'Working...')}`;
+            } else if (buttonEl.dataset.cashBusyLabel !== undefined) {
+                buttonEl.innerHTML = buttonEl.dataset.cashBusyLabel;
+                delete buttonEl.dataset.cashBusyLabel;
+            }
+        }
+        renderCashAdvanceAttachments(cashAdvanceAttachments);
+    }
 
     function isCashAdvanceEditable() {
         const status = String(document.getElementById('cashAdvanceStatus')?.value || 'Draft').trim().toLowerCase();
@@ -729,12 +755,12 @@
         const attachLprButton = document.getElementById('cashAttachLprBtn');
         if (attachLprButton) attachLprButton.disabled = !editable;
         const deleteAll = document.getElementById('cashDeleteAllAttachmentsBtn');
-        ['cashSelectAttachmentsBtn','cashUploadAttachmentsBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !editable; });
+        ['cashSelectAttachmentsBtn','cashUploadAttachmentsBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !editable || cashAdvanceBusy; });
         const input = document.getElementById('cashAttachmentFiles');
         if (input) input.disabled = !editable;
         if (deleteAll) {
             deleteAll.style.display = editable && cashAdvanceAttachments.length ? '' : 'none';
-            deleteAll.disabled = !editable || !cashAdvanceAttachments.length;
+            deleteAll.disabled = !editable || !cashAdvanceAttachments.length || cashAdvanceBusy;
         }
         if (!list) return;
         if (!cashAdvanceAttachments.length) {
@@ -833,6 +859,17 @@
     }
 
     async function saveCashAdvanceDraft(silent) {
+        if (cashAdvanceBusy) return null;
+        const button = silent ? null : document.getElementById('cashSaveDraftBtn');
+        setCashBusy(true, button, 'Saving...');
+        try {
+            return await saveCashAdvanceDraftCore(silent);
+        } finally {
+            setCashBusy(false, button);
+        }
+    }
+
+    async function saveCashAdvanceDraftCore(silent) {
         const payload = collectCashAdvancePayload();
         const issue = validateCashAdvancePayload(payload, false);
         if (issue) {
@@ -865,6 +902,7 @@
     }
 
     async function submitCashAdvance() {
+        if (cashAdvanceBusy || !isCashAdvanceEditable()) return;
         const payload = collectCashAdvancePayload();
         const issue = validateCashAdvancePayload(payload, true);
         if (issue) {
@@ -872,7 +910,17 @@
             return;
         }
 
-        const saved = await saveCashAdvanceDraft(true);
+        const button = document.getElementById('cashSubmitBtn');
+        setCashBusy(true, button, 'Submitting...');
+        try {
+            await submitCashAdvanceCore(payload);
+        } finally {
+            setCashBusy(false, button);
+        }
+    }
+
+    async function submitCashAdvanceCore(payload) {
+        const saved = await saveCashAdvanceDraftCore(true);
         const record = saved && (saved.item || saved.cash_advance || saved);
         const id = record && (record.id || record.cash_advance_id || payload.id);
         if (!id) {
@@ -913,12 +961,56 @@
         document.getElementById('cashLiquidationDays').value = item.liquidation_days || 30;
         document.getElementById('cashPurpose').value = item.purpose || '';
         setCashStatus(item.status || 'Draft');
+        cashAdvanceCurrentRecord = id ? item : null;
         renderCashAdvanceAttachments(item.attachments || []);
         const statusText = document.getElementById('cashFormStatusText');
-        if (statusText) statusText.textContent = item.lock_reason || (String(item.status || 'Draft').toLowerCase() === 'draft' ? 'Draft request. You may edit, save, and submit.' : 'Submitted record loaded for review.');
+        if (statusText) statusText.textContent = cashStatusSentence(item);
+        applyCashAdvanceEditState(item);
     }
 
-    function clearCashAdvanceForm() {
+    function cashStatusSentence(item) {
+        const key = String(item?.status || 'Draft').trim().toLowerCase();
+        if (key === 'draft') return 'Draft. You can edit, save and submit.';
+        if (key === 'rejected' || key === 'returned') {
+            const remarks = String(item?.approval_remarks || '').trim();
+            return 'Rejected by the approver. Edit and submit again.' + (remarks ? ` Remarks: ${remarks}` : '');
+        }
+        if (key === 'submitted') return 'Waiting for manager approval. You can withdraw it from the list.';
+        if (key === 'approved' || key === 'released') return 'Approved. Waiting for Accounting to release the cash.';
+        if (key === 'received' || key === 'ready for liquidation' || key.startsWith('liquidation')) return 'Received. Start or open the liquidation.';
+        return 'This request is locked.';
+    }
+
+    // Draft and Rejected records are editable; anything else opens read-only with only the actions the server allows.
+    function applyCashAdvanceEditState(item) {
+        const editable = item && typeof item.editable === 'boolean' ? item.editable : isCashAdvanceEditable();
+        ['cashAmountRequested', 'cashLiquidationDays', 'cashPurpose'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.readOnly = !editable;
+        });
+        const neededDate = document.getElementById('cashNeededDate');
+        if (neededDate) neededDate.disabled = !editable;
+        const status = String(document.getElementById('cashAdvanceStatus')?.value || 'Draft').trim().toLowerCase();
+        const hasId = Boolean(document.getElementById('cashAdvanceId')?.value);
+        const show = (id, visible) => { const el = document.getElementById(id); if (el) el.style.display = visible ? '' : 'none'; };
+        show('cashSaveDraftBtn', editable);
+        show('cashSubmitBtn', editable);
+        show('cashDeleteDraftBtn', hasId && status === 'draft');
+        const liquidationBtn = document.getElementById('cashLiquidationBtn');
+        if (liquidationBtn) {
+            const canOpen = Boolean(item?.can_open_liquidation);
+            liquidationBtn.style.display = canOpen || item?.can_create_liquidation ? '' : 'none';
+            liquidationBtn.innerHTML = `<i class="fa-solid fa-file-invoice-dollar"></i> ${canOpen ? 'Open Liquidation' : 'Start Liquidation'}`;
+        }
+    }
+
+    function clearCashAdvanceForm(silent) {
+        if (!silent) {
+            const unsaved = !document.getElementById('cashAdvanceId').value &&
+                ['cashNeededDate', 'cashAmountRequested', 'cashPurpose'].some(id => String(document.getElementById(id)?.value || '').trim());
+            if (unsaved && !window.confirm('Clear the form? Unsaved changes are lost.')) return;
+        }
+        cashAdvanceCurrentRecord = null;
         document.getElementById('cashAdvanceId').value = '';
         document.getElementById('cashAdvanceNo').value = '';
         document.getElementById('cashNeededDate').value = '';
@@ -931,10 +1023,66 @@
         const attachmentInput = document.getElementById('cashAttachmentFiles');
         if (attachmentInput) attachmentInput.value = '';
         updateCashAttachmentSelection();
-        cashToast('Cash advance form cleared.', 'ok');
+        const statusText = document.getElementById('cashFormStatusText');
+        if (statusText) statusText.textContent = cashStatusSentence(null);
+        applyCashAdvanceEditState(null);
+        if (!silent) cashToast('Cash advance form cleared.', 'ok');
+    }
+
+    async function deleteCashAdvanceDraft() {
+        if (cashAdvanceBusy) return;
+        const id = document.getElementById('cashAdvanceId')?.value || '';
+        if (!id) return;
+        const no = document.getElementById('cashAdvanceNo')?.value || `CA-${id}`;
+        if (!window.confirm(`Delete draft ${no}? Its attachments are deleted too.`)) return;
+        const button = document.getElementById('cashDeleteDraftBtn');
+        setCashBusy(true, button, 'Deleting...');
+        try {
+            const response = await fetch(`/delete_cash_advance_draft/${encodeURIComponent(id)}`, {method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json','X-CSRFToken':getCashCsrfToken()}});
+            const data = await parseCashJson(response, 'Unable to delete draft.');
+            clearCashAdvanceForm(true);
+            cashToast(`${data.message || 'Draft deleted.'}${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`, data.cleanup_warning ? 'warn' : 'ok', 'Deleted');
+            await loadCashAdvances();
+        } catch (error) {
+            cashToast(error.message || 'Unable to delete draft.', 'error');
+        } finally {
+            setCashBusy(false, button);
+        }
+    }
+
+    // Same flow as Accounting Center: open the existing liquidation, or create the draft and go to it.
+    async function openOrCreateCashAdvanceLiquidation(itemOrId) {
+        const item = itemOrId && typeof itemOrId === 'object'
+            ? itemOrId
+            : cashAdvanceListItems.find(row => Number(row.id) === Number(itemOrId));
+        if (!item) return;
+        const openUrl = item.liquidation_url || item.open_liquidation_url || '';
+        if (item.can_open_liquidation && openUrl) {
+            window.location.href = openUrl;
+            return;
+        }
+        if (!item.can_create_liquidation || cashAdvanceBusy) return;
+        const button = Number(cashAdvanceCurrentRecord?.id) === Number(item.id) ? document.getElementById('cashLiquidationBtn') : null;
+        setCashBusy(true, button, 'Creating...');
+        try {
+            const response = await fetch(item.create_liquidation_url || `/create_cash_advance_liquidation_draft/${encodeURIComponent(item.id)}`, {method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json','X-CSRFToken':getCashCsrfToken()}});
+            const data = await parseCashJson(response, 'Unable to start liquidation.');
+            const liquidationUrl = data?.liquidation?.liquidation_url || data?.liquidation?.detail_url || '';
+            if (liquidationUrl) {
+                window.location.href = liquidationUrl;
+                return;
+            }
+            cashToast(data.message || 'Liquidation draft created.', 'ok');
+            await loadCashAdvances();
+        } catch (error) {
+            cashToast(error.message || 'Unable to start liquidation.', 'error');
+        } finally {
+            setCashBusy(false, button);
+        }
     }
 
     async function uploadCashAdvanceAttachments() {
+        if (cashAdvanceBusy) return;
         if (!isCashAdvanceEditable()) { cashToast('Attachments can only be changed while the request is Draft, Rejected, or Returned.', 'warn'); return; }
         const input = document.getElementById('cashAttachmentFiles');
         const files = Array.from(input?.files || []);
@@ -942,17 +1090,16 @@
         if (cashAdvanceAttachments.length + files.length > 10) { cashToast('A Cash Advance can contain up to 10 attachments.', 'warn'); return; }
         const oversized = files.find(file => Number(file.size || 0) > 35 * 1024 * 1024);
         if (oversized) { cashToast(`${oversized.name} exceeds the 35MB upload limit.`, 'warn'); return; }
-        let id = document.getElementById('cashAdvanceId')?.value || '';
-        if (!id) {
-            const saved = await saveCashAdvanceDraft(true);
-            const record = saved && (saved.item || saved.cash_advance || saved);
-            id = record?.id || record?.cash_advance_id || document.getElementById('cashAdvanceId')?.value || '';
-            if (!id) { cashToast('Complete the request details so the draft can be saved before uploading.', 'warn'); return; }
-        }
         const button = document.getElementById('cashUploadAttachmentsBtn');
-        const original = button?.innerHTML || '';
-        if (button) { button.disabled = true; button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Uploading...'; }
+        setCashBusy(true, button, 'Uploading...');
         try {
+            let id = document.getElementById('cashAdvanceId')?.value || '';
+            if (!id) {
+                const saved = await saveCashAdvanceDraftCore(true);
+                const record = saved && (saved.item || saved.cash_advance || saved);
+                id = record?.id || record?.cash_advance_id || document.getElementById('cashAdvanceId')?.value || '';
+                if (!id) { cashToast('Complete the request details so the draft can be saved before uploading.', 'warn'); return; }
+            }
             const form = new FormData();
             files.forEach(file => form.append('attachment_files', file, file.name));
             const response = await fetch(`/upload_cash_advance_attachments/${encodeURIComponent(id)}`, {method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json','X-CSRFToken':getCashCsrfToken()},body:form});
@@ -962,7 +1109,7 @@
             updateCashAttachmentSelection();
             cashToast(data.message || `${files.length} attachment(s) uploaded.`, 'ok', 'Uploaded');
         } catch (error) { cashToast(error.message || 'Unable to upload attachments.', 'error'); }
-        finally { if (button) { button.disabled = false; button.innerHTML = original; } }
+        finally { setCashBusy(false, button); }
     }
 
     async function deleteCashAdvanceAttachment(id) {
@@ -992,6 +1139,7 @@
     function renderCashAdvanceList(items) {
         const target = document.getElementById('cashAdvanceList');
         const list = Array.isArray(items) ? items : [];
+        cashAdvanceListItems = list;
         if (!target) return;
         if (!list.length) {
             target.innerHTML = '<div class="cash-notification-list">No cash advance requests found.</div>';
@@ -1019,7 +1167,8 @@
                     </div>
                     <div class="cash-actions">
                         <button type="button" class="cash-btn cash-btn-secondary" onclick="openCashAdvance(${Number(item.id) || 0})">Open</button>
-                        ${statusKey.includes('submitted') ? `<button type="button" class="cash-btn cash-btn-danger" onclick="openRequestRecall('cash_advance', ${Number(item.id) || 0}, 'Cash Advance')"><i class="fa-solid fa-rotate-left"></i> Withdraw</button>` : ''}
+                        ${item.can_open_liquidation || item.can_create_liquidation ? `<button type="button" class="cash-btn cash-btn-primary" onclick="openOrCreateCashAdvanceLiquidation(${Number(item.id) || 0})"><i class="fa-solid fa-file-invoice-dollar"></i> ${item.can_open_liquidation ? 'Open Liquidation' : 'Start Liquidation'}</button>` : ''}
+                        ${statusKey === 'submitted' ? `<button type="button" class="cash-btn cash-btn-danger" onclick="openRequestRecall('cash_advance', ${Number(item.id) || 0}, 'Cash Advance')"><i class="fa-solid fa-rotate-left"></i> Withdraw</button>` : ''}
                     </div>
                 </div>
             `;
@@ -1028,18 +1177,20 @@
     }
 
     function updateCashCounts(items) {
-        const counts = { draft: 0, submitted: 0, approved: 0, ready: 0 };
+        const counts = { draft: 0, submitted: 0, approved: 0, ready: 0, rejected: 0 };
         (items || []).forEach(function(item) {
-            const key = String(item.status || '').toLowerCase();
-            if (key.includes('ready')) counts.ready += 1;
-            else if (key.includes('approved') || key.includes('released') || key.includes('received')) counts.approved += 1;
-            else if (key.includes('submitted')) counts.submitted += 1;
-            else counts.draft += 1;
+            const key = String(item.status || '').trim().toLowerCase();
+            if (key === 'draft') counts.draft += 1;
+            else if (key === 'submitted') counts.submitted += 1;
+            else if (key === 'approved' || key === 'released' || key === 'received') counts.approved += 1;
+            else if (key === 'rejected' || key === 'returned') counts.rejected += 1;
+            else if (key === 'ready for liquidation' || (key.startsWith('liquidation') && key !== 'liquidation completed')) counts.ready += 1;
         });
         document.getElementById('cashDraftCount').textContent = counts.draft;
         document.getElementById('cashSubmittedCount').textContent = counts.submitted;
         document.getElementById('cashApprovedCount').textContent = counts.approved;
         document.getElementById('cashReadyCount').textContent = counts.ready;
+        document.getElementById('cashRejectedCount').textContent = counts.rejected;
     }
 
     async function loadCashAdvances() {
@@ -1243,7 +1394,12 @@
         setCashStatus('Draft');
         renderCashAdvanceAttachments([]);
         document.getElementById('cashAttachmentFiles')?.addEventListener('change', updateCashAttachmentSelection);
-        loadCashAdvances();
+        applyCashAdvanceEditState(null);
+        // Notifications and detail_url link here with ?cash_advance_id=N.
+        const deepLinkId = Number(new URLSearchParams(window.location.search).get('cash_advance_id') || 0);
+        loadCashAdvances().then(function() {
+            if (Number.isInteger(deepLinkId) && deepLinkId > 0) openCashAdvance(deepLinkId);
+        });
         loadCashAdvanceNotifications();
     });
 </script>

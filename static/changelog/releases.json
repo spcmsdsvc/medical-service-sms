@@ -1,6 +1,78 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-13-cash-advance-page",
+      "release_date": "2026-10-13",
+      "title": "Cash Advance Fixes",
+      "summary": "The Cash Advance page shows only the actions you can take and opens the request you linked to.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-cash-advance-page-no-duplicates",
+          "category": "Cash Advance",
+          "description": "Double clicks no longer create duplicate requests.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-13-cash-advance-page-links",
+          "category": "Cash Advance",
+          "description": "Links from notifications open the request.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-13-cash-advance-page-read-only",
+          "category": "Cash Advance",
+          "description": "Submitted and approved requests open read-only.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-13-cash-advance-page-liquidation",
+          "category": "Cash Advance",
+          "description": "Start or open the liquidation from the page.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 4
+        },
+        {
+          "item_key": "2026-10-13-cash-advance-page-delete-draft",
+          "category": "Cash Advance",
+          "description": "Delete drafts you no longer need.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 5
+        }
+      ]
+    },
+    {
+      "release_key": "2026-10-13-cash-advance-server",
+      "release_date": "2026-10-13",
+      "title": "Safer Cash Advance Saving",
+      "summary": "Cash Advance requests are checked before saving so a bad value cannot break your list.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-13-cash-advance-server-checks",
+          "category": "Cash Advance",
+          "description": "Amounts, dates and liquidation days are checked before saving.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-13-reimbursement-design",
       "release_date": "2026-10-13",
       "title": "Reimbursement Worksheet Comes First",
