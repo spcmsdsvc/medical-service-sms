@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Cash Advance — Batch 4: Dark Mode (pills, buttons, KPI note contrast, header and toasts on theme colours)
 
-**Status:** Executed locally 2026-10-13 (owner: "execute batch 3 and 4"); awaiting "commit and push".
+**Status:** Executed — `9f932cb` on `main` (2026-10-13; owner: "execute batch 3 and 4", then "commit and push").
 **Outcome differences:** Batch 3 already moved the page to theme tokens, so most dark surfaces needed no page rule; dark rules were added only for pills, danger buttons and toasts. Submit with the purple accent measures 4.23:1 in every theme (white on `#8b5cf6`, the app-wide accent fill shared with `.btn-primary`); left unchanged as a shared accent decision.
 **Approved:** 2026-10-13 (owner: "all approved" after the 2026-10-13 page scan and design scan of `/cash_advance`).
 **Detailed:** 2026-10-13.
@@ -107,7 +107,7 @@ Intended outcome: every text and pill reaches 4.5:1 in light, graphite and AMOLE
 
 # Cash Advance — Batch 3: Design System (Page Header, form first, Stat Cards, weights, radii, accent Submit, focus ring)
 
-**Status:** Executed locally 2026-10-13 (owner: "execute batch 3 and 4"); awaiting "commit and push".
+**Status:** Executed — `9f932cb` on `main` (2026-10-13; owner: "execute batch 3 and 4", then "commit and push").
 **Outcome differences:** The status pill moved into the header (one status display); Request Date is kept as a hidden input plus "Requested MM-DD-YYYY" text; Clear Form became a quiet outline (Delete Draft keeps the red outline); colours moved to theme tokens as part of step 5; the light Rejected pill now uses the Semantic Status pair. Measured: first input y=235 at 1366×768 (was 1044).
 **Approved:** 2026-10-13 (owner: "all approved"; page order "Form on top"; Submit colour "Accent primary").
 **Detailed:** 2026-10-13.
