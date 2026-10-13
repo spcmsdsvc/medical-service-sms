@@ -2,6 +2,8 @@
 
 codex changes - 2026-10-13
 
+- Added `.claude/skills/page-design-scan/SKILL.md` to git (previously untracked, local only) on the owner's request, so the design-scan skill and its new Request pages consistency check are backed up with the project. Only that file; the rest of `.claude/` (including `launch.json`) stays untracked.
+
 - Executed **Request Pages — Uniform Header, New Request Button and Page Width** (`plans.md`) on the owner's "execute"; published to `main` as `ae3e2e0` on "commit and push" (Railway deployment building; full suite rerun after the dark fix, 1930 tests, no new failures). No used function, handler or element id renamed or removed.
 - `static/css/app-dashboard.css`: new shared `.request-page` (max-width 1220px, centred) and `.request-page .dash-page-header` (column, left-aligned), so the header button always sits under the subtitle. Link version `app-dashboard.css?v=16` → `?v=17` in `accounting_center.html`, `cash_advance.html`, `dashboard.html`, `travel_request.html` (and the four tests that pin it).
 - `templates/travel_request.html`: wrapper `travel-page request-page`; the page-local 1220px width moved to the shared rule (no visible change). `templates/cash_advance.html`: wrapper `cash-page request-page`, full-width rule removed, top padding 6px → 0; New Request now under the subtitle.
