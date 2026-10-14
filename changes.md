@@ -2,6 +2,7 @@
 
 codex changes - 2026-10-14
 
+- Published **Create TSR — offline scan fixes** (all 4 batches) to `main` as `84a973e` on "commit and push" (service worker v321). `scheduler.db` and the unrelated dirty files (`.impeccable/`, handoffs, `changes-archive.md`, the pre-existing LPR line edit in `changes.md`) were left out.
 - Executed **Create TSR — offline scan fixes**, batches 3 and 4 (`plans.md`, amendments recorded there) on the owner's "can we execute batch 3 and 4 before commit and push?"; not committed, all four batches publish together. Kept functions unchanged except the three unused ones below.
 - Batch 3, `templates/offline_tsr.html`: new `renderSelectedStandaloneScheduleCard(schedule)` holds the selected-schedule card markup (hides and empties it for `null`); `applyScheduleToStandaloneTSR` and `clearStandaloneScheduleSelection` use it, and `applyStandaloneTSRDraftData` now shows the card and sets `#tsr-schedule-select` after Continue draft (previously the card stayed hidden). Removed the unused `loadStandaloneTSRDraft`, `resetStandaloneTSRForm` and `copyStandaloneTSRText` (no callers in templates, `static/js` or `app.py`).
 - Batch 3, `app.py`: the "Calibration Report & Certificate submitted" and "approved" notifications now open `/calibration-center` (`my_calibrations_page`) instead of a blank Create TSR page; the "returned" notification is unchanged.

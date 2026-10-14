@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Create TSR — offline scan fixes (4 batches)
 
-**Status:** All 4 batches executed locally, not committed (owner, 2026-10-14: "execute batch 1 then 2", then "can we execute batch 3 and 4 before commit and push?"). To publish together on "commit and push" under service worker v321, as one commit (owner asked for all four in one push; the plan's one-commit-per-batch is replaced by that).
+**Status:** Executed — `84a973e` on `main` (2026-10-14; owner: "execute batch 1 then 2", then "can we execute batch 3 and 4 before commit and push?", then "commit and push"). All four batches in one commit under service worker v321.
 
 ### Amendments during execution (batches 1–2)
 
