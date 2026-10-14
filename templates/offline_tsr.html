@@ -33,13 +33,26 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=47"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=48"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
-<div class="offline-tsr-page offline-tsr-layout">
+{% if calibration_report_page %}
+{# Hide the TSR form from the first paint; applyOnlineTSRCalibrationOnlyGate hides the same parts after load. #}
+<style>
+.offline-tsr-calibration-page :is(#offline-tsr-action-bar,#tsr-core-readiness-summary,#standalone-tsr-drafts-disclosure,#tsr-section-nav,#tsr-section-customer-equipment,#tsr-section-service-work,#tsr-section-visit-signoff),
+.offline-tsr-calibration-page #tsr-section-supporting-documents > :not(#calibration-report-card){display:none!important}
+</style>
+<script>window.OFFLINE_TSR_CALIBRATION_PAGE = true;</script>
+{% endif %}
+<div class="offline-tsr-page offline-tsr-layout{% if calibration_report_page %} offline-tsr-calibration-page{% endif %}">
   <div class="offline-tsr-hero no-print">
     <div>
+      {% if calibration_report_page %}
+      <h2 class="mb-1 fw-bold"><i class="fa-solid fa-file-circle-check text-primary me-2"></i>Calibration Report</h2>
+      <p class="text-muted mb-0">Complete or review the Calibration Report attached to the saved TSR. The original TSR will not be revised.</p>
+      {% else %}
       <h2 class="mb-1 fw-bold"><i class="fa-solid fa-file-pen text-primary me-2"></i>Create TSR</h2>
       <p class="text-muted mb-0">Create a TSR from a selected schedule, save progress, and continue later from this device or your account backup.</p>
+      {% endif %}
     </div>
   </div>
 
@@ -1955,10 +1968,10 @@ async function redirectCalibrationHandoffToSavedTSR(){
     const submissionId = String(result?.submission?.submission_id || result?.submission?.id || '').trim();
     if(result?.status !== 'success' || !/^\d+$/.test(submissionId)) return false;
     params.delete('open_calibration_report');
-    params.set('mode', 'calibration_report');
+    params.delete('mode');
     params.set('submission_id', submissionId);
     try{ sessionStorage.removeItem('create_tsr_schedule_context'); }catch(err){}
-    window.location.replace(`${window.location.pathname}?${params.toString()}`);
+    window.location.replace(`/calibration-report?${params.toString()}`);
     return true;
   }catch(err){
     console.warn('[Offline TSR] Saved TSR lookup for Calibration Report failed', err);
@@ -4483,6 +4496,8 @@ function resetStandaloneTSRSaveStatus(){
 }
 
 function enqueueStandaloneTSRServerDraftSync(record, { immediate=false, statusContext=null } = {}){
+  // A Calibration Report for a saved TSR has its own backup; the TSR-draft backup would reserve a TSR number.
+  if(String(record?.id || '').includes('late_calibration_')) return { skipped:true, reason:'calibration_report_own_backup' };
   if(!record?.id || !navigator.onLine) return { pending:true, skipped:true, reason:'offline_or_missing_key' };
   if(String(record.account_id || '') !== STANDALONE_TSR_ACCOUNT_SCOPE){
     return { pending:true, skipped:true, reason:'account_scope_mismatch' };
@@ -5476,7 +5491,8 @@ function onlineTSRCalibrationReportLocked(){
 
 function getOnlineTSRCalibrationRequestFromUrl(){
   const params = new URLSearchParams(window.location.search || '');
-  if(String(params.get('mode') || '').toLowerCase() !== 'calibration_report') return null;
+  // The /calibration-report page sets the flag; the old ?mode=calibration_report is kept as a fallback.
+  if(window.OFFLINE_TSR_CALIBRATION_PAGE !== true && String(params.get('mode') || '').toLowerCase() !== 'calibration_report') return null;
   const submissionId = params.get('submission_id') || params.get('edit_submission_id') || '';
   const shiftId = params.get('shift_id') || params.get('schedule_id') || '';
   if(submissionId) return { type:'submission', id:submissionId };
@@ -5493,6 +5509,83 @@ function onlineTSRCalibrationReportState(submission, payload){
   return payload?.calibration_report && payload.calibration_report.status !== 'not_started' ? 'draft' : 'not_started';
 }
 
+// Account backup for a Calibration Report started after its TSR was saved. The server stores it
+// under the same key as the device draft, so older backups and device drafts match.
+let lateCalibrationBackupTimer = null;
+let lateCalibrationBackupGeneration = 0;
+let lateCalibrationBackupPending = null;
+
+function backupLateCalibrationReportDraft(submissionId, report, { immediate=false } = {}){
+  const targetId = String(submissionId || '').trim();
+  if(!targetId || !report || typeof report !== 'object') return null;
+  clearTimeout(lateCalibrationBackupTimer);
+  const generation = ++lateCalibrationBackupGeneration;
+  lateCalibrationBackupPending = { submissionId:targetId, report };
+  const isLatest = () => generation === lateCalibrationBackupGeneration;
+  const run = async () => {
+    if(!navigator.onLine){
+      if(isLatest()) setStandaloneTSRSaveStatus('local-saved-pending', null, { message:'Saved on this device. Account backup will wait until you are online.' });
+      return { pending:true, skipped:true, reason:'offline' };
+    }
+    if(isLatest()) setStandaloneTSRSaveStatus('backup-in-progress');
+    const headers = { 'Content-Type':'application/json', Accept:'application/json' };
+    const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+    if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+    try{
+      const response = await fetch(`/save_calibration_report_draft/${encodeURIComponent(targetId)}`, {
+        method:'POST',
+        credentials:'same-origin',
+        headers,
+        body:JSON.stringify({ calibration_report:report, device_updated_at:new Date().toISOString() })
+      });
+      const result = await response.json().catch(() => ({}));
+      if(!response.ok || result.status !== 'success'){
+        const error = new Error(result.message || 'Calibration Report backup failed.');
+        error.httpStatus = response.status;
+        throw error;
+      }
+      if(isLatest()){
+        lateCalibrationBackupPending = null;
+        if(result.stale_ignored){
+          setStandaloneTSRSaveStatus('account-backup-conflict', null, {
+            message:'Saved on this device. Your account has a newer copy of this report from another device; reopen this report to use it.'
+          });
+        }else{
+          setStandaloneTSRSaveStatus('account-backed-up');
+        }
+      }
+      return result;
+    }catch(error){
+      console.warn('[Calibration Report] Account backup failed', error);
+      if(isLatest()) setStandaloneTSRSaveStatus('account-backup-failed', null, { error });
+      return { failed:true, error };
+    }
+  };
+  if(immediate) return run();
+  lateCalibrationBackupTimer = setTimeout(run, 1500);
+  return { pending:true, scheduled:true };
+}
+
+window.addEventListener('online', () => {
+  const pending = lateCalibrationBackupPending;
+  if(pending && isOnlineTSRCalibrationMode()) backupLateCalibrationReportDraft(pending.submissionId, pending.report, { immediate:true });
+});
+
+async function loadLateCalibrationReportAccountCopy(submissionId){
+  if(!navigator.onLine) return null;
+  try{
+    const response = await fetch(`/get_calibration_report_draft/${encodeURIComponent(submissionId)}`, {
+      cache:'no-store', credentials:'same-origin', headers:{ Accept:'application/json' }
+    });
+    const result = await response.json().catch(() => ({}));
+    const report = response.ok && result.status === 'success' ? result.draft?.calibration_report : null;
+    return report && typeof report === 'object' ? report : null;
+  }catch(err){
+    console.warn('[Calibration Report] Account draft lookup failed', err);
+    return null;
+  }
+}
+
 async function restoreStandaloneLateCalibrationDraft(submissionId){
   const targetId = String(submissionId || '').trim();
   if(!targetId || onlineTSRCalibrationReportLocked()) return null;
@@ -5503,16 +5596,27 @@ async function restoreStandaloneLateCalibrationDraft(submissionId){
   }catch(err){
     console.warn('[Offline TSR] Late Calibration Report draft lookup failed', err);
   }
-  const indexedCandidate = records.find(record => String(record?.payload?._late_calibration_report_submission_id || '') === targetId);
+  // Match by draft key first: older copies may lack the submission field.
+  const draftKey = getStandaloneLateCalibrationDraftId(targetId);
+  const indexedCandidate = records.find(record => draftKey && String(record?.id || '') === draftKey)
+    || records.find(record => String(record?.payload?._late_calibration_report_submission_id || '') === targetId);
   let candidate = indexedCandidate || null;
   if(!candidate){
     const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
-    if(String(fallback?._late_calibration_report_submission_id || '') === targetId){
+    if((draftKey && String(fallback?._draft_id || '') === draftKey) ||
+      String(fallback?._late_calibration_report_submission_id || '') === targetId){
       candidate = { id:fallback._draft_id || '', payload:fallback, source:'localstorage' };
     }
   }
-  if(!candidate?.payload?.calibration_report) return null;
-  // For a returned report, only a correction saved on this device after the return is worth restoring.
+  if(!candidate?.payload?.calibration_report) candidate = null;
+  // The account copy wins when it is newer (saved on another device, or this device was cleared).
+  const accountCopy = await loadLateCalibrationReportAccountCopy(targetId);
+  const reportSavedAt = report => Date.parse(report?.updated_at || '') || 0;
+  if(accountCopy && (!candidate || reportSavedAt(accountCopy) > reportSavedAt(candidate.payload.calibration_report))){
+    candidate = { id:draftKey, payload:{ calibration_report:accountCopy }, source:'account' };
+  }
+  if(!candidate) return null;
+  // For a returned report, only a correction saved after the return is worth restoring.
   const returnedAt = Date.parse(onlineTSRCalibrationContext?.calibration_report_returned_at || '');
   const draftSavedAt = Date.parse(candidate.payload.calibration_report.updated_at || '');
   if(onlineTSRCalibrationContext?.calibration_report_returned && !(draftSavedAt > returnedAt)) return null;
@@ -5522,6 +5626,15 @@ async function restoreStandaloneLateCalibrationDraft(submissionId){
   if(onlineTSRCalibrationContext){
     onlineTSRCalibrationContext.local_draft_id = localId;
     onlineTSRCalibrationContext.recovered_local_draft_id = localId;
+  }
+  if(candidate.source === 'account'){
+    window.calibrationReport?.apply(candidate.payload.calibration_report);
+    // Keep a device copy too, under the same key, so the report survives losing the signal.
+    await saveStandaloneTSRDraftLocally(
+      prepareStandaloneLateCalibrationDraft(collectTSRData(), targetId), { serverSync:'none' }
+    ).catch(err => console.warn('[Calibration Report] Device copy of the account draft failed', err));
+    showTSRStatus('Restored the Calibration Report draft from your account. It is not uploaded yet.', 'warning');
+    return candidate;
   }
   window.calibrationReport?.apply(candidate.payload.calibration_report);
   showTSRStatus('Recovered the Calibration Report saved on this device after the previous upload did not complete. It is still not uploaded.', 'warning');
@@ -5585,7 +5698,9 @@ async function loadOnlineTSRCalibrationFromUrl(){
     const stateLabel = onlineTSRCalibrationContext.calibration_report_returned ? 'returned for correction; fix it and Save Final Report to resubmit' : onlineTSRCalibrationContext.calibration_report_state === 'uploaded' ? 'uploaded and read-only' : onlineTSRCalibrationContext.calibration_report_state === 'draft' ? 'saved as a draft' : 'not started';
     showTSRStatus(
       restoredLateDraft
-        ? 'Calibration Report is saved locally but not uploaded. Retry Save Final Report to attach it to the existing TSR.'
+        ? (restoredLateDraft.source === 'account'
+          ? 'Calibration Report draft restored from your account. It is not uploaded yet; Save Final Report attaches it to the existing TSR.'
+          : 'Calibration Report is saved locally but not uploaded. Retry Save Final Report to attach it to the existing TSR.')
         : `Saved TSR REV${submission.revision_no || 1} loaded. Calibration Report is ${stateLabel}; the original TSR will not be revised.`,
       restoredLateDraft ? 'warning' : (onlineTSRCalibrationReportLocked() ? 'info' : 'warning')
     );
@@ -6381,7 +6496,8 @@ async function renderStandaloneTSRDraftPanel(){
   if(!list) return;
   let records = [];
   try{
-    records = await getStandaloneTSRDraftRecords();
+    // A Calibration Report for a saved TSR opens from its own page, not as a TSR draft.
+    records = (await getStandaloneTSRDraftRecords()).filter(record => !String(record?.id || '').includes('late_calibration_'));
   }catch(err){
     console.warn('[Offline TSR] Unable to render draft panel', err);
   }
@@ -8101,6 +8217,10 @@ async function saveStandaloneCalibrationReport(preparedPayload){
   }
 
   onlineTSRCalibrationContext.calibration_report_state = 'uploaded';
+  // The server dropped the account backup; a backup still waiting must not recreate it.
+  clearTimeout(lateCalibrationBackupTimer);
+  lateCalibrationBackupGeneration += 1;
+  lateCalibrationBackupPending = null;
   const localDraftIds = [
     onlineTSRCalibrationContext.local_draft_id,
     onlineTSRCalibrationContext.recovered_local_draft_id
@@ -9346,7 +9466,7 @@ async function confirmStandaloneTSRFinalSave(){
   }
 }
 
-async function saveStandaloneTSRDraft(silent=false){
+async function saveStandaloneTSRDraft(silent=false, { backupNow=false } = {}){
   if(silent && standaloneTSRAutosavePaused) return;
   const calibrationRequest = getOnlineTSRCalibrationRequestFromUrl();
   if(calibrationRequest){
@@ -9371,9 +9491,15 @@ async function saveStandaloneTSRDraft(silent=false){
       };
     }
     const data = collectTSRData();
-    return await saveStandaloneTSRDraftLocally(
+    const saved = await saveStandaloneTSRDraftLocally(
       prepareStandaloneLateCalibrationDraft(data, submissionId), { serverSync:'none' }
     );
+    // The TSR-draft backup would reserve a TSR number, so the report has its own account backup.
+    if(saved && !saved.skipped && !saved.failed && saved.source !== 'none' && !onlineTSRCalibrationReportLocked()){
+      const backup = backupLateCalibrationReportDraft(submissionId, data.calibration_report, { immediate:backupNow === true });
+      if(backupNow === true) saved.server_sync_result = await backup;
+    }
+    return saved;
   }
   if(!hasStandaloneScheduleSelection()){
     if(!silent) updateCreateTSRScheduleGate({ showMessage:true });

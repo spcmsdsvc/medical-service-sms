@@ -20625,11 +20625,14 @@ function buildCreateTSRPageUrlFromContext(context={}){
     if(submissionId) params.set('submission_id', submissionId);
     if(engineerId) params.set('engineer_id', engineerId);
     if(dateIso) params.set('date', dateIso);
-    if(mode) params.set('mode', mode);
     if(openCalibrationReport) params.set('open_calibration_report', '1');
 
     const query = params.toString();
-    return query ? `/offline-tsr?${query}` : '/offline-tsr';
+    // The Calibration Report for a saved TSR has its own page.
+    if(mode === 'calibration_report') return `/calibration-report?${query}`;
+    if(mode) params.set('mode', mode);
+    const fullQuery = params.toString();
+    return fullQuery ? `/offline-tsr?${fullQuery}` : '/offline-tsr';
 }
 
 function storeCreateTSRContextForPage(context={}){

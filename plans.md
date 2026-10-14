@@ -37,6 +37,231 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Calibration Report — its own page and account backup (2 batches)
+
+**Status:** Executed, not committed (2026-10-14; owner: "approved, record it", then "execute all"). Both batches were done
+together, in order 1 → 2. They publish on the owner's "commit and push".
+
+### Amendments during execution
+
+- **Server-built links (added).** My Calibrations' `fix_url` and the "returned for correction" notification were still
+  built with `url_for('offline_tsr_page', mode='calibration_report')`. Both now use `calibration_report_page`. Old
+  notifications already in the database keep the old URL and go through the step 2 redirect.
+- **The Create TSR page-load backup also sent report drafts (found in the browser check; added).** Each Create TSR
+  load re-sends device drafts that are missing from `/get_tsr_drafts` through `enqueueStandaloneTSRServerDraftSync`
+  → `/save_tsr_draft`. That includes the report's device copy, which is how the old `_20_33` row was first written
+  (2026-09-25). For a new report it reserves a TSR number, and it overwrote the newer-wins backup. Step 9 made it
+  happen on every load, because the report key no longer appears in that list. Fixes:
+  `enqueueStandaloneTSRServerDraftSync` skips `late_calibration_` keys (`calibration_report_own_backup`), and
+  `/save_tsr_draft` refuses them with 409 for tabs still running the old page.
+- **Create TSR's Continue Saved Work listed the report's device copy (added).** `renderStandaloneTSRDraftPanel` now
+  filters out `late_calibration_` records. Opening the report from the Calendar is unchanged.
+- **Step 8:** the backup endpoint refuses a report that is already uploaded and not returned for correction
+  (`calibration_report_already_uploaded`, 409). This replaces the "approved only" check and covers it. It also stops a
+  backup still in flight from recreating the row that the upload deleted. The client also cancels a pending backup
+  timer on a successful upload.
+- **Step 10:** cleanup is a best-effort `delete_late_calibration_report_draft(submission)` with its own commit, called
+  before both late-upload success responses (new upload and duplicate retry), not part of the upload's commit. A
+  failure only leaves a hidden row.
+- **Step 11:** `saveStandaloneTSRDraft(silent, { backupNow })`. The report toolbar's Save Draft passes `backupNow` in
+  calibration mode and reports the backup outcome. The backup code sits next to the restore code, not in the draft-key
+  section, so the existing Node harnesses that load that section are unaffected.
+- **Service worker:** one bump (v322) covers both batches, since they publish together.
+- **Existing tests updated for the new URL or signature:** `test_calibration_report_tombstone` (handoff target),
+  `test_my_calibrations` (`fix_url`), `test_calibration_report_returned_fix` and
+  `test_calibration_certificate_approval_workflow` (notification URL; the direct view call now runs in a request
+  context), `test_tsr_calibration_report` (`?v=48`, the new `saveStandaloneTSRDraft` signature, the Save Draft
+  message in calibration mode, and backup stubs in the late-draft harness), `test_calibration_center` (`?v=48`).
+
+## Context
+
+Calendar's **Create Calibration Report** on a schedule card whose TSR is already saved opens the whole Create TSR page
+(`/offline-tsr?mode=calibration_report&submission_id=…`). The TSR form renders first and JavaScript then hides it
+(`applyOnlineTSRCalibrationOnlyGate`, `templates/offline_tsr.html:5436`), so it flashes. The report's draft is kept on the
+device only (`serverSync:'none'`, `offline_tsr.html:9375`): a lost or cleared phone loses an unsent report. This was left
+open by the Create TSR offline scan plan (below) as "the owner decides separately".
+
+Intended outcome: the report has its own address and opens without the TSR form, and unsent report drafts are backed up
+to the engineer's account like TSR drafts. Drafts that exist today, on devices and on the server, must keep working.
+
+## Decisions taken (owner, 2026-10-14)
+
+- **Own address, same engine.** A new `/calibration-report` route renders the existing `offline_tsr.html` in calibration
+  mode. Not a new lightweight page: the save/upload code was just fixed and is tangled into Create TSR; rewriting it is
+  high risk.
+- **Back up unsent reports to the account.**
+- **Existing drafts must not be lost on publish.** The new backup uses the same draft key the device and the older server
+  backups already use, so existing copies are found automatically. No existing row is deleted or rewritten by the update.
+
+## Investigation
+
+- Entry points that open calibration mode on a saved TSR:
+  - Calendar: `templates/timeline.html:20784-20789` sets `context.mode='calibration_report'` + `submission_id` (or
+    `open_calibration_report=true` when the card has no saved-TSR link); `buildCreateTSRPageUrlFromContext`
+    (`timeline.html:20609`) builds `/offline-tsr?…`.
+  - `redirectCalibrationHandoffToSavedTSR` (`offline_tsr.html:1946`): for `open_calibration_report=1`, looks up the saved
+    TSR and `location.replace`s to `/offline-tsr?mode=calibration_report&submission_id=…`.
+  - No other template, JS file or `app.py` builds a `mode=calibration_report` link (grep). My Calibrations
+    (`calibration_center.html`) loads `app-calibration-report.js` but links to no editor.
+- Calibration mode is decided by `getOnlineTSRCalibrationRequestFromUrl` (`offline_tsr.html:5477`, reads `mode`) and,
+  separately, by `saveReportDraft` in `static/js/app-calibration-report.js:1814-1818` (parses `mode` itself).
+  `loadOnlineTSRCalibrationFromUrl` (`:5530`) fetches the saved TSR, so the mode cannot work offline today either.
+- `/offline-tsr` route: `app.py:13852` `offline_tsr_page`, gate `can_back_up_tsr_drafts()`, render arguments
+  `offline_storage_health_admin`, `offline_tsr_can_create_tsr_without_equipment`, `tsr_filename_template`,
+  `signature_stamp_scale`, `certificate_catalog`. The page title comes from `layout.html:48` (static "Medical Service").
+- Late report device draft key: `getStandaloneLateCalibrationDraftId` (`offline_tsr.html:3734`) =
+  `standalone_tsr_draft_late_calibration_<account>_<submission id>`; `prepareStandaloneLateCalibrationDraft` (`:3752`)
+  sets `_late_calibration_report_submission_id`. `restoreStandaloneLateCalibrationDraft` (`:5496`) finds the draft by that
+  payload field in IndexedDB, then the localStorage fallback. After a successful late upload (`:8103-8110`) the local copies
+  are cleared from IndexedDB.
+- **Older server backups exist.** The local `scheduler.db` copy has 2 `tsr_draft` rows with keys
+  `standalone_tsr_draft_late_calibration_20_33` (2026-09-26) and `…_20_34` (2026-09-28), both holding a
+  `calibration_report`; the first has **no** `_late_calibration_report_submission_id` field. They come from before late
+  drafts were switched to `serverSync:'none'`. Production may hold similar rows. Consequence: restore must match by key,
+  not by payload field, and the new backup must reuse this key format.
+- `/save_tsr_draft` (`app.py:18992`) reserves a TSR number (`reserve_online_tsr_number`, around `:19105`) on every new
+  key, so reusing it for report backups would leak a number per report. `/get_tsr_drafts` (`:19216`) returns every row of
+  the user. `TSR_DRAFT_MAX_PAYLOAD_BYTES` = 2 MB (`:18578`). `TsrDraft` model `app.py:3812`, unique `(user_id, draft_key)`.
+- Late upload: `upload_online_tsr_attachment` (`app.py:26871`) with `late_calibration_report=1`; checks submission is
+  `completed`, `can_work_on_existing_schedule_shift(shift)`, and refuses replacing an approved latest report
+  (`calibration_report_approved_immutable`). Merge via `merge_late_calibration_report_payload` (`:18394`).
+- Device storage (IndexedDB/localStorage) is per site origin, not per path, and the service worker deliberately never
+  touches IndexedDB (comment above `purgeAuthenticatedCaches`, `app.py` service worker block around `:27855`). A path
+  change and a `CACHE_VERSION` bump therefore leave device drafts in place.
+- `app-calibration-report.js?v=47` is pinned in `offline_tsr.html:36`, `calibration_center.html:659`, the service worker
+  `APP_SHELL` (`app.py:27806`), `tests/test_tsr_calibration_report.py`, `tests/test_calibration_center.py`.
+- Report status text for the device-only case: `app-calibration-report.js:424-425` ("Saved on this device only until Save
+  Final Report uploads it.") when `syncNotRequested`.
+
+## Execution steps
+
+### Batch 1 — own address, same engine
+
+1. **Shared render helper** (`app.py`): move the `offline_tsr_page` render arguments (catalog try/except included) into
+   `offline_tsr_template_context()`. `offline_tsr_page` calls it; output unchanged. Done: `/offline-tsr` renders as before.
+2. **Old URL redirect** (`app.py` `offline_tsr_page`): when `request.args.get('mode') == 'calibration_report'`, redirect
+   (302) to `/calibration-report` with all other query parameters kept and `mode` dropped. Done: old bookmarks and any
+   open-tab reload land on the new page.
+3. **New route** `/calibration-report` (`app.py`, next to `offline_tsr_page`): `@login_required`, same
+   `can_back_up_tsr_drafts()` gate (else dashboard). Requires a numeric `submission_id` or `schedule_id`/`shift_id`;
+   otherwise redirect to `/offline-tsr`. Renders `offline_tsr.html` with `**offline_tsr_template_context()` and
+   `calibration_report_page=True`.
+4. **First paint without the TSR form** (`templates/offline_tsr.html`): when `calibration_report_page`:
+   - add a page class (e.g. `offline-tsr-calibration-page` on `.offline-tsr-page`) and a CSS rule hiding the same ids the
+     JS gate hides (`offline-tsr-action-bar`, `tsr-core-readiness-summary`, `standalone-tsr-drafts-disclosure`,
+     `tsr-section-nav`, `tsr-section-customer-equipment`, `tsr-section-service-work`, `tsr-section-visit-signoff`, and the
+     supporting-documents children other than `#calibration-report-card`);
+   - render the hero title "Calibration Report" and the subtitle from `applyOnlineTSRCalibrationOnlyGate` server-side;
+   - set `window.OFFLINE_TSR_CALIBRATION_PAGE = true`.
+   `applyOnlineTSRCalibrationOnlyGate` is unchanged (backstop). Done: no TSR section visible at any moment of the load.
+5. **One source for "calibration mode requested"**: `getOnlineTSRCalibrationRequestFromUrl` returns a request when
+   `window.OFFLINE_TSR_CALIBRATION_PAGE` is true **or** `mode=calibration_report` (kept as fallback).
+   `app-calibration-report.js` `saveReportDraft` uses `window.getOnlineTSRCalibrationRequestFromUrl()` when defined
+   instead of parsing `mode` itself (keep its current parse as the fallback). Bump `?v=47` → `?v=48` in all five pinned
+   places. Done: Save Draft waits for the saved-TSR context on the new page.
+6. **Entry points**: `timeline.html` `buildCreateTSRPageUrlFromContext` returns `/calibration-report?…` (without `mode`)
+   when `context.mode === 'calibration_report'`; `redirectCalibrationHandoffToSavedTSR` replaces to
+   `/calibration-report?schedule_id=…&submission_id=…` (keeping `date`/`engineer_id`). Done: Calendar never opens the old
+   URL.
+7. Service worker `CACHE_VERSION` bump (v322, previous kept as a history comment). The new route is **not** added to
+   `APP_SHELL`/`FIELD_SAFE_ROUTES` (it needs the server; see excluded).
+
+### Batch 2 — account backup for unsent reports
+
+8. **Backup endpoints** (`app.py`, near the TSR draft routes):
+   - `POST /save_calibration_report_draft/<int:submission_id>`: `@login_required`, `can_back_up_tsr_drafts()`,
+     `ensure_tsr_draft_schema()`. Loads the submission; requires `status == 'completed'`, its shift, and
+     `can_work_on_existing_schedule_shift(shift)` (403 otherwise); refuses an approved latest report with
+     `calibration_report_approved_immutable` (409), same check as the upload route. Body: `calibration_report` (dict,
+     required), `device_updated_at`. Key = `standalone_tsr_draft_late_calibration_<current_user.id>_<submission_id>`
+     (built server-side; verify during execution that it equals the client's `getStandaloneLateCalibrationDraftId` for the
+     same account, i.e. `STANDALONE_TSR_ACCOUNT_SCOPE` is the user id — the existing `_20_34` row says yes). Stores in
+     `TsrDraft` (`payload_json` = `{calibration_report, _late_calibration_report_submission_id, _late_calibration_report_pending:true}`,
+     `schedule_id` = shift id, title from the submission). **Never calls `reserve_online_tsr_number`.** Newer wins: if the
+     stored `calibration_report.updated_at` is newer than the incoming one, return `stale_ignored` with the stored copy.
+     Respect `TSR_DRAFT_MAX_PAYLOAD_BYTES` (413).
+   - `GET /get_calibration_report_draft/<int:submission_id>`: same access checks; returns the user's row for that key, or
+     `draft: null`. Works for the older rows (payload may lack the submission field; the key identifies it).
+9. **Draft list** (`app.py` `get_tsr_drafts`): exclude keys containing `late_calibration_` so report backups do not appear
+   in Create TSR's Continue Saved Work. Rows stay in the table and are reached through step 8.
+10. **Cleanup on upload** (`upload_online_tsr_attachment`): after a successful late report merge, delete that user's row
+    for that submission's key in the same commit. Nothing else deletes these rows.
+11. **Client backup** (`offline_tsr.html`): new `backupLateCalibrationReportDraft(submissionId, report, { immediate })`.
+    `saveStandaloneTSRDraft`'s calibration branch keeps the local save with `serverSync:'none'`, then calls it (debounced
+    for autosave, immediate when the toolbar Save Draft triggers it; pass the mode through the existing call). Offline or
+    failed → status "pending", retried on the next save and on the `online` event. The returned
+    `server_sync_result`-style object drives `setStandaloneTSRSaveStatus` so the report status reads "Saved on this device
+    and backed up to your account." / "Account backup is pending." instead of "device only" (`app-calibration-report.js:424`).
+12. **Restore** (`restoreStandaloneLateCalibrationDraft`): look up the local copy by draft **key**
+    (`getStandaloneLateCalibrationDraftId`) first, then by the payload field (current behaviour), then fetch
+    `GET /get_calibration_report_draft/<id>`. Use whichever copy has the newer `calibration_report.updated_at`; keep the
+    returned-report rule (only a copy saved after `returned_at`) and the locked-report early return. A server copy restored
+    onto a device is saved locally under the same key.
+
+## Deliberately excluded
+
+- **A fully separate lightweight page**: owner chose same engine (risk to just-fixed save/upload code).
+- **Opening `/calibration-report` offline**: it must load the saved TSR from the server; unchanged from today.
+- **The pre-save Calibration Report** (TSR not yet saved): stays inside Create TSR with the TSR draft.
+- **Backing up the generated PDF**: rebuilt at Save Final Report; TSR drafts likewise keep files on the device.
+- **Deleting or migrating the existing server rows**: they are reused, not touched.
+- **Page `<title>`**: `layout.html` has a static title; changing the shell is out of scope.
+- **Online banner reachability check, Create TSR design scan**: separate open follow-ups.
+
+## Verification
+
+- New `tests/test_calibration_report_page.py` (Flask test client + the Node harness style of
+  `test_tsr_calibration_report.py`):
+  - `/calibration-report?submission_id=…` renders for the owning engineer with the calibration page class and server hero;
+    without an id it redirects to `/offline-tsr`; a non-engineer is redirected like `/offline-tsr`.
+  - `/offline-tsr?mode=calibration_report&submission_id=5&date=…` redirects to `/calibration-report?submission_id=5&date=…`.
+  - `getOnlineTSRCalibrationRequestFromUrl` returns a request with `OFFLINE_TSR_CALIBRATION_PAGE` and no `mode`.
+  - Save endpoint: stores under the shared key, creates **no** TSR number reservation (reservation count unchanged),
+    403 for another engineer, 409 for an approved report, older `updated_at` → `stale_ignored`.
+  - `/get_tsr_drafts` omits the late key; a pre-existing row without the submission field is returned by the GET endpoint.
+  - Late upload success deletes only that submission's row.
+  - Restore picks a device draft found only by key, and the newer of device/server copies.
+  - **Existing-draft safety test**: seed a device draft and a server row in the old format, load the new page, the report
+    is restored.
+  - Positive control for each: run against the unchanged code (or with the step reverted) and see it fail.
+- Focused: `test_tsr_calibration_report`, `test_calibration_report_tombstone`, `test_tsr_draft_sync`,
+  `test_calibration_center`, `test_my_calibrations`, `test_calibration_report_returned_fix`, `test_tsr_page_design`,
+  `test_changelog_coverage`.
+- Full suite once before publishing (touches the shared `/get_tsr_drafts` and upload routes), main project folder:
+  `venv/Scripts/python.exe scripts/run_suite.py`.
+- Browser (DB copy, engineer test account): Calendar card with a saved TSR → **Create Calibration Report** → lands on
+  `/calibration-report`, no TSR section visible during load; edit + Save Draft → "backed up to your account"; clear the
+  site's IndexedDB → reload → report restored from the account; Save Final Report → the account row is gone; old
+  `/offline-tsr?mode=calibration_report…` URL redirects; the existing `_20_34` row opens on its report; 375 px width, tap
+  targets, console clean. Create TSR's own Save Draft / Continue Saved Work unchanged.
+
+## After implementation (per batch)
+
+1. Self-review against "Protect Existing Functions": `applyOnlineTSRCalibrationOnlyGate`, `loadOnlineTSRCalibrationFromUrl`,
+   `saveStandaloneTSRDraft`, `saveReportDraft`, Save Final Report, Clear/Remove report, Create TSR Save Draft, Continue
+   draft, Delete draft still defined and working; My Calibrations still loads the report script.
+2. Prove the new tests fail without the fix.
+3. Focused tests; browser steps for that batch.
+4. Service worker `CACHE_VERSION` bump (one per published commit; previous kept as a history comment).
+5. `static/changelog/releases.json`: engineer items "Calibration Report has its own page" (batch 1) and "Unsent
+   Calibration Reports are backed up to your account" (batch 2).
+6. `changes.md` bullets; update this Status line (`In progress`, then `Executed` with the commit hash per batch); amend
+   this plan if execution differs.
+7. Commit only that batch's files plus `plans.md`, `changes.md`, `releases.json`. Never `scheduler.db`, `output/`, `tmp/`,
+   handoffs, `.impeccable/` or `.claude/`. Publish only on the owner's "commit and push".
+
+## Risks
+
+- **Two devices editing one report**: newer save wins; older edits on the other device are overwritten. One engineer per
+  report in practice.
+- **Redirect breaks a link**: it keeps every parameter and the JS `mode` fallback stays.
+- **Key mismatch** between server-built and client keys would orphan backups: checked in step 8 and by the
+  existing-draft test.
+- **Hidden report rows** in `/get_tsr_drafts`: still reachable through the report page; never deleted except by their own
+  successful upload.
+- **Blast radius**: Calendar's report link, the report page, the TSR draft list, the late upload. Rollback = revert the
+  batch commit; device drafts and server rows are untouched either way.
+
 # Create TSR — offline scan fixes (4 batches)
 
 **Status:** Executed — `84a973e` on `main` (2026-10-14; owner: "execute batch 1 then 2", then "can we execute batch 3 and 4 before commit and push?", then "commit and push"). All four batches in one commit under service worker v321.

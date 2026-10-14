@@ -213,7 +213,7 @@ class ReturnedCalibrationReportFixTests(unittest.TestCase):
             note = app_module.SystemNotification.query.filter_by(
                 module='calibration_certificate', record_id=approval_id, user_id=user_id,
             ).order_by(app_module.SystemNotification.id.desc()).first()
-            self.assertIn('mode=calibration_report', note.target_url)
+            self.assertTrue(note.target_url.startswith('/calibration-report?'), note.target_url)
             self.assertIn(f'submission_id={submission_id}', note.target_url)
             self.assertNotIn('mode=correct', note.target_url)
             state = app_module.calibration_report_timeline_state_for_submission(

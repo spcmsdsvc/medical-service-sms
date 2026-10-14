@@ -247,7 +247,8 @@ class CalibrationCertificateServerTests(unittest.TestCase):
                 patch.object(app_module, 'is_admin_authorized', return_value=False), \
                 patch.object(app_module, 'calibration_certificate_catalog', side_effect=RuntimeError('missing catalog')), \
                 patch.object(app_module, 'render_template', return_value='offline-rendered') as render:
-            response = app_module.offline_tsr_page.__wrapped__()
+            with app_module.app.test_request_context('/offline-tsr'):
+                response = app_module.offline_tsr_page.__wrapped__()
         self.assertEqual(response, 'offline-rendered')
         catalog = render.call_args.kwargs['certificate_catalog']
         self.assertFalse(catalog['available'])
@@ -695,7 +696,7 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
                 self.assertIsNotNone(notification)
                 self.assertEqual(
                     notification.target_url,
-                    f'/offline-tsr?submission_id={fixture["submission_id"]}&mode=calibration_report',
+                    f'/calibration-report?submission_id={fixture["submission_id"]}',
                 )
             finally:
                 app_module.logout_user()

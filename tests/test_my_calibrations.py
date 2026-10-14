@@ -158,7 +158,7 @@ class MyCalibrationRouteTests(unittest.TestCase):
         self.assertNotIn(client_b, names)
         self.assertEqual(data['summary']['all'], 1)
         self.assertEqual(data['records'][0]['status']['key'], 'pending')
-        self.assertIn('mode=calibration_report', data['records'][0]['fix_url'])
+        self.assertTrue(data['records'][0]['fix_url'].startswith('/calibration-report?'), data['records'][0]['fix_url'])
 
     def test_due_soon_lists_only_expiring_machines(self):
         user_id, submission_id, approval_id, client_name = self._fixture('Approved')

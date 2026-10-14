@@ -422,7 +422,7 @@
       'failed':'Calibration Report could not be saved. Keep this page open and try again.'
     }[normalized] || 'Calibration Report save status unavailable.';
     if(details?.syncNotRequested && normalized === 'device-saved'){
-      message = 'Saved on this device only until Save Final Report uploads it.';
+      message = 'Saved on this device. Backing up to your account shortly.';
     }else if(details?.message){
       message = String(details.message);
     }
@@ -1811,7 +1811,9 @@
     if(typeof window.saveStandaloneTSRDraft !== 'function') return;
     try{
       var calibrationRequest = false;
-      try{
+      if(typeof window.getOnlineTSRCalibrationRequestFromUrl === 'function'){
+        calibrationRequest = Boolean(window.getOnlineTSRCalibrationRequestFromUrl());
+      }else try{
         var search = window.location && typeof window.location.search === 'string' ? window.location.search : '';
         if(typeof URLSearchParams === 'function'){
           calibrationRequest = String(new URLSearchParams(search).get('mode') || '').toLowerCase() === 'calibration_report';
@@ -1824,12 +1826,19 @@
           return;
         }
       }
-      var result = (await releaseDraftDeletion()) ? await window.saveStandaloneTSRDraft(true) : { skipped:true, reason:'deletion_release_failed' };
+      var result = (await releaseDraftDeletion()) ? await window.saveStandaloneTSRDraft(true, { backupNow:calibrationRequest }) : { skipped:true, reason:'deletion_release_failed' };
       if(!trackDraftSave(result)){
         showStatus(draftSaveFailureMessage(result),'danger');
         return;
       }
-      showStatus('Calibration Report draft saved with the TSR draft.', 'success');
+      if(!calibrationRequest){
+        showStatus('Calibration Report draft saved with the TSR draft.', 'success');
+      }else{
+        var backup = result.server_sync_result || {};
+        if(backup.status === 'success' && !backup.stale_ignored) showStatus('Calibration Report draft saved on this device and backed up to your account.', 'success');
+        else if(backup.stale_ignored) showStatus('Calibration Report draft saved on this device. Your account has a newer copy from another device; reopen this report to use it.', 'warning');
+        else showStatus('Calibration Report draft saved on this device. Account backup will retry when you are online.', 'warning');
+      }
     }catch(err){ unsavedAfterFailure = true; showStatus(draftSaveFailureMessage(null),'danger'); }
   }
   async function clearForm(){

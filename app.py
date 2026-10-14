@@ -76,7 +76,7 @@ from werkzeug.security import (
 
 from werkzeug.utils import secure_filename
 
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from sqlalchemy import (
     func, 
@@ -13859,6 +13859,14 @@ def offline_tsr_page():
     """
     if not can_back_up_tsr_drafts():
         return redirect(url_for('dashboard_page'))
+    # The Calibration Report for a saved TSR has its own page; keep old links working.
+    if (request.args.get('mode') or '').strip().lower() == 'calibration_report':
+        params = [(key, value) for key, value in request.args.items(multi=True) if key != 'mode']
+        return redirect(url_for('calibration_report_page') + ('?' + urlencode(params) if params else ''))
+    return render_template('offline_tsr.html', **offline_tsr_template_context())
+
+
+def offline_tsr_template_context():
     filename_template = get_email_template_value('tsr_pdf_filename')
     try:
         certificate_catalog = calibration_certificate_effective_catalog()
@@ -13870,14 +13878,26 @@ def offline_tsr_page():
             'available': False,
             'error': 'Calibration Certificate catalog is unavailable. Reload this page after it is restored.',
         }
-    return render_template(
-        'offline_tsr.html',
-        offline_storage_health_admin=is_admin_authorized(),
-        offline_tsr_can_create_tsr_without_equipment=can_create_tsr_without_equipment_for_user(),
-        tsr_filename_template=filename_template,
-        signature_stamp_scale=SIGNATURE_STAMP_SCALE,
-        certificate_catalog=certificate_catalog,
-    )
+    return {
+        'offline_storage_health_admin': is_admin_authorized(),
+        'offline_tsr_can_create_tsr_without_equipment': can_create_tsr_without_equipment_for_user(),
+        'tsr_filename_template': filename_template,
+        'signature_stamp_scale': SIGNATURE_STAMP_SCALE,
+        'certificate_catalog': certificate_catalog,
+    }
+
+
+@app.route('/calibration-report')
+@login_required
+def calibration_report_page():
+    """Calibration Report for a saved TSR: the Create TSR engine in calibration mode only."""
+    if not can_back_up_tsr_drafts():
+        return redirect(url_for('dashboard_page'))
+    target = (request.args.get('submission_id') or request.args.get('edit_submission_id') or
+              request.args.get('schedule_id') or request.args.get('shift_id') or '')
+    if not str(target).strip().isdigit():
+        return redirect(url_for('offline_tsr_page'))
+    return render_template('offline_tsr.html', calibration_report_page=True, **offline_tsr_template_context())
 
 
 def offline_tsr_client_contact_payload(client):
@@ -19005,6 +19025,13 @@ def save_tsr_draft():
     payload = body.get('payload') if isinstance(body.get('payload'), dict) else {}
     if not draft_key or not payload:
         return jsonify({'status': 'error', 'message': 'A TSR draft key and payload are required.'}), 400
+    # Calibration Reports for saved TSRs use /save_calibration_report_draft; this path reserves a TSR number.
+    if LATE_CALIBRATION_DRAFT_KEY_MARKER in draft_key:
+        return jsonify({
+            'status': 'error',
+            'error_code': 'calibration_report_own_backup',
+            'message': 'Calibration Report drafts are backed up from the Calibration Report page.',
+        }), 409
     if 'base_revision' in body and body.get('base_revision') not in (None, '') and normalize_tsr_draft_revision(body.get('base_revision')) is None:
         return jsonify({'status': 'error', 'message': 'The TSR draft revision is invalid.'}), 400
 
@@ -19229,7 +19256,10 @@ def get_tsr_drafts():
         db.session.rollback()
         print(f"[TSR-DRAFT] History retention failed for user={user_id}: {history_error}", flush=True)
         return jsonify({'status': 'error', 'message': 'TSR draft history is temporarily unavailable.'}), 503
-    drafts = TsrDraft.query.filter_by(user_id=user_id).order_by(
+    # Calibration Report backups for saved TSRs open from their report page, not Continue Saved Work.
+    drafts = TsrDraft.query.filter_by(user_id=user_id).filter(
+        ~TsrDraft.draft_key.contains(LATE_CALIBRATION_DRAFT_KEY_MARKER)
+    ).order_by(
         TsrDraft.updated_at.desc(), TsrDraft.id.desc()
     ).all()
     serialized = [tsr_draft_to_dict(draft) for draft in drafts]
@@ -19387,6 +19417,140 @@ def delete_tsr_draft():
         print(f"[TSR-DRAFT] Delete failed for user={getattr(current_user, 'id', None)} key={draft_key}: {delete_error}", flush=True)
         return jsonify({'status': 'error', 'message': 'TSR draft backup could not be deleted.'}), 500
     return jsonify({'status': 'success', 'success': True, 'draft_key': draft_key, 'history_deleted': True, 'message': 'TSR draft backup and history deleted.'})
+
+
+# A Calibration Report started after its TSR was saved is backed up under the same key the browser
+# uses for it (getStandaloneLateCalibrationDraftId), so device drafts and older account backups match.
+LATE_CALIBRATION_DRAFT_KEY_MARKER = 'late_calibration_'
+
+
+def late_calibration_report_draft_key(user_id, submission_id):
+    return normalize_tsr_draft_key(f'standalone_tsr_draft_{LATE_CALIBRATION_DRAFT_KEY_MARKER}{user_id}_{submission_id}')
+
+
+def late_calibration_report_draft_access(submission_id):
+    """Return (submission, error_response) for a saved TSR the user may attach a report to."""
+    if not can_back_up_tsr_drafts():
+        return None, denied()
+    if not ensure_tsr_draft_schema():
+        return None, (jsonify({'status': 'error', 'message': 'Calibration Report backup is temporarily unavailable.'}), 503)
+    ensure_online_tsr_submission_table()
+    submission = db.session.get(OnlineTsrSubmission, submission_id)
+    if not submission or submission.status != 'completed':
+        return None, (jsonify({'status': 'error', 'message': 'Saved TSR was not found.'}), 404)
+    shift = db.session.get(Shift, submission.shift_id)
+    if not shift or not can_work_on_existing_schedule_shift(shift):
+        return None, denied('You are not allowed to work on this Calibration Report.')
+    return submission, None
+
+
+def late_calibration_report_draft_dict(draft):
+    try:
+        payload = json.loads(draft.payload_json or '{}')
+    except (TypeError, ValueError):
+        payload = {}
+    report = payload.get('calibration_report') if isinstance(payload, dict) else None
+    return {
+        'draft_key': draft.draft_key,
+        'calibration_report': report if isinstance(report, dict) else None,
+        'device_updated_at': draft.device_updated_at or '',
+        'updated_at': draft.updated_at.isoformat() if draft.updated_at else '',
+    }
+
+
+def delete_late_calibration_report_draft(submission):
+    """Drop the uploaded report's account backup. Best effort: a failure only leaves a hidden row."""
+    user_id = getattr(current_user, 'id', None)
+    try:
+        if not ensure_tsr_draft_schema():
+            return
+        TsrDraft.query.filter_by(
+            user_id=user_id, draft_key=late_calibration_report_draft_key(user_id, submission.id)
+        ).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception as delete_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] Calibration Report backup cleanup failed for user={user_id} submission={submission.id}: {delete_error}", flush=True)
+
+
+@app.route('/save_calibration_report_draft/<int:submission_id>', methods=['POST'])
+@login_required
+def save_calibration_report_draft(submission_id):
+    """Back up an unsent Calibration Report for a saved TSR. Never reserves a TSR number."""
+    submission, error_response = late_calibration_report_draft_access(submission_id)
+    if error_response:
+        return error_response
+    # Only an unsent report, or one returned for correction, has a draft worth backing up. This also
+    # stops a backup that was still in flight from recreating the row the upload removed.
+    if (
+        calibration_report_state_for_submission(submission) == 'uploaded' and
+        not calibration_report_is_returned_for_correction(submission)
+    ):
+        return jsonify({
+            'status': 'error',
+            'error_code': 'calibration_report_already_uploaded',
+            'message': 'This Calibration Report is already uploaded and cannot be replaced.',
+        }), 409
+
+    body = request.get_json(silent=True) or {}
+    report = body.get('calibration_report') if isinstance(body, dict) else None
+    if not isinstance(report, dict) or not report:
+        return jsonify({'status': 'error', 'message': 'A Calibration Report is required.'}), 400
+    payload = {
+        'calibration_report': report,
+        '_late_calibration_report_submission_id': str(submission.id),
+        '_late_calibration_report_pending': True,
+    }
+    payload_json = tsr_draft_payload_json(payload)
+    if len(payload_json.encode('utf-8')) > TSR_DRAFT_MAX_PAYLOAD_BYTES:
+        return jsonify({'status': 'error', 'message': 'Calibration Report is too large for account backup.'}), 413
+
+    user_id = getattr(current_user, 'id', None)
+    draft_key = late_calibration_report_draft_key(user_id, submission.id)
+    existing = TsrDraft.query.filter_by(user_id=user_id, draft_key=draft_key).with_for_update().first()
+    if existing:
+        stored = late_calibration_report_draft_dict(existing)
+        stored_at = parse_tsr_draft_device_timestamp((stored['calibration_report'] or {}).get('updated_at'))
+        incoming_at = parse_tsr_draft_device_timestamp(report.get('updated_at'))
+        # Newer wins: an older device copy never overwrites a newer account copy.
+        if stored_at is not None and (incoming_at is None or stored_at > incoming_at):
+            db.session.rollback()
+            return jsonify({'status': 'success', 'success': True, 'stale_ignored': True, 'draft': stored})
+        draft = existing
+        draft.revision = (normalize_tsr_draft_revision(existing.revision) or 1) + 1
+    else:
+        draft = TsrDraft(user_id=user_id, draft_key=draft_key, revision=1, payload_json=payload_json)
+        db.session.add(draft)
+    draft.payload_json = payload_json
+    draft.content_hash = hashlib.sha256(payload_json.encode('utf-8')).hexdigest()
+    draft.schedule_id = tsr_draft_text(submission.shift_id, 140)
+    draft.tsr_number = tsr_draft_text(getattr(submission, 'tsr_number', None), 120)
+    draft.title = 'Calibration Report'
+    draft.attachment_count = 0
+    draft.device_updated_at = tsr_draft_text(body.get('device_updated_at') or report.get('updated_at'), 40)
+    try:
+        db.session.commit()
+    except Exception as save_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] Calibration Report backup failed for user={user_id} key={draft_key}: {save_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'Calibration Report backup is temporarily unavailable.'}), 503
+    return jsonify({'status': 'success', 'success': True, 'draft': late_calibration_report_draft_dict(draft)})
+
+
+@app.route('/get_calibration_report_draft/<int:submission_id>', methods=['GET'])
+@login_required
+def get_calibration_report_draft(submission_id):
+    submission, error_response = late_calibration_report_draft_access(submission_id)
+    if error_response:
+        return error_response
+    user_id = getattr(current_user, 'id', None)
+    draft = TsrDraft.query.filter_by(
+        user_id=user_id, draft_key=late_calibration_report_draft_key(user_id, submission.id)
+    ).first()
+    return jsonify({
+        'status': 'success', 'success': True,
+        'draft': late_calibration_report_draft_dict(draft) if draft else None,
+    })
 
 
 @app.route('/release_tsr_number_reservation', methods=['POST'])
@@ -25289,10 +25453,9 @@ def _my_calibration_rows(user):
             'approved_at': _my_calibration_iso(getattr(live_approval, 'approved_at', None)),
             'last_activity_at': _my_calibration_iso(last_activity),
             'fix_url': url_for(
-                'offline_tsr_page',
+                'calibration_report_page',
                 schedule_id=submission.shift_id,
                 submission_id=submission.id,
-                mode='calibration_report',
             ),
             '_approval': live_approval,
         })
@@ -26807,9 +26970,8 @@ def return_calibration_certificate(approval_id):
             module='calibration_certificate',
             record_id=approval.id,
             target_url=url_for(
-                'offline_tsr_page',
+                'calibration_report_page',
                 submission_id=approval.online_tsr_submission_id,
-                mode='calibration_report',
             ),
             metadata={'event': 'returned', 'approval_id': approval.id},
         )
@@ -27038,6 +27200,8 @@ def upload_online_tsr_attachment(submission_id):
             except Exception as certificate_error:
                 print(f'[CalibrationCertificate] Submission retry failed for TSR {submission.id}: {certificate_error}', flush=True)
                 record_calibration_submit_failure(submission, 'unexpected')
+        if late_calibration_report_requested:
+            delete_late_calibration_report_draft(submission)
         return jsonify({
             'status': 'success',
             'success': True,
@@ -27150,6 +27314,8 @@ def upload_online_tsr_attachment(submission_id):
                 print(f'[CalibrationCertificate] Submission failed after TSR {submission.id} remained saved: {certificate_error}', flush=True)
                 record_calibration_submit_failure(submission, 'unexpected')
                 certificate_result = {'ok': False, 'code': 'retryable_submission_failure', 'message': 'Certificate submission can be retried.'}
+        if late_calibration_report_requested:
+            delete_late_calibration_report_draft(submission)
         return jsonify({
             'status': 'success',
             'success': True,
@@ -27772,8 +27938,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v317-lpr-hidden.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v318-my-calibrations.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v319-calibration-draft-save.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v320-draft-conflict-compare.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v321-tsr-offline-fixes';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v321-tsr-offline-fixes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v322-calibration-report-page';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27803,7 +27969,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=47',
+  '/static/js/app-calibration-report.js?v=48',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

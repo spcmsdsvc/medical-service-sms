@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-14-calibration-report-page",
+      "release_date": "2026-10-14",
+      "title": "Calibration Report has its own page",
+      "summary": "A Calibration Report for a saved TSR opens on its own page, and unsent reports are backed up to your account.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-14-calibration-report-own-page",
+          "category": "Calibration",
+          "description": "Create Calibration Report on a schedule with a saved TSR opens the Calibration Report page directly, without the TSR form showing first. Older links and notifications still open it.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-14-calibration-report-account-backup",
+          "category": "Calibration",
+          "description": "A Calibration Report you have not uploaded yet is backed up to your account as you work, so it comes back on another device or after this device's data is cleared. Reports you already started are kept.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-14-tsr-offline-fixes",
       "release_date": "2026-10-14",
       "title": "Offline TSRs keep their TSR number",
@@ -72,7 +99,7 @@
       "items": [
         {
           "item_key": "2026-10-13-calibration-draft-save-fix",
-          "category": "Calibration Report",
+          "category": "Calibration",
           "description": "A Calibration Report started for a schedule whose TSR was already saved now saves normally instead of showing \"could not be saved on this device\".",
           "audiences": [
             "engineers"
@@ -81,7 +108,7 @@
         },
         {
           "item_key": "2026-10-13-calibration-draft-save-guard",
-          "category": "Calibration Report",
+          "category": "Calibration",
           "description": "If a report cannot be saved, the message says why, and the browser asks before you refresh or close the page.",
           "audiences": [
             "engineers"
@@ -90,7 +117,7 @@
         },
         {
           "item_key": "2026-10-13-calibration-draft-save-reopen",
-          "category": "Calibration Report",
+          "category": "Calibration",
           "description": "Opening a Calibration Report from Calendar attaches it to the schedule's saved TSR when there is one, and reopens a report already saved on your device instead of a blank one.",
           "audiences": [
             "engineers"
@@ -2438,7 +2465,7 @@
       "items": [
         {
           "item_key": "2026-10-01-calibration-ch200m-second-tube-admins-engineers",
-          "category": "Calibration Report",
+          "category": "Calibration",
           "description": "When the selected model contains \"with CH-200M\", Page 1 shows X-ray Tube 2 and a second Control Console (model and serial number) and Page 4 is always included; Tube 2 model and serial number are required before final save. For every other model these fields and Page 4 are hidden and not printed. Long values no longer push the whole first table onto a second page.",
           "audiences": [
             "admins",
@@ -2944,7 +2971,7 @@
       "items": [
         {
           "item_key": "2026-09-26-calibration-report-paste-criteria-users",
-          "category": "Calibration Report",
+          "category": "Calibration",
           "description": "Page 2 result fields now allow up to 60 characters, Pages 3/4 measurement tables accept rectangular Excel pastes, and the first Page 3/4 performance criterion uses ±8% while retaining the 6kV rule above 100kVp.",
           "audiences": [
             "admins",
@@ -3209,7 +3236,7 @@
         },
         {
           "item_key": "2026-09-24-calibration-report-two-tube-output",
-          "category": "Calibration Report",
+          "category": "Calibration",
           "description": "Calibration Reports label the existing results as X-ray Tube 1 and add a separate X-ray Tube 2 results page when the second tube model and serial number are entered.",
           "audiences": [
             "engineers"

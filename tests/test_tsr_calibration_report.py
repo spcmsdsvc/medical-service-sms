@@ -954,9 +954,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('?v=12', self.template_source)
         self.assertIn("app-calibration-report.css?v=12", self.app_source)
         self.assertIn('app-calibration-report.js', self.template_source)
-        self.assertIn('?v=47', self.template_source)
+        self.assertIn('?v=48', self.template_source)
         self.assertIn("app-calibration-report.css?v=12", self.app_source)
-        self.assertIn("app-calibration-report.js?v=47", self.app_source)
+        self.assertIn("app-calibration-report.js?v=48", self.app_source)
         assert_cache_version_at_least(self, 208, self.app_source)
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))['releases']
         paste_release = next(item for item in releases if item['release_key'] == '2026-09-26-calibration-report-paste-criteria')
@@ -1027,8 +1027,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=12", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=47", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=47'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=48", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=48'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1069,8 +1069,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('late_calibration_report', self.template_source)
         self.assertIn('calibration_report_json', self.template_source)
         self.assertIn('calibration-only', self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=47", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=47'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=48", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=48'", self.app_source)
         self.assertNotIn('certificateTemplateUrl', self.script_source)
         self.assertNotIn('fetch(attempt.url', self.script_source)
         self.assertIn('generateCertificateSample', self.script_source)
@@ -1366,7 +1366,7 @@ context.saveStandaloneTSRDraft = async () => {
   resolveReady({ requested:true, ready:true });
   await pendingSave;
   if(order.join(',') !== 'wait-start,wait-end,save') throw new Error('Save Draft ran before the calendar TSR context was ready');
-  if(statuses.at(-1)?.message !== 'Calibration Report draft saved with the TSR draft.') throw new Error('ready context did not show the saved status');
+  if(statuses.at(-1)?.message !== 'Calibration Report draft saved on this device. Account backup will retry when you are online.') throw new Error('ready context did not show the saved status');
 
   order = [];
   statuses.length = 0;
@@ -1395,7 +1395,7 @@ function section(start, end){
 const snippets = [
   section("const OFFLINE_TSR_DRAFT_PREFIX =", 'function getStandaloneTSRDraftTitle(data){'),
   section('async function saveStandaloneCalibrationReport(preparedPayload){', 'function stripStandaloneTSRClientSignatureForCompletedQueuePayload'),
-  section('async function saveStandaloneTSRDraft(silent=false){', 'async function saveStandaloneTSRLocalDraft(){')
+  section('async function saveStandaloneTSRDraft(silent=false, { backupNow=false } = {}){', 'async function saveStandaloneTSRLocalDraft(){')
 ];
 const originalId = 'standalone_tsr_draft_25-2026-09-25';
 const report = { status:'draft', facility:{ name:'Calibration Facility' } };
@@ -1410,6 +1410,8 @@ const context = {
   onlineTSRCalibrationContext:{ submission_id:41, local_draft_id:'' },
   getOnlineTSRCalibrationRequestFromUrl:() => ({ type:'submission', id:'41' }),
   isOnlineTSRCalibrationMode:() => true,
+  onlineTSRCalibrationReportLocked:() => false,
+  backupLateCalibrationReportDraft:() => ({ pending:true, scheduled:true }),
   collectTSRData:() => ({ _draft_id:context.standaloneCurrentDraftId, calibration_report:report }),
   advanceStandaloneTSRActiveContext:() => 1,
   saveStandaloneTSRDraftLocally:async data => {
