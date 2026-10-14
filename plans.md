@@ -39,8 +39,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Calibration Report — its own page and account backup (2 batches)
 
-**Status:** Executed, not committed (2026-10-14; owner: "approved, record it", then "execute all"). Both batches were done
-together, in order 1 → 2. They publish on the owner's "commit and push".
+**Status:** Executed — `8063533` on `main` (2026-10-14; owner: "approved, record it", then "execute all", then "commit and
+push"). Both batches were done together, in order 1 → 2, and published as one commit under service worker v322.
 
 ### Amendments during execution
 
