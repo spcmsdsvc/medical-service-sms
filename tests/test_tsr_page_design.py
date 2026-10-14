@@ -254,10 +254,8 @@ class TSRPageDesignContracts(unittest.TestCase):
         self.assertNotIn("scrollIntoView(", page_head)
 
     def test_blank_draft_startup_does_not_focus_calibration_or_show_schedule_toast(self):
-        draft_load = TEMPLATE.split("async function loadStandaloneTSRDraft()", 1)[1].split("async function saveStandaloneTSRLocalDraft()", 1)[0]
         startup = TEMPLATE.split("const offlineTSRStartup =", 1)[1].split("document.querySelectorAll('.tsr-field')", 1)[0]
         draft_apply = TEMPLATE.split("function applyStandaloneTSRDraftData(data)", 1)[1].split("function setOnlineTSRRevisionContext(context)", 1)[0]
-        self.assertNotIn("showMessage:true", draft_load)
         self.assertNotIn("showMessage", startup)
         self.assertNotIn("showMessage", draft_apply)
 

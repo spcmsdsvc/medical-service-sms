@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-14-tsr-offline-fixes",
+      "release_date": "2026-10-14",
+      "title": "Offline TSRs keep their TSR number",
+      "summary": "TSRs saved without signal keep their reserved number, draft messages say exactly what was saved, and shared devices keep each engineer's work separate.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-14-tsr-offline-number",
+          "category": "Create TSR",
+          "description": "A TSR saved while offline keeps the TSR number shown on its PDF when it syncs, and syncing no longer uses up an extra number.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-14-tsr-draft-messages",
+          "category": "Create TSR",
+          "description": "Save Draft now says when a draft was saved only on this device, the \"Complete Linked Schedules?\" question is asked once, and a saved schedule list is labelled \"saved offline cache\" instead of live.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-14-tsr-draft-schedule-card",
+          "category": "Create TSR",
+          "description": "Continuing a saved draft shows its selected schedule again (client, date, time, task and equipment), and the submitted and approved Calibration Report notifications open My Calibrations.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-14-tsr-shared-device-speed",
+          "category": "Create TSR",
+          "description": "On a shared phone or tablet, each engineer sees only their own saved schedules and pending TSRs, and the schedule list loads faster.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-14-draft-conflict-compare",
       "release_date": "2026-10-14",
       "title": "No more false \"Different saved copies\"",

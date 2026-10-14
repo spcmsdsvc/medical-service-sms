@@ -14019,28 +14019,34 @@ def get_offline_tsr_schedule_options():
         .order_by(Shift.start_time.asc())
     )
 
-    shifts = query.all()
+    # Standalone TSR is for real customer/equipment service work only.
+    shifts = [shift for shift in query.all() if shift.client_id]
     options = []
     current_engineer_profile = getattr(current_user, 'engineer_profile', None)
     current_engineer_id = getattr(current_engineer_profile, 'id', None)
 
-    shift_equipment = {}
-    equipment_for_history = []
+    # One ShiftEngineer query for the window instead of one per shift; same fallback rule and
+    # order as get_shift_assigned_engineer_ids (its per-shift lookup reads the (shift_id,
+    # engineer_id) index, so engineers come back by id).
+    linked_engineer_ids = {}
+    shift_ids = [shift.id for shift in shifts]
+    for chunk_start in range(0, len(shift_ids), 500):
+        rows = (
+            db.session.query(ShiftEngineer.shift_id, ShiftEngineer.engineer_id)
+            .filter(ShiftEngineer.shift_id.in_(shift_ids[chunk_start:chunk_start + 500]))
+            .order_by(ShiftEngineer.shift_id.asc(), ShiftEngineer.engineer_id.asc())
+            .all()
+        )
+        for shift_id, engineer_id in rows:
+            linked_engineer_ids.setdefault(shift_id, []).append(engineer_id)
+
+    def assigned_ids_for(shift):
+        return linked_engineer_ids.get(shift.id) or ([shift.engineer_id] if shift.engineer_id else [])
+
+    # Filter to this user's schedules before the per-shift equipment and history work.
+    candidates = []
     for shift in shifts:
-        source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
-        equipment = resolve_shift_equipment(shift)
-        shift_equipment[shift.id] = (equipment, source)
-        if equipment and source in OPERATIONAL_EQUIPMENT_SOURCES:
-            equipment_for_history.append((equipment, source))
-    calibration_history_map = approved_calibration_history_for_equipment(equipment_for_history)
-
-    for shift in shifts:
-        # Standalone TSR is for real customer/equipment service work only.
-        if not shift.client_id:
-            continue
-
-        assigned_ids = get_shift_assigned_engineer_ids(shift)
-
+        assigned_ids = assigned_ids_for(shift)
         # Offline TSR schedule picker should be engineer-personal.
         # Hybrid admin/engineer users still see only their own assigned field schedules here.
         if current_engineer_id:
@@ -14048,16 +14054,33 @@ def get_offline_tsr_schedule_options():
                 continue
         elif getattr(current_user, 'role', None) == 'engineer' and not is_current_engineer_assigned_to_shift(shift):
             continue
+        candidates.append((shift, assigned_ids))
 
-        if is_regional_admin_user():
-            assigned_engineers = [db.session.get(Engineer, eid) for eid in assigned_ids if eid]
-            assigned_engineers = [eng for eng in assigned_engineers if eng]
-            if assigned_engineers and not any(eng.branch in REGIONAL_ADMIN_BRANCHES for eng in assigned_engineers):
-                continue
-
-        assigned_engineers = [db.session.get(Engineer, eid) for eid in assigned_ids if eid]
+    engineer_ids = {eid for _shift, assigned_ids in candidates for eid in assigned_ids if eid}
+    engineers_by_id = (
+        {eng.id: eng for eng in Engineer.query.filter(Engineer.id.in_(engineer_ids)).all()}
+        if engineer_ids else {}
+    )
+    regional_admin = is_regional_admin_user()
+    kept = []
+    for shift, assigned_ids in candidates:
+        assigned_engineers = [engineers_by_id.get(eid) for eid in assigned_ids if eid]
         assigned_engineers = [eng for eng in assigned_engineers if eng]
+        if regional_admin and assigned_engineers and not any(eng.branch in REGIONAL_ADMIN_BRANCHES for eng in assigned_engineers):
+            continue
+        kept.append((shift, assigned_ids, assigned_engineers))
 
+    shift_equipment = {}
+    equipment_for_history = []
+    for shift, _assigned_ids, _assigned_engineers in kept:
+        source = normalize_equipment_source(getattr(shift, 'equipment_source', None), default='')
+        equipment = resolve_shift_equipment(shift)
+        shift_equipment[shift.id] = (equipment, source)
+        if equipment and source in OPERATIONAL_EQUIPMENT_SOURCES:
+            equipment_for_history.append((equipment, source))
+    calibration_history_map = approved_calibration_history_for_equipment(equipment_for_history)
+
+    for shift, assigned_ids, assigned_engineers in kept:
         if current_engineer_profile:
             serviced_engineer = current_engineer_profile
         elif getattr(current_user, 'role', None) == 'engineer':
@@ -26384,7 +26407,7 @@ def submit_calibration_certificate_for_submission(submission):
         for approver_user in approvers:
             create_system_notification(approver_user.id, approval_subject, approval_message, module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': approval.model_source})
         if requester:
-            create_system_notification(requester.id, 'Calibration Report & Certificate submitted', requester_message, module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': approval.model_source})
+            create_system_notification(requester.id, 'Calibration Report & Certificate submitted', requester_message, module='calibration_certificate', record_id=approval.id, target_url=url_for('my_calibrations_page'), metadata={'event': 'submitted', 'approval_id': approval.id, 'model_source': approval.model_source})
         clear_calibration_submit_failure(submission)
         db.session.commit()
         return {'ok': True, 'duplicate': False, 'approval': approval}
@@ -26714,7 +26737,7 @@ def approve_calibration_certificate(approval_id):
         )
         requester = db.session.get(User, approval.requester_user_id) if approval.requester_user_id else None
         if requester:
-            create_system_notification(requester.id, 'Calibration Report & Certificate approved', f'{approval.certificate_number} report and certificate were approved by {approver_name}.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'approved', 'approval_id': approval.id})
+            create_system_notification(requester.id, 'Calibration Report & Certificate approved', f'{approval.certificate_number} report and certificate were approved by {approver_name}.', module='calibration_certificate', record_id=approval.id, target_url=url_for('my_calibrations_page'), metadata={'event': 'approved', 'approval_id': approval.id})
         db.session.add(ActivityLog(user=approver_name or current_user.username, action=f'Approved Calibration Report & Certificate {approval.certificate_number}'))
         db.session.commit()
     except Exception as approval_error:
@@ -27749,7 +27772,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v317-lpr-hidden.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v318-my-calibrations.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v319-calibration-draft-save.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v320-draft-conflict-compare';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v320-draft-conflict-compare.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v321-tsr-offline-fixes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

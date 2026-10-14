@@ -560,11 +560,11 @@ class TSRAddressRehydrationTests(unittest.TestCase):
         self.assertIn('const submission = result.submission;', correction)
         self.assertIn('const payload = submission.payload || {};', correction)
         self.assertIn('setOnlineTSRRevisionContext({', correction)
-        self.assertIn('applyScheduleToStandaloneTSR(schedule, false);', correction)
+        self.assertIn('applyScheduleToStandaloneTSR(schedule, false, { preserveSavedRevision:true });', correction)
         self.assertIn('syncStandaloneTSRAddressFromSchedule(schedule);', correction)
         self.assertIn('Editing saved TSR REV', correction)
 
-        apply_at = correction.find('applyScheduleToStandaloneTSR(schedule, false);')
+        apply_at = correction.find('applyScheduleToStandaloneTSR(schedule, false, { preserveSavedRevision:true });')
         sync_at = correction.find('syncStandaloneTSRAddressFromSchedule(schedule);')
         self.assertGreaterEqual(apply_at, 0)
         self.assertGreaterEqual(sync_at, 0)

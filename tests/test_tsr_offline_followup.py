@@ -199,6 +199,7 @@ let standaloneDocuments = [];
 function isSameScheduleSelection() {{ return false; }}
 function isOnlineTSRRevisionMode() {{ return Boolean(onlineTSRRevisionContext); }}
 function renderTSRClientContactSuggestions() {{}}
+function renderSelectedStandaloneScheduleCard() {{}}
 function renderTSRScheduleCoveragePanel() {{}}
 function normalizeQueuedAttachments(value) {{ return Array.isArray(value) ? value : []; }}
 function addTSRPartRow() {{}}

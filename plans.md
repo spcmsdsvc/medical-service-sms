@@ -37,6 +37,272 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Create TSR — offline scan fixes (4 batches)
+
+**Status:** All 4 batches executed locally, not committed (owner, 2026-10-14: "execute batch 1 then 2", then "can we execute batch 3 and 4 before commit and push?"). To publish together on "commit and push" under service worker v321, as one commit (owner asked for all four in one push; the plan's one-commit-per-batch is replaced by that).
+
+### Amendments during execution (batches 1–2)
+
+- Step 3: instead of wrapping the long body in one `try`, `syncOfflineTSRQueue` now claims the flag before its first `await` and runs the unchanged body as the new `runOfflineTSRQueueSync` inside `try/finally`. Because the body now runs with the flag set, the outer `finally` re-renders the queue panel and calls `updateOfflineTSRStatusIntelligence()` after resetting it (otherwise the banner stayed on "Syncing"). The flag is claimed only when `navigator.onLine`, matching the old offline early return.
+- Step 2: if the offline queue cannot be read, the flush releases nothing that run (`queue_unreadable`) rather than risk releasing a queued number.
+- Step 7: the same swapped-tone line also exists in the dead `loadStandaloneTSRDraft`; left as is, since Batch 3 deletes that function.
+- One service worker bump (v321) and one release entry cover all four batches, as they publish together.
+
+### Amendments during execution (batches 3–4)
+
+- Step 9: the picker button text is static ("Select Schedule from List"), so only the card and the hidden `#tsr-schedule-select` value change. Two existing Node harnesses that run `applyStandaloneTSRDraftData` (`test_tsr_offline_followup.py`, `test_tsr_contact_suggestions.py`) needed a stub for the new `renderSelectedStandaloneScheduleCard`.
+- Step 11: `test_tsr_page_design.py` checked the body of the dead `loadStandaloneTSRDraft` itself; that one assertion was removed with the function (the startup and draft-apply checks in the same test remain).
+- Step 12: the corrected assertion occurs twice in that test; both were updated. `tests/known_failures.txt` still lists it until `--update-known` is run on `main` after publishing.
+- Step 15: the bulk `ShiftEngineer` query orders by `(shift_id, engineer_id)` because the old per-shift query read the `(shift_id, engineer_id)` index, so engineers came back by id; ordering by row id changed the `engineers`/`engineer_names` order for admins and the regional admin. With that order the JSON is identical for an engineer, a hybrid admin-engineer, the regional admin and an admin (DB copy, before/after snapshot). Queries: engineer 1,260 → 910, regional 545 → 195, hybrid 477 → 125, admin 6,012 → 5,236. The remaining engineer cost is per kept schedule (linked shifts, coverage, contacts) and was not part of this step.
+Each batch is one commit, executed in order 1 → 4. Start only on the owner's separate "execute".
+
+## Context
+
+The 2026-10-14 page scan of Create TSR (`templates/offline_tsr.html`, route `/offline-tsr`) focused on
+offline saving, refreshing and syncing. It was run in the browser on a copy of `scheduler.db` as an engineer with
+the server stopped to simulate no signal. Offline page reload, device draft save, draft restore, durable queueing,
+auto-sync after reconnect and server idempotency all worked. The scan found two TSR-number defects, misleading
+save messages, a double prompt, a hidden selected-schedule card after reopening a draft, account-unscoped caches on
+shared devices, a slow schedule endpoint, dead code and a stale test. Intended outcome: a queued TSR keeps its
+reserved number, numbers are never leaked, messages tell the truth, and the schedule list loads fast.
+
+## Decisions taken (owner, 2026-10-14)
+
+- All four batches approved as proposed in the scan report, in this order.
+- The separate Calibration Report page (for the "after the TSR is saved" mode) is **not** part of this plan.
+  It needs its own decision and plan.
+
+## Investigation
+
+Reproduced in the browser (DB copy, engineer `john`, server stopped then restarted):
+
+- **Number released after queuing (High).** After an offline final save, the queue item held
+  `reservation_token = tsr-res-b7db…` and `localStorage["medicalServiceStandaloneTSRReservationReleasesV1"]` held the
+  same token. Cause: `finishStandaloneTSRFinalSave` (`offline_tsr.html:9242-9243`, and the `err.queued` branch at
+  `:9204-9205`) calls `clearStandaloneTSRDraftLocally()` after queuing. That function (`:5749-5760`) reads
+  `standaloneTSRReservationToken` and releases it (or queues the release when offline).
+  `flushTSRReservationReleaseQueue` (`:4730`) runs on page load and on `online` (`scheduleOfflineTSRAutoSync`, `:8733-8735`),
+  before or alongside `syncOfflineTSRQueue`. If the release lands before the upload, the number can go to another
+  draft, and the queued TSR is renumbered (`reserve_online_tsr_number` with `preferred_number`, `app.py:19575`), so the
+  saved PDF no longer matches the one the client signed off. Devices in the field may already hold such release entries.
+- **Double upload leaks a number (High).** `syncOfflineTSRQueue` (`:8493`) checks `offlineTSRSyncRunning` at `:8494`
+  but sets it only at `:8558`, after `loadOfflineTSRQueueStore`, the `checkOfflineTSRSyncHealth` network ping and the
+  schedule-queue sync. Two triggers (the page-load `setTimeout` at `:8777` and the `focus`/`visibilitychange` listeners at
+  `:8760-8770`) both pass the check. Server log: `reserve_tsr_number` → `save_offline_tsr_online` (completed, `-01`) →
+  `release_tsr_number_reservation` → `reserve_tsr_number` → `save_offline_tsr_online` ("Idempotent replay"). The second
+  reserve created a new row `20260522-02-JMM` that the replay never consumed, so that number is left reserved and the
+  engineer's next TSR that day will skip it.
+- **"Backed up" message after a refused backup (High, code-confirmed).** `saveStandaloneTSRLocalDraft` (`:9358`) shows
+  "Draft saved on this device and backed up to your account." whenever `server_sync_result` is neither `pending` nor
+  `skipped` (`:9385-9390`). A 409 conflict returns `{status:'conflict'}` from `syncStandaloneTSRDraftToServer`
+  (`:4328-4346`), and a `stale_ignored` success is also not a backup, so both get the success message. The
+  `result.reason === 'draft_source_conflict'` check at `:9375` never matches: that reason is set by
+  `enqueueStandaloneTSRServerDraftSync` (`:4484`) on `server_sync_result`, not on `result`, so a draft blocked by
+  "different copies" is told "It will be backed up to your account when you are online."
+- **Linked-schedule prompt asked twice (Medium).** With weak signal, `beginStandaloneTSRFinalPreview` (`:8997`) calls
+  `prepareTSRForFinalSave` (`:1103`), which asks `chooseTSRCompletionScope` (`:1113`) and then fails to reserve the
+  number. The fallback `buildOfflineShapedPayload` (`:9046-9056`) asks again (`:9052`) because `data.completion_scope`
+  was never set. Reproduced: the dialog came back after the first answer.
+- **Selected-schedule card hidden after "Continue draft" (Medium).** `applyStandaloneTSRDraftData` (`:5209`) sets
+  `selectedStandaloneScheduleId` but never shows `#tsr-selected-schedule-card` or sets `#tsr-schedule-select`. Only
+  `applyScheduleToStandaloneTSR` renders the card (`:2736-2753`). Reproduced: card stayed `d-none` and the picker still
+  said "Select Schedule from List".
+- **Stale list labelled live (Low).** With the server unreachable but `navigator.onLine` true, the service worker's
+  `networkFirst` returns the cached `/get_offline_tsr_schedule_options` response with status 200, so
+  `refreshStandaloneScheduleOptions` (`:2458-2468`) labels it "live system data". Reproduced. The response carries
+  `generated_at` (`app.py` `get_offline_tsr_schedule_options`), which is unchanged in a cached copy.
+- **Swapped message tones (Low).** `openStandaloneTSRDraft` `:6566` shows the successful load as `warning` and the
+  "select a schedule first" message as `info`.
+- **Notifications open a blank page (Low).** The "submitted" (`app.py:26387`) and "approved" (`app.py:26717`) calibration
+  notifications target `url_for('offline_tsr_page')` with no parameters. The engineer page is `my_calibrations_page`
+  (`app.py:25290`).
+- **Unscoped device caches (Medium).** Drafts are scoped by `STANDALONE_TSR_ACCOUNT_SCOPE`, but the schedule cache
+  `STANDALONE_TSR_SCHEDULES_KEY` (`:695`, read/written at `:2232-2245`, also cleared at `:709`) and the queue
+  (`OFFLINE_TSR_QUEUE_KEY` `:3475`, IndexedDB `queue` store) are not. The SW runtime cache is already purged on logout
+  (`purgeAuthenticatedCaches`), but IndexedDB and localStorage are not, by design.
+  `save_offline_tsr_online` checks `can_work_on_existing_schedule_shift` (`app.py:19481`), so another engineer's TSR is
+  refused unless both are assigned to the schedule.
+- **Slow schedule list (Medium).** `/get_offline_tsr_schedule_options` took 1196.6 ms on 557 shifts. It loads all shifts in
+  a 455-day window for every engineer (`app.py:14009-14022`), resolves equipment and calibration history for all of them
+  (`:14027-14035`), and only then filters to the current engineer (`:14042-14050`). `get_shift_assigned_engineer_ids`
+  runs one `ShiftEngineer` query per shift, and `db.session.get(Engineer, …)` runs per assigned engineer (`:14053`, `:14058`).
+  It is called on every page load and every draft open (`openStandaloneTSRDraft`, `:6556`).
+- **Dead code.** `loadStandaloneTSRDraft` (`:9327`), `resetStandaloneTSRForm` (`:9403`) and `copyStandaloneTSRText`
+  (`:9544`) have no callers in templates or JS. Tests use their names only as `split()` markers:
+  `tests/test_tsr_page_design.py:257`, `tests/test_tsr_calibration_report.py:1398`, `tests/test_tsr_draft_sync.py:383`
+  and `:1047`, `tests/test_tsr_notifications.py:36` and `:44`.
+- **Stale test.** `tests/test_offline_resilience.py:563` expects `applyScheduleToStandaloneTSR(schedule, false);`. Since
+  `492b4c1` the call passes `{ preserveSavedRevision:true }`. The test is listed in `tests/known_failures.txt:3`.
+- **Not true / not a bug:** the SW runtime cache does not leak between accounts (purged on `/logout`). CSRF exemption
+  on `save_offline_tsr_online` is mitigated by `SameSite=Lax` and is app-wide practice, so it is not part of this plan.
+
+## Execution steps
+
+### Batch 1 — TSR number safety
+
+1. **Keep the queued TSR's number.** In `finishStandaloneTSRFinalSave` (`templates/offline_tsr.html`), in both
+   queued branches (the `err?.queued` branch and the offline branch after `queueStandaloneTSROffline`), set
+   `standaloneTSRReservationToken = ''` immediately before `clearStandaloneTSRDraftLocally()`. Add a one-line comment:
+   the queue item owns that token now. Done: after an offline final save, the release list holds no token that a
+   queue item holds.
+2. **Never release a token the queue still needs.** In `flushTSRReservationReleaseQueue` (`:4730`), load the queue
+   (`loadOfflineTSRQueueStore`) and skip (drop from the release list, do not call the server) any entry whose
+   `reservation_token` equals a queue item's `reservation_token` or `payload.reservation_token`. This cleans up
+   entries already stored on field devices. Done: a release entry matching a queue item is removed without a
+   `/release_tsr_number_reservation` call.
+3. **Single-flight sync.** In `syncOfflineTSRQueue` (`:8493`), set `offlineTSRSyncRunning = true` right after the
+   `if(offlineTSRSyncRunning) return;` check and the `navigator.onLine` check, wrapping everything after it in
+   `try{…}finally{ offlineTSRSyncRunning = false; }`. Every early `return` (no pending, health check failed) must still
+   reset it through the `finally`. Keep the existing inner `finally` that calls `renderOfflineTSRQueuePanel()`.
+   Done: two calls in the same tick produce one `reserve_tsr_number` and one `save_offline_tsr_online` per item.
+4. **Kept functions.** `clearStandaloneTSRDraftLocally`, `queueTSRReservationRelease`, `flushTSRReservationReleaseQueue`,
+   `releaseTSRReservationRemote`, `syncOfflineTSRQueue` and `uploadQueuedOfflineTSR` keep their names and signatures.
+   Deleting a draft (`deleteStandaloneTSRDraft`) and Clear Current TSR (`clearStandaloneTSRPage`) still release the number.
+
+### Batch 2 — Honest messages
+
+5. **Save Draft message.** In `saveStandaloneTSRLocalDraft` (`:9358`), read `const sync = result?.server_sync_result`.
+   Show, in this order:
+   - `sync?.reason === 'draft_source_conflict'` or `sync?.status === 'conflict'` or `sync?.stale_ignored`:
+     "Draft saved on this device. It was not backed up because a different saved copy exists — choose one in Continue
+     Saved Work." (`warning`);
+   - `result.server_sync_error`: unchanged (`standaloneTSRServerBackupFailureText`);
+   - `sync?.pending || sync?.skipped`: unchanged "…backed up when you are online.";
+   - `sync?.status === 'success'`: unchanged success message.
+   - Anything else: "Draft saved on this device." (`info`).
+   Remove the unreachable `result.reason === 'draft_source_conflict'` branch at `:9375`. The local `result.skipped`
+   message for an empty draft stays.
+6. **Ask the linked-schedule question once.** In `beginStandaloneTSRFinalPreview`, in the non-revision branch, compute
+   `const completionScope = data?.completion_scope || await chooseTSRCompletionScope(data?.selectedSchedule || getSelectedStandaloneSchedule());`
+   once before the `navigator.onLine` check. Pass it as `prepareTSRForFinalSave(data, { assignNumber:true, completionScope })`
+   and use it in `buildOfflineShapedPayload` instead of calling `chooseTSRCompletionScope` again.
+   `chooseTSRCompletionScope` and `prepareTSRForFinalSave` keep their signatures. Their other callers are unchanged.
+7. **Swap the tones back.** `openStandaloneTSRDraft` (`:6566`): a successful load is `info`, and "Select a schedule
+   first" / "pick the schedule again" is `warning`.
+8. **Label a cached schedule list honestly.** `cacheStandaloneScheduleOptions(schedules, generatedAt='')` also stores
+   `generatedAt`; `readCachedStandaloneScheduleOptions` is unchanged (still returns the array). Add a small
+   `readCachedStandaloneScheduleGeneratedAt()`. In `refreshStandaloneScheduleOptions`, when the response's
+   `data.generated_at` equals the cached `generatedAt`, treat it as the saved copy: `source = 'saved offline cache'`,
+   `standaloneScheduleOptionsAreLive = false`, and do not rewrite the cache. Otherwise keep today's live path and pass
+   `data.generated_at` to `cacheStandaloneScheduleOptions`. The other caller (Timeline fallback, `:2479`) passes nothing.
+   Done: with the server stopped, the picker text says "saved offline cache".
+
+### Batch 3 — Draft restore, notifications, cleanup
+
+9. **Show the selected schedule after Continue draft.** Move the card markup from `applyScheduleToStandaloneTSR`
+   (`:2736-2753`) into a new `renderSelectedStandaloneScheduleCard(schedule)` (hides and empties the card when `schedule`
+   is falsy). `applyScheduleToStandaloneTSR` calls it at the same point. `applyStandaloneTSRDraftData` calls
+   `renderSelectedStandaloneScheduleCard(matchedOption || null)` and sets `#tsr-schedule-select` to
+   `selectedStandaloneScheduleId` (or `''`). `clearStandaloneScheduleSelection` keeps its own hide code or calls the new
+   function with `null`. Done: after "Continue draft", the card shows the client, date, time, task and equipment.
+10. **Calibration notification links.** `app.py:26387` (submitted) and `app.py:26717` (approved): `target_url=url_for('my_calibrations_page')`.
+    The "returned" notification (`:26787`) keeps its calibration-mode link.
+11. **Delete dead functions.** Remove `loadStandaloneTSRDraft`, `resetStandaloneTSRForm` and `copyStandaloneTSRText` from
+    `templates/offline_tsr.html`, after a fresh grep of `templates/`, `static/js/` and `app.py` confirms no caller.
+    Update the test markers to the next real function in the template: `test_tsr_page_design.py:257`,
+    `test_tsr_calibration_report.py:1398`, `test_tsr_draft_sync.py:383` and `:1047` (drop the name from the tuple),
+    `test_tsr_notifications.py:36` and `:44`. Each updated test must still check the same code it checked before.
+12. **Fix the stale test.** `tests/test_offline_resilience.py:563`: assert
+    `applyScheduleToStandaloneTSR(schedule, false, { preserveSavedRevision:true });`. Remove its line from
+    `tests/known_failures.txt` (via `scripts/run_suite.py --update-known` only once this is on `main`, per the rule above).
+
+### Batch 4 — Shared devices and speed
+
+13. **Scope the schedule cache.** `cacheStandaloneScheduleOptions` / `readCachedStandaloneScheduleOptions` /
+    `readCachedStandaloneScheduleGeneratedAt` use the key `${STANDALONE_TSR_SCHEDULES_KEY}:${STANDALONE_TSR_ACCOUNT_SCOPE}`
+    through one helper `getStandaloneScheduleCacheKey()`. On the first scoped write, remove the old unscoped key (it is only
+    a cache; the next online load refills it). `invalidateTimelineSnapshotsAfterTSRSave` (`:709`) removes the scoped key.
+14. **Scope the queue.** `queueStandaloneTSROffline` stamps `account_id: STANDALONE_TSR_ACCOUNT_SCOPE` on new items.
+    `syncOfflineTSRQueue` uploads only items whose `account_id` is the current scope or empty (empty = legacy items,
+    still uploaded as today so nothing is stranded). `renderOfflineTSRQueuePanel` and `updateOfflineTSRStatusIntelligence`
+    count only those items, and the panel shows a one-line note "N TSR(s) from another account on this device" when
+    other-account items exist (no sync or delete buttons for them). Nothing is ever deleted.
+15. **Speed up `/get_offline_tsr_schedule_options`** (`app.py`). Before the equipment loop:
+    load `ShiftEngineer` rows for all shift ids in the window in one query into `{shift_id: [engineer_id…]}`
+    (fallback to `shift.engineer_id`, same rule as `get_shift_assigned_engineer_ids`). Apply the existing client,
+    engineer and regional filters first, using that map. Run `resolve_shift_equipment` and
+    `approved_calibration_history_for_equipment` only for the kept shifts. Load assigned `Engineer` rows once in a single
+    query into a dict instead of `db.session.get` per id. The response JSON must be identical to today's for the same user.
+    `get_shift_assigned_engineer_ids` stays (other callers).
+
+## Deliberately excluded
+
+- **Separate Calibration Report page** for the "after the TSR is saved" mode: the owner decides separately.
+- **Connection banner** ("Online mode" while the server is unreachable): it is driven by `navigator.onLine` across the
+  page. Fixing it needs a reachability check, which is a separate change.
+- **Account backup for late Calibration Report drafts** (`serverSync:'none'`, `:9313`): belongs with the separate page decision.
+- **Renaming `saveStandaloneTSRDraft` / `saveStandaloneTSRLocalDraft`:** names are wrong for their buttons, but renaming
+  touches many tests and the `Protect Existing Functions` rule. Not worth the risk.
+- **CSRF exemption on `save_offline_tsr_online`:** app-wide pattern, mitigated by `SameSite=Lax`.
+- **Cleaning up leaked reservations already on the server** (like `20260522-02-JMM` on the copy): none are known in
+  production; the fix stops new ones.
+
+## Verification
+
+Tests (each with a positive control: run it against `git show HEAD:<file>` copied to the scratchpad, never `git stash`;
+it must fail there):
+
+- Batch 1 (`tests/test_tsr_sync_reliability.py` or `tests/test_offline_resilience.py`, Node run of the extracted functions
+  with stubbed storage/fetch): after the queued branch, the release list does not contain the queue item's token;
+  `flushTSRReservationReleaseQueue` drops a matching entry without calling fetch; two concurrent `syncOfflineTSRQueue()`
+  calls upload an item once.
+- Batch 2: Save Draft with `{status:'conflict'}`, `{stale_ignored:true}` and `draft_source_conflict` results shows the
+  not-backed-up message; `chooseTSRCompletionScope` is called once when `prepareTSRForFinalSave` throws a retriable error;
+  a matching `generated_at` yields the "saved offline cache" label.
+- Batch 3: `applyStandaloneTSRDraftData` with a matching option shows the card; both notifications target
+  `/calibration-center` (`tests/test_my_calibrations.py` or `tests/test_tsr_notifications.py`); the fixed
+  `test_offline_resilience` test passes.
+- Batch 4: the scoped schedule key is used; other-account queue items are not uploaded; legacy items without
+  `account_id` still are; `/get_offline_tsr_schedule_options` returns the same JSON as before for an assigned engineer,
+  a hybrid admin-engineer and a regional admin (`tests/test_offline_schedule.py` / new test), with a query-count or timing
+  check showing it no longer scales with other engineers' shifts.
+
+Focused run per batch: `test_offline_resilience`, `test_tsr_draft_sync`, `test_tsr_offline_followup`,
+`test_tsr_sync_reliability`, `test_offline_tsr_pending_schedule`, `test_tsr_calibration_report`, `test_tsr_page_design`,
+`test_tsr_notifications`, `test_online_tsr_numbering`, `test_calibration_report_tombstone`, `test_my_calibrations`,
+`test_sw_cache_version`, `test_changelog_coverage` (unittest: `venv/Scripts/python.exe -m unittest tests.<module> …`;
+pytest is not installed). Batch 4 changes an `app.py` route used by Create TSR only, not a shared helper, so no full
+suite unless the executor touches `get_shift_assigned_engineer_ids` or another shared helper.
+
+Browser (copy of `scheduler.db`, temporary password on an engineer with in-window equipment schedules, e.g. `john`,
+`.claude/launch.json` pointed at the copy):
+
+1. Online: select a schedule, edit, Save Draft → "backed up". Stop the server. Edit → device save message.
+2. Reload with the server stopped: the page loads, the picker says "saved offline cache", Continue draft shows the
+   selected-schedule card and the offline edit.
+3. Fill the required fields, Review & Save → "Complete Linked Schedules?" appears once → Confirm Save TSR → queued.
+   The release list does not hold the queue item's token.
+4. Restart the server, reload, focus the window: the server log shows one `reserve_tsr_number` and one
+   `save_offline_tsr_online` for the item, and no leftover row in `tsr_number_reservation` for its draft key.
+5. Batch 4: log in as a second engineer on the same pane: their picker does not show the first engineer's cached
+   schedules; a queued item from the first engineer is not uploaded. `[PERF] GET /get_offline_tsr_schedule_options` is
+   well under the 1196.6 ms baseline.
+6. Console clean except expected connection-refused lines while stopped. 375 px: no horizontal scroll on the card.
+7. Clean up: DB copy, temporary password, `launch.json` path, pane localStorage/IndexedDB, log out.
+
+## After implementation (per batch)
+
+1. Self-review against step 4 (kept functions) and the "Protect Existing Functions" rule: Save Draft, Review & Save,
+   Preview TSR, Download PDF, Clear Current TSR, Continue draft, Delete draft, Sync Now and Retry still work.
+2. Prove the new tests fail without the fix (positive control above).
+3. Focused tests; browser steps for that batch.
+4. Service worker `CACHE_VERSION` bump in `app.py` (one bump per published commit, previous version kept as a history comment).
+5. `static/changelog/releases.json`: engineer-facing item per batch (e.g. "Offline TSRs keep their TSR number",
+   "Clearer draft save messages", "Reopened drafts show their schedule", "Faster schedule list on Create TSR").
+6. `changes.md` bullets; update this Status line (`In progress`, then `Executed` with the commit hash per batch).
+7. Commit only the files of that batch plus `plans.md`, `changes.md`, `releases.json`. Never `scheduler.db`, `output/`,
+   `tmp/`, handoffs, `.impeccable/` or `.claude/`. Publish only on the owner's "commit and push".
+
+## Risks
+
+- **Batch 1 releases nothing in a case it should:** only tokens still held by a queue item are skipped; once the item
+  syncs or is removed, the next flush releases normally. Safety net: the release tests and browser step 3–4.
+- **Single-flight flag stuck `true`:** prevented by the `finally`; a stuck flag would only stop syncing until reload.
+- **Batch 4 legacy queue items:** items without `account_id` keep today's behaviour, so no field work is stranded.
+- **Batch 4 endpoint output drift:** guarded by the same-JSON test for three roles.
+- **Blast radius:** Create TSR page, its offline queue and the schedule options endpoint; two notification links.
+  Rollback = revert the batch commit.
+
 # TSR drafts — false "Different saved copies" after account backup (1 batch)
 
 **Status:** Executed — `a917bea` on `main` (2026-10-14; owner: "APPROVED PARTNER", then "execute. we publish them together later on", then "commit and push"). Published together with the Calibration Report fix below under service worker v320.

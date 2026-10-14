@@ -33,7 +33,7 @@ class TsrNotificationSourceTests(unittest.TestCase):
         self.assertNotIn('id="standalone-tsr-status"', self.template)
 
     def test_status_and_recovery_do_not_scroll_the_document(self):
-        status = self.template.split('function showTSRStatus(', 1)[1].split('function copyStandaloneTSRText', 1)[0]
+        status = self.template.split('function showTSRStatus(', 1)[1].split('async function loadMySavedSignatureForTSR', 1)[0]
         recovery = self.template.split('function showTSRFinalSaveRecovery(', 1)[1].split('async function finishStandaloneTSRFinalSave', 1)[0]
         self.assertIn('offline-tsr-notification', self.template)
         self.assertNotIn('scrollIntoView', status)
@@ -41,7 +41,7 @@ class TsrNotificationSourceTests(unittest.TestCase):
         self.assertIn('Download PDF now', recovery)
 
     def test_notifications_are_persistent_or_timed_by_tone_and_action(self):
-        status = self.template.split('function showTSRStatus(', 1)[1].split('function copyStandaloneTSRText', 1)[0]
+        status = self.template.split('function showTSRStatus(', 1)[1].split('async function loadMySavedSignatureForTSR', 1)[0]
         notification = self.template.split('function renderTSRNotification(', 1)[1].split('function showTSRStatus', 1)[0]
         for marker in ('mouseenter', 'mouseleave', 'focusin', 'focusout', 'replaceKey', 'action'):
             self.assertIn(marker, notification + status, marker)

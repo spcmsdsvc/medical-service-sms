@@ -230,6 +230,7 @@ function normalizeQueuedAttachments(value) {{ return value || []; }}
 function isSameScheduleSelection() {{ return false; }}
 function getStandaloneScheduleRuntimeId() {{ return ''; }}
 function renderTSRClientContactSuggestions() {{}}
+function renderSelectedStandaloneScheduleCard() {{}}
 function renderTSRScheduleCoveragePanel() {{}}
 function clearStandaloneCalibrationHistory() {{}}
 function addTSRPartRow() {{}}

@@ -706,7 +706,7 @@ async function invalidateTimelineSnapshotsAfterTSRSave(){
     TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY,
     LEGACY_TIMELINE_OFFLINE_SNAPSHOT_KEY,
     LEGACY_TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY,
-    STANDALONE_TSR_SCHEDULES_KEY
+    getStandaloneScheduleCacheKey()
   ].forEach(key => {
     try{ localStorage.removeItem(key); }catch(err){}
   });
@@ -2229,19 +2229,30 @@ function readTimelineSnapshotSchedules(){
   });
   return enrichCachedStandaloneScheduleCoverage(schedules.sort((a,b)=>String(a.date_iso||'').localeCompare(String(b.date_iso||''))));
 }
-function cacheStandaloneScheduleOptions(schedules){
+// Scoped to the signed-in account so a shared device never offers another engineer's schedules.
+function getStandaloneScheduleCacheKey(){
+  return `${STANDALONE_TSR_SCHEDULES_KEY}:${STANDALONE_TSR_ACCOUNT_SCOPE}`;
+}
+function cacheStandaloneScheduleOptions(schedules, generatedAt=''){
   try{
-    localStorage.setItem(STANDALONE_TSR_SCHEDULES_KEY, JSON.stringify({
+    localStorage.removeItem(STANDALONE_TSR_SCHEDULES_KEY); // pre-scoping cache, refilled per account
+    localStorage.setItem(getStandaloneScheduleCacheKey(), JSON.stringify({
       savedAt: new Date().toISOString(),
+      generatedAt: generatedAt || '',
       schedules: schedules || []
     }));
   }catch(err){ console.warn('[Offline TSR] Unable to cache schedule options', err); }
 }
 function readCachedStandaloneScheduleOptions(){
   try{
-    const parsed = JSON.parse(localStorage.getItem(STANDALONE_TSR_SCHEDULES_KEY) || 'null');
+    const parsed = JSON.parse(localStorage.getItem(getStandaloneScheduleCacheKey()) || 'null');
     return Array.isArray(parsed?.schedules) ? parsed.schedules : [];
   }catch(err){ return []; }
+}
+function readCachedStandaloneScheduleGeneratedAt(){
+  try{
+    return String(JSON.parse(localStorage.getItem(getStandaloneScheduleCacheKey()) || 'null')?.generatedAt || '');
+  }catch(err){ return ''; }
 }
 async function enrichCachedStandaloneScheduleCalibration(schedules){
   const rows = Array.isArray(schedules) ? schedules : [];
@@ -2461,10 +2472,16 @@ async function refreshStandaloneScheduleOptions(manual=false){
       if(res.ok){
         const data = await res.json();
         schedules = Array.isArray(data.schedules) ? data.schedules : [];
-        standaloneScheduleOptionsAreLive = schedules.length > 0;
-        source = 'live system data';
         cacheTSRFilenameTemplate(data.tsr_filename_template);
-        cacheStandaloneScheduleOptions(schedules);
+        // With the server unreachable the service worker answers 200 from its cache; an unchanged
+        // generated_at means this is that saved copy, not live data.
+        if(data.generated_at && data.generated_at === readCachedStandaloneScheduleGeneratedAt()){
+          source = 'saved offline cache';
+        }else{
+          standaloneScheduleOptionsAreLive = schedules.length > 0;
+          source = 'live system data';
+          cacheStandaloneScheduleOptions(schedules, data.generated_at);
+        }
       }
     }catch(err){ console.warn('[Offline TSR] Schedule picker live fetch failed', err); }
   }
@@ -2733,24 +2750,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
     standaloneTSRAutosavePaused = wasPaused;
   }
 
-  const card = document.getElementById('tsr-selected-schedule-card');
-  if(card){
-    card.classList.remove('d-none');
-    const selectedDate = escapeHTML(schedule.date_label || schedule.date_iso || '');
-    const selectedTime = escapeHTML([schedule.time_start, schedule.time_end].filter(Boolean).join(' - ') || '');
-    card.innerHTML = `<div class="schedule-picker-title"><i class="fa-solid fa-calendar-check text-primary me-1"></i>${escapeHTML(schedule.client_name || 'Selected Schedule')}</div>
-      <div class="schedule-picker-detail-grid">
-        <div><span>Date</span><strong>${selectedDate || 'No date'}</strong></div>
-        <div><span>Time</span><strong>${selectedTime || 'No time'}</strong></div>
-        <div><span>Task</span><strong>${escapeHTML(stripScheduleBillingTags(schedule.task) || 'Service schedule')}</strong></div>
-        <div><span>Equipment</span><strong>${escapeHTML(getScheduleProductLabel(schedule))}</strong></div>
-      </div>
-      <div class="tsr-schedule-locked-note"><i class="fa-solid ${isOnlineTSRRevisionMode() ? 'fa-pen-to-square' : 'fa-lock'} me-1"></i>${isOnlineTSRRevisionMode()
-        ? 'Correction mode: product and serial can be edited and will update the equipment database record.'
-        : (isFrancisTSRWithoutEquipmentSchedule(schedule)
-          ? 'No equipment assigned on Calendar. Product and serial remain blank; start and finish time may be adjusted before saving.'
-          : 'Client/equipment fields are locked. Start and finish time may be adjusted before saving.')}</div>`;
-  }
+  renderSelectedStandaloneScheduleCard(schedule);
   renderTSRScheduleCoveragePanel(schedule);
   renderTSRClientContactSuggestions(schedule);
   refreshStandaloneCalibrationHistory(schedule);
@@ -2759,6 +2759,26 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
   renderStandaloneTSRDraftPanel();
   resetAllTSRKnowledgeQuickPicks();
   showTSRStatus('TSR fields auto-filled from selected schedule. Client/equipment fields are locked; start and finish time can be adjusted before saving.', 'info');
+}
+function renderSelectedStandaloneScheduleCard(schedule){
+  const card = document.getElementById('tsr-selected-schedule-card');
+  if(!card) return;
+  if(!schedule){ card.classList.add('d-none'); card.innerHTML = ''; return; }
+  card.classList.remove('d-none');
+  const selectedDate = escapeHTML(schedule.date_label || schedule.date_iso || '');
+  const selectedTime = escapeHTML([schedule.time_start, schedule.time_end].filter(Boolean).join(' - ') || '');
+  card.innerHTML = `<div class="schedule-picker-title"><i class="fa-solid fa-calendar-check text-primary me-1"></i>${escapeHTML(schedule.client_name || 'Selected Schedule')}</div>
+    <div class="schedule-picker-detail-grid">
+      <div><span>Date</span><strong>${selectedDate || 'No date'}</strong></div>
+      <div><span>Time</span><strong>${selectedTime || 'No time'}</strong></div>
+      <div><span>Task</span><strong>${escapeHTML(stripScheduleBillingTags(schedule.task) || 'Service schedule')}</strong></div>
+      <div><span>Equipment</span><strong>${escapeHTML(getScheduleProductLabel(schedule))}</strong></div>
+    </div>
+    <div class="tsr-schedule-locked-note"><i class="fa-solid ${isOnlineTSRRevisionMode() ? 'fa-pen-to-square' : 'fa-lock'} me-1"></i>${isOnlineTSRRevisionMode()
+      ? 'Correction mode: product and serial can be edited and will update the equipment database record.'
+      : (isFrancisTSRWithoutEquipmentSchedule(schedule)
+        ? 'No equipment assigned on Calendar. Product and serial remain blank; start and finish time may be adjusted before saving.'
+        : 'Client/equipment fields are locked. Start and finish time may be adjusted before saving.')}</div>`;
 }
 function applySelectedStandaloneSchedule(){
   const select = document.getElementById('tsr-schedule-select');
@@ -2773,8 +2793,7 @@ function clearStandaloneScheduleSelection(showMessage=true){
   selectedStandaloneScheduleSnapshot = null;
   const select = document.getElementById('tsr-schedule-select');
   if(select) select.value = '';
-  const card = document.getElementById('tsr-selected-schedule-card');
-  if(card){ card.classList.add('d-none'); card.innerHTML = ''; }
+  renderSelectedStandaloneScheduleCard(null);
   clearStandaloneCalibrationHistory();
   renderTSRScheduleCoveragePanel(null);
   setStandaloneScheduleLockedFields(false);
@@ -4731,8 +4750,20 @@ async function flushTSRReservationReleaseQueue(){
   if(!navigator.onLine) return { skipped:true, reason:'offline' };
   const pending = readTSRReservationReleaseQueue();
   if(!pending.length) return { released:0 };
+  // A queued TSR still needs its reserved number: drop any release entry for it.
+  const queuedTokens = new Set();
+  try{
+    (await loadOfflineTSRQueueStore()).forEach(entry => {
+      [entry?.reservation_token, entry?.payload?.reservation_token, entry?.payload?.tsr_reservation_token]
+        .map(normalizeTSRReservationToken).filter(Boolean).forEach(token => queuedTokens.add(token));
+    });
+  }catch(err){
+    console.warn('[Offline TSR] Unable to read the offline queue before releasing TSR numbers', err);
+    return { skipped:true, reason:'queue_unreadable' };
+  }
   const remaining = []; let released = 0;
   for(const item of pending){
+    if(queuedTokens.has(normalizeTSRReservationToken(item?.reservation_token))) continue;
     try{ await releaseTSRReservationRemote(item); released += 1; }
     catch(err){ remaining.push(item); console.warn('[Offline TSR] Pending reservation release failed', err); }
   }
@@ -5251,6 +5282,9 @@ function applyStandaloneTSRDraftData(data){
       awaitingScheduleRepick = Boolean(storedScheduleId);
     }
     renderTSRClientContactSuggestions(matchedOption || selectedStandaloneScheduleSnapshot);
+    renderSelectedStandaloneScheduleCard(matchedOption || null);
+    const scheduleSelect = document.getElementById('tsr-schedule-select');
+    if(scheduleSelect) scheduleSelect.value = selectedStandaloneScheduleId || '';
     standaloneDocuments=data.documents||[];
     offlineTSRAttachments=normalizeQueuedAttachments(data.attachments||[]);
     window.calibrationReport?.apply(data.calibration_report || null);
@@ -6563,7 +6597,7 @@ async function openStandaloneTSRDraft(id){
       : (awaitingScheduleRepick
         ? 'Loaded saved TSR draft. Everything you typed is still here, but its schedule is no longer in your list — pick the schedule again to continue and save.'
         : 'Loaded saved TSR draft for visibility. Select a schedule first to continue editing or saving.');
-    showTSRStatus(draftMessage, hasStandaloneScheduleSelection() ? 'warning' : 'info');
+    showTSRStatus(draftMessage, hasStandaloneScheduleSelection() ? 'info' : 'warning');
     renderStandaloneTSRDraftPanel();
   }catch(err){
     console.warn('[Offline TSR] Unable to apply selected TSR draft', err);
@@ -7706,8 +7740,13 @@ function setOfflineTSRConnectionBanner(mode='online', message=''){
   );
 }
 
+// Items without account_id were queued before scoping and stay uploadable, so no field work is stranded.
+function isOfflineTSRQueueItemForCurrentAccount(item){
+  const accountId = String(item?.account_id || '').trim();
+  return !accountId || accountId === STANDALONE_TSR_ACCOUNT_SCOPE;
+}
 function updateOfflineTSRStatusIntelligence(){
-  const queue = readOfflineTSRQueue();
+  const queue = readOfflineTSRQueue().filter(isOfflineTSRQueueItemForCurrentAccount);
   const pending = queue.filter(item => (item?.status || 'pending') === 'pending');
   const failed = pending.filter(item => item.last_error || item.conflict_message);
 
@@ -7742,15 +7781,20 @@ function renderOfflineTSRQueuePanel(){
   const list = document.getElementById('offline-tsr-queue-list');
   if(!panel || !summary || !list) return;
 
-  const pending = readOfflineTSRQueue().filter(item => (item?.status || 'pending') === 'pending');
+  const allPending = readOfflineTSRQueue().filter(item => (item?.status || 'pending') === 'pending');
+  const pending = allPending.filter(isOfflineTSRQueueItemForCurrentAccount);
+  const otherAccountCount = allPending.length - pending.length;
+  const otherAccountNote = otherAccountCount
+    ? ` ${otherAccountCount} TSR${otherAccountCount === 1 ? '' : 's'} from another account on this device.`
+    : '';
   const failed = pending.filter(item => item.last_error || item.conflict_message);
   panel.classList.toggle('offline-tsr-queue-panel-syncing', !!offlineTSRSyncRunning);
   panel.classList.toggle('offline-tsr-queue-panel-failed', !offlineTSRSyncRunning && failed.length > 0);
   panel.classList.toggle('offline-tsr-queue-panel-success', !offlineTSRSyncRunning && pending.length === 0);
   updateOfflineTSRStatusIntelligence();
   if(!pending.length){
-    panel.classList.add('d-none');
-    summary.textContent = 'No pending TSRs.';
+    panel.classList.toggle('d-none', !otherAccountCount);
+    summary.textContent = `No pending TSRs.${otherAccountNote}`;
     list.innerHTML = '';
     updateOfflineTSRStatusIntelligence();
     return;
@@ -7765,10 +7809,10 @@ function renderOfflineTSRQueuePanel(){
   }catch(err){}
   getOfflineTSRSyncMetadata().then(syncMeta => {
     if(syncMeta?.last_finished_at && summary && readOfflineTSRQueue().length){
-      summary.textContent = `${pending.length} pending TSR${pending.length === 1 ? '' : 's'} waiting for sync. Last sync: ${formatOfflineQueueTime(syncMeta.last_finished_at)}.`;
+      summary.textContent = `${pending.length} pending TSR${pending.length === 1 ? '' : 's'} waiting for sync. Last sync: ${formatOfflineQueueTime(syncMeta.last_finished_at)}.${otherAccountNote}`;
     }
   }).catch(()=>{});
-  summary.textContent = `${pending.length} pending TSR${pending.length === 1 ? '' : 's'} waiting for sync.${lastSavedText}`;
+  summary.textContent = `${pending.length} pending TSR${pending.length === 1 ? '' : 's'} waiting for sync.${lastSavedText}${otherAccountNote}`;
   list.innerHTML = pending.map((item, index) => {
     const title = item.client_name || item.payload?.['tsr-customer-name'] || 'Unknown client';
     const product = item.product_name || item.payload?.['tsr-equipment-model'] || '';
@@ -8114,6 +8158,7 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', 
   persistedQueuePayload.pending_schedule_token = payload?.pending_schedule_token || selectedSchedule?.pending_schedule_token || '';
   let queueItem = {
     id: `offline-tsr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    account_id: STANDALONE_TSR_ACCOUNT_SCOPE,
     submission_token: submissionToken,
     reservation_token: reservationToken,
     status: 'pending',
@@ -8161,7 +8206,7 @@ function scheduleOfflineTSRSyncRetry(error=null){
   if(error && !isRetriableTSRSyncError(error)) return;
   clearOfflineTSRSyncRetryTimer();
   const pending = readOfflineTSRQueue().filter(item =>
-    (item?.status || 'pending') === 'pending' && item?.retryable !== false
+    (item?.status || 'pending') === 'pending' && item?.retryable !== false && isOfflineTSRQueueItemForCurrentAccount(item)
   );
   if(!pending.length) return;
   const highestAttempts = Math.max(0, ...pending.map(item => Number(item.sync_attempts || 0)));
@@ -8492,7 +8537,19 @@ async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
 
 async function syncOfflineTSRQueue({ silent=false } = {}){
   if(offlineTSRSyncRunning) return;
+  if(navigator.onLine) offlineTSRSyncRunning = true; // claim before the first await so concurrent triggers do not upload twice
+  try{
+    await runOfflineTSRQueueSync({ silent });
+  }finally{
+    if(offlineTSRSyncRunning){
+      offlineTSRSyncRunning = false;
+      renderOfflineTSRQueuePanel();
+      updateOfflineTSRStatusIntelligence();
+    }
+  }
+}
 
+async function runOfflineTSRQueueSync({ silent=false } = {}){
   if(!navigator.onLine){
     await refreshOfflineTSRQueueStore();
     await saveOfflineTSRSyncMetadata({
@@ -8506,7 +8563,8 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
   let queue = await loadOfflineTSRQueueStore();
   let pending = queue.filter(item =>
     (item?.status || 'pending') === 'pending' &&
-    (item?.retryable !== false || item?.requires_login === true)
+    (item?.retryable !== false || item?.requires_login === true) &&
+    isOfflineTSRQueueItemForCurrentAccount(item)
   );
 
   if(!pending.length){
@@ -8514,8 +8572,8 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
     renderOfflineTSRQueuePanel();
     await saveOfflineTSRSyncMetadata({
       last_checked_at: new Date().toISOString(),
-      pending_count: queue.filter(item => (item?.status || 'pending') === 'pending').length,
-      last_status: queue.length ? 'attention_required' : 'idle_no_pending'
+      pending_count: queue.filter(item => (item?.status || 'pending') === 'pending' && isOfflineTSRQueueItemForCurrentAccount(item)).length,
+      last_status: queue.some(isOfflineTSRQueueItemForCurrentAccount) ? 'attention_required' : 'idle_no_pending'
     });
     return;
   }
@@ -8526,7 +8584,8 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
     const latestQueue = await loadOfflineTSRQueueStore();
     const firstPending = latestQueue.find(entry =>
       (entry?.status || 'pending') === 'pending' &&
-      (entry?.retryable !== false || entry?.requires_login === true)
+      (entry?.retryable !== false || entry?.requires_login === true) &&
+      isOfflineTSRQueueItemForCurrentAccount(entry)
     );
     if(firstPending){
       await markFailedOfflineTSRQueueItem(latestQueue, firstPending, connectionError);
@@ -8555,7 +8614,6 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
     }
   }
 
-  offlineTSRSyncRunning = true;
   clearOfflineTSRSyncRetryTimer();
   await saveOfflineTSRSyncMetadata({
     last_started_at: new Date().toISOString(),
@@ -8595,12 +8653,11 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
       }
     }
   }finally{
-    offlineTSRSyncRunning = false;
     renderOfflineTSRQueuePanel();
   }
 
   const latestQueue = await loadOfflineTSRQueueStore();
-  const remaining = latestQueue.filter(item => (item?.status || 'pending') === 'pending').length;
+  const remaining = latestQueue.filter(item => (item?.status || 'pending') === 'pending' && isOfflineTSRQueueItemForCurrentAccount(item)).length;
   if(!remaining) clearOfflineTSRSyncRetryTimer();
 
   await saveOfflineTSRSyncMetadata({
@@ -9049,16 +9106,18 @@ async function beginStandaloneTSRFinalPreview(data){
           schedule_id: getStandaloneScheduleRealId(selectedSchedule) || data?.schedule_id || '',
           pending_schedule_token: selectedSchedule?.pending_schedule_token || data?.pending_schedule_token || '',
           selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
-          completion_scope: data?.completion_scope || await chooseTSRCompletionScope(selectedSchedule)
+          completion_scope: completionScope
         });
         offlinePayload.reservation_token = ensureTSRReservationToken(offlinePayload.reservation_token || offlinePayload.tsr_reservation_token || standaloneTSRReservationToken);
         offlinePayload.tsr_reservation_token = offlinePayload.reservation_token;
         return offlinePayload;
       };
 
+      // Asked once: a failed number fetch below falls back to the offline shape, which must not ask again.
+      const completionScope = data?.completion_scope || await chooseTSRCompletionScope(data?.selectedSchedule || getSelectedStandaloneSchedule());
       if(navigator.onLine){
         try{
-          payload = await prepareTSRForFinalSave(data, { assignNumber:true });
+          payload = await prepareTSRForFinalSave(data, { assignNumber:true, completionScope });
         }catch(prepareError){
           // Only a connection-shaped failure falls back. A refusal the server actually meant
           // -- a rejected number, a permission error -- must still stop and be shown.
@@ -9202,6 +9261,7 @@ async function finishStandaloneTSRFinalSave(state){
     }catch(err){
       console.warn('[Offline TSR] Online TSR save failed', err);
       if(err?.queued){
+        standaloneTSRReservationToken = ''; // the queue item owns this TSR number now; do not release it
         await clearStandaloneTSRDraftLocally();
         initializeBlankStandaloneTSR();
         resetAllInlineTSRKnowledgeSuggestions();
@@ -9240,6 +9300,7 @@ async function finishStandaloneTSRFinalSave(state){
   }
 
   await queueStandaloneTSROffline(payload, pdfPackage, 'offline');
+  standaloneTSRReservationToken = ''; // the queue item owns this TSR number now; do not release it
   await clearStandaloneTSRDraftLocally();
   initializeBlankStandaloneTSR();
   resetAllInlineTSRKnowledgeSuggestions();
@@ -9324,37 +9385,6 @@ async function saveStandaloneTSRDraft(silent=false){
   }
   await beginStandaloneTSRFinalPreview(data);
 }
-async function loadStandaloneTSRDraft(){
-  let data = null;
-  let source = 'indexeddb';
-
-  try{
-    data = await loadStandaloneTSRDraftFromIndexedDB();
-  }catch(err){
-    console.warn('[Offline TSR DB] IndexedDB draft load failed. Trying localStorage fallback.', err);
-  }
-
-  if(!data){
-    initializeBlankStandaloneTSR();
-    return;
-  }
-
-  try{
-    applyStandaloneTSRDraftData(data);
-    setStandaloneTSRSaveStatus('local-saved-pending', null, {
-      loaded:true,
-      record:{ payload:data }
-    });
-    renderStandaloneTSRCoreReadiness(data);
-    const draftMessage = hasStandaloneScheduleSelection()
-      ? (source === 'indexeddb' ? 'Loaded saved TSR draft from this device.' : 'Loaded saved TSR draft from fallback storage.')
-      : 'Loaded saved TSR draft for visibility. Select a schedule first to continue editing or saving.';
-    showTSRStatus(draftMessage, hasStandaloneScheduleSelection() ? 'warning' : 'info');
-  }catch(e){
-    console.warn('[Offline TSR] Unable to apply saved draft', e);
-    initializeBlankStandaloneTSR();
-  }
-}
 async function saveStandaloneTSRLocalDraft(){
   if(!requireStandaloneScheduleForTSRAction()) return;
   const btn=document.getElementById('standalone-tsr-draft-btn');
@@ -9372,22 +9402,24 @@ async function saveStandaloneTSRLocalDraft(){
     }
     const result = await saveStandaloneTSRDraftLocally(data, { serverSync:'immediate' });
     if(result?.skipped){
-      const message = result.reason === 'draft_source_conflict'
-        ? 'Different saved copies are available. Choose Use this copy in Continue Saved Work before saving this draft.'
-        : 'Nothing to save yet. Add TSR details such as actions taken, remarks, documents, signature, or contact details before saving a draft.';
-      showTSRStatus(message, result.reason === 'draft_source_conflict' ? 'warning' : 'info');
+      showTSRStatus('Nothing to save yet. Add TSR details such as actions taken, remarks, documents, signature, or contact details before saving a draft.', 'info');
       return;
     }
     await renderStandaloneTSRDraftPanel();
-    if(result?.server_sync_error){
+    const sync = result?.server_sync_result;
+    if(sync?.reason === 'draft_source_conflict' || sync?.status === 'conflict' || sync?.stale_ignored){
+      showTSRStatus('Draft saved on this device. It was not backed up because a different saved copy exists — choose one in Continue Saved Work.', 'warning');
+    }else if(result?.server_sync_error){
       // A 401/403 is a permanent refusal, not a connection problem. Calling it
       // "temporary, will retry" is what stopped bug 1z ever being reported: the
       // user was told to wait for something that was never going to happen.
       showTSRStatus(standaloneTSRServerBackupFailureText(result.server_sync_error), 'warning');
-    }else if(result?.server_sync_result?.pending || result?.server_sync_result?.skipped){
+    }else if(sync?.pending || sync?.skipped){
       showTSRStatus('Draft saved on this device. It will be backed up to your account when you are online.', 'warning');
-    }else{
+    }else if(sync?.status === 'success'){
       showTSRStatus('Draft saved on this device and backed up to your account.', 'success');
+    }else{
+      showTSRStatus('Draft saved on this device.', 'info');
     }
     if(isOfflineTSRStorageHealthAdmin()) renderOfflineTSRStorageHealth();
   }catch(err){
@@ -9399,12 +9431,6 @@ async function saveStandaloneTSRLocalDraft(){
       btn.innerHTML=originalHtml || '<i class="fa-solid fa-bookmark me-1"></i>Save Draft';
     }
   }
-}
-async function resetStandaloneTSRForm(){
-  initializeBlankStandaloneTSR();
-  resetAllInlineTSRKnowledgeSuggestions();
-  await renderStandaloneTSRDraftPanel();
-  showTSRStatus('Started a new TSR. Saved drafts remain available below.', 'info');
 }
 const TSR_NOTIFICATION_DISMISS_MS = 8000;
 function getTSRNotificationHost(options={}){
@@ -9541,7 +9567,6 @@ function showTSRStatus(msg, variant='success', options={}){
   return renderTSRNotification(host, msg, normalized, Object.assign({}, options, { key }), findTSRNotification(host, key));
 }
 showTSRStatus.isNotificationRouter = true;
-function copyStandaloneTSRText(){ if(!requireStandaloneScheduleForTSRAction()) return; const d=collectTSRData(); const text=`TSR No.: ${d['tsr-number']||''}\nCustomer: ${d['tsr-customer-name']||''}\nAddress: ${d['tsr-address']||''}\nEquipment/Model: ${d['tsr-equipment-model']||''}\nSerial No.: ${d['tsr-serial-no']||''}\nService Category: ${getTSRServiceCategoryText(d)}\nComplaint:\n${d['tsr-complaint']||''}\nActions Taken:\n${d['tsr-actions-taken']||''}\nRemarks:\n${d['tsr-remarks']||''}`; navigator.clipboard?.writeText(text); showTSRStatus('Draft text copied.'); }
 async function loadMySavedSignatureForTSR(force=false){
   if(mySavedSignatureLoaded && !force) return mySavedSignatureData;
   if(mySavedSignatureLoadingPromise && !force) return mySavedSignatureLoadingPromise;

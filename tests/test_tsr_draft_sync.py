@@ -380,7 +380,7 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         )[1].split('async function deleteStandaloneTSRDraft', 1)[0]
         save_draft = self.template_source.split(
             'async function saveStandaloneTSRLocalDraft()', 1
-        )[1].split('async function resetStandaloneTSRForm', 1)[0]
+        )[1].split('const TSR_NOTIFICATION_DISMISS_MS', 1)[0]
         local_save = self.template_source.split(
             'async function saveStandaloneTSRDraftLocally(data', 1
         )[1].split('async function clearStandaloneTSRDraftLocally', 1)[0]
@@ -1044,7 +1044,7 @@ function syncStandaloneTSRDraftToServer(){return Promise.resolve(nextResult);}
         self.assertIn('standaloneCurrentDraftId', guard)
         self.assertIn('standaloneTSRSaveStatusGeneration', guard)
         self.assertIn('standaloneTSRActiveContextVersion', guard)
-        for reset in ('clearStandaloneTSRPage', 'resetStandaloneTSRForm', 'finishStandaloneTSRFinalSave'):
+        for reset in ('clearStandaloneTSRPage', 'finishStandaloneTSRFinalSave'):
             body = self.template_source.split(f'async function {reset}', 1)[1].split('\n}', 1)[0]
             self.assertIn('initializeBlankStandaloneTSR()', body)
         reset_status = self.template_source.split(

@@ -1395,7 +1395,7 @@ function section(start, end){
 const snippets = [
   section("const OFFLINE_TSR_DRAFT_PREFIX =", 'function getStandaloneTSRDraftTitle(data){'),
   section('async function saveStandaloneCalibrationReport(preparedPayload){', 'function stripStandaloneTSRClientSignatureForCompletedQueuePayload'),
-  section('async function saveStandaloneTSRDraft(silent=false){', 'async function loadStandaloneTSRDraft(){')
+  section('async function saveStandaloneTSRDraft(silent=false){', 'async function saveStandaloneTSRLocalDraft(){')
 ];
 const originalId = 'standalone_tsr_draft_25-2026-09-25';
 const report = { status:'draft', facility:{ name:'Calibration Facility' } };
