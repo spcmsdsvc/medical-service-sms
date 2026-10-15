@@ -24,6 +24,15 @@
             "engineers"
           ],
           "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-15-calibration-report-revised-tsr",
+          "category": "Calibration",
+          "description": "Saving a Calibration Report on a corrected (revised) TSR no longer fails with \"This attachment token belongs to another TSR\". The report moves to the latest revision and its certificate is sent to your approver.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
         }
       ]
     },

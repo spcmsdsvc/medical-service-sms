@@ -118,6 +118,138 @@ class LateUploadCertificateFeedbackTests(unittest.TestCase):
         self.assertEqual(certificate['status'], 'Pending')
 
 
+@unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+class RevisedTsrReportTests(unittest.TestCase):
+    """A revised TSR re-sends its report with the same token (plans.md, 2026-10-15)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with app_module.app.app_context():
+            app_module.db.create_all()
+            app_module.ensure_calibration_report_conversion_table()
+        cls._n = 0
+
+    @classmethod
+    def _shift(cls, engineer_id, suffix):
+        shift = app_module.Shift(
+            title=f'Revised report {suffix}', start_time=datetime(2026, 10, 15, 8, 0),
+            end_time=datetime(2026, 10, 15, 17, 0), engineer_id=engineer_id, status='Completed',
+        )
+        app_module.db.session.add(shift)
+        app_module.db.session.flush()
+        return shift
+
+    @classmethod
+    def _fixture(cls, approval_status=None, other_shift=False):
+        cls._n += 1
+        suffix = f'rev-{os.getpid()}-{cls._n:03d}'
+        token = f'calibration-report-rev{os.getpid()}{cls._n:03d}'
+        generated = {'attachment_id': token, 'fingerprint': f'fp-{suffix}', 'filename': 'Calibration_Report.docx'}
+        db = app_module.db
+        with app_module.app.app_context():
+            user = app_module.User(username=f'user-{suffix}', password='test-password', role='engineer')
+            db.session.add(user)
+            db.session.flush()
+            engineer = app_module.Engineer(user_id=user.id, employee_id=f'RV-{suffix}', name='Revised Report Engineer', initials='RRE')
+            db.session.add(engineer)
+            db.session.flush()
+            shift = cls._shift(engineer.id, suffix)
+            owner_shift = cls._shift(engineer.id, suffix + '-other') if other_shift else shift
+            rev1 = app_module.OnlineTsrSubmission(
+                shift_id=owner_shift.id, status='completed', submission_token=f'tsr-{suffix}-1',
+                payload_json='{}', revision_no=1, is_latest=other_shift, submitted_by_user_id=user.id,
+            )
+            db.session.add(rev1)
+            db.session.flush()
+            source = app_module.ShiftFile(
+                shift_id=owner_shift.id, filename=f'src-{suffix}.docx', original_filename='Calibration_Report.docx',
+                upload_token=token, online_tsr_submission_id=rev1.id,
+            )
+            pdf = app_module.ShiftFile(
+                shift_id=owner_shift.id, filename=f'pdf-{suffix}.pdf', original_filename='Calibration_Report.pdf',
+                online_tsr_submission_id=rev1.id,
+            )
+            db.session.add_all([source, pdf])
+            db.session.flush()
+            rev1.payload_json = json.dumps({
+                'calibration_report': {'status': 'draft', 'generated': dict(generated, file_id=source.id, source='generated_calibration_report')},
+                '_generated_calibration_report': {'source': 'generated_calibration_report', 'file_id': source.id, 'attachment_id': token, 'upload_token': token},
+            })
+            db.session.add(app_module.CalibrationReportConversion(source_shift_file_id=source.id, pdf_shift_file_id=pdf.id, state='ready'))
+            if approval_status:
+                db.session.add(app_module.CalibrationCertificateApproval(
+                    shift_id=owner_shift.id, online_tsr_submission_id=rev1.id, requester_user_id=user.id,
+                    revision_no=1, is_latest=True, status=approval_status, certificate_number=f'CERT-{suffix}',
+                    mapped_data_json='{}', template_sha256='test', unsigned_artifact_path='test.pdf',
+                ))
+            rev2 = app_module.OnlineTsrSubmission(
+                shift_id=shift.id, status='completed', submission_token=f'tsr-{suffix}-2',
+                payload_json=json.dumps({'calibration_report': {'status': 'draft', 'generated': dict(generated)}}),
+                revision_no=2 if not other_shift else 1, is_latest=True, submitted_by_user_id=user.id,
+                parent_submission_id=None if other_shift else rev1.id,
+            )
+            db.session.add(rev2)
+            db.session.commit()
+            return SimpleNamespace(user_id=user.id, rev1=rev1.id, rev2=rev2.id, source=source.id, pdf=pdf.id, token=token, generated=generated)
+
+    def _upload(self, fx, late):
+        client = app_module.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(fx.user_id)
+            session['_fresh'] = True
+        data = {
+            'attachment_token': fx.token, 'attachment_source': 'generated_calibration_report',
+            'attachment': (io.BytesIO(b'docx'), 'Calibration_Report.docx'),
+        }
+        if late:
+            data.update({'late_calibration_report': '1', 'calibration_report_json': json.dumps({'status': 'draft', 'generated': fx.generated})})
+        submitted = []
+
+        def submit(submission):
+            submitted.append(submission.id)
+            return {'ok': False, 'code': 'missing_values', 'message': 'Model'}
+
+        with patch.object(app_module, 'can_work_on_existing_schedule_shift', return_value=True), \
+                patch.object(app_module, 'managed_storage_write_bytes'), \
+                patch.object(app_module, 'schedule_calibration_report_conversion'), \
+                patch.object(app_module, 'submit_calibration_certificate_for_submission', side_effect=submit):
+            response = client.post(f'/upload_online_tsr_attachment/{fx.rev2}', content_type='multipart/form-data', data=data)
+            rows = client.get('/calibration-center/data').get_json()
+        return response, submitted, rows
+
+    def _owner(self, file_id):
+        with app_module.app.app_context():
+            return app_module.db.session.get(app_module.ShiftFile, file_id).online_tsr_submission_id
+
+    def _check_moved(self, late):
+        fx = self._fixture(approval_status='Pending')
+        response, submitted, rows = self._upload(fx, late)
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual((self._owner(fx.source), self._owner(fx.pdf)), (fx.rev2, fx.rev2))
+        self.assertEqual(submitted, [fx.rev2])
+        self.assertIn(fx.rev2, [row['submission_id'] for row in rows['records']])
+
+    def test_late_upload_moves_report_to_latest_revision(self):
+        self._check_moved(late=True)
+
+    def test_revision_attachment_upload_moves_report_to_latest_revision(self):
+        self._check_moved(late=False)
+
+    def test_report_on_a_different_tsr_is_still_refused(self):
+        fx = self._fixture(other_shift=True)
+        response, submitted, _ = self._upload(fx, late=True)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()['message'], 'This attachment token belongs to another TSR.')
+        self.assertEqual((self._owner(fx.source), submitted), (fx.rev1, []))
+
+    def test_report_approved_on_earlier_revision_stays_put(self):
+        fx = self._fixture(approval_status='Approved')
+        response, submitted, _ = self._upload(fx, late=True)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json().get('error_code'), 'calibration_report_approved_on_earlier_revision')
+        self.assertEqual((self._owner(fx.source), self._owner(fx.pdf), submitted), (fx.rev1, fx.rev1, []))
+
+
 class LateUploadMessageSourceTests(unittest.TestCase):
     def test_save_final_report_reports_the_certificate_result(self):
         source = (ROOT / 'static' / 'js' / 'app-calibration-report.js').read_text(encoding='utf-8')

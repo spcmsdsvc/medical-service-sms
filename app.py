@@ -27029,6 +27029,29 @@ def record_calibration_report_upload(submission, upload_token, file_rec, origina
     return True
 
 
+def relink_calibration_report_to_latest_revision(existing_file, submission):
+    """Move a report a revised TSR re-sent (same token) from its older revision to the latest one.
+
+    Returns 'moved', 'approved' (approved on the older revision: left in place) or '' (not this case).
+    The caller commits."""
+    owner = db.session.get(OnlineTsrSubmission, clean_int(getattr(existing_file, 'online_tsr_submission_id', None)) or 0)
+    if not (
+        owner and submission and owner.id != submission.id and
+        clean_int(owner.shift_id) == clean_int(submission.shift_id) == clean_int(existing_file.shift_id) and
+        not bool(owner.is_latest) and bool(submission.is_latest) and
+        calibration_report_source_file_is_private(existing_file)
+    ):
+        return ''
+    if CalibrationCertificateApproval.query.filter_by(online_tsr_submission_id=owner.id, status='Approved').first():
+        return 'approved'
+    existing_file.online_tsr_submission_id = submission.id
+    job = calibration_report_conversion_for_source(existing_file.id)
+    pdf_file = db.session.get(ShiftFile, job.pdf_shift_file_id) if job and job.pdf_shift_file_id else None
+    if pdf_file and clean_int(pdf_file.online_tsr_submission_id) == owner.id:
+        pdf_file.online_tsr_submission_id = submission.id
+    return 'moved'
+
+
 def calibration_upload_certificate_payload(certificate_result, submission):
     """Certificate result for an upload response: the approval, or the failure code and reason."""
     approval = certificate_result.get('approval') if certificate_result.get('ok') else None
@@ -27091,6 +27114,17 @@ def upload_online_tsr_attachment(submission_id):
         }), 400
 
     existing_file = ShiftFile.query.filter_by(upload_token=upload_token).first()
+    if existing_file and existing_file.online_tsr_submission_id != submission.id and attachment_source == 'generated_calibration_report':
+        # A revised TSR re-sends the same report (same content token): it follows the TSR to the latest revision.
+        relinked = relink_calibration_report_to_latest_revision(existing_file, submission)
+        if relinked == 'approved':
+            return jsonify({
+                'status': 'error',
+                'error_code': 'calibration_report_approved_on_earlier_revision',
+                'message': 'This Calibration Report was approved on an earlier revision of this TSR and cannot be moved.'
+            }), 409
+        if relinked == 'moved':
+            db.session.commit()
     if existing_file and existing_file.online_tsr_submission_id != submission.id:
         return jsonify({
             'status': 'error',

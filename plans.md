@@ -37,6 +37,133 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Calibration Report on a revised TSR — move it to the latest revision instead of "belongs to another TSR" (1 batch)
+
+**Status:** Executed (2026-10-15, on "Execute the revised-TSR calibration report plan."); not committed. One batch,
+one commit, server-side only.
+
+### Amendments during execution
+
+- **Helper return value:** `relink_calibration_report_to_latest_revision` returns `'moved'`, `'approved'` or `''`
+  (not True/False), so the route can tell "approved on the older revision" apart from "not this case".
+- **One call site:** the helper runs in the early token check of `upload_online_tsr_attachment` and the route commits
+  right after a move; the later check inside the existing-file branch (`app.py` ~27176) then sees the file on the
+  latest revision and needs no change. If a later step of that request fails, the file stays on the latest revision
+  and the next retry continues from there.
+- **Older Pending certificate → Superseded** is not asserted in the new tests (they patch
+  `submit_calibration_certificate_for_submission`); it is existing behaviour of that function. The tests assert the
+  certificate is sent for the latest revision.
+- **Fail-without-fix proof:** before the change, the two "moves to latest revision" tests failed with exactly the
+  engineer's error (409 "This attachment token belongs to another TSR.") and the approved test got no `error_code`;
+  the different-TSR test is a coverage test and passes on both.
+- **Browser (DB copy, test engineer):** uploaded a report on TSR 35 (REV1), created REV2 the way a revision does
+  (same report, REV1 superseded), opened REV2's calibration page and pressed Save Final Report: upload 200 with the
+  same token, report file moved to REV2, REV2 listed on My Calibrations ("Failed to send: Missing values: Certificate
+  No." — the copy's test machine has no BSID). No page file changed, so no service worker bump.
+- **Correction to the retry plan's note:** "a My Calibrations read right after an upload did not list the new row" was
+  a test-login slip (the browser was signed in as another user), not app behaviour; signed in as the right engineer the
+  row is listed at once.
+
+## Context
+
+After the weak-signal saves (see the two Late Calibration Report plans below), the engineer now gets "This attachment
+token belongs to another TSR." on Save Final Report, with a working connection. The Calibration Report upload token is
+a fingerprint of the report's content only, not of the TSR. A TSR revision is a new `OnlineTsrSubmission` row, and the
+browser re-uploads the same report with the same token; the older revision already owns a `ShiftFile` with that token,
+so the server refuses it. Result: the revised TSR has no report, My Calibrations (latest revision only) shows nothing,
+and every retry fails the same way. Intended outcome: the report follows the TSR to its latest revision and its
+certificate is sent, while a token owned by a genuinely different TSR is still refused.
+
+## Decisions taken (owner, 2026-10-15)
+
+- Fix on the server: move the report to the latest revision of the same TSR instead of refusing.
+- Keep the content-based token (no per-revision token).
+- One batch. Do not disturb other plans in this file (the Product Inventory plan below was added by another session).
+
+## Investigation
+
+- Token = `'calibration-report-' + fingerprint(report)` (`static/js/app-calibration-report.js:1594`); nothing ties it
+  to a submission.
+- `revise_online_tsr_submission` (`app.py:27460`) creates a new submission (`mark_existing_online_tsr_submissions_superseded`
+  then `OnlineTsrSubmission(..., is_latest=True)`) and links only files sent with that request
+  (`attach_uploaded_online_tsr_extra_files_to_shift`); the old report file stays on the old revision. The browser then
+  calls `uploadTSRSupportingAttachments` (`templates/offline_tsr.html:9112`), which re-uploads every attachment,
+  including the generated report with the same token.
+- `upload_online_tsr_attachment` refuses any token whose `ShiftFile` is linked to another submission — early at
+  `app.py:27076` and again inside the existing-file branch (`app.py:27176`). Both return
+  "This attachment token belongs to another TSR." (409).
+- The file must be moved, not just reused: `calibration_certificate_generated_report_source_file` (`app.py:24700`)
+  requires `report_file.online_tsr_submission_id == approval.online_tsr_submission_id`, and
+  `calibration_report_pdf_file_for_source` requires the ready PDF's `online_tsr_submission_id` to equal the source's.
+- Sending the certificate for the new revision already closes older ones for the same shift
+  (`submit_calibration_certificate_for_submission`, `app.py:26523`: older `is_latest` → False, `Pending` → `Superseded`).
+- The local `scheduler.db` copy (data to 2026-10-14) has no such case; the engineer's TSR was not inspected (no
+  production access). The cause is confirmed in code, not in the engineer's data.
+
+## Execution steps
+
+1. **Helper** in `app.py`, next to `record_calibration_report_upload`:
+   `relink_calibration_report_to_latest_revision(existing_file, submission)` → True only when all hold: the file is a
+   generated Calibration Report source (`calibration_report_source_file_is_private` / DOCX name); same `shift_id`; the
+   owning submission is an older revision of that shift (`is_latest` False, different id) and `submission.is_latest`
+   is True; the owning revision's latest certificate approval is not `Approved`. Then set
+   `existing_file.online_tsr_submission_id = submission.id` and, when the conversion job has a PDF
+   (`calibration_report_conversion_for_source(existing_file.id).pdf_shift_file_id`), the PDF's too. Otherwise False with
+   no change. Done: unit-testable, no commit inside (caller commits).
+2. **Use it in both checks** of `upload_online_tsr_attachment` (`app.py:27076`, `:27176`), only when
+   `attachment_source == 'generated_calibration_report'`: if the helper moved the file, continue down the existing-file
+   branch (record the marker on the latest revision via `record_calibration_report_upload`, schedule conversion, submit
+   the certificate, return success with `duplicate: true`). Done: older-revision tokens of the same TSR succeed; other
+   TSRs still get 409.
+3. **Approved on the older revision:** when the only blocker is an `Approved` certificate on the older revision, return
+   409 with `error_code: 'calibration_report_approved_on_earlier_revision'` and the message "This Calibration Report was
+   approved on an earlier revision of this TSR and cannot be moved." Nothing moves.
+4. **Release:** `static/changelog/releases.json` item; service worker bump only if a page file changes (expected not);
+   `changes.md`; this plan's Status.
+
+## Deliberately excluded
+
+- Per-revision upload tokens: would also avoid the clash, but changes how retries are recognised and affects reports
+  already saved on devices; moving within the same TSR is smaller.
+- Moving a report whose certificate was approved on an older revision: stays put with a clear message; whether an
+  approved report should follow a revision is a separate decision.
+- Tokens owned by a genuinely different TSR (different shift): still refused.
+- Revisions saved on a device that no longer has the report file (missing blob): separate issue.
+
+## Verification
+
+- New tests in `tests/test_calibration_late_upload_feedback.py`:
+  - REV1 owns the report file (+ ready PDF via a conversion job), REV2 is latest: late upload and ordinary
+    attachment-path upload to REV2 succeed; file and PDF now linked to REV2; certificate sent for REV2; REV1's
+    `Pending` approval becomes `Superseded`; My Calibrations lists REV2.
+  - File owned by a different shift: still 409 "belongs to another TSR".
+  - REV1 certificate `Approved`: 409 with the new message; nothing moved.
+- Positive control: the new tests fail on the current code.
+- Focused modules: `test_calibration_late_upload_feedback`, `test_tsr_sync_reliability`, `test_my_calibrations`,
+  `test_calibration_report_returned_fix`, `test_calibration_certificate_approval_workflow`,
+  `test_calibration_report_page`, `test_changelog_coverage`. Full suite not needed (no shared code).
+- Browser: local server on a copy of `scheduler.db`, test engineer: upload a report on a TSR, revise that TSR, Save
+  Final Report again → success, card "Uploaded", row on My Calibrations; clean console. Remove the DB copy, test
+  account and temporary launch entries afterwards.
+
+## After implementation
+
+- Self-review the diff; confirm `upload_online_tsr_attachment`, `record_calibration_report_upload`,
+  `submit_calibration_certificate_for_submission`, `revise_online_tsr_submission` and the My Calibrations routes still
+  work (no function, id or handler removed or renamed).
+- Prove the new tests fail without the change, run the focused modules, browser check, `releases.json`, `changes.md`,
+  update Status here.
+- On "commit and push": commit only the intended files and hunks (never `scheduler.db`, `output/`, `tmp/`, handoffs,
+  other dirty files, or other sessions' uncommitted plans/log lines); verify `origin/main` and Railway deployment
+  metadata.
+
+## Risks
+
+- History: the older revision no longer lists the report; it now belongs to the latest revision (same file, not
+  duplicated).
+- An older `Pending` certificate becomes `Superseded` — existing behaviour whenever a newer certificate is sent.
+- Blast radius: only Calibration Report uploads; ordinary attachments and approved-report rules unchanged.
+
 # Late Calibration Report — real upload failure reason and automatic retry (1 batch)
 
 **Status:** Executed (2026-10-15, on "Execute the late upload retry plan."). Published on "commit and push. never db and dirty" as `70ae4b5` on `main`, together with the certificate-result plan below (service worker v327).
