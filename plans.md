@@ -40,8 +40,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 # Create TSR — design scan fixes (4 batches)
 
 **Status:** Executed (2026-10-15; owner: "keep it. write the batches in plans.md", then "Execute all four batches", then
-"fix first. then commit and push"). All four batches done together under service worker v323; commit hash below once
-published.
+"fix first. then commit and push"). Published as `44c33d1` on `main`, all four batches in one commit under
+service worker v323.
 
 ### Amendments during execution
 
