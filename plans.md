@@ -39,8 +39,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Calibration Report on a revised TSR — move it to the latest revision instead of "belongs to another TSR" (1 batch)
 
-**Status:** Executed (2026-10-15, on "Execute the revised-TSR calibration report plan."); not committed. One batch,
-one commit, server-side only.
+**Status:** Executed (2026-10-15, on "Execute the revised-TSR calibration report plan."). Published on "commit and
+push. never db and dirty" as `47de227` on `main`. One batch, one commit, server-side only.
 
 ### Amendments during execution
 
