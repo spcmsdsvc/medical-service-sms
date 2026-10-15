@@ -33,7 +33,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=48"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=50"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 {% if calibration_report_page %}
 {# Hide the TSR form from the first paint; applyOnlineTSRCalibrationOnlyGate hides the same parts after load. #}
@@ -5636,7 +5636,16 @@ async function restoreStandaloneLateCalibrationDraft(submissionId){
     return candidate;
   }
   window.calibrationReport?.apply(candidate.payload.calibration_report);
-  showTSRStatus('Recovered the Calibration Report saved on this device after the previous upload did not complete. It is still not uploaded.', 'warning');
+  showTSRStatus('Recovered the Calibration Report saved on this device after the previous upload did not complete. It is still not uploaded.', 'warning', { replaceKey:'late-calibration-upload' });
+  // A failed Save Final Report resumes uploading when its generated report is still on this device.
+  if(candidate.payload._late_calibration_report_upload_failed && window.calibrationReport?.scheduleLateUploadRetry){
+    const attachment = window.calibrationReport.getAttachment?.({ calibration_report:candidate.payload.calibration_report });
+    const blob = attachment ? await window.calibrationReport.resolveAttachmentBlob(attachment).catch(() => null) : null;
+    if(blob){
+      candidate.retrying = true;
+      window.calibrationReport.scheduleLateUploadRetry({ immediate:true });
+    }
+  }
   return candidate;
 }
 
@@ -5699,9 +5708,12 @@ async function loadOnlineTSRCalibrationFromUrl(){
       restoredLateDraft
         ? (restoredLateDraft.source === 'account'
           ? 'Calibration Report draft restored from your account. It is not uploaded yet; Save Final Report attaches it to the existing TSR.'
-          : 'Calibration Report is saved locally but not uploaded. Retry Save Final Report to attach it to the existing TSR.')
+          : (restoredLateDraft.retrying
+            ? 'Calibration Report saved on this device is uploading again now.'
+            : 'Calibration Report is saved locally but not uploaded. Retry Save Final Report to attach it to the existing TSR.'))
         : `Saved TSR REV${submission.revision_no || 1} loaded. Calibration Report is ${stateLabel}; the original TSR will not be revised.`,
-      restoredLateDraft ? 'warning' : (onlineTSRCalibrationReportLocked() ? 'info' : 'warning')
+      restoredLateDraft ? 'warning' : (onlineTSRCalibrationReportLocked() ? 'info' : 'warning'),
+      restoredLateDraft?.retrying ? { replaceKey:'late-calibration-upload' } : {}
     );
     return true;
   }catch(err){
@@ -8144,6 +8156,8 @@ async function saveStandaloneCalibrationReport(preparedPayload){
     Object.assign({}, payload, { calibration_report:report }), submissionId
   );
   const saveLocallyAfterFailure = async (uploadError) => {
+    // Marks a failed Save Final Report so reopening the page retries the upload.
+    latePayload._late_calibration_report_upload_failed = true;
     const localResult = await saveStandaloneTSRDraftLocally(latePayload, { serverSync:'none' }).catch(storageError => ({
       failed:true,
       source:'none',
@@ -8167,9 +8181,12 @@ async function saveStandaloneCalibrationReport(preparedPayload){
       status:'local_saved',
       success:false,
       local_saved:true,
-      message:'Calibration Report saved locally but not uploaded. Retry Save Final Report when you are online.',
+      message:'Calibration Report saved on this device but not uploaded.',
       local_result:localResult,
-      upload_error:uploadError?.message || 'Upload did not complete.'
+      upload_error:uploadError?.message || 'Upload did not complete.',
+      upload_error_code:uploadError?.errorCode || '',
+      retryable:uploadError?.retryable === true,
+      requires_login:uploadError?.requiresLogin === true
     };
   };
 
@@ -8199,7 +8216,11 @@ async function saveStandaloneCalibrationReport(preparedPayload){
       method:'POST',
       headers,
       body:formData
-    }, { phase:'uploading_late_calibration_report', timeoutMs:120000 }));
+    }, {
+      phase:'uploading_late_calibration_report',
+      // At least 2 minutes; larger reports get about 20 KB/s so a weak signal can finish (cap 10 minutes).
+      timeoutMs:Math.min(600000, Math.max(120000, Math.ceil(Number(blob.size || 0) / 20480) * 1000))
+    }));
   }catch(error){
     return await saveLocallyAfterFailure(error);
   }

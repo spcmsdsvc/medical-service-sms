@@ -26378,6 +26378,15 @@ CALIBRATION_SUBMIT_FAILURE_MARKER = '_calibration_submit_failure'
 CALIBRATION_SUBMIT_FAILURE_UNEXPECTED = 'Could not reach the approver. Retry, or contact admin if it keeps failing.'
 
 
+def calibration_submit_failure_message(code, message=''):
+    """Engineer-facing reason a certificate did not reach the approver."""
+    if code == 'missing_values':
+        return f'Missing values: {clean_str(message)}' if clean_str(message) else 'Some report values are missing.'
+    if code in {'catalog_validation'} and clean_str(message):
+        return clean_str(message)
+    return CALIBRATION_SUBMIT_FAILURE_UNEXPECTED
+
+
 def record_calibration_submit_failure(submission, code, message=''):
     """Remember that this TSR's report did not reach the approver (My Calibrations).
 
@@ -26385,12 +26394,7 @@ def record_calibration_submit_failure(submission, code, message=''):
     if not submission:
         return
     code = clean_str(code) or 'unexpected'
-    if code == 'missing_values':
-        message = f'Missing values: {clean_str(message)}' if clean_str(message) else 'Some report values are missing.'
-    elif code in {'catalog_validation'} and clean_str(message):
-        message = clean_str(message)
-    else:
-        message = CALIBRATION_SUBMIT_FAILURE_UNEXPECTED
+    message = calibration_submit_failure_message(code, message)
     try:
         payload = parse_online_tsr_payload_json(submission)
         payload[CALIBRATION_SUBMIT_FAILURE_MARKER] = {
@@ -27025,6 +27029,20 @@ def record_calibration_report_upload(submission, upload_token, file_rec, origina
     return True
 
 
+def calibration_upload_certificate_payload(certificate_result, submission):
+    """Certificate result for an upload response: the approval, or the failure code and reason."""
+    approval = certificate_result.get('approval') if certificate_result.get('ok') else None
+    if approval is None:
+        code = certificate_result.get('code') or 'not_requested'
+        # Ordinary attachments never submit a certificate, so there is no failure to explain.
+        message = '' if code in {'not_requested', 'not_attempted'} else calibration_submit_failure_message(code, certificate_result.get('message'))
+        return {'status': code, 'message': message}
+    certificate = calibration_certificate_approval_to_dict(approval)
+    if approval.status == 'Pending' and not get_assigned_approvers_for_requester(submission.submitted_by_user_id, 'calibration_certificate'):
+        certificate['status'] = 'awaiting_route'
+    return certificate
+
+
 @app.route('/upload_online_tsr_attachment/<int:submission_id>', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -27212,7 +27230,7 @@ def upload_online_tsr_attachment(submission_id):
             'attachment_source': attachment_source or 'manual_attachment',
             'late_calibration_report': bool(late_calibration_report_requested),
             'calibration_report': calibration_report_conversion_state(existing_file.id) if attachment_source == 'generated_calibration_report' else None,
-            'certificate': calibration_certificate_approval_to_dict(certificate_result['approval']) if certificate_result.get('ok') and certificate_result.get('approval') else {'status': certificate_result.get('code', 'retryable')},
+            'certificate': calibration_upload_certificate_payload(certificate_result, submission),
         })
 
     saved_count = ShiftFile.query.filter(
@@ -27327,7 +27345,7 @@ def upload_online_tsr_attachment(submission_id):
             'attachment_source': attachment_source or 'manual_attachment',
             'late_calibration_report': bool(late_calibration_report_requested),
             'calibration_report': conversion_state,
-            'certificate': calibration_certificate_approval_to_dict(certificate_result['approval']) if certificate_result.get('ok') and certificate_result.get('approval') else {'status': certificate_result.get('code', 'not_requested'), 'message': certificate_result.get('message', '')},
+            'certificate': calibration_upload_certificate_payload(certificate_result, submission),
         })
     except Exception as attachment_error:
         db.session.rollback()
@@ -27940,7 +27958,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v325-client-list-table';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v327-late-calibration-retry';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -27970,7 +27988,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=48',
+  '/static/js/app-calibration-report.js?v=50',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

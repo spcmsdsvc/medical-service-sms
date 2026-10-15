@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-15-calibration-save-feedback",
+      "release_date": "2026-10-15",
+      "title": "Calibration Report save feedback",
+      "summary": "Save Final Report now tells you whether the certificate went to your approver.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-15-calibration-save-feedback-message",
+          "category": "Calibration",
+          "description": "After you add a Calibration Report to a saved TSR, Save Final Report says whether the certificate was sent to the approver. If it was not sent, it shows why (for example, the equipment model is not in the catalog, or no approver is assigned to you) with a button to My Calibrations.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-15-calibration-upload-retry",
+          "category": "Calibration",
+          "description": "If the Calibration Report upload fails, the message now says why (weak or dropped connection, expired session, or a server problem). On a weak or dropped connection the report uploads by itself when the connection is back — while the page stays open, or when you reopen it — and large reports get more time to upload.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-15-client-list",
       "release_date": "2026-10-15",
       "title": "Client List improvements",

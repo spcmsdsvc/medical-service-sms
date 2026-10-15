@@ -1616,7 +1616,7 @@
         submission_id:result.certificate.submission_id || state.certificate_approval?.submission_id || '',
         revision_no:Number(result.certificate.revision_no || state.certificate_approval?.revision_no || 0),
         remarks:result.certificate.return_remarks || result.certificate.remarks || state.certificate_approval?.remarks || '',
-        error:result.certificate.error || ''
+        error:result.certificate.message || result.certificate.error || ''
       });
     }
     renderCard();
@@ -1700,6 +1700,81 @@
       if(missing.length){ showStatus('Sample Calibration Report PDF downloaded. It is not attached. Some required fields are still missing: ' + missing.slice(0,4).map(function(item){ return item.label; }).join(', ') + (missing.length > 4 ? ', and more.' : '.'), 'warning'); }
     }catch(err){ if(err?.code === 'calibration_report_incomplete'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Sample PDF generation failed',err); showStatus(err?.message || 'Calibration Report sample PDF could not be generated.','danger'); } }
   }
+  // Late upload (Save Final Report on a saved TSR): failure reasons and automatic retry.
+  var LATE_UPLOAD_RETRY_DELAYS = [30000, 60000, 120000, 300000];
+  var lateUploadRetry = { timer:null, attempt:0, busy:false, active:false };
+  // One notice slot for the late upload: each new message replaces the previous one.
+  var LATE_UPLOAD_STATUS = { replaceKey:'late-calibration-upload' };
+  // In the editor while it is open; on the page otherwise (a closed editor hides its own status box).
+  function showLateUploadStatus(message, tone, extra){
+    var options = Object.assign({}, extra || {}, LATE_UPLOAD_STATUS);
+    var overlay = q('#calibration-report-overlay');
+    if(overlay && overlay.classList.contains('is-open')) showStatus(message, tone, options);
+    else if(typeof window.showTSRStatus === 'function') window.showTSRStatus(message, tone, options);
+  }
+  function describeLateUploadFailure(result){
+    var code = String(result?.upload_error_code || '').toLowerCase();
+    var message = String(result?.upload_error || '').trim().replace(/[.\s]+$/, '');
+    var httpStatus = Number((code.match(/^http_(\d+)$/) || [])[1] || 0);
+    if(code === 'timeout') return { reason:'The upload timed out — the connection is too weak or slow.', autoRetry:true };
+    if(code === 'network_error' || code === 'offline') return { reason:'The connection dropped during the upload.', autoRetry:true };
+    if(code === 'session_expired' || httpStatus === 401 || result?.requires_login === true) return { reason:'Your session expired. Sign in again, then press Save Final Report.', autoRetry:false };
+    if(httpStatus >= 500 || result?.retryable === true) return { reason:'The server could not take the upload: ' + (message || ('HTTP ' + httpStatus)) + '.', autoRetry:true };
+    return { reason:(message || 'The upload was not accepted') + '.', autoRetry:false };
+  }
+  function showLateUploadFailure(result){
+    var failure = describeLateUploadFailure(result);
+    showLateUploadStatus('Calibration Report saved on this device but not uploaded: ' + failure.reason + (failure.autoRetry ? ' It will upload automatically when the connection is back.' : ''), 'warning');
+    return failure.autoRetry;
+  }
+  function finishLateUpload(lateResult){
+    markUploaded(lateResult);
+    renderCard();
+    close();
+    var lateCert = state.certificate_approval || {};
+    var lateCertKey = String(lateCert.status || '').trim().toLowerCase();
+    if(lateCertKey === 'pending') showLateUploadStatus('Calibration Report uploaded and sent to the approver.', 'success');
+    else if(lateCertKey === 'awaiting_route') showLateUploadStatus('Calibration Report uploaded, but no approver is assigned to you. Contact admin.', 'warning');
+    else showLateUploadStatus('Calibration Report uploaded, but the certificate was not sent: ' + (lateCert.error || 'Retry from My Calibrations.'), 'warning', { action:{ label:'Open My Calibrations', onClick:function(){ window.location.href = '/calibration-center'; } } });
+  }
+  function stopLateUploadRetry(){
+    clearTimeout(lateUploadRetry.timer);
+    lateUploadRetry.timer = null;
+    lateUploadRetry.attempt = 0;
+    lateUploadRetry.active = false;
+  }
+  function scheduleLateUploadRetry(options){
+    clearTimeout(lateUploadRetry.timer);
+    lateUploadRetry.active = true;
+    var delay = options?.immediate ? 0 : LATE_UPLOAD_RETRY_DELAYS[Math.min(lateUploadRetry.attempt, LATE_UPLOAD_RETRY_DELAYS.length - 1)];
+    lateUploadRetry.timer = setTimeout(runLateUploadRetry, delay);
+  }
+  async function runLateUploadRetry(){
+    lateUploadRetry.timer = null;
+    if(!lateUploadRetry.active || lateUploadRetry.busy) return;
+    if(typeof window.saveStandaloneCalibrationReport !== 'function'){ stopLateUploadRetry(); return; }
+    lateUploadRetry.busy = true;
+    lateUploadRetry.attempt += 1;
+    showLateUploadStatus('Retrying the Calibration Report upload…', 'info');
+    try{
+      var result = await window.saveStandaloneCalibrationReport();
+      if(result?.local_saved){
+        if(showLateUploadFailure(result)) scheduleLateUploadRetry(); else stopLateUploadRetry();
+        return;
+      }
+      if(result?.status !== 'success' && result?.success !== true) throw new Error(result?.message || 'Calibration Report upload was not confirmed.');
+      stopLateUploadRetry();
+      finishLateUpload(result);
+    }catch(error){
+      stopLateUploadRetry();
+      console.error('[Calibration Report] Upload retry failed', error);
+      showLateUploadStatus(error?.message || 'Calibration Report upload failed. Press Save Final Report to try again.', 'danger');
+    }finally{
+      lateUploadRetry.busy = false;
+    }
+  }
+  if(typeof window.addEventListener === 'function') window.addEventListener('online', function(){ if(lateUploadRetry.active && !lateUploadRetry.busy) scheduleLateUploadRetry({ immediate:true }); });
+
   async function saveFinalReport(){
     try{
       var calibrationOnly = typeof window.isOnlineTSRCalibrationMode === 'function' && window.isOnlineTSRCalibrationMode();
@@ -1707,19 +1782,19 @@
       if(!(await releaseDraftDeletion())){ unsavedAfterFailure = true; throw new Error(draftSaveFailureMessage({ skipped:true, reason:'deletion_release_failed' })); }
       if(calibrationOnly){
         if(typeof window.saveStandaloneCalibrationReport !== 'function') throw new Error('The late Calibration Report upload handler is unavailable. Reload Create TSR and try again.');
-        var lateResult = await window.saveStandaloneCalibrationReport(ready);
+        stopLateUploadRetry();
+        lateUploadRetry.busy = true;
+        var lateResult;
+        try{ lateResult = await window.saveStandaloneCalibrationReport(ready); }
+        finally{ lateUploadRetry.busy = false; }
+        unsavedAfterFailure = false;
         if(lateResult?.local_saved){
-          unsavedAfterFailure = false;
-          showStatus('Calibration Report saved locally but not uploaded. Retry Save Final Report when you are online.', 'warning');
+          if(showLateUploadFailure(lateResult)) scheduleLateUploadRetry();
           renderCard();
           return;
         }
         if(lateResult?.status !== 'success' && lateResult?.success !== true) throw new Error(lateResult?.message || 'Calibration Report upload was not confirmed.');
-        markUploaded(lateResult);
-        unsavedAfterFailure = false;
-        showStatus('Calibration Report uploaded to the existing TSR. No new TSR revision was created.', 'success');
-        renderCard();
-        close();
+        finishLateUpload(lateResult);
         return;
       }
       state.certificate_approval = Object.assign({}, state.certificate_approval || {}, { status: String(state.certificate?.bsid || '').trim() ? 'queued' : 'not_ready', error: '' });
@@ -1761,6 +1836,7 @@
     else if(certStatusKey === 'pending') certStatus = 'Certificate pending approval.';
     else if(certStatusKey === 'awaiting_route' || certStatusKey === 'awaiting_approver_assignment') certStatus = 'Certificate awaiting approver assignment.';
     else if(certStatusKey === 'error' || certStatusKey === 'retryable') certStatus = 'Certificate submission failed; retry after TSR sync.';
+    else if(cert.error && !['queued','not_ready','superseded'].includes(certStatusKey)) certStatus = 'Certificate not sent: ' + cert.error;
     var conversionNote = conversionState === 'ready' ? 'PDF is ready for archive and delivery. ' : (conversionState === 'failed' ? 'PDF conversion failed; retry is available. ' : 'PDF is created after TSR synchronization. ');
     var returnedBanner = q('#calibration-report-returned-banner'); if(returnedBanner){ returnedBanner.classList.toggle('d-none', !returned); var returnedText = returnedBanner.querySelector('[data-returned-remarks]'); if(returnedText) returnedText.textContent = 'Returned for correction' + (cert.approver_name ? ' by ' + cert.approver_name : '') + ': ' + (cert.remarks || 'See the approver remarks in Approvals.') + ' Fix the report and Save Final Report to resubmit.'; }
     if(note) note.textContent = returned ? 'Saving the corrected report replaces the returned one on this TSR and sends it back for approval.' : uploaded ? 'Uploaded to the saved TSR. Uploaded Calibration Reports cannot be replaced through this page. ' + certStatus : (downloadReady ? 'Auto-managed document chip: Calibration Report · ' + conversionNote : 'Sample PDFs are not attached. Save Final Report to create the TSR attachment. ') + certStatus;
@@ -1842,6 +1918,7 @@
     }catch(err){ unsavedAfterFailure = true; showStatus(draftSaveFailureMessage(null),'danger'); }
   }
   async function clearForm(){
+    stopLateUploadRetry();
     var confirmed = typeof window.offlineTSRConfirm === 'function' ? await window.offlineTSRConfirm({ title:'Clear Calibration Report form?', message:'Clear only the Calibration Report values and generated file. The ordinary TSR, signatures, documents, and manual attachments will remain unchanged.', confirmText:'Clear Form', cancelText:'Keep Report', tone:'warning', icon:'eraser' }) : false;
     if(!confirmed) return;
     var cleanupIds = reportBlobIdsForCleanup(state); var hadAutoDocument = !!state.auto_document;
@@ -1858,6 +1935,7 @@
     else showStatus('Calibration Report form cleared. The ordinary TSR remains unchanged.','info');
   }
   async function removeReport(){
+    stopLateUploadRetry();
     var confirmed = typeof window.offlineTSRConfirm === 'function' ? await window.offlineTSRConfirm({ title:'Remove Calibration Report?', message:'Remove this optional Calibration Report from the TSR draft? The ordinary TSR will remain unchanged.', confirmText:'Remove Report', cancelText:'Keep Report', tone:'danger', icon:'file-circle-minus' }) : false;
     if(!confirmed) return;
     var cleanupIds = reportBlobIdsForCleanup(state);
@@ -1872,7 +1950,7 @@
   }
   function ensureEditor(){ if(!editorBuilt) buildEditor(); }
 
-  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, setSaveStatusFromTSR:setCalibrationSaveStatus, markUploaded:markUploaded, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, buildRepairDocx:function(payload, report, filename){ var normalized = normalizeState(report || payload?.calibration_report || {}); return buildDocx(payload || { calibration_report:normalized }, normalized, filename || filenameFor(payload || {}, normalized)); }, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); } };
+  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, setSaveStatusFromTSR:setCalibrationSaveStatus, markUploaded:markUploaded, describeUploadFailure:describeLateUploadFailure, scheduleLateUploadRetry:scheduleLateUploadRetry, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, buildRepairDocx:function(payload, report, filename){ var normalized = normalizeState(report || payload?.calibration_report || {}); return buildDocx(payload || { calibration_report:normalized }, normalized, filename || filenameFor(payload || {}, normalized)); }, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice(), approved_models:clone(CERTIFICATE_APPROVED_MODELS) }; }, getSource:function(){ return clone(SOURCE); } };
   function warnBeforeLeavingUnsaved(event){
     if(!unsavedAfterFailure || !isActive(state)) return;
     event.preventDefault();

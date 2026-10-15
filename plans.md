@@ -37,6 +37,290 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Late Calibration Report — real upload failure reason and automatic retry (1 batch)
+
+**Status:** Executed (2026-10-15, on "Execute the late upload retry plan."); not committed. One batch, one commit.
+
+### Amendments during execution
+
+- **Not client-side only:** `app.py` gained `calibration_submit_failure_message(code, message)`, now used by both
+  `record_calibration_submit_failure` and `calibration_upload_certificate_payload`, so the Save Final Report notice and
+  My Calibrations word a certificate failure the same way (the upload reply said only "Certificate No." where My
+  Calibrations said "Missing values: Certificate No.").
+- **Notices go to the visible place:** the calibration script's `showStatus` writes into the editor's own status box
+  (`hostId:'calibration-report-modal-status'`), which is hidden once the editor closes — so a success notice shown
+  before `close()`, or during a retry with the editor closed, was invisible. New `showLateUploadStatus` uses the editor
+  box only while `#calibration-report-overlay` is open, else the page notices; `finishLateUpload` now closes the editor
+  first and then shows the result.
+- **One notice slot:** every late-upload notice (recovered, retrying, failed, uploaded) and the page-load notice when a
+  retry is starting share `replaceKey:'late-calibration-upload'`, so the newest replaces the older ones. Without it the
+  browser check showed "It is still not uploaded" and "Retry Save Final Report…" after the report had already uploaded.
+  The page-load notice now reads "Calibration Report saved on this device is uploading again now." when a retry starts.
+- **Tests** went into `tests/test_calibration_late_upload_feedback.py` (Node vm with fake timers, plus source checks)
+  rather than `test_tsr_calibration_report.py`; the pinned `saveFinalReport` contract there now checks
+  `finishLateUpload(lateResult)`. Node output is read as UTF-8 (the em dash broke on the Windows code page).
+- **Fail-without-fix proof:** all 8 new retry tests failed on the code before the change.
+- **Browser (DB copy, test engineer, three TSRs, real Save Final Report with the local server stopped):** notice "The
+  connection dropped during the upload. It will upload automatically when the connection is back."; after restarting
+  the server the timed retry uploaded (`POST /upload_online_tsr_attachment` 200, card "Uploaded", row on My
+  Calibrations); after closing and reopening the page the upload restarted within seconds and the page ended on one
+  current notice ("uploaded, but the certificate was not sent: Missing values…" with Open My Calibrations — the copy's
+  test machine has no BSID). 375 px: scrollWidth 375, notices wrap inside the screen. Console errors were only the
+  deliberate refused connections while the server was down.
+- **Seen, not changed:** while the server is down the editor's autosave line also says "Calibration Report could not
+  be saved. Keep this page open and try again." (account-backup status, `app-calibration-report.js:422`), next to the
+  new "saved on this device" notice. One My Calibrations read made right after an upload did not list the new row; a
+  read a few seconds later did. Neither was part of this plan.
+
+## Context
+
+An engineer reported "Calibration Report saved locally but not uploaded" while on Wi-Fi with a low signal. On a weak
+link the late upload (Save Final Report on an already-saved TSR) times out or drops; the screen then says "Retry Save
+Final Report when you are online" although the device is online, the real reason is discarded, and the report waits on
+the device until the engineer reopens the calibration-report page and presses Save Final Report again. Intended outcome:
+the engineer sees the real reason, and the upload retries by itself when the connection allows.
+
+## Decisions taken (owner, 2026-10-15)
+
+- Show the real failure reason instead of "when you are online".
+- Retry the late Calibration Report upload automatically when the connection is back.
+- One batch; the previous plan (certificate result after Save Final Report) is the base this builds on.
+
+## Investigation
+
+- `saveStandaloneCalibrationReport` (`templates/offline_tsr.html:8108`): every failure — `navigator.onLine` false, any
+  error thrown by `fetchTSRSyncJSON`, or a non-success JSON (except `calibration_report_already_uploaded`) — goes to
+  `saveLocallyAfterFailure` (`:8146`), which returns `{status:'local_saved', upload_error:<message>}` and drops the error
+  code and `retryable` flag.
+- The caller ignores `upload_error` and shows fixed text (`static/js/app-calibration-report.js:1713`).
+- `fetchTSRSyncJSON` (`templates/offline_tsr.html:942`) already classifies failures: `timeout` (AbortError),
+  `network_error`, `session_expired` (redirect to `/login`, `requiresLogin`), `http_<status>` with `retryable` true for
+  408/425/429/5xx or when the server says so.
+- Upload timeout is fixed at 120 s (`templates/offline_tsr.html:8202`) regardless of the DOCX size.
+- Nothing retries: the `online` listener at `templates/offline_tsr.html:5568` only re-sends the account backup
+  (`/save_calibration_report_draft`), not the upload; the offline TSR queue (`scheduleOfflineTSRAutoSync`, `:8908`) never
+  reads late reports; reopening the page restores the device copy (`restoreStandaloneLateCalibrationDraft`, `:5588`)
+  with a warning but does not upload.
+- Retry is safe: the server treats the same `attachment_token` as a duplicate (existing-file branch of
+  `upload_online_tsr_attachment`, `app.py` ~27175) and returns success; if the timed-out upload actually landed, the
+  retry simply confirms it.
+- `_late_calibration_report_pending` is set on every late draft (`prepareStandaloneLateCalibrationDraft`, `:3764`), so on
+  reopen it cannot tell "Save Final Report was pressed and failed" from ordinary edits — a separate marker is needed.
+- An account-restored copy (`candidate.source === 'account'`) has no DOCX blob on the device; only a device copy with a
+  resolvable blob can be retried without regenerating.
+
+## Execution steps
+
+1. **`saveStandaloneCalibrationReport` keeps the failure details** (`templates/offline_tsr.html`): `saveLocallyAfterFailure`
+   also returns `upload_error_code`, `retryable`, `requires_login` (from the thrown error; `offline` → code `offline`,
+   retryable), and sets `_late_calibration_report_upload_failed: true` on `latePayload` before the device save (the copy
+   is deleted on successful upload, so the marker goes with it). Done: result carries the code; device copy carries the
+   marker.
+2. **Size-aware timeout** (same function): `timeoutMs = min(600000, max(120000, Math.ceil(blob.size / 20480) * 1000))`.
+   Done: the fixed `timeoutMs:120000` is gone from this call.
+3. **One reason mapper** in `static/js/app-calibration-report.js`: `describeLateUploadFailure(result)` → `{ reason,
+   autoRetry }`, exposed as `window.calibrationReport.describeUploadFailure`:
+   - `timeout` → "The upload timed out — the connection is too weak or slow." (retry)
+   - `network_error` / `offline` → "The connection dropped during the upload." (retry)
+   - `session_expired` / `http_401` / `requires_login` → "Your session expired. Sign in again, then press Save Final
+     Report." (no retry)
+   - `http_5xx` or `retryable` → "The server could not take the upload: <message>." (retry)
+   - other `http_4xx` → the server's message (no retry).
+   Done: pure function, no DOM access.
+4. **`finishLateUpload(lateResult)`** in `app-calibration-report.js`: moves the current success branch of
+   `saveFinalReport` (`markUploaded`, the certificate-result message, `renderCard()`, `close()`) into one function used by
+   both Save Final Report and the retry. Done: no duplicated success handling.
+5. **Failure message** (`saveFinalReport`, `local_saved` branch): "Calibration Report saved on this device but not
+   uploaded: <reason>" + " It will upload automatically when the connection is back." when `autoRetry`, otherwise
+   nothing more (the reason says what to do). Done: the "when you are online" text is gone.
+6. **Automatic retry while the page is open** (`app-calibration-report.js`): `scheduleLateUploadRetry()` — backoff 30 s,
+   60 s, 120 s, then every 300 s; plus an immediate attempt on `window` `online`. Each attempt calls
+   `window.saveStandaloneCalibrationReport()` with the already-generated report (no `preparePayload` / regeneration); a
+   busy flag shared with `saveFinalReport` prevents overlap; the retry stops on success (→ `finishLateUpload`), on a
+   non-retryable failure (→ failure message, no reschedule), or when the engineer saves, removes or clears the report.
+   One short "Retrying the Calibration Report upload…" info status per attempt. Done: timer and listener cleared on
+   every stop path.
+7. **Resume after reopening** (`restoreStandaloneLateCalibrationDraft`, `templates/offline_tsr.html:5588`): when the
+   restored device copy has `_late_calibration_report_upload_failed` and its attachment blob resolves, call
+   `window.calibrationReport.scheduleLateUploadRetry({ immediate:true })` after `apply`. Account-restored copies are left
+   to the manual Save Final Report. Done: reopened failed uploads retry by themselves.
+8. **Release:** `app-calibration-report.js?v=50` in `templates/offline_tsr.html`, `templates/calibration_center.html`, the
+   service worker precache list in `app.py`, and the version pins in `tests/test_tsr_calibration_report.py` /
+   `tests/test_calibration_center.py`; service worker `CACHE_VERSION` v327; `static/changelog/releases.json` item;
+   `changes.md`; this plan's Status.
+
+## Deliberately excluded
+
+- Background upload after the page is closed (offline TSR queue / Create TSR pages): that needs building the upload
+  outside the calibration editor; a larger change. Reopening the page covers it (step 7).
+- No server change: duplicate-token handling already makes retries safe.
+- No change to the account backup flow or the normal TSR save/sync path.
+
+## Verification
+
+- `tests/test_tsr_calibration_report.py` (vm tests that load `app-calibration-report.js`): each error code maps to the
+  right reason and auto-retry flag; the "when you are online" text is absent.
+- Source checks: size-based `timeoutMs` in `saveStandaloneCalibrationReport`; `_late_calibration_report_upload_failed`
+  set in `saveLocallyAfterFailure`; `restoreStandaloneLateCalibrationDraft` calls `scheduleLateUploadRetry`;
+  `saveFinalReport` and the retry both call `finishLateUpload`.
+- Positive control: the new tests fail on the current code before the change.
+- Focused modules: `test_tsr_calibration_report`, `test_tsr_sync_reliability`, `test_calibration_report_page`,
+  `test_calibration_center`, `test_calibration_late_upload_feedback`, `test_changelog_coverage`. Full suite not needed
+  (no shared code).
+- Browser: local server on a copy of `scheduler.db`, test engineer, fill a complete Calibration Report:
+  (1) stop the local server → Save Final Report → "The connection dropped…" + auto-upload note;
+  (2) restart the server → the retry uploads and the certificate-result message shows;
+  (3) repeat but close and reopen the page before restarting → retry resumes on its own;
+  375 px, tap targets ≥44px, clean console. Remove the DB copy, test account and temporary launch entries afterwards.
+
+## After implementation
+
+- Self-review the diff; confirm `saveFinalReport`, `markUploaded`, `saveStandaloneCalibrationReport`,
+  `restoreStandaloneLateCalibrationDraft` and the account-backup `online` listener still work (no function, id or
+  handler removed or renamed).
+- Prove the new tests fail without the change, run the focused modules, browser check, script version and service
+  worker bump, `releases.json`, `changes.md`, update Status here.
+- Commit only the intended files on "commit and push" (never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty
+  files); verify `origin/main` and Railway deployment metadata.
+
+## Risks
+
+- Duplicate upload: prevented by the server's same-token handling.
+- Endless retry: stops on any non-retryable failure; capped at one attempt per 5 minutes; only while the page is open.
+- Retry racing a manual save: shared busy flag.
+- Blast radius: the late-upload path of the calibration-report page only; normal TSR saves untouched.
+
+# Late Calibration Report — show the certificate result after Save Final Report (1 batch)
+
+**Status:** Executed (2026-10-15, on "Execute the Late Calibration Report plan."); not committed. One batch, one commit.
+
+### Amendments during execution
+
+- **Script cache-bust:** `app-calibration-report.js` is loaded with `?v=48` (`templates/offline_tsr.html`,
+  `templates/calibration_center.html`, service worker precache list in `app.py`); bumped to `?v=49`, otherwise browsers
+  keep the old script. Pins updated in `tests/test_tsr_calibration_report.py` and `tests/test_calibration_center.py`.
+  Service worker v326-late-calibration-feedback.
+- **Pinned text:** `test_calibration_only_final_save_uses_page_upload_without_normal_tsr_save` pinned the old success
+  text "No new TSR revision was created."; it now pins "Calibration Report uploaded and sent to the approver."
+- **Card note:** the "Certificate not sent" branch skips `queued`, `not_ready` and `superseded`; it sits after the BSID
+  and temporary-model checks, so those notes still win.
+- **Fail-without-fix proof:** before the fix, the failure-reason test errored (`KeyError: 'message'` on the retry path),
+  the no-approver test failed (`'Pending' != 'awaiting_route'`) and the JS source test failed; the with-approver test is a
+  coverage test and passes on both.
+- **Browser (DB copy, test engineer, TSR 35):** the calibration-report page loads `app-calibration-report.js?v=49` in
+  calibration-only mode with no console errors; Save Final Report still runs its validation ("Complete the Calibration
+  Report…"). The three upload messages were **not** clicked through in the browser: that needs a fully filled report
+  (equipment, dates, test tool, X-ray pages); they are covered by the route tests and the JS source test.
+
+## Context
+
+An engineer reported: TSR created, saved and sent to the client; then a Calibration Report was added and
+**Save Final Report** clicked; the report "does not show in my calibration page as pending / for approval / sent to
+approver". Reproduced on a scratch DB (2026-10-15): the late upload succeeds and the row does appear on My Calibrations
+(`/calibration-center`), but as **Failed to send** with a reason (in the repro: equipment name/model not in the
+catalog). The engineer was told "Calibration Report uploaded to the existing TSR. No new TSR revision was created." — a
+plain success — so they believe it went to the approver. Intended outcome: after Save Final Report the engineer sees
+whether the certificate was sent to the approver, and if not, why and where to fix it.
+
+## Decisions taken (owner, 2026-10-15)
+
+- Fix the feedback, not the workflow: show the certificate result (sent / failed reason / no approver) instead of the
+  plain success message.
+- One batch.
+
+## Investigation
+
+- The late upload (`upload_online_tsr_attachment`, `app.py:27028`) calls `submit_calibration_certificate_for_submission`
+  straight after storing the DOCX (`app.py:27308`; retry/duplicate path `app.py:27195`). On failure it records
+  `CALIBRATION_SUBMIT_FAILURE_MARKER`, which My Calibrations shows as "Failed to send" (`my_calibration_status`,
+  `app.py:25360`).
+- New-upload response `certificate` = approval dict on success, else `{'status': code, 'message': message}`
+  (`app.py:27330`). Duplicate/retry response sends only `{'status': code}` — **no message** (`app.py:27215`).
+- No approver assigned: the approval is still created as `Pending`; the response does not say no approver will get it.
+  Only `get_calibration_certificate_status` derives "Awaiting approver assignment" (`app.py:26666`); My Calibrations
+  shows it as Failed with `MY_CALIBRATION_NO_APPROVER_REASON`.
+- Client: `saveStandaloneCalibrationReport` (`templates/offline_tsr.html:8108`) returns the upload JSON. The caller in
+  `static/js/app-calibration-report.js:1708-1723` (calibration-only mode) calls `markUploaded(lateResult)` and always
+  shows the fixed success text at line 1720. `markUploaded` (`:1604`) stores `result.certificate.status` and
+  `error`, not `message`.
+- Card note (`renderCard`, `:1754-1766`): unknown status codes such as `catalog_validation` / `missing_values` fall
+  through to "Certificate queued until TSR sync." — also misleading after an upload. Known keys: `pending`,
+  `awaiting_route` / `awaiting_approver_assignment`, `returned`, `approved`, `error` / `retryable`.
+- Not the cause: page query (`_my_calibration_rows`, `app.py:25386`) correctly picks up late uploads because
+  `record_calibration_report_upload` writes the top-level `_generated_calibration_report` marker (`app.py:27023`).
+- Other ways a report is missing from the page entirely (not fixed here): upload failed/offline → saved on the device
+  only, already warned ("saved locally but not uploaded", `:1713`); report saved from the normal TSR editor rather than
+  calibration-only mode → local draft until TSR sync (`:1731`).
+
+## Execution steps
+
+1. **`app.py` — one helper, both responses.** Add `calibration_upload_certificate_payload(certificate_result, submission)`
+   next to `record_calibration_report_upload`. Returns:
+   - success with approval → `calibration_certificate_approval_to_dict(approval)`, and when `approval.status == 'Pending'`
+     and `get_assigned_approvers_for_requester(submission.submitted_by_user_id, 'calibration_certificate')` is empty, its
+     `status` set to `'awaiting_route'`;
+   - otherwise → `{'status': code or 'not_requested', 'message': message or ''}`.
+   Use it in both `jsonify` responses of `upload_online_tsr_attachment` (`:27215` and `:27330`). Done: both responses
+   come from the helper; no other route changed.
+2. **`markUploaded`** (`static/js/app-calibration-report.js:1604`): store
+   `error: result.certificate.message || result.certificate.error || ''`. Done: failure reason kept in
+   `state.certificate_approval.error`.
+3. **Late upload message** (`:1718-1722`): after `markUploaded`, choose from `state.certificate_approval`:
+   - `pending` → success "Calibration Report uploaded and sent to the approver.";
+   - `awaiting_route` → warning "Calibration Report uploaded, but no approver is assigned to you. Contact admin.";
+   - anything else (failure code) → warning "Calibration Report uploaded, but the certificate was not sent: <reason>"
+     with `action:{ label:'Open My Calibrations', onClick: go to '/calibration-center' }` (the `showStatus` action option
+     already used at `:1732`).
+   Keep `renderCard()` and `close()` as now. Done: the fixed text at `:1720` is gone; the three messages exist.
+4. **Card note** (`renderCard`, `:1762-1763`): add a branch — a status that is not one of the known keys and has
+   `cert.error` → "Certificate not sent: <error>". Done: `catalog_validation` with a message no longer reads "queued
+   until TSR sync".
+5. **Release:** bump service worker `CACHE_VERSION` (`app.py:27943`, next vNN with label e.g.
+   `late-calibration-feedback`); add a "Calibration Report save feedback" item to `static/changelog/releases.json`;
+   `changes.md` entry; this plan's Status → In progress / Executed.
+
+## Deliberately excluded
+
+- Offline queue sync / normal TSR save paths (`templates/offline_tsr.html:8652`, `:9097`): their certificate result
+  comes through TSR sync, a separate flow. Follow-up only if wanted.
+- No change to certificate validation, catalog matching, approver routing, or My Calibrations statuses — they are
+  already correct.
+- No automatic retry; the existing Retry on My Calibrations stays the way to resend.
+
+## Verification
+
+- New `tests/test_calibration_late_upload_feedback.py` (fixture modelled on `_make_late_upload_fixture` in
+  `tests/test_tsr_sync_reliability.py`, with `submitted_by_user_id` set; patch `managed_storage_write_bytes`,
+  `schedule_calibration_report_conversion`, `can_work_on_existing_schedule_shift`):
+  - patched submit failure with a message → response `certificate` has code + message, on the new-upload path **and**
+    the same-token retry path;
+  - patched submit success with a Pending approval, no approver assigned → `certificate.status == 'awaiting_route'`;
+  - same with an approver assigned → `certificate.status == 'Pending'`;
+  - JS source check: the three messages and the `/calibration-center` action exist, the old fixed text does not.
+- Positive control: the route tests must fail on the current code (retry path has no message; no `awaiting_route`).
+- Focused modules: the new file, `test_my_calibrations`, `test_tsr_sync_reliability`,
+  `test_calibration_report_returned_fix`, `sw_cache_version` check. Full suite not needed (no shared code).
+- Browser: local server on a copy of `scheduler.db`; test engineer with no approver → save a TSR, then Save Final Report
+  from the calibration-report page → warning shown; assign an approver, repeat on a second TSR → "sent to the
+  approver"; a report with a non-catalog model → "not sent: <reason>" with Open My Calibrations working. 375 px, tap
+  targets ≥44px, clean console. Remove the DB copy, test accounts and temporary launch entries afterwards.
+
+## After implementation
+
+- Self-review the diff; confirm `markUploaded`, `renderCard`, `showStatus`, `saveStandaloneCalibrationReport` and
+  `upload_online_tsr_attachment` callers still work (no function, id or handler removed or renamed).
+- Prove the new tests fail without the fix, run the focused modules, browser check, service worker bump,
+  `releases.json`, `changes.md`, update Status here.
+- Commit only the intended files on "commit and push" (never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty
+  files); verify `origin/main` and Railway deployment metadata.
+
+## Risks
+
+- Small blast radius: the late-upload path and one card note. The response only gains fields / a more specific status,
+  and the certificate is still created exactly as before.
+- `awaiting_route` replaces `Pending` in the upload response only; `setApprovalStatus` / `renderCard` already handle
+  that key. Safety net: the route tests and the existing `test_tsr_sync_reliability` upload tests.
+
 # Client List — scan fixes and table improvements (4 batches)
 
 **Status:** Executed (2026-10-15, on "Execute all four Client List batches."; owner chose "All 4 batches" and
