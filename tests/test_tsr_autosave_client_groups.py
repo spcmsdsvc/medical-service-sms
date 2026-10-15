@@ -440,7 +440,7 @@ class MedicalCenterSpeedAndUiTests(unittest.TestCase):
         self.assertNotIn('data-sort-key="phone"', page)
         self.assertNotIn('data-sort-key="designation"', page)
         self.assertNotIn('colspan="9"', page)
-        self.assertIn("const CLIENT_SORT_KEYS = ['name', 'address', 'contact'];", page)
+        self.assertIn("const CLIENT_SORT_KEYS = ['name', 'address', 'group', 'contact', 'equipment'];", page)
 
     def test_layout_polish(self):
         page = self.page()

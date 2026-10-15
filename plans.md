@@ -37,6 +37,222 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Client List — scan fixes and table improvements (4 batches)
+
+**Status:** Executed, not committed (2026-10-15, on "Execute all four Client List batches."; owner chose "All 4 batches" and
+"Hide when empty" for the Group column after `/page-scan` and `/page-design-scan` of `templates/clients.html`). All four
+batches done together under service worker v325.
+
+### Amendments during execution
+
+- **Step 14 (gutter):** not changed. Products' phone cards also sit 28px from the screen edge (shell `.main-content`
+  14px + `.container-fluid` 14px), so Clients already matches; changing it means editing the shared shell. Card radius
+  16px was done.
+- **Step 10:** the dark rule also covers the row `btn-outline-danger` (Delete, `#f1aeb5`, as liquidation) and the phone
+  Delete button.
+- **Step 11:** the toast and confirm dialog colours (`#0f172a`, `#bbf7d0` in `.client-alert-*` / `.client-confirm-*`)
+  are outside the table and were left; the test checks the table, sort and phone-card rules instead of the whole file.
+- **Sort headers:** `white-space: nowrap` added to `.client-sort-btn` so "Main Contact ↕" no longer wraps (header 64px →
+  40px). Equipment sorts numerically, shows "0-9" / "9-0", and treats 0 as a value.
+- **Print:** the copied popup keeps the section headings and equipment rows (now buttons) and drops only the action
+  buttons.
+- **Pinned test updated:** `tests/test_tsr_autosave_client_groups.py` `test_table_has_six_columns_with_stacked_contact`
+  now expects the five sort keys.
+- **Fail-without-fix proof:** new tests run in a temporary worktree at HEAD (test `SECRET_KEY`, temp DB): 4 source tests
+  and the Excel and admin-button route tests fail there; `check_client_duplicate` is a coverage test and passes on both.
+- **Browser (engineer test account, DB copy):** sticky header pinned at top 0 after a real wheel scroll; Group column
+  hides on a filter with no groups (empty-state colspan 5); every checked text ≥4.5:1 in light, AMOLED and Graphite
+  (name 6.67 / 7.88, "+N more" 6.67 / 7.88, row Edit Contacts 6.67 / 7.88, View 4.69 / 8.77, phone name 6.67 / 7.28);
+  375px: scrollWidth 375, no tappable control under 44px, no disabled icons; Edit Contacts save and View still work; no
+  failed requests. Admin flows were covered by the test client only (admin browser login is blocked).
+
+## Context
+
+The owner asked to "improve that table" on the Client List page (`/clients_page`, `templates/clients.html`, ~76 KB:
+markup lines 1–220, JS 221–1481, inline CSS 1485 onward). Routes live in `app.py`. The page scan found a broken
+per-client Excel download, "None" dates in that file, and admin buttons shown by role name while the server checks an
+allowlist. The design scan (Impeccable critique 22/36, Help n/a, snapshot
+`.impeccable/critique/2026-10-15T03-14-58Z__templates-clients-html.md`) found broken dark mode on phone cards, a 1.96:1
+"+ More" badge, no keyboard path into the View popup, 34px phone icon links, and a table dominated by empty data. This
+is the closed list (critique-loop rule): nothing is added during execution.
+
+## Decisions taken (owner, 2026-10-15)
+
+- All four batches, in this order, one commit each (or one commit for all four, as with liquidation, if the owner says so).
+- Group column: hidden when no visible row has a group (it reappears when filtered rows have one). Group stays in the
+  filter, phone cards (only when set) and the View popup.
+- Defaults chosen by the agent while writing the plan (change before execution if needed): the "+ More" badge becomes
+  a plain "+N" text button; phone call/email/map icons with no data are not rendered (instead of greyed out); View
+  popup shows Equipment before Contacts; no pagination (147 rows; sticky header instead).
+
+## Investigation
+
+Verified in code; Excel checks with Flask's test client on a copy of `scheduler.db` (`is_admin_authorized` patched);
+browser checks as a temporary engineer account on a DB copy at 1366×768 and 375×812, light and AMOLED (copy and account
+deleted). An admin browser login was blocked by the permission classifier, so admin-only flows were not clicked in the
+browser.
+
+- **Per-client Excel filename** (`export_client_excel`, `app.py:55603`, header at `:55667`):
+  `attachment;filename=Allied_Care_Experts_(ACE)_Medical_Center_-_Legazpi,_Inc._report.xlsx` — unquoted, with a comma.
+  14 of 147 client names contain a comma; Chrome rejects such a header (ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_DISPOSITION).
+  Names outside Latin-1 would fail header encoding. Not opened in Chrome (admin login blocked).
+- **"None" dates:** `str(p.start_warranty_date)` / `str(p.end_warranty_date)` (`app.py:55654-55655`) write the text
+  "None"; 9 linked products have no date (confirmed in the generated workbook). The file also has no Group, and
+  `Contact.query.filter_by(client_id=…)` (`:55611`) has no `order_by`.
+- **Role-name gating:** toolbar Import/Export/Add (`clients.html:27`, `:37`), modal Export Excel (`:163`) and
+  `const isAdminUser = ['superadmin','regional_admin'].includes(authRoleVal)` (`:384`) use the role name only. The server
+  uses `is_admin_authorized()` (`app.py:11647`), which also requires `SUPERADMIN_USERNAMES` / the regional admin
+  username. A superadmin-role account not on the list saw every button; `/export_clients` and `/export_client_excel`
+  returned 403. `clients_page` (`app.py:29717`) already passes `can_edit_products` and `can_merge_clients`.
+- **Print popup** `printClientReport` (`clients.html:1296`): `window.open('')` is not null-checked; the printed HTML
+  includes the Export Excel and Print buttons from `#view-details-content`.
+- **Dead code:** `clientHasDesignationMatch` (`clients.html:1324`) has no caller; `designation` and `phone` in
+  `getClientSortValue` (`:901-902`) are unreachable because `CLIENT_SORT_KEYS = ['name','address','contact']` (`:316`).
+- **Speed (not in batches, see Excluded):** `/get_clients` runs `repair_recent_online_tsr_contacts_for_medical_centers`
+  every call (`app.py:34364`), 111 ms locally; the View popup loads all of `/get_products` (101 rows, 260 ms, cached).
+- **Tests:** no test calls `/export_client_excel` or `/check_client_duplicate`. Pinned strings to keep:
+  `tests/test_tsr_autosave_client_groups.py` (`id="s-group"`, `id="c-group"`, `c-group-new*`, group helpers,
+  `/export_clients` absent for engineers, `const canEditProducts`, no raw `${c.name}` etc., `function clientJsArg(`);
+  `tests/test_appearance_themes.py:546` (no `#0d6efd`, `#2563eb`, `#eff6ff` in clients.html);
+  `tests/test_offline_tsr_pending_schedule.py:85`.
+- **Measured (design):**
+  - "+ More" `badge bg-info` (`clients.html:1129`): white on #0dcaf0, 10px, 1.96:1, inside a non-focusable span.
+  - Name cell `<span onclick>` (`:1141`), phone `.client-mobile-name` div (`:1062`), modal "▼" toggles (`:1193`, `:1225`):
+    tabIndex -1. `aria-sort` set on the button (`:959`), not the `<th>`. `#viewModal` (`:100`) has no
+    `aria-labelledby`; its `.btn-close` has no `aria-label`.
+  - Dark (AMOLED): desktop View `btn-outline-dark` 1.23:1, Edit Contacts `btn-outline-primary` 2.85:1. Phone card:
+    `.client-mobile-name` #0f172a 1.02:1, `.client-mobile-address` #64748b 3.69:1, contact box stays #f8fafc,
+    `.client-mobile-contact-more` 2.31:1 (CSS ~`:1741-1880`, hardcoded hex).
+  - Phone: enabled `.client-mobile-icon-action` links 34×34 (`:1786`); 326 of 441 icons disabled; cards 16.8px radius
+    (1.05rem, `:1743`), 28px from the screen edge (DESIGN.md 14px gutter); count footer at the bottom of a ~40,000px page.
+  - Desktop: 147 rows, no overflow (1167 = container); Group column 60px with 145 of 147 empty; Main Contact "-" on most
+    rows; Edit/View 30px tall; `thead` not sticky; sort hover/active hardcoded green `#bbf7d0` / `#86efac`
+    (`:1677-1688`); title icon `text-success` (`:25`); `:focus { outline:none }` on sort buttons (`:1676`).
+  - Detector: 27 findings; Arial / 11px (`:1304-1306`) are inside the print popup's own style (false positive).
+- **Not true / not a finding:** `table-dark` headers match Products and Personnel; tabular figures already set; no
+  horizontal scroll at 1366 or 375; search covers contact name/phone/email.
+
+## Execution steps
+
+### Batch 1 — logic (`app.py`, `templates/clients.html`)
+
+1. **Excel filename:** in `export_client_excel`, build the file with
+   `send_file(output, mimetype=…, as_attachment=True, download_name=f"{client.name}_report.xlsx")` (Werkzeug quotes it
+   and adds `filename*=UTF-8''…`). Done: header for a comma name and for "Biñan Doctors Hospital" is quoted and valid.
+2. **Excel values:** dates `p.start_warranty_date.isoformat() if p.start_warranty_date else ''` (same for end); add a
+   "Group" row under Address (`client.group_name or ''`); contacts `order_by(Contact.id.asc())`. Done: no "None" cell.
+3. **Admin flag:** `clients_page` passes `can_admin_clients=is_admin_authorized()`. In `clients.html` replace the two
+   `{% if current_user.role in ['superadmin', 'regional_admin'] %}` blocks (`:27`, `:37`) and the modal one (`:163`) with
+   `{% if can_admin_clients %}`, and `isAdminUser` (`:384`) with `{{ 'true' if can_admin_clients else 'false' }}`.
+   `authRoleVal` and `isEngineerUser` stay. Done: a superadmin-role account off the allowlist sees no admin buttons.
+4. **Print popup:** `printClientReport` returns with `clientAlert('Allow pop-ups to print this report.')` when
+   `window.open` returns null; strip buttons from the copied HTML (clone `#view-details-content`, remove `button`
+   elements, use its `innerHTML`).
+5. **Delete dead code:** `clientHasDesignationMatch`; the `designation` and `phone` entries in `getClientSortValue`
+   (grep for callers first).
+
+### Batch 2 — accessibility and contrast (`templates/clients.html`)
+
+6. **Name as a button:** in `renderTable` the name becomes
+   `<button type="button" class="client-name-link" onclick="viewContacts(${c.id})">…</button>` styled as a link
+   (accent `--app-primary-text`, no border/background, focus ring); the phone `.client-mobile-name` div becomes the same
+   button. Remove inline `style="cursor:pointer"`.
+7. **"+ More" → "+N":** replace the badge with a text button `+${count - 1} more` (`client-name-link` style, 0.8rem,
+   `aria-label="View all N contacts for <name>"`). Done: ≥4.5:1 in light, Graphite, AMOLED; focusable.
+8. **Sort semantics:** `updateClientSortIndicators` sets `aria-sort` on the parent `<th>` (remove it from the button);
+   replace `:focus { outline:none }` with the standard focus ring.
+9. **View popup labels:** `#viewModal` gets `aria-labelledby="view-client-name"`; its close button `aria-label="Close"`;
+   the "▼ Contacts" / "▼ Equipment" toggles become `<button type="button" aria-expanded aria-controls>`; `toggleSection`
+   updates `aria-expanded`.
+10. **Dark outline buttons:** View `btn-outline-dark` → `btn-outline-secondary`; add a dark rule for the row
+    `btn-outline-primary` / `btn-outline-secondary` using `--app-primary-text` / `--app-muted` through `--bs-btn-*`.
+    Done: ≥4.5:1 on #101010 and #292a2d.
+
+### Batch 3 — phone cards and theme drift (`templates/clients.html` CSS + `renderClientMobileCards`)
+
+11. **Tokens:** every `.client-mobile-*` hex (`#0f172a`, `#64748b`, `#e2e8f0`, `#fff`, `#f8fafc`, `#94a3b8`, …) →
+    `--app-text`, `--app-muted`, `--app-border`, `--app-surface`, `--app-surface-raised`; sort hover/active
+    (`#bbf7d0`, `#86efac`) → `--app-primary-soft` / `--app-primary-soft-border`; title icon `text-success` → no colour
+    class. Done: card text ≥4.5:1 in all three themes; no new `#0d6efd`-family values (theme test).
+12. **Taps:** `.client-mobile-icon-action` 44×44.
+13. **Empty data:** render call/email/map only when the value exists (no disabled icons); show Group and Equipment
+    lines only when set / > 0; a card with no contact shows one muted "No contact yet" line.
+14. **Shape:** card radius 16px; phone gutter so cards sit 14px from the screen edge (match Products' phone cards).
+
+### Batch 4 — table layout and View popup (`templates/clients.html`)
+
+15. **Group column hide:** `<th>` and cells get `client-col-group`; `renderTable` toggles `is-hidden-group` on the table
+    when no row in `data` has `group_name`; colspans for empty/loading/error use the visible column count.
+16. **Sortable Group and Equipment:** add `group` and `equipment` to `CLIENT_SORT_KEYS` and `getClientSortValue`
+    (equipment compared numerically); header buttons like Name.
+17. **Sticky header:** `thead th { position: sticky; top: 0 }` inside the page's own scroll context (follow Products'
+    sticky rule at `products.html:2631`); verify it does not sit under the shell top bar.
+18. **Count above the list:** move "Showing N of M medical centers" under the filters (keep `#client-count-label`,
+    `#client-contact-count`, `#client-filter-state` ids); footer removed.
+19. **View popup:** Equipment section first; equipment status as a semantic chip (same pairs as Products'
+    `computed_status` badges, measured ≥4.5:1 in dark); one compact row per contact (name 600, designation muted,
+    phone/email links) instead of Name:/Designation:/Phone:/Email: label rows.
+20. Service worker `CACHE_VERSION` bump per published commit (currently `v324-liquidation-scan-fixes`, `app.py:27942`).
+
+## Deliberately excluded
+
+- **`/get_clients` contact repair on every load** and **View popup loading all products:** measured 111 ms / 260 ms with
+  147 clients and 101 products; not felt. Moving the repair is a TSR-workflow change, not a table change.
+- **Engineers on a phone wanting "my sites first" / missing-contact filter** (critique questions): new features, not
+  asked.
+- **Pagination:** 147 rows; sticky header and the count above cover orientation.
+- **Excel export restyle** (column widths, bold headers): not asked.
+- **Products and Personnel tables:** same patterns, but out of scope; note for a later scan.
+
+## Verification
+
+- New `tests/test_clients_scan_fixes.py`:
+  - Batch 1 (test client, isolated DB like `ClientGroupRouteTests`): `/export_client_excel` for a client named
+    "A, Inc." returns a quoted `filename=` and `filename*=`; a product with no dates gives empty cells, not "None";
+    Group row present; a superadmin-role account not on the allowlist gets no `/export_clients` and `isAdminUser` false
+    on `/clients_page`; `/check_client_duplicate` match / no-match. Source: `clientHasDesignationMatch` absent.
+  - Batch 2 (source): `client-name-link` button in `renderTable` and mobile cards; no `badge bg-info`; `aria-sort` set on
+    `th`; `aria-labelledby="view-client-name"`; `aria-expanded` in `toggleSection`.
+  - Batch 3 (source): no `#0f172a`, `#bbf7d0`, `#86efac` in clients.html; `.client-mobile-icon-action` 44px.
+  - Batch 4 (source): `client-col-group`, `group` and `equipment` in `CLIENT_SORT_KEYS`, sticky `thead`.
+  - Positive control: run each test against `git show HEAD:<file>` in-process (never `git stash`) and see it fail.
+- Focused: `test_tsr_autosave_client_groups`, `test_appearance_themes`, `test_offline_tsr_pending_schedule`,
+  `test_changelog_coverage`, plus the new file. `clients_page` and the export route are page-specific; no shared code is
+  touched, so no full suite (AGENTS.md "Keep It Simple").
+- Browser (DB copy, temporary engineer account; admin flows through the test client unless the owner provides an admin
+  test path): 1366×768 and 375×812, light, Graphite, AMOLED. Search, group filter, Clear, sort every column (asc/desc,
+  persisted), Tab to the name and "+N" and open View with Enter, popup toggles, Edit Contacts save (engineer), sticky
+  header while scrolling, Group column hidden then shown when filtering a grouped client. JS-measured contrast for
+  "+N", row buttons and phone cards; every phone control ≥44px; scrollWidth 375; console clean. One screenshot per
+  width as proof.
+
+## After implementation (per batch)
+
+1. Self-review against "Protect Existing Functions": `openAddModal`, `openEditModal`, `saveClient`, `deleteClient`,
+   `viewContacts`, `openProductModal`, `editProduct`, `handleImport`, `exportClientExcel`, `printClientReport`,
+   `applyFilters`, `clearClientFilters`, `setClientSort`, `loadClients`, `openClientDuplicatesModal`,
+   `openClientMergeModal`, `confirmClientMerge`, `toggleSection`, `liveDuplicateCheck` still defined; every `onclick`
+   target exists; no id removed.
+2. Prove the new tests fail without the fix.
+3. Focused tests; browser steps for that batch.
+4. Service worker `CACHE_VERSION` bump (one per published commit; previous kept as a history comment).
+5. `static/changelog/releases.json`: one release "Client List improvements" with an item per batch.
+6. `changes.md` bullets; update this Status line (`In progress`, then `Executed` with the commit hash); amend this plan
+   if execution differs.
+7. Commit only that batch's files plus `plans.md`, `changes.md`, `releases.json`. Never `scheduler.db`, `output/`,
+   `tmp/`, handoffs, `.impeccable/` or `.claude/`. Publish only on the owner's "commit and push".
+
+## Risks
+
+- **Step 3 hides admin buttons** for any superadmin-role account not on the allowlist; those accounts already got 403,
+  so nothing they could do is lost.
+- **Step 13 hides data-less icons:** an engineer can no longer see at a glance that a phone is missing from the icon row;
+  the "No contact yet" line covers the common case.
+- **Step 17 sticky header** can collide with the shell's phone top bar or `table-responsive` overflow; desktop only
+  (the table is hidden on phones), verified in the browser.
+- **Blast radius:** the Client List page and the per-client Excel route only. Rollback = revert the commit; no schema
+  change.
+
 # Travel and Cash Advance Liquidation — scan fixes (4 batches)
 
 **Status:** Executed (2026-10-15; recorded on the owner's "Write batches 1-4 to plans.md, then stop and wait.", executed

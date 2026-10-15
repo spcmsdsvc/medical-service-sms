@@ -27939,7 +27939,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v321-tsr-offline-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v325-client-list-table';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -29724,6 +29725,7 @@ def clients_page():
         'clients.html',
         can_edit_products=can_edit_products_inventory(),
         can_merge_clients=is_superadmin_user(),
+        can_admin_clients=is_admin_authorized(),
     )
 
 
@@ -55608,7 +55610,7 @@ def export_client_excel(client_id):
     if not client:
         return "Not found", 404
 
-    contacts = Contact.query.filter_by(client_id=client_id).all()
+    contacts = Contact.query.filter_by(client_id=client_id).order_by(Contact.id.asc()).all()
     products = Product.query.filter_by(client_id=client_id).all()
 
     wb = Workbook()
@@ -55622,6 +55624,9 @@ def export_client_excel(client_id):
     row += 1
     ws.cell(row=row, column=1, value="Address")
     ws.cell(row=row, column=2, value=client.address)
+    row += 1
+    ws.cell(row=row, column=1, value="Group")
+    ws.cell(row=row, column=2, value=getattr(client, 'group_name', None) or '')
     row += 2
 
     ws.cell(row=row, column=1, value="Contacts")
@@ -55657,8 +55662,8 @@ def export_client_excel(client_id):
     for p in products:
         ws.cell(row=row, column=1, value=p.serial_number)
         ws.cell(row=row, column=2, value=p.name)
-        ws.cell(row=row, column=3, value=str(p.start_warranty_date))
-        ws.cell(row=row, column=4, value=str(p.end_warranty_date))
+        ws.cell(row=row, column=3, value=p.start_warranty_date.isoformat() if p.start_warranty_date else '')
+        ws.cell(row=row, column=4, value=p.end_warranty_date.isoformat() if p.end_warranty_date else '')
         ws.cell(row=row, column=5, value="Yes" if p.under_contract else "No")
         ws.cell(row=row, column=6, value=product_contract_status(p, today=today))
         row += 1
@@ -55667,12 +55672,12 @@ def export_client_excel(client_id):
     wb.save(output)
     output.seek(0)
 
-    filename = f"{client.name}_report.xlsx".replace(" ", "_")
-
-    return Response(
+    # send_file quotes the name and adds filename*= so commas and non-Latin names download.
+    return send_file(
         output,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment;filename={filename}"}
+        as_attachment=True,
+        download_name=f"{client.name}_report.xlsx".replace(" ", "_"),
     )
 
 def can_engineer_manage_client_contacts():

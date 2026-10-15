@@ -22,9 +22,9 @@
 
     <div class="card shadow-sm border-0 p-4 bg-white client-page-card">
         <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-            <h1 class="h4 mb-0"><i class="fa-solid fa-hospital me-2 text-success"></i>Client List</h1>
+            <h1 class="h4 mb-0"><i class="fa-solid fa-hospital me-2" aria-hidden="true"></i>Client List</h1>
             <div class="btn-group">
-                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                {% if can_admin_clients %}
                 <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
                 <button class="btn btn-outline-primary btn-sm" id="client-import-btn" onclick="document.getElementById('csv-file').click()">
                     <i class="fa-solid fa-file-import me-1"></i>Import CSV
@@ -34,7 +34,7 @@
 
                 <button class="btn btn-outline-dark btn-sm" onclick="window.print()">Print</button>
 
-                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                {% if can_admin_clients %}
                 <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">+ Add Medical Center</button>
                 {% endif %}
                 {% if can_merge_clients %}
@@ -43,7 +43,7 @@
             </div>
         </div>
 
-        <div class="row g-2 mb-4 no-print align-items-end">
+        <div class="row g-2 mb-3 no-print align-items-end">
             <div class="col-md-8">
                 <label class="small fw-bold" for="s-search">Search</label>
                 <input type="search" id="s-search" class="form-control form-control-sm" placeholder="Search name, address, contact, phone or email" oninput="applyFilters()">
@@ -59,15 +59,20 @@
             </div>
         </div>
 
+        <div class="client-count-bar no-print" aria-live="polite">
+            <span class="fw-semibold" id="client-count-label">Showing 0 of 0 medical centers</span>
+            <span class="client-count-meta"><span id="client-contact-count">0 contacts</span> · <span id="client-filter-state">No active filter</span></span>
+        </div>
+
         <div class="table-responsive">
-            <table class="table table-hover align-middle">
+            <table class="table table-hover align-middle client-table" id="client-table">
                 <thead class="table-dark">
                     <tr>
                         <th><button type="button" class="client-sort-btn" data-sort-key="name" onclick="setClientSort('name')">Name <span class="client-sort-indicator" data-sort-indicator="name">↕</span></button></th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="address" onclick="setClientSort('address')">Address <span class="client-sort-indicator" data-sort-indicator="address">↕</span></button></th>
-                        <th>Group</th>
+                        <th class="client-col-group"><button type="button" class="client-sort-btn" data-sort-key="group" onclick="setClientSort('group')">Group <span class="client-sort-indicator" data-sort-indicator="group">↕</span></button></th>
                         <th><button type="button" class="client-sort-btn" data-sort-key="contact" onclick="setClientSort('contact')">Main Contact <span class="client-sort-indicator" data-sort-indicator="contact">↕</span></button></th>
-                        <th class="text-center">Equipment</th>
+                        <th class="text-center"><button type="button" class="client-sort-btn justify-content-center" data-sort-key="equipment" onclick="setClientSort('equipment')">Equipment <span class="client-sort-indicator" data-sort-indicator="equipment">↕</span></button></th>
                         <th class="no-print text-end">Actions</th>
                     </tr>
                 </thead>
@@ -77,32 +82,16 @@
 
         <div id="client-mobile-list" class="client-mobile-list no-print"></div>
 
-        <div class="directory-count-footer no-print mt-3 pt-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <div>
-                <div class="small text-muted text-uppercase fw-bold">Directory Count</div>
-                <div class="fw-bold text-dark" id="client-count-label">Showing 0 of 0 medical centers</div>
-            </div>
-            <div class="d-flex flex-wrap gap-2">
-                <span class="count-chip bg-white border text-muted">
-                    <i class="fa-solid fa-address-book me-1 text-success"></i>
-                    <span id="client-contact-count">0 contacts</span>
-                </span>
-                <span class="count-chip bg-white border text-muted">
-                    <i class="fa-solid fa-filter me-1 text-primary"></i>
-                    <span id="client-filter-state">No active filter</span>
-                </span>
-            </div>
-        </div>
     </div>
 </div>
 
 <!-- VIEW MODAL -->
-<div class="modal fade no-print" id="viewModal" tabindex="-1">
+<div class="modal fade no-print" id="viewModal" tabindex="-1" aria-labelledby="view-client-name">
     <div class="modal-dialog">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-dark text-white">
                 <h2 class="modal-title h5 mb-0" id="view-client-name">Medical Center Details</h2>
-                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0" id="view-details-content"></div>
         </div>
@@ -160,7 +149,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                {% if can_admin_clients %}
                 <button class="btn btn-outline-success btn-sm" onclick="exportClientExcel()">Export Excel</button>
                 {% endif %}
                 {% if can_merge_clients %}
@@ -313,7 +302,7 @@ let clientModalInstance, viewModalInstance, clientsData = [];
 let clientProductsPromise = null;
 let clientSortState = { key: '', direction: 'asc' };
 const CLIENT_SORT_STORAGE_KEY = 'medicalServiceClientSortV1';
-const CLIENT_SORT_KEYS = ['name', 'address', 'contact'];
+const CLIENT_SORT_KEYS = ['name', 'address', 'group', 'contact', 'equipment'];
 
 
 function hideDuplicateWarning(){
@@ -381,7 +370,7 @@ let contactCount = 0;
 
 const authRoleVal = "{{ current_user.role }}";
 
-const isAdminUser = ['superadmin', 'regional_admin'].includes(authRoleVal);
+const isAdminUser = {{ 'true' if can_admin_clients else 'false' }};
 const canEditProducts = {{ 'true' if can_edit_products else 'false' }};
 const canMergeClients = {{ 'true' if can_merge_clients else 'false' }};
 let clientMergeState = { sourceId: null };
@@ -549,7 +538,9 @@ function toggleSection(id, el){
     section.style.display = isHidden ? 'block' : 'none';
 
     if(el){
-        el.innerHTML = (isHidden ? '▼ ' : '▶ ') + el.innerText.replace('▶','').replace('▼','').trim();
+        el.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+        const caret = el.querySelector('.client-section-caret');
+        if(caret) caret.textContent = isHidden ? '▼' : '▶';
     }
 }
 
@@ -855,7 +846,7 @@ async function loadClients(options = {}) {
 function renderClientLoadError(){
     const message = 'Could not load medical centers. Refresh to try again.';
     const body = document.getElementById('client-table-body');
-    if(body) body.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${message}</td></tr>`;
+    if(body) body.innerHTML = `<tr><td colspan="${getClientVisibleColumnCount()}" class="text-center text-danger py-4">${message}</td></tr>`;
     const mobile = document.getElementById('client-mobile-list');
     if(mobile) mobile.innerHTML = `<div class="client-mobile-empty"><i class="fa-solid fa-triangle-exclamation"></i><span>${message}</span></div>`;
 }
@@ -897,9 +888,9 @@ function getClientSortValue(client, key){
     const values = {
         name: client.name || '',
         address: client.address || '',
+        group: client.group_name || '',
         contact: contact.name || '',
-        designation: contact.designation || '',
-        phone: contact.phone || ''
+        equipment: String(Number(client.product_count || 0))
     };
     return values[key] || '';
 }
@@ -956,7 +947,8 @@ function updateClientSortIndicators(){
         const key = btn.dataset.sortKey || '';
         const active = key && key === clientSortState.key;
         btn.classList.toggle('active', active);
-        btn.setAttribute('aria-sort', active ? (clientSortState.direction === 'desc' ? 'descending' : 'ascending') : 'none');
+        btn.removeAttribute('aria-sort');
+        btn.closest('th')?.setAttribute('aria-sort', active ? (clientSortState.direction === 'desc' ? 'descending' : 'ascending') : 'none');
     });
 
     document.querySelectorAll('[data-sort-indicator]').forEach(indicator => {
@@ -967,7 +959,8 @@ function updateClientSortIndicators(){
             return;
         }
         const descending = clientSortState.direction === 'desc';
-        indicator.textContent = descending ? 'Z-A' : 'A-Z';
+        if(key === 'equipment') indicator.textContent = descending ? '9-0' : '0-9';
+        else indicator.textContent = descending ? 'Z-A' : 'A-Z';
         indicator.setAttribute('aria-label', descending ? 'Sorted descending' : 'Sorted ascending');
     });
 }
@@ -1005,17 +998,12 @@ function renderClientMobileCards(data){
     container.innerHTML = data.map(c => {
         const contact = getPrimaryClientContact(c);
         const contactSummary = getClientContactSummary(c);
-        const phoneAction = contact.phone
-            ? `<a class="client-mobile-icon-action" href="tel:${escapeHtml(contact.phone)}" title="Call"><i class="fa-solid fa-phone"></i></a>`
-            : `<button class="client-mobile-icon-action disabled" disabled title="No phone"><i class="fa-solid fa-phone"></i></button>`;
-
-        const emailAction = contact.email
-            ? `<a class="client-mobile-icon-action" href="mailto:${escapeHtml(contact.email)}" title="Email"><i class="fa-solid fa-envelope"></i></a>`
-            : `<button class="client-mobile-icon-action disabled" disabled title="No email"><i class="fa-solid fa-envelope"></i></button>`;
-
-        const mapAction = c.address
-            ? `<a class="client-mobile-icon-action" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}" title="Map"><i class="fa-solid fa-map-location-dot"></i></a>`
-            : `<button class="client-mobile-icon-action disabled" disabled title="No address"><i class="fa-solid fa-map-location-dot"></i></button>`;
+        // Only actions with data are shown; a row of greyed-out icons was mostly noise.
+        const iconActions = [
+            contact.phone ? `<a class="client-mobile-icon-action" href="tel:${escapeHtml(contact.phone)}" aria-label="Call ${escapeHtml(contact.name || c.name)}"><i class="fa-solid fa-phone" aria-hidden="true"></i></a>` : '',
+            contact.email ? `<a class="client-mobile-icon-action" href="mailto:${escapeHtml(contact.email)}" aria-label="Email ${escapeHtml(contact.name || c.name)}"><i class="fa-solid fa-envelope" aria-hidden="true"></i></a>` : '',
+            c.address ? `<a class="client-mobile-icon-action" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}" aria-label="Open ${escapeHtml(c.name)} in Maps"><i class="fa-solid fa-map-location-dot" aria-hidden="true"></i></a>` : ''
+        ].join('');
 
         const adminActions = isAdminUser
             ? `
@@ -1045,7 +1033,7 @@ function renderClientMobileCards(data){
                         ${contact.email ? `<span>${escapeHtml(contact.email)}</span>` : ''}
                         ${contactCount > 1 ? `<span class="client-mobile-contact-more">${escapeHtml(contactSummary)}</span>` : ''}
                     </div>`
-            : `<div class="client-mobile-contact-empty">No contacts saved</div>`;
+            : `<div class="client-mobile-contact-empty">No contact yet</div>`;
         const equipmentCount = Number(c.product_count || 0);
 
         const contactEditAction = (!isAdminUser && canManageClientContacts)
@@ -1059,25 +1047,23 @@ function renderClientMobileCards(data){
             <div class="client-mobile-card">
                 <div class="client-mobile-card-top">
                     <div class="client-mobile-main">
-                        <div class="client-mobile-name" onclick="viewContacts(${c.id})">${escapeHtml(c.name || 'Unnamed medical center')}</div>
+                        <button type="button" class="client-name-link client-mobile-name" onclick="viewContacts(${c.id})">${escapeHtml(c.name || 'Unnamed medical center')}</button>
                         <div class="client-mobile-address">
                             <i class="fa-solid fa-location-dot"></i>
                             <span>${escapeHtml(c.address || 'No address saved')}</span>
                         </div>
+                        ${c.group_name ? `
                         <div class="client-mobile-address">
                             <i class="fa-solid fa-layer-group"></i>
-                            <span>${escapeHtml(c.group_name || 'No group')}</span>
-                        </div>
+                            <span>${escapeHtml(c.group_name)}</span>
+                        </div>` : ''}
+                        ${equipmentCount ? `
                         <div class="client-mobile-address">
                             <i class="fa-solid fa-boxes-stacked"></i>
                             <span>${equipmentCount} equipment</span>
-                        </div>
+                        </div>` : ''}
                     </div>
-                    <div class="client-mobile-icon-actions">
-                        ${phoneAction}
-                        ${emailAction}
-                        ${mapAction}
-                    </div>
+                    ${iconActions ? `<div class="client-mobile-icon-actions">${iconActions}</div>` : ''}
                 </div>
 
                 <div class="client-mobile-contact-box">${contactBox}
@@ -1117,56 +1103,66 @@ function renderTable(data) {
     updateClientCountFooter(data);
     renderClientMobileCards(data);
 
+    // The Group column only shows when a row in view has a group (owner decision 2026-10-15).
+    const showGroup = data.some(c => String(c.group_name || '').trim());
+    document.getElementById('client-table')?.classList.toggle('is-hidden-group', !showGroup);
+
     if(!data.length){
-        body.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No medical centers match your search.</td></tr>';
+        body.innerHTML = `<tr><td colspan="${getClientVisibleColumnCount()}" class="text-center text-muted py-4">No medical centers match your search.</td></tr>`;
         return;
     }
 
     body.innerHTML = data.map(c => {
         const contact = getPrimaryClientContact(c);
-        const hasMore = countContactsForClient(c) > 1;
-        const contactName = hasMore
-            ? `<span class="fw-semibold text-primary text-decoration-underline" style="cursor:pointer" onclick="viewContacts(${c.id})">${escapeHtml(contact.name || '-')} <span class="badge bg-info ms-1" style="font-size:10px">+ More</span></span>`
-            : `<span class="fw-semibold">${escapeHtml(contact.name || '-')}</span>`;
+        const contactTotal = countContactsForClient(c);
+        const contactName = `<span class="fw-semibold">${escapeHtml(contact.name || '-')}</span>`;
+        const moreContacts = contactTotal > 1
+            ? `<button type="button" class="client-name-link client-more-link" onclick="viewContacts(${c.id})" aria-label="View all ${contactTotal} contacts for ${escapeHtml(c.name)}">+${contactTotal - 1} more</button>`
+            : '';
         const contactLines = [
             contact.designation ? `<div class="small text-muted">${escapeHtml(contact.designation)}</div>` : '',
             contact.phone ? `<div class="small"><a href="tel:${escapeHtml(contact.phone)}">${escapeHtml(contact.phone)}</a></div>` : '',
             contact.email ? `<div class="small"><a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a></div>` : ''
         ].join('');
-        const contactDisplay = (contact.name || contactLines) ? `${contactName}${contactLines}` : '-';
+        const contactDisplay = (contact.name || contactLines) ? `${contactName} ${moreContacts}${contactLines}` : '-';
 
         return `
         <tr>
-            <td>
-<span class="fw-semibold text-primary" style="cursor:pointer;" onclick="viewContacts(${c.id})">
-${escapeHtml(c.name)}
-</span>
-</td>
+            <td><button type="button" class="client-name-link" onclick="viewContacts(${c.id})">${escapeHtml(c.name)}</button></td>
             <td><small>${escapeHtml(c.address || '-')}</small></td>
-            <td>${escapeHtml(c.group_name || '-')}</td>
+            <td class="client-col-group">${escapeHtml(c.group_name || '-')}</td>
             <td>${contactDisplay}</td>
             <td class="text-center">${Number(c.product_count || 0)}</td>
             <td class="text-end no-print">
                 <div class="btn-group">
-
                     ${isAdminUser ? `
 <button class="btn btn-sm btn-outline-primary" onclick="openEditModal(${c.id})">Edit</button>
 <button class="btn btn-sm btn-outline-danger" onclick="deleteClient(${c.id})">Delete</button>
 ` : ''}
-
                     ${canManageClientContacts && !isAdminUser ? `
 <button class="btn btn-sm btn-outline-primary" onclick="openEditModal(${c.id})">Edit Contacts</button>
 ` : ''}
-
-                    <button class="btn btn-sm btn-outline-dark" onclick="viewContacts(${c.id})">View</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="viewContacts(${c.id})">View</button>
                 </div>
             </td>
         </tr>`;
     }).join('');
 }
 
+function getClientVisibleColumnCount(){
+    return document.getElementById('client-table')?.classList.contains('is-hidden-group') ? 5 : 6;
+}
 
+function getProductStatusChipClass(status){
+    if(status === 'Under Warranty') return 'client-status-active';
+    if(status === 'Under Contract' || status === 'Expired - Under Contract') return 'client-status-contract';
+    if(status === 'Expired - No Contract') return 'client-status-expired';
+    return 'client-status-na';
+}
 
+function clientSectionToggle(id, label){
+    return `<button type="button" class="client-section-toggle" aria-expanded="true" aria-controls="${id}" onclick="toggleSection('${id}', this)"><span class="client-section-caret" aria-hidden="true">▼</span> ${label}</button>`;
+}
 
 async function viewContacts(id){
     const c = clientsData.find(x => x.id === id);
@@ -1180,51 +1176,18 @@ async function viewContacts(id){
         </div>
         <div class="d-flex gap-2">
             ${isAdminUser ? `<button class="btn btn-sm btn-outline-success" onclick="window.open('/export_client_excel/${c.id}')">Export Excel</button>` : ''}
-            <button class="btn btn-sm btn-outline-dark" onclick="printClientReport()">Print</button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="printClientReport()">Print</button>
         </div>
     </div>
     `;
 
-    // CONTACTS SECTION
-    let hasContacts = false;
-
-    html += `
-    <div class="p-2">
-        <div class="fw-bold text-primary mb-2" style="cursor:pointer" onclick="toggleSection('contacts-sec', this)">
-            ▼ Contacts
-        </div>
-        <div id="contacts-sec">
-    `;
-
-    getClientContacts(c).forEach((contact, index) => {
-        hasContacts = true;
-        const phone = contact.phone ? `<a href="tel:${escapeHtml(contact.phone)}">${escapeHtml(contact.phone)}</a>` : '-';
-        const email = contact.email ? `<a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a>` : '-';
-        html += `
-        <div class="list-group-item p-2">
-            <div class="fw-semibold small mb-1">Contact ${index + 1}</div>
-            <div class="small"><strong>Name:</strong> ${escapeHtml(contact.name || '-')}</div>
-            <div class="small"><strong>Designation:</strong> ${escapeHtml(contact.designation || '-')}</div>
-            <div class="small"><strong>Phone:</strong> ${phone}</div>
-            <div class="small"><strong>Email:</strong> ${email}</div>
-        </div>`;
-    });
-
-    if(!hasContacts){
-        html += `<div class="text-muted text-center p-3">No contacts available</div>`;
-    }
-
-    html += `</div></div>`;
-
-    // PRODUCTS
+    // EQUIPMENT first: it is what an engineer opens this for.
     const products = await getClientProducts();
     const clientProducts = products.filter(p => p.client_id === id);
 
     html += `
-    <div class="p-2 border-top">
-        <div class="fw-bold text-success mb-2" style="cursor:pointer" onclick="toggleSection('products-sec', this)">
-            ▼ Equipment
-        </div>
+    <div class="p-2">
+        ${clientSectionToggle('products-sec', `Equipment (${clientProducts.length})`)}
         <div id="products-sec">
     `;
 
@@ -1233,14 +1196,43 @@ async function viewContacts(id){
     } else {
         clientProducts.forEach(p=>{
             const status = p.computed_status || 'No Expiry Set - No Contract';
-
             html += `
-            <div class="list-group-item p-2" style="cursor:pointer" onclick="openProductModal(${clientJsArg(p.serial_number)})">
-                <div class="fw-bold text-dark">${escapeHtml(p.name || '-')}</div>
-                <div class="small"><strong>Serial Number:</strong> ${escapeHtml(p.serial_number || '-')}</div>
-                <div class="small"><strong>Status:</strong> ${escapeHtml(status)}</div>
-            </div>`;
+            <button type="button" class="client-view-row client-view-product" onclick="openProductModal(${clientJsArg(p.serial_number)})">
+                <span class="client-view-row-main">
+                    <span class="fw-semibold">${escapeHtml(p.name || '-')}</span>
+                    <span class="small text-muted">S/N ${escapeHtml(p.serial_number || '-')}</span>
+                </span>
+                <span class="client-status-chip ${getProductStatusChipClass(status)}">${escapeHtml(status)}</span>
+            </button>`;
         });
+    }
+
+    html += `</div></div>`;
+
+    // CONTACTS
+    const contacts = getClientContacts(c);
+    html += `
+    <div class="p-2 border-top">
+        ${clientSectionToggle('contacts-sec', `Contacts (${contacts.length})`)}
+        <div id="contacts-sec">
+    `;
+
+    contacts.forEach(contact => {
+        const links = [
+            contact.phone ? `<a href="tel:${escapeHtml(contact.phone)}">${escapeHtml(contact.phone)}</a>` : '',
+            contact.email ? `<a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a>` : ''
+        ].filter(Boolean).join('<span class="text-muted" aria-hidden="true"> · </span>');
+        html += `
+        <div class="client-view-row">
+            <span class="client-view-row-main">
+                <span><span class="fw-semibold">${escapeHtml(contact.name || 'No name')}</span>${contact.designation ? ` <span class="small text-muted">${escapeHtml(contact.designation)}</span>` : ''}</span>
+                ${links ? `<span class="small">${links}</span>` : ''}
+            </span>
+        </div>`;
+    });
+
+    if(!contacts.length){
+        html += `<div class="text-muted text-center p-3">No contacts available</div>`;
     }
 
     html += `</div></div>`;
@@ -1248,8 +1240,6 @@ async function viewContacts(id){
     document.getElementById('view-details-content').innerHTML = html;
     viewModalInstance.show();
 }
-
-
 
 
 async function deleteClient(id){
@@ -1294,8 +1284,14 @@ function exportClientExcel(){
 
 
 function printClientReport(){
-    const content = document.getElementById('view-details-content').innerHTML;
+    const copy = document.getElementById('view-details-content').cloneNode(true);
+    copy.querySelectorAll('button:not(.client-section-toggle):not(.client-view-row)').forEach(button => button.remove());
+    const content = copy.innerHTML;
     const win = window.open('');
+    if(!win){
+        clientAlert('Allow pop-ups to print this report.');
+        return;
+    }
     win.document.write(`
         <html>
         <head>
@@ -1319,11 +1315,6 @@ function printClientReport(){
 
 function editProduct(id){
     window.location.href = '/products_page?edit=' + id;
-}
-
-function clientHasDesignationMatch(c, designationFilter){
-    if(!designationFilter) return true;
-    return getClientContacts(c).some(contact => contact.designation.toLowerCase().includes(designationFilter));
 }
 
 function showClientModalAfterOthers(modalId){
@@ -1644,19 +1635,147 @@ function applyFilters(){
         to { opacity: 1; transform: translateY(0); }
     }
 
-    .directory-count-footer {
+    .client-count-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.25rem 1rem;
+        margin-bottom: 0.75rem;
         font-size: 0.88rem;
+        color: var(--app-text);
     }
 
-    .count-chip {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: 6px 10px;
-        font-size: 0.78rem;
-        font-weight: 700;
+    .client-count-meta {
+        color: var(--app-muted);
+        font-size: 0.82rem;
+    }
+
+    /* Name, "+N more" and popup rows are real buttons styled as links. */
+    .client-name-link {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        color: var(--app-primary-text);
+        font: inherit;
+        font-weight: 600;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .client-name-link:hover {
+        text-decoration: underline;
+    }
+
+    .client-name-link:focus-visible,
+    .client-section-toggle:focus-visible,
+    .client-view-product:focus-visible {
+        outline: 2px solid var(--app-primary);
+        outline-offset: 2px;
+        border-radius: 4px;
+    }
+
+    .client-more-link {
+        font-size: 0.8rem;
         white-space: nowrap;
     }
+
+    .client-table.is-hidden-group .client-col-group {
+        display: none;
+    }
+
+    /* Header stays in view while scrolling 147 rows; the table never overflows sideways here
+       (it switches to cards below 1200px), so the wrapper does not need to clip. */
+    .client-page-card .table-responsive {
+        overflow: visible;
+    }
+
+    .client-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    :root[data-app-theme="dark"] #client-table-body .btn-outline-primary {
+        --bs-btn-color: var(--app-primary-text);
+        --bs-btn-border-color: var(--app-primary-text);
+    }
+
+    :root[data-app-theme="dark"] #client-table-body .btn-outline-secondary {
+        --bs-btn-color: var(--app-muted);
+        --bs-btn-border-color: var(--app-muted);
+    }
+
+    :root[data-app-theme="dark"] #client-table-body .btn-outline-danger {
+        --bs-btn-color: #f1aeb5;
+        --bs-btn-border-color: #f1aeb5;
+    }
+
+    /* View popup */
+    .client-section-toggle {
+        border: 0;
+        background: transparent;
+        padding: 0.25rem 0;
+        margin-bottom: 0.25rem;
+        color: var(--app-text);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .client-section-caret {
+        display: inline-block;
+        width: 1rem;
+        color: var(--app-muted);
+        font-size: 0.75rem;
+    }
+
+    .client-view-row {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.55rem 0.5rem;
+        border: 0;
+        border-top: 1px solid var(--app-border);
+        background: transparent;
+        color: var(--app-text);
+        font: inherit;
+        text-align: left;
+    }
+
+    .client-view-product {
+        cursor: pointer;
+    }
+
+    .client-view-product:hover {
+        background: var(--app-primary-soft);
+    }
+
+    .client-view-row-main {
+        display: grid;
+        gap: 0.1rem;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    /* Same pairs as Products' warranty badges; each keeps its own background in every theme. */
+    .client-status-chip {
+        flex-shrink: 0;
+        max-width: 11rem;
+        border-radius: 999px;
+        padding: 0.25rem 0.6rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1.25;
+        text-align: center;
+    }
+
+    .client-status-active { background: #dcfce7; color: #166534; }
+    .client-status-expired { background: #fee2e2; color: #991b1b; }
+    .client-status-contract { background: #fef3c7; color: #854d0e; }
+    .client-status-na { background: #f1f5f9; color: #334155; }
 
     .client-sort-btn {
         width: 100%;
@@ -1664,28 +1783,25 @@ function applyFilters(){
         background: transparent;
         color: inherit;
         font: inherit;
-        font-weight: 800;
+        font-weight: 600;
         text-align: left;
+        white-space: nowrap;
         padding: 0;
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
     }
 
+    /* The header is dark in every theme, so the accent is lifted toward white to stay readable on it. */
     .client-sort-btn:hover,
-    .client-sort-btn:focus {
-        color: #bbf7d0;
-        outline: none;
+    .client-sort-btn.active {
+        color: color-mix(in srgb, var(--app-primary) 35%, #fff);
     }
 
     .client-sort-btn:focus-visible {
-        outline: 2px solid rgba(187, 247, 208, 0.85);
+        outline: 2px solid currentColor;
         outline-offset: 3px;
         border-radius: 4px;
-    }
-
-    .client-sort-btn.active {
-        color: #86efac;
     }
 
     .client-sort-indicator {
@@ -1695,7 +1811,7 @@ function applyFilters(){
         background: rgba(255, 255, 255, 0.12);
         color: inherit;
         font-size: 0.64rem;
-        font-weight: 900;
+        font-weight: 600;
         line-height: 1.25;
         text-align: center;
         white-space: nowrap;
@@ -1723,7 +1839,7 @@ function applyFilters(){
     }
 
     @media print {
-        .directory-count-footer,
+        .client-count-bar,
         .client-mobile-list {
             display: none !important;
         }
@@ -1738,9 +1854,10 @@ function applyFilters(){
     }
 
     .client-mobile-card {
-        border: 1px solid #e2e8f0;
-        background: #fff;
-        border-radius: 1.05rem;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface);
+        color: var(--app-text);
+        border-radius: 16px;
         padding: 0.95rem;
         margin-bottom: 0.75rem;
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
@@ -1759,11 +1876,10 @@ function applyFilters(){
     }
 
     .client-mobile-name {
-        color: #0f172a;
+        display: block;
+        min-height: 44px;
         font-size: 0.98rem;
-        font-weight: 900;
         line-height: 1.2;
-        cursor: pointer;
     }
 
     .client-mobile-address {
@@ -1771,9 +1887,9 @@ function applyFilters(){
         display: grid;
         grid-template-columns: 1rem 1fr;
         gap: 0.45rem;
-        color: #64748b;
+        color: var(--app-muted);
         font-size: 0.75rem;
-        font-weight: 700;
+        font-weight: 600;
         line-height: 1.25;
     }
 
@@ -1784,8 +1900,8 @@ function applyFilters(){
     }
 
     .client-mobile-icon-action {
-        width: 2.15rem;
-        height: 2.15rem;
+        width: 44px;
+        height: 44px;
         border-radius: 999px;
         border: 1px solid var(--app-primary-soft-border);
         background: var(--app-primary-soft);
@@ -1796,36 +1912,30 @@ function applyFilters(){
         text-decoration: none;
     }
 
-    .client-mobile-icon-action.disabled {
-        background: #f8fafc;
-        color: #94a3b8;
-        border-color: #e2e8f0;
-    }
-
     .client-mobile-contact-box {
         margin-top: 0.85rem;
         padding: 0.75rem;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 0.9rem;
+        background: var(--app-surface-raised);
+        border: 1px solid var(--app-border);
+        border-radius: 10px;
     }
 
     .client-mobile-contact-title {
         display: flex;
         align-items: center;
         gap: 0.45rem;
-        color: #0f172a;
+        color: var(--app-text);
         font-size: 0.82rem;
-        font-weight: 900;
+        font-weight: 600;
     }
 
     .client-mobile-contact-lines {
         display: grid;
         gap: 0.25rem;
         margin-top: 0.45rem;
-        color: #64748b;
-        font-size: 0.74rem;
-        font-weight: 700;
+        color: var(--app-muted);
+        font-size: 0.78rem;
+        font-weight: 500;
     }
 
     #contacts-container input.cd {
@@ -1837,9 +1947,9 @@ function applyFilters(){
     }
 
     .client-mobile-contact-empty {
-        color: #64748b;
+        color: var(--app-muted);
         font-size: 0.78rem;
-        font-weight: 700;
+        font-weight: 500;
     }
 
     .client-mobile-contact-more {
@@ -1855,10 +1965,10 @@ function applyFilters(){
 
     .client-mobile-btn {
         border: none;
-        min-height: 2.45rem;
-        border-radius: 0.85rem;
-        font-size: 0.78rem;
-        font-weight: 900;
+        min-height: 44px;
+        border-radius: 6px;
+        font-size: 0.82rem;
+        font-weight: 600;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -1876,10 +1986,15 @@ function applyFilters(){
         border: 1px solid #fecaca !important;
     }
 
+    :root[data-app-theme="dark"] .client-mobile-delete {
+        color: #f1aeb5;
+        border-color: #f1aeb5 !important;
+    }
+
     .client-mobile-view {
-        background: #fff;
-        color: #0f172a;
-        border: 1px solid #cbd5e1 !important;
+        background: var(--app-surface);
+        color: var(--app-text);
+        border: 1px solid var(--app-border) !important;
     }
 
     #client-table-body td:first-child,
@@ -1926,13 +2041,13 @@ function applyFilters(){
     }
 
     .client-mobile-empty {
-        border: 1px dashed #cbd5e1;
-        background: #f8fafc;
-        color: #64748b;
-        border-radius: 1rem;
+        border: 1px dashed var(--app-border);
+        background: var(--app-surface-raised);
+        color: var(--app-muted);
+        border-radius: 16px;
         padding: 1.3rem;
         text-align: center;
-        font-weight: 800;
+        font-weight: 600;
         display: grid;
         gap: 0.4rem;
     }
@@ -2028,9 +2143,6 @@ function applyFilters(){
             font-weight: 700;
         }
 
-        .directory-count-footer {
-            align-items: flex-start !important;
-        }
 
         #clientModal .modal-dialog,
         #viewModal .modal-dialog {

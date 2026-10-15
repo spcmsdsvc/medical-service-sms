@@ -1,6 +1,57 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-15-client-list",
+      "release_date": "2026-10-15",
+      "title": "Client List improvements",
+      "summary": "The Client List table is easier to read and use: sortable Group and Equipment, a header that stays in view, working dark mode on phones, and a fixed Excel download.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-15-clients-excel",
+          "category": "Clients",
+          "description": "The per-client Excel download now works for every medical center, including names with commas or ñ, shows blank instead of \"None\" for missing warranty dates, and includes the Group. Admin buttons only show for accounts that can use them.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-15-clients-keyboard",
+          "category": "Clients",
+          "description": "On the Client List, the medical center name and \"+N more\" are proper buttons you can reach with the keyboard, and the row buttons are readable in the dark themes.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-15-clients-phone",
+          "category": "Clients",
+          "description": "Client cards on a phone follow your theme (dark mode works), and the call, email and map buttons are bigger and only appear when there is something to call, email or map.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-15-clients-table",
+          "category": "Clients",
+          "description": "The Client List table can be sorted by Group and Equipment, keeps its header in view while you scroll, shows the count above the list, hides the Group column when no client has a group, and the View window lists equipment first with its warranty status.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-15-liquidation-fixes",
       "release_date": "2026-10-15",
       "title": "Liquidation fixes",
