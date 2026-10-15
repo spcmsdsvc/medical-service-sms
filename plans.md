@@ -37,6 +37,267 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Travel and Cash Advance Liquidation — scan fixes (4 batches)
+
+**Status:** Executed, not committed (2026-10-15; recorded on the owner's "Write batches 1-4 to plans.md, then stop and
+wait.", executed on "Execute all four liquidation batches."). All four batches in the working tree under service worker
+v324; awaiting "commit and push".
+
+### Amendments during execution
+
+- **Step 16:** done in the two edit gates instead of each route. `can_edit_travel_liquidation` lost its admin override
+  and `can_edit_cash_advance_liquidation` now uses `cash_advance_liquidation_get_for_requester_page`. Every edit route
+  goes through them, so a non-owner (admins included) gets 403 with the gate's message, not 404.
+- **Step 19:** the dock note always shows the new sentence; the server's `branch_resolution_error` still shows in the
+  Details note and the readiness list.
+- **Step 20:** no helper became unused (`get_or_create_travel_liquidation_draft` and
+  `get_or_create_cash_advance_liquidation_draft` still have callers), so only route functions and decorators were removed.
+- **Pinned test:** `tests/test_accounting_branch_codes.py` asserted "Derived Branch"; it now asserts the new
+  `<div class="liq-label">Branch</div>`.
+- **Risk check (DB copy):** stored totals match a fresh recalculation for every locked liquidation except travel
+  liquidation 4 (Completed): stored cash advance 4,500.00 / due to employee 500.00; recalculated from today's travel
+  request 8,500.00 / due to Shimadzu 3,500.00. Step 7 keeps the stored values. Owner to decide which is right.
+- **Not exercised in the browser:** the USD rate queue (no USD draft in the data); covered by the source test.
+
+## Context
+
+The owner asked for `/page-scan` and `/page-design-scan` on both liquidation pages (2026-10-15). Both pages are
+`templates/travel_liquidation.html` and `templates/cash_advance_liquidation.html`, which extend the shared
+`templates/_liquidation_base.html` (all markup, inline CSS and JS live there; the two pages only fill blocks and set
+`LIQ.hooks`). The server routes are near-copies in `app.py`. The scan found one high data-integrity bug (opening or
+previewing a locked liquidation rewrites it), unsafe file deletion in travel Clear Form, server-side validation gaps, a
+1.63:1 Clear Form button, dark-mode contrast failures, small phone taps, and a header that does not follow the
+request-page Page Header. Impeccable critique 26/40, snapshot
+`.impeccable/critique/2026-10-15T02-09-53Z__templates-liquidation-base-html.md`. This is the closed list (critique-loop
+rule): nothing is added during execution.
+
+## Decisions taken (owner, 2026-10-15)
+
+- All four batches recorded, in this order, one commit each.
+- The defaults below were chosen by the agent while writing the plan, and the owner approved the plan as a whole. Change any
+  of them before execution if needed:
+  - Travel Clear Form keeps the current status (Returned stays Returned, remarks kept), like cash advance Clear.
+  - Row limits: amount ≤ 10,000,000 per row; expense date from 2000-01-01 to Manila today + 366 days; remarks ≤ 500
+    characters. A date that is sent but cannot be read is an error, not silently replaced.
+  - Submit is refused on the server when the form would carry no signature.
+  - Clear Form becomes `btn-outline-danger` (as Create TSR's Clear); Submit becomes the accent primary.
+
+## Investigation
+
+Verified in code and, where noted, with Flask's test client on a copy of `scheduler.db` signed in as the records' owner
+(copy deleted afterwards). No live browser pass: changing the owner's login on the copy was blocked by the permission
+classifier, so the execution browser check must use a test account given ownership in the copy (see Verification).
+
+- **Locked records are rewritten on view (High).** `get_travel_liquidation` (`app.py:49651`) and
+  `get_cash_advance_liquidation` (`app.py:70630`) call `*_recalculate_totals` and `db.session.commit()` for every status.
+  The recalculators (`travel_liquidation_recalculate_totals` `app.py:48460`, `cash_advance_liquidation_recalculate_totals`
+  `app.py:70190`) always set `updated_at`, and travel rebuilds `cash_advance_amount` from
+  `build_travel_liquidation_reference_summary(request_rec)` and reapplies the currency rate. Test client: GET on TL 7
+  (Submitted) moved `updated_at` from 2026-08-24 to today; GET on CAL 2 (Approved) from 2026-06-28 to today. The same
+  recalculators run from Preview/Download (`app.py:50060`, `50102`, `72907`, `72930`), approval detail and approve
+  routes, packages, RFP and Excel payload builders (call sites `app.py:46334 46808 48810 50563 50821 71697 71780 72209
+  72533 73120 73689 73738`). Editable statuses: `TRAVEL_LIQUIDATION_EDITABLE_STATUSES = {'draft','returned'}`
+  (`app.py:50973`), `CASH_ADVANCE_LIQUIDATION_EDITABLE_STATUSES = {'draft','returned','rejected'}` (`app.py:70052`).
+  Submit recalculates while the status is still editable (`app.py:42122`, `71203`), so totals are fixed at submit.
+- **Travel Clear deletes files before commit.** `clear_travel_liquidation` (`app.py:41951`) calls `managed_storage_delete`
+  inside the receipt loop (`:41979`), before `db.session.commit()`; a failed commit leaves rows pointing at deleted
+  files. `clear_cash_advance_liquidation` (`app.py:71047`) deletes after commit and returns `cleanup_warning`.
+- **Travel Clear resets Returned to Draft** (`:41994-42002`: status, accounting_status, `approval_remarks = None`, approval
+  fields, signature snapshot) and audits `status_from='Draft'` hard-coded. Cash advance Clear keeps the status.
+- **Signature only checked in the browser.** `submitLiquidation` calls `/get_my_signature` (`_liquidation_base.html:535`);
+  `submit_travel_liquidation` (`app.py:42069`) and `submit_cash_advance_liquidation` (`app.py:71164`) do not check.
+  `get_liquidation_submitter_signature_data(liquidation)` (`app.py:48771`) is what the form stamps (engineer signature,
+  else the requester's user snapshot).
+- **Row validation.** `travel_liquidation_parse_row_payload` (`app.py:50995`, also used by
+  `cash_advance_liquidation_parse_row_payload` `app.py:70253`) uses `parse_date`, which returns `None` on bad input, and
+  callers then keep the old date or a default. No amount ceiling, no remarks length. Test client: amount 1e13, date
+  1900-01-01 and 5,000-char remarks saved; date `2026-13-45` saved as 2026-06-19. Negative/zero amounts: travel 400,
+  cash advance 409 (`ValueError` → 409 at `app.py:70716`, `70777`). The existing test
+  `test_zero_amount_rows_are_rejected` calls both parsers directly.
+- **Rate save dropped while busy.** `usdToPhpRate` change handler (`travel_liquidation.html:85`) uses `runBusy('', '', …)`,
+  which returns immediately when `liqBusy` is set. The rate-save route's error message says "before previewing or
+  submitting" (`travel_liquidation_validate_usd_rate`, `app.py:48559`).
+- **Delete All on a missing id** returns 403 "draft not found" (`app.py:51600`, test client confirmed).
+- **Admin edit gap (travel):** `can_edit_travel_liquidation` (`app.py:50976`) lets admins pass, so save/delete row and
+  delete receipt work on other users' liquidations, while add row, upload, clear and submit use
+  `get_travel_liquidation_for_requester_page` and refuse. Cash advance `can_current_user_manage_cash_advance_liquidation`
+  (`app.py:70122`) also lets admins pass.
+- **Front-end:** load error writes `colspan="6"` in a 5-column table and leaves the subtitle "Loading…" and chip "Loading"
+  (`_liquidation_base.html:414-422`); new-row date default `new Date().toISOString().slice(0,10)` is UTC (`:433`), the
+  previous day before 08:00 Manila. `renderReadiness` runs and `#liqReadyBtn` stays visible on locked records; only
+  `.liq-dock-actions` is hidden (`:291`).
+- **Contrast (computed):** Clear Form `btn-outline-warning` (`:167`) #ffc107 on the white dock 1.63:1. Balance amounts
+  `.is-shimadzu .amount` #c2410c and `.is-employee .amount` #15803d (`:28-29`), readiness `.blocking` #c2410c (`:57`):
+  3.67 / 3.79:1 on AMOLED surface #101010, 2.77 / 2.86:1 on Graphite #292a2d (light 5.18 / 5.02, passes).
+- **Phone taps:** the only 44px rule is `.liq-page .btn{min-height:44px}` (`:76`); the dock (`:159`), readiness panel
+  (`:172`) and toasts sit outside `.liq-page`. From CSS: dock buttons ~38px, `.liq-ready-btn` ~34px, `.liq-chip-delete`
+  ~23px, toast close ~20px.
+- **Header:** `.liq-hero` gradient banner with hardcoded fallbacks `#0f5132` / `#198754` (`:7`), `.liq-page`
+  max-width 1400px (`:6`). DESIGN.md "Page Header": request pages use `.request-page` (1220px) + `.dash-page-header` with
+  the status chip beside the title; Cash Advance links `app-dashboard.css?v=17` (`templates/cash_advance.html:4`, wrapper
+  `:499`). Submit is `btn-warning` (`:168`); DESIGN.md primary = accent. Add Expense modal header not green (DESIGN.md Add
+  exception).
+- **Unused routes** (no caller in `templates/`, `static/`, `tests/`): `/create_travel_liquidation_draft` +
+  `/create_travel_request_liquidation_draft` (`app.py:49557-49558`, the travel draft is made by
+  `mark_travel_completed_ready_for_liquidation`), `/get_travel_liquidation_draft` + `/get_travel_request_liquidation_draft`
+  (`:49612-49613`), `/get_cash_advance_liquidation_draft` (`:70595`), alias `/get_my_cash_advance_liquidation` (`:70631`),
+  aliases `/mark_travel_request_ready_for_liquidation` + `/travel_request_ready_for_liquidation` (`:49405-49406`). Prefix
+  entries `'/get_my_cash_advance_liquidation'` (`:282`) and `'/travel_request_ready_for_liquidation'` (`:326`) in the
+  workflow route list. `/open_travel_liquidation_excel` IS used by `approvals.html` and stays.
+- **Tests pinning current code:** `tests/test_liquidation_pages.py` (source assertions; `test_auto_rows…` needs
+  `travel_liquidation_seed_per_diem_airfare_rows(liquidation` inside clear; `test_reimbursement_parity_features` needs
+  `/get_my_signature`, `liq-dock`, etc.; `test_old_behaviour…` forbids `#064e3b`). No test pins `liq-hero`,
+  `btn-warning` or the removed routes. Service worker is at `v323-tsr-design-scan` (`app.py:27943`).
+- **Not true / not a finding:** CSRF exemption on the routes is app-wide (88 routes) and mitigated by
+  `SESSION_COOKIE_SAMESITE='Lax'` (`app.py:173`); out of scope. "Rejected" cannot be reached today (both reject routes set
+  Returned), so the editable-set difference is legacy only. The status chip passes in every theme (it keeps its own white
+  background). Excel download and preview both return the right content type (test client).
+
+## Execution steps
+
+### Batch 1 — small UI fixes (`templates/_liquidation_base.html` only)
+
+1. **Clear Form** (`#clearDraftTopBtn`, `:167`): `btn-outline-warning` → `btn-outline-danger`. Add a dark rule
+   `:root[data-app-theme="dark"] .liq-dock .btn-outline-danger` using `#f1aeb5` text and border through Bootstrap's
+   `--bs-btn-*` variables (Create TSR precedent). Done: ≥4.5:1 in light, Graphite, AMOLED.
+2. **Dark amounts and Required text:** dark rules for `.liq-summary .is-shimadzu .amount`, `.liq-summary .is-employee
+   .amount` and `.liq-readiness .blocking` with lighter tints (start from `#fdba74` and `#86efac`; measure). Light colours
+   unchanged. Done: ≥4.5:1 on #101010 and #292a2d.
+3. **Phone taps** (inside the existing `@media(max-width:768px)`): `.liq-dock .btn`, `.liq-ready-btn`,
+   `.liq-readiness .btn` `min-height:44px`; `.liq-chip-delete` and `.liq-toast button` `min-width:44px;min-height:44px`.
+   Done: every control in the dock, readiness panel, receipt list and toasts ≥44px at 375px.
+4. **Readiness on locked records** (`updateWorkflowButtons`, `:286`): hide `#liqReadyBtn` and call
+   `toggleLiquidationReadiness(false)` when `!isEditable()`. Done: Submitted/Approved/Completed show no readiness pill.
+5. **Load error** (`loadLiquidation`, `:414`): `colspan="5"`; set `#liqSubtitle` to the error text and `#liqStatus` to
+   "Unavailable" (class `is-returned`). Done: a 404 shows no "Loading" anywhere.
+6. **Manila date** (`openRowModal`, `:433`): default with
+   `new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date())`. Done: before 08:00 Manila the
+   default is today's Manila date.
+
+### Batch 2 — data safety on the server
+
+7. **Stop rewriting locked records:** at the top of `travel_liquidation_recalculate_totals` and
+   `cash_advance_liquidation_recalculate_totals`, return the liquidation unchanged when its status (lower-cased) is not in
+   the module's editable set. One change covers every caller. Done: GET, Preview, Download and approval detail of a
+   Submitted/Approved/Completed record leave `updated_at` and all totals unchanged.
+8. **Travel Clear file order** (`clear_travel_liquidation`): collect stored filenames, delete DB rows, commit, then delete
+   files and return `cleanup_warning` (same shape as `clear_cash_advance_liquidation`). Keep the
+   `travel_liquidation_seed_per_diem_airfare_rows(liquidation` call (pinned test).
+9. **Travel Clear keeps status:** remove the status/accounting_status/approval field resets and
+   `clear_approval_signature_snapshot` from Clear; audit `status_from`/`status_to` = the real current status. Response
+   message unchanged. Done: clearing a Returned liquidation keeps Returned and its remarks banner.
+10. **Rate save never dropped** (`travel_liquidation.html:85`): replace `runBusy('', '', …)` with a page-level promise chain
+    (`rateSaveQueue = rateSaveQueue.then(save)`), errors shown with `liqToast(…, 'error')`; it does not touch `liqBusy`.
+    Done: changing the rate during a row save still saves the new rate.
+11. **Rate message:** the rate-save route gives its own message ("Enter a USD to PHP rate above 0 for the PHP
+    receipts.") instead of the preview/submit wording. `travel_liquidation_validate_usd_rate` unchanged for its other
+    callers.
+
+### Batch 3 — server validation (both pages)
+
+12. **Row limits** in `travel_liquidation_parse_row_payload` (shared by cash advance): when a date value is sent and
+    `parse_date` returns `None`, raise `ValueError('Enter a valid expense date.')`; dates outside 2000-01-01 … Manila today
+    + 366 days raise `ValueError`; `source_amount > 10_000_000` raises `ValueError`; remarks over 500 characters raise
+    `ValueError`. Front-end: `maxlength="500"` on `#rowRemarks`, `maxlength="255"` on `#rowParticulars`,
+    `max="10000000"` on `#rowAmount`.
+13. **Same error codes:** cash advance add/save row `ValueError` → 400 (was 409), matching travel.
+14. **Signature on submit:** in both submit routes, before any change, return 400 "Add your signature in Settings before
+    submitting." when `get_liquidation_submitter_signature_data(liquidation)` is empty. The browser check stays.
+15. **Delete All missing id** (`delete_all_travel_liquidation_receipts`): 404 "Travel Liquidation draft not found or not
+    accessible." when the lookup returns `None`, before `can_edit_travel_liquidation`.
+16. **Admin edit gap:** `save_travel_liquidation_row`, `delete_travel_liquidation_row`, `delete_travel_liquidation_receipt`
+    and the three cash advance equivalents also require `get_*_for_requester_page`-level ownership (the same lookup add
+    row uses), so admins get the same 404 on someone else's draft for every edit action. Approval routes are not touched.
+
+### Batch 4 — header, buttons, cleanup
+
+17. **Page Header:** in `_liquidation_base.html` link `app-dashboard.css?v=17`, add `request-page` to `.liq-page` (drop
+    its 1400px max-width; dock inner width → 1220px), and replace `.liq-hero` with `.dash-page-header`: `.dash-page-h1`
+    `#liqTitle` with `#liqStatus` beside it, `.dash-page-sub` `#liqSubtitle`, and outline header buttons Preview Form
+    (`#previewTemplateTopBtn`), Download Form (`#downloadFormBtn`), Back to My Requests under the subtitle. Status chip
+    colours become semantic pairs on their own background that pass 4.5:1 in every theme (measure). Remove `.liq-hero`,
+    `.liq-eyebrow` and the `#0f5132`/`#198754` fallbacks. Keep every id.
+18. **Submit** (`#submitLiquidationTopBtn`): `btn-warning` → `btn-primary` (accent). **Add Expense modal:** when adding,
+    the header gets the success-green Add treatment (DESIGN.md exception); Edit keeps the plain header (toggle a class in
+    `openRowModal`).
+19. **Wording:** "Derived Branch" → "Branch"; helper "From the request creator's Engineer profile." → "From your
+    Engineer profile."; the dock note `updateWorkflowButtons` branch message → "Your Engineer profile has no branch.
+    Ask an admin to set Manila/Main, Cebu or Davao." (server `branch_resolution_error` text unchanged).
+20. **Delete unused routes** listed in Investigation, plus the two prefix entries at `app.py:282` and `:326`. Keep
+    `get_or_create_travel_liquidation_draft` and `get_or_create_cash_advance_liquidation_draft` if any caller remains
+    (grep before deleting each function; delete only the route function, never a helper still called).
+21. Service worker `CACHE_VERSION` bump per published commit.
+
+## Deliberately excluded
+
+- **CSRF exemption** on liquidation routes: app-wide pattern, mitigated by SameSite=Lax; a separate decision.
+- **Approval Center liquidation views** (`approvals.html`): not scanned; only touched indirectly by step 7.
+- **Detector off-ramp font sizes and undocumented semantic tints**: covered where a step changes them; the rest are
+  status tints allowed by the Semantic Status Rule.
+- **Readiness panel Esc/focus** (Low): not in the batches; left for a later accessibility pass.
+- **Duplicate recalculation in travel Download → Preview**: harmless once step 7 lands for locked records; drafts
+  recalc twice cheaply.
+- **Misplaced docstring** in `travel_liquidation_page` (`app.py:47360`): cosmetic.
+- **Rejected in the cash advance editable set**: unreachable, left as is.
+
+## Verification
+
+- New `tests/test_liquidation_scan_fixes.py`:
+  - Batch 1 (source): Clear is `btn-outline-danger` with the dark rule; dark rules for the two amounts and `.blocking`;
+    the 44px phone rules cover `.liq-dock .btn`, `.liq-ready-btn`, `.liq-chip-delete`, `.liq-toast button`;
+    `updateWorkflowButtons` hides `liqReadyBtn`; `colspan="6"` absent; `Asia/Manila` in `openRowModal`.
+  - Batch 2 (test client on a temp DB or in-memory app context, following existing server-test style): GET of a Submitted
+    record leaves `updated_at` unchanged; travel Clear calls storage delete only after commit (patch
+    `managed_storage_delete` and `db.session.commit` order) and a Returned record stays Returned; source check for the rate
+    queue.
+  - Batch 3: parser raises for bad date, 1900 date, amount 10,000,001 and 501-char remarks; cash advance add row
+    `ValueError` → 400; submit without signature → 400; Delete All on a missing id → 404; admin save-row on another
+    user's draft → 404.
+  - Batch 4 (source): `request-page` and `dash-page-header` present, `liq-hero`, `#0f5132`, `#198754`, `btn-warning`
+    absent; removed routes absent from `@app.route` lines; kept ids present.
+  - Positive control: run each test against `git show HEAD:<file>` in-process (never `git stash`) and see it fail.
+- Update `tests/test_liquidation_pages.py` only where a batch changes a pinned string.
+- Focused: `test_liquidation_pages`, `test_my_requests_actions`, `test_my_requests_page`, `test_approval_center_wording`,
+  `test_approval_notifications`, `test_cash_advance_server`, `test_reimbursement_liquidation_row_deletion`,
+  `test_shared_pdf_upload_conversion`, `test_accounting_attachment_management`, `test_changelog_coverage`, plus the new
+  file. Batch 2 (shared recalculators used by approval and accounting flows) and batch 3 (shared parser, permissions):
+  run the full suite once before publishing (AGENTS.md "Keep It Simple").
+- Browser (DB copy; a temporary engineer test account added to the copy and given ownership of one travel and one cash
+  advance draft in the copy only; cleanup afterwards): both pages at 1366×768 and 375×812, light, Graphite, AMOLED.
+  Add/Edit/Delete row, upload and delete receipt, Delete All, Clear Form (travel: Per Diem/Airfare reseeded, status kept),
+  USD rate change during a save, Submit (and refused without a signature), Preview Form, Download Form. JS-measured
+  contrast for Clear, the amounts and Required text; every control ≥44px at 375px; scrollWidth 375; locked record shows no
+  readiness pill and its `updated_at` unchanged after reload; console clean. One screenshot per page as proof.
+
+## After implementation (per batch)
+
+1. Self-review against "Protect Existing Functions": `openRowModal`, `saveRow`, `deleteRow`, `uploadReceipts`,
+   `deleteReceipt`, `deleteAllLiquidationReceipts`, `clearLiquidationForm`, `submitLiquidation`,
+   `downloadLiquidationForm`, `toggleLiquidationReadiness`, `renderLiquidation`, `loadLiquidation`, `liqUrl`, `liqFetch`
+   and every `LIQ.hooks` entry still defined; every `onclick` target exists; no id removed.
+2. Prove the new tests fail without the fix.
+3. Focused tests (full suite for batches 2 and 3); browser steps for that batch.
+4. Service worker `CACHE_VERSION` bump (one per published commit; previous kept as a history comment).
+5. `static/changelog/releases.json`: one engineer release "Liquidation fixes" with an item per batch.
+6. `changes.md` bullets; update this Status line (`In progress`, then `Executed` with the commit hash); amend this plan if
+   execution differs.
+7. Commit only that batch's files plus `plans.md`, `changes.md`, `releases.json`. Never `scheduler.db`, `output/`, `tmp/`,
+   handoffs, `.impeccable/` or `.claude/`. Publish only on the owner's "commit and push".
+
+## Risks
+
+- **Step 7 freezes totals at submit:** any locked record whose stored totals are wrong (legacy rows) stays wrong instead of
+  self-correcting on view. Check before publishing: compare stored vs recalculated totals for all locked liquidations in
+  a DB copy and list mismatches for the owner.
+- **Signature check uses the requester's signature:** a travel participant who submits is checked against the signature
+  the form stamps (the liquidation's engineer/requester), which is what the document needs; the browser check still
+  checks the submitter's own.
+- **Batch 3 limits reject existing data on edit:** an old row with a 1900 date or long remarks must be fixed before it
+  can be saved again; message names the field.
+- **Batch 4 header:** shared `app-dashboard.css` is only linked, not edited; blast radius is the two liquidation pages.
+- **Blast radius overall:** both liquidation pages, the approval and accounting flows that call the recalculators (step
+  7), and the shared row parser (step 12). Rollback = revert the batch commit; no schema change, no stored file moved.
+
 # Create TSR — design scan fixes (4 batches)
 
 **Status:** Executed (2026-10-15; owner: "keep it. write the batches in plans.md", then "Execute all four batches", then

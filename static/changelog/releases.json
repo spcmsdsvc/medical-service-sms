@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-15-liquidation-fixes",
+      "release_date": "2026-10-15",
+      "title": "Liquidation fixes",
+      "summary": "Travel and Cash Advance Liquidation are safer and easier to read: locked records stay as approved, rows are checked, and the header matches the request pages.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-15-liquidation-readable",
+          "category": "Liquidation",
+          "description": "Clear Form, the balance and the readiness notes are easier to read, including in the dark themes, and every button on the liquidation pages is easy to tap on a phone. The page date now follows Manila time.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-15-liquidation-safe",
+          "category": "Liquidation",
+          "description": "Opening or previewing a submitted or approved liquidation no longer changes it, Clear Form keeps a returned liquidation's status and remarks, and a USD rate change is never lost.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-15-liquidation-checks",
+          "category": "Liquidation",
+          "description": "Expense rows now refuse impossible dates and amounts, and Submit checks your signature before sending.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-15-liquidation-header",
+          "category": "Liquidation",
+          "description": "Travel and Cash Advance Liquidation now use the same header as the request pages, with the status beside the title and Submit in your theme colour.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-15-tsr-labels-contrast",
       "release_date": "2026-10-15",
       "title": "Create TSR labels and contrast",

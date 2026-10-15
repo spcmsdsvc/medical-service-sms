@@ -100,11 +100,18 @@ Object.assign(LIQ.hooks, {
 });
 
 document.getElementById('rowSourceCurrency').addEventListener('change', updateRowAmountLabel);
+// Rate saves queue on their own chain instead of runBusy, so a change made during another save is never dropped.
+let rateSaveQueue = Promise.resolve();
 document.getElementById('usdToPhpRate').addEventListener('change', event => {
-    runBusy('', '', async () => {
-        const data = await liqFetch(liqUrl('save_*_currency_rate', LIQUIDATION_ID), { method: 'POST', json: { usd_to_php_rate: Number(event.target.value || 0) } });
-        renderLiquidation(data.liquidation);
-        liqToast('Rate saved and totals recalculated.');
+    const rate = Number(event.target.value || 0);
+    rateSaveQueue = rateSaveQueue.then(async () => {
+        try {
+            const data = await liqFetch(liqUrl('save_*_currency_rate', LIQUIDATION_ID), { method: 'POST', json: { usd_to_php_rate: rate } });
+            renderLiquidation(data.liquidation);
+            liqToast('Rate saved and totals recalculated.');
+        } catch (err){
+            liqToast(err.message || String(err), 'error');
+        }
     });
 });
 </script>

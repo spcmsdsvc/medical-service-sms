@@ -97,8 +97,8 @@ class AccountingPayloadAndUIContractsTests(unittest.TestCase):
             self.assertIn(token, self.source)
         self.assertIn('readonly aria-readonly="true"', self.travel_template)
         self.assertIn('readonly aria-readonly="true"', self.cash_template)
-        self.assertIn('Derived Branch', self.travel_template)
-        self.assertIn('Derived Branch', self.cash_template)
+        self.assertIn('<div class="liq-label">Branch</div>', self.travel_template)
+        self.assertIn('<div class="liq-label">Branch</div>', self.cash_template)
         self.assertIn('currentLiquidation?.derived_branch_code', self.travel_template)
         self.assertIn('currentLiquidation?.derived_branch_code', self.cash_template)
 

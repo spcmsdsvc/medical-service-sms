@@ -279,7 +279,6 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/get_accounting_',
     '/get_approval_',
     '/get_cash_advance',
-    '/get_my_cash_advance_liquidation',
     '/get_my_reimbursement_',
     '/get_my_travel_',
     '/get_reimbursement_',
@@ -323,7 +322,6 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/submit_cash_advance',
     '/submit_reimbursement',
     '/submit_travel_',
-    '/travel_request_ready_for_liquidation',
     '/upload_cash_advance_liquidation_',
     '/upload_reimbursement_',
     '/upload_travel_liquidation_',
@@ -27940,7 +27938,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v319-calibration-draft-save.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v321-tsr-offline-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v323-tsr-design-scan';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -41971,18 +41970,10 @@ def clear_travel_liquidation(liquidation_id):
         require_accounting_branch_code(liquidation, action='clear a liquidation draft')
         rows = TravelLiquidationRow.query.filter_by(liquidation_id=liquidation.id).all()
         receipts = TravelLiquidationReceipt.query.filter_by(liquidation_id=liquidation.id).all()
-        deleted_file_count = 0
-        folder = travel_liquidation_receipt_folder()
+        # Stored files are removed only after the commit, so a failed save never leaves rows without files.
+        stored_filenames = [os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '') for receipt in receipts]
 
         for receipt in receipts:
-            stored_filename = os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '')
-            if stored_filename:
-                file_path = os.path.join(folder, stored_filename)
-                try:
-                    managed_storage_delete(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
-                    deleted_file_count += 1
-                except Exception as file_delete_error:
-                    print(f"[TravelLiquidation] Receipt file delete skipped during clear: {file_delete_error}", flush=True)
             db.session.delete(receipt)
 
         for row in rows:
@@ -41992,16 +41983,9 @@ def clear_travel_liquidation(liquidation_id):
         db.session.expire(liquidation, ['rows'])
         travel_liquidation_seed_per_diem_airfare_rows(liquidation, commit=False)
         travel_liquidation_recalculate_totals(liquidation)
-        liquidation.status = 'Draft'
-        liquidation.accounting_status = 'Draft'
-        liquidation.submitted_at = None
-        liquidation.approved_at = None
-        liquidation.approved_by_id = None
-        liquidation.rejected_at = None
-        liquidation.rejected_by_id = None
-        liquidation.approval_remarks = None
-        clear_approval_signature_snapshot(liquidation)
+        # Clear keeps the status: a Returned liquidation stays Returned with its remarks.
         liquidation.updated_at = get_manila_time()
+        current_status = normalize_travel_liquidation_status(getattr(liquidation, 'status', None))
 
         request_rec = getattr(liquidation, 'travel_request', None)
         request_label = clean_str(getattr(request_rec, 'request_no', None)) or f"TR-{getattr(liquidation, 'travel_request_id', '')}"
@@ -42011,8 +41995,8 @@ def clear_travel_liquidation(liquidation_id):
             liquidation.travel_request_id,
             'liquidation_cleared',
             actor_user=current_user,
-            status_from='Draft',
-            status_to='Draft',
+            status_from=current_status,
+            status_to=current_status,
             remarks='Cleared liquidation draft rows and receipts.',
             metadata={
                 'travel_request_id': liquidation.travel_request_id,
@@ -42020,8 +42004,7 @@ def clear_travel_liquidation(liquidation_id):
                 'liquidation_id': liquidation.id,
                 'liquidation_no': liquidation.liquidation_no,
                 'deleted_rows': len(rows),
-                'deleted_receipts': len(receipts),
-                'deleted_files': deleted_file_count
+                'deleted_receipts': len(receipts)
             }
         )
         db.session.add(ActivityLog(
@@ -42030,15 +42013,6 @@ def clear_travel_liquidation(liquidation_id):
         ))
         db.session.commit()
 
-        return jsonify({
-            'success': True,
-            'message': 'Form cleared. Per Diem and Airfare were reset to the approved amounts.',
-            'deleted_rows': len(rows),
-            'deleted_receipts': len(receipts),
-            'deleted_files': deleted_file_count,
-            'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
-        })
-
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(exc)}), 409
@@ -42046,6 +42020,28 @@ def clear_travel_liquidation(liquidation_id):
         db.session.rollback()
         print(f"[TravelLiquidation] Clear draft failed: {exc}", flush=True)
         return jsonify({'success': False, 'error': 'Unable to clear liquidation form.'}), 500
+
+    deleted_file_count = 0
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, os.path.join(travel_liquidation_receipt_folder(), stored_filename))
+            deleted_file_count += 1
+        except Exception as file_delete_error:
+            cleanup_failures += 1
+            print(f"[TravelLiquidation] Receipt file delete skipped during clear: {file_delete_error}", flush=True)
+
+    return jsonify({
+        'success': True,
+        'message': 'Form cleared. Per Diem and Airfare were reset to the approved amounts.',
+        'deleted_rows': len(rows),
+        'deleted_receipts': len(receipts),
+        'deleted_files': deleted_file_count,
+        'cleanup_warning': f'{cleanup_failures} stored file(s) need administrator cleanup.' if cleanup_failures else '',
+        'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
+    })
 
 
 def travel_liquidation_submit_notification_approvers(liquidation):
@@ -42108,6 +42104,8 @@ def submit_travel_liquidation(liquidation_id):
             'success': False,
             'error': 'Please add at least one actual expense row before submitting liquidation.'
         }), 400
+    if not get_liquidation_submitter_signature_data(liquidation):
+        return jsonify({'success': False, 'error': LIQUIDATION_SIGNATURE_REQUIRED_MESSAGE}), 400
 
     try:
         authoritative_branch_code = require_accounting_branch_code(liquidation, action='submit a liquidation')
@@ -48469,6 +48467,9 @@ def travel_liquidation_recalculate_totals(liquidation):
     """
     if not liquidation:
         return None
+    # Totals are fixed at submit: never rewrite a locked liquidation on view, preview or approval.
+    if (clean_str(getattr(liquidation, 'status', None)) or 'Draft').strip().lower() not in TRAVEL_LIQUIDATION_EDITABLE_STATUSES:
+        return liquidation
 
     try:
         db.session.flush()
@@ -49402,8 +49403,6 @@ def clear_travel_request_liquidation_reminder_notifications(request_rec):
 
 
 @app.route('/mark_travel_completed_ready_for_liquidation/<int:travel_request_id>', methods=['POST'])
-@app.route('/mark_travel_request_ready_for_liquidation/<int:travel_request_id>', methods=['POST'])
-@app.route('/travel_request_ready_for_liquidation/<int:travel_request_id>', methods=['POST'])
 @csrf.exempt
 @login_required
 def mark_travel_completed_ready_for_liquidation(travel_request_id):
@@ -49552,100 +49551,6 @@ def mark_travel_completed_ready_for_liquidation(travel_request_id):
         print(f"[TravelRequest] Mark ready for liquidation failed: {exc}", flush=True)
         traceback.print_exc()
         return jsonify({'success': False, 'error': 'Unable to mark Travel Request as ready for liquidation.'}), 500
-
-
-@app.route('/create_travel_liquidation_draft/<int:travel_request_id>', methods=['POST'])
-@app.route('/create_travel_request_liquidation_draft/<int:travel_request_id>', methods=['POST'])
-@csrf.exempt
-@login_required
-def create_travel_liquidation_draft_endpoint(travel_request_id):
-    """S13B: Create or return the liquidation draft for a Ready for Liquidation Travel Request."""
-    denial = require_accounting_center_access()
-    if denial:
-        return denial
-
-    ensure_travel_request_tables()
-    ensure_travel_liquidation_tables()
-
-    request_rec = db.session.get(TravelRequest, clean_int(travel_request_id))
-    if not request_rec:
-        return jsonify({'success': False, 'error': 'Travel Request not found.'}), 404
-
-    if not can_current_user_manage_my_accounting_record(request_rec):
-        return jsonify({
-            'success': False,
-            'error': 'You can only create liquidation drafts for your own Travel Request or a request where you are a participant.'
-        }), 403
-
-    status = travel_request_normalize_status(getattr(request_rec, 'status', None))
-    if status not in {'Ready for Liquidation', 'Liquidation Pending', 'Liquidation Started', 'Liquidation Submitted', 'Liquidation Completed', 'Completed'}:
-        return jsonify({
-            'success': False,
-            'error': f'Travel Request must be Ready for Liquidation before creating a liquidation draft. Current status: {status}.'
-        }), 409
-
-    try:
-        liquidation, created = get_or_create_travel_liquidation_draft(request_rec, actor_user=current_user, commit=False)
-        if created:
-            db.session.add(ActivityLog(
-                user=current_user.username.capitalize(),
-                action=f"Created Travel Liquidation draft: {liquidation.liquidation_no or f'TL-{liquidation.id}'} for {request_rec.request_no or f'TR-{request_rec.id}'}"
-            ))
-        db.session.commit()
-
-        return jsonify({
-            'success': True,
-            'created': bool(created),
-            'message': 'Travel liquidation draft created.' if created else 'Existing travel liquidation draft loaded.',
-            'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True),
-            'item': accounting_center_travel_request_item_to_dict(request_rec)
-        })
-    except ValueError as exc:
-        db.session.rollback()
-        return jsonify({'success': False, 'error': str(exc)}), 409
-    except Exception as exc:
-        db.session.rollback()
-        print(f"[TravelLiquidation] Create draft failed: {exc}", flush=True)
-        return jsonify({'success': False, 'error': 'Unable to create Travel Liquidation draft.'}), 500
-
-
-@app.route('/get_travel_liquidation_draft/<int:travel_request_id>')
-@app.route('/get_travel_request_liquidation_draft/<int:travel_request_id>')
-@login_required
-def get_travel_liquidation_draft_by_request(travel_request_id):
-    """S13B: Return an existing liquidation draft by Travel Request ID."""
-    denial = require_accounting_center_access()
-    if denial:
-        return denial
-
-    ensure_travel_request_tables()
-    ensure_travel_liquidation_tables()
-
-    request_rec = db.session.get(TravelRequest, clean_int(travel_request_id))
-    if not request_rec:
-        return jsonify({'success': False, 'error': 'Travel Request not found.'}), 404
-
-    if not can_current_user_manage_my_accounting_record(request_rec):
-        return jsonify({'success': False, 'error': 'You are not allowed to view this liquidation draft.'}), 403
-
-    liquidation = TravelLiquidationHeader.query.filter_by(travel_request_id=request_rec.id).first()
-    if not liquidation:
-        return jsonify({
-            'success': True,
-            'exists': False,
-            'liquidation': None,
-            'message': 'No liquidation draft has been created yet.'
-        })
-
-    travel_liquidation_seed_per_diem_airfare_rows(liquidation, commit=False)
-    travel_liquidation_recalculate_totals(liquidation)
-    db.session.commit()
-
-    return jsonify({
-        'success': True,
-        'exists': True,
-        'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
-    })
 
 
 @app.route('/get_travel_liquidation/<int:liquidation_id>')
@@ -50971,6 +50876,9 @@ def preview_travel_liquidation_rfp(liquidation_id):
 
 
 TRAVEL_LIQUIDATION_EDITABLE_STATUSES = {'draft', 'returned'}
+TRAVEL_LIQUIDATION_ROW_MAX_AMOUNT = 10_000_000
+TRAVEL_LIQUIDATION_ROW_MAX_REMARKS = 500
+LIQUIDATION_SIGNATURE_REQUIRED_MESSAGE = 'Add your signature in Settings before submitting.'
 
 
 def can_edit_travel_liquidation(liquidation):
@@ -50982,11 +50890,9 @@ def can_edit_travel_liquidation(liquidation):
     if status_key not in TRAVEL_LIQUIDATION_EDITABLE_STATUSES:
         return False, f'This liquidation is already {normalize_travel_liquidation_status(status_key)} and can no longer be edited.'
 
+    # Same owner rule as the requester page, for every edit action (no admin override).
     request_rec = getattr(liquidation, 'travel_request', None)
     if request_rec and can_current_user_manage_my_accounting_record(request_rec):
-        return True, ''
-
-    if is_admin_authorized():
         return True, ''
 
     return False, 'You can only edit your own Travel Liquidation or a request where you are a participant.'
@@ -51005,12 +50911,23 @@ def travel_liquidation_parse_row_payload(payload, target_currency_code='PHP', us
     source_amount = travel_liquidation_money(source_amount_raw)
     if source_amount <= 0:
         raise ValueError('Please enter an amount greater than zero.')
+    if source_amount > TRAVEL_LIQUIDATION_ROW_MAX_AMOUNT:
+        raise ValueError('Amount is too large. Enter at most 10,000,000 per row.')
+    raw_date = payload.get('expense_date') or payload.get('date') or payload.get('row_date')
+    expense_date = parse_date(raw_date)
+    if clean_str(raw_date) and not expense_date:
+        raise ValueError('Enter a valid expense date.')
+    if expense_date and not (date(2000, 1, 1) <= expense_date <= get_manila_today() + timedelta(days=366)):
+        raise ValueError('Expense date must be between 2000 and one year from today.')
+    remarks = clean_str(payload.get('remarks')) or ''
+    if len(remarks) > TRAVEL_LIQUIDATION_ROW_MAX_REMARKS:
+        raise ValueError('Remarks are too long. Use at most 500 characters.')
     if source_currency != target_currency and target_currency == 'USD' and source_currency == 'PHP' and travel_usd_to_php_rate(usd_to_php_rate) <= 0:
         raise ValueError('Please enter the USD to PHP Rate before saving a PHP receipt row. Example: 61.13 if 1 USD = PHP 61.13.')
     exchange_rate = travel_liquidation_direct_exchange_rate(source_currency, target_currency, usd_to_php_rate, payload.get('exchange_rate'))
     converted_amount = travel_liquidation_money(travel_converted_amount(source_amount, source_currency, target_currency, exchange_rate))
     return {
-        'expense_date': parse_date(payload.get('expense_date') or payload.get('date') or payload.get('row_date')),
+        'expense_date': expense_date,
         'expense_type': (clean_str(payload.get('expense_type') or payload.get('type')) or 'Others')[:80],
         'particulars': (clean_str(payload.get('particulars') or payload.get('description') or payload.get('item_name')) or 'Travel expense')[:255],
         # The legacy client field is accepted for compatibility but ignored.
@@ -51024,7 +50941,7 @@ def travel_liquidation_parse_row_payload(payload, target_currency_code='PHP', us
         'source_currency_code': source_currency,
         'source_amount': source_amount,
         'exchange_rate': exchange_rate,
-        'remarks': clean_str(payload.get('remarks')) or '',
+        'remarks': remarks,
         'sort_order': clean_int(payload.get('sort_order'))
     }
 
@@ -51304,10 +51221,10 @@ def save_travel_liquidation_currency_rate(liquidation_id):
         else:
             liquidation.usd_to_php_rate = 0
 
-        rate_ok, rate_message = travel_liquidation_validate_usd_rate(liquidation)
+        rate_ok, _rate_message = travel_liquidation_validate_usd_rate(liquidation)
         if not rate_ok:
             db.session.rollback()
-            return jsonify({'success': False, 'error': rate_message}), 400
+            return jsonify({'success': False, 'error': 'Enter a USD to PHP rate above 0 for the PHP receipts.'}), 400
 
         travel_liquidation_recalculate_totals(liquidation)
         db.session.commit()
@@ -51598,6 +51515,8 @@ def delete_all_travel_liquidation_receipts(liquidation_id):
         return denial
     ensure_travel_liquidation_tables()
     liquidation = get_travel_liquidation_for_current_user(liquidation_id=liquidation_id)
+    if not liquidation:
+        return jsonify({'success': False, 'error': 'Travel Liquidation draft not found or not accessible.'}), 404
     allowed, message = can_edit_travel_liquidation(liquidation)
     if not allowed:
         return jsonify({'success': False, 'error': message}), 403
@@ -70146,7 +70065,8 @@ def can_edit_cash_advance_liquidation(liquidation):
     status_key = (clean_str(getattr(liquidation, 'status', None)) or 'Draft').strip().lower()
     if status_key not in CASH_ADVANCE_LIQUIDATION_EDITABLE_STATUSES:
         return False, f'This Cash Advance Liquidation is already {cash_advance_liquidation_normalize_status(status_key)} and can no longer be edited.'
-    if can_current_user_manage_cash_advance_liquidation(liquidation):
+    # Same owner rule as the requester page, for every edit action (no admin override).
+    if cash_advance_liquidation_get_for_requester_page(liquidation_id=liquidation.id):
         return True, ''
     return False, 'You can only edit your own Cash Advance Liquidation.'
 
@@ -70190,6 +70110,9 @@ def cash_advance_liquidation_get_for_requester_page(liquidation_id=None, cash_ad
 def cash_advance_liquidation_recalculate_totals(liquidation):
     if not liquidation:
         return None
+    # Totals are fixed at submit: never rewrite a locked liquidation on view, preview or approval.
+    if (clean_str(getattr(liquidation, 'status', None)) or 'Draft').strip().lower() not in CASH_ADVANCE_LIQUIDATION_EDITABLE_STATUSES:
+        return liquidation
     db.session.flush()
     header = getattr(liquidation, 'cash_advance', None)
     cash_advance_amount = cash_advance_liquidation_amount(header)
@@ -70592,43 +70515,7 @@ def create_cash_advance_liquidation_draft_endpoint(cash_advance_id):
         return jsonify({'success': False, 'error': 'Unable to create Cash Advance Liquidation draft.'}), 500
 
 
-@app.route('/get_cash_advance_liquidation_draft/<int:cash_advance_id>')
-@login_required
-def get_cash_advance_liquidation_draft_by_cash_advance(cash_advance_id):
-    denial = require_accounting_center_access()
-    if denial:
-        return denial
-
-    ensure_cash_advance_tables()
-    ensure_cash_advance_liquidation_tables()
-    header = db.session.get(CashAdvanceHeader, clean_int(cash_advance_id))
-    if not header:
-        return jsonify({'success': False, 'error': 'Cash Advance request not found.'}), 404
-    if not can_current_user_manage_my_accounting_record(header):
-        return jsonify({'success': False, 'error': 'You are not allowed to view this Cash Advance Liquidation draft.'}), 403
-
-    liquidation = CashAdvanceLiquidationHeader.query.filter_by(cash_advance_id=header.id).first()
-    if not liquidation:
-        return jsonify({
-            'success': True,
-            'exists': False,
-            'liquidation': None,
-            'cash_advance': cash_advance_to_dict(header, include_audit=False),
-            'message': 'No Cash Advance Liquidation draft has been created yet.'
-        })
-
-    cash_advance_liquidation_recalculate_totals(liquidation)
-    db.session.commit()
-    return jsonify({
-        'success': True,
-        'exists': True,
-        'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True),
-        'cash_advance': cash_advance_to_dict(header, include_audit=False)
-    })
-
-
 @app.route('/get_cash_advance_liquidation/<int:liquidation_id>')
-@app.route('/get_my_cash_advance_liquidation/<int:liquidation_id>')
 @login_required
 def get_cash_advance_liquidation(liquidation_id):
     denial = require_accounting_center_access()
@@ -70712,7 +70599,7 @@ def add_cash_advance_liquidation_row(liquidation_id):
         })
     except ValueError as exc:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(exc)}), 409
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidation] Add row failed: {exc}", flush=True)
@@ -70773,7 +70660,7 @@ def save_cash_advance_liquidation_row(row_id):
         })
     except ValueError as exc:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(exc)}), 409
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidation] Save row failed: {exc}", flush=True)
@@ -71189,6 +71076,8 @@ def submit_cash_advance_liquidation(liquidation_id):
     rows = CashAdvanceLiquidationRow.query.filter_by(liquidation_id=liquidation.id).all()
     if not rows:
         return jsonify({'success': False, 'error': 'Please add at least one actual expense row before submitting liquidation.'}), 400
+    if not get_liquidation_submitter_signature_data(liquidation):
+        return jsonify({'success': False, 'error': LIQUIDATION_SIGNATURE_REQUIRED_MESSAGE}), 400
 
     try:
         authoritative_branch_code = require_accounting_branch_code(liquidation, action='submit a liquidation')
