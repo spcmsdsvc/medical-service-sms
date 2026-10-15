@@ -22,7 +22,6 @@ class ProductInventoryMutationTests(unittest.TestCase):
 
         # Use a test-only superadmin identity without changing the application's
         # production allowlist. This exercises the real mutation authorization guard.
-        app_module.SUPERADMIN_USERNAMES.add(cls.username)
 
         with cls.app.app_context():
             app_module.db.create_all()
@@ -74,7 +73,6 @@ class ProductInventoryMutationTests(unittest.TestCase):
             if user:
                 app_module.db.session.delete(user)
             app_module.db.session.commit()
-        app_module.SUPERADMIN_USERNAMES.discard(cls.username)
 
     def setUp(self):
         self.client = self.app.test_client()

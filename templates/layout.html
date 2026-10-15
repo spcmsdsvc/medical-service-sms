@@ -241,7 +241,7 @@
 
             {% if not is_approver_only_user %}
                 {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}
-                {{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}
+                {% if nav_can_do_field_work %}{{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}{% endif %}
                 {{ nav_link('/calibration-center', 'fa-certificate', 'My Calibrations') }}
             {% endif %}
 
@@ -264,9 +264,9 @@
                 </button>
                 <div id="new-request-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in new_request_paths }}" role="group" aria-label="Forms">
                     <div class="sidebar-flyout-title" aria-hidden="true">Forms</div>
-                    {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
+                    {% if not nav_is_support_engineer %}{{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}{% endif %}
                     {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
-                    {{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}
+                    {% if not nav_is_support_engineer %}{{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}{% endif %}
                     {{ nav_link('/leave_request', 'fa-calendar-check', 'Leave Request') }}
                     {#- LPR link hidden from the sidebar for everyone until LPR is in use (2026-10-13). -#}
                 </div>

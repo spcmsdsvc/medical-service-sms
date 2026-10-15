@@ -47,7 +47,7 @@ class TsrWithoutEquipmentSourceTests(unittest.TestCase):
         self.assertIn("isScheduleEquipmentAssignable", self.tsr_source)
         self.assertIn("No equipment assigned", self.timeline_source + self.tsr_source)
         self.assertIn("can_create_tsr_without_equipment", self.settings_source)
-        self.assertIn("approvalUserIsFrancis", self.settings_source)
+        self.assertIn("approvalUserCanHoldTsrGrant", self.settings_source)
         self.assertNotIn("Create Calibration Report", self.timeline_source.split("function canOpenCalibrationReportForSchedule", 1)[1].split("function getCalibrationReportTimelineLabel", 1)[0])
 
     def test_release_and_cache_are_advanced_for_this_package(self):

@@ -27,7 +27,6 @@ class DeletedProductTsrHistoryTests(unittest.TestCase):
     def setUp(self):
         self.suffix = uuid.uuid4().hex[:8].upper()
         self.username = f"deleted-product-admin-{self.suffix}"
-        app_module.SUPERADMIN_USERNAMES.add(self.username.lower())
 
         with self.app.app_context():
             app_module.db.create_all()
@@ -144,7 +143,6 @@ class DeletedProductTsrHistoryTests(unittest.TestCase):
             app_module.db.session.remove()
             app_module.db.drop_all()
             reset_schema_flags(app_module)
-        app_module.SUPERADMIN_USERNAMES.discard(self.username.lower())
 
     def admin_client(self):
         client = self.app.test_client()

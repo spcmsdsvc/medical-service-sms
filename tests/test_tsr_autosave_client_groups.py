@@ -119,7 +119,6 @@ class ClientGroupRouteTests(unittest.TestCase):
                 app_module.db.session.add_all([admin, engineer, hr])
                 app_module.db.session.commit()
                 added_superadmin_username = admin.username.lower()
-                app_module.SUPERADMIN_USERNAMES.add(added_superadmin_username)
                 user_ids = {'admin': admin.id, 'engineer': engineer.id, 'hr': hr.id}
             clients = {}
             for label, user_id in user_ids.items():
@@ -138,8 +137,6 @@ class ClientGroupRouteTests(unittest.TestCase):
                     app_module._client_group_column_ready = original_group_ready
                     app_module._contact_designation_column_ready = original_contact_ready
                     reset_schema_flags(app_module)
-                    if added_superadmin_username:
-                        app_module.SUPERADMIN_USERNAMES.discard(added_superadmin_username)
                     if original_csrf is not None:
                         app_module.app.config['WTF_CSRF_ENABLED'] = original_csrf
             if test_engine is not None:

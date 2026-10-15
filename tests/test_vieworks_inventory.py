@@ -54,7 +54,6 @@ class VieworksInventoryTests(unittest.TestCase):
         cls.app = app_module.app
         cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, PROPAGATE_EXCEPTIONS=True)
         cls.superadmin_username = f"vieworks_superadmin_{uuid.uuid4().hex[:8]}"
-        app_module.SUPERADMIN_USERNAMES.add(cls.superadmin_username)
         with cls.app.app_context():
             cls.app_module_ensure = app_module.ensure_vieworks_item_table
             app_module.db.create_all()
@@ -68,12 +67,12 @@ class VieworksInventoryTests(unittest.TestCase):
                 role="superadmin", is_active=True,
             )
             cls.regional = app_module.User.query.filter_by(
-                username=app_module.REGIONAL_ADMIN_USERNAME
+                username='kevin'
             ).first()
             cls.regional_created = cls.regional is None
             if cls.regional is None:
                 cls.regional = app_module.User(
-                    username=app_module.REGIONAL_ADMIN_USERNAME, password="test",
+                    username='kevin', password="test",
                     role="regional_admin", is_active=True,
                 )
             cls.engineer = app_module.User(
@@ -151,7 +150,6 @@ class VieworksInventoryTests(unittest.TestCase):
                     app_module.db.session.delete(row)
             app_module.db.session.commit()
             app_module.db.session.remove()
-        app_module.SUPERADMIN_USERNAMES.discard(cls.superadmin_username)
 
     def setUp(self):
         with self.app.app_context():

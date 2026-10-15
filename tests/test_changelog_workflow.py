@@ -142,8 +142,8 @@ class ChangelogApiTests(unittest.TestCase):
         return client
 
     def _admin_client(self):
-        # is_superadmin_user() requires membership in SUPERADMIN_USERNAMES.
-        name = sorted(app_module.SUPERADMIN_USERNAMES)[0]
+        # Rights come from the role; 'diary' also has a fallback notification email.
+        name = 'diary'
         return self._client(name, role='superadmin')
 
     def _create_release(self, client, **overrides):
@@ -427,7 +427,7 @@ class ChangelogDigestEnabledPathTests(unittest.TestCase):
             app_module.ensure_changelog_tables()
 
     def _admin_client(self):
-        name = sorted(app_module.SUPERADMIN_USERNAMES)[0]
+        name = 'diary'
         with self.app.app_context():
             user = app_module.User.query.filter_by(username=name).first()
             if not user:
@@ -511,7 +511,7 @@ class ChangelogDigestEnabledPathTests(unittest.TestCase):
         client = self._admin_client()
 
         with self.app.app_context():
-            name = sorted(app_module.SUPERADMIN_USERNAMES)[0]
+            name = 'diary'
             user = app_module.User.query.filter_by(username=name).first()
             own = app_module.normalize_single_email_address(
                 app_module.get_user_email_for_notification(user))

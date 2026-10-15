@@ -84,7 +84,6 @@ class ProductOwnerChangePurchaseOrderCountTests(unittest.TestCase):
         cls.suffix = uuid.uuid4().hex[:10]
         cls.username = f'product_b1_admin_{cls.suffix}'
         cls.serial = f'B1-{cls.suffix}'.upper()
-        app_module.SUPERADMIN_USERNAMES.add(cls.username)
 
         with cls.app.app_context():
             app_module.db.create_all()
@@ -140,7 +139,6 @@ class ProductOwnerChangePurchaseOrderCountTests(unittest.TestCase):
                 if row:
                     session.delete(row)
             session.commit()
-        app_module.SUPERADMIN_USERNAMES.discard(cls.username)
 
     def test_owner_change_reports_linked_purchase_orders(self):
         client = self.app.test_client()

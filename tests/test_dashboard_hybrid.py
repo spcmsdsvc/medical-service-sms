@@ -15,6 +15,7 @@ import os
 import pathlib
 import re
 import tempfile
+import types
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -105,9 +106,7 @@ class HybridDashboardSourceTests(unittest.TestCase):
                      "'/set_developer_dashboard_view',"):
             self.assertNotIn(dead, self.app_source)
 
-        # The username constant stays -- protected passwords and get_display_role need it.
-        self.assertIn("DEVELOPER_SUPERADMIN_USERNAME = 'jonamar'", self.app_source)
-        # And the section id stays accepted, like every other retired section.
+        # The section id stays accepted, like every other retired section.
         self.assertIn("'developer-view-switcher',", self.app_source)
 
         for dead in ('developer-dashboard-switcher', 'developer-view-btn',
@@ -233,7 +232,7 @@ class RetiredHybridEndpointTests(unittest.TestCase):
         cls.app.config['TESTING'] = True
         with cls.app.app_context():
             app_module.db.create_all()
-            username = app_module.DEVELOPER_SUPERADMIN_USERNAME
+            username = 'jonamar'
             user = app_module.User.query.filter_by(username=username).first()
             if not user:
                 user = app_module.User(
@@ -303,11 +302,14 @@ class ManagerPrimaryExemptionTests(unittest.TestCase):
             user = app_module.User.query.filter_by(username=cls.username).first()
             if not user:
                 user = app_module.User(
-                    username=cls.username, role='superadmin', is_active=True,
+                    username=cls.username, role='manager', is_active=True,
                     password=app_module.generate_password_hash('ManagerPrimary123'))
                 app_module.db.session.add(user)
                 app_module.db.session.commit()
                 cls.created_user_ids.append(user.id)
+            # The manager-only dashboard follows the manager role, not the name.
+            user.role = 'manager'
+            app_module.db.session.commit()
 
             # He must genuinely hold an engineer profile, or the assertions below would pass
             # for the wrong reason -- an account with no profile gets no engineer sections
@@ -323,10 +325,8 @@ class ManagerPrimaryExemptionTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # Seeding APPROVAL_CENTER_MANAGER_USERNAME makes ensure_default_approval_routes()
-        # write an ApprovalRouting row per user, whose NOT NULL requester FK then breaks
-        # sibling modules sharing this database. Deleting the rows alone is not enough --
-        # the app rebuilds them on the next request while the username exists.
+        # Leave no ApprovalRouting rows behind: their NOT NULL requester FK would break
+        # sibling modules sharing this database once the users are deleted.
         with cls.app.app_context():
             app_module.ApprovalRouting.query.delete()
             for engineer_id in cls.created_engineer_ids:
@@ -384,11 +384,10 @@ class ManagerPrimaryExemptionTests(unittest.TestCase):
         self.assertIn('data-dashboard-section="manager-executive"', body)
 
     def test_another_admin_with_a_profile_still_gets_the_hybrid_stack(self):
-        """The exemption must be the named account only, not every manager-ish admin."""
-        with self.app.app_context():
-            self.assertEqual(app_module.MANAGER_PRIMARY_USERNAMES, {'rodito'})
-            self.assertIn('robert', app_module.MANAGER_USERNAMES)
-            self.assertNotIn('robert', app_module.MANAGER_PRIMARY_USERNAMES)
+        """The exemption is the manager role only, not every admin."""
+        robert_like = types.SimpleNamespace(username='robert', role='superadmin', is_authenticated=True)
+        self.assertFalse(app_module.is_manager_primary_user(robert_like))
+        self.assertTrue(app_module.is_admin_authorized(robert_like))
 
 
 if __name__ == '__main__':

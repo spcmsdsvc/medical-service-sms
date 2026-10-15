@@ -77,8 +77,8 @@ class DashboardTrendHelperTests(unittest.TestCase):
 
 
 class DashboardTrendEndpointTests(unittest.TestCase):
-    # Superadmin needs a SUPERADMIN_USERNAMES name: the owner's account, a superadmin who is
-    # also an engineer and not an approver -- the view this plan was written for.
+    # The owner's account: a superadmin who is also an engineer and not an approver --
+    # the view this plan was written for.
     username = 'jonamar'
 
     @classmethod

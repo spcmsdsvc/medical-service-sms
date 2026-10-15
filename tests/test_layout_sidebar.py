@@ -677,7 +677,7 @@ class SidebarSourceTests(unittest.TestCase):
             "nav_link('/', 'fa-chart-line', 'Dashboard')",
             "nav_link('/approvals'",
             "nav_link('/accounting_center'",
-            "nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}\n                {{ nav_link('/offline-tsr'",
+            "nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}\n                {% if nav_can_do_field_work %}{{ nav_link('/offline-tsr'",
             'aria-level="2">Work</div>',
             'aria-label="Forms"',
             'aria-label="Clients"',
@@ -843,15 +843,9 @@ class SidebarRenderTests(unittest.TestCase):
         self.assertIn('Calibration Center (Admin)', html)
         self.assertIn('My Calibrations', html)
 
-    def test_superadmin_role_without_username_allowlist_gets_no_admin_links(self):
-        """The headline divergence this work fixes.
-
-        is_superadmin_user() requires membership in SUPERADMIN_USERNAMES, but the old
-        sidebar only checked `role`. An account with role='superadmin' outside that set
-        saw Admin, Analytics and Personnel, then was redirected away by every one.
-        """
-        self.assertNotIn('layout_fake_super', app_module.SUPERADMIN_USERNAMES)
-        user_id = self._make_user('layout_fake_super', 'superadmin')
+    def test_staff_role_gets_no_admin_links(self):
+        """The sidebar follows the same role checks as the routes: no admin links for staff."""
+        user_id = self._make_user('layout_fake_super', 'staff')
         html = self._render_dashboard_as(user_id)
         self.assertNotIn('/activity_page', html)
         self.assertNotIn('/analytics_page', html)

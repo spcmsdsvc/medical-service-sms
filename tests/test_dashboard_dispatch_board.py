@@ -106,13 +106,16 @@ class DispatchBoardEndpointTests(unittest.TestCase):
         db = app_module.db
         today = app_module.get_manila_today()
 
-        cls.scheduler_username = sorted(app_module.SCHEDULER_USERNAMES)[0]
-        if not app_module.User.query.filter_by(username=cls.scheduler_username).first():
-            db.session.add(app_module.User(
-                username=cls.scheduler_username, role='superadmin', is_active=True,
+        cls.scheduler_username = 'diary'
+        scheduler = app_module.User.query.filter_by(username=cls.scheduler_username).first()
+        if not scheduler:
+            scheduler = app_module.User(
+                username=cls.scheduler_username, role='scheduler', is_active=True,
                 password=app_module.generate_password_hash('BoardTest123')
-            ))
-            db.session.commit()
+            )
+            db.session.add(scheduler)
+        scheduler.role = 'scheduler'
+        db.session.commit()
 
         def engineer(employee_id, name):
             row = app_module.Engineer.query.filter_by(employee_id=employee_id).first()

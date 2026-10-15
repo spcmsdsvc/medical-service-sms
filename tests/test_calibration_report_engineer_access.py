@@ -41,7 +41,7 @@ class CalibrationReportEngineerAccessTests(unittest.TestCase):
             username=f"calibration-remote-engineer-{suffix}", password="test", role=" ENGINEER ", is_active=True
         )
         self.scheduler = app_module.User(
-            username=f"calibration-scheduler-{suffix}", password="test", role="scheduler", is_active=True
+            username=f"calibration-scheduler-{suffix}", password="test", role="staff", is_active=True
         )
         self.requester_profile = app_module.Engineer(
             employee_id=f"CAL-REQ-{suffix}", name="Request Engineer", initials="RE", branch="Manila"

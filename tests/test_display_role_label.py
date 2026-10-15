@@ -19,18 +19,21 @@ def _account(username, role='superadmin'):
 
 
 class DisplayRoleLabelTests(unittest.TestCase):
-    def test_superadmin_role_off_the_list_is_labelled_staff(self):
-        account = _account('zz_not_on_the_list')
-        self.assertFalse(app_module.is_superadmin_user(account))
-        self.assertEqual(app_module.get_display_role(account), 'Staff')
+    def test_label_follows_the_role_not_the_username(self):
+        expected = {
+            'superadmin': 'Superadmin', 'manager': 'Manager', 'scheduler': 'Scheduler',
+            'regional_admin': 'Administrator', 'engineer': 'Engineer',
+            'support_engineer': 'Support Engineer', 'approver': 'Approver', 'staff': 'Staff',
+        }
+        for role, label in expected.items():
+            self.assertEqual(app_module.get_display_role(_account('zz_any_name', role)), label, role)
+        # A former name rule no longer decides anything.
+        self.assertEqual(app_module.get_display_role(_account('diary', 'engineer')), 'Engineer')
 
-    def test_listed_superadmins_keep_their_labels(self):
-        self.assertEqual(
-            app_module.get_display_role(_account(app_module.DEVELOPER_SUPERADMIN_USERNAME)),
-            'Superadmin',
-        )
-        for username in app_module.SCHEDULER_USERNAMES:
-            self.assertEqual(app_module.get_display_role(_account(username)), 'Scheduler')
+    def test_superadmin_label_matches_superadmin_rights(self):
+        for role in ('superadmin', 'manager', 'scheduler'):
+            self.assertTrue(app_module.is_superadmin_user(_account('zz_any_name', role)), role)
+        self.assertFalse(app_module.is_superadmin_user(_account('rodito', 'staff')))
 
 
 if __name__ == '__main__':

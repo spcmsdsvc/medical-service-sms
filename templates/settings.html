@@ -46,7 +46,7 @@
         <button type="button" class="settings-section-tab active" data-settings-section-target="account" onclick="switchSettingsSection('account')">
             <i class="fa-solid fa-user-shield"></i><span>My Account</span>
         </button>
-        {% if current_user.role in ['superadmin', 'regional_admin'] %}
+        {% if nav_is_admin %}
         <button type="button" class="settings-section-tab" data-settings-section-target="users" onclick="switchSettingsSection('users')">
             <i class="fa-solid fa-users-gear"></i><span>Users</span>
         </button>
@@ -56,7 +56,7 @@
             <i class="fa-solid fa-tags"></i><span>Product Names</span>
         </button>
         {% endif %}
-        {% if current_user.role == 'superadmin' %}
+        {% if nav_is_superadmin %}
         {% if new_workflows_enabled %}
         <button type="button" class="settings-section-tab" data-settings-section-target="approval" onclick="switchSettingsSection('approval')">
             <i class="fa-solid fa-route"></i><span>Approval Routing</span>
@@ -451,7 +451,27 @@
         {% endif %}
 
         <!-- COLUMN 2: ADMINISTRATIVE PERSONNEL MANAGEMENT -->
-        {% if current_user.role in ['superadmin', 'regional_admin'] %}
+        {% if nav_is_admin %}
+    {% macro settings_role_badge(display_role) -%}
+        {%- set badge_class = {
+            'Superadmin': 'bg-danger', 'Manager': 'bg-purple text-white', 'Scheduler': 'bg-warning text-dark',
+            'Administrator': 'bg-success', 'Engineer': 'bg-primary', 'Support Engineer': 'bg-info text-dark'
+        }.get(display_role, 'bg-secondary') -%}
+        <span class="badge {{ badge_class }}">{{ display_role }}</span>
+    {%- endmacro %}
+    {% macro settings_role_control(acc, display_role, prefix='d') -%}
+        {%- if nav_is_superadmin and acc.can_change_role -%}
+        <select class="form-select form-select-sm settings-role-select" id="role-{{ prefix }}-{{ acc.id }}"
+                aria-label="Role for {{ acc.username }}" data-id="{{ acc.id }}" data-user="{{ acc.username }}"
+                data-current="{{ acc.role }}" onchange="changeUserRole(this)">
+            {%- for value, label in role_choices %}
+            <option value="{{ value }}" {{ 'selected' if value == acc.role }}>{{ label }}</option>
+            {%- endfor %}
+        </select>
+        {%- else -%}
+        {{ settings_role_badge(display_role) }}
+        {%- endif -%}
+    {%- endmacro %}
     <div class="row g-4 settings-section-panel" data-settings-section="users">
         <div class="col-12 col-xl-10">
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
@@ -489,19 +509,7 @@
                                     </td>
                                     <td>
                                         {% set display_role = acc.display_role if acc.display_role is defined else acc.role|capitalize %}
-                                        {% if display_role == 'Superadmin' %}
-                                            <span class="badge bg-danger">Superadmin</span>
-                                        {% elif display_role == 'Manager' %}
-                                            <span class="badge bg-purple text-white">Manager</span>
-                                        {% elif display_role == 'Scheduler' %}
-                                            <span class="badge bg-warning text-dark">Scheduler</span>
-                                        {% elif display_role == 'Administrator' %}
-                                            <span class="badge bg-success">Administrator</span>
-                                        {% elif display_role == 'Engineer' %}
-                                            <span class="badge bg-primary">Engineer</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">{{ display_role }}</span>
-                                        {% endif %}
+                                        {{ settings_role_control(acc, display_role) }}
                                     </td>
                                     <td class="text-end pe-4">
                                         <div class="btn-group">
@@ -532,19 +540,7 @@
                                 </div>
 
                                 <div>
-                                    {% if display_role == 'Superadmin' %}
-                                        <span class="badge bg-danger">Superadmin</span>
-                                    {% elif display_role == 'Manager' %}
-                                        <span class="badge bg-purple text-white">Manager</span>
-                                    {% elif display_role == 'Scheduler' %}
-                                        <span class="badge bg-warning text-dark">Scheduler</span>
-                                    {% elif display_role == 'Administrator' %}
-                                        <span class="badge bg-success">Administrator</span>
-                                    {% elif display_role == 'Engineer' %}
-                                        <span class="badge bg-primary">Engineer</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">{{ display_role }}</span>
-                                    {% endif %}
+                                    {{ settings_role_control(acc, display_role, 'm') }}
                                 </div>
                             </div>
 
@@ -578,7 +574,7 @@
                     </div>
     </div>
 
-            {% if current_user.role == 'superadmin' %}
+            {% if nav_is_superadmin %}
             {% if new_workflows_enabled %}
     <div class="row g-4 settings-section-panel" data-settings-section="approval">
         <div class="col-12">
@@ -2225,10 +2221,23 @@
         ].join('');
         const titleId = `approval-u${user.id}-title`;
         const branchId = `approval-u${user.id}-branch`;
-        const francisTSRWithoutEquipmentControl = approvalUserIsFrancis(user) ? `
+        const francisTSRWithoutEquipmentControl = approvalUserCanHoldTsrGrant(user) ? `
                     <div class="mt-3">
-                        ${approvalSwitchHtml(user, 'tsr-without-equipment', 'tsr-without-equipment-input', user.can_create_tsr_without_equipment, 'Allow TSR without assigned equipment', 'Francis may create a TSR for a client-linked schedule when Calendar has no assigned equipment. The server still verifies the client schedule and keeps product/serial blank.')}
+                        ${approvalSwitchHtml(user, 'tsr-without-equipment', 'tsr-without-equipment-input', user.can_create_tsr_without_equipment, 'Allow TSR without assigned equipment', 'This engineer may create a TSR for a client-linked schedule when Calendar has no assigned equipment. The server still verifies the client schedule and keeps product/serial blank.')}
                     </div>` : '';
+        const protectedHelp = approvalViewerIsProtected
+            ? 'Nobody else can reset, deactivate, or delete this account. Engineer-only dashboard and the timeline view picker.'
+            : 'Only a protected account can change this switch.';
+        const accountFlagControls = `
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6">
+                            ${approvalSwitchHtml(user, 'default-approver', 'approval-default-approver-input', user.is_default_approver, 'Default approver', 'New accounts are routed to this approver when they are created.')}
+                        </div>
+                        <div class="col-md-6">
+                            ${approvalSwitchHtml(user, 'protected', 'approval-protected-input', user.is_protected_account, 'Protected developer account', protectedHelp)
+                                .replace('type="checkbox"', approvalViewerIsProtected ? 'type="checkbox"' : 'type="checkbox" disabled')}
+                        </div>
+                    </div>`;
 
         return `
             <details class="approval-user-card" data-user-id="${user.id}" data-search="${approvalEscape(search)}" data-approver="${user.can_approve_requests ? '1' : '0'}" ${isOpen ? 'open' : ''}>
@@ -2256,6 +2265,7 @@
                             <input type="text" id="${titleId}" class="form-control form-control-sm approval-title-input" value="${approvalEscape(user.approval_title || '')}" placeholder="e.g. Vice President" maxlength="100">
                         </div>
                     </div>
+                    ${accountFlagControls}
                     ${francisTSRWithoutEquipmentControl}
                     <div class="mt-3">
                         ${approvalSwitchHtml(user, 'approver-only', 'approval-approver-only-input', user.approver_only, 'Approver-only view', 'Use for executives/approvers who should only see Dashboard, My Requests, Approvals, Settings, and Logout.', 'toggleApprovalOnlyMode')}
@@ -2425,11 +2435,15 @@
             po_admin_access: Boolean(card.querySelector('.po-admin-access-input')?.checked),
             reimbursement_tracker_access: Boolean(card.querySelector('.reimbursement-tracker-access-input')?.checked),
             approval_title: card.querySelector('.approval-title-input')?.value || '',
-            is_active: Boolean(card.querySelector('.approval-active-input')?.checked)
+            is_active: Boolean(card.querySelector('.approval-active-input')?.checked),
+            is_default_approver: Boolean(card.querySelector('.approval-default-approver-input')?.checked)
         };
         const targetUser = approvalUserById(userId);
-        if (approvalUserIsFrancis(targetUser)) {
+        if (approvalUserCanHoldTsrGrant(targetUser)) {
             payload.can_create_tsr_without_equipment = Boolean(card.querySelector('.tsr-without-equipment-input')?.checked);
+        }
+        if (approvalViewerIsProtected) {
+            payload.is_protected_account = Boolean(card.querySelector('.approval-protected-input')?.checked);
         }
 
         try {
@@ -2951,9 +2965,45 @@
         settingsAlert(data.message || 'Product name deleted.', 'success');
     }
 
-    function approvalUserIsFrancis(user) {
-        return String(user?.username || '').trim().toLowerCase() === 'francis';
+    // Same rule as the server: an engineer account with a Personnel profile.
+    async function changeUserRole(select) {
+        const previous = select.dataset.current;
+        const label = select.options[select.selectedIndex].text;
+        const confirmed = await settingsConfirmDialog({
+            title: 'Change role?',
+            message: `${select.dataset.user} will become ${label}. Their access changes at their next page load.`,
+            confirmText: 'Change role', cancelText: 'Cancel', icon: 'user-gear'
+        });
+        if (!confirmed) { select.value = previous; return; }
+        select.disabled = true;
+        try {
+            const response = await fetch('/settings/update-user-role', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+                body: JSON.stringify({ user_id: Number(select.dataset.id), role: select.value })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) {
+                select.value = previous;
+                return settingsAlert(data.error || 'The role could not be changed.');
+            }
+            document.querySelectorAll(`.settings-role-select[data-id="${select.dataset.id}"]`).forEach(other => {
+                other.value = data.role;
+                other.dataset.current = data.role;
+            });
+            settingsAlert(data.message || 'Role changed.', 'success');
+        } catch (err) {
+            select.value = previous;
+            settingsAlert('The role could not be changed. Check your connection and try again.');
+        } finally {
+            select.disabled = false;
+        }
     }
+
+    function approvalUserCanHoldTsrGrant(user) {
+        return String(user?.role || '').trim().toLowerCase() === 'engineer' && Boolean(user?.engineer_id);
+    }
+    const approvalViewerIsProtected = {{ nav_is_protected_account|tojson }};
 
     /**
      * EMAIL RECIPIENT SETTINGS LOGIC:
@@ -4785,6 +4835,16 @@
         align-items: flex-start;
         gap: 0.75rem;
         margin-bottom: 0.85rem;
+    }
+
+    .settings-role-select {
+        width: auto;
+        min-width: 150px;
+        max-width: 190px;
+    }
+
+    .settings-mobile-user-card .settings-role-select {
+        min-height: 44px;
     }
 
     .settings-mobile-username {

@@ -36,7 +36,7 @@
                 <label for="analytics-branch">Schedule branch</label>
                 <select id="analytics-branch" class="form-select">
                     <option value="ALL">All Branches</option>
-                    {% if current_user.role == 'regional_admin' %}<option value="REGIONAL">Cebu + Davao</option>{% endif %}
+                    {% if nav_is_regional_admin %}<option value="REGIONAL">Cebu + Davao</option>{% endif %}
                     <option value="Manila">Manila</option>
                     <option value="Cebu">Cebu</option>
                     <option value="Davao">Davao</option>

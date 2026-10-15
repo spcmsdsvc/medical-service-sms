@@ -37,6 +37,349 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# User roles — no hardcoded usernames, role dropdown in Settings, Support Engineer role (4 batches)
+
+**Status:** Executed locally 2026-10-15 on "execute the User roles plan in plans.md" — all four batches, **not
+committed** (awaiting "commit and push"; the batches share `app.py`/templates hunks, so they publish as one commit).
+**Approved:** 2026-10-15 — the owner said "Approved. Write the four-batch roles plan to plans.md." Under the two-step
+rule this records approval only; execution needs a separate instruction.
+**Origin:** 2026-10-15 page scan of the Settings → Users tab (role focus), then owner decisions in the same session.
+Four batches, one commit each, published together or one at a time on "commit and push".
+
+### Amendments during execution
+
+- **Production never ran `migrate_hierarchy_accounts`.** Gunicorn (`RAILWAY_ENVIRONMENT`) only runs
+  `prepare_deferred_workflow_schemas()` at import and the per-request `ensure_runtime_sqlite_migrations_before_request`;
+  `initialize_database()` is `__main__`-only. The one-time migrations therefore run from that per-request hook (once per
+  process, via `run_role_migrations()`) and from `initialize_database()`. Markers in `app_migration`: `roles_v1`,
+  `roles_v2_protected_account`, `roles_v3_default_approver`; the marker row is inserted first so a second gunicorn worker's
+  claim fails instead of re-running.
+- **`diary` already resolved to the Diary Dizon profile** through the `engineer_profile` name-prefix fallback, so moving
+  the link changed nothing in her snapshot (no new engineer items).
+- **Owned-records check** also counts integer `created_by`/`updated_by` columns (`purchase_order`,
+  `reimbursement_tracker_*`), not only `*user_id`/`*_by_id` and user FKs.
+- **Legacy role `'admin'` kept in the three inventory-admin helpers** (`can_administer_products_inventory`, Genoray,
+  Vieworks): no production account holds it, but 80+ inventory test fixtures use it. Removed everywhere else.
+- **Batch 3 approval queues:** one explained difference. Rodito's own requests (id 1) leave his own queue — routing never
+  lets a requester approve himself; they already route to Anthony. Anthony's only route to Rodito had been deactivated,
+  so he reached an approver only through the name bypass; the v3 migration reactivated that route (production log line
+  `[Roles] Routed 'anthony' to the default approver.`). All other queues identical.
+- **Support Engineer writes are gated in one place** — `restrict_support_engineer_writes()` (`before_request`) over
+  `SUPPORT_ENGINEER_DENIED_ENDPOINTS` (TSR/calibration writes, schedule writes, Cash Advance) — instead of a check in each
+  of ~25 routes. Products go through `can_manage_supported_inventory_as_engineer`; Create TSR and drafts through
+  `can_back_up_tsr_drafts` → `can_do_field_work`; new travel requests are refused inside `save_travel_request_draft`.
+  Existing TSR/schedule write routes that already required `role == 'engineer'` were left as they are (they exclude
+  Support Engineers already). The travel page shows a notice above the form rather than replacing it, so requests the
+  Support Engineer is on still open there. Timeline uses the existing read-only mode with a "Support Engineer View" banner.
+- **`nav_rights_role`** (context processor) is what page scripts compare against: `superadmin` for the superadmin family,
+  `regional_admin`, `engineer` for Support Engineers, else the raw role. Replaces `current_user.role` in timeline,
+  engineers, clients.
+- **Role dropdown** also refuses a scheduler changing an admin account or giving an admin role (same limit as admin
+  delete), and `approver` without Can Approve.
+- **Tests:** `tests/test_roles_from_database.py` (15 tests; all fail on `HEAD`, run from a `git archive` export). 27 test
+  files updated from name lists to roles; tests whose premise was "superadmin role without the name list has no rights"
+  now use a `staff` account.
+
+## Context
+
+The owner wants to change a user's role from Settings and add a new **Support Engineer** role. Today that cannot work:
+rights come from **usernames**, not from `User.role`. Superadmin, manager, scheduler and regional-admin authority are
+fixed username lists (`app.py:8137-8165`), `migrate_hierarchy_accounts` forces six named accounts back to their roles on
+every start (`app.py:67052`), and the timeline repeats the names in JavaScript. The owner's rules for the rework: **no
+hardcoded username rules, no change to what each role may do, nobody loses any access in production**, and clean up
+the two stray logins `hannah` and `diarydizon`.
+
+## Decisions taken (owner, 2026-10-15)
+
+1. **Roles become the only source of truth.** New role values `manager` and `scheduler` hold exactly today's
+   Manager/Scheduler rights. Superadmin, Manager and Scheduler are all "superadmin family" (today's
+   `is_superadmin_user()` rights); Scheduler keeps its narrower password-reset and admin-delete limits; Regional Admin
+   keeps Cebu/Davao-only by role.
+2. **Approvals = Approval Routing only.** Remove Rodito's username rules (sees everything, six name fallbacks,
+   auto re-added routes). New per-account **Default approver** checkbox; new accounts are routed to the ticked
+   default approver(s) when they are created. A route the owner removes stays removed.
+3. **Protected developer account** — one per-account checkbox replacing the `jonamar` name rules: password cannot be
+   reset/deactivated/deleted by anyone else, engineer-only dashboard, timeline developer view picker. Only a protected
+   account may untick it.
+4. **Francis grant** ("Create TSR without assigned equipment") becomes checkbox-only: any active engineer-type
+   account with an Engineer profile can be ticked; the username lock goes.
+5. **Support Engineer** (`support_engineer`, label "Support Engineer") is a **view-only** engineer. Same as Engineer
+   for reimbursements, leave, dashboard, Personnel and viewing pages, except:
+   - **Products:** can view; cannot add, edit or delete — Product, Genoray and Vieworks lists (one helper governs all
+     three; assumption stated to owner).
+   - **Schedules:** can view and can be assigned by admins; cannot add, edit or delete schedules, including their own,
+     and cannot change status or upload files on an assigned schedule (owner, 2026-10-15: "they cant add/edit/delete
+     schedules even submit tsr or calibration").
+   - **TSR and calibration:** cannot create, draft, submit, revise or upload a TSR, cannot save or submit a calibration
+     report or certificate, cannot email a TSR to the client, cannot add knowledge-base entries. They can still view
+     TSRs (archive, history) and calibration reports they may see today.
+   - **Travel requests:** cannot create one. As a participant on someone else's request they need no saved signature
+     (a saved one still prints). They can still open requests they are on, as any participant can today.
+   - **Cash advance:** no access (page, save, submit, liquidation creation), link hidden.
+   - Owner sets who gets the role through the new dropdown after release; no account is migrated to it.
+6. **Stray logins.** `diarydizon`'s Personnel row "Diary Dizon" (12-139) moves to the real `diary` login, then
+   `diarydizon` is deleted; `hannah` is deleted. Expected consequence accepted by the owner: `diary` gains engineer
+   tools (own timeline row, signature, TSRs) and the scheduler + engineer dashboard Hanna already has.
+7. **Production safety:** nobody loses access. Proven with a before/after access snapshot on a copy of production
+   (below); any unexplained difference blocks the publish. Fresh backup before the push.
+
+## Investigation
+
+### Production copy (2026-10-15 nightly backup, `tmp/medical_service_db_20261015.sqlite.gz`, integrity `ok`)
+
+- Accounts: 22 `engineer`, 6 `superadmin` (rodito #1, robert #2, jonamar #3, diary #4, hannah #5, hanna #23),
+  1 `regional_admin` (kevin #6, linked to Engineer 15-148 by `user_id`), 1 `staff` (xyra #30). `anthony` #29 is an
+  `engineer` with `can_approve_requests` (the local DB shows him as `approver`; production is the truth).
+- `hannah` (#5) owns nothing except 1 `approval_routing` row as requester. `diarydizon` (#24) owns nothing except
+  2 `approval_routing` rows as requester and the Engineer link (Engineer #22 "Diary Dizon", 85 `shift` + 87
+  `shift_engineer` rows on engineer_id 22 — these stay with the Engineer row and follow it to `diary`). `diary` (#4)
+  has no Engineer profile today.
+- Approval routes by approver: rodito 29, robert 27, jonamar 2, anthony 1.
+- The local `scheduler.db` differs from production (approver role, `po_*` test accounts); use the production copy for
+  the snapshot.
+
+### Hardcoded username rules (all to be removed or replaced)
+
+- Constants `app.py:8137-8165`: `DEVELOPER_SUPERADMIN_USERNAME`, `MANAGER_USERNAMES`, `MANAGER_PRIMARY_USERNAMES`,
+  `ENGINEER_PRIMARY_USERNAMES`, `SCHEDULER_USERNAMES`, `SUPERADMIN_DISPLAY_USERNAMES` (unused),
+  `SUPERADMIN_USERNAMES`, `PROTECTED_PASSWORD_USERNAMES`, `REGIONAL_ADMIN_USERNAME`, `REGIONAL_ADMIN_EMPLOYEE_ID`,
+  `FRANCIS_USERNAME`, `APPROVAL_CENTER_MANAGER_USERNAME`.
+- Helpers: `is_manager_dashboard_user` 11527, `is_manager_primary_user` 11553, `is_engineer_primary_user` 11567,
+  `get_display_role` 11579 (`robert`/`rodito` literals), `is_scheduler_user` 11607, `is_superadmin_user` 11617,
+  `is_regional_admin_user` 11627 (username + employee id), `can_create_tsr_without_equipment_for_user` 11750,
+  `can_reset_password_for_user` 11801, `personnel_account_change_denial` 64424,
+  `is_legacy_reimbursement_approval_user` 8176 and callers 11359, 11374, 11391, 11410, 29640, 29745, 45690.
+- `User.engineer_profile` Kevin fallback 1770; `resolve_staff_permission_request` 30576 (Francis) and
+  `protected_business_roles` 30655; activity-log regional filter 34113 (`ilike('kevin')`).
+- Rodito fallbacks: 42075, 52735, 59066 (forces `can_approve_requests`), 59093 (`ensure_default_approval_routes`,
+  re-adds "all → Rodito" on startup 67212, on each Approval Routing load 30553, and in
+  `ensure_runtime_sqlite_migrations_before_request` 66979), 69638, 73529.
+- Startup: `migrate_hierarchy_accounts` 67052 (called twice in `initialize_database` 67209/67211, which production
+  runs via `initialize_wsgi_workflow_schemas` 77623; Procfile = gunicorn `app:app`).
+- Templates: `timeline.html:211` and `9409` (developer picker, `jonamar`), `9402` `defaultAllBranchUsers`, `9950`
+  `isTimelineSchedulerAccount`, `12319-12331` workload exemption names and name hints (`"rio"` matches any name
+  containing it); `settings.html:2955` (Francis).
+
+### Raw role-string checks that must follow the new roles
+
+- Settings tabs use the raw role, not the server's checks: `settings.html:49`, `59`, `454`, `581` → `hannah` sees
+  Users (0 rows), Approval Routing, Email Recipients, Templates (403). Confirmed in the browser on a DB copy.
+- `== 'superadmin'` / `'regional_admin'` comparisons: `app.py:11820`, `11830`, `48673`, `64427`, `73886`, `74022`;
+  `analytics.html:39`; `timeline.html:230`, `9364-9366`, `9961-9974`, `22850`; `engineers.html:342-345`, `538`;
+  `clients.html:377`.
+- Never-matching role values `'admin'`, `'manager'`, `'scheduler'` in `can_quick_add_timeline_client` 11728,
+  `can_administer_products_inventory`/Genoray/Vieworks (8503, 8518, 8556), 29641, 55718, `timeline.html:9961` — they
+  would become live once `manager`/`scheduler` exist; each must be reviewed, not left to activate silently.
+- `== 'engineer'` checks (26 in `app.py`), classified: **engineer-type** (include `support_engineer`): 1480, 8539,
+  8619, 11596, 13066, 14073, 14104, 14307, 14393, 15181, 19602, 24748, 27074, 27405, 27496, 27831, 28544, 29614,
+  29622, 54245, 54484, 55702, 64310, 11757; **schedule write** (exclude `support_engineer`): 11875, 11906, 63161.
+  Templates: `engineers.html:71`, `345`, `529`, `544`; `clients.html:377`; `timeline.html:9366`.
+- `User.role` is `String(20)`; `support_engineer` (16) fits.
+
+### Support Engineer gates
+
+- Products: `can_manage_supported_inventory_as_engineer` 8562 → `can_edit_products_inventory` 8580, Genoray 8588,
+  Vieworks 8596; routes `add_product` 64589, `update_product` 64809 (delete is admin-only already); page flags 29778,
+  29793, 29809, 29825; catalog 29881; Vieworks 65816/65881; Genoray 66217/66273.
+- Schedules: `can_modify_schedule_for_engineer_ids` 11854 and `can_create_schedule_for_engineer_ids` 11882 grant
+  engineers by `role == 'engineer'` (support engineer falls through to False with no change);
+  `can_submit_update_engineer_ids_for_scope` 11977 and `update_shift` 62692 (engineer detail/time edits) must deny
+  support engineers except status/TSR-file work; `can_work_on_existing_schedule_shift` 11938 is profile-based.
+- Travel: page `travel_request_page` 29707, `save_travel_request_draft` 44106 (creates when no id),
+  `submit_travel_request` 44398, signatures `get_travel_request_missing_signature_people` 43521 (people from
+  `get_travel_request_signature_people` 43448, lead role `'lead'`).
+- Cash advance: page 69239, `save_cash_advance` 69357, `submit_cash_advance` 69437, liquidation page 70536.
+- TSR and calibration writes: `can_back_up_tsr_drafts` 8219 (single gate for the Create TSR page and its draft
+  endpoints), `reserve_tsr_number` 18669, `save_tsr_draft` 19010, `save_tsr_draft_version` 19267,
+  `delete_tsr_draft` 19373, `save_calibration_report_draft` 19474, `release_tsr_number_reservation` 19554,
+  `save_offline_tsr_online` 19592, `submit_calibration_certificate` 26624/26625, `upload_online_tsr_attachment` 27069,
+  `convert_calibration_report_sample` 27401, `revise_online_tsr_submission` 27491, `save_tsr_knowledge_entry` 27826,
+  `preview_tsr_client_email_message` 62213, `send_tsr_client_email` 62271, `get_next_online_tsr_number` 15180;
+  schedule work `can_work_on_existing_schedule_shift` 11938. View routes (`get_tsr_archive` 54482,
+  `search_tsr_knowledge` 14298, `calibration_report_engineer_can_view` 24740) stay open.
+- Navigation: `layout.html:149-151`, `202`, `267`, `269`; context processor `inject_navigation_access` 1457.
+
+## Execution steps
+
+### Batch 0 — Access snapshot tool (no app behaviour change; committed with Batch 1)
+
+1. New `scripts/role_access_snapshot.py`: given a DB path (env `MEDICAL_SERVICE_TEST_DB`), loads the app in a test
+   request context and writes JSON per active and inactive user: role, display label, `is_admin_authorized`,
+   `is_superadmin_user`, `is_scheduler_user`, `is_regional_admin_user`, `is_manager_dashboard_user`,
+   `get_dashboard_capabilities`, every `nav_*` value from `inject_navigation_access`, `can_administer_personnel`,
+   `can_view_admin_reports`, `can_manage_any_schedule`, `can_manage_purchase_orders`,
+   `can_manage_reimbursement_tracker`, `can_access_calibration_center`, `can_edit_products_inventory` / Genoray /
+   Vieworks, `can_quick_add_timeline_client`, `can_back_up_tsr_drafts`, `is_approval_center_user`,
+   `can_create_tsr_without_equipment_for_user`, the password-reset matrix (`can_reset_password_for_user` for every
+   actor × target pair), `personnel_account_change_denial` matrix, and the requester ids in each approval scope
+   queue (`get_requester_user_ids_for_approver` + legacy bypass). Done: running it twice on the same DB gives an
+   identical file.
+2. Run it on the unzipped production copy (scratchpad, never the tracked DB) with **current `HEAD`** → `before.json`.
+
+### Batch 1 — The role is the badge
+
+3. New role constants in one place next to the helpers: `SUPERADMIN_FAMILY_ROLES = {'superadmin', 'manager',
+   'scheduler'}`, `ENGINEER_TYPE_ROLES = {'engineer', 'support_engineer'}` (support engineer only used from Batch 4),
+   `ROLE_LABELS` (superadmin "Superadmin", manager "Manager", scheduler "Scheduler", regional_admin "Administrator",
+   engineer "Engineer", approver "Approver", staff "Staff").
+4. Rewrite helpers by role only: `is_superadmin_user` = role in family; `is_scheduler_user` = role `scheduler`;
+   `is_manager_dashboard_user` = admin-authorized and not scheduler; `is_manager_primary_user` = role `manager`
+   (Rodito today; same result); `is_regional_admin_user` = role `regional_admin` (Cebu/Davao rule unchanged);
+   `get_display_role` = `ROLE_LABELS` lookup. `is_engineer_primary_user` stays name-based until Batch 2.
+5. Replace raw comparisons: `can_reset_password_for_user` 11820/11830 and `personnel_account_change_denial` 64427
+   compare against the superadmin family (a scheduler still cannot reset manager/superadmin/scheduler or engineer
+   passwords; regional admin still cannot touch any admin); 48673, 73886, 74022 → `is_regional_admin_user()`;
+   `protected_business_roles` → `is_admin_authorized(target)`; 34113 → filter on the regional admin's own username
+   from `current_user`. Remove the dead `'admin'`/`'manager'`/`'scheduler'` literals listed above after checking
+   each result in the snapshot is unchanged.
+6. Templates: Settings tabs 49/59/454/581 → `nav_is_admin` / `nav_is_superadmin`; `analytics.html:39`,
+   `timeline.html:230`, `22850` → new `nav_is_regional_admin`; `timeline.html:9364-9366`, `engineers.html:342-345`,
+   `clients.html:377` derive `isSuperAdmin`/`isRegionalAdmin`/`isEngineer`/`isScheduler` from server flags
+   (`|tojson`), not the role string; `timeline.html:9961-9974` the same. Delete `defaultAllBranchUsers` (covered by
+   `isSuperAdmin`), make `isTimelineSchedulerAccount` use the server flag, and replace the workload exemption lists
+   with an `is_admin_account` flag on each engineer row in the timeline payload (admin-authorized accounts, as today).
+7. Remove `User.engineer_profile` Kevin fallback (1770) — Kevin is linked by `user_id` in production.
+8. One-time migration `migrate_roles_v1()` replacing `migrate_hierarchy_accounts`, guarded by a new
+   `app_migration(name PRIMARY KEY, applied_at)` table so it never runs twice (a later dropdown change must not be
+   undone). In one transaction: rodito → `manager`; diary, hanna → `scheduler`; Engineer row linked to `diarydizon`
+   → `user_id = diary.id` only if `diary` has no profile; delete `diarydizon` and `hannah` with their
+   `approval_routing` rows **only when** an owned-records check across every `*user_id`/`*_by_id` column finds
+   nothing else, otherwise deactivate and log why. The account names appear only inside this one-time function.
+   Done: second run is a no-op; startup no longer rewrites roles.
+9. `bootstrap_static_accounts` (fresh databases only) creates the seed accounts with their new roles.
+   `ensure_emergency_superadmin_from_env` stays (excluded below).
+10. Delete `MANAGER_USERNAMES`, `SCHEDULER_USERNAMES`, `SUPERADMIN_USERNAMES`, `SUPERADMIN_DISPLAY_USERNAMES`,
+    `REGIONAL_ADMIN_USERNAME`, `REGIONAL_ADMIN_EMPLOYEE_ID` and `migrate_hierarchy_accounts` after grep shows no caller.
+11. Tests: update the 16 test files that create accounts by name to set the role instead; new
+    `tests/test_roles_from_database.py` — renaming a scheduler account keeps its rights, changing a role changes rights,
+    `hannah`-style superadmin-role account now gets full rights only because its role says so, migration is idempotent
+    and refuses to delete an account with history.
+12. Run the snapshot on the migrated production copy → `after-1.json`; diff with `before.json`. Allowed differences
+    only: `hannah`/`diarydizon` gone; `diary` gains engineer-profile items; display labels unchanged. Anything else
+    blocks.
+
+### Batch 2 — Per-account switches
+
+13. Additive column `user.is_protected_account BOOLEAN DEFAULT 0` (in `ensure_user_admin_capability_columns`);
+    `migrate_roles_v1` (or a `v2` marker) sets it for the account that is today's `DEVELOPER_SUPERADMIN_USERNAME`.
+14. Replace `PROTECTED_PASSWORD_USERNAMES` (11812, 64424), `ENGINEER_PRIMARY_USERNAMES` / `is_engineer_primary_user`,
+    and the timeline developer picker (`timeline.html:211`, `9409`, via `nav_is_protected_account`) with the flag.
+    Settings → Approval Routing user editor shows "Protected developer account"; server allows changing it only when
+    the actor is itself protected.
+15. Francis grant: drop the username check in `can_create_tsr_without_equipment_for_user` 11756 (keep active,
+    engineer-type role, profile, flag), in `resolve_staff_permission_request` 30576 (refuse only for non-engineer-type
+    or profile-less targets), and `settings.html:2955` (show for engineer-type accounts with a profile).
+16. Delete `DEVELOPER_SUPERADMIN_USERNAME` (except inside the one-time migration and the emergency bootstrap),
+    `PROTECTED_PASSWORD_USERNAMES`, `ENGINEER_PRIMARY_USERNAMES`, `MANAGER_PRIMARY_USERNAMES` if unused, `FRANCIS_USERNAME`.
+17. Tests: protected account cannot be reset/deactivated by another superadmin; non-protected actor cannot untick it;
+    engineer-only dashboard follows the flag; grant works for a non-Francis engineer and is refused for staff.
+18. Snapshot → `after-2.json`: identical to `after-1.json`.
+
+### Batch 3 — Approval Routing is the only approval rule
+
+19. Additive column `user.is_default_approver BOOLEAN DEFAULT 0`; one-time marker sets it for today's
+    `APPROVAL_CENTER_MANAGER_USERNAME` account and keeps its `can_approve_requests`.
+20. Remove `is_legacy_reimbursement_approval_user` and its bypasses (11359, 11374, 11391, 11410, 29640, 29745, 45690);
+    queues filter by routing for everyone. `approval_center_is_legacy_manager` / `legacy_manager_view` template flags
+    become False-equivalent; remove their template branches only after grep shows what they render.
+21. The six fallbacks (42075, 52735, 69638, 73529 and the 59060 forcing block) use a new
+    `get_default_approvers()` (active, `can_approve_requests`, `is_default_approver`).
+22. `ensure_default_approval_routes` no longer runs on startup, page load or per request; instead Add Personnel
+    (account creation, 64215 path) adds "all → default approver(s)" routes for the new account.
+23. Approval Routing editor: "Default approver" checkbox (superadmin-only, server-validated, audited).
+24. Tests: removed route stays removed after reloading Approval Routing and restarting; new account gets default
+    routes; Rodito's queue on the production copy equals before (same requester ids per scope).
+25. Snapshot → `after-3.json`: approval queues identical to `after-2.json`. Any active requester without a route
+    (who today reaches Rodito only through the legacy bypass) is listed; the migration gives each one an
+    "all → default approver" route so no request loses its approver.
+
+### Batch 4 — Role dropdown and Support Engineer
+
+26. `/settings/update-user-role` (POST, CSRF, superadmin only): allowed values = `ROLE_LABELS` keys +
+    `support_engineer`; refuses own account, the last active superadmin-family account, a protected account changed by
+    someone else, and `regional_admin` targets outside the actor's power; keeps `approver` role and the approver-only
+    checkbox consistent (`approver` requires `can_approve_requests`); writes `ActivityLog`. Users tab row: a Role
+    `<select>` (desktop and phone card) for superadmins, read-only badge for others; existing Reset Password unchanged.
+    Badge colour for Support Engineer.
+27. `is_engineer_type(user)` helper = role in `ENGINEER_TYPE_ROLES`; switch the engineer-type sites listed above;
+    schedule-write sites stay `role == 'engineer'`; `nav_is_engineer` uses the helper; add `nav_is_support_engineer`.
+28. Products: `can_manage_supported_inventory_as_engineer` returns False for `support_engineer` (view routes unchanged).
+29. Schedules: `can_work_on_existing_schedule_shift`, `can_submit_update_engineer_ids_for_scope` and the engineer
+    branch of `update_shift` return False / 403 for support engineers (no detail, time, status or file changes); the
+    timeline hides add/edit/delete controls for them (`nav_is_support_engineer`).
+29a. TSR and calibration: new `can_do_field_work(user)` = authenticated, active, not approver-only, role not
+    `support_engineer`. `can_back_up_tsr_drafts` returns `can_do_field_work` (closes Create TSR page and drafts in one
+    place); every TSR/calibration write route listed in Investigation checks it and returns 403 "Support Engineers can
+    view TSRs and calibration reports but cannot submit them."; Create TSR nav link, dashboard TSR actions and the
+    calibration Save/Submit buttons hidden by the same flag. View routes unchanged. In the step 27 classification, the
+    TSR write sites (14073, 14104, 15181, 19602, 27074, 27405, 27496, 27831) use `can_do_field_work`, not
+    `is_engineer_type`.
+30. Travel: `save_travel_request_draft` refuses creation (no id) for support engineers; page shows a short "Support
+    Engineers cannot create travel requests" state instead of the New form; nav link and New-request tile hidden;
+    `get_travel_request_missing_signature_people` skips non-lead people whose account is `support_engineer`.
+31. Cash advance: page redirects to My Requests, `save_cash_advance`/`submit_cash_advance`/liquidation creation
+    refuse, nav link and tile hidden.
+32. Tests: dropdown rules (own, last superadmin, protected, bad value, audit row); support engineer can view products
+    but add/update return 403; cannot create, edit, change status of or upload to a schedule, even an assigned one;
+    Create TSR page redirects and every TSR/calibration write route returns 403 while TSR archive and calibration
+    report views still load; cannot create travel request or cash advance; travel submit succeeds with a
+    support-engineer participant lacking a signature; still reaches reimbursement and leave.
+33. Snapshot → `after-4.json`: identical to `after-3.json` (no account holds `support_engineer` yet).
+
+## Deliberately excluded
+
+- `ensure_emergency_superadmin_from_env` (`SEED_PASSWORD_JONAMAR`): break-glass recovery, only active when the env var
+  is set; not a role rule.
+- Stock-inventory first-run `UPDATE ... username IN (...)` (`app.py:6185`): already ran once in production
+  (`stock_inventory_permission_initialized`); changing it has no effect.
+- Fallback email maps (`app.py:9140`, `12362`): contact addresses for accounts without a profile email, not access
+  rules. Can move to profile emails later.
+- No account is given `support_engineer` by migration; the owner assigns it.
+- No Railway variable change or manual redeploy.
+
+## Verification
+
+- Positive control: every new test fails on current `HEAD` (run in-process against `git show HEAD:` sources; never
+  `git stash`).
+- Focused modules per batch: the new tests plus `test_admin_capabilities`, `test_approval_routing_settings`,
+  `test_display_role_label`, `test_layout_sidebar`, `test_dashboard_*` (hybrid, scheduler, manager, developer view,
+  dispatch board), `test_staff_creation`, `test_stock_inventory`, `test_purchase_orders`, `test_reimbursement_tracker`,
+  `test_tsr_without_equipment`, `test_hr_schedule_viewer`, travel/cash-advance/product modules for Batch 4.
+- **Full suite** once before publishing (shared auth, permissions, schema): `venv/Scripts/python.exe
+  scripts/run_suite.py` in the main project folder; no new failures beyond `tests/known_failures.txt`.
+- **Access snapshot** on the production copy after every batch, diffed as in steps 12, 18, 25, 33. Blocks on any
+  unexplained difference.
+- Browser (production copy in scratchpad, test passwords in the copy only), as superadmin, manager (rodito),
+  scheduler (diary, hanna), regional admin (kevin), engineer, staff and a test support engineer: Settings tabs match
+  rights, Users tab role dropdown and refusals, Approval Routing checkboxes, dashboard type per account, timeline
+  admin controls and developer picker, Products buttons, schedule modal, travel and cash advance gates; 375 px for
+  the Users tab; console clean. Delete the copy and restore `.claude/launch.json` afterwards.
+
+## After implementation
+
+- Self-review the diff; confirm every function, element id and handler the changed pages call still exists
+  (`promptAdminReset`, `filterSettingsUsers`, approval-routing editor save, timeline admin actions, Personnel
+  deactivate/delete/reset).
+- Service worker `CACHE_VERSION` bump (templates change); `static/changelog/releases.json` release "User roles"
+  (role dropdown, Support Engineer, approval default approver); `changes.md`; batch memory note; Status here.
+- Before the push the owner takes a fresh database backup (Settings → Backup).
+- On "commit and push": only the intended files (never `scheduler.db`, `output/`, `tmp/`, handoffs, `.impeccable/`,
+  `.claude/` or other dirty files); verify `origin/main` and Railway deployment metadata. After deploy, sign in as the
+  owner and confirm Settings → Users shows the new roles (manager, scheduler) and that the two logins are gone.
+
+## Risks
+
+- **Lost access in production** — the main risk. Safety net: the access snapshot on a production copy, the full suite,
+  migrations that only add columns and run once, and a fresh backup.
+- **Rollback:** reverting the code is safe — old code's `migrate_hierarchy_accounts` puts rodito/diary/hanna back to
+  `superadmin` on start and ignores new columns and the `app_migration` table. Deleted logins (`hannah`,
+  `diarydizon`) and the moved Personnel link are restored only from the backup.
+- **Dead role values becoming live** (`'manager'`, `'scheduler'` literals) — each reviewed in step 5 and covered by
+  the snapshot.
+- **Diary's dashboard changes** (accepted by the owner) — she gains engineer sections and her schedule rows.
+- **Blast radius:** login/permission helpers used by every page, Settings, timeline, Personnel, approvals, products,
+  travel, cash advance. One commit per batch so a batch can be reverted alone.
+
 # Calibration Report on a revised TSR — move it to the latest revision instead of "belongs to another TSR" (1 batch)
 
 **Status:** Executed (2026-10-15, on "Execute the revised-TSR calibration report plan."). Published on "commit and

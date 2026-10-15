@@ -65,7 +65,6 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             cls.vieworks_serial = cls.vieworks.serial_number
             cls.other_vieworks_serial = cls.other_vieworks.serial_number
             cls.product_name_id = cls.product_name_catalog.id
-            app_module.SUPERADMIN_USERNAMES.add(cls.superadmin.username.lower())
 
     @classmethod
     def tearDownClass(cls):
@@ -77,7 +76,6 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             TEST_DB_PATH.unlink(missing_ok=True)
         except OSError:
             pass
-        app_module.SUPERADMIN_USERNAMES.discard(cls.superadmin.username.lower())
 
     def client_for(self, user_id):
         client = self.app.test_client()

@@ -91,7 +91,6 @@ class InventoryPmTests(unittest.TestCase):
         cls.app = app_module.app
         cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, PROPAGATE_EXCEPTIONS=True)
         cls.superadmin_username = f"pm_superadmin_{uuid.uuid4().hex[:8]}"
-        app_module.SUPERADMIN_USERNAMES.add(cls.superadmin_username)
         with cls.app.app_context():
             app_module.db.create_all()
             app_module.ensure_inventory_pm_visit_table()
@@ -187,7 +186,6 @@ class InventoryPmTests(unittest.TestCase):
                     app_module.db.session.delete(row)
             app_module.db.session.commit()
             app_module.db.session.remove()
-        app_module.SUPERADMIN_USERNAMES.discard(cls.superadmin_username)
 
     def setUp(self):
         with self.app.app_context():

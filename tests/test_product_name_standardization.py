@@ -23,7 +23,6 @@ class ProductNameStandardizationTests(unittest.TestCase):
         cls.app = app_module.app
         cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, PROPAGATE_EXCEPTIONS=True)
         cls.username = f"product_standardization_admin_{uuid.uuid4().hex[:8]}"
-        app_module.SUPERADMIN_USERNAMES.add(cls.username)
         with cls.app.app_context():
             app_module.db.create_all()
             app_module.ensure_product_name_catalog()
@@ -59,7 +58,6 @@ class ProductNameStandardizationTests(unittest.TestCase):
                 app_module.db.session.delete(user)
             app_module.db.session.commit()
             app_module.db.session.remove()
-        app_module.SUPERADMIN_USERNAMES.discard(cls.username)
 
     def setUp(self):
         self.client = self.app.test_client()

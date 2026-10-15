@@ -68,7 +68,7 @@
             <hr>
         </div>
 
-        {% if current_user.role == 'engineer' and not current_user.engineer_profile %}
+        {% if nav_is_engineer and not current_user.engineer_profile %}
         <div class="alert alert-warning no-print small" id="engineer-profile-link-warning">
             <i class="fa-solid fa-triangle-exclamation me-1"></i>
             Your login is not linked to an Engineer profile yet. Please ask admin to link your account before editing contact details.
@@ -338,7 +338,7 @@
      */
     let engModal;
     let engineersData = [];
-    const authRole = "{{ current_user.role }}";
+    const authRole = {{ nav_rights_role|tojson }};
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
     const isScheduler = {{ 'true' if nav_is_scheduler else 'false' }};
@@ -535,13 +535,13 @@
         if(!(isSuperAdmin || isRegionalAdmin) || !e.user_id) return false;
         if(loggedInEngineerId && String(e.id) === String(loggedInEngineerId)) return false;
         // Schedulers and the regional admin cannot deactivate or delete admin accounts.
-        if((isScheduler || isRegionalAdmin) && ['superadmin', 'regional_admin'].includes(e.account_role)) return false;
+        if((isScheduler || isRegionalAdmin) && ['superadmin', 'manager', 'scheduler', 'regional_admin'].includes(e.account_role)) return false;
         return true;
     }
 
     function canResetEngineerPassword(e){
         // Schedulers cannot reset engineers' passwords (same rule as Settings).
-        return canChangeEngineerAccount(e) && !(isScheduler && e.account_role === 'engineer');
+        return canChangeEngineerAccount(e) && !(isScheduler && ['engineer', 'support_engineer'].includes(e.account_role));
     }
 
     function canDeleteEngineer(e){

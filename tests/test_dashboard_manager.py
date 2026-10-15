@@ -112,10 +112,9 @@ class ManagerEndpointTests(unittest.TestCase):
 
         Every test module pins MEDICAL_SERVICE_TEST_DB with os.environ.setdefault, so under
         `unittest discover` the first module to import wins and they all share one database
-        and one Flask app. Seeding an account named APPROVAL_CENTER_MANAGER_USERNAME makes
-        ensure_default_approval_routes() write an ApprovalRouting row for every user; those
-        rows have a NOT NULL requester_user_id, and sibling modules that recreate users then
-        trip that constraint. Left in place, this module turns 16 unrelated tests red.
+        and one Flask app. The ApprovalRouting row seeded here has a NOT NULL
+        requester_user_id, and sibling modules that recreate users then trip that
+        constraint. Left in place, this module turns unrelated tests red.
         """
         cls.app.config['NEW_WORKFLOWS_ENABLED'] = cls._previous_workflows_flag
         with cls.app.app_context():
@@ -125,9 +124,6 @@ class ManagerEndpointTests(unittest.TestCase):
                 app_module.ReimbursementHeader.query.filter_by(user_id=cls.requester_id).delete()
                 app_module.db.session.commit()
 
-                # The approver account has to go too. While a user with this username
-                # exists, ensure_default_approval_routes() simply rebuilds the rows on the
-                # next request a sibling module makes.
                 for username in (cls.manager_username, cls.non_approver_manager,
                                  'mgr_test_engineer'):
                     user = app_module.User.query.filter_by(username=username).first()
@@ -143,16 +139,16 @@ class ManagerEndpointTests(unittest.TestCase):
         today = app_module.get_manila_today()
         now = app_module.as_naive_datetime(app_module.get_manila_time())
 
-        # rodito is the legacy approval manager: apply_assigned_approver_filter returns the
-        # unfiltered query for him. A configured approver with no routing rows sees nothing.
-        cls.manager_username = app_module.APPROVAL_CENTER_MANAGER_USERNAME
+        # The manager approves through Approval Routing like everyone else: a route from
+        # the requester is seeded below. A configured approver with no routes sees nothing.
+        cls.manager_username = 'rodito'
         # The regional admin reaches the manager dashboard through is_admin_authorized()
         # without being an approver -- the real case that decides whether the approvals
         # block is hidden or shows a panel of permanent zeros. An approver-only account is
         # NOT a manager-dashboard user and gets 403, so it cannot stand in for this.
-        cls.non_approver_manager = app_module.REGIONAL_ADMIN_USERNAME
+        cls.non_approver_manager = 'kevin'
         accounts = (
-            (cls.manager_username, 'superadmin', False),
+            (cls.manager_username, 'manager', True),
             ('mgr_test_engineer', 'engineer', False),
             (cls.non_approver_manager, 'regional_admin', False),
         )
@@ -172,6 +168,12 @@ class ManagerEndpointTests(unittest.TestCase):
 
         requester = app_module.User.query.filter_by(username='mgr_test_engineer').first()
         cls.requester_id = requester.id
+        manager = app_module.User.query.filter_by(username=cls.manager_username).first()
+        if not app_module.ApprovalRouting.query.filter_by(
+                requester_user_id=requester.id, approver_user_id=manager.id, request_scope='all').first():
+            db.session.add(app_module.ApprovalRouting(
+                requester_user_id=requester.id, approver_user_id=manager.id, request_scope='all', active=True))
+            db.session.commit()
 
         # Pending approvals of different ages so the aging headline is exercised.
         existing_pending = app_module.ReimbursementHeader.query.filter_by(

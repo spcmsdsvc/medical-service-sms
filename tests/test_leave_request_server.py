@@ -60,7 +60,7 @@ class LeaveRequestServerTests(unittest.TestCase):
             cls.owner_id, cls.owner_engineer_id = person('lr_owner', 'engineer', 'LRS-OWN')
             cls.super_id, cls.super_engineer_id = person('jonamar', 'superadmin', 'LRS-SUP')
             cls.super2_id, _ = person('robert', 'superadmin', 'LRS-SU2')
-            cls.scheduler_id, _ = person('lr_scheduler', 'scheduler', 'LRS-SCH')
+            cls.scheduler_id, _ = person('lr_scheduler', 'staff', 'LRS-SCH')
             db.session.commit()
 
     @classmethod

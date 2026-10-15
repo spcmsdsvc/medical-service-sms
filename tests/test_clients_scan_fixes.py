@@ -103,7 +103,7 @@ class ClientListRouteTests(unittest.TestCase):
         with self.isolated_database() as clients:
             with app_module.app.app_context():
                 rogue = app_module.User(username='client-rogue-superadmin', password='test-only',
-                                        role='superadmin', is_active=True)
+                                        role='staff', is_active=True)
                 app_module.db.session.add(rogue)
                 app_module.db.session.commit()
                 rogue_id = rogue.id

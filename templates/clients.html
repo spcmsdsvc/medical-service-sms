@@ -368,7 +368,7 @@ async function liveDuplicateCheck(){
 
 let contactCount = 0;
 
-const authRoleVal = "{{ current_user.role }}";
+const authRoleVal = {{ nav_rights_role|tojson }};
 
 const isAdminUser = {{ 'true' if can_admin_clients else 'false' }};
 const canEditProducts = {{ 'true' if can_edit_products else 'false' }};

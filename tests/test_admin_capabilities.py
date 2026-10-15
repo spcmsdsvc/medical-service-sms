@@ -108,10 +108,9 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
             cls.plain_user = add_user('cap_plain')
             cls.approver_user = add_user('cap_approver', role='approver', can_approve_requests=True)
 
-            # role='superadmin' on a username outside SUPERADMIN_USERNAMES. The three
-            # Cash Advance / LPR helpers used to trust the role column alone, so this
-            # account is what proves they no longer do.
-            cls.role_only_user = add_user('cap_roleonly', role='superadmin')
+            # A staff account: the three Cash Advance / LPR admin helpers must refuse it
+            # while a superadmin-role account is granted (rights come from the role).
+            cls.role_only_user = add_user('cap_roleonly', role='staff')
 
             # The regional admin is restricted to REGIONAL_ADMIN_BRANCHES, never Manila.
             # No fixture covered them, which is how a broad capability check placed ahead
@@ -136,7 +135,7 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
             if not regional_profile:
                 regional_profile = app_module.Engineer(
                     user_id=cls.regional_admin.id,
-                    employee_id=app_module.REGIONAL_ADMIN_EMPLOYEE_ID,
+                    employee_id='15-148',
                     name='Kevin Regional Admin',
                     initials='KRA',
                     branch='Cebu',
@@ -240,19 +239,13 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
 
         self._as_user(self.plain_user_id, refused)
 
-    def test_role_column_alone_does_not_grant_cash_advance_or_lpr_admin(self):
-        """Behavioural replacement for the source-string assertion this file used to make.
-
-        A pinned source string cannot tell you whether the rule holds; it only tells you
-        the old text is gone. This exercises the predicates with a real account whose role
-        column says superadmin but whose username is outside SUPERADMIN_USERNAMES.
-        """
+    def test_cash_advance_and_lpr_admin_follow_the_role(self):
+        """A staff account is refused the Cash Advance / LPR admin helpers; a superadmin is granted."""
         with self.app.app_context():
             role_only = app_module.db.session.get(app_module.User, self.role_only_user_id)
             superadmin = app_module.db.session.get(app_module.User, self.superadmin_id)
 
-            self.assertEqual(role_only.role, 'superadmin')
-            self.assertNotIn(role_only.username, app_module.SUPERADMIN_USERNAMES)
+            self.assertEqual(role_only.role, 'staff')
             self.assertFalse(app_module.is_admin_authorized(role_only))
 
             stub = types.SimpleNamespace(user_id=self.superadmin_id, id=1)
@@ -260,8 +253,8 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
             self.assertFalse(app_module.can_user_approve_lpr(role_only, stub))
             self.assertFalse(app_module.lpr_can_manage(stub, role_only))
 
-            # Positive control: a genuine allowlisted superadmin is still granted, so the
-            # refusals above are the username gate and not a predicate that denies all.
+            # Positive control: a superadmin-role account is granted, so the refusals
+            # above are the role gate and not a predicate that denies all.
             self.assertTrue(app_module.can_user_access_cash_advance(stub, superadmin))
             self.assertTrue(app_module.can_user_approve_lpr(superadmin, stub))
 

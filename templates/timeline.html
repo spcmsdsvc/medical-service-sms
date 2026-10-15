@@ -207,8 +207,8 @@
 
         <div class="d-flex align-items-center gap-2">
 
-            <!-- DEVELOPER ONLY: Timeline role view picker for Jonamar -->
-            {% if current_user.username|lower == 'jonamar' %}
+            <!-- DEVELOPER ONLY: Timeline role view picker for the protected developer account -->
+            {% if nav_is_protected_account %}
             <div class="timeline-dev-view-picker input-group input-group-sm shadow-sm border rounded">
                 <span class="input-group-text bg-light border-0">
                     <i class="fa-solid fa-user-gear text-danger"></i>
@@ -227,7 +227,7 @@
                 <span class="input-group-text bg-light border-0"><i class="fa-solid fa-location-dot text-primary"></i></span>
                 <select id="branch-filter" class="form-select border-0 bg-light fw-bold text-primary" onchange="loadGrid()" style="cursor: pointer;">
                     <option value="ALL">ALL BRANCH OFFICES</option>
-                    {% if current_user.role == 'regional_admin' %}
+                    {% if nav_is_regional_admin %}
                     <option value="REGIONAL">CEBU + DAVAO BRANCHES</option>
                     {% endif %}
                     <option value="Manila">MANILA BRANCH</option>
@@ -428,11 +428,13 @@
         </div>
         <div>
             <div class="timeline-approver-banner-title">
-                {% if timeline_read_only_hr %}HR Schedule View{% else %}Approver Calendar View{% endif %}
+                {% if timeline_read_only_hr %}HR Schedule View{% elif timeline_read_only_support %}Support Engineer View{% else %}Approver Calendar View{% endif %}
             </div>
             <div class="timeline-approver-banner-sub">
                 {% if timeline_read_only_hr %}
                     You can review assigned client schedules, dates, times, and status. Schedule changes and detailed client records are unavailable.
+                {% elif timeline_read_only_support %}
+                    You can review schedules, including the ones you are assigned to. Adding, editing, deleting, status changes and uploads are disabled.
                 {% else %}
                     You can review schedules for approval context. Adding, editing, deleting, and drag/drop changes are disabled for approver-only access.
                 {% endif %}
@@ -9346,13 +9348,15 @@ async function fetchTimelineDataWithOfflineTimeout(url){
     const loggedInEngineerId = "{{ logged_in_engineer_id or '' }}";
     const loggedInEngineerName = "{{ (current_user.engineer_profile.name if current_user.engineer_profile else current_user.username)|e }}";
     const loggedInEngineerInitials = "{{ (current_user.engineer_profile.initials if current_user.engineer_profile and current_user.engineer_profile.initials else '')|e }}";
-    const authRole = "{{ current_user.role }}";
+    const authRole = {{ nav_rights_role|tojson }};
     const timelineApproverView =
         "{{ 'true' if timeline_approver_view else 'false' }}" === "true";
     const timelineReadOnlyApprover =
         "{{ 'true' if timeline_read_only_approver else 'false' }}" === "true";
     const timelineReadOnlyHR =
         "{{ 'true' if timeline_read_only_hr else 'false' }}" === "true";
+    const timelineReadOnlySupport =
+        "{{ 'true' if timeline_read_only_support else 'false' }}" === "true";
     const isNamedSuperAdmin =
         "{{ 'true' if timeline_is_named_superadmin else 'false' }}" === "true";
     const canRecordProvisionalLeave =
@@ -9364,14 +9368,14 @@ async function fetchTimelineDataWithOfflineTimeout(url){
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
     const isEngineer = authRole === "engineer";
-    const canQuickAddTimelineClient = ["admin", "superadmin", "scheduler", "regional_admin", "manager"].includes(authRole);
+    const canQuickAddTimelineClient = isSuperAdmin || isRegionalAdmin;
 
     function isTimelineApproverView(){
         return Boolean(timelineApproverView);
     }
 
     function isTimelineReadOnlyMode(){
-        return Boolean(timelineReadOnlyApprover || timelineReadOnlyHR);
+        return Boolean(timelineReadOnlyApprover || timelineReadOnlyHR || timelineReadOnlySupport);
     }
 
     // Backward-compatible alias for existing action guards in this large page.
@@ -9382,7 +9386,9 @@ async function fetchTimelineDataWithOfflineTimeout(url){
     function showTimelineReadOnlyNotice(){
         timelineAlert(timelineReadOnlyHR
             ? "This calendar is view-only for HR schedule access. Schedule changes are disabled."
-            : "This calendar is view-only for approver access. Schedule changes are disabled.");
+            : timelineReadOnlySupport
+                ? "Support Engineers can view schedules but cannot add, edit, or delete them."
+                : "This calendar is view-only for approver access. Schedule changes are disabled.");
     }
 
     function showTimelineReadOnlyApproverNotice(){
@@ -9397,16 +9403,14 @@ async function fetchTimelineDataWithOfflineTimeout(url){
 
     // Detection of user's home branch to set auto-filter
     const userBranch = "{{ current_user.engineer_profile.branch if current_user.engineer_profile else 'ALL' }}";
-    // Named leadership/scheduler accounts default to ALL branches even if linked to an engineer profile.
-    // Any superadmin account also defaults to ALL unless it is the regional_admin role.
-    const defaultAllBranchUsers = ["jonamar", "rodito", "robert", "diary", "hanna"];
-    const shouldDefaultAllBranches = !isRegionalAdmin && (isSuperAdmin || defaultAllBranchUsers.includes(loggedInUserLower));
+    // Superadmin-family accounts default to ALL branches even if linked to an engineer profile.
+    const shouldDefaultAllBranches = !isRegionalAdmin && isSuperAdmin;
     // Regional Admin/Kevin can view Cebu and Davao together, but not Manila schedule actions.
     const regionalAllowedBranches = ["Cebu", "Davao"];
 
-    // Developer-only timeline preview mode for Jonamar.
+    // Developer-only timeline preview mode for the protected developer account.
     // This changes frontend view behavior only. Backend permissions remain unchanged.
-    const isTimelineDeveloperJonamar = loggedInUserLower === "jonamar";
+    const isTimelineDeveloperJonamar = {{ nav_is_protected_account|tojson }};
     const TIMELINE_DEV_VIEW_MODE_KEY = 'timelineDeveloperViewMode';
 
     function getTimelineDeveloperViewMode(){
@@ -9920,7 +9924,7 @@ function getTimelineCurrentUserRole(){
             window.userRole ||
             document.body?.dataset?.role ||
             document.body?.getAttribute('data-user-role') ||
-            '{{ current_user.role }}'
+            '{{ nav_rights_role }}'
         );
         return String(rawRole || '').trim().toLowerCase();
     }catch(err){
@@ -9945,9 +9949,8 @@ function getTimelineCurrentUsername(){
 }
 
 function isTimelineSchedulerAccount(){
-    const role = getTimelineCurrentUserRole();
-    const username = getTimelineCurrentUsername();
-    return role === 'scheduler' || username === 'diary' || username === 'hanna';
+    // The developer's Scheduler preview reports the 'scheduler' effective role.
+    return {{ nav_is_scheduler|tojson }} || getTimelineCurrentUserRole() === 'scheduler';
 }
 
 function isTimelineMobileDevice(){
@@ -12316,20 +12319,9 @@ function collectMobileEngineerSchedules(){
     // Timeline Intelligence is for management/scheduler views only, not engineer accounts.
     // Leadership/scheduler/admin personnel rows are exempt from workload scoring.
     const timelineIntelligenceEnabled = !isEngineer && (isSuperAdmin || isRegionalAdmin);
-    const workloadExemptUsernames = ["jonamar", "rodito", "robert", "diary", "hanna", "kevin"];
-    const workloadExemptNameHints = ["jonamar", "rodito", "robert", "diary", "hanna", "aretano", "rio"];
-
-    function normalizeNameForWorkload(value){
-        return String(value || '').toLowerCase().trim();
-    }
-
+    // Admin accounts' rows are exempt; the server marks them on /get_engineers.
     function isWorkloadExemptEngineer(eng){
-        const name = normalizeNameForWorkload(eng?.name);
-        const username = normalizeNameForWorkload(eng?.username || eng?.account_username || '');
-
-        if(username && workloadExemptUsernames.includes(username)) return true;
-        if(loggedInUserLower === "kevin" && isRegionalAdmin && isLoggedInEngineer(eng)) return true;
-        return workloadExemptNameHints.some(token => name.includes(token));
+        return Boolean(eng?.is_admin_account);
     }
 
     function getWorkloadLevel(count){
@@ -22847,7 +22839,7 @@ body.dragging-schedule .add-hint {
                 <label class="fw-bold small text-muted text-uppercase">Branch</label>
                 <select id="print-branch-filter" class="form-select form-select-sm" onchange="buildEngineerList()">
                     <option value="ALL">All Branches</option>
-                    {% if current_user.role == 'regional_admin' %}
+                    {% if nav_is_regional_admin %}
                     <option value="REGIONAL">Cebu + Davao</option>
                     {% endif %}
                     <option value="Manila">Manila</option>

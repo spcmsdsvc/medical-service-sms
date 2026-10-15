@@ -25,8 +25,12 @@ class DeveloperEngineerOnlyDashboardTests(unittest.TestCase):
         cls.created_engineer_ids = []
         with cls.app.app_context():
             app_module.db.create_all()
-            cls.developer_id = cls._user_with_profile(app_module.DEVELOPER_SUPERADMIN_USERNAME, 'DV')
+            cls.developer_id = cls._user_with_profile('jonamar', 'DV')
             cls.other_admin_id = cls._user_with_profile('robert', 'RB')
+            # The engineer-only dashboard follows the protected-account switch, not the name.
+            developer = app_module.db.session.get(app_module.User, cls.developer_id)
+            developer.is_protected_account = True
+            app_module.db.session.commit()
 
     @classmethod
     def _user_with_profile(cls, username, initials):
@@ -90,7 +94,9 @@ class DeveloperEngineerOnlyDashboardTests(unittest.TestCase):
             self.assertTrue(app_module.is_admin_authorized(user))
 
     def test_other_admin_with_profile_keeps_hybrid_view(self):
-        self.assertEqual(app_module.ENGINEER_PRIMARY_USERNAMES, {app_module.DEVELOPER_SUPERADMIN_USERNAME})
+        with self.app.app_context():
+            other = app_module.db.session.get(app_module.User, self.other_admin_id)
+            self.assertFalse(app_module.is_engineer_primary_user(other))
         caps = self._caps(self.other_admin_id)
         self.assertTrue(caps['manager_view'])
         self.assertTrue(caps['hybrid_view'])

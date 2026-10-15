@@ -1459,7 +1459,6 @@ def inject_navigation_access():
 
     layout.html used to re-implement these rules inline, and its versions were
     looser than the server's -- it checked `role in ('superadmin','regional_admin')`
-    without the SUPERADMIN_USERNAMES membership that is_superadmin_user() requires,
     and omitted the is_active checks that the approver helpers enforce. The sidebar
     therefore offered links that the route then redirected away from.
 
@@ -1474,10 +1473,21 @@ def inject_navigation_access():
         'nav_authenticated': authenticated,
         'nav_is_admin': is_admin_authorized(),
         'nav_is_superadmin': is_superadmin_user(),
+        'nav_is_regional_admin': is_regional_admin_user(),
+        'nav_is_protected_account': authenticated and is_protected_account(),
+        # The role the page scripts compare against: manager and scheduler hold
+        # superadmin rights, so scripts see them as 'superadmin'.
+        'nav_rights_role': (
+            'superadmin' if is_superadmin_user() else
+            'regional_admin' if is_regional_admin_user() else
+            'engineer' if role == 'support_engineer' else role
+        ),
         # The same business-facing label Settings shows (Manager, Scheduler, ...);
         # the sidebar's own role chain had no branch for managers or schedulers.
         'nav_display_role': get_display_role(current_user) if authenticated else '',
-        'nav_is_engineer': authenticated and role == 'engineer',
+        'nav_is_engineer': authenticated and is_engineer_type(),
+        'nav_is_support_engineer': authenticated and is_support_engineer(),
+        'nav_can_do_field_work': authenticated and can_do_field_work(),
         'nav_is_approval_center_user': is_approval_center_user(),
         'nav_is_approver_only': is_approver_only_user(),
         'nav_can_access_calibration_center': can_access_calibration_center(),
@@ -1743,6 +1753,10 @@ class User(UserMixin, db.Model):
     po_admin_access = db.Column(db.Boolean, default=False, nullable=False)
     reimbursement_tracker_access = db.Column(db.Boolean, default=False, nullable=False)
     can_create_tsr_without_equipment = db.Column(db.Boolean, default=False, nullable=False)
+    # Protected developer account: nobody else may reset, deactivate or delete it.
+    is_protected_account = db.Column(db.Boolean, default=False, nullable=False)
+    # New accounts are routed to every active default approver when they are created.
+    is_default_approver = db.Column(db.Boolean, default=False, nullable=False)
 
     # Last successful sign-in. Older accounts stay NULL until their next login.
     last_login_at = db.Column(db.DateTime, nullable=True)
@@ -1757,18 +1771,9 @@ class User(UserMixin, db.Model):
 
     @property
     def engineer_profile(self):
-        """Personalization v5.4: Links user account to the correct engineer profile.
-
-        Important:
-        - Admin Kevin must resolve by employee ID, not by first-name matching.
-        - This prevents another engineer named Kevin from being treated as the regional admin profile.
-        """
+        """Personalization v5.4: Links user account to the correct engineer profile."""
         if self.engineer_rel:
             return self.engineer_rel
-
-        username = (self.username or '').strip().lower()
-        if username == REGIONAL_ADMIN_USERNAME:
-            return Engineer.query.filter_by(employee_id=REGIONAL_ADMIN_EMPLOYEE_ID).first()
 
         # Fallback for older engineer accounts without user_id linkage.
         return Engineer.query.filter(Engineer.name.ilike(f"{self.username}%")).first()
@@ -6235,6 +6240,8 @@ def ensure_user_admin_capability_columns():
                 'schedule_admin_access',
                 'po_admin_access',
                 'reimbursement_tracker_access',
+                'is_protected_account',
+                'is_default_approver',
             ):
                 if column_name not in user_columns:
                     connection.exec_driver_sql(
@@ -8134,35 +8141,90 @@ def ensure_emergency_superadmin_from_env():
 
 # --- AUTHORIZATION POLICY HELPERS ---
 
-DEVELOPER_SUPERADMIN_USERNAME = 'jonamar'
-MANAGER_USERNAMES = {'rodito', 'robert'}
-# Accounts whose dashboard is the manager dashboard, full stop, even though they also
-# hold an Engineer profile. Every other admin+engineer account gets the manager view
-# with their own work stacked beneath it; these accounts do not.
-#
-# Deliberately NOT reused from APPROVAL_CENTER_MANAGER_USERNAME below, which happens to
-# be the same username today. That constant means approval routing; borrowing it would
-# couple routing to dashboard layout, so changing one would silently move the other.
-MANAGER_PRIMARY_USERNAMES = {'rodito'}
-# The opposite: accounts whose dashboard is the plain engineer dashboard even though
-# they are admin-authorized (the developer is a field engineer, not a manager).
-# Dashboard presentation only -- every permission and route check is unchanged.
-ENGINEER_PRIMARY_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME}
-SCHEDULER_USERNAMES = {'diary', 'hanna'}
-SUPERADMIN_DISPLAY_USERNAMES = {'jonamar', 'robert'}
-SUPERADMIN_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME} | MANAGER_USERNAMES | SCHEDULER_USERNAMES
-PROTECTED_PASSWORD_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME}
-REGIONAL_ADMIN_USERNAME = 'kevin'
-REGIONAL_ADMIN_EMPLOYEE_ID = '15-148'
 REGIONAL_ADMIN_BRANCHES = {'Cebu', 'Davao'}
 REGIONAL_PERSONNEL_DENIAL = 'You can manage Cebu and Davao personnel only.'
-FRANCIS_USERNAME = 'francis'
+
+# --- ROLES ---
+# User.role is the only source of rights. Superadmin, Manager and Scheduler all hold
+# superadmin rights; Scheduler keeps its narrower password-reset and admin-delete limits.
+SUPERADMIN_FAMILY_ROLES = {'superadmin', 'manager', 'scheduler'}
+ENGINEER_TYPE_ROLES = {'engineer', 'support_engineer'}
+ROLE_LABELS = {
+    'superadmin': 'Superadmin',
+    'manager': 'Manager',
+    'scheduler': 'Scheduler',
+    'regional_admin': 'Administrator',
+    'engineer': 'Engineer',
+    'support_engineer': 'Support Engineer',
+    'approver': 'Approver',
+    'staff': 'Staff',
+}
+
+
+def role_of(user=None):
+    target = user or current_user
+    return (getattr(target, 'role', '') or '').strip().lower()
+
+
+def is_engineer_type(user=None):
+    """Engineer and Support Engineer: the engineer pages, dashboard and viewing rights."""
+    target = user or current_user
+    return bool(target and getattr(target, 'is_authenticated', False) and role_of(target) in ENGINEER_TYPE_ROLES)
+
+
+def is_support_engineer(user=None):
+    """A view-only engineer: no TSR, calibration, schedule, product, travel-create or cash advance writes."""
+    target = user or current_user
+    return bool(target and getattr(target, 'is_authenticated', False) and role_of(target) == 'support_engineer')
+
+
+def can_do_field_work(user=None):
+    """May create, draft, submit or revise TSRs and calibration reports."""
+    target = user or current_user
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True)) and
+        not is_approver_only_user(target) and
+        not is_support_engineer(target)
+    )
+
+
+def is_protected_account(user=None):
+    """The protected developer account: nobody else may reset, deactivate or delete it."""
+    target = user or current_user
+    return bool(target and getattr(target, 'is_protected_account', False))
+
+
+# --- SUPPORT ENGINEER (view-only engineer) ---
+SUPPORT_ENGINEER_TRAVEL_DENIAL = 'Support Engineers cannot create travel requests.'
+SUPPORT_ENGINEER_DENIALS = {
+    'tsr': 'Support Engineers can view TSRs and calibration reports but cannot submit them.',
+    'schedule': 'Support Engineers can view schedules but cannot add, edit, or delete them.',
+    'cash_advance': 'Support Engineers do not have access to Cash Advance.',
+}
+SUPPORT_ENGINEER_DENIED_ENDPOINTS = {
+    **dict.fromkeys((
+        'reserve_tsr_number', 'save_tsr_draft', 'save_tsr_draft_version', 'delete_tsr_draft',
+        'save_calibration_report_draft', 'release_tsr_number_reservation', 'save_offline_tsr_online',
+        'submit_calibration_certificate', 'upload_online_tsr_attachment', 'convert_calibration_report_sample',
+        'revise_online_tsr_submission', 'save_tsr_knowledge_entry', 'preview_tsr_client_email_message',
+        'send_tsr_client_email', 'get_next_online_tsr_number',
+    ), 'tsr'),
+    **dict.fromkeys((
+        'add_shift', 'update_shift', 'move_shift', 'preview_delete_shifts', 'delete_shifts_previewed',
+        'delete_shift', 'batch_delete_shifts', 'scheduler_quick_assign_shift', 'scheduler_quick_reschedule_shift',
+    ), 'schedule'),
+    **dict.fromkeys((
+        'cash_advance', 'save_cash_advance', 'submit_cash_advance', 'delete_cash_advance_draft',
+        'upload_cash_advance_attachments', 'delete_cash_advance_attachment', 'delete_all_cash_advance_attachments',
+        'create_cash_advance_liquidation_draft_endpoint',
+    ), 'cash_advance'),
+}
 
 # --- APPROVAL CENTER ACCESS POLICY ---
-# Current reimbursement approval remains Rodito-only until the request modules
-# are migrated to assigned approver routing. S1 only adds the backend foundation
-# for future Settings-driven routing.
-APPROVAL_CENTER_MANAGER_USERNAME = 'rodito'
+# Approval Routing (Settings) is the only approval rule. Accounts ticked as
+# "Default approver" receive new accounts' routes and are the fallback recipients.
 APPROVAL_REQUEST_SCOPES = {'all', 'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'leave_request', 'request_for_payment', 'calibration_certificate'}
 
 
@@ -8173,14 +8235,33 @@ def available_approval_request_scopes():
     return sorted(scopes)
 
 
-def is_legacy_reimbursement_approval_user(user=None):
-    """Return True for the current Rodito-only reimbursement approval gate."""
-    target = user or current_user
-    return bool(
-        target and
-        getattr(target, 'is_authenticated', False) and
-        (getattr(target, 'username', '') or '').strip().lower() == APPROVAL_CENTER_MANAGER_USERNAME
+def get_default_approvers():
+    """Active approvers ticked as Default approver in Settings, oldest account first."""
+    return (
+        User.query
+        .filter(User.is_default_approver.is_(True))
+        .filter(User.can_approve_requests.is_(True))
+        .filter(User.is_active.is_(True))
+        .order_by(User.id.asc())
+        .all()
     )
+
+
+def add_default_approval_routes_for(requester):
+    """Route a newly created account to every default approver (Add Personnel)."""
+    added = 0
+    for approver in get_default_approvers():
+        if approver.id == requester.id:
+            continue
+        if ApprovalRouting.query.filter_by(
+            requester_user_id=requester.id, approver_user_id=approver.id, request_scope='all'
+        ).first():
+            continue
+        db.session.add(ApprovalRouting(
+            requester_user_id=requester.id, approver_user_id=approver.id, request_scope='all', active=True
+        ))
+        added += 1
+    return added
 
 
 def is_configured_approver_user(user=None):
@@ -8226,10 +8307,7 @@ def can_back_up_tsr_drafts(user=None):
     that was never backed up, while the panel promised a backup and the failure
     was reported as temporary. See pending-work.md bug 1z.
     """
-    target = user or current_user
-    if not (target and getattr(target, 'is_authenticated', False)):
-        return False
-    return not is_approver_only_user(target)
+    return can_do_field_work(user)
 
 
 def is_approver_only_engineer_profile(engineer=None):
@@ -8499,8 +8577,8 @@ def can_administer_products_inventory(user=None):
     ):
         return False
 
-    role = (getattr(target, 'role', '') or '').strip().lower()
-    return bool(role == 'admin' or is_admin_authorized(target))
+    # 'admin' is a legacy role no production account holds; test fixtures still use it.
+    return bool(role_of(target) == 'admin' or is_admin_authorized(target))
 
 
 def can_administer_genoray_inventory(user=None):
@@ -8513,9 +8591,9 @@ def can_administer_genoray_inventory(user=None):
     ):
         return False
 
-    role = (getattr(target, 'role', '') or '').strip().lower()
+    # 'admin' is a legacy role no production account holds; test fixtures still use it.
     return bool(
-        role == 'admin' or
+        role_of(target) == 'admin' or
         is_superadmin_user(target) or
         is_regional_admin_user(target)
     )
@@ -8536,7 +8614,7 @@ def can_access_genoray_inventory(user=None):
         can_administer_genoray_inventory(target) or
         (
             not is_approver_only_user(target) and
-            (role == 'engineer' or has_engineer_profile(target))
+            (is_engineer_type(target) or has_engineer_profile(target))
         )
     )
 
@@ -8551,9 +8629,9 @@ def can_administer_vieworks_inventory(user=None):
     ):
         return False
 
-    role = (getattr(target, 'role', '') or '').strip().lower()
+    # 'admin' is a legacy role no production account holds; test fixtures still use it.
     return bool(
-        role == 'admin' or
+        role_of(target) == 'admin' or
         is_superadmin_user(target) or
         is_regional_admin_user(target)
     )
@@ -8566,7 +8644,8 @@ def can_manage_supported_inventory_as_engineer(user=None):
         target and
         getattr(target, 'is_authenticated', False) and
         bool(getattr(target, 'is_active', True)) and
-        not is_approver_only_user(target)
+        not is_approver_only_user(target) and
+        not is_support_engineer(target)
     ):
         return False
 
@@ -8616,7 +8695,7 @@ def can_access_vieworks_inventory(user=None):
         can_administer_vieworks_inventory(target) or
         (
             not is_approver_only_user(target) and
-            (role == 'engineer' or has_engineer_profile(target))
+            (is_engineer_type(target) or has_engineer_profile(target))
         )
     )
 
@@ -8703,14 +8782,8 @@ def stock_inventory_can_administer(user=None):
 
 
 def is_approval_center_user(user=None):
-    """Return True for users allowed to enter Approval Center.
-
-    Rodito keeps current access for the active reimbursement workflow. Newly
-    configured approvers, such as Anthony later, can also enter the page once a
-    superadmin marks them as approvers. Module queues will be filtered by assigned
-    routing in the next implementation step.
-    """
-    return bool(is_legacy_reimbursement_approval_user(user) or is_configured_approver_user(user))
+    """Return True for users allowed to enter Approval Center (active configured approvers)."""
+    return bool(is_configured_approver_user(user))
 
 
 def require_approval_center_user():
@@ -11356,9 +11429,6 @@ def apply_assigned_approver_filter(query, model_cls, approver_user=None, request
     """Apply assigned-approver filtering to request queues."""
     target = approver_user or current_user
 
-    if is_legacy_reimbursement_approval_user(target):
-        return query
-
     requester_ids = get_requester_user_ids_for_approver(target, request_scope)
     if not requester_ids:
         return query.filter(db.text('1 = 0'))
@@ -11370,9 +11440,6 @@ def can_user_approve_reimbursement_header(approver_user, header):
     """Return True if user can approve/reject this reimbursement header."""
     if not header:
         return False
-
-    if is_legacy_reimbursement_approval_user(approver_user):
-        return True
 
     if not is_configured_approver_user(approver_user):
         return False
@@ -11387,9 +11454,6 @@ def can_user_approve_travel_liquidation(approver_user, liquidation):
     """Return True if user can approve/reject this Travel Liquidation."""
     if not liquidation:
         return False
-
-    if is_legacy_reimbursement_approval_user(approver_user):
-        return True
 
     if not is_configured_approver_user(approver_user):
         return False
@@ -11407,13 +11471,12 @@ def travel_liquidation_query_for_current_approver(status_filter='Submitted'):
     ensure_travel_liquidation_tables()
     query = TravelLiquidationHeader.query
 
-    if not is_legacy_reimbursement_approval_user(current_user):
-        requester_ids = set(get_requester_user_ids_for_approver(current_user, 'travel_liquidation'))
-        requester_ids.update(get_requester_user_ids_for_approver(current_user, 'travel_request'))
-        if not requester_ids:
-            query = query.filter(db.text('1 = 0'))
-        else:
-            query = query.filter(TravelLiquidationHeader.user_id.in_(sorted(requester_ids)))
+    requester_ids = set(get_requester_user_ids_for_approver(current_user, 'travel_liquidation'))
+    requester_ids.update(get_requester_user_ids_for_approver(current_user, 'travel_request'))
+    if not requester_ids:
+        query = query.filter(db.text('1 = 0'))
+    else:
+        query = query.filter(TravelLiquidationHeader.user_id.in_(sorted(requester_ids)))
 
     if status_filter and status_filter != 'All':
         query = query.filter(func.lower(func.trim(TravelLiquidationHeader.status)) == status_filter.lower())
@@ -11517,6 +11580,8 @@ def approval_user_to_dict(user):
         # deliberately not reflected here so an unrelated Settings save cannot grant it.
         'reimbursement_tracker_access': bool(getattr(user, 'reimbursement_tracker_access', False)),
         'can_create_tsr_without_equipment': bool(getattr(user, 'can_create_tsr_without_equipment', False)),
+        'is_protected_account': bool(getattr(user, 'is_protected_account', False)),
+        'is_default_approver': bool(getattr(user, 'is_default_approver', False)),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -11534,14 +11599,11 @@ def is_manager_dashboard_user(user=None):
     block gates on is_approval_center_user().
     """
     target = user or current_user
-    username = _username_of(target)
     return bool(
         target and
         getattr(target, 'is_authenticated', False) and
-        (
-            username in MANAGER_USERNAMES or
-            (is_admin_authorized(target) and not is_scheduler_user(target))
-        )
+        is_admin_authorized(target) and
+        not is_scheduler_user(target)
     )
 
 
@@ -11562,45 +11624,28 @@ def is_manager_primary_user(user=None):
     return bool(
         target and
         getattr(target, 'is_authenticated', False) and
-        _username_of(target) in MANAGER_PRIMARY_USERNAMES
+        role_of(target) == 'manager'
     )
 
 
 def is_engineer_primary_user(user=None):
-    """True for accounts whose dashboard is the engineer view only (presentation only)."""
+    """True for accounts whose dashboard is the engineer view only (presentation only).
+
+    The protected developer account is a field engineer, not a manager.
+    """
     target = user or current_user
     return bool(
         target and
         getattr(target, 'is_authenticated', False) and
-        _username_of(target) in ENGINEER_PRIMARY_USERNAMES
+        is_protected_account(target)
     )
 
 
 def get_display_role(user):
     """Business-facing role label for Settings/UI without weakening backend authority."""
-    username = _username_of(user)
-    raw_role = (getattr(user, 'role', '') or '').strip().lower()
-
-    if username == DEVELOPER_SUPERADMIN_USERNAME:
-        return 'Superadmin'
-    if username == 'robert':
-        return 'Superadmin'
-    if username == 'rodito':
-        return 'Manager'
-    if username in SCHEDULER_USERNAMES:
-        return 'Scheduler'
-    if username == REGIONAL_ADMIN_USERNAME:
-        return 'Administrator'
-    if raw_role == 'approver':
-        return 'Approver'
-    if raw_role == 'engineer':
-        return 'Engineer'
-    if raw_role == 'regional_admin':
-        return 'Administrator'
-    if raw_role == 'superadmin':
-        # is_superadmin_user() also requires SUPERADMIN_USERNAMES; an account with the
-        # role but not on the list has no admin rights, so it must not be labelled one.
-        return 'Superadmin' if username in SUPERADMIN_USERNAMES else 'Staff'
+    raw_role = role_of(user)
+    if raw_role in ROLE_LABELS:
+        return ROLE_LABELS[raw_role]
     return raw_role.capitalize() if raw_role else 'User'
 
 
@@ -11609,39 +11654,28 @@ def is_scheduler_user(user=None):
     return bool(
         target and
         getattr(target, 'is_authenticated', False) and
-        getattr(target, 'role', None) == 'superadmin' and
-        _username_of(target) in SCHEDULER_USERNAMES
+        role_of(target) == 'scheduler'
     )
 
 
 def is_superadmin_user(user=None):
+    """Superadmin rights: the superadmin, manager and scheduler roles."""
     target = user or current_user
     return bool(
         target and
         getattr(target, 'is_authenticated', False) and
-        getattr(target, 'role', None) == 'superadmin' and
-        _username_of(target) in SUPERADMIN_USERNAMES
+        role_of(target) in SUPERADMIN_FAMILY_ROLES
     )
 
 
 def is_regional_admin_user(user=None):
+    """Regional admin rights (Cebu and Davao only) come from the regional_admin role."""
     target = user or current_user
-    if not (
+    return bool(
         target and
         getattr(target, 'is_authenticated', False) and
-        getattr(target, 'role', None) == 'regional_admin' and
-        _username_of(target) == REGIONAL_ADMIN_USERNAME
-    ):
-        return False
-
-    # Unique identifier for admin Kevin.
-    # If the profile exists, it must be the intended Kevin Bautista employee record.
-    profile = getattr(target, 'engineer_profile', None)
-    if profile:
-        return getattr(profile, 'employee_id', None) == REGIONAL_ADMIN_EMPLOYEE_ID
-
-    # Allow the account during first-run/bootstrap before the Engineer row is created.
-    return True
+        role_of(target) == 'regional_admin'
+    )
 
 
 def is_admin_authorized(user=None):
@@ -11719,13 +11753,10 @@ def can_quick_add_timeline_client(user=None):
     Pure engineer accounts are intentionally excluded.
     """
     target = user or current_user
-    role = (getattr(target, 'role', '') or '').strip().lower()
-
     return bool(
         is_admin_authorized(target) or
         is_scheduler_user(target) or
-        is_manager_dashboard_user(target) or
-        role in {'admin', 'scheduler', 'manager'}
+        is_manager_dashboard_user(target)
     )
 
 
@@ -11747,14 +11778,13 @@ def has_engineer_profile(user=None):
 
 
 def can_create_tsr_without_equipment_for_user(user=None):
-    """Return the narrow effective grant for Francis's equipment-less TSR workflow."""
+    """Return the narrow effective grant for the equipment-less TSR workflow (per-account switch)."""
     target = user or current_user
     return bool(
         target and
         getattr(target, 'is_authenticated', False) and
         bool(getattr(target, 'is_active', True)) and
-        _username_of(target) == FRANCIS_USERNAME and
-        (getattr(target, 'role', '') or '').strip().lower() == 'engineer' and
+        role_of(target) == 'engineer' and
         has_engineer_profile(target) and
         bool(getattr(target, 'can_create_tsr_without_equipment', False))
     )
@@ -11801,15 +11831,13 @@ def get_dashboard_capabilities(user=None):
 def can_reset_password_for_user(target_user, actor=None):
     """Password reset policy for the new hierarchy."""
     actor = actor or current_user
-    actor_username = _username_of(actor)
-    target_username = _username_of(target_user)
     target_role = (getattr(target_user, 'role', '') or '').strip().lower()
 
     if not target_user:
         return False, 'No account'
 
-    # Nobody can change Jonamar/developer-superadmin password except Jonamar through own-password flow.
-    if target_username in PROTECTED_PASSWORD_USERNAMES and actor_username != target_username:
+    # Nobody can change the protected account's password except itself through the own-password flow.
+    if is_protected_account(target_user) and getattr(actor, 'id', None) != getattr(target_user, 'id', None):
         return False, 'This protected account password cannot be changed.'
 
     if not is_admin_authorized(actor):
@@ -11817,7 +11845,7 @@ def can_reset_password_for_user(target_user, actor=None):
 
     # Kevin keeps current admin scope but should not reset protected core accounts.
     if is_regional_admin_user(actor):
-        if target_role in {'superadmin', 'regional_admin'}:
+        if target_role in SUPERADMIN_FAMILY_ROLES | {'regional_admin'}:
             return False, 'You are not allowed to change this password.'
         # Like schedules, a regional admin manages Cebu and Davao personnel only.
         target_profile = Engineer.query.filter_by(user_id=target_user.id).first()
@@ -11827,7 +11855,7 @@ def can_reset_password_for_user(target_user, actor=None):
 
     # Schedulers cannot change passwords of superadmins or engineers.
     if is_scheduler_user(actor):
-        if target_role in {'superadmin', 'engineer'}:
+        if target_role in SUPERADMIN_FAMILY_ROLES | ENGINEER_TYPE_ROLES:
             return False, 'Schedulers cannot change passwords of superadmins or engineers.'
         return True, None
 
@@ -11952,7 +11980,7 @@ def can_work_on_existing_schedule_shift(shift):
     Admins keep normal branch authority. Engineers may update a schedule only
     when their linked Engineer profile is assigned to that schedule.
     """
-    if not shift:
+    if not shift or is_support_engineer():
         return False
 
     if is_superadmin_user():
@@ -11985,7 +12013,7 @@ def can_submit_update_engineer_ids_for_scope(master_shift, requested_engineer_id
         return can_modify_schedule_for_engineer_ids(requested_engineer_ids)
 
     my_engineer_id = get_current_user_engineer_id()
-    if not my_engineer_id or not master_shift:
+    if not my_engineer_id or not master_shift or is_support_engineer():
         return False
 
     requested_ids = [eid for eid in (requested_engineer_ids or []) if eid]
@@ -13063,7 +13091,7 @@ def login():
                 # landed on the dashboard after signing in.
                 if next_target:
                     response = redirect(next_target)
-                elif getattr(user_rec, 'role', None) == 'engineer' and is_mobile_request():
+                elif is_engineer_type(user_rec) and is_mobile_request():
                     response = redirect(url_for('timeline_page'))
                 else:
                     response = redirect(url_for('dashboard_page'))
@@ -14304,7 +14332,7 @@ def search_tsr_knowledge():
     - Context values are fallback helpers, not hard blockers, so keyword search
       still works even when product/serial/client data is incomplete.
     """
-    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+    if not (is_admin_authorized() or is_engineer_type()):
         return denied()
 
     ensure_tsr_knowledge_entry_table()
@@ -14390,7 +14418,7 @@ def get_tsr_knowledge_quick_picks():
     - Same serial number is preferred; same product/model is allowed as fallback.
     - No global fallback is returned, so engineers do not see unrelated machines.
     """
-    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+    if not (is_admin_authorized() or is_engineer_type()):
         return denied()
 
     ensure_tsr_knowledge_entry_table()
@@ -24745,7 +24773,7 @@ def calibration_report_engineer_can_view(user=None):
         target and
         getattr(target, 'is_authenticated', False) and
         bool(getattr(target, 'is_active', False)) and
-        role == 'engineer'
+        role in ENGINEER_TYPE_ROLES
     )
 
 
@@ -27992,7 +28020,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v328-product-inventory-scan';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v329-user-roles';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28541,7 +28569,7 @@ def changelog_user_audiences(user=None):
     if is_approval_center_user(target):
         audiences.add('approvers')
     role = (getattr(target, 'role', '') or '').strip().lower()
-    if not is_approver_only_user(target) and (role == 'engineer' or has_engineer_profile(target)):
+    if not is_approver_only_user(target) and (is_engineer_type(target) or has_engineer_profile(target)):
         audiences.add('engineers')
     return audiences
 
@@ -29611,7 +29639,7 @@ def analytics_page():
 @login_required
 def reports_page():
     """Reports hub. Admins see full intelligence; engineers see TSR archive only."""
-    if not (can_view_admin_reports() or getattr(current_user, 'role', None) == 'engineer'):
+    if not (can_view_admin_reports() or is_engineer_type()):
         return redirect(url_for('dashboard_page'))
 
     reports_admin_view = can_view_admin_reports()
@@ -29619,7 +29647,7 @@ def reports_page():
         'reports.html',
         # Existing names kept for backward compatibility with older reports.html versions.
         reports_admin=reports_admin_view,
-        reports_engineer_only=(getattr(current_user, 'role', None) == 'engineer' and not reports_admin_view),
+        reports_engineer_only=(is_engineer_type() and not reports_admin_view),
         # New decluttered/professional reports.html expects this name.
         reports_admin_view=reports_admin_view
     )
@@ -29628,7 +29656,6 @@ def reports_page():
 def can_access_timeline_page(user=None):
     """Keep Timeline access explicit while preserving existing schedule viewers."""
     target = user or current_user
-    role = (getattr(target, 'role', '') or '').strip().lower()
     return bool(
         is_hr_schedule_viewer(target) or
         is_admin_authorized(target) or
@@ -29636,9 +29663,7 @@ def can_access_timeline_page(user=None):
         has_engineer_profile(target) or
         is_scheduler_user(target) or
         is_manager_dashboard_user(target) or
-        is_configured_approver_user(target) or
-        is_legacy_reimbursement_approval_user(target) or
-        role in {'admin', 'manager'}
+        is_configured_approver_user(target)
     )
 
 
@@ -29664,6 +29689,7 @@ def timeline_page():
         timeline_approver_view=is_configured_approver_user(),
         timeline_read_only_approver=(is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile()),
         timeline_read_only_hr=is_hr_schedule_only_user(),
+        timeline_read_only_support=is_support_engineer(),
         timeline_is_named_superadmin=is_superadmin_user(),
         timeline_can_record_provisional_leave=(is_superadmin_user() or is_regional_admin_user()),
         # Flag-only, matching the server helpers. The client runs the same
@@ -29742,7 +29768,7 @@ def approvals_page():
         'approvals.html',
         approval_center_user=getattr(current_user, 'username', ''),
         approval_center_is_configured_approver=is_configured_approver_user(),
-        approval_center_is_legacy_manager=is_legacy_reimbursement_approval_user(),
+        approval_center_is_legacy_manager=False,
         approval_center_requester_ids=get_requester_user_ids_for_approver(current_user, 'all'),
         # Kept for API/template compatibility. The current approvals template
         # does not consume this list; its visible LPR tile/script are gated by
@@ -29863,6 +29889,7 @@ def settings_page():
             account.display_role = get_display_role(account)
             can_reset, _ = can_reset_password_for_user(account)
             account.can_reset_password = can_reset
+            account.can_change_role = role_change_denial(account) is None
     return render_template(
         'settings.html',
         users=all_accounts,
@@ -29870,7 +29897,8 @@ def settings_page():
         backup_summary=backup_summary() if backup_superadmin else None,
         can_manage_product_names=bool(is_admin_authorized()),
         approval_routing_enabled=True,
-        approval_request_scopes=available_approval_request_scopes()
+        approval_request_scopes=available_approval_request_scopes(),
+        role_choices=list(ROLE_LABELS.items())
     )
 
 
@@ -30550,7 +30578,6 @@ def settings_approval_routing_data():
         return denied('Only superadmins can manage approval routing.')
 
     ensure_approval_routing_schema()
-    ensure_default_approval_routes()
 
     users = User.query.order_by(User.username.asc()).all()
     routes = ApprovalRouting.query.order_by(ApprovalRouting.request_scope.asc(), ApprovalRouting.id.asc()).all()
@@ -30573,8 +30600,11 @@ def resolve_staff_permission_request(payload, target_user=None):
     target = target_user if target_user is not None else current_user
 
     tsr_without_equipment_present = 'can_create_tsr_without_equipment' in payload
-    if tsr_without_equipment_present and _username_of(target) != FRANCIS_USERNAME:
-        return None, 'Only the Francis account may receive the TSR without assigned equipment grant.'
+    if tsr_without_equipment_present and bool(payload.get('can_create_tsr_without_equipment')) and (
+        role_of(target) != 'engineer' or
+        not (getattr(target, 'id', None) and getattr(target, 'engineer_profile', None))
+    ):
+        return None, 'Only an engineer account with a Personnel profile may receive the TSR without assigned equipment grant.'
     tsr_without_equipment_requested = (
         bool(payload.get('can_create_tsr_without_equipment'))
         if tsr_without_equipment_present
@@ -30651,23 +30681,17 @@ def resolve_staff_permission_request(payload, target_user=None):
     if stock_inventory_requested and not stock_branch_code and not is_superadmin_user(target):
         return None, 'Select a branch for this Stock Inventory user.'
 
-    target_username = _username_of(target)
-    protected_business_roles = target_username in (
-        MANAGER_USERNAMES |
-        SCHEDULER_USERNAMES |
-        {DEVELOPER_SUPERADMIN_USERNAME, REGIONAL_ADMIN_USERNAME}
-    )
-    if stock_inventory_only_requested and (is_admin_authorized(target) or protected_business_roles):
+    if stock_inventory_only_requested and is_admin_authorized(target):
         return None, (
             'Stock Inventory-only view cannot be applied to protected management, scheduler, '
             'regional-admin, or superadmin accounts.'
         )
-    if hr_schedule_view_requested and (is_admin_authorized(target) or protected_business_roles):
+    if hr_schedule_view_requested and is_admin_authorized(target):
         return None, (
             'HR Schedule View cannot be applied to protected management, scheduler, '
             'regional-admin, or superadmin accounts.'
         )
-    if approver_only_requested and (is_admin_authorized(target) or protected_business_roles):
+    if approver_only_requested and is_admin_authorized(target):
         return None, (
             'Approver-only view cannot be applied to protected management, scheduler, '
             'or superadmin accounts.'
@@ -30698,6 +30722,28 @@ def resolve_staff_permission_request(payload, target_user=None):
     }, None
 
 
+def resolve_account_flag_request(payload, target_user):
+    """Validate the protected-account and default-approver switches. Returns (values, error)."""
+    protected = bool(getattr(target_user, 'is_protected_account', False))
+    if 'is_protected_account' in payload:
+        requested = bool(payload.get('is_protected_account'))
+        if requested != protected and not is_protected_account(current_user):
+            return None, 'Only a protected account can change the protected developer account switch.'
+        protected = requested
+    if protected and getattr(current_user, 'id', None) != getattr(target_user, 'id', None) and not bool(payload.get('is_active', True)):
+        return None, 'This account is protected.'
+
+    default_approver = bool(getattr(target_user, 'is_default_approver', False))
+    if 'is_default_approver' in payload:
+        default_approver = bool(payload.get('is_default_approver'))
+    can_approve = bool(payload.get('can_approve_requests')) or bool(payload.get('approver_only'))
+    if default_approver and not can_approve:
+        return None, 'A default approver must be enabled as an approver.'
+    if default_approver and not bool(payload.get('is_active', True)):
+        return None, 'An inactive account cannot be a default approver.'
+    return {'is_protected_account': protected, 'is_default_approver': default_approver}, None
+
+
 @app.route('/settings/update-approval-user', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -30721,6 +30767,10 @@ def settings_update_approval_user():
     permission_values, permission_error = resolve_staff_permission_request(payload, target_user)
     if permission_error:
         return jsonify({'success': False, 'error': permission_error}), 400
+    flag_values, flag_error = resolve_account_flag_request(payload, target_user)
+    if flag_error:
+        return jsonify({'success': False, 'error': flag_error}), 400
+    permission_values.update(flag_values)
 
     tracked_permission_fields = (
         'can_approve_requests',
@@ -30735,6 +30785,8 @@ def settings_update_approval_user():
         'po_admin_access',
         'reimbursement_tracker_access',
         'can_create_tsr_without_equipment',
+        'is_protected_account',
+        'is_default_approver',
     )
     old_permission_values = {}
     for field in tracked_permission_fields:
@@ -30764,6 +30816,8 @@ def settings_update_approval_user():
     target_user.po_admin_access = permission_values['po_admin_access']
     target_user.reimbursement_tracker_access = permission_values['reimbursement_tracker_access']
     target_user.can_create_tsr_without_equipment = permission_values['can_create_tsr_without_equipment']
+    target_user.is_protected_account = permission_values['is_protected_account']
+    target_user.is_default_approver = permission_values['is_default_approver']
 
     if approver_only_requested:
         target_user.role = 'approver'
@@ -30798,6 +30852,70 @@ def settings_update_approval_user():
         'success': True,
         'message': 'Approval user settings updated.',
         'user': approval_user_to_dict(target_user)
+    })
+
+
+def role_change_denial(target_user, new_role=None):
+    """Why the current user may not change this account's role (to new_role), or None."""
+    if not is_superadmin_user():
+        return 'Only superadmins can change roles.'
+    if not target_user:
+        return 'User not found.'
+    if target_user.id == getattr(current_user, 'id', None):
+        return 'You cannot change your own role.'
+    if is_protected_account(target_user):
+        return 'This account is protected.'
+    admin_roles = SUPERADMIN_FAMILY_ROLES | {'regional_admin'}
+    current_role = role_of(target_user)
+    if is_scheduler_user() and current_role in admin_roles:
+        return "Only a manager can change an admin account's role."
+    if new_role is None:
+        return None
+    if new_role not in ROLE_LABELS:
+        return 'Choose a valid role.'
+    if is_scheduler_user() and new_role in admin_roles:
+        return 'Only a manager can give an admin role.'
+    if new_role == 'approver' and not bool(getattr(target_user, 'can_approve_requests', False)):
+        return 'Turn on Can Approve for this account in Approval Routing first.'
+    if current_role in SUPERADMIN_FAMILY_ROLES and new_role not in SUPERADMIN_FAMILY_ROLES:
+        others = User.query.filter(
+            User.role.in_(SUPERADMIN_FAMILY_ROLES), User.is_active.is_(True), User.id != target_user.id
+        ).count()
+        if not others:
+            return 'This is the last active superadmin account.'
+    return None
+
+
+@app.route('/settings/update-user-role', methods=['POST'])
+@login_required
+def settings_update_user_role():
+    """Change an account's role from Settings -> Users (superadmin only, audited)."""
+    payload = request.get_json(silent=True) or {}
+    user_id = clean_int(payload.get('user_id'))
+    target_user = db.session.get(User, user_id) if user_id else None
+    new_role = (clean_str(payload.get('role')) or '').strip().lower()
+    denial = role_change_denial(target_user, new_role)
+    if denial:
+        status = 404 if target_user is None and is_superadmin_user() else (400 if denial in (
+            'Choose a valid role.', 'Turn on Can Approve for this account in Approval Routing first.',
+            'This is the last active superadmin account.'
+        ) else 403)
+        return jsonify({'success': False, 'error': denial}), status
+
+    old_role = role_of(target_user)
+    if old_role == new_role:
+        return jsonify({'success': True, 'message': 'Role unchanged.', 'role': new_role, 'display_role': get_display_role(target_user)})
+    target_user.role = new_role
+    db.session.add(ActivityLog(
+        user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
+        action=f"Changed role of {target_user.username}: {ROLE_LABELS.get(old_role, old_role or 'None')} -> {ROLE_LABELS[new_role]}"
+    ))
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'message': f'{target_user.username} is now {ROLE_LABELS[new_role]}.',
+        'role': new_role,
+        'display_role': get_display_role(target_user),
     })
 
 
@@ -34104,13 +34222,13 @@ def activity_decision_reason(log, records):
 def activity_scope_query(query):
     """
     Activity visibility scope:
-    - named superadmins/managers/schedulers: all logs
+    - superadmins/managers/schedulers: all logs
     - Kevin/regional_admin: Cebu/Davao-related logs plus his own actions
     - engineers: denied by route guard
     """
     if is_regional_admin_user() and not is_superadmin_user():
         regional_terms = [
-            ActivityLog.user.ilike(REGIONAL_ADMIN_USERNAME),
+            ActivityLog.user.ilike(_username_of(current_user)),
             ActivityLog.action.ilike('%Cebu%'),
             ActivityLog.action.ilike('%Davao%'),
             ActivityLog.action.ilike('%Kevin%')
@@ -34356,6 +34474,10 @@ def get_engineers():
             engineer for engineer in engineers
             if not is_hr_schedule_engineer_profile(engineer)
         ]
+    # Admin accounts' rows are exempt from the timeline workload score.
+    admin_user_ids = {
+        user.id for user in User.query.filter(User.role.in_(SUPERADMIN_FAMILY_ROLES | {'regional_admin'})).all()
+    }
 
     for e in engineers:
         if hr_view:
@@ -34374,6 +34496,7 @@ def get_engineers():
                 'phone': e.phone or "",
                 'email': e.email or "",
                 'branch': e.branch or "",
+                'is_admin_account': bool(e.user_id and e.user_id in admin_user_ids),
             }
 
         if include_account_metadata and not hr_view:
@@ -42072,9 +42195,10 @@ def travel_liquidation_submit_notification_approvers(liquidation):
                 approvers.append(approver)
                 seen_ids.add(approver_id)
     if not approvers:
-        legacy_approver = User.query.filter(func.lower(func.trim(User.username)) == APPROVAL_CENTER_MANAGER_USERNAME).first()
-        if legacy_approver and clean_int(getattr(legacy_approver, 'id', None)) not in seen_ids:
-            approvers = [legacy_approver]
+        approvers = [
+            approver for approver in get_default_approvers()
+            if clean_int(getattr(approver, 'id', None)) not in seen_ids
+        ]
     return approvers
 
 
@@ -43523,6 +43647,12 @@ def get_travel_request_missing_signature_people(request_rec):
     missing = []
     for person in get_travel_request_signature_people(request_rec):
         if not clean_str(person.get('signature_data')):
+            # A Support Engineer on someone else's request needs no saved signature.
+            account = person.get('user')
+            if not account and person.get('engineer') and getattr(person['engineer'], 'user_id', None):
+                account = db.session.get(User, person['engineer'].user_id)
+            if person.get('role') != 'lead' and account and role_of(account) == 'support_engineer':
+                continue
             missing.append(person)
     return missing
 
@@ -44116,6 +44246,9 @@ def save_travel_request_draft():
 
     request_id = clean_int(payload.get('id') or payload.get('travel_request_id'))
     request_rec = db.session.get(TravelRequest, request_id) if request_id else None
+
+    if not request_rec and is_support_engineer():
+        return jsonify({'success': False, 'error': SUPPORT_ENGINEER_TRAVEL_DENIAL}), 403
 
     if request_rec:
         can_edit_existing_request = (
@@ -45687,7 +45820,7 @@ def get_approval_center_summary():
     return jsonify({
         'success': True,
         'approver': getattr(current_user, 'username', ''),
-        'legacy_manager_view': is_legacy_reimbursement_approval_user(),
+        'legacy_manager_view': False,
         'generated_at': get_manila_time().isoformat(),
         'modules': modules,
         'summary': {
@@ -48670,7 +48803,7 @@ def travel_liquidation_to_dict(liquidation, include_rows=True):
                 clean_int(getattr(liquidation, 'user_id', None)) == clean_int(getattr(current_user, 'id', None)) or
                 request_manage_allowed or
                 is_superadmin_user() or
-                getattr(current_user, 'role', '') == 'regional_admin'
+                is_regional_admin_user()
             )
         )
     except Exception:
@@ -52732,9 +52865,10 @@ def submit_reimbursement():
             if getattr(approver, 'id', None) != current_user.id
         ]
         if not approvers:
-            legacy_approver = User.query.filter(func.lower(func.trim(User.username)) == APPROVAL_CENTER_MANAGER_USERNAME).first()
-            if legacy_approver and getattr(legacy_approver, 'id', None) != current_user.id:
-                approvers = [legacy_approver]
+            approvers = [
+                approver for approver in get_default_approvers()
+                if getattr(approver, 'id', None) != current_user.id
+            ]
 
         requester_name = clean_str(getattr(profile, 'name', None)) or approval_user_display_name(current_user) or getattr(current_user, 'username', 'Requester')
         clear_existing_pending_approval_notifications('reimbursement', header.id)
@@ -54242,7 +54376,7 @@ def user_can_view_shift_tsr_archive(shift, scope=None):
     if can_view_admin_reports():
         return True
 
-    if getattr(current_user, 'role', None) == 'engineer':
+    if is_engineer_type():
         if (scope or 'my') == 'all':
             return True
         return is_current_engineer_assigned_to_shift(shift)
@@ -54481,7 +54615,7 @@ def tsr_archive_assignment_filter(engineer_ids):
 @login_required
 def get_tsr_archive():
     """All-history TSR file archive with server-side search and pagination."""
-    if not (can_view_admin_reports() or getattr(current_user, 'role', None) == 'engineer'):
+    if not (can_view_admin_reports() or is_engineer_type()):
         return denied()
 
     search = clean_str(request.args.get('q')) or ''
@@ -55699,7 +55833,7 @@ def can_engineer_manage_client_contacts():
     return bool(
         current_user and
         getattr(current_user, 'is_authenticated', False) and
-        getattr(current_user, 'role', None) == 'engineer'
+        is_engineer_type()
     )
 
 
@@ -55710,12 +55844,10 @@ def can_delete_client_contacts():
     preservation-safe. Schedulers/admins/managers can clean up duplicated or
     outdated contact rows.
     """
-    role = (getattr(current_user, 'role', '') or '').strip().lower()
     return bool(
         is_admin_authorized() or
         is_scheduler_user() or
-        is_manager_dashboard_user() or
-        role in {'admin', 'scheduler', 'manager'}
+        is_manager_dashboard_user()
     )
 
 
@@ -55930,8 +56062,7 @@ def update_client(id):
 
     contact_only_role = (
         can_engineer_manage_client_contacts() or
-        is_scheduler_user() or
-        (getattr(current_user, 'role', None) in {'scheduler', 'manager'})
+        is_scheduler_user()
     )
 
     if contact_only_role and not is_admin_authorized():
@@ -59060,65 +59191,11 @@ def ensure_approval_routing_schema():
         ApprovalRouting.__table__.create(db.engine, checkfirst=True)
         ensure_approval_routing_multi_approver_schema()
 
-        # Rodito remains the current active reimbursement approver and default
-        # business approver. This flag only enables Approval Center access and
-        # future routing selection; it does not change current queue filtering.
-        rodito = User.query.filter_by(username=APPROVAL_CENTER_MANAGER_USERNAME).first()
-        if rodito:
-            if not getattr(rodito, 'can_approve_requests', False):
-                rodito.can_approve_requests = True
-                changed = True
-            if not clean_str(getattr(rodito, 'approval_scope', None)):
-                rodito.approval_scope = 'manager'
-                changed = True
-            if not clean_str(getattr(rodito, 'approval_title', None)):
-                rodito.approval_title = 'Manager Approver'
-                changed = True
-
         if changed:
             db.session.commit()
     except Exception as exc:
         db.session.rollback()
         print(f"[ApprovalRouting] Schema migration skipped: {exc}", flush=True)
-
-
-def ensure_default_approval_routes():
-    """Create a safe default all-employee-to-Rodito route when none exists.
-
-    This gives Settings/API a useful starting point without affecting current
-    reimbursement approval logic. Rodito's own route is intentionally left blank
-    until Anthony is added through Settings.
-    """
-    try:
-        default_approver = User.query.filter_by(username=APPROVAL_CENTER_MANAGER_USERNAME).first()
-        if not default_approver:
-            return
-
-        created = 0
-        for requester in User.query.order_by(User.id.asc()).all():
-            if not requester or requester.id == default_approver.id:
-                continue
-            existing = ApprovalRouting.query.filter_by(
-                requester_user_id=requester.id,
-                approver_user_id=default_approver.id,
-                request_scope='all'
-            ).first()
-            if existing:
-                continue
-            db.session.add(ApprovalRouting(
-                requester_user_id=requester.id,
-                approver_user_id=default_approver.id,
-                request_scope='all',
-                active=True
-            ))
-            created += 1
-
-        if created:
-            db.session.commit()
-            print(f"[ApprovalRouting] Created {created} default route(s) to Rodito.", flush=True)
-    except Exception as exc:
-        db.session.rollback()
-        print(f"[ApprovalRouting] Default route setup skipped: {exc}", flush=True)
 
 
 def ensure_reimbursement_approval_columns():
@@ -64259,6 +64336,7 @@ def add_engineer():
 
     db.session.add(new_user)
     db.session.flush()
+    add_default_approval_routes_for(new_user)
 
     if staff_type == 'engineer':
         new_eng = Engineer(
@@ -64307,7 +64385,7 @@ def update_engineer(id):
     if not eng:
         return jsonify({'message': 'Missing'}), 404
 
-    if getattr(current_user, 'role', None) == 'engineer' and not can_administer_personnel():
+    if is_engineer_type() and not can_administer_personnel():
         my_profile = getattr(current_user, 'engineer_profile', None)
         if not my_profile or my_profile.id != eng.id:
             return denied('Engineers can edit only their own contact information.')
@@ -64421,10 +64499,10 @@ def personnel_account_change_denial(user_acc):
         return 'You cannot deactivate or delete your own account.'
     # Not the password-reset policy: that one also stops schedulers touching engineers,
     # and schedulers have always been able to remove engineers here.
-    if _username_of(user_acc) in PROTECTED_PASSWORD_USERNAMES:
+    if is_protected_account(user_acc):
         return 'This account is protected.'
     limited_admin = is_scheduler_user() or is_regional_admin_user()
-    if limited_admin and (getattr(user_acc, 'role', '') or '').strip().lower() in {'superadmin', 'regional_admin'}:
+    if limited_admin and role_of(user_acc) in SUPERADMIN_FAMILY_ROLES | {'regional_admin'}:
         return 'Only a manager can deactivate or delete an admin account.'
     if is_regional_admin_user():
         profile = Engineer.query.filter_by(user_id=user_acc.id).first()
@@ -66958,6 +67036,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     except Exception as conversion_worker_error:
         print(f'[CalibrationReport] Startup conversion wake skipped: {conversion_worker_error}', flush=True)
     ensure_user_admin_capability_columns()
+    run_role_migrations()
     ensure_purchase_order_schema()
     ensure_reimbursement_tracker_schema()
     ensure_unique_engineer_initials()
@@ -66976,10 +67055,22 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_calibration_certificate_approval_table()
     ensure_schedule_delete_indexes()
     ensure_approval_routing_schema()
-    ensure_default_approval_routes()
     ensure_tsr_draft_schema()
     ensure_reimbursement_approval_columns()
     ensure_reimbursement_receipt_columns()
+
+
+@app.before_request
+def restrict_support_engineer_writes():
+    """Support Engineers are view-only engineers: one list of the endpoints they may not use."""
+    area = SUPPORT_ENGINEER_DENIED_ENDPOINTS.get(request.endpoint)
+    if not area or not is_support_engineer():
+        return None
+    if area == 'cash_advance' and request.method == 'GET':
+        flash(SUPPORT_ENGINEER_DENIALS[area])
+        return redirect(url_for('accounting_center_page'))
+    message = SUPPORT_ENGINEER_DENIALS[area]
+    return jsonify({'success': False, 'error': message, 'message': message}), 403
 
 
 @app.before_request
@@ -67049,51 +67140,156 @@ def get_shift_range(shift_id):
 # --- APPLICATION STARTUP HELPERS ---
 
 
-def migrate_hierarchy_accounts():
-    """One-time safe alignment for the named hierarchy accounts.
+def ensure_app_migration_table():
+    db.session.execute(db.text(
+        "CREATE TABLE IF NOT EXISTS app_migration ("
+        "name VARCHAR(80) PRIMARY KEY, applied_at DATETIME NOT NULL)"
+    ))
 
-    - Renames legacy 'hannah' account to 'hanna' when possible.
-    - Aligns named authority accounts to their intended backend roles.
-    - Does not change passwords.
+
+def user_owned_record_count(user_id, skip_tables=('approval_routing',)):
+    """Rows in any table that point at this user (*user_id, *_by_id, created_by/updated_by or a user FK)."""
+    total = 0
+    tables = [row[0] for row in db.session.execute(db.text(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )).fetchall()]
+    for table in tables:
+        if table in skip_tables or table == 'user':
+            continue
+        columns = {
+            row[1] for row in db.session.execute(db.text(f'PRAGMA table_info("{table}")')).fetchall()
+            if row[1].lower().endswith(('user_id', '_by_id')) or (
+                row[1].lower() in ('created_by', 'updated_by') and 'INT' in (row[2] or '').upper()
+            )
+        }
+        columns.update(
+            row[3] for row in db.session.execute(db.text(f'PRAGMA foreign_key_list("{table}")')).fetchall()
+            if row[2] == 'user'
+        )
+        for column in columns:
+            total += db.session.execute(
+                db.text(f'SELECT COUNT(*) FROM "{table}" WHERE "{column}" = :uid'), {'uid': user_id}
+            ).scalar() or 0
+    return total
+
+
+def _claim_app_migration(name):
+    """Insert the marker first so a second worker's claim fails instead of re-running the change."""
+    ensure_app_migration_table()
+    if db.session.execute(db.text("SELECT 1 FROM app_migration WHERE name = :n"), {'n': name}).first():
+        return False
+    db.session.execute(
+        db.text("INSERT INTO app_migration (name, applied_at) VALUES (:n, :at)"),
+        {'n': name, 'at': datetime.utcnow()}
+    )
+    return True
+
+
+def migrate_roles_v1():
+    """One-time move from username lists to roles (2026-10-15). Never runs twice, so a
+    later role change made in Settings is never undone. The account names appear only here.
     """
-    legacy_hannah = User.query.filter_by(username='hannah').first()
-    existing_hanna = User.query.filter_by(username='hanna').first()
+    try:
+        if not _claim_app_migration('roles_v1'):
+            db.session.rollback()
+            return
+        by_name = {u.username.strip().lower(): u for u in User.query.all() if u.username}
+        for username, role in (('rodito', 'manager'), ('diary', 'scheduler'), ('hanna', 'scheduler')):
+            account = by_name.get(username)
+            if account and account.role == 'superadmin':
+                account.role = role
 
-    if legacy_hannah and not existing_hanna:
-        legacy_hannah.username = 'hanna'
+        # The Diary Dizon Personnel row belongs to the real 'diary' login.
+        stray, diary = by_name.get('diarydizon'), by_name.get('diary')
+        if stray and diary and not Engineer.query.filter_by(user_id=diary.id).first():
+            for profile in Engineer.query.filter_by(user_id=stray.id).all():
+                profile.user_id = diary.id
+        db.session.flush()
 
-    intended_roles = {
-        'jonamar': 'superadmin',
-        'rodito': 'superadmin',
-        'robert': 'superadmin',
-        'diary': 'superadmin',
-        'hanna': 'superadmin',
-        'kevin': 'regional_admin'
-    }
+        for username in ('diarydizon', 'hannah'):
+            account = by_name.get(username)
+            if not account:
+                continue
+            owned = user_owned_record_count(account.id)
+            if owned:
+                account.is_active = False
+                print(f"[Roles] Kept '{username}' inactive: it owns {owned} record(s).", flush=True)
+                continue
+            ApprovalRouting.query.filter(or_(
+                ApprovalRouting.requester_user_id == account.id,
+                ApprovalRouting.approver_user_id == account.id,
+            )).delete(synchronize_session=False)
+            db.session.delete(account)
+            print(f"[Roles] Removed unused login '{username}'.", flush=True)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[Roles] Role migration skipped: {exc}", flush=True)
 
-    for username, role in intended_roles.items():
-        user = User.query.filter_by(username=username).first()
-        if user:
-            user.role = role
 
-    # Unique Regional Admin Kevin binding.
-    # The admin account must link only to employee_id 15-148.
-    # Any other engineer named Kevin should not inherit the admin profile/role.
-    kevin_user = User.query.filter_by(username=REGIONAL_ADMIN_USERNAME).first()
-    if kevin_user:
-        kevin_user.role = 'regional_admin'
-        admin_kevin_engineer = Engineer.query.filter_by(employee_id=REGIONAL_ADMIN_EMPLOYEE_ID).first()
+def migrate_roles_v2():
+    """One-time: the developer account becomes the protected account (was a username rule)."""
+    try:
+        if not _claim_app_migration('roles_v2_protected_account'):
+            db.session.rollback()
+            return
+        developer = User.query.filter(func.lower(User.username) == 'jonamar').first()
+        if developer:
+            developer.is_protected_account = True
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[Roles] Protected-account migration skipped: {exc}", flush=True)
 
-        if admin_kevin_engineer:
-            admin_kevin_engineer.user_id = kevin_user.id
 
-            for engineer in Engineer.query.filter(
-                Engineer.user_id == kevin_user.id,
-                Engineer.id != admin_kevin_engineer.id
-            ).all():
-                engineer.user_id = None
+def migrate_roles_v3():
+    """One-time: the approval manager becomes the ticked Default approver, and every account
+    that reached him only through the old name bypass gets an active "all" route to him, so
+    no request loses its approver when the bypass goes.
+    """
+    try:
+        if not _claim_app_migration('roles_v3_default_approver'):
+            db.session.rollback()
+            return
+        ensure_approval_routing_schema()
+        manager = User.query.filter(func.lower(User.username) == 'rodito').first()
+        if manager:
+            manager.can_approve_requests = True
+            manager.is_default_approver = True
+            for requester in User.query.filter(User.id != manager.id).all():
+                has_active_route = ApprovalRouting.query.filter_by(
+                    requester_user_id=requester.id, active=True
+                ).first()
+                if has_active_route:
+                    continue
+                route = ApprovalRouting.query.filter_by(
+                    requester_user_id=requester.id, approver_user_id=manager.id, request_scope='all'
+                ).first()
+                if route:
+                    route.active = True
+                else:
+                    db.session.add(ApprovalRouting(
+                        requester_user_id=requester.id, approver_user_id=manager.id,
+                        request_scope='all', active=True
+                    ))
+                print(f"[Roles] Routed '{requester.username}' to the default approver.", flush=True)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[Roles] Default-approver migration skipped: {exc}", flush=True)
 
-    db.session.commit()
+
+_role_migrations_checked = False
+
+
+def run_role_migrations():
+    global _role_migrations_checked
+    if _role_migrations_checked:
+        return
+    migrate_roles_v1()
+    migrate_roles_v2()
+    migrate_roles_v3()
+    _role_migrations_checked = True
 
 
 def bootstrap_static_accounts():
@@ -67112,21 +67308,21 @@ def bootstrap_static_accounts():
     """
     bootstrap_credentials = []
 
-    # SuperAdmins
-    # (username, is_engineer, emp_id, branch, full_name, initials, phone, email)
+    # Superadmin-family seed accounts
+    # (username, role, is_engineer, emp_id, branch, full_name, initials, phone, email)
     super_users = [
-        ('rodito', True, '99-055', 'Manila', 'Rodito Aretano Jr', 'RAJ', '09175961523', 'r_aretano@shimadzu.com.ph'),
-        ('robert', True, '14-146', 'Manila', 'Robert Rio', 'RR', '09175075933', 'rnrio@shimadzu.com.ph'),
-        ('jonamar', True, '18-185', 'Manila', 'Jonamar Paunil', 'JP', '09171323953', 'jonamar@shimadzu.com.ph'),
-        ('diary', False, None, None, None, None, None, None),
-        ('hanna', False, None, None, None, None, None, None)
+        ('rodito', 'manager', True, '99-055', 'Manila', 'Rodito Aretano Jr', 'RAJ', '09175961523', 'r_aretano@shimadzu.com.ph'),
+        ('robert', 'superadmin', True, '14-146', 'Manila', 'Robert Rio', 'RR', '09175075933', 'rnrio@shimadzu.com.ph'),
+        ('jonamar', 'superadmin', True, '18-185', 'Manila', 'Jonamar Paunil', 'JP', '09171323953', 'jonamar@shimadzu.com.ph'),
+        ('diary', 'scheduler', False, None, None, None, None, None, None),
+        ('hanna', 'scheduler', False, None, None, None, None, None, None)
     ]
 
-    for u_name, is_eng, e_id, br, f_name, inits, ph, em in super_users:
+    for u_name, u_role, is_eng, e_id, br, f_name, inits, ph, em in super_users:
         env_password = os.environ.get(f"SEED_PASSWORD_{u_name.upper()}")
-        u_rec, temp_pw, created = bootstrap_user(u_name, 'superadmin', env_password)
+        u_rec, temp_pw, created = bootstrap_user(u_name, u_role, env_password)
         if created:
-            bootstrap_credentials.append((u_name, temp_pw, 'superadmin'))
+            bootstrap_credentials.append((u_name, temp_pw, u_role))
 
         if is_eng and e_id and not Engineer.query.filter_by(employee_id=e_id).first():
             db.session.add(Engineer(
@@ -67145,10 +67341,10 @@ def bootstrap_static_accounts():
     if kevin_created:
         bootstrap_credentials.append(('kevin', kevin_temp_pw, 'regional_admin'))
 
-    if kevin_rec and not Engineer.query.filter_by(employee_id=REGIONAL_ADMIN_EMPLOYEE_ID).first():
+    if kevin_rec and not Engineer.query.filter_by(employee_id='15-148').first():
         db.session.add(Engineer(
             user_id=kevin_rec.id,
-            employee_id=REGIONAL_ADMIN_EMPLOYEE_ID,
+            employee_id='15-148',
             branch='Davao',
             name='Kevin Bautista',
             initials='KB',
@@ -67206,10 +67402,8 @@ def initialize_database():
         ensure_schedule_delete_indexes()
         ensure_approval_routing_schema()
         ensure_tsr_draft_schema()
-        migrate_hierarchy_accounts()
         bootstrap_credentials = bootstrap_static_accounts()
-        migrate_hierarchy_accounts()
-        ensure_default_approval_routes()
+        run_role_migrations()
         ensure_reimbursement_receipt_columns()
         repair_shift_engineer_links()
 
@@ -69553,9 +69747,7 @@ def cash_advance_query_for_current_approver(status_filter='Submitted'):
     ensure_cash_advance_tables()
     query = CashAdvanceHeader.query
 
-    if is_legacy_reimbursement_approval_user(current_user):
-        pass
-    elif is_configured_approver_user(current_user):
+    if is_configured_approver_user(current_user):
         requester_ids = get_requester_user_ids_for_approver(current_user, 'cash_advance')
         if not requester_ids:
             requester_ids = get_requester_user_ids_for_approver(current_user, 'all')
@@ -69615,9 +69807,6 @@ def can_user_approve_cash_advance(approver_user, header):
     if not header:
         return False
 
-    if is_legacy_reimbursement_approval_user(approver_user):
-        return True
-
     if not is_configured_approver_user(approver_user):
         return False
 
@@ -69633,11 +69822,9 @@ def cash_advance_submit_notification_approvers(header):
     if not approvers:
         approvers = get_assigned_approvers_for_requester(getattr(header, 'user_id', None), 'all')
 
-    # Backward-compatible fallback: Rodito can still see legacy approval queues.
+    # Fallback: the default approver(s) from Settings.
     if not approvers:
-        legacy_manager = User.query.filter(func.lower(User.username) == APPROVAL_CENTER_MANAGER_USERNAME).first()
-        if legacy_manager:
-            approvers = [legacy_manager]
+        approvers = get_default_approvers()
 
     return approvers
 
@@ -73526,8 +73713,8 @@ def cash_advance_liquidation_submit_notification_approvers(liquidation):
         add_approver(db.session.get(User, original_cash_advance_approver_id))
 
     if not approvers:
-        fallback = User.query.filter(func.lower(User.username) == APPROVAL_CENTER_MANAGER_USERNAME).first()
-        add_approver(fallback)
+        for fallback in get_default_approvers():
+            add_approver(fallback)
 
     return approvers
 
@@ -73536,8 +73723,6 @@ def can_user_approve_cash_advance_liquidation(approver_user, liquidation):
     """Return True if user can approve/return this standalone Cash Advance Liquidation."""
     if not liquidation:
         return False
-    if is_legacy_reimbursement_approval_user(approver_user):
-        return True
     if not is_configured_approver_user(approver_user):
         return False
     requester_id = clean_int(getattr(liquidation, 'user_id', None))
@@ -73553,9 +73738,7 @@ def cash_advance_liquidation_query_for_current_approver(status_filter='Submitted
     ensure_cash_advance_liquidation_tables()
     query = CashAdvanceLiquidationHeader.query
 
-    if is_legacy_reimbursement_approval_user(current_user):
-        pass
-    elif is_configured_approver_user(current_user):
+    if is_configured_approver_user(current_user):
         requester_ids = set(get_requester_user_ids_for_approver(current_user, 'cash_advance_liquidation'))
         requester_ids.update(get_requester_user_ids_for_approver(current_user, 'cash_advance'))
         requester_ids.update(get_requester_user_ids_for_approver(current_user, 'all'))
@@ -73883,7 +74066,7 @@ def complete_travel_liquidation(liquidation_id):
     user_id = clean_int(getattr(current_user, 'id', None))
     owner_id = clean_int(getattr(liquidation, 'user_id', None))
     request_manage_allowed = can_current_user_manage_my_accounting_record(request_rec) if request_rec else False
-    if owner_id != user_id and not request_manage_allowed and not is_superadmin_user() and getattr(current_user, 'role', '') != 'regional_admin':
+    if owner_id != user_id and not request_manage_allowed and not is_superadmin_user() and not is_regional_admin_user():
         return jsonify({'success': False, 'error': 'Only the requester/participant can mark this Travel Liquidation as completed.'}), 403
 
     current_status = normalize_travel_liquidation_status(getattr(liquidation, 'status', None))
@@ -74019,7 +74202,7 @@ def complete_cash_advance_liquidation(liquidation_id):
 
     user_id = int(getattr(current_user, 'id', 0) or 0)
     owner_id = int(getattr(liquidation, 'user_id', 0) or 0)
-    if owner_id != user_id and not is_superadmin_user() and getattr(current_user, 'role', '') != 'regional_admin':
+    if owner_id != user_id and not is_superadmin_user() and not is_regional_admin_user():
         return jsonify({'success': False, 'error': 'Only the requester can mark this Cash Advance Liquidation as completed.'}), 403
 
     current_status = cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None))

@@ -14,10 +14,8 @@
 
 <div class="container py-4">
 {# nav_is_scheduler comes from inject_navigation_access() and calls the same
-   is_scheduler_user() the scheduler routes guard themselves with. This template used to
-   match the username against its own inline list -- a second copy of SCHEDULER_USERNAMES
-   that was free to drift from the server's, the same anti-pattern removed from
-   layout.html. Note the account list already contains a near-miss of one of those names. #}
+   is_scheduler_user() the scheduler routes guard themselves with (the scheduler role).
+   Never match usernames here. #}
 {% set dashboard_scheduler_account = nav_is_scheduler %}
 {% set dashboard_effective_scheduler_only = dashboard_scheduler_only or dashboard_scheduler_account %}
 {% set dashboard_effective_admin_view = dashboard_admin_view and not dashboard_scheduler_account %}
@@ -78,7 +76,7 @@
             {% else %}
             <a href="/analytics_page" class="btn btn-sm btn-primary dash-page-primary"><i class="fa-solid fa-chart-pie me-1" aria-hidden="true"></i>Open analytics</a>
             {% endif %}
-            {% elif dashboard_has_engineer_profile %}
+            {% elif dashboard_has_engineer_profile and nav_can_do_field_work %}
             <a href="/offline-tsr" class="btn btn-sm btn-primary dash-page-primary"><i class="fa-solid fa-file-circle-plus me-1" aria-hidden="true"></i>Create TSR</a>
             {% endif %}
         </div>
@@ -696,7 +694,7 @@
                     <span>Schedules and dispatch</span>
                 </a>
                 {% endif %}
-                {% if dashboard_has_engineer_profile %}
+                {% if dashboard_has_engineer_profile and nav_can_do_field_work %}
                 <a href="/offline-tsr" class="hybrid-shortcut">
                     <i class="fa-solid fa-file-circle-plus" aria-hidden="true"></i>
                     <strong>Create TSR</strong>

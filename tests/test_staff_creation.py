@@ -55,7 +55,7 @@ class StaffCreationTests(unittest.TestCase):
             if not cls.regional_profile:
                 cls.regional_profile = app_module.Engineer(
                     user_id=cls.regional_admin.id,
-                    employee_id=app_module.REGIONAL_ADMIN_EMPLOYEE_ID,
+                    employee_id='15-148',
                     name='Kevin Regional Admin',
                     initials='KRA',
                     branch='Cebu',

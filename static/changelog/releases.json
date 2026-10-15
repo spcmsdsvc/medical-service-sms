@@ -1,6 +1,44 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-15-user-roles",
+      "release_date": "2026-10-15",
+      "title": "User roles",
+      "summary": "Roles are now set in Settings, and there is a new view-only Support Engineer role.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-15-user-roles-dropdown",
+          "category": "Settings",
+          "description": "Superadmins can change an account's role from Settings > Users: Superadmin, Manager, Scheduler, Administrator, Engineer, Support Engineer, Approver or Staff. Every change is recorded in the activity log.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-15-user-roles-support-engineer",
+          "category": "Settings",
+          "description": "Support Engineer is a view-only engineer: they can view schedules, TSRs, calibration reports and products, and file reimbursements and leave, but cannot change schedules, submit TSRs or calibration reports, add or edit products, create travel requests, or use Cash Advance.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-15-user-roles-default-approver",
+          "category": "Approvals",
+          "description": "Approval Routing is now the only approval rule. Tick Default approver on an account in Approval Routing and new accounts are routed to it when they are added; a route you remove stays removed.",
+          "audiences": [
+            "admins",
+            "approvers"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-15-product-inventory",
       "release_date": "2026-10-15",
       "title": "Product Inventory fixes",

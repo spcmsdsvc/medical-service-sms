@@ -26,7 +26,6 @@ class GenorayInventoryTests(unittest.TestCase):
         cls.app = app_module.app
         cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, PROPAGATE_EXCEPTIONS=True)
         cls.superadmin_username = f"genoray_superadmin_{uuid.uuid4().hex[:8]}"
-        app_module.SUPERADMIN_USERNAMES.add(cls.superadmin_username)
         with cls.app.app_context():
             app_module.db.create_all()
             app_module.ensure_genoray_item_table()
@@ -43,7 +42,7 @@ class GenorayInventoryTests(unittest.TestCase):
                 is_active=True,
             )
             cls.regional = app_module.User(
-                username=app_module.REGIONAL_ADMIN_USERNAME,
+                username='kevin',
                 password="test",
                 role="regional_admin",
                 is_active=True,
@@ -129,7 +128,6 @@ class GenorayInventoryTests(unittest.TestCase):
                     app_module.db.session.delete(row)
             app_module.db.session.commit()
             app_module.db.session.remove()
-        app_module.SUPERADMIN_USERNAMES.discard(cls.superadmin_username)
 
     def setUp(self):
         with self.app.app_context():

@@ -96,12 +96,12 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
             regional_admin_user.is_active = True
 
             regional_admin_engineer = app_module.Engineer.query.filter_by(
-                employee_id=app_module.REGIONAL_ADMIN_EMPLOYEE_ID
+                employee_id='15-148'
             ).first()
             if not regional_admin_engineer:
                 regional_admin_engineer = app_module.Engineer(
                     user_id=regional_admin_user.id,
-                    employee_id=app_module.REGIONAL_ADMIN_EMPLOYEE_ID,
+                    employee_id='15-148',
                     name='Provisional Test Regional Admin',
                     initials='PRA',
                     branch='Cebu',

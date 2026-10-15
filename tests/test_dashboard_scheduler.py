@@ -138,14 +138,17 @@ class SchedulerDispatchIntelligenceTests(unittest.TestCase):
         db = app_module.db
         today = app_module.get_manila_today()
 
-        cls.scheduler_username = sorted(app_module.SCHEDULER_USERNAMES)[0]
-        for username, role in ((cls.scheduler_username, 'superadmin'),
+        cls.scheduler_username = 'diary'
+        for username, role in ((cls.scheduler_username, 'scheduler'),
                                ('sched_test_engineer', 'engineer')):
-            if not app_module.User.query.filter_by(username=username).first():
-                db.session.add(app_module.User(
+            user = app_module.User.query.filter_by(username=username).first()
+            if not user:
+                user = app_module.User(
                     username=username, role=role, is_active=True,
                     password=app_module.generate_password_hash('SchedTest123')
-                ))
+                )
+                db.session.add(user)
+            user.role = role
         db.session.commit()
 
         engineer = app_module.Engineer.query.filter_by(employee_id='SCHED-E1').first()

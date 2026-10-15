@@ -30,7 +30,6 @@ class ProductInventoryLoadingRouteTests(unittest.TestCase):
         cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
         cls.suffix = uuid.uuid4().hex[:8].upper()
         cls.username = f'product_b3_admin_{cls.suffix.lower()}'
-        app_module.SUPERADMIN_USERNAMES.add(cls.username)
         with cls.app.app_context():
             app_module.db.create_all()
             app_module.ensure_product_contract_column()
@@ -97,7 +96,6 @@ class ProductInventoryLoadingRouteTests(unittest.TestCase):
             if user:
                 session.delete(user)
             session.commit()
-        app_module.SUPERADMIN_USERNAMES.discard(cls.username)
 
     def client(self):
         client = self.app.test_client()

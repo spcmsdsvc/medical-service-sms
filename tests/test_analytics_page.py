@@ -69,7 +69,7 @@ class AnalyticsPageTests(unittest.TestCase):
             if not regional_profile:
                 regional_profile = app_module.Engineer(
                     user_id=cls.regional_user.id,
-                    employee_id=app_module.REGIONAL_ADMIN_EMPLOYEE_ID,
+                    employee_id='15-148',
                     name=f'Analytics Regional Admin {cls.suffix}',
                     initials='ARA',
                     branch='Cebu',

@@ -21,7 +21,6 @@ class ProductInventoryScanServerTests(unittest.TestCase):
         cls.suffix = uuid.uuid4().hex[:8].upper()
         cls.username = f'product_scan_admin_{cls.suffix.lower()}'
         cls.serial = f'SCANFIX{cls.suffix}'
-        app_module.SUPERADMIN_USERNAMES.add(cls.username)
 
         with cls.app.app_context():
             app_module.db.create_all()
@@ -56,7 +55,6 @@ class ProductInventoryScanServerTests(unittest.TestCase):
                 if row:
                     app_module.db.session.delete(row)
             app_module.db.session.commit()
-        app_module.SUPERADMIN_USERNAMES.discard(cls.username)
 
     def setUp(self):
         self.client = self.app.test_client()

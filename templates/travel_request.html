@@ -204,6 +204,9 @@
 </style>
 
 <div class="travel-page request-page">
+    {% if nav_is_support_engineer %}
+    <div class="alert alert-info small" role="status">Support Engineers cannot create travel requests. Open the requests you are on from My Requests.</div>
+    {% endif %}
     <header class="dash-page-header">
         <div>
             <h1 class="dash-page-h1"><span id="travel-hero-title">New Travel Request</span> <span id="travel-hero-status" class="travel-status-chip">Draft</span></h1>

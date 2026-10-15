@@ -281,7 +281,7 @@ class DashboardSeriesEndpointTests(unittest.TestCase):
     OTHER_USER = 'dash_style_test_other'
     STAFF_USER = 'dash_style_test_staff'
     # A real manager-dashboard account: is_regional_admin_user() is tied to this username.
-    MANAGER_USER = app_module.REGIONAL_ADMIN_USERNAME
+    MANAGER_USER = 'kevin'
 
     @classmethod
     def setUpClass(cls):
