@@ -39,9 +39,9 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Travel and Cash Advance Liquidation — scan fixes (4 batches)
 
-**Status:** Executed, not committed (2026-10-15; recorded on the owner's "Write batches 1-4 to plans.md, then stop and
-wait.", executed on "Execute all four liquidation batches."). All four batches in the working tree under service worker
-v324; awaiting "commit and push".
+**Status:** Executed (2026-10-15; recorded on the owner's "Write batches 1-4 to plans.md, then stop and wait.", executed
+on "Execute all four liquidation batches.", published on "commit and push. never db and dirty"). Published as `e1b3aa2`
+on `main`, all four batches in one commit under service worker v324.
 
 ### Amendments during execution
 
