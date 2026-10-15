@@ -39,8 +39,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # User roles — no hardcoded usernames, role dropdown in Settings, Support Engineer role (4 batches)
 
-**Status:** Executed locally 2026-10-15 on "execute the User roles plan in plans.md" — all four batches, **not
-committed** (awaiting "commit and push"; the batches share `app.py`/templates hunks, so they publish as one commit).
+**Status:** Executed — published to `main` as `4ab0627` on 2026-10-16 ("Commit and push the User roles change"; owner
+took a fresh database backup first). All four batches in one commit (they share `app.py`/template hunks).
 **Approved:** 2026-10-15 — the owner said "Approved. Write the four-batch roles plan to plans.md." Under the two-step
 rule this records approval only; execution needs a separate instruction.
 **Origin:** 2026-10-15 page scan of the Settings → Users tab (role focus), then owner decisions in the same session.

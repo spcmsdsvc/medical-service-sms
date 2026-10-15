@@ -1,5 +1,9 @@
 # Project Change Log
 
+codex changes - 2026-10-16
+
+- Published **User roles** (all four batches) to `main` as `4ab0627` on "Commit and push the User roles change. Never db and dirty." after the owner took a fresh database backup. Left out: `scheduler.db`, the pre-existing LPR line edit in `changes.md`, `changes-archive.md`, handoffs, `.impeccable/`, `.claude/`, `output/`, `tmp/`. On the first request after deploy the one-time role migrations run (expected log lines: removed `diarydizon` and `hannah`, routed `anthony` to the default approver).
+
 codex changes - 2026-10-15
 
 - Executed **User roles** (`plans.md`, all four batches, amendments recorded there) on "execute the User roles plan in plans.md"; not committed. Rights now come from `User.role` and per-account switches; no username decides access outside one-time migrations, the fresh-database seed, the emergency bootstrap and the excluded email/stock-init maps.
