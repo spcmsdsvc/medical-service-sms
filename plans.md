@@ -39,7 +39,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Late Calibration Report — real upload failure reason and automatic retry (1 batch)
 
-**Status:** Executed (2026-10-15, on "Execute the late upload retry plan."); not committed. One batch, one commit.
+**Status:** Executed (2026-10-15, on "Execute the late upload retry plan."). Published on "commit and push. never db and dirty" as `70ae4b5` on `main`, together with the certificate-result plan below (service worker v327).
 
 ### Amendments during execution
 
@@ -192,7 +192,7 @@ the engineer sees the real reason, and the upload retries by itself when the con
 
 # Late Calibration Report — show the certificate result after Save Final Report (1 batch)
 
-**Status:** Executed (2026-10-15, on "Execute the Late Calibration Report plan."); not committed. One batch, one commit.
+**Status:** Executed (2026-10-15, on "Execute the Late Calibration Report plan."). Published as `70ae4b5` on `main` with the retry plan above.
 
 ### Amendments during execution
 
