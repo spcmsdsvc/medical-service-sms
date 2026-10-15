@@ -2,6 +2,7 @@
 
 codex changes - 2026-10-15
 
+- Published **Client List — scan fixes and table improvements** (all 4 batches) to `main` as `ab0967e` on "commit and push. never db and dirty" (service worker v325); Railway deployment accepted and in progress at push time. `scheduler.db` and the unrelated dirty files (`.impeccable/`, handoffs, `changes-archive.md`, the pre-existing LPR line edit in `changes.md`, `.claude/`, `output/`, `tmp/`) were left out.
 - Executed **Client List — scan fixes and table improvements** (all 4 batches, `plans.md`, amendments recorded there) on the owner's "Execute all four Client List batches."; not committed. No function, handler or element id the page uses was removed or renamed (`client-count-label`, `client-contact-count`, `client-filter-state` moved above the list).
 - `app.py`: `/export_client_excel` sends the file with `send_file(..., download_name=...)` so the filename is quoted with a UTF-8 `filename*` (names with commas or ñ downloaded broken before); missing warranty dates are blank instead of "None"; a Group row was added; contacts are ordered. `clients_page` passes `can_admin_clients=is_admin_authorized()`. Service worker `CACHE_VERSION` v325-client-list-table.
 - `templates/clients.html` batch 1: Import/Export/Add, modal Export Excel and `isAdminUser` follow `can_admin_clients` (the server's allowlist check) instead of the role name; Print warns when pop-ups are blocked and leaves action buttons out of the printout; removed the unused `clientHasDesignationMatch` and the unreachable `designation`/`phone` sort values.

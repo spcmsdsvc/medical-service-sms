@@ -39,9 +39,9 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Client List — scan fixes and table improvements (4 batches)
 
-**Status:** Executed, not committed (2026-10-15, on "Execute all four Client List batches."; owner chose "All 4 batches" and
-"Hide when empty" for the Group column after `/page-scan` and `/page-design-scan` of `templates/clients.html`). All four
-batches done together under service worker v325.
+**Status:** Executed (2026-10-15, on "Execute all four Client List batches."; owner chose "All 4 batches" and
+"Hide when empty" for the Group column after `/page-scan` and `/page-design-scan` of `templates/clients.html`). Published
+on "commit and push. never db and dirty" as `ab0967e` on `main`, all four batches in one commit under service worker v325.
 
 ### Amendments during execution
 
