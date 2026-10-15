@@ -1,6 +1,54 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-15-product-inventory",
+      "release_date": "2026-10-15",
+      "title": "Product Inventory fixes",
+      "summary": "Product Inventory imports no longer erase data, and the page is easier to read on phones and in dark mode.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-15-product-inventory-import",
+          "category": "Inventory",
+          "description": "CSV Import now only changes the columns your file has: a file without owner, dates, room or BSID keeps those values. Lowercase serial numbers update the existing product instead of adding a copy, and owner names that were matched approximately are reported so you can check them.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-15-product-inventory-checks",
+          "category": "Inventory",
+          "description": "Add and Edit now refuse an unreadable date, an end date before the start date, or a medical center that is not on the list, and say which field to fix. Clicking Save twice no longer shows a false error.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-15-product-inventory-phone",
+          "category": "Inventory",
+          "description": "On phones, Import, Export and Print are under More and the Client and Status filters fold behind Filter, so the list starts higher. Export only shows for accounts that can download it.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-15-product-inventory-look",
+          "category": "Inventory",
+          "description": "Status labels are soft coloured pills, with red kept for Expired - No Contract. Text and buttons are readable in dark mode, the Add/Edit window keeps Save in view, and Service History shows dates like 25 Sep 2026, 11:50 with the newest calibration first.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-15-calibration-save-feedback",
       "release_date": "2026-10-15",
       "title": "Calibration Report save feedback",

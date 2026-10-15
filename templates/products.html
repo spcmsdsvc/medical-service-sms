@@ -36,10 +36,11 @@
         <!-- Header Section -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 no-print">
             <h2 class="h4 mb-0">
-                <i class="fa-solid fa-boxes-stacked me-2 text-info"></i>
-                MEDICAL SERVICE {{ inventory_label }} Inventory
+                <i class="fa-solid fa-boxes-stacked me-2 product-title-icon" aria-hidden="true"></i>
+                {{ inventory_label }} Inventory
             </h2>
-            <div class="btn-group">
+            <div class="product-page-actions">
+            <div class="btn-group product-secondary-actions">
                 <!-- BULK DATA IMPORT - Updated v5.4.2 to include Regional Admin -->
                 {% if product_can_delete %}
                 <input type="file" id="prod-csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
@@ -48,15 +49,32 @@
                 </button>
                 {% endif %}
                 
-                <button type="button" class="btn btn-outline-success btn-sm" title="Export {{ inventory_plural }}" aria-label="Export {{ inventory_plural }}" onclick="window.location.href='{{ inventory_export_url }}'">
+                {% if is_standalone_inventory or product_can_delete %}
+                <button type="button" class="btn btn-outline-success btn-sm product-export-btn" title="Export {{ inventory_plural }}" aria-label="Export {{ inventory_plural }}" onclick="window.location.href='{{ inventory_export_url }}'">
                     <i class="fa-solid fa-file-excel me-1"></i>Export
                 </button>
-                <button type="button" class="btn btn-outline-dark btn-sm" title="Print {{ inventory_label }} inventory" aria-label="Print {{ inventory_label }} inventory" onclick="window.print()">
+                {% endif %}
+                <button type="button" class="btn btn-outline-dark btn-sm product-print-btn" title="Print {{ inventory_label }} inventory" aria-label="Print {{ inventory_label }} inventory" onclick="window.print()">
                     <i class="fa-solid fa-print me-1"></i>Print
                 </button>
-                
+            </div>
+            <!-- Phones: Import, Export and Print live in one More menu so the list starts higher. -->
+            <div class="dropdown product-more-actions">
+                <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" id="product-more-btn" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fa-solid fa-ellipsis me-1" aria-hidden="true"></i>More
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="product-more-btn">
+                    {% if product_can_delete %}
+                    <li><button type="button" class="dropdown-item" onclick="document.getElementById('prod-csv-file').click()"><i class="fa-solid fa-file-import me-2" aria-hidden="true"></i>Import</button></li>
+                    {% endif %}
+                    {% if is_standalone_inventory or product_can_delete %}
+                    <li><button type="button" class="dropdown-item" onclick="window.location.href='{{ inventory_export_url }}'"><i class="fa-solid fa-file-excel me-2" aria-hidden="true"></i>Export</button></li>
+                    {% endif %}
+                    <li><button type="button" class="dropdown-item" onclick="window.print()"><i class="fa-solid fa-print me-2" aria-hidden="true"></i>Print</button></li>
+                </ul>
+            </div>
                 {% if product_can_edit %}
-                <button type="button" class="btn btn-success btn-sm ms-2" title="{% if is_vieworks_inventory %}Add Vieworks item{% elif is_genoray_inventory %}Add Genoray item{% else %}Add product{% endif %}" aria-label="{% if is_vieworks_inventory %}Add Vieworks item{% elif is_genoray_inventory %}Add Genoray item{% else %}Add product{% endif %}" onclick="openAddModal()">
+                <button type="button" class="btn btn-success btn-sm product-add-btn" title="{% if is_vieworks_inventory %}Add Vieworks item{% elif is_genoray_inventory %}Add Genoray item{% else %}Add product{% endif %}" aria-label="{% if is_vieworks_inventory %}Add Vieworks item{% elif is_genoray_inventory %}Add Genoray item{% else %}Add product{% endif %}" onclick="openAddModal()">
                     <i class="fa-solid fa-plus me-1"></i>{% if is_vieworks_inventory %}Add Vieworks Item{% elif is_genoray_inventory %}Add Genoray Item{% else %}Add Product{% endif %}
                 </button>
                 {% endif %}
@@ -70,23 +88,28 @@
         </div>
 
         <!-- Search and Filter Controls -->
-        <div class="row g-2 mb-4 no-print bg-light p-3 rounded align-items-end shadow-sm">
+        <div id="product-filter-panel" class="row g-2 mb-4 no-print bg-light p-3 rounded align-items-end shadow-sm">
             
             <div class="col-md-4">
-                <label class="small fw-bold text-muted text-uppercase">Search Equipment</label>
-                <input type="text" id="search-text" class="form-control form-control-sm" oninput="applyFilters()" placeholder="S/N or Product Name">
+                <label for="search-text" class="small fw-bold text-muted text-uppercase">Search Equipment</label>
+                <div class="product-search-row">
+                    <input type="text" id="search-text" class="form-control form-control-sm" oninput="applyFilters()" placeholder="S/N or Product Name">
+                    <button type="button" id="product-filter-toggle" class="btn btn-outline-secondary btn-sm product-filter-toggle" aria-expanded="false" aria-controls="product-filter-panel" onclick="toggleProductFilters()">
+                        <i class="fa-solid fa-sliders me-1" aria-hidden="true"></i><span id="product-filter-toggle-label">Filter</span>
+                    </button>
+                </div>
             </div>
             
-            <div class="col-md-4">
-                <label class="small fw-bold text-muted text-uppercase">Filter by Client</label>
+            <div class="col-md-4 product-filter-extra">
+                <label for="filter-cli-search" class="small fw-bold text-muted text-uppercase">Filter by Client</label>
                 <input type="text" id="filter-cli-search" class="form-control form-control-sm" oninput="applyFilters()" placeholder="Medical Center Name">
             </div>
             
-            <div class="col-md-4">
-                <label class="small fw-bold text-muted text-uppercase">{{ inventory_label }} Status</label>
+            <div class="col-md-4 product-filter-extra">
+                <label for="filter-status" class="small fw-bold text-muted text-uppercase">{{ inventory_label }} Status</label>
                 <select id="filter-status" class="form-select form-select-sm" onchange="applyFilters()">
                     <option value="">All Statuses</option>
-                    <option value="Under Warranty">Active Warranty</option>
+                    <option value="Under Warranty">Under Warranty</option>
                     <option value="Under Contract">Under Contract</option>
                     <option value="Expired - Under Contract">Expired - Under Contract</option>
                     <option value="Expired - No Contract">Expired - No Contract</option>
@@ -171,23 +194,23 @@
                 <div class="fw-bold text-dark" id="product-count-label">Showing 0 of 0 {{ inventory_plural }}</div>
             </div>
             <div class="d-flex flex-wrap gap-2">
-                <span class="count-chip bg-white border text-success">
+                <span class="count-chip product-status-pill product-status-pill--warranty">
                     <i class="fa-solid fa-shield-halved me-1"></i>
                     <span id="product-active-count">0 active</span>
                 </span>
-                <span class="count-chip bg-white border text-warning-emphasis">
+                <span class="count-chip product-status-pill product-status-pill--contract">
                     <i class="fa-solid fa-file-shield me-1"></i>
                     <span id="product-expired-contract-count">0 expired + contract</span>
                 </span>
-                <span class="count-chip bg-white border text-danger">
+                <span class="count-chip product-status-pill product-status-pill--expired">
                     <i class="fa-solid fa-file-circle-xmark me-1"></i>
                     <span id="product-expired-no-contract-count">0 expired + no contract</span>
                 </span>
-                <span class="count-chip bg-white border text-secondary">
+                <span class="count-chip product-status-pill product-status-pill--none">
                     <i class="fa-solid fa-circle-question me-1"></i>
                     <span id="product-no-expiry-count">0 no expiry</span>
                 </span>
-                <span class="count-chip bg-white border text-primary">
+                <span class="count-chip product-filter-chip">
                     <i class="fa-solid fa-filter me-1"></i>
                     <span id="product-filter-state">No active filter</span>
                 </span>
@@ -198,15 +221,15 @@
 
 <!-- PRODUCT MODAL (ADD/EDIT) -->
 <div class="modal fade no-print" id="prodModal" tabindex="-1" aria-labelledby="modal-title" aria-describedby="modal-product-context" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content shadow-lg border-0">
             
-            <div class="modal-header bg-success text-white">
+            <div id="product-modal-header" class="modal-header bg-success text-white">
                 <div>
                     <h5 id="modal-title" class="modal-title">{% if is_vieworks_inventory %}Vieworks Item Details{% elif is_genoray_inventory %}Genoray Item Details{% else %}Product Details{% endif %}</h5>
                     <div id="modal-product-context" class="product-modal-context" aria-live="polite">{% if is_vieworks_inventory %}Add or edit a Vieworks item record.{% elif is_genoray_inventory %}Add or edit a Genoray item record.{% else %}Add or edit a product record.{% endif %}</div>
                 </div>
-                <button type="button" class="btn-close btn-close-white" aria-label="Close product details" data-bs-dismiss="modal"></button>
+                <button type="button" id="product-modal-close" class="btn-close btn-close-white" aria-label="Close product details" data-bs-dismiss="modal"></button>
             </div>
             
             <div class="modal-body">
@@ -307,7 +330,7 @@
             
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-success btn-sm px-4" onclick="saveProduct()">
+                <button type="button" id="product-save-btn" class="btn btn-success btn-sm px-4" onclick="saveProduct()">
                     <i class="fa-solid fa-floppy-disk me-1"></i>{% if is_vieworks_inventory %}Save Vieworks Item{% elif is_genoray_inventory %}Save Genoray Item{% else %}Save Product{% endif %}
                 </button>
             </div>
@@ -342,7 +365,7 @@
         <div id="importToastHeader" class="toast-header text-white bg-success">
             <i id="importToastIcon" class="fa-solid fa-circle-check me-2"></i>
             <strong class="me-auto" id="importToastTitle">Import Complete</strong>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
         <div class="toast-body bg-white" id="importToastBody"></div>
     </div>
@@ -945,6 +968,11 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
 
     document.addEventListener('DOMContentLoaded', async () => { 
         prodModal = new bootstrap.Modal(document.getElementById('prodModal')); 
+        // Focus the first field to fill: Serial on Add, Product Name on Edit.
+        document.getElementById('prodModal').addEventListener('shown.bs.modal', () => {
+            const editing = Boolean(document.getElementById('edit-prod-serial').value);
+            document.getElementById(editing ? 'p-name' : 'p-serial')?.focus();
+        });
         const historyModal = document.getElementById('productHistoryModal');
         if(historyModal) window.productHistoryModal = new bootstrap.Modal(historyModal);
         restoreProductSortPreference();
@@ -1393,6 +1421,25 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         if(expiredNoContract) expiredNoContract.innerText = `${counts.expiredNoContract} expired + no contract`;
         if(noExpiry) noExpiry.innerText = `${counts.noExpiry} no expiry`;
         if(state) state.innerText = hasFilter ? 'Filtered results' : 'No active filter';
+        updateProductFilterToggle();
+    }
+
+    // Phones show search + "Filter (n)"; the Client and Status fields fold behind the button.
+    function updateProductFilterToggle(){
+        const label = document.getElementById('product-filter-toggle-label');
+        if(!label) return;
+        const count = ['filter-cli-search', 'filter-status']
+            .filter(id => String(document.getElementById(id)?.value || '').trim()).length;
+        label.textContent = count ? `Filter (${count})` : 'Filter';
+    }
+
+    function toggleProductFilters(){
+        const panel = document.getElementById('product-filter-panel');
+        const toggle = document.getElementById('product-filter-toggle');
+        if(!panel || !toggle) return;
+        const open = panel.classList.toggle('is-filter-open');
+        toggle.setAttribute('aria-expanded', String(open));
+        if(open) document.getElementById('filter-cli-search')?.focus();
     }
 
 
@@ -1454,11 +1501,11 @@ function renderProductRowActions(product){
 }
 
 function getWarrantyBadgeClass(status){
-    if(status === 'Under Warranty') return 'product-mobile-badge-active';
-    if(status === 'Under Contract') return 'product-mobile-badge-contract';
-    if(status === 'Expired - Under Contract') return 'product-mobile-badge-contract';
-    if(status === 'Expired - No Contract') return 'product-mobile-badge-expired';
-    return 'product-mobile-badge-na';
+    // One status -> pill mapping for the table, phone cards and count chips.
+    if(status === 'Under Warranty') return 'product-status-pill--warranty';
+    if(status === 'Under Contract' || status === 'Expired - Under Contract') return 'product-status-pill--contract';
+    if(status === 'Expired - No Contract') return 'product-status-pill--expired';
+    return 'product-status-pill--none';
 }
 
 function renderProductMobileCards(data){
@@ -1501,14 +1548,14 @@ function renderProductMobileCards(data){
         }
 
         return `
-            <div class="product-mobile-card" onclick="openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)})" role="button" tabindex="0" onkeydown="if(event.key==='Enter' || event.key===' ') { event.preventDefault(); openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)}); }">
+            <div class="product-mobile-card" onclick="openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)})">
                 <div class="product-mobile-head">
                     <div class="product-mobile-sn">${escapeHtml(p.serial_number)}</div>
-                    <div class="product-mobile-status ${getWarrantyBadgeClass(status)}">${escapeHtml(status)}</div>
+                    <div class="product-mobile-status product-status-pill ${getWarrantyBadgeClass(status)}">${escapeHtml(status)}</div>
                 </div>
                 ${renderProductCalibrationDocumentLinks(p, true)}
                 ${renderProductCalibrationBadge(p)}
-                <div class="product-mobile-name">${escapeHtml(p.name || fallbackName)}</div>
+                <button type="button" class="product-mobile-name product-mobile-open" onclick="event.stopPropagation(); openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)})" aria-label="Service history for ${identity}">${escapeHtml(p.name || fallbackName)}</button>
                 ${renderProductLinkedVieworks(p, true)}
                 <div class="product-mobile-owner">
                     <i class="fa-solid fa-hospital" aria-hidden="true"></i>
@@ -1577,11 +1624,30 @@ function productHistoryUrl(serial, source){
     return `/api/${normalizedSource}/items/${encoded}/history`;
 }
 
+// Stored times are already Manila time, so format the parts as written ("25 Sep 2026, 11:50").
+function formatProductHistoryDate(value){
+    const text = String(value || '').trim();
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+    if(!match) return text;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[Number(match[2]) - 1];
+    if(!month) return text;
+    const day = `${Number(match[3])} ${month} ${match[1]}`;
+    return match[4] ? `${day}, ${match[4]}:${match[5]}` : day;
+}
+
+function productHistorySortKey(row){
+    const match = String(row?.['calibration_' + 'date'] || row?.approved_at || '').match(/^\d{4}-\d{2}-\d{2}/);
+    return match ? match[0] : '';
+}
+
 function renderProductHistory(data){
     const asset = data?.asset || {};
     const visits = Array.isArray(data?.visits) ? data.visits : [];
     const pmHistory = Array.isArray(data?.pm_history) ? data.pm_history : [];
-    const calibrations = Array.isArray(data?.calibrations) ? data.calibrations : [];
+    const calibrations = (Array.isArray(data?.calibrations) ? data.calibrations : [])
+        .slice()
+        .sort((a, b) => productHistorySortKey(b).localeCompare(productHistorySortKey(a)));
     const coverageDates = [asset.start_warranty, asset.end_warranty].filter(Boolean).join(' – ') || 'No warranty dates recorded';
     const coverageLabel = asset.under_contract ? 'Under Contract' : 'No Contract';
     const linked = [];
@@ -1629,15 +1695,15 @@ function renderProductHistory(data){
             const approvalInfo = [
                 row.approval_id ? `Approval ${escapeHtml(row.approval_id)}` : '',
                 row.revision_no ? `Revision ${escapeHtml(row.revision_no)}` : '',
-                row.approved_at ? `Approved ${escapeHtml(row.approved_at)}` : '',
+                row.approved_at ? `Approved ${escapeHtml(formatProductHistoryDate(row.approved_at))}` : '',
                 row.approver_name ? `By ${escapeHtml(row.approver_name)}` : ''
             ].filter(Boolean).join(' · ');
             return `<article class="product-calibration-history-record border rounded-3 p-3 mb-2">
                 <div class="d-flex flex-wrap justify-content-between gap-2">
                     <strong>${escapeHtml(row.status || 'Calibration record')}</strong>
-                    <span class="small text-muted">${escapeHtml(row['calibration_' + 'date'] || 'Date not recorded')}</span>
+                    <span class="small text-muted">${escapeHtml(formatProductHistoryDate(row['calibration_' + 'date']) || 'Date not recorded')}</span>
                 </div>
-                <div class="small mt-1"><strong>Valid through:</strong> ${escapeHtml(row.valid_until || 'Not available')}</div>
+                <div class="small mt-1"><strong>Valid through:</strong> ${escapeHtml(formatProductHistoryDate(row.valid_until) || 'Not available')}</div>
                 <div class="small mt-1"><strong>Calibrated by:</strong> ${escapeHtml(row.calibrated_by || row.report_recorded_calibrator || 'Not recorded')}</div>
                 <div class="small mt-1"><strong>Certificate:</strong> ${escapeHtml(row['certificate_' + 'number'] || 'Not recorded')}</div>
                 ${approvalInfo ? `<div class="small mt-1"><strong>Approval:</strong> ${approvalInfo}</div>` : ''}
@@ -1785,7 +1851,7 @@ function updateProductSortIndicators(){
         const key = btn.dataset.sortKey || '';
         const active = key && key === productSortState.key;
         btn.classList.toggle('active', active);
-        btn.setAttribute('aria-sort', active ? (productSortState.direction === 'desc' ? 'descending' : 'ascending') : 'none');
+        btn.closest('th')?.setAttribute('aria-sort', active ? (productSortState.direction === 'desc' ? 'descending' : 'ascending') : 'none');
     });
 
     document.querySelectorAll('[data-sort-indicator]').forEach(indicator => {
@@ -1840,16 +1906,7 @@ function renderTable(data) {
             body.innerHTML = data.map(p => {
                 const status = p.computed_status || getProductWarrantyStatus(p);
 
-                let sBadge = `<span class="badge product-status-badge bg-secondary">${escapeHtml(status)}</span>`;
-                if(status === 'Under Warranty'){
-                    sBadge = `<span class="badge product-status-badge bg-success">Under Warranty</span>`;
-                } else if(status === 'Under Contract'){
-                    sBadge = `<span class="badge product-status-badge bg-warning text-dark">Under Contract</span>`;
-                } else if(status === 'Expired - Under Contract'){
-                    sBadge = `<span class="badge product-status-badge bg-warning text-dark">Expired - Under Contract</span>`;
-                } else if(status === 'Expired - No Contract'){
-                    sBadge = `<span class="badge product-status-badge bg-danger">Expired - No Contract</span>`;
-                }
+                const sBadge = `<span class="product-status-badge product-status-pill ${getWarrantyBadgeClass(status)}">${escapeHtml(status)}</span>`;
 
                 const ownerDisplay = escapeHtml(p.client_name || '-');
 
@@ -1948,7 +2005,20 @@ function renderTable(data) {
 
     // --- MODAL CONTROL LOGIC ---
 
+// Add keeps the green create header (DESIGN.md exception); Edit uses a neutral header.
+function setProductModalEditMode(isEdit){
+    const header = document.getElementById('product-modal-header');
+    const close = document.getElementById('product-modal-close');
+    if(header){
+        header.classList.toggle('bg-success', !isEdit);
+        header.classList.toggle('text-white', !isEdit);
+        header.classList.toggle('product-modal-header-edit', isEdit);
+    }
+    if(close) close.classList.toggle('btn-close-white', !isEdit);
+}
+
 function openAddModal() {
+        setProductModalEditMode(false);
         document.getElementById('modal-title').innerText = isStandaloneInventory ? `Add New ${inventoryLabel} Item` : "Add New Equipment Entry";
         document.getElementById('modal-product-context').innerText = isStandaloneInventory ? `Create a new ${inventoryLabel} item record.` : "Create a new equipment record.";
         document.getElementById('edit-prod-serial').value = ""; 
@@ -1984,6 +2054,7 @@ function openAddModal() {
                 ? `${inventoryLabel} item record was not found. Please refresh and try again.`
                 : "Product record was not found. Please refresh and try again.");
         }
+        setProductModalEditMode(true);
         document.getElementById('modal-title').innerText = isStandaloneInventory ? `Edit ${inventoryLabel} Item` : "Edit Product Record";
         document.getElementById('modal-product-context').innerText = getProductIdentityLabel(p);
         document.getElementById('edit-prod-serial').value = sn; 
@@ -2041,7 +2112,10 @@ function openAddModal() {
         return message || `${fallback} (HTTP ${response.status}).`;
     }
 
+    let productSaveBusy = false;
+
     async function saveProduct() { 
+        if (productSaveBusy) return;
         const editSN = document.getElementById('edit-prod-serial').value; 
         
         const data = { 
@@ -2122,6 +2196,9 @@ function openAddModal() {
             ? (isStandaloneInventory ? `${inventoryItemsUrl}/${encodeURIComponent(editSN)}` : `/update_product/${encodeURIComponent(editSN)}`)
             : (isStandaloneInventory ? inventoryItemsUrl : '/add_product');
         const method = editSN ? 'PUT' : 'POST';
+        const saveButton = document.getElementById('product-save-btn');
+        productSaveBusy = true;
+        if (saveButton) saveButton.disabled = true;
 
         try {
             const res = await fetch(url, {
@@ -2154,11 +2231,14 @@ function openAddModal() {
                     }
                 }
             } else {
-                productToast("Database Error: " + productResponseMessage(res, responseData, "Action failed"));
+                productToast(productResponseMessage(res, responseData, "Action failed"));
             }
         } catch (error) {
             console.error('[Products] Unable to save product', error);
             productToast(`Unable to save the ${inventoryNoun}. Please check your connection and try again.`);
+        } finally {
+            productSaveBusy = false;
+            if (saveButton) saveButton.disabled = false;
         }
     }
 
@@ -2750,7 +2830,7 @@ function openAddModal() {
         place-content: center;
         justify-items: center;
         gap: 0.55rem;
-        color: #64748b;
+        color: var(--app-muted, #64748b);
         font-weight: 800;
         text-align: center;
     }
@@ -3129,49 +3209,48 @@ function openAddModal() {
         grid-template-columns: 1rem 1fr;
         gap: 0.45rem;
         margin-top: 0.45rem;
-        color: #64748b;
+        color: var(--app-muted, #64748b);
         font-size: 0.75rem;
         font-weight: 700;
     }
 
     .product-mobile-status {
-        border-radius: 999px;
-        padding: 0.38rem 0.6rem;
-        font-size: 0.64rem;
-        font-weight: 900;
         max-width: 10rem;
         text-align: center;
         line-height: 1.25;
     }
 
-    .product-mobile-badge-active {
-        background: #dcfce7;
-        color: #166534;
+    /* Status pills: fixed semantic pairs (Semantic Status Rule), not the accent.
+       Only Expired - No Contract is red, and as a soft pair, never a solid fill. */
+    .product-status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 0.3rem 0.6rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1.25;
     }
+    .product-status-pill--warranty { background: #dcfce7; color: #166534; }
+    .product-status-pill--contract { background: #fef3c7; color: #854d0e; }
+    .product-status-pill--expired { background: #fde8ea; color: #a1121f; }
+    .product-status-pill--none { background: #f1f5f9; color: #334155; }
+    :root[data-app-theme="dark"] .product-status-pill--warranty { background: #14532d; color: #bbf7d0; }
+    :root[data-app-theme="dark"] .product-status-pill--contract { background: #4a3612; color: #fde68a; }
+    :root[data-app-theme="dark"] .product-status-pill--expired { background: #5c1a22; color: #fecdd3; }
+    :root[data-app-theme="dark"] .product-status-pill--none { background: #334155; color: #e2e8f0; }
 
-    .product-mobile-badge-expired {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-
-    .product-mobile-badge-contract {
-        background: #fef3c7;
-        color: #854d0e;
-    }
-
-    .product-mobile-badge-na {
-        background: #f1f5f9;
-        color: #334155;
+    .product-filter-chip {
+        border: 1px solid var(--app-border, #dbe3ea);
+        background: var(--app-surface, #fff);
+        color: var(--app-primary-text, #0a58ca);
     }
 
     :root[data-app-theme="dark"] .product-mobile-name {
         color: var(--dark-text, #e5e7eb);
     }
 
-    :root[data-app-theme="dark"] .product-mobile-badge-contract {
-        background: #4a3612;
-        color: #fde68a;
-    }
 
     :root[data-app-theme="dark"] .product-contract-control {
         background: var(--app-surface-raised, #182536);
@@ -3215,7 +3294,7 @@ function openAddModal() {
     .product-mobile-empty {
         border: 1px dashed #cbd5e1;
         background: #f8fafc;
-        color: #64748b;
+        color: var(--app-muted, #64748b);
         border-radius: 1rem;
         padding: 1.3rem;
         text-align: center;
@@ -3382,7 +3461,7 @@ function openAddModal() {
     }
 
     .product-linked-vieworks-item small {
-        color: #64748b;
+        color: var(--app-muted, #64748b);
     }
 
     .product-history-state {
@@ -3485,5 +3564,109 @@ function openAddModal() {
     :root[data-app-theme="dark"] .product-linked-vieworks-item small {
         color: #b8bbc2;
     }
+
+    /* 2026-10-15 scan fixes: header actions, phone More menu and Filter (n), readable outline buttons. */
+    .product-page-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .product-title-icon { color: var(--app-primary-text, #0a58ca); }
+    .product-more-actions,
+    .product-filter-toggle { display: none; }
+    .product-search-row {
+        display: flex;
+        gap: 0.5rem;
+    }
+    .product-search-row .form-control { flex: 1 1 auto; min-width: 0; }
+
+    .product-page-actions .product-export-btn {
+        color: #146c43;
+        border-color: #146c43;
+    }
+    .product-page-actions .product-export-btn:hover,
+    .product-page-actions .product-export-btn:focus-visible {
+        color: #fff;
+        background: #146c43;
+    }
+    #product-reset-widths,
+    #product-clear-filters,
+    .product-filter-toggle,
+    .product-more-actions > .btn {
+        color: #565e64;
+        border-color: #6c757d;
+    }
+    #product-clear-filters:disabled { opacity: 1; color: #5c636a; }
+    .product-modal-context { color: #fff; }
+
+    :root[data-app-theme="dark"] .product-page-actions .product-export-btn {
+        color: #75b798;
+        border-color: #75b798;
+    }
+    :root[data-app-theme="dark"] .product-page-actions .product-export-btn:hover,
+    :root[data-app-theme="dark"] .product-page-actions .product-export-btn:focus-visible {
+        color: #0b1f16;
+        background: #75b798;
+    }
+    :root[data-app-theme="dark"] .product-page-actions .product-print-btn,
+    :root[data-app-theme="dark"] #product-reset-widths,
+    :root[data-app-theme="dark"] #product-clear-filters,
+    :root[data-app-theme="dark"] .product-filter-toggle,
+    :root[data-app-theme="dark"] .product-more-actions > .btn {
+        color: var(--app-text, #ededed);
+        border-color: var(--app-muted, #b8bbc2);
+    }
+    :root[data-app-theme="dark"] #product-clear-filters:disabled { color: var(--app-muted, #b8bbc2); }
+
+    @media screen and (max-width: 768px) {
+        .product-page-actions {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .product-page-actions .product-secondary-actions { display: none; }
+        .product-more-actions { display: block; }
+        .product-more-actions > .btn,
+        .product-page-actions .product-add-btn {
+            width: 100%;
+            min-height: 44px;
+            border-radius: 0.8rem;
+            font-weight: 600;
+        }
+        .product-page-actions:not(:has(.product-add-btn)) { grid-template-columns: 1fr; }
+        .product-more-actions .dropdown-item {
+            min-height: 44px;
+            display: flex;
+            align-items: center;
+        }
+        .product-filter-toggle {
+            display: inline-flex;
+            align-items: center;
+            min-height: 44px;
+            white-space: nowrap;
+            border-radius: 0.85rem;
+            font-weight: 600;
+        }
+        #product-filter-panel .product-filter-extra { display: none; }
+        #product-filter-panel.is-filter-open .product-filter-extra { display: block; }
+    }
+    /* The card name is the keyboard entry to Service History; the card itself is no longer a button. */
+    .product-mobile-open {
+        display: block;
+        width: 100%;
+        min-height: 44px;
+        padding: 0;
+        border: 0;
+        background: none;
+        font-family: inherit;
+        text-align: left;
+    }
+    .product-modal-header-edit {
+        background: var(--app-surface-raised, #f8fafc);
+        color: var(--app-text, #172033);
+        border-bottom: 1px solid var(--app-border, #dbe3ea);
+    }
+    .product-modal-header-edit .product-modal-context { color: var(--app-muted, #64748b); }
 </style>
 {% endblock %}

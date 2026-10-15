@@ -164,6 +164,209 @@ certificate is sent, while a token owned by a genuinely different TSR is still r
 - An older `Pending` certificate becomes `Superseded` — existing behaviour whenever a newer certificate is sent.
 - Blast radius: only Calibration Report uploads; ordinary attachments and approved-report rules unchanged.
 
+# Product Inventory — scan fixes (4 batches)
+
+**Status:** Executed (2026-10-15, on "Execute all four Product Inventory batches."); not committed. Approved 2026-10-15;
+owner chose "All four batches", "Soft pills, one red", "Add + search only".
+
+### Amendments during execution
+
+- **Count chip wording kept as "N active"** (step 10): the chip counts Under Warranty *and* Under Contract, so
+  "under warranty" would be wrong. Only the filter option changed to "Under Warranty".
+- **Steps 11 and 20 done together:** `getWarrantyBadgeClass` (name kept) now returns `product-status-pill--warranty|
+  contract|expired|none`; Expired - Under Contract shares the contract pair (four modifiers, not five). The old
+  `product-mobile-badge-*` classes and the solid Bootstrap badges are gone; the count chips use the same pills, and the
+  "No active filter" chip got `.product-filter-chip` (border + accent text).
+- **Steps 13–14 colours:** light Export `#146c43`, Clear/Reset/Filter/More `#565e64` (disabled Clear `#5c636a`, opacity 1);
+  dark uses `--app-text` / `--app-muted` and `#75b798` for Export; Add subtitle plain white (4.53:1 on green), Edit
+  subtitle `--app-muted`; header icon `--app-primary-text`.
+- **Step 17:** the card keeps its tap-anywhere `onclick` (mouse/touch); the keyboard entry is the name button
+  `.product-mobile-open` (44px, `aria-label="Service history for …"`).
+- **Step 23:** heading is `{{ inventory_label }} Inventory` for all three modes; pins updated in
+  `tests/test_genoray_inventory.py` and `tests/test_vieworks_inventory.py`.
+- **Existing test that passed by accident:** `test_edit_and_delete_accept_encoded_slash_serial_numbers` edits `N/A-<hex>`
+  (the edit uppercases it), then deleted the old lowercase serial — a no-op the old "success" hid (and left a test row
+  behind). It now deletes the serial the server returned.
+- **Known failure unchanged:** `test_product_save_stays_in_place_without_refetching_page_data` already fails on `HEAD`
+  (listed in `tests/known_failures.txt`).
+- **Fail-without-fix proof:** all 17 new tests (20 failures with subtests) fail against `HEAD` in a temporary worktree.
+- **Browser (DB copy, admin and engineer test passwords in the copy, removed afterwards):** Add focuses Serial with the
+  green header, Edit focuses Product Name with the neutral header; double-click Add makes one request (one "Product
+  added." toast); end-before-start shows "End date cannot be earlier than the start date."; Save footer inside the
+  viewport at 1366×768 (bottom 740) and 375×812 (bottom 786). History of MQ00005A5042: six calibrations newest first,
+  "Approved 8 Sep 2026, 14:09". Contrast light / Graphite / AMOLED: Export 6.45 / 5.32 / 7.52, Print 15.43 / 10.62 /
+  15.02, Clear and Reset ≥6.26 dark, pills 6.15–9.45, phone owner 4.76 / 6.47 / 8.11 (was 2.61 Graphite), title icon
+  6.69 / 5.32 / 7.52. 375px: no horizontal scroll, no control under 44px, first card at y=414 (was 662), More menu
+  Import/Export/Print 44px, "Filter (1)". Engineer: no Export, More shows Print only. Genoray and Vieworks: load, keep
+  Export, new heading, all page functions defined. No server errors.
+
+## Context
+
+The 2026-10-15 page scan and design scan of Product Inventory (`templates/products.html` in product mode,
+`/products_page`; Impeccable critique 24/40, snapshot `.impeccable/critique/2026-10-15T05-22-36Z__templates-products-html.md`).
+The scan found that CSV Import silently erases owner and dates, Export is broken for engineers, and the server accepts bad
+dates and unknown clients; the critique found dark-theme contrast failures, a modal taller than the screen and red status
+badges on half the rows. The same template also renders Genoray (`/genoray`) and Vieworks (`/vieworks`); those pages
+get their own scan later, so every change here is limited to product mode unless it is plainly shared and harmless.
+
+## Decisions taken (owner, 2026-10-15)
+
+- All four batches go into this plan.
+- Status colour: soft semantic pill pairs for every status (light and dark pairs, ≥4.5:1). Red only for
+  "Expired - No Contract" (soft pair `#a1121f` on `#fde8ea`, DESIGN.md `status-rejected`), never a solid red fill.
+- Phone top of page (≤768px): only Add and search stay visible; Import, Export and Print go into a "More" menu; the
+  Client and Status filters fold behind a "Filter (n)" button.
+
+## Investigation
+
+- **Import erases fields** (`import_products`, `app.py:66737`): for an existing product it always assigns `room`,
+  `client_id`, `start_warranty_date`, `end_warranty_date`, `bsid` (`app.py:66817-66824`), even when the CSV has no such
+  column (`csv_get` returns empty). Repro on a DB copy: CSV with only Serial Number + Description → MPF16C78B011 lost its
+  owner and both dates. Contract already follows the "column present" rule (`has_contract_column`).
+- **Import does not uppercase serials** (`app.py:66778`), while `add_product` (`:64594`) and `update_product` (`:64825`)
+  do. Importing `zzscan6` beside `ZZSCAN6` made a second row (PK is case-sensitive in SQLite).
+- **Import owner matching** `csv_find_client_id` (`app.py:66586`) falls back to a 0.75 similarity match and applies it
+  silently. The exported "N/A" owner is also counted as "unmatched" on re-import (`export_products`, `app.py:55505`).
+- **Add/Edit accept bad input** (`add_product` `:64573`, `update_product` `:64789`): `parse_date` (`:7747`) turns an
+  unreadable date into `None` without an error; no end-before-start check (the P.O. route has one, `:64762`); `client_id`
+  is not checked against `Client` (999999 saved, shows "N/A"); a 307-character serial was saved (column is 100).
+- **Export button** is shown to everyone (`products.html:51`), but `/export_products` is `is_admin_authorized()` only
+  (`app.py:55495`): an engineer lands on raw `{"message":"Denied"}`. Genoray/Vieworks exports allow everyone with page
+  access (`app.py:66156`, `:66523`), so the button must stay for those modes.
+- **Delete of a missing serial** returns 200 `success` (`app.py:65043-65075`).
+- **Save double-click** (`saveProduct`, `products.html:2044`): no busy guard; the second Add POST returns 409 and the
+  page shows "Database Error: Serial number … already exists" after the success toast. Every failure message is prefixed
+  "Database Error:" (`:2153`), including validation messages.
+- **Filter wording**: option "Active Warranty" (`:89`) for status "Under Warranty".
+- **Unused route** `/get_products_summary` (`app.py:34729`): no caller in templates, static JS or tests.
+- **Contrast** (measured in Graphite on `#333438`): phone owner name `#64748b` hardcoded (`products.html:3132`, also
+  `:2753`, `:3218`, `:3385`) 2.61:1 (AMOLED 3.69:1); Print `btn-outline-dark` 1.24:1; Export `btn-outline-success`
+  2.74:1; Clear Filters and Reset widths `btn-outline-secondary` 2.65:1. Light: Export 4.20:1, Clear/Reset 4.45:1. Modal
+  subtitle `#modal-product-context` 12px at 3.78:1 on the green header. Header icon `text-info` 1.96:1 (`:39`).
+- **Accessibility**: filter labels have no `for` (`:76`, `:81`, `:86`); phone card is `role=button` containing Edit and
+  Delete buttons (`:1504`); `aria-sort` sits on the sort button, not the `<th>` (`:1788`); import toast close button has
+  no name (`:345`).
+- **Modal**: 1020px (Add) / 1066px (Edit) tall at 768px viewport, 1476px on a phone; Save below the fold; focus lands on
+  the dialog; Edit keeps the green Add header (`:204`; DESIGN.md allows green only for Add).
+- **Status**: solid `bg-danger` on 52 of 102 rows (`renderTable`, `:1842-1851`); phone uses `getWarrantyBadgeClass`
+  (`:1456`), desktop repeats the same mapping inline; count chips (`:174-190`) lose their colour in dark themes.
+- **History copy** (`renderProductHistory`, `:1580`): raw ISO `approved_at` ("2026-09-25T11:50:01.981557", `:1632`);
+  calibration records not sorted by date. Heading "MEDICAL SERVICE Product Inventory" (`:39-40`).
+- **Not a finding**: no console or server errors; no dead JS functions; 375px has no page-level horizontal scroll and
+  phone Edit/Delete are 44px.
+
+## Execution steps
+
+### Batch 1 — server checks (`app.py`)
+
+1. `import_products`: for an existing product, change `room`, `client_id`, both dates and `bsid` only when the CSV has
+   that column (same pattern as `has_contract_column`, using `csv_has_header` with the aliases already passed to
+   `csv_get`). Done = CSV with only Serial + Description keeps owner, dates, room and BSID.
+2. `import_products`: `serial = serial.upper()` before lookup; also check `len(serial) <= 100` (skip with a counted
+   reason). Done = `abc1` updates `ABC1`, no second row.
+3. `import_products`: treat owner "N/A" (case-insensitive) as empty; when `csv_find_client_id` matches by similarity
+   (not exact `ilike`), still assign it but count it in a new `fuzzy_owner_matches` field and add "N owner name(s) were
+   matched approximately — check them" to the message. Return a new helper flag from `csv_find_client_id` via a small
+   wrapper `csv_find_client_match(owner_name)` → `(client_id, exact)`; keep `csv_find_client_id` unchanged for its other
+   callers.
+4. New helper `product_payload_errors(d, client_id)` used by `add_product` and `update_product`: unreadable non-empty
+   `start_warranty`/`end_warranty` → 400 "Start date must be a valid date."; end before start → 400; `client_id` given
+   but no `Client` row → 400 "Select a medical center from the list."; serial over 100 characters → 400. Done = each case
+   returns 400 with `field`.
+5. `delete_product`: return 404 `{'message': 'Product not found.'}` when the serial does not exist.
+6. Remove the unused `/get_products_summary` route (grep again first; if any caller appeared, keep it).
+
+### Batch 2 — page logic (`templates/products.html`)
+
+7. Export button: render only when `is_standalone_inventory or product_can_delete` (`:51`). Done = engineers see no
+   Export in product mode; Genoray/Vieworks unchanged.
+8. `saveProduct`: busy guard — disable the modal Save button (give it `id="product-save-btn"`) and ignore re-entry while
+   the request runs; re-enable in `finally`. Done = double-click makes one request, one toast.
+9. Failure toast: drop the "Database Error: " prefix (`:2153`); show the server message as is.
+10. Filter option label "Active Warranty" → "Under Warranty" (`:89`); count chip "N active" → "N under warranty" if it
+    fits on one line at 375px (otherwise keep).
+11. Simplify: desktop badge in `renderTable` uses the same status→class mapping as `getWarrantyBadgeClass` (one
+    mapping, used by both views; batch 4 restyles it).
+
+### Batch 3 — contrast and accessibility (`templates/products.html` page CSS/markup)
+
+12. `.product-mobile-owner` and the other `#64748b` uses (`:2753`, `:3132`, `:3218`, `:3385`) → `var(--app-muted)` (or the
+    page's existing muted token); measure ≥4.5:1 in light, Graphite, AMOLED.
+13. Dark-theme rules for the toolbar's Print, Export, Clear Filters and Reset widths so text and border reach ≥4.5:1
+    (Graphite and AMOLED); light Export/Clear/Reset to ≥4.5:1 as well.
+14. Modal subtitle ≥4.5:1 on its header; header icon off `text-info` (use `--app-primary-text` or the muted token).
+15. Filter labels get `for="search-text"`, `for="filter-cli-search"`, `for="filter-status"`.
+16. `aria-sort` moves to the `<th>` (`updateProductSortIndicators`, `:1783`); the button keeps its label.
+17. Phone card: drop `role=button` from the card container; make the card title (S/N + name) the button that opens
+    history, so Edit/Delete are no longer nested inside a button. Keyboard Enter/Space still opens history.
+18. Import toast close button: `aria-label="Close"`.
+
+### Batch 4 — modal, status, phone top and wording
+
+19. Modal: `modal-dialog-scrollable` with the footer always visible; focus `#p-serial` on Add and `#p-name` on Edit after
+    `shown.bs.modal`; Edit header neutral (surface-raised, normal text), Add header stays green.
+20. Status pills: one class set `.product-status-pill--warranty|contract|expired-contract|expired|none` with light and
+    dark (`:root[data-app-theme="dark"]`) pairs, all ≥4.5:1; only `expired` (Expired - No Contract) is red, as a soft
+    pair; used by the desktop table, phone cards and the count chips. Record the pairs in DESIGN.md under Chips / Badges.
+21. Phone top (≤768px): Import, Export, Print move into a "More" dropdown (44px items); Client and Status filters fold
+    behind a "Filter (n)" button that shows how many are active; search and Add stay visible. Desktop layout unchanged.
+    Same element ids and handlers (`handleImport`, `product-import-btn`, `prod-csv-file`, `applyFilters`, `clearProductFilters`).
+22. History: format `approved_at` and calibration dates as "25 Sep 2026, 11:50" (Manila, no seconds); sort calibration
+    records newest first.
+23. Heading "MEDICAL SERVICE Product Inventory" → "Product Inventory" (the Genoray/Vieworks headings follow the same
+    `inventory_label` rule: "Genoray Inventory", "Vieworks Inventory").
+
+## Deliberately excluded
+
+- **Genoray and Vieworks behaviour** — separate scan next; this plan only touches shared markup where noted (heading,
+  contrast, labels, modal, status pills), which those pages inherit harmlessly.
+- **Old travel-visit links** (`travel_request_route_visit.product_id` keeps an old serial after rename/delete): names are
+  stored alongside; changing the travel workflow is out of scope.
+- **Fuzzy-match rules themselves** and **legacy names on re-import** (77 of 109 exported rows skipped because their names
+  are not in the Product Name list): reported clearly now; renaming legacy products is a data task for the owner.
+- **Pagination / row density**, **history race** when two rows are clicked quickly, **28px desktop row actions** (44px
+  rule is phones only): not felt at 102 rows.
+
+## Verification
+
+- New `tests/test_product_inventory_scan_fixes.py`:
+  - Batch 1: import without owner/date/room/BSID columns keeps them; lowercase serial updates the uppercase row; "N/A"
+    owner is not "unmatched"; fuzzy match counted; add/update reject bad date, end-before-start, unknown client, 101-char
+    serial (400 + `field`); delete missing → 404; `/get_products_summary` gone (404).
+  - Batches 2–4: source checks (Export condition, `product-save-btn` busy guard, no "Database Error: ", "Under Warranty",
+    `for=` labels, `aria-sort` on `th`, no `role="button"` on the phone card container, toast close label,
+    `modal-dialog-scrollable`, status pill classes with dark pairs, heading text).
+- Positive control: every new test fails on the current code (run in-process against `git show HEAD:` sources; never
+  `git stash`).
+- Focused modules: the new file plus `test_product_inventory_batch1`–`batch4`, `test_product_inventory_mutations`,
+  `test_product_name_standardization`, `test_product_room_catalog`, `test_product_vieworks_links_history`,
+  `test_product_table_column_resize`, `test_product_contract_status`, `test_genoray_inventory`, `test_vieworks_inventory`,
+  `test_dark_mode_readability`, `test_changelog_coverage`. Full suite not needed (page and its routes only).
+- Browser (copy of `scheduler.db`, admin and engineer test passwords in the copy only): Add/Edit/Delete, double-click
+  Save, Import (missing columns, lowercase serial), Export as admin and engineer, history modal; contrast in light,
+  Graphite, AMOLED for every item in steps 12–14 and 20; 375px: no horizontal scroll, taps ≥44px, More menu and Filter (n)
+  work, first card visible in the first screen; Genoray and Vieworks pages still load and save; console clean. Delete the
+  DB copy and restore `.claude/launch.json` afterwards.
+
+## After implementation
+
+- Self-review the diff; confirm `saveProduct`, `deleteProduct`, `handleImport`, `openAddModal`, `openEditModal`,
+  `openProductHistory`, `applyFilters`, `clearProductFilters`, `createVieworksFromProduct` and the freeze/resize controls
+  still work in all three modes (no function, id or handler removed or renamed except the unused route).
+- Prove the tests fail without the fix, focused modules, browser check, service worker `CACHE_VERSION` bump,
+  `static/changelog/releases.json` entry ("Product Inventory fixes"), DESIGN.md status pairs, `changes.md`, Status here.
+- On "commit and push": only the intended files (never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files);
+  verify `origin/main` and Railway deployment metadata.
+
+## Risks
+
+- **Import behaviour change**: a CSV that relied on blank columns to clear values no longer clears them. Safer default;
+  clearing is still possible in the Edit modal.
+- **New 400s on Add/Edit**: existing rows with an orphan client id or end-before-start (0 in the local DB) can no longer be
+  re-saved until fixed; the message names the field.
+- **Shared template**: Genoray/Vieworks inherit markup changes; covered by their test modules and the browser check.
+- Blast radius: Product Inventory page and its five product routes; no schema change.
+
 # Late Calibration Report — real upload failure reason and automatic retry (1 batch)
 
 **Status:** Executed (2026-10-15, on "Execute the late upload retry plan."). Published on "commit and push. never db and dirty" as `70ae4b5` on `main`, together with the certificate-result plan below (service worker v327).

@@ -99,12 +99,14 @@ class ProductInventoryMutationTests(unittest.TestCase):
         )
         self.assertEqual(updated.status_code, 200, updated.get_data(as_text=True))
 
-        deleted = self.client.delete(f'/delete_product/{encoded_serial}')
+        # Saving uppercases the serial, so delete the serial the server returned.
+        saved_serial = updated.get_json()['serial_number']
+        deleted = self.client.delete(f"/delete_product/{quote(saved_serial, safe='')}")
         self.assertEqual(deleted.status_code, 200, deleted.get_data(as_text=True))
         self.assertEqual(deleted.get_json()['status'], 'success')
 
         with self.app.app_context():
-            self.assertIsNone(app_module.db.session.get(app_module.Product, self.serial))
+            self.assertIsNone(app_module.db.session.get(app_module.Product, saved_serial))
 
     def test_product_page_uses_server_mutation_permissions_and_error_payloads(self):
         source = (ROOT / 'templates' / 'products.html').read_text(encoding='utf-8')

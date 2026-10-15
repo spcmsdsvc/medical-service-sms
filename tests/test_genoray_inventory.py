@@ -278,7 +278,8 @@ class GenorayInventoryTests(unittest.TestCase):
             with self.subTest(user=user.username):
                 page = client.get("/genoray")
                 self.assertEqual(page.status_code, 200)
-                self.assertIn("MEDICAL SERVICE Genoray Inventory", page.get_data(as_text=True))
+                self.assertIn("Genoray Inventory", page.get_data(as_text=True))
+                self.assertNotIn("MEDICAL SERVICE Genoray Inventory", page.get_data(as_text=True))
                 self.assertEqual(client.get("/api/genoray/items").get_json(), [])
                 self.assertEqual(client.get("/api/genoray/summary").get_json()["total_items"], 0)
 

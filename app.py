@@ -27992,7 +27992,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v327-late-calibration-retry';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v328-product-inventory-scan';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -34758,44 +34758,6 @@ def get_products():
         })
 
     return jsonify(results)
-
-
-@app.route('/get_products_summary')
-@login_required
-def get_products_summary():
-    """Return contract-aware product counts while preserving legacy keys."""
-    ensure_product_contract_column()
-    products = Product.query.all()
-    counts = {
-        'total_products': len(products),
-        'active_warranty': 0,
-        'expired_warranty': 0,
-        'na_warranty': 0,
-        'expired_under_contract': 0,
-        'expired_no_contract': 0,
-        'no_expiry_under_contract': 0,
-        'no_expiry_no_contract': 0,
-        'linked_products': sum(1 for product in products if product.client_id),
-    }
-
-    for product in products:
-        status = product_contract_status(product)
-        if status in {'Under Warranty', 'Under Contract'}:
-            counts['active_warranty'] += 1
-        elif status == 'Expired - Under Contract':
-            counts['expired_warranty'] += 1
-            counts['expired_under_contract'] += 1
-        elif status == 'Expired - No Contract':
-            counts['expired_warranty'] += 1
-            counts['expired_no_contract'] += 1
-        elif status == 'No Expiry Set - Under Contract':
-            counts['na_warranty'] += 1
-            counts['no_expiry_under_contract'] += 1
-        else:
-            counts['na_warranty'] += 1
-            counts['no_expiry_no_contract'] += 1
-
-    return jsonify(counts)
 
 
 def genoray_item_to_dict(item):
@@ -64604,6 +64566,26 @@ def force_change_password_api():
 
 # --- EQUIPMENT INVENTORY ACTIONS ---
 
+PRODUCT_SERIAL_MAX_LENGTH = 100
+
+
+def product_payload_error(d, serial_number, client_id):
+    """Return (message, field) for an invalid Add/Edit product payload, else None."""
+    if len(serial_number or '') > PRODUCT_SERIAL_MAX_LENGTH:
+        return f'Serial number must be {PRODUCT_SERIAL_MAX_LENGTH} characters or fewer.', 'serial_number'
+    dates = {}
+    for key, label in (('start_warranty', 'Start date'), ('end_warranty', 'End date')):
+        raw = clean_str(d.get(key))
+        dates[key] = parse_date(raw)
+        if raw and not dates[key]:
+            return f'{label} must be a valid date.', key
+    if dates['start_warranty'] and dates['end_warranty'] and dates['end_warranty'] < dates['start_warranty']:
+        return 'End date cannot be earlier than the start date.', 'end_warranty'
+    if client_id and not db.session.get(Client, client_id):
+        return 'Select a medical center from the list.', 'client_id'
+    return None
+
+
 @app.route('/add_product', methods=['POST'])
 @login_required
 def add_product():
@@ -64644,6 +64626,10 @@ def add_product():
 
     if not product_name:
         return jsonify({'message': 'Product name is required.'}), 400
+
+    payload_error = product_payload_error(d, serial_number, clean_int(d.get('client_id')))
+    if payload_error:
+        return jsonify({'message': payload_error[0], 'field': payload_error[1]}), 400
 
     existing_product = db.session.get(Product, serial_number)
     if existing_product:
@@ -64869,6 +64855,9 @@ def update_product(serial_number):
     old_room = getattr(p, 'room', None) or ''
 
     new_client_id = clean_int(d.get('client_id'))
+    payload_error = product_payload_error(d, new_serial, new_client_id)
+    if payload_error:
+        return jsonify({'message': payload_error[0], 'field': payload_error[1]}), 400
     new_start = parse_date(d.get('start_warranty'))
     new_end = parse_date(d.get('end_warranty'))
     new_contract = parse_bool_flag(d.get('under_contract'))
@@ -65083,6 +65072,8 @@ def delete_product(serial_number):
     ensure_product_vieworks_link_table()
     ensure_shift_product_identity_snapshot_columns()
     target = db.session.get(Product, serial_number)
+    if not target:
+        return jsonify({'message': 'Product not found.'}), 404
     if target:
         linked_purchase_order_count = purchase_order_count_for_machine(target.serial_number)
         if linked_purchase_order_count:
@@ -66617,6 +66608,17 @@ def csv_has_header(fieldnames, *names):
     )
 
 
+def csv_find_client_match(owner_name):
+    """Return (client_id, exact) so imports can report approximate owner matches."""
+    owner_name = clean_str(owner_name)
+    if not owner_name:
+        return None, False
+    target = Client.query.filter(Client.name.ilike(owner_name)).first()
+    if target:
+        return target.id, True
+    return csv_find_client_id(owner_name), False
+
+
 def csv_find_client_id(owner_name):
     """Resolve imported client/owner names using exact, ilike, acronym, and similarity fallback."""
     owner_name = clean_str(owner_name)
@@ -66795,12 +66797,25 @@ def import_products():
             reader.fieldnames,
             'Contract', 'Under Contract', 'Contract Status'
         )
+        # An existing product only changes the fields its CSV actually carries.
+        has_room_column = csv_has_header(reader.fieldnames, 'Room', 'Room Name')
+        has_owner_column = csv_has_header(
+            reader.fieldnames, 'Current Owner', 'Owner', 'Client', 'Client Name', 'Medical Center'
+        )
+        has_start_column = csv_has_header(
+            reader.fieldnames, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date'
+        )
+        has_end_column = csv_has_header(
+            reader.fieldnames, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date'
+        )
+        has_bsid_column = csv_has_header(reader.fieldnames, 'BSID', 'Business Service ID', 'Machine BSID')
 
         created_count = 0
         updated_count = 0
         skipped_count = 0
         invalid_product_name_count = 0
         unresolved_owner_count = 0
+        fuzzy_owner_count = 0
         seen_bsids = {}
         catalog_by_normalized_name = {
             normalize_product_name_catalog_value(item.name).casefold(): item
@@ -66808,14 +66823,14 @@ def import_products():
         }
 
         for row in reader:
-            serial = clean_str(csv_get(row, 'Serial Number', 'Serial', 'S/N', 'SN'))
+            serial = (clean_str(csv_get(row, 'Serial Number', 'Serial', 'S/N', 'SN')) or '').upper()
             product_name = clean_str(csv_get(row, 'Description', 'Product Name', 'Name', 'Equipment Name', 'Item'))
             room, room_error = normalize_inventory_room(csv_get(row, 'Room', 'Room Name'))
             owner_name = clean_str(csv_get(row, 'Current Owner', 'Owner', 'Client', 'Client Name', 'Medical Center'))
             start_date = parse_date(csv_get(row, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date'))
             end_date = parse_date(csv_get(row, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date'))
 
-            if not serial or not product_name or room_error:
+            if not serial or len(serial) > PRODUCT_SERIAL_MAX_LENGTH or not product_name or room_error:
                 skipped_count += 1
                 continue
 
@@ -66847,9 +66862,13 @@ def import_products():
                 csv_get(row, 'Contract', 'Under Contract', 'Contract Status')
             ) if has_contract_column else None
 
-            client_id = csv_find_client_id(owner_name)
+            if (owner_name or '').casefold() == 'n/a':
+                owner_name = ''
+            client_id, exact_owner = csv_find_client_match(owner_name)
             if owner_name and not client_id:
                 unresolved_owner_count += 1
+            elif client_id and not exact_owner:
+                fuzzy_owner_count += 1
 
             product = db.session.get(Product, serial)
             duplicate_bsid = product_bsid_duplicate(bsid, exclude_serial=serial)
@@ -66862,13 +66881,18 @@ def import_products():
                 }), 409
             if product:
                 product.name = canonical_product_name
-                product.room = room
-                product.client_id = client_id
-                product.start_warranty_date = start_date
-                product.end_warranty_date = end_date
+                if has_room_column:
+                    product.room = room
+                if has_owner_column:
+                    product.client_id = client_id
+                if has_start_column:
+                    product.start_warranty_date = start_date
+                if has_end_column:
+                    product.end_warranty_date = end_date
                 if has_contract_column:
                     product.under_contract = contract_value
-                product.bsid = bsid or None
+                if has_bsid_column:
+                    product.bsid = bsid or None
                 updated_count += 1
             else:
                 db.session.add(Product(
@@ -66891,6 +66915,8 @@ def import_products():
             message += f' {invalid_product_name_count} row(s) had a Product Name not found in the catalog.'
         if unresolved_owner_count:
             message += f' {unresolved_owner_count} owner name(s) were not matched and were left blank.'
+        if fuzzy_owner_count:
+            message += f' {fuzzy_owner_count} owner name(s) were matched approximately — check them.'
 
         log_activity(f"Imported product CSV: {created_count} created, {updated_count} updated, {skipped_count} skipped")
         return jsonify({
@@ -66901,6 +66927,7 @@ def import_products():
             'skipped': skipped_count,
             'invalid_product_names': invalid_product_name_count,
             'unresolved_owners': unresolved_owner_count,
+            'fuzzy_owner_matches': fuzzy_owner_count,
             'total': total
         })
 

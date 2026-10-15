@@ -300,7 +300,8 @@ class VieworksInventoryTests(unittest.TestCase):
         for user_id in (self.admin_id, self.superadmin_id, self.regional_id):
             client = self.client_for(user_id)
             self.assertEqual(client.get("/vieworks").status_code, 200)
-            self.assertIn("MEDICAL SERVICE Vieworks Inventory", client.get("/vieworks").get_data(as_text=True))
+            self.assertIn("Vieworks Inventory", client.get("/vieworks").get_data(as_text=True))
+            self.assertNotIn("MEDICAL SERVICE Vieworks Inventory", client.get("/vieworks").get_data(as_text=True))
             self.assertEqual(client.get("/api/vieworks/items").get_json(), [])
             self.assertEqual(client.get("/api/vieworks/summary").get_json()["total_items"], 0)
         self.assertIn('href="/vieworks"', self.client_for(self.admin_id).get("/products_page").get_data(as_text=True))
