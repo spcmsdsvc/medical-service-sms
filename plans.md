@@ -166,7 +166,7 @@ certificate is sent, while a token owned by a genuinely different TSR is still r
 
 # Product Inventory — scan fixes (4 batches)
 
-**Status:** Executed (2026-10-15, on "Execute all four Product Inventory batches."); not committed. Approved 2026-10-15;
+**Status:** Executed (2026-10-15, on "Execute all four Product Inventory batches."). Published on "commit and push. never db and dirty" as `99719b6` on `main` (service worker v328). Approved 2026-10-15;
 owner chose "All four batches", "Soft pills, one red", "Add + search only".
 
 ### Amendments during execution
