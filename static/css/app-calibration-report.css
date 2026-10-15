@@ -1,8 +1,9 @@
-.calibration-report-card{border:1px solid #dbe4ee;border-left:5px solid var(--app-primary,#c8102e);background:linear-gradient(135deg,rgba(255,255,255,.98),rgba(248,250,252,.98));}
+.calibration-report-card{border:1px solid #dbe4ee;background:linear-gradient(135deg,rgba(255,255,255,.98),rgba(248,250,252,.98));}
 .calibration-report-card .calibration-report-status{font-weight:800;}
 .calibration-report-card .calibration-report-status.ready{color:#15803d;}
 .calibration-report-card .calibration-report-status.draft{color:#b45309;}
 .calibration-report-card .calibration-report-status.muted{color:#64748b;}
+:root[data-app-theme="dark"] .calibration-report-card .calibration-report-status.muted{color:#cbd5e1;}
 .calibration-report-card .calibration-report-status.returned{color:#b91c1c;}
 .calibration-report-card .btn{min-height:44px;}
 

@@ -1,8 +1,8 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=12">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=8">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=13">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=9">
 <script>
 (() => {
   const navigation = window.performance?.getEntriesByType?.('navigation')?.[0];
@@ -174,7 +174,6 @@ window.CalibrationReportConfig = {
       <section class="card p-3 p-md-4 mb-3 no-print offline-tsr-schedule-picker-card" id="tsr-schedule-selection" aria-labelledby="tsr-schedule-selection-title">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
           <div>
-            <div class="small fw-bold text-primary text-uppercase">Step 1</div>
             <h3 class="h5 fw-bold mb-1" id="tsr-schedule-selection-title">Schedule, Customer &amp; Equipment</h3>
             <div class="small text-muted" id="tsr-schedule-picker-help">Loading available schedules for this device...</div>
           </div>
@@ -184,7 +183,7 @@ window.CalibrationReportConfig = {
         </div>
 
         <label class="small fw-bold text-muted text-uppercase mb-2" for="tsr-schedule-select">Selected Schedule <span class="offline-tsr-required-marker" data-tsr-required="schedule">Required</span></label>
-        <button class="btn btn-primary w-100 fw-bold schedule-picker-open-btn" type="button" aria-label="Select an assigned schedule with equipment (required)" onclick="openStandaloneSchedulePickerModal()">
+        <button class="btn btn-primary w-100 fw-bold schedule-picker-open-btn" type="button" aria-label="Select Schedule from List (required)" onclick="openStandaloneSchedulePickerModal()">
           <i class="fa-solid fa-magnifying-glass me-1" aria-hidden="true"></i>Select Schedule from List
         </button>
         <select id="tsr-schedule-select" class="form-select d-none" aria-required="true" onchange="applySelectedStandaloneSchedule()">
@@ -210,8 +209,8 @@ window.CalibrationReportConfig = {
           <li><button type="button" class="offline-tsr-readiness-item" data-tsr-core-prerequisite="schedule" onclick="focusStandaloneTSRCorePrerequisite('schedule')"><span class="offline-tsr-readiness-label">Assigned schedule and equipment</span><span class="offline-tsr-readiness-state" data-tsr-core-state>Needed</span></button></li>
           <li><button type="button" class="offline-tsr-readiness-item" data-tsr-core-prerequisite="service-category" onclick="focusStandaloneTSRCorePrerequisite('service-category')"><span class="offline-tsr-readiness-label">Service Category</span><span class="offline-tsr-readiness-state" data-tsr-core-state>Needed</span></button></li>
           <li><button type="button" class="offline-tsr-readiness-item" data-tsr-core-prerequisite="actions-taken" onclick="focusStandaloneTSRCorePrerequisite('actions-taken')"><span class="offline-tsr-readiness-label">Actions Taken</span><span class="offline-tsr-readiness-state" data-tsr-core-state>Needed</span></button></li>
-          <li><button type="button" class="offline-tsr-readiness-item" data-tsr-core-prerequisite="serviced-signature" onclick="focusStandaloneTSRCorePrerequisite('serviced-signature')"><span class="offline-tsr-readiness-label">Serviced By signature</span><span class="offline-tsr-readiness-state" data-tsr-core-state>Needed</span></button></li>
-          <li><button type="button" class="offline-tsr-readiness-item" data-tsr-core-prerequisite="acknowledged-signature" onclick="focusStandaloneTSRCorePrerequisite('acknowledged-signature')"><span class="offline-tsr-readiness-label">Acknowledged By signature</span><span class="offline-tsr-readiness-state" data-tsr-core-state>Needed</span></button></li>
+          <li><button type="button" class="offline-tsr-readiness-item" data-tsr-core-prerequisite="serviced-signature" onclick="focusStandaloneTSRCorePrerequisite('serviced-signature')"><span class="offline-tsr-readiness-label">Serviced By Signature</span><span class="offline-tsr-readiness-state" data-tsr-core-state>Needed</span></button></li>
+          <li><button type="button" class="offline-tsr-readiness-item" data-tsr-core-prerequisite="acknowledged-signature" onclick="focusStandaloneTSRCorePrerequisite('acknowledged-signature')"><span class="offline-tsr-readiness-label">Acknowledged By Signature</span><span class="offline-tsr-readiness-state" data-tsr-core-state>Needed</span></button></li>
         </ul>
         <div class="small text-muted mt-2">This summary covers core fields only. Calibration and attachment requirements may still apply.</div>
       </section>
@@ -230,10 +229,10 @@ window.CalibrationReportConfig = {
       <nav id="tsr-section-nav" class="card p-3 p-md-4 mb-3 no-print offline-tsr-section-nav" aria-label="TSR sections">
         <h3 class="h6 fw-bold mb-2">Form sections</h3>
         <ol class="list-unstyled mb-0">
-          <li><a href="#tsr-section-customer-equipment">Customer &amp; equipment</a></li>
-          <li><a href="#tsr-section-service-work">Service work</a></li>
-          <li><a href="#tsr-section-visit-signoff">Visit &amp; sign-off</a></li>
-          <li><a href="#tsr-section-supporting-documents">Supporting documents</a></li>
+          <li><a href="#tsr-section-customer-equipment">Customer &amp; Equipment</a></li>
+          <li><a href="#tsr-section-service-work">Service Work</a></li>
+          <li><a href="#tsr-section-visit-signoff">Visit &amp; Sign-off</a></li>
+          <li><a href="#tsr-section-supporting-documents">Supporting Documents</a></li>
         </ol>
       </nav>
     </aside>
@@ -253,35 +252,35 @@ window.CalibrationReportConfig = {
 
         <div class="row g-3">
           <div class="col-md-8">
-            <label class="small fw-bold text-muted text-uppercase">Customer Name</label>
+            <label for="tsr-customer-name" class="small fw-bold text-muted text-uppercase">Customer Name</label>
             <input id="tsr-customer-name" class="form-control tsr-field" placeholder="Customer / hospital name">
           </div>
           <div class="col-md-4">
-            <label class="small fw-bold text-muted text-uppercase">TSR No.</label>
+            <label for="tsr-number" class="small fw-bold text-muted text-uppercase">TSR No.</label>
             <input id="tsr-number" class="form-control tsr-field" placeholder="Pending — assigned after draft save" readonly aria-readonly="true">
           </div>
           <div class="col-12">
-            <label class="small fw-bold text-muted text-uppercase">Address</label>
+            <label for="tsr-address" class="small fw-bold text-muted text-uppercase">Address</label>
             <input id="tsr-address" class="form-control tsr-field" placeholder="Customer address">
           </div>
           <div class="col-md-6">
-            <label class="small fw-bold text-muted text-uppercase">Service Requested By</label>
+            <label for="tsr-requested-by" class="small fw-bold text-muted text-uppercase">Service Requested By</label>
             <input id="tsr-requested-by" class="form-control tsr-field" placeholder="Client representative">
           </div>
           <div class="col-md-6">
-            <label class="small fw-bold text-muted text-uppercase">Department</label>
+            <label for="tsr-department" class="small fw-bold text-muted text-uppercase">Department</label>
             <input id="tsr-department" class="form-control tsr-field" value="Radiology">
           </div>
           <div class="col-md-8">
-            <label class="small fw-bold text-muted text-uppercase">Equipment / Model</label>
+            <label for="tsr-equipment-model" class="small fw-bold text-muted text-uppercase">Equipment / Model</label>
             <input id="tsr-equipment-model" class="form-control tsr-field" placeholder="Select equipment on Calendar first" readonly aria-readonly="true" title="Select equipment on Calendar first. Revision mode can edit an existing linked Product.">
           </div>
           <div class="col-md-4">
-            <label class="small fw-bold text-muted text-uppercase">Serial No.</label>
+            <label for="tsr-serial-no" class="small fw-bold text-muted text-uppercase">Serial No.</label>
             <input id="tsr-serial-no" class="form-control tsr-field" placeholder="Select equipment on Calendar first" readonly aria-readonly="true" title="Select equipment on Calendar first. Revision mode can edit an existing linked Product.">
           </div>
           <div class="col-12">
-            <div class="tsr-schedule-locked-note"><i class="fa-solid fa-lock me-1"></i>Select the assigned equipment on Calendar before creating a TSR. These fields are auto-filled and locked for the initial TSR; saved linked Product revisions can use correction mode.</div>
+            <div class="tsr-schedule-locked-note"><i class="fa-solid fa-lock me-1"></i>Filled in from the schedule's equipment and locked.</div>
           </div>
         </div>
       </section>
@@ -317,17 +316,17 @@ window.CalibrationReportConfig = {
 
       <div class="card p-3 p-md-4 mb-3">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
-          <label class="small fw-bold text-muted text-uppercase mb-0">Complaint</label>
+          <label for="tsr-complaint" class="small fw-bold text-muted text-uppercase mb-0">Complaint</label>
           <button class="btn btn-outline-primary btn-sm fw-bold no-print" type="button" onclick="searchInlineTSRKnowledge('complaint', false)">
-            <i class="fa-solid fa-magnifying-glass me-1"></i>Search Previous Complaints
+            <i class="fa-solid fa-magnifying-glass me-1"></i>Search Complaints
           </button>
         </div>
-        <textarea id="tsr-complaint" class="form-control tsr-field mb-2" rows="3" placeholder="Type complaint keyword, then tap Search Previous Complaints"></textarea>
+        <textarea id="tsr-complaint" class="form-control tsr-field mb-2" rows="3" placeholder="Type complaint keyword, then tap Search Complaints"></textarea>
         <div class="d-flex flex-wrap gap-2 mb-2 no-print">
           <button class="btn btn-outline-secondary btn-sm fw-bold" type="button" onclick="loadEquipmentTSRKnowledgeQuickPicks('complaint','common')"><i class="fa-solid fa-fire me-1"></i>Common Complaints</button>
           <button class="btn btn-outline-secondary btn-sm fw-bold" type="button" onclick="loadEquipmentTSRKnowledgeQuickPicks('complaint','recent')"><i class="fa-solid fa-clock-rotate-left me-1"></i>Recent Complaints</button>
         </div>
-        <div id="tsr-complaint-suggestions" class="tsr-inline-suggestions no-print mb-3 d-none"><span class="text-muted small">Type a complaint keyword, then tap Search Previous Complaints.</span></div>
+        <div id="tsr-complaint-suggestions" class="tsr-inline-suggestions no-print mb-3 d-none"><span class="text-muted small">Type a complaint keyword, then tap Search Complaints.</span></div>
         <div id="tsr-complaint-quick-picks" class="tsr-inline-suggestions no-print mb-3 d-none"></div>
 
         <label class="small fw-bold text-muted text-uppercase" for="tsr-action-input">Actions Taken <span class="offline-tsr-required-marker" data-tsr-required="actions-taken">Required</span></label>
@@ -345,7 +344,7 @@ window.CalibrationReportConfig = {
         <div id="tsr-actions-list" class="tsr-list-box mb-2"></div>
         <textarea id="tsr-actions-taken" class="form-control tsr-field d-none"></textarea>
 
-        <label class="small fw-bold text-muted text-uppercase mt-3">Remarks / Recommendations</label>
+        <label for="tsr-remarks" class="small fw-bold text-muted text-uppercase mt-3">Remarks / Recommendations</label>
         <textarea id="tsr-remarks" class="form-control tsr-field" rows="3" placeholder="Recommendation, pending parts, continuation notes"></textarea>
       </div>
 
@@ -367,7 +366,7 @@ window.CalibrationReportConfig = {
         <label class="small fw-bold text-muted text-uppercase" for="tsr-acknowledged-by">Acknowledged By</label>
         <input id="tsr-acknowledged-by" class="form-control tsr-field mb-2" placeholder="Customer name">
         <div class="offline-tsr-signature-heading"><span>Acknowledged By signature</span><span class="offline-tsr-required-marker" data-tsr-required="acknowledged-signature">Required</span></div>
-        <button class="btn btn-outline-primary mb-2" type="button" onclick="openSignatureModal('acknowledged')"><i class="fa-solid fa-signature me-1" aria-hidden="true"></i>Add Acknowledged Signature</button>
+        <button class="btn btn-outline-primary mb-2" type="button" onclick="openSignatureModal('acknowledged')"><i class="fa-solid fa-signature me-1" aria-hidden="true"></i>Add Acknowledged By Signature</button>
         <div id="acknowledged-signature-status" class="small text-muted mb-3">No signature saved.</div>
 
         <div class="row g-2">
@@ -402,8 +401,8 @@ window.CalibrationReportConfig = {
       <h3 class="h5 fw-bold mb-3" id="tsr-supporting-documents-title">Supporting Documents</h3>
       <div class="card p-3 p-md-4 mb-3">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-          <label class="small fw-bold text-muted text-uppercase mb-0">Submitted Original Documents</label>
-          <span class="badge bg-secondary-subtle text-secondary border" id="tsr-doc-count">0 selected</span>
+          <label for="tsr-document-select" class="small fw-bold text-muted text-uppercase mb-0">Submitted Original Documents</label>
+          <span class="badge bg-secondary-subtle text-secondary border offline-tsr-count-badge" id="tsr-doc-count">0 selected</span>
         </div>
         <select id="tsr-document-select" class="form-select form-select-sm mb-2" onchange="addTSRDocument(this.value); this.value='';">
           <option value="">Add document...</option>
@@ -452,17 +451,17 @@ window.CalibrationReportConfig = {
       <div class="card p-3 p-md-4 mb-3 no-print">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
           <div>
-            <label class="small fw-bold text-muted text-uppercase mb-0">Offline TSR Attachments</label>
-            <div class="small text-muted">Photos, supporting documents, or extra images to upload with this TSR during sync.</div>
+            <label for="tsr-attachment-input" class="small fw-bold text-muted text-uppercase mb-0">Extra Attachments</label>
+            <div class="small text-muted">Photos, supporting documents or extra images, uploaded with this TSR.</div>
           </div>
-          <span class="badge bg-secondary-subtle text-secondary border" id="tsr-attachment-count">0 selected</span>
+          <span class="badge bg-secondary-subtle text-secondary border offline-tsr-count-badge" id="tsr-attachment-count">0 selected</span>
         </div>
         <input id="tsr-attachment-input" type="file" class="form-control form-control-sm" accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx,.csv,image/*" multiple onchange="handleTSRAttachmentInput(event)">
         <div id="tsr-attachment-list" class="tsr-attachment-list mt-2"><span class="text-muted small">No extra attachments selected.</span></div>
       </div>
 
       <details class="card p-3 p-md-4 mb-3">
-        <summary class="fw-bold"><i class="fa-solid fa-screwdriver-wrench me-1"></i>Parts Supplied <span class="small text-muted">Optional</span></summary>
+        <summary class="fw-bold offline-tsr-parts-summary"><i class="fa-solid fa-screwdriver-wrench me-1"></i>Parts Supplied/Recommended <span class="small text-muted">(optional)</span></summary>
         <div class="mt-3">
           <div class="tsr-parts-grid tsr-parts-header"><div>Item No.</div><div>Part Number</div><div>Description</div><div>Qty</div><div>Delivery Receipt</div></div>
           <div id="tsr-parts-rows"></div>
@@ -479,8 +478,8 @@ window.CalibrationReportConfig = {
       <button class="btn btn-outline-primary fw-bold" type="button" id="standalone-tsr-draft-btn" onclick="saveStandaloneTSRLocalDraft()"><i class="fa-solid fa-bookmark me-1" aria-hidden="true"></i>Save Draft</button>
     </div>
     <div class="offline-tsr-action-secondary" role="group" aria-label="Other TSR actions">
-      <button class="btn btn-outline-dark fw-bold" type="button" onclick="openTSRPrintPreview()"><i class="fa-solid fa-print me-1" aria-hidden="true"></i>Preview TSR</button>
-      <button class="btn btn-outline-success fw-bold offline-tsr-pdf-action" type="button" onclick="downloadTSRPDF()"><i class="fa-solid fa-file-arrow-down me-1" aria-hidden="true"></i>Download PDF</button>
+      <button class="btn btn-outline-secondary fw-bold" type="button" onclick="openTSRPrintPreview()"><i class="fa-solid fa-print me-1" aria-hidden="true"></i>Preview TSR</button>
+      <button class="btn btn-outline-primary fw-bold offline-tsr-pdf-action" type="button" onclick="downloadTSRPDF()"><i class="fa-solid fa-file-arrow-down me-1" aria-hidden="true"></i>Download PDF</button>
       <button class="btn btn-outline-danger fw-bold" type="button" onclick="clearStandaloneTSRPage()"><i class="fa-solid fa-eraser me-1" aria-hidden="true"></i>Clear Current TSR</button>
     </div>
   </div>
@@ -650,7 +649,7 @@ window.CalibrationReportConfig = {
 .offline-tsr-queue-meta{font-size:.82rem;color:#64748b;font-weight:800}
 .offline-tsr-queue-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 8px;font-size:.72rem;font-weight:900;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
 @media(max-width:768px){.schedule-picker-detail-grid{grid-template-columns:1fr}.tsr-action-controls .btn{flex:0 0 2.1rem}}
-.offline-tsr-storage-health{border:1px solid var(--app-primary-soft-border);border-left:5px solid var(--app-primary);border-radius:18px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.offline-tsr-storage-health summary{cursor:pointer;list-style:none}.offline-tsr-storage-health summary::-webkit-details-marker{display:none}.offline-tsr-storage-health-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.offline-tsr-health-tile{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:10px 12px}.offline-tsr-health-label{font-size:.7rem;text-transform:uppercase;font-weight:900;letter-spacing:.04em;color:#64748b}.offline-tsr-health-value{font-size:.92rem;font-weight:900;color:#0f172a;word-break:break-word}.offline-tsr-health-value.good{color:#15803d}.offline-tsr-health-value.warn{color:#c2410c}.offline-tsr-health-value.bad{color:#b91c1c}@media(max-width:768px){.offline-tsr-storage-health-grid{grid-template-columns:1fr}.offline-tsr-storage-health summary{align-items:flex-start!important;flex-direction:column}.offline-tsr-storage-health summary .btn{width:100%}}
+.offline-tsr-storage-health{border:1px solid var(--app-primary-soft-border);border-radius:18px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.offline-tsr-storage-health summary{cursor:pointer;list-style:none}.offline-tsr-storage-health summary::-webkit-details-marker{display:none}.offline-tsr-storage-health-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.offline-tsr-health-tile{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:10px 12px}.offline-tsr-health-label{font-size:.7rem;text-transform:uppercase;font-weight:900;letter-spacing:.04em;color:#64748b}.offline-tsr-health-value{font-size:.92rem;font-weight:900;color:#0f172a;word-break:break-word}.offline-tsr-health-value.good{color:#15803d}.offline-tsr-health-value.warn{color:#c2410c}.offline-tsr-health-value.bad{color:#b91c1c}@media(max-width:768px){.offline-tsr-storage-health-grid{grid-template-columns:1fr}.offline-tsr-storage-health summary{align-items:flex-start!important;flex-direction:column}.offline-tsr-storage-health summary .btn{width:100%}}
 
 .tsr-attachment-list{display:grid;gap:6px}.tsr-attachment-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px}.tsr-attachment-name{font-weight:800;color:#0f172a;word-break:break-word}.tsr-attachment-meta{font-size:.75rem;color:#64748b;font-weight:700}.tsr-attachment-item .btn{flex-shrink:0}
 
@@ -2978,7 +2977,7 @@ function renderDocs(){
   const box=document.getElementById('tsr-documents-chips'); document.getElementById('tsr-doc-count').textContent=`${standaloneDocuments.length} selected`; document.getElementById('tsr-documents').value=standaloneDocuments.join(', ');
   box.innerHTML=standaloneDocuments.length ? standaloneDocuments.map(d=>`<span class="tsr-chip">${escapeHTML(d)} <button type="button" onclick="removeTSRDocument('${escapeAttr(d)}')">×</button></span>`).join('') : '<span class="text-muted small">No documents selected.</span>';
 }
-function addTSRPartRow(data={}){ const partRowPosition=document.querySelectorAll('#tsr-parts-rows .tsr-part-row').length+1; const row=document.createElement('div'); row.className='tsr-parts-grid tsr-part-row'; row.innerHTML=`<input class="form-control form-control-sm part-item" placeholder="${partRowPosition}" value="${escapeAttr(data.item||'')}"><input class="form-control form-control-sm part-number" placeholder="Part no." value="${escapeAttr(data.number||'')}"><input class="form-control form-control-sm part-description" placeholder="Description" value="${escapeAttr(data.description||'')}"><input type="number" min="0" class="form-control form-control-sm part-qty" placeholder="Qty" value="${escapeAttr(data.qty||'')}"><input class="form-control form-control-sm part-dr" placeholder="DR no." value="${escapeAttr(data.dr||'')}">`; document.getElementById('tsr-parts-rows').appendChild(row); row.querySelectorAll('input').forEach(i=>i.addEventListener('input',()=>{syncPartsText(); saveStandaloneTSRDraft(true);})); syncPartsText(); }
+function addTSRPartRow(data={}){ const partRowPosition=document.querySelectorAll('#tsr-parts-rows .tsr-part-row').length+1; const row=document.createElement('div'); row.className='tsr-parts-grid tsr-part-row'; row.innerHTML=`<input class="form-control form-control-sm part-item" aria-label="Item no. ${partRowPosition}" placeholder="${partRowPosition}" value="${escapeAttr(data.item||'')}"><input class="form-control form-control-sm part-number" aria-label="Part number ${partRowPosition}" placeholder="Part no." value="${escapeAttr(data.number||'')}"><input class="form-control form-control-sm part-description" aria-label="Description ${partRowPosition}" placeholder="Description" value="${escapeAttr(data.description||'')}"><input type="number" min="0" class="form-control form-control-sm part-qty" aria-label="Quantity ${partRowPosition}" placeholder="Qty" value="${escapeAttr(data.qty||'')}"><input class="form-control form-control-sm part-dr" aria-label="Delivery receipt ${partRowPosition}" placeholder="DR no." value="${escapeAttr(data.dr||'')}">`; document.getElementById('tsr-parts-rows').appendChild(row); row.querySelectorAll('input').forEach(i=>i.addEventListener('input',()=>{syncPartsText(); saveStandaloneTSRDraft(true);})); syncPartsText(); }
 function getParts(){ return [...document.querySelectorAll('.tsr-part-row')].map(r=>({item:r.querySelector('.part-item').value,number:r.querySelector('.part-number').value,description:r.querySelector('.part-description').value,qty:r.querySelector('.part-qty').value,dr:r.querySelector('.part-dr').value})); }
 function syncPartsText(){ document.getElementById('tsr-parts-table').value=getParts().filter(p=>Object.values(p).some(Boolean)).map(p=>[p.item,p.number,p.description,p.qty,p.dr].join(' | ')).join('\n'); }
 
@@ -3006,7 +3005,7 @@ function resetInlineTSRKnowledgeSuggestions(type){
   window.tsrInlineKnowledgeEntries[type] = [];
   box.innerHTML = type === 'action'
     ? '<span class="text-muted small">Type an action keyword, then tap Search.</span>'
-    : '<span class="text-muted small">Type a complaint keyword, then tap Search Previous Complaints.</span>';
+    : '<span class="text-muted small">Type a complaint keyword, then tap Search Complaints.</span>';
   box.classList.add('d-none');
 }
 function resetAllInlineTSRKnowledgeSuggestions(){
@@ -9851,8 +9850,8 @@ function renderStandaloneTSRCoreReadiness(data=null){
     schedule:'Assigned schedule and equipment',
     'service-category':'Service Category',
     'actions-taken':'Actions Taken',
-    'serviced-signature':'Serviced By signature',
-    'acknowledged-signature':'Acknowledged By signature'
+    'serviced-signature':'Serviced By Signature',
+    'acknowledged-signature':'Acknowledged By Signature'
   };
   const completedCount = Object.values(readiness).filter(Boolean).length;
   const progress = document.getElementById('tsr-core-readiness-progress');

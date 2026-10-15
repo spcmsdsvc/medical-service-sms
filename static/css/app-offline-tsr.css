@@ -126,7 +126,7 @@
   background: color-mix(in srgb, var(--app-primary, #0d6efd) 9%, var(--app-surface, #fff));
   border: 1px solid color-mix(in srgb, var(--app-primary, #0d6efd) 28%, var(--app-border, #e2e8f0));
   border-radius: 999px;
-  color: var(--app-primary, #0d6efd);
+  color: var(--app-primary-text, #0a58ca);
   display: inline-flex;
   font-size: .66rem;
   font-weight: 800;
@@ -165,7 +165,7 @@
 .offline-tsr-readiness-progress {
   background: color-mix(in srgb, var(--app-primary, #0d6efd) 10%, var(--app-surface, #fff));
   border-radius: 999px;
-  color: var(--app-primary, #0d6efd);
+  color: var(--app-primary-text, #0a58ca);
   flex: 0 0 auto;
   font-size: .72rem;
   font-weight: 800;
@@ -680,4 +680,36 @@
   .offline-tsr-calibration-summary {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Design scan 2026-10-15: count badges, Clear in dark themes, 44px disclosure headers. */
+.offline-tsr-page .offline-tsr-count-badge {
+  color: #475569 !important;
+}
+
+:root[data-app-theme="dark"] .offline-tsr-page .offline-tsr-count-badge {
+  color: #cbd5e1 !important;
+}
+
+/* Bootstrap's disabled outline-primary is a fixed #0d6efd (4.48:1); follow the accent text instead. */
+.offline-tsr-action-bar .btn-outline-primary {
+  --bs-btn-disabled-color: var(--app-primary-text, #0a58ca);
+  --bs-btn-disabled-border-color: var(--app-primary, #0d6efd);
+}
+
+:root[data-app-theme="dark"] .offline-tsr-action-bar .btn-outline-danger {
+  --bs-btn-color: #f1aeb5;
+  --bs-btn-border-color: #f1aeb5;
+  --bs-btn-hover-color: #000;
+  --bs-btn-hover-bg: #f1aeb5;
+  --bs-btn-hover-border-color: #f1aeb5;
+  --bs-btn-active-color: #000;
+  --bs-btn-active-bg: #f1aeb5;
+  --bs-btn-active-border-color: #f1aeb5;
+}
+
+.offline-tsr-page #standalone-tsr-drafts-disclosure > summary,
+.offline-tsr-page .offline-tsr-parts-summary {
+  min-height: 44px;
+  padding-block: 10px;
 }

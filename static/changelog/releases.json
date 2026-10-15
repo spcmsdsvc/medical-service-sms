@@ -1,6 +1,51 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-15-tsr-labels-contrast",
+      "release_date": "2026-10-15",
+      "title": "Create TSR labels and contrast",
+      "summary": "Create TSR reads more clearly: consistent button names, readable small text in every theme, and fields named for screen readers.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-15-tsr-field-labels",
+          "category": "Create TSR",
+          "description": "Every Create TSR field, including the Parts rows, is now announced by its label to screen readers.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-15-tsr-contrast-tap",
+          "category": "Create TSR",
+          "description": "Required tags, the progress count, the selected counts, Clear Current TSR and the Calibration Report status are easier to read, including in the dark themes. Continue Saved Work and Parts Supplied/Recommended are easier to tap on a phone.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-15-tsr-wording",
+          "category": "Create TSR",
+          "description": "Clearer names: Add Acknowledged By Signature, Search Complaints, Extra Attachments and Parts Supplied/Recommended, matching the printed form.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
+        },
+        {
+          "item_key": "2026-10-15-tsr-action-bar",
+          "category": "Create TSR",
+          "description": "The action bar uses your theme colour for Download PDF, so only Clear Current TSR stands out in red.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 4
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-14-calibration-report-page",
       "release_date": "2026-10-14",
       "title": "Calibration Report has its own page",

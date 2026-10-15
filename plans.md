@@ -37,6 +37,211 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Create TSR — design scan fixes (4 batches)
+
+**Status:** Executed (2026-10-15; owner: "keep it. write the batches in plans.md", then "Execute all four batches", then
+"fix first. then commit and push"). All four batches done together under service worker v323; commit hash below once
+published.
+
+### Amendments during execution
+
+- **Step 4:** the count badges use fixed `#475569` (light) and `#cbd5e1` (dark) on the new `.offline-tsr-count-badge`
+  class instead of `--app-muted-text`; measured 5.90:1 light, 12.08:1 dark.
+- **Step 5:** dark Clear uses `#f1aeb5` through Bootstrap's `--bs-btn-*` variables; 7.89:1 Graphite, 10.46:1 AMOLED.
+- **Step 7:** the summaries keep `display:list-item` (native disclosure marker) with `min-height:44px; padding-block:10px`
+  instead of flex. Parts Supplied/Recommended wraps to two lines at 375px (68px tall).
+- **Step 11:** the readiness label map in `updateStandaloneTSRCoreReadiness` (`labels`, around `:9854`) was changed
+  to Title Case too, since it rewrites the same list items.
+- **Step 8:** more pinned versions than listed: `tests/test_tsr_page_design.py:25`, `tests/test_dark_mode_readability.py:51`,
+  `tests/test_tsr_calibration_report.py:954,1028`.
+- **Added on the owner's "fix first" (2026-10-15):** Download PDF and Save Draft measured 4.48:1 in light. Cause: while no
+  schedule is selected they are disabled, and Bootstrap's disabled outline-primary uses a fixed `#0d6efd`
+  (`--bs-btn-disabled-color`), ignoring the accent; enabled they already used `--app-primary-text` (6.64:1). New rule
+  `.offline-tsr-action-bar .btn-outline-primary` sets `--bs-btn-disabled-color: var(--app-primary-text)` and the
+  disabled border to `--app-primary`. Disabled, both now measure 6.29–8.84:1 across light, Graphite, AMOLED and the
+  accents. Test `test_disabled_outline_buttons_follow_accent_text` added (11 tests).
+
+## Context
+
+Design scan of Create TSR (`templates/offline_tsr.html`, `/offline-tsr`) on 2026-10-15, page-design-scan skill plus one
+Impeccable critique (28/40, snapshot `.impeccable/critique/2026-10-15T00-15-35Z__templates-offline-tsr-html.md`). The owner
+uses the page daily and finds it good; the scan was asked to focus on labels. Findings: fields screen readers cannot name,
+text below 4.5:1 in dark themes and in small light-mode tags, two 24px tap targets, inconsistent label wording, and an
+action bar with four colours. This is the closed list (critique-loop rule): nothing is added during execution.
+
+## Decisions taken (owner, 2026-10-15)
+
+- All four batches recorded.
+- **Serviced By and Acknowledged By stay two separate signature buttons.** Only the second button's name gains "By" so
+  each button matches the field label above it.
+- Labels keep the paper form's wording (SPC Service TSR 004-2020): "Contact No.", "Email Add.", "TSR No." stay.
+
+## Investigation
+
+Measured in the browser on a copy of `scheduler.db`, engineer test account, 1366×768 and 375×812, light, Graphite and
+AMOLED (via `window.appAppearance.toggleQuick()`).
+
+- **Unlinked labels:** 69 of 84 `<label>` elements on the page have no `for`. The visible fields without a programmatic
+  name: `templates/offline_tsr.html:256-281` (Customer Name `tsr-customer-name`, TSR No. `tsr-number`, Address
+  `tsr-address`, Service Requested By `tsr-requested-by`, Department `tsr-department`, Equipment / Model
+  `tsr-equipment-model`, Serial No. `tsr-serial-no`), `:320` Complaint (`tsr-complaint`, `:325`), `:348` Remarks /
+  Recommendations (`tsr-remarks`, `:349`), `:405` Submitted Original Documents (`tsr-document-select`, `:408`), `:455`
+  attachments (`tsr-attachment-input`, `:457`). Parts rows are built by `addTSRPartRow` (`:2981`); their five inputs
+  (`part-item`, `part-number`, `part-description`, `part-qty`, `part-dr`) have placeholders only. `:294` Machine Type labels
+  a fixed pill (hidden input), not a control.
+- **Schedule button name:** `:187` visible text "Select Schedule from List", `aria-label` "Select an assigned schedule with
+  equipment (required)". The spoken name does not contain the visible words (WCAG 2.5.3 Label in Name).
+- **Dark-theme contrast:** Clear Current TSR (`:484`, Bootstrap `btn-outline-danger`, no page or dark override) 3.19:1
+  Graphite, 4.23:1 AMOLED. Calibration status "Not Started" (`#calibration-report-status.muted`, colour `#64748b`
+  hardcoded in `static/css/app-calibration-report.css:5`) 2.61:1 Graphite, 3.69:1 AMOLED.
+- **Light small-text contrast** (DESIGN.md Small-Text Contrast Rule, 4.5:1): `.offline-tsr-required-marker`
+  (`static/css/app-offline-tsr.css:124`, `var(--app-primary)` at .66rem) 3.99:1; `.offline-tsr-readiness-progress` (`:165`,
+  .72rem) 3.93:1; the two "0 selected" badges `#tsr-doc-count` (`offline_tsr.html:406`) and `#tsr-attachment-count`
+  (`:458`), `bg-secondary-subtle text-secondary` at 12px, 3.65:1. `--app-primary-text` exists in `app-themes.css:45`
+  (light) and `:96` (dark). The dark overrides for the marker live in the shared `app-dark-pages.css:1175` and already pass.
+- **Tap targets at 375px:** `#standalone-tsr-drafts-disclosure > summary` ("Continue Saved Work", `:220`) and the Parts
+  Supplied `<details>` summary (`:465`) are 24px tall. Every other control on the page is ≥44px; no horizontal scroll
+  (scrollWidth 375).
+- **Wording:**
+  - `:364` "Add Serviced By Signature" vs `:370` "Add Acknowledged Signature".
+  - `:322` "Search Previous Complaints" vs the Actions "Search"; the phrase is repeated in the placeholder `:325`, the hint
+    `:330` and `:3009`.
+  - Section nav `:233-236` in sentence case ("Customer & equipment") vs headings `:245`, `:290`, `:355`, `:402` in Title
+    Case; readiness list items "Serviced By signature" / "Acknowledged By signature" (`:209-213`).
+  - `:455` "Offline TSR Attachments" is shown online too; its helper says "during sync".
+  - `:465` "Parts Supplied" while the printed form says "Parts Supplied/Recommended" (`:10128`).
+  - `:220` "(optional)" vs `:465` "Optional" (no brackets).
+  - `:177` "Step 1" eyebrow with no Step 2 anywhere on the page.
+  - `:194` and `:284` both tell the engineer to assign equipment on Calendar; `:284` adds "saved linked Product revisions
+    can use correction mode". The correction-mode note shown when it applies is built separately in JS (`:2790-2791`)
+    and is not touched.
+- **Action bar colours:** `:480-484` primary blue, outline blue, `btn-outline-dark` Preview, `btn-outline-success` Download
+  PDF, `btn-outline-danger` Clear. DESIGN.md allows green only on Add buttons. `.offline-tsr-pdf-action` is a JS hook
+  (`:1279`, `:11133`) and stays.
+- **Side stripes:** `border-left:5px` on `.calibration-report-card` (`app-calibration-report.css:1`) and
+  `.offline-tsr-storage-health` (`offline_tsr.html:653`); not recorded in DESIGN.md.
+- **Tests pinning current text:** `tests/test_tsr_calibration_report.py:1007` asserts the string "Offline TSR Attachments";
+  `tests/test_tsr_page_design.py` pins `app-offline-tsr.css?v=8`, "Download PDF", "Clear Current TSR", "Continue Saved
+  Work"; `app-calibration-report.css?v=12` is pinned in `tests/test_dark_mode_readability.py:52` and
+  `tests/test_tsr_calibration_report.py:955,958`. Both CSS files are in the service worker `APP_SHELL` (`app.py:27965-27966`).
+  None of the other strings above is asserted in tests or used by JS.
+- **Not true:** Machine Type has no editable control, so it needs no `for`. The detector's 4 "cramped modal-content"
+  findings are Bootstrap modals with their own padded body (false positive); its 41 undocumented colours are semantic
+  status pairs allowed by the Semantic Status Rule.
+
+## Execution steps
+
+### Batch 1 — field labels
+
+1. **Link the labels** (`templates/offline_tsr.html`): add `for="<id>"` to the labels at `:256`, `:260`, `:264`, `:268`,
+   `:272`, `:276`, `:280`, `:320` (`tsr-complaint`), `:348` (`tsr-remarks`), `:405` (`tsr-document-select`), `:455`
+   (`tsr-attachment-input`). Ids and classes unchanged. Done: each field announces its visible label.
+2. **Parts row names** (`addTSRPartRow`, `:2981`): give the five inputs `aria-label` "Item no. N", "Part number N",
+   "Description N", "Quantity N", "Delivery receipt N" (N = `partRowPosition`). Placeholders unchanged. Done: a row's fields
+   are named in the accessibility tree.
+3. **Schedule button** (`:187`): `aria-label` → "Select Schedule from List (required)". Done: the spoken name starts with the
+   visible text.
+
+### Batch 2 — contrast and tap targets
+
+4. **Light small text** (`static/css/app-offline-tsr.css`): `.offline-tsr-required-marker` and
+   `.offline-tsr-readiness-progress` colour `var(--app-primary-text, #0a58ca)` instead of `var(--app-primary)`. The two
+   count badges (`#tsr-doc-count`, `#tsr-attachment-count`): add a page class `offline-tsr-count-badge` and give it
+   `color: var(--app-muted-text)` if it reaches 4.5:1 on the badge fill, else `#475569` (measure).
+   Done: all three ≥4.5:1 in light under every accent (check classic and the lightest accent).
+5. **Dark Clear button** (`app-offline-tsr.css`): `:root[data-app-theme="dark"] .offline-tsr-action-bar .btn-outline-danger`
+   text and border a lighter red that reaches ≥4.5:1 on both Graphite and AMOLED bar backgrounds (start from `#f1aeb5`,
+   Bootstrap's dark danger text; measure). Hover keeps a readable fill. Done: ≥4.5:1 in both dark palettes.
+6. **"Not Started" in dark** (`static/css/app-calibration-report.css`): dark rule for
+   `.calibration-report-card .calibration-report-status.muted` using the theme's muted text token (measure ≥4.5:1 on the
+   card's dark background). The ready/draft/returned colours are not in this list and stay. Done: ≥4.5:1 Graphite and
+   AMOLED.
+7. **Tap targets** (`app-offline-tsr.css`): `#standalone-tsr-drafts-disclosure > summary` and the Parts Supplied summary
+   (add class `offline-tsr-parts-summary` at `:465`) get `min-height:44px; display:flex; align-items:center` (keep the
+   disclosure marker visible). Done: both ≥44px at 375px; desktop look unchanged apart from height.
+8. Bump `app-offline-tsr.css?v=8` → `?v=9` and `app-calibration-report.css?v=12` → `?v=13` in `offline_tsr.html:4-5`,
+   `app.py` `APP_SHELL` (`:27965-27966`), and the pinned tests listed in Investigation.
+
+### Batch 3 — wording
+
+9. `:370` button → "Add Acknowledged By Signature". Any message that names the button is updated to the same words
+   (grep "Acknowledged Signature" first).
+10. `:322` button → "Search Complaints"; update the same phrase at `:325`, `:330`, `:3009`. (The Actions button stays
+    "Search"; both now read as search of their own field.)
+11. Section nav `:233-236` → Title Case to match the headings: "Customer & Equipment", "Service Work", "Visit & Sign-off",
+    "Supporting Documents". Readiness items `:209-213` → "Serviced By Signature", "Acknowledged By Signature".
+12. `:455` "Offline TSR Attachments" → "Extra Attachments"; helper → "Photos, supporting documents or extra images,
+    uploaded with this TSR." Update `tests/test_tsr_calibration_report.py:1007` to the new string.
+13. `:465` "Parts Supplied" → "Parts Supplied/Recommended", and its "Optional" → "(optional)" to match `:220`.
+14. Remove the orphan "Step 1" eyebrow `:177` (the heading below it stays).
+15. `:284` static locked note → "Filled in from the schedule's equipment and locked." (the alert at `:194` keeps the
+    "assign equipment on Calendar" instruction; the JS correction-mode note at `:2790` is unchanged).
+
+### Batch 4 — action bar and stripes
+
+16. `:483` Download PDF: `btn-outline-success` → `btn-outline-primary` (keep `offline-tsr-pdf-action`). Preview TSR
+    `btn-outline-dark` → `btn-outline-secondary` so the bar is accent + neutral + one red (Clear). Do not change the
+    preview dialog's own Download PDF (`:567`) or the calibration toolbar (`:505`).
+17. Side stripes: remove `border-left:5px` from `.calibration-report-card` (`app-calibration-report.css:1`) and
+    `.offline-tsr-storage-health` (`offline_tsr.html:653`), keeping their 1px border. Bump `app-calibration-report.css`
+    once more only if batch 2 is already published; otherwise the batch 2 bump covers it.
+
+## Deliberately excluded
+
+- **Save Draft outline button 4.48:1 in light** (measured during the scan, not on the approved list): owner decides
+  separately, per the critique-loop rule.
+- **Disabled buttons at opacity .65**: disabled controls are exempt from contrast; DESIGN.md's full-opacity rule is for
+  inputs.
+- **Paper-form abbreviations** ("Email Add.", "Contact No.", "TSR No."): kept, the form is the spec.
+- **`app-dark-pages.css`**: shared across pages; all new rules go into the page's own CSS files.
+- **"Online mode" banner reachability**: separate open follow-up.
+- **Calibration report ready/draft/returned colours, the preview dialog and calibration toolbar buttons**: not measured
+  failing, not in scope.
+
+## Verification
+
+- New `tests/test_tsr_design_scan_fixes.py` (source-assertion style of `tests/test_tsr_page_design.py`):
+  - each label listed in step 1 has the matching `for`; `addTSRPartRow` sets the five `aria-label`s; the schedule
+    button's `aria-label` starts with "Select Schedule from List" (batch 1);
+  - the marker/progress rules use `--app-primary-text`; the dark Clear rule and dark "Not Started" rule exist; the two
+    summaries carry the 44px rule; CSS versions `?v=9` / `?v=13` (batch 2);
+  - new strings present and old strings ("Add Acknowledged Signature", "Search Previous Complaints",
+    "Offline TSR Attachments", `>Step 1<`) absent (batch 3);
+  - Download PDF in the action bar is not `btn-outline-success`, no `border-left:5px` on the two cards (batch 4).
+  - Positive control: run each test against `git show HEAD:<file>` in-process (never `git stash`) and see it fail.
+- Focused: `test_tsr_page_design`, `test_tsr_calibration_report`, `test_dark_mode_readability`, `test_offline_resilience`,
+  `test_tsr_notifications`, `test_calibration_report_page`, `test_changelog_coverage`, plus the new file. Page-local change,
+  no full suite (AGENTS.md "Keep It Simple").
+- Browser (DB copy, engineer test account, then cleanup): `read_page` shows every field in step 1 with its label name; JS
+  contrast measure of the marker, progress, badges (light, classic + lightest accent), Clear and "Not Started" (Graphite,
+  AMOLED) all ≥4.5:1; 375px: both summaries ≥44px, scrollWidth 375; desktop 1366: action bar has blue/neutral/red only;
+  Save Draft, Review & Save TSR, Preview TSR, Download PDF, Clear Current TSR, both signature buttons, Search Complaints,
+  Add Row, Create Calibration Report and attachments still work; console clean. One screenshot as proof.
+
+## After implementation (per batch)
+
+1. Self-review against "Protect Existing Functions": `openStandaloneSchedulePickerModal`, `addTSRPartRow`, `getParts`,
+   `openSignatureModal`, `saveStandaloneTSRDraft`, `saveStandaloneTSRLocalDraft`, `openTSRPrintPreview`, `downloadTSRPDF`,
+   `clearStandaloneTSRPage`, `handleTSRAttachmentInput`, `refreshStandaloneTSRDraftPanel` still defined; no id or JS-hook
+   class removed (`offline-tsr-pdf-action`, `tsr-doc-count`, `tsr-attachment-count`, the part-input classes).
+2. Prove the new tests fail without the fix.
+3. Focused tests; browser steps for that batch.
+4. Service worker `CACHE_VERSION` bump (one per published commit; previous kept as a history comment).
+5. `static/changelog/releases.json`: one engineer release "Create TSR labels and contrast" with an item per batch.
+6. `changes.md` bullets; update this Status line (`In progress`, then `Executed` with the commit hash); amend this plan if
+   execution differs.
+7. Commit only that batch's files plus `plans.md`, `changes.md`, `releases.json`. Never `scheduler.db`, `output/`, `tmp/`,
+   handoffs, `.impeccable/` or `.claude/`. Publish only on the owner's "commit and push".
+
+## Risks
+
+- **Renamed text that another check relies on**: only `test_tsr_calibration_report.py:1007` asserts a renamed string
+  (grep done); JS hooks use ids and classes, not text.
+- **Colour fix that fails under another accent**: measure with the lightest accent, not only classic.
+- **Summary height change shifting the sidebar column**: checked at 375 and 1366.
+- **Blast radius**: Create TSR and the Calibration Report page (same template). Rollback = revert the batch commit; no data
+  or storage is touched.
+
 # Calibration Report — its own page and account backup (2 batches)
 
 **Status:** Executed — `8063533` on `main` (2026-10-14; owner: "approved, record it", then "execute all", then "commit and
