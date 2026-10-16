@@ -21498,6 +21498,26 @@ def _calibration_report_signature_bytes(report):
         return b''
 
 
+# Dark pixels a drawn signature must have; a tap or an untouched pad saves a white image with none.
+CALIBRATION_SIGNATURE_MIN_INK_PIXELS = 50
+
+
+def calibration_report_signature_has_ink(report):
+    """Return whether the saved service-engineer signature has visible ink, not a blank pad."""
+    signature_bytes = _calibration_report_signature_bytes(report)
+    if not signature_bytes:
+        return False
+    try:
+        from PIL import Image
+        image = Image.open(io.BytesIO(signature_bytes)).convert('RGBA')
+        flattened = Image.new('RGBA', image.size, (255, 255, 255, 255))
+        flattened.alpha_composite(image)
+        histogram = flattened.convert('L').histogram()
+    except Exception:
+        return False
+    return sum(histogram[:160]) >= CALIBRATION_SIGNATURE_MIN_INK_PIXELS
+
+
 def _calibration_report_docx_contains_saved_signature(docx_bytes, report):
     """Verify that the regenerated report retains the saved engineer signature part."""
     expected = _calibration_report_signature_bytes(report)
@@ -26510,6 +26530,8 @@ def submit_calibration_certificate_for_submission(submission):
         }
     if catalog_errors:
         return {'ok': False, 'code': 'catalog_validation', 'message': ' '.join(catalog_errors), 'retryable': True}
+    if not calibration_report_signature_has_ink(report):
+        missing = list(missing) + ['Calibration Signature']
     if missing:
         return {'ok': False, 'code': 'missing_values', 'missing': missing, 'message': ', '.join(missing)}
     template_path = calibration_certificate_template_path()
@@ -28049,7 +28071,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v331-vieworks-machine-line';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v332-calibration-signature-ink';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28079,7 +28101,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=50',
+  '/static/js/app-calibration-report.js?v=51',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

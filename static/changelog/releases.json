@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-16-calibration-signature",
+      "release_date": "2026-10-16",
+      "title": "Calibration Report signature",
+      "summary": "The service engineer's signature on the Calibration Report must be drawn.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-16-calibration-signature-ink",
+          "category": "Calibration",
+          "description": "A tap or an empty signature pad no longer counts as the service engineer's signature. Draw the signature in 6.7 before saving the final report; a report without a drawn signature is not sent for approval."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-16-genoray-vieworks",
       "release_date": "2026-10-16",
       "title": "Genoray and Vieworks fixes",

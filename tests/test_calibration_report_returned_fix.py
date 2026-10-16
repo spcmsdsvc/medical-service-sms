@@ -157,6 +157,7 @@ class ReturnedCalibrationReportFixTests(unittest.TestCase):
             with app_module.app.test_request_context(), \
                     patch.object(app_module, 'calibration_certificate_effective_catalog', return_value={}), \
                     patch.object(app_module, 'calibration_certificate_values', side_effect=fake_values), \
+                    patch.object(app_module, 'calibration_report_signature_has_ink', return_value=True), \
                     patch.object(app_module, 'calibration_certificate_catalog_errors', return_value=([], None)), \
                     patch.object(app_module, 'calibration_certificate_model_resolution', return_value={'source': 'catalog', 'value': 'Model', 'catalog_id': None}), \
                     patch.object(app_module, 'calibration_certificate_template_path', return_value=template.name), \

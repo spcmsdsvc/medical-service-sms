@@ -875,18 +875,34 @@
     context.fillStyle = '#ffffff'; context.fillRect(0, 0, canvas.width, canvas.height); context.lineWidth = 4; context.lineCap = 'round'; context.lineJoin = 'round'; context.strokeStyle = '#111827';
     function finish(){
       if(!signatureDrawing) return;
-      signatureDrawing = false; state.signature.image = canvas.toDataURL('image/png'); state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); updateSignatureStatus(); renderCard(); syncAutoDocument(); setCalibrationSaveStatus('unsaved'); scheduleDraftSave();
+      signatureDrawing = false;
+      // A tap or a cancelled touch leaves a white pad: keep the previous signature (or none).
+      if(signatureInkPixels(canvas) < SIGNATURE_MIN_INK_PIXELS){ drawSignature(); updateSignatureStatus(); return; }
+      state.signature.image = canvas.toDataURL('image/png'); state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); updateSignatureStatus(); renderCard(); syncAutoDocument(); setCalibrationSaveStatus('unsaved'); scheduleDraftSave();
     }
     canvas.addEventListener('pointerdown', function(event){ signatureDrawing = true; canvas.setPointerCapture?.(event.pointerId); var point = signaturePoint(canvas, event); context.beginPath(); context.moveTo(point.x, point.y); });
     canvas.addEventListener('pointermove', function(event){ if(!signatureDrawing) return; var point = signaturePoint(canvas, event); context.lineTo(point.x, point.y); context.stroke(); });
     ['pointerup','pointercancel','lostpointercapture'].forEach(function(name){ canvas.addEventListener(name, finish); });
+  }
+  // Same rule as the server (CALIBRATION_SIGNATURE_MIN_INK_PIXELS): dark pixels a drawn signature must have.
+  var SIGNATURE_MIN_INK_PIXELS = 50;
+  function signatureInkPixels(canvas){
+    var data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data; var count = 0;
+    for(var index = 0; index < data.length; index += 4){ if((data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114) < 160) count++; }
+    return count;
   }
   function signaturePoint(canvas, event){ var rect = canvas.getBoundingClientRect(); return { x:(event.clientX - rect.left) * canvas.width / rect.width, y:(event.clientY - rect.top) * canvas.height / rect.height }; }
   function drawSignature(){
     var canvas = q('#cr-signature-pad'); if(!canvas) return;
     var context = canvas.getContext('2d'); context.clearRect(0,0,canvas.width,canvas.height); context.fillStyle = '#ffffff'; context.fillRect(0, 0, canvas.width, canvas.height);
     if(!state.signature.image) return;
-    var image = new Image(); image.onload = function(){ context.drawImage(image, 0, 0, canvas.width, canvas.height); }; image.src = state.signature.image;
+    var image = new Image(); var source = state.signature.image;
+    image.onload = function(){
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      // A blank pad saved before this check is not a signature: the engineer must draw one.
+      if(state.signature.image === source && signatureInkPixels(canvas) < SIGNATURE_MIN_INK_PIXELS){ state.signature.image = ''; updateSignatureStatus(); renderCard(); }
+    };
+    image.src = source;
   }
   function clearSignature(){ state.signature.image = ''; state.status = 'draft'; state.updated_at = new Date().toISOString(); invalidateGenerated(); drawSignature(); updateSignatureStatus(); renderCard(); setCalibrationSaveStatus('unsaved'); scheduleDraftSave(); }
   function updateSignatureStatus(){ var element = q('#cr-signature-status'); if(element) element.textContent = state.signature.image ? 'Calibration signature saved.' : 'No calibration signature saved.'; }

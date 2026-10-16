@@ -54,6 +54,7 @@ def complete_payload():
         "calibration_report": {
             "certificate": {"bsid": " B-43 "},
             "facility": {"name": "St. Mary's Clinic"},
+            "signature": {"name": "Engineer", "image": SIGNATURE},
             "machine": {"modality": "Digital Angiography System", "model": "Mobile Dart Evolution MX9", "serial_number": "SN-42"},
             "calibration": {
                 "machine_calibration_date": "2026-08-20",
@@ -1208,6 +1209,46 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
                 app.config['UPLOAD_FOLDER'] = original_upload_folder
                 with app.app_context():
                     db.session.remove()
+
+
+class CalibrationReportSignatureInkTests(unittest.TestCase):
+    """A tap or an untouched pad saved a white image that passed as the engineer's signature."""
+
+    @staticmethod
+    def _png(color, dots=0):
+        from PIL import Image
+        image = Image.new("RGBA", (1200, 300), color)
+        for index in range(dots):
+            image.putpixel((10 + index, 10), (17, 24, 39, 255))
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return "data:image/png;base64," + __import__("base64").b64encode(buffer.getvalue()).decode("ascii")
+
+    def test_blank_transparent_and_tap_sized_signatures_have_no_ink(self):
+        has_ink = app_module.calibration_report_signature_has_ink
+        self.assertFalse(has_ink({}))
+        self.assertFalse(has_ink({"signature": {"image": ""}}))
+        self.assertFalse(has_ink({"signature": {"image": "data:image/png;base64,not-a-png"}}))
+        self.assertFalse(has_ink({"signature": {"image": self._png((255, 255, 255, 255))}}))
+        self.assertFalse(has_ink({"signature": {"image": self._png((0, 0, 0, 0))}}))
+        self.assertFalse(has_ink({"signature": {"image": self._png((255, 255, 255, 255), dots=10)}}))
+        self.assertTrue(has_ink({"signature": {"image": SIGNATURE}}))
+
+    def test_blank_signature_never_reaches_the_approver(self):
+        payload = complete_payload()
+        payload["calibration_report"]["signature"] = {"name": "Engineer", "image": self._png((255, 255, 255, 255))}
+        submission = app_module.OnlineTsrSubmission(id=987654, shift_id=987654, payload_json=json.dumps(payload))
+        with app_module.app.app_context(), \
+                patch.object(app_module, "ensure_calibration_certificate_approval_table"), \
+                patch.object(app_module.CalibrationCertificateApproval, "query") as query, \
+                patch.object(app_module.db.session, "get", return_value=None), \
+                patch.object(app_module, "calibration_certificate_template_path") as template_path:
+            query.filter_by.return_value.first.return_value = None
+            result = app_module.submit_calibration_certificate_for_submission(submission)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["code"], "missing_values")
+        self.assertIn("Calibration Signature", result["missing"])
+        template_path.assert_not_called()
 
 
 if __name__ == "__main__":

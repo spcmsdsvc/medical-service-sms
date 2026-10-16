@@ -35,6 +35,7 @@ def temporary_payload(model_name, source='temporary'):
                 'equipment_model': model_name,
             },
             'facility': {'name': 'Temporary Model Clinic'},
+            'signature': {'name': 'Engineer', 'image': SIGNATURE},
             'machine': {
                 'modality': 'Digital Angiography System',
                 'model': model_name,
