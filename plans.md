@@ -39,7 +39,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # TSR without equipment — update two tests to the User roles rule (1 batch, tests only)
 
-**Status:** Executed (2026-10-16, on "commit and push together", taken as the go-ahead). Approved 2026-10-16
+**Status:** Executed (2026-10-16, on "commit and push together", taken as the go-ahead). Published to `main` as `73315f9`
+with the Genoray/Vieworks fixes. Approved 2026-10-16
 ("Approved. Write the TSR-without-equipment test fix to plans.md and wait.").
 
 ### Amendments during execution
@@ -112,7 +113,8 @@ deliberately removed the "Francis only" username rule. The tests still expect th
 
 # Genoray and Vieworks inventory — scan fixes (4 batches)
 
-**Status:** Executed (2026-10-16, on "execute all"); not committed. Approved 2026-10-16 ("Approved. Write the four
+**Status:** Executed (2026-10-16, on "execute all"). Published on "commit and push together. never the db and dirty" as
+`73315f9` on `main` (service worker v330), together with the TSR-without-equipment test fix. Approved 2026-10-16 ("Approved. Write the four
 Genoray/Vieworks batches to plans.md and wait.").
 
 ### Amendments during execution
