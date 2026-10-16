@@ -2762,6 +2762,14 @@ function openAddModal() {
         overflow-wrap: anywhere;
     }
 
+    /* Linked machine / Vieworks line sits under the name + actions, never between them. */
+    .product-name-content { flex-wrap: wrap; }
+    .product-name-content > .product-linked-vieworks {
+        order: 3;
+        flex-basis: 100%;
+        margin-top: 0;
+    }
+
     .product-row-actions {
         display: inline-flex;
         align-items: center;

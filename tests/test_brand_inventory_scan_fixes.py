@@ -207,6 +207,9 @@ class BrandInventoryTemplateTests(unittest.TestCase):
         self.assertIn('function renderVieworksLinkedProduct(item, mobile=false){', TEMPLATE)
         self.assertIn('${renderVieworksLinkedProduct(p, true)}', TEMPLATE)
         self.assertIn('${renderVieworksLinkedProduct(p)}', TEMPLATE)
+        # The link line wraps under the name + actions instead of squeezing the name.
+        self.assertIn('.product-name-content { flex-wrap: wrap; }', TEMPLATE)
+        self.assertIn('.product-name-content > .product-linked-vieworks {\n        order: 3;\n        flex-basis: 100%;', TEMPLATE)
         self.assertIn("`No ${inventoryPlural} yet. Use Add ${inventoryLabel} Item${productCanDelete ? ' or Import' : ''} to create the first one.`", TEMPLATE)
 
 

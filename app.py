@@ -28049,7 +28049,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v330-genoray-vieworks-scan';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v331-vieworks-machine-line';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
