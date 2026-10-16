@@ -9,6 +9,7 @@
 {% set inventory_api_url = '/api/vieworks/items' if is_vieworks_inventory else ('/api/genoray/items' if is_genoray_inventory else '/get_products') %}
 {% set inventory_import_url = '/vieworks/import' if is_vieworks_inventory else ('/genoray/import' if is_genoray_inventory else '/import_products') %}
 {% set inventory_export_url = '/vieworks/export' if is_vieworks_inventory else ('/genoray/export' if is_genoray_inventory else '/export_products') %}
+{% set inventory_name_label = 'Equipment Name' if is_standalone_inventory else 'Product Name' %}
 {% set inventory_pm_base_url = '/vieworks/pm' if is_vieworks_inventory else ('/genoray/pm' if is_genoray_inventory else '') %}
 {% set product_can_pm = product_can_pm|default(false) %}
 
@@ -93,7 +94,7 @@
             <div class="col-md-4">
                 <label for="search-text" class="small fw-bold text-muted text-uppercase">Search Equipment</label>
                 <div class="product-search-row">
-                    <input type="text" id="search-text" class="form-control form-control-sm" oninput="applyFilters()" placeholder="S/N or Product Name">
+                    <input type="text" id="search-text" class="form-control form-control-sm" oninput="applyFilters()" placeholder="S/N or {{ inventory_name_label }}">
                     <button type="button" id="product-filter-toggle" class="btn btn-outline-secondary btn-sm product-filter-toggle" aria-expanded="false" aria-controls="product-filter-panel" onclick="toggleProductFilters()">
                         <i class="fa-solid fa-sliders me-1" aria-hidden="true"></i><span id="product-filter-toggle-label">Filter</span>
                     </button>
@@ -125,7 +126,7 @@
                         <select id="product-freeze-column" class="form-select form-select-sm" title="Choose which columns stay visible while scrolling" aria-label="Choose which columns stay visible while scrolling" onchange="setProductFreezeColumn(this.value)">
                             <option value="none">None</option>
                             <option value="serial">S/N</option>
-                            <option value="name" selected>Product Name + Actions</option>
+                            <option value="name" selected>{{ inventory_name_label }} + Actions</option>
                             <option value="room">Room</option>
                             <option value="bsid">BSID</option>
                             <option value="owner">Owner</option>
@@ -169,7 +170,7 @@
                 <thead class="table-dark">
                     <tr>
                         <th data-column-key="serial"><button type="button" class="product-sort-btn" data-sort-key="serial" onclick="setProductSort('serial')">S/N <span class="product-sort-indicator" data-sort-indicator="serial">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize S/N column" tabindex="0" data-column-key="serial"></span></th>
-                        <th data-column-key="name"><button type="button" class="product-sort-btn" data-sort-key="name" onclick="setProductSort('name')">Product Name <span class="product-sort-indicator" data-sort-indicator="name">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Product Name column" tabindex="0" data-column-key="name"></span></th>
+                        <th data-column-key="name"><button type="button" class="product-sort-btn" data-sort-key="name" onclick="setProductSort('name')">{{ inventory_name_label }} <span class="product-sort-indicator" data-sort-indicator="name">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize {{ inventory_name_label }} column" tabindex="0" data-column-key="name"></span></th>
                         <th data-column-key="room"><button type="button" class="product-sort-btn" data-sort-key="room" onclick="setProductSort('room')">Room <span class="product-sort-indicator" data-sort-indicator="room">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Room column" tabindex="0" data-column-key="room"></span></th>
                         <th data-column-key="bsid"><button type="button" class="product-sort-btn" data-sort-key="bsid" onclick="setProductSort('bsid')">BSID <span class="product-sort-indicator" data-sort-indicator="bsid">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize BSID column" tabindex="0" data-column-key="bsid"></span></th>
                         <th data-column-key="owner"><button type="button" class="product-sort-btn" data-sort-key="owner" onclick="setProductSort('owner')">Owner (Medical Center) <span class="product-sort-indicator" data-sort-indicator="owner">↕</span></button><span class="product-column-resizer" role="separator" aria-orientation="vertical" aria-label="Resize Owner column" tabindex="0" data-column-key="owner"></span></th>
@@ -1032,7 +1033,9 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
                 icon: 'fa-box-open',
                 message: hasFilter
                     ? (isVieworksInventory ? 'No Vieworks items match your filters.' : (isGenorayInventory ? 'No Genoray items match your filters.' : 'No products match your filters.'))
-                    : (isVieworksInventory ? 'No Vieworks items available.' : (isGenorayInventory ? 'No Genoray items available.' : 'No products available.')),
+                    : (isStandaloneInventory && productCanEdit
+                        ? `No ${inventoryPlural} yet. Use Add ${inventoryLabel} Item${productCanDelete ? ' or Import' : ''} to create the first one.`
+                        : (isVieworksInventory ? 'No Vieworks items available.' : (isGenorayInventory ? 'No Genoray items available.' : 'No products available.'))),
                 summary: hasFilter
                     ? (isVieworksInventory ? 'No Vieworks items match your filters' : (isGenorayInventory ? 'No Genoray items match your filters' : 'No products match your filters'))
                     : (isVieworksInventory ? 'No Vieworks items available' : (isGenorayInventory ? 'No Genoray items available' : 'No products available')),
@@ -1407,13 +1410,13 @@ window.addEventListener('resize', handleProductViewportChange, { passive: true }
         const noExpiry = document.getElementById('product-no-expiry-count');
         const state = document.getElementById('product-filter-state');
 
-        if(label) label.innerText = `Showing ${shown} of ${total} ${inventoryPlural.toLowerCase()}`;
+        if(label) label.innerText = `Showing ${shown} of ${total} ${inventoryPlural}`;
         if(summary){
             summary.innerText = shown === 0
                 ? (hasFilter
-                    ? `No ${inventoryPlural.toLowerCase()} match your filters`
-                    : `No ${inventoryPlural.toLowerCase()} available`)
-                : `Showing ${shown} of ${total} ${inventoryPlural.toLowerCase()}`;
+                    ? `No ${inventoryPlural} match your filters`
+                    : `No ${inventoryPlural} available`)
+                : `Showing ${shown} of ${total} ${inventoryPlural}`;
         }
         if(clearFilters) clearFilters.disabled = !hasFilter;
         if(active) active.innerText = `${counts.active} active`;
@@ -1461,6 +1464,12 @@ function getProductIdentityLabel(product){
     const name = String(product?.name || fallbackName).trim() || fallbackName;
     const serial = String(product?.serial_number || 'Unknown').trim() || 'Unknown';
     return `${name} (S/N: ${serial})`;
+}
+
+function renderVieworksLinkedProduct(item, mobile=false){
+    if(!isVieworksInventory || !item?.linked_product) return '';
+    const machine = item.linked_product;
+    return `<div class="product-linked-vieworks ${mobile ? 'product-linked-vieworks-mobile' : ''}" title="Linked machine"><i class="fa-solid fa-link me-1" aria-hidden="true"></i><span class="product-linked-vieworks-item">Machine: ${escapeHtml(machine.name || 'Machine')} <small>(${escapeHtml(machine.serial_number || '')})</small></span></div>`;
 }
 
 function renderProductLinkedVieworks(product, mobile=false){
@@ -1556,7 +1565,7 @@ function renderProductMobileCards(data){
                 ${renderProductCalibrationDocumentLinks(p, true)}
                 ${renderProductCalibrationBadge(p)}
                 <button type="button" class="product-mobile-name product-mobile-open" onclick="event.stopPropagation(); openProductHistory(${productJsArg(p.serial_number)}, ${productJsArg(inventoryMode)})" aria-label="Service history for ${identity}">${escapeHtml(p.name || fallbackName)}</button>
-                ${renderProductLinkedVieworks(p, true)}
+                ${renderProductLinkedVieworks(p, true)}${renderVieworksLinkedProduct(p, true)}
                 <div class="product-mobile-owner">
                     <i class="fa-solid fa-hospital" aria-hidden="true"></i>
                     <span>${escapeHtml(owner)}</span>
@@ -1728,7 +1737,7 @@ async function openProductHistory(serial, source=inventoryMode){
     if(!window.productHistoryModal) window.productHistoryModal = new bootstrap.Modal(modalElement);
     body.innerHTML = '<div class="product-history-state text-muted"><i class="fa-solid fa-spinner fa-spin me-2"></i>Loading service history...</div>';
     if(title) title.textContent = 'Service History';
-    if(subtitle) subtitle.textContent = `${source || inventoryMode} · ${serial || ''}`;
+    if(subtitle) subtitle.textContent = `${source === inventoryMode ? inventoryLabel : (source || inventoryLabel)} · ${serial || ''}`;
     window.productHistoryModal.show();
     try{
         const response = await fetch(freshUrl(productHistoryUrl(serial, source)), { cache: 'no-store' });
@@ -1922,7 +1931,7 @@ function renderTable(data) {
                         <td class="product-name-cell">
                             <div class="product-name-content">
                                 <span class="product-name-value">${escapeHtml(p.name || '-')}</span>
-                                ${renderProductLinkedVieworks(p)}
+                                ${renderProductLinkedVieworks(p)}${renderVieworksLinkedProduct(p)}
                                 ${actionButtons}
                             </div>
                         </td>
@@ -2031,8 +2040,7 @@ function openAddModal() {
         setProductNameForEdit('');
         const bsidField = document.getElementById('p-bsid');
         if (bsidField) {
-            bsidField.disabled = isGenorayInventory;
-            if(isVieworksInventory) bsidField.disabled = true;
+            bsidField.disabled = isStandaloneInventory;
             bsidField.placeholder = isStandaloneInventory ? 'Assigned automatically on save' : 'Machine-level BSID';
         }
         document.getElementById('p-under-contract').checked = false;
@@ -2068,7 +2076,7 @@ function openAddModal() {
         }
         const serialHelp = document.getElementById('serial-edit-help');
         if(serialHelp) serialHelp.innerText = isStandaloneInventory
-            ? "Serial number can be changed. This will create an activity log."
+            ? "Serial number can be changed. Its schedules and PM visits move with it, and an activity log is created."
             : "Serial number can be changed. This will update linked schedules and create an activity log.";
         document.getElementById('p-name-id').value = '';
         setProductNameForEdit(p.name);
@@ -2178,7 +2186,7 @@ function openAddModal() {
             const proceed = await productConfirmDialog({
                 title: 'Change Serial Number?',
                 message: isStandaloneInventory
-                    ? `Change ${inventoryLabel} serial number from ${editSN} to ${data.serial_number}?\n\nThe change will be recorded in Activity Logs.`
+                    ? `Change ${inventoryLabel} serial number from ${editSN} to ${data.serial_number}?\n\nIts schedules and PM visits move to the new serial, and the change is recorded in Activity Logs.`
                     : `Change product serial number from ${editSN} to ${data.serial_number}?\n\nLinked schedules using this product will be updated and the action will be recorded in Activity Logs.`,
                 confirmText: 'Change Serial',
                 cancelText: 'Cancel',
@@ -2223,6 +2231,11 @@ function openAddModal() {
                         : (isStandaloneInventory ? `${inventoryLabel} item added.` : 'Product added.'),
                     'success'
                 );
+                const movedSchedules = Number(responseData.linked_schedule_count) || 0;
+                const movedPmVisits = Number(responseData.pm_visit_count) || 0;
+                if (isStandaloneInventory && responseData.serial_changed && (movedSchedules || movedPmVisits)) {
+                    productToast(`Moved ${movedSchedules} schedule(s) and ${movedPmVisits} PM visit(s) to the new serial.`, 'success');
+                }
                 if (!isStandaloneInventory) {
                     loadVieworksLinkOptions();
                     const linkedPurchaseOrders = Number(responseData.linked_purchase_order_count) || 0;
@@ -2278,6 +2291,7 @@ function openAddModal() {
             if (res.ok) {
                 productsData = productsData.filter(item => item.serial_number !== s);
                 applyFilters();
+                productToast(isStandaloneInventory ? `${inventoryLabel} item deleted.` : 'Product deleted.', 'success');
                 // A deleted product frees its linked Vieworks items.
                 loadVieworksLinkOptions();
             } else {
@@ -3555,6 +3569,20 @@ function openAddModal() {
     :root[data-app-theme="dark"] #productHistoryModal hr {
         border-color: #85888d !important;
         opacity: .7;
+    }
+
+    /* PM actions (Genoray/Vieworks): the light teal fill would carry the dark-theme link blue at 2.1:1. */
+    :root[data-app-theme="dark"] .product-row-pm,
+    :root[data-app-theme="dark"] .product-mobile-pm {
+        color: #5eead4;
+        background: rgba(20, 184, 166, 0.16);
+        border-color: #2dd4bf;
+    }
+    :root[data-app-theme="dark"] .product-row-pm:hover,
+    :root[data-app-theme="dark"] .product-row-pm:focus-visible,
+    :root[data-app-theme="dark"] .product-mobile-pm:hover,
+    :root[data-app-theme="dark"] .product-mobile-pm:focus-visible {
+        color: #99f6e4;
     }
 
     :root[data-app-theme="dark"] .product-linked-vieworks {

@@ -1,6 +1,34 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-16-genoray-vieworks",
+      "release_date": "2026-10-16",
+      "title": "Genoray and Vieworks fixes",
+      "summary": "Safer CSV import, faster lists and clearer wording on the Genoray and Vieworks pages.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-16-genoray-vieworks-import",
+          "category": "Inventory",
+          "description": "Genoray and Vieworks CSV import now changes only the columns the file has, treats an N/A owner as blank, warns about approximate owner matches, and skips a linked Vieworks item whose new owner is not its machine's medical center.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-16-genoray-vieworks-page",
+          "category": "Inventory",
+          "description": "Vieworks rows show their linked machine, the PM button is readable in dark themes, the item list loads faster, and changing a serial number says that its schedules and PM visits move with it.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-15-user-roles",
       "release_date": "2026-10-15",
       "title": "User roles",

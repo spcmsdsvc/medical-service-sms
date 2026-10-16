@@ -156,7 +156,7 @@ class TsrWithoutEquipmentWorkflowTests(unittest.TestCase):
             other.can_create_tsr_without_equipment = False
             app_module.db.session.commit()
 
-    def test_default_off_and_effective_permission_is_francis_only(self):
+    def test_default_off_and_effective_permission_follows_switch(self):
         with self.app.app_context():
             francis = app_module.db.session.get(app_module.User, self.francis_id)
             other = app_module.db.session.get(app_module.User, self.other_id)
@@ -166,7 +166,13 @@ class TsrWithoutEquipmentWorkflowTests(unittest.TestCase):
             francis.can_create_tsr_without_equipment = True
             other.can_create_tsr_without_equipment = True
             self.assertTrue(app_module.can_create_tsr_without_equipment_for_user(francis))
-            self.assertFalse(app_module.can_create_tsr_without_equipment_for_user(other))
+            # Since User roles (4ab0627) any engineer with a profile may hold the switch.
+            self.assertTrue(app_module.can_create_tsr_without_equipment_for_user(other))
+            no_profile = app_module.User(
+                username="no_profile_engineer", role="engineer", is_active=True,
+                can_create_tsr_without_equipment=True,
+            )
+            self.assertFalse(app_module.can_create_tsr_without_equipment_for_user(no_profile))
 
             francis.is_active = False
             self.assertFalse(app_module.can_create_tsr_without_equipment_for_user(francis))
@@ -175,7 +181,7 @@ class TsrWithoutEquipmentWorkflowTests(unittest.TestCase):
             self.assertFalse(app_module.can_create_tsr_without_equipment_for_user(francis))
             francis.role = "engineer"
 
-    def test_settings_grant_audits_only_francis_and_unrelated_save_round_trips(self):
+    def test_settings_grant_audits_and_refuses_non_engineers(self):
         admin_client = self._client_for(self.admin_id)
         granted = admin_client.post(
             "/settings/update-approval-user",
@@ -207,13 +213,26 @@ class TsrWithoutEquipmentWorkflowTests(unittest.TestCase):
                 "is_active": True,
             },
         )
-        self.assertEqual(other_grant.status_code, 400, other_grant.get_data(as_text=True))
+        self.assertEqual(other_grant.status_code, 200, other_grant.get_data(as_text=True))
+
+        admin_grant = admin_client.post(
+            "/settings/update-approval-user",
+            json={
+                "user_id": self.admin_id,
+                "can_create_tsr_without_equipment": True,
+                "is_active": True,
+            },
+        )
+        self.assertEqual(admin_grant.status_code, 400, admin_grant.get_data(as_text=True))
+        self.assertIn("Only an engineer account", admin_grant.get_data(as_text=True))
 
         with self.app.app_context():
             francis = app_module.db.session.get(app_module.User, self.francis_id)
             other = app_module.db.session.get(app_module.User, self.other_id)
+            admin = app_module.db.session.get(app_module.User, self.admin_id)
             self.assertTrue(francis.can_create_tsr_without_equipment)
-            self.assertFalse(other.can_create_tsr_without_equipment)
+            self.assertTrue(other.can_create_tsr_without_equipment)
+            self.assertFalse(admin.can_create_tsr_without_equipment)
             audit = (
                 app_module.ActivityLog.query
                 .filter(app_module.ActivityLog.action.ilike("%can_create_tsr_without_equipment%"))

@@ -37,6 +37,285 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# TSR without equipment — update two tests to the User roles rule (1 batch, tests only)
+
+**Status:** Executed (2026-10-16, on "commit and push together", taken as the go-ahead). Approved 2026-10-16
+("Approved. Write the TSR-without-equipment test fix to plans.md and wait.").
+
+### Amendments during execution
+
+- Step 2 checks the refusal text in the response body (`get_data`), since the 400 body has no `message` key.
+- Step 1's no-profile case uses an unsaved `User(role="engineer", can_create_tsr_without_equipment=True)`.
+- Result: module 8/8 pass. Positive control in-process: removing the role check or the profile check from
+  `can_create_tsr_without_equipment_for_user` each makes `test_default_off_and_effective_permission_follows_switch` fail.
+
+## Context
+
+Two tests in `tests/test_tsr_without_equipment.py` fail on `main` and are not in `tests/known_failures.txt`. The Genoray
+and Vieworks session found them during its focused run. They began failing with `4ab0627` (User roles), which
+deliberately removed the "Francis only" username rule. The tests still expect that rule.
+
+## Decisions taken (owner, 2026-10-16)
+
+- The code is right and the tests are outdated. The switch stays "any active engineer with a Personnel profile" (User
+  roles plan, step 15: "drop the username check … grant works for a non-Francis engineer and is refused for staff").
+- Fix the tests only; no app code changes.
+
+## Investigation
+
+- `can_create_tsr_without_equipment_for_user` (`app.py:11809`) requires active, `role_of == 'engineer'`, an engineer
+  profile and the account switch — no username.
+- Settings grant refusal (`app.py:30631-30636`) refuses only a non-engineer or profile-less target ("Only an engineer
+  account with a Personnel profile may receive the TSR without assigned equipment grant.").
+- `test_default_off_and_effective_permission_is_francis_only` (`tests/test_tsr_without_equipment.py:158`) asserts the
+  switched-on "other" engineer is refused (line 169); the code now allows it.
+- `test_settings_grant_audits_only_francis_and_unrelated_save_round_trips` (`:177`) expects 400 for granting "other"
+  (line 210) and `other.can_create_tsr_without_equipment` False afterwards; the code now returns 200.
+- Fixtures (`:73-115`): admin `role="superadmin"`, Francis and Other `role="engineer"` with Engineer profiles.
+- The other 6 tests in the module pass.
+
+## Execution steps
+
+1. Rename the first test to `test_default_off_and_effective_permission_follows_switch`; change line 169 to
+   `assertTrue(... (other))`; keep the inactive and superadmin refusals; add: an engineer with the switch on but no
+   profile is refused (temporarily detach Other's profile in-memory, or assert on a new unsaved `User(role="engineer")`
+   with the switch on). Done = test passes and still fails if the role or profile check is removed.
+2. Rename the second test to `test_settings_grant_audits_and_refuses_non_engineers`; granting Other → 200 and
+   `other.can_create_tsr_without_equipment` True; add a grant to the superadmin `admin_id` → 400 with the "Only an
+   engineer account" message; keep the Francis grant, the unrelated-save round trip and the "False -> True" audit check.
+3. `setUp` already resets both switches to False; no other change.
+
+## Deliberately excluded
+
+- App code (`can_create_tsr_without_equipment_for_user`, `resolve_staff_permission_request`, `settings.html`): matches
+  the approved User roles plan.
+- `tests/known_failures.txt`: the tests will pass, so the list does not change.
+
+## Verification
+
+- `venv/Scripts/python.exe -m unittest tests.test_tsr_without_equipment` — 8 tests pass.
+- Positive control: in-process, swap in a copy of `can_create_tsr_without_equipment_for_user` without the role check
+  → step 1 test fails; without the profile check → the no-profile assertion fails.
+- No browser check (no UI change); no full suite (test file only).
+
+## After implementation
+
+- Self-review the diff (test file only), `changes.md`, Status here. No service worker or `releases.json` change (nothing
+  user-visible).
+- On "commit and push": only `tests/test_tsr_without_equipment.py`, `plans.md`, `changes.md` (plus any other approved
+  change being published); never `scheduler.db` or dirty files.
+
+## Risks
+
+- None for users (tests only). If the owner later wants the switch restricted again, these tests would be changed back
+  with that code change.
+
+# Genoray and Vieworks inventory — scan fixes (4 batches)
+
+**Status:** Executed (2026-10-16, on "execute all"); not committed. Approved 2026-10-16 ("Approved. Write the four
+Genoray/Vieworks batches to plans.md and wait.").
+
+### Amendments during execution
+
+- **Step 4:** the redundant `if item:` block in both delete routes was flattened after the new 404 guard.
+- **Step 5:** sentinel `_NOT_GIVEN` (new, above `genoray_item_to_dict`) marks "not precomputed"; `None` is a real value
+  (no approval / no machine). Add/PUT build `item_payload` once.
+- **Step 13 colours as planned:** `#5eead4` on `rgba(20,184,166,.16)`, `#2dd4bf` border; hover `#99f6e4`. Recorded in
+  DESIGN.md (Chips / Badges, "PM action").
+- **Existing pin updated:** `tests/test_genoray_inventory.py:542` pinned `bsidField.disabled = isGenorayInventory`; now
+  pins `bsidField.disabled = isStandaloneInventory`.
+- **Fail-without-fix proof:** all 11 new tests (14 failures + 1 error with subtests) fail against `HEAD` in a temporary
+  worktree (removed afterwards).
+- **Focused modules:** all pass, plus every module that pins `CACHE_VERSION` or `releases.json`, except
+  `test_tsr_without_equipment` (2 failures, pre-existing since `4ab0627` removed the Francis username rule; not touched
+  here, not in `tests/known_failures.txt`) — left for its own fix.
+- **Browser (DB copy, temporary admin, removed afterwards; `.claude/launch.json` restored):** Genoray — count "Showing 2 of
+  2 Genoray items", header "Equipment Name", placeholder "S/N or Equipment Name", Add (BSID disabled) / Edit help text /
+  history subtitle "Genoray · GS-SCAN-1" while loading / Delete with "Genoray item deleted." toast; missing delete 404;
+  export→import round trip 0 unmatched. Vieworks — empty state "No Vieworks items yet. Use Add Vieworks Item or Import…";
+  Add linked to MPF16817600 shows "Machine: MobileDart Evo MX7c (MPF16817600)" on the row and phone card; import with a
+  different owner → "1 row(s) skipped: a linked Vieworks item must stay with its machine's medical center.", item and link
+  unchanged; serial rename works. PM contrast light / Graphite / AMOLED: desktop 6.40 / 9.70 / 12.86, phone 5.92 / 8.40 /
+  11.89 (were 2.32 and 2.14 dark); machine line 5.47 / 8.40 / 11.89. 375px: no horizontal scroll, no tap under 44px. No
+  server errors; console only the two deliberate 400/404 test requests.
+- Service worker `v330-genoray-vieworks-scan`; release "Genoray and Vieworks fixes" (2026-10-16).
+
+## Context
+
+The 2026-10-16 page scan and design scan of `templates/products.html` in Genoray (`/genoray`) and Vieworks (`/vieworks`)
+mode, the follow-up to the Product Inventory plan below (published `99719b6`). Critique snapshot:
+`.impeccable/critique/2026-10-16T00-00-00Z__templates-products-html-genoray-vieworks.md` (27/40, only what differs from
+product mode). The worst problems: a Vieworks CSV import can move a linked item to a different medical center than its
+machine; both imports still erase owner, dates and room when a column is missing (the bug fixed for products on
+2026-10-15); the list API makes one calibration query per row; the PM button is unreadable in dark themes.
+
+## Decisions taken (owner, 2026-10-16)
+
+- All four batches go into this plan, as proposed after the scan.
+- Follow the Product Inventory fixes already published wherever the same bug exists here (import column rule, "N/A"
+  owner, fuzzy-match count, delete of a missing row → 404), so the three inventories behave the same.
+
+## Investigation
+
+- **Vieworks import breaks the machine link** (`import_vieworks_items`, `app.py:66130`): for an existing item it sets
+  `existing.client_id = client_id` with no link check, while `update_vieworks_item` (`app.py:65955`) rejects a client that
+  differs from the linked Product's ("A linked Vieworks/Canon item must remain with the same medical center as its
+  Product."). Repro on a DB copy: VW-SCAN-1 linked to MPF16817600 (client 7); importing `VW-SCAN-1,VW Scan,"Accura-Tech
+  Diagnostic Laboratory"` → "1 updated", item now at Accura-Tech, `linked_product` still the client-7 machine. The next
+  Edit then drops the link without a word (the Linked Machine list only offers the new center's machines,
+  `refreshProductLinkOptions`, `products.html:1224`).
+- **Both imports erase missing columns** (`import_vieworks_items` and `import_genoray_items`, `app.py:66498`): an
+  existing row always gets `room`, `client_id`, `start_warranty_date`, `end_warranty_date` from the CSV, even when the
+  column is absent. `import_products` (`app.py:66853`, `has_room_column` … `has_bsid_column` at `:66879`) already uses
+  the "only change what the CSV carries" rule.
+- **"N/A" owner on re-import**: export writes `N/A` for no owner (`export_vieworks_items` `app.py:66255`,
+  `export_genoray_items` `:66622`); re-importing that export reports "1 owner name(s) were not matched" (seen in the
+  browser on Genoray). `import_products` treats "N/A" as empty and counts fuzzy matches through
+  `csv_find_client_match` (`app.py:66689`, returns `(client_id, exact)`); the brand imports call the old
+  `csv_find_client_id` and apply fuzzy matches silently.
+- **Delete of a missing serial** returns 200 `success` in `delete_vieworks_item` (`app.py:66098`) and
+  `delete_genoray_item` (`:66468`); `delete_product` returns 404 "Product not found." since `99719b6`.
+- **N+1 list queries**: `get_genoray_items` (`app.py:35274`) and `get_vieworks_items` (`:35117`) call
+  `genoray_item_to_dict` / `vieworks_item_to_dict` (`:34886`, `:34958`) per row; each runs
+  `latest_approved_calibration_approvals_for_equipment([(item, source)])` (one joined query per row) and lazy-loads
+  `owner`; Vieworks also runs `product_vieworks_parent_payload` (`:3197`: link query + item lookups + Product get) per
+  row. `get_products` already batches both (`:34845` `product_vieworks_link_payload_map`, `:34852` one calibration call).
+  The Add/PUT responses also call the `*_to_dict` twice (`'item': …, **…`).
+- **Dead code**: `role = …` assigned and never used in `can_access_genoray_inventory` (`app.py:8602`) and
+  `can_access_vieworks_inventory` (`:8683`).
+- **Serial change text is wrong for brand modes**: the help text says only "This will create an activity log."
+  (`openEditModal`, `products.html:2070`) and the confirm says "The change will be recorded in Activity Logs."
+  (`saveProduct`, `:2180`), but the PUT routes move the item's schedules and PM visits (`app.py` `update_vieworks_item`
+  `Shift … update`, `InventoryPmVisit … update`; same in `update_genoray_item`) and return `linked_schedule_count` /
+  `pm_visit_count`, which the page ignores.
+- **Labels**: count line "Showing 2 of 2 genoray items" / "0 of 0 vieworks items" (`products.html:1410`, `:1416`,
+  `:1414-1415` use `inventoryPlural.toLowerCase()`); history subtitle "genoray · SN" while loading (`openProductHistory`,
+  `:1731`, raw `source`); table header "Product Name" (`:172`) and search placeholder "S/N or Product Name" (`:96`) while
+  the modal says "Genoray/Vieworks Equipment Name".
+- **Delete has no success message** (`deleteProduct`, `:2278-2282`), while Add and Edit toast. All three modes.
+- **Simplify**: `openAddModal` sets `bsidField.disabled = isGenorayInventory;` then `if(isVieworksInventory) … = true`
+  (`:2034-2035`) — one line `= isStandaloneInventory`.
+- **PM button contrast** (brand modes only; measured with transitions disabled): phone `.product-mobile-pm`
+  (`products.html:3288`, `#115e59` on `#ccfbf1`) becomes link blue `#6ea8fe` on the same light teal in dark themes:
+  2.14:1 Graphite and AMOLED (light 5.92). Desktop `.product-row-pm` icon (`:2785`) 2.32:1 Graphite/AMOLED (light 6.40;
+  non-text needs ≥3:1).
+- **Vieworks rows never show their machine**: `renderProductLinkedVieworks` (`:1466`) returns `''` in brand modes; the
+  data (`linked_product`) is already loaded but only appears in Service History and the Edit list. Product rows do show
+  their linked Vieworks.
+- **Empty state** "No Vieworks items available." (`:1035`, `:1049`) offers no next step, though Add and Import exist.
+- **Not a finding**: Vieworks PM plans have no warranty cutoff on purpose (`cutoff = … if normalized == 'genoray'`,
+  `app.py:65502`, `:65664`), so `update_vieworks_item` not calling a PM repair is correct. Server validation (BSID clear,
+  lengths, dates, unknown client) is in `genoray_payload_values` / `vieworks_payload_values` (`:35390`, `:35480`).
+  Permissions are enforced on every route (edit: `can_edit_*`; delete/import/PM: `can_administer_*`). No console or
+  server errors; 375px has no horizontal scroll and no tap under 44px; HTML in names is escaped.
+
+## Execution steps
+
+### Batch 1 — imports, delete, list speed (`app.py`)
+
+1. `import_vieworks_items`: for an existing item that has a `ProductVieworksLink`, if the CSV owner column is present and
+   resolves to a different client than the linked Product's, skip the row and count it in a new `link_conflicts` field;
+   message adds "N row(s) skipped: a linked Vieworks item must stay with its machine's medical center." Done = repro above
+   leaves the item at client 7 and reports 1 conflict.
+2. Both imports: change `room`, `client_id`, start and end date of an existing row only when the CSV has that column
+   (copy the `has_*_column` checks from `import_products`, `app.py:66879`). New rows unchanged. Done = CSV with only
+   Serial + Description keeps owner, dates and room.
+3. Both imports: treat owner "N/A" (any case) as empty; use `csv_find_client_match` and report `fuzzy_owner_matches` plus
+   "N owner name(s) were matched approximately — check them." exactly as `import_products` does. Done = re-importing an
+   export reports 0 unmatched owners.
+4. `delete_vieworks_item` / `delete_genoray_item`: 404 `{'message': 'Vieworks item not found.'}` / `'Genoray item not
+   found.'` when the serial does not exist.
+5. List speed: `genoray_item_to_dict(item, calibration_approval=_MISSING)` and `vieworks_item_to_dict(item,
+   calibration_approval=_MISSING, linked_product=_MISSING)` accept precomputed values (fall back to today's per-item
+   lookups when not given, so other callers keep working). `get_genoray_items` / `get_vieworks_items` load rows with
+   `joinedload(owner)`, make one `latest_approved_calibration_approvals_for_equipment` call for all rows, and (Vieworks)
+   one new `product_vieworks_parent_payload_map(serials)` built like `product_vieworks_link_payload_map` (`app.py:3167`),
+   same payload shape as `product_vieworks_parent_payload`. Add/PUT responses build the dict once. Done = list JSON
+   identical before/after on the DB copy; query count no longer grows with rows.
+6. Remove the unused `role = …` lines in `can_access_genoray_inventory` and `can_access_vieworks_inventory`.
+
+### Batch 2 — page logic and wording (`templates/products.html`)
+
+7. Serial change in brand modes: help text "Serial number can be changed. Its schedules and PM visits move with it, and
+   an activity log is created."; confirm text says the same. After a rename, if `linked_schedule_count` or
+   `pm_visit_count` > 0, toast "Moved N schedule(s) and M PM visit(s) to the new serial." Product mode unchanged.
+8. Count line, empty and no-match texts keep the brand capital: "Showing 2 of 2 Genoray items" (use `inventoryPlural`
+   lower-cased only in product mode).
+9. History subtitle while loading uses the label ("Genoray · SN", from `inventoryLabel` / source label), not the raw
+   `source`.
+10. Brand modes: table header and resize label "Equipment Name", search placeholder "S/N or Equipment Name", freeze option
+    "Equipment Name + Actions" (Jinja `inventory_mode`); product mode keeps "Product Name".
+11. `deleteProduct`: success toast "`<label>` item deleted." / "Product deleted." (all modes).
+12. `openAddModal`: `bsidField.disabled = isStandaloneInventory;` (one line).
+
+### Batch 3 — PM button contrast (`templates/products.html` page CSS)
+
+13. Dark rules (`:root[data-app-theme="dark"]`) for `.product-mobile-pm` and `.product-row-pm`: a dark teal pair (for
+    example text `#5eead4` on `rgba(20,184,166,.16)` with a `#2dd4bf` border — final values measured) so phone text is
+    ≥4.5:1 and the desktop icon ≥3:1 in Graphite and AMOLED; light unchanged. Record the pair in DESIGN.md next to the
+    status pills.
+
+### Batch 4 — linked machine on Vieworks rows, empty state
+
+14. Vieworks rows and phone cards show the linked machine under the name: link icon + "Machine: `<name>` (`<serial>`)",
+    reusing the `.product-linked-vieworks` styles (light and dark already ≥4.5:1). New small `renderVieworksLinkedProduct`;
+    `renderProductLinkedVieworks` unchanged.
+15. Empty state when there are no items at all and `productCanEdit`: "No Genoray items yet. Use Add Genoray Item or
+    Import to create the first one." (no new buttons; "match your filters" text unchanged).
+
+## Deliberately excluded
+
+- **Unused `/api/genoray/summary`, `/api/vieworks/summary` and the duplicate `genoray_summary_for` /
+  `vieworks_summary_for`**: kept on 2026-10-15 on purpose and pinned by tests; not reopened.
+- **Merging the duplicated Genoray/Vieworks route pairs into one source-aware set**: large refactor, not asked for.
+- **Double-click on the Delete confirm**: the second DELETE now returns 404 (step 4) and the row is already gone; no
+  guard added.
+- **BSID formats** `G-00001` vs `V-000001`: existing data, not a defect.
+- **Detector design-system colour drift** (71 hits, template-wide, all modes): not specific to these pages.
+
+## Verification
+
+- New `tests/test_brand_inventory_scan_fixes.py`:
+  - Batch 1: Vieworks import with a different owner for a linked item → item and link unchanged, `link_conflicts == 1`;
+    both imports without owner/date/room columns keep them; "N/A" owner not unmatched; fuzzy match counted; delete
+    missing → 404 for both; list JSON equal to the per-item serializer output for a linked, calibrated and plain row;
+    query count for 1 vs 5 rows equal (SQLAlchemy `before_cursor_execute` counter); no `role =` line in the two access
+    helpers.
+  - Batches 2–4: source checks for the new texts, brand-capital count line, label-based subtitle, "Equipment Name" in
+    brand modes only, delete toast, single `bsidField.disabled = isStandaloneInventory`, dark PM rules,
+    `renderVieworksLinkedProduct`, empty-state text.
+- Positive control: every new test fails on the current code (in-process against `git show HEAD:` sources; never
+  `git stash`).
+- Focused modules: the new file plus `test_genoray_inventory`, `test_vieworks_inventory`, `test_vieworks_parent_link`,
+  `test_product_vieworks_links_history`, `test_product_new_vieworks_inline`, `test_inventory_pm`,
+  `test_product_inventory_batch1`/`batch3`/`batch4`, `test_product_inventory_scan_fixes`, `test_dark_mode_readability`,
+  `test_changelog_coverage`. Full suite not needed (one page and its routes; no shared helper signature changes —
+  the `*_to_dict` defaults keep other callers as they are).
+- Browser (copy of `scheduler.db`, temporary admin in the copy only): both pages — Add, Edit, serial rename (toast counts),
+  Delete (toast), Import (missing columns, "N/A" round trip, Vieworks link conflict), Export, Service History, PM link;
+  Vieworks row shows its machine; empty state; contrast of PM buttons light / Graphite / AMOLED with transitions
+  disabled; 375px no horizontal scroll, taps ≥44px; console clean. Delete the copy and restore `.claude/launch.json`.
+
+## After implementation
+
+- Self-review the diff; confirm `saveProduct`, `deleteProduct`, `handleImport`, `openAddModal`, `openEditModal`,
+  `openProductHistory`, `applyFilters`, `clearProductFilters`, `refreshProductLinkOptions`, `createVieworksFromProduct`,
+  PM links and freeze/resize still work in all three modes (no function, id or handler removed or renamed).
+- Prove the tests fail without the fix, focused modules, browser check, service worker `CACHE_VERSION` bump,
+  `static/changelog/releases.json` entry ("Genoray and Vieworks fixes"), DESIGN.md PM pair, `changes.md`, Status here.
+- On "commit and push": only the intended files (never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files);
+  verify `origin/main` and Railway deployment metadata.
+
+## Risks
+
+- **Import behaviour change**: a CSV that relied on blank columns to clear values no longer clears them, and linked
+  Vieworks rows with a conflicting owner are skipped. Both are reported in the import message; Edit can still clear or
+  unlink.
+- **Serializer change**: a wrong batch map would show the wrong calibration or machine on rows; the equality test against
+  the per-item path is the safety net.
+- Blast radius: `/genoray`, `/vieworks` and their item/import/delete routes; product mode only gets the delete toast and
+  the shared text helpers. No schema change.
+
 # User roles — no hardcoded usernames, role dropdown in Settings, Support Engineer role (4 batches)
 
 **Status:** Executed — published to `main` as `4ab0627` on 2026-10-16 ("Commit and push the User roles change"; owner

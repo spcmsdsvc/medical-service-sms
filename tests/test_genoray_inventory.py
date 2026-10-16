@@ -539,7 +539,7 @@ class GenorayInventoryTests(unittest.TestCase):
             "if(summary.calibration_report_preview_url)", "if(summary.certificate_preview_url)",
             "!isGenorayInventory",
             "Assigned automatically on save", "cannot be cleared once it has been assigned",
-            "bsidField.disabled = isGenorayInventory", "responseData.item || responseData",
+            "bsidField.disabled = isStandaloneInventory", "responseData.item || responseData",
         ):
             self.assertIn(marker, template)
         # The summary route stays; the inventory page no longer calls it (Product Inventory Batch 3).

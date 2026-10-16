@@ -3212,6 +3212,37 @@ def product_vieworks_parent_payload(vieworks_serial):
     }
 
 
+def product_vieworks_parent_payload_map(vieworks_serials):
+    """Batch form of product_vieworks_parent_payload for many Vieworks serials (same shape)."""
+    ensure_product_vieworks_link_table()
+    wanted = {clean_str(serial) or '' for serial in vieworks_serials}
+    links = {
+        row.vieworks_serial: row.product_serial
+        for row in ProductVieworksLink.query.all()
+        if row.vieworks_serial in wanted
+    }
+    products = {
+        product.serial_number: product
+        for product in Product.query.options(joinedload(Product.owner)).filter(
+            Product.serial_number.in_(set(links.values()))
+        ).all()
+    } if links else {}
+    payload = {}
+    for vieworks_serial, product_serial in links.items():
+        product = products.get(product_serial)
+        if not product:
+            continue
+        owner = getattr(product, 'owner', None)
+        payload[vieworks_serial] = {
+            'serial_number': clean_str(getattr(product, 'serial_number', None)) or '',
+            'name': clean_str(getattr(product, 'name', None)) or '',
+            'bsid': normalize_product_bsid(getattr(product, 'bsid', None)),
+            'client_id': clean_int(getattr(product, 'client_id', None)),
+            'client_name': clean_str(getattr(owner, 'name', None)) or 'N/A',
+        }
+    return payload
+
+
 def normalize_product_vieworks_serials(payload):
     """Normalize the Product-only Vieworks multi-select payload."""
     raw = payload.get('linked_vieworks_serials', payload.get('linked_vieworks', []))
@@ -8609,7 +8640,6 @@ def can_access_genoray_inventory(user=None):
     ):
         return False
 
-    role = (getattr(target, 'role', '') or '').strip().lower()
     return bool(
         can_administer_genoray_inventory(target) or
         (
@@ -8690,7 +8720,6 @@ def can_access_vieworks_inventory(user=None):
     ):
         return False
 
-    role = (getattr(target, 'role', '') or '').strip().lower()
     return bool(
         can_administer_vieworks_inventory(target) or
         (
@@ -28020,7 +28049,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v329-user-roles';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v330-genoray-vieworks-scan';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -34883,14 +34912,21 @@ def get_products():
     return jsonify(results)
 
 
-def genoray_item_to_dict(item):
-    """Serialize one standalone Genoray item for the table and mobile cards."""
+_NOT_GIVEN = object()
+
+
+def genoray_item_to_dict(item, calibration_approval=_NOT_GIVEN):
+    """Serialize one standalone Genoray item for the table and mobile cards.
+
+    List routes pass a precomputed calibration approval so one query serves every row.
+    """
     start_date = getattr(item, 'start_warranty_date', None)
     end_date = getattr(item, 'end_warranty_date', None)
     owner = getattr(item, 'owner', None)
-    calibration_approval = latest_approved_calibration_approvals_for_equipment([(item, 'genoray')]).get(
-        ('genoray', item.serial_number.casefold())
-    )
+    if calibration_approval is _NOT_GIVEN:
+        calibration_approval = latest_approved_calibration_approvals_for_equipment([(item, 'genoray')]).get(
+            ('genoray', item.serial_number.casefold())
+        )
     return {
         'serial_number': item.serial_number,
         'name': item.name,
@@ -34955,14 +34991,20 @@ def genoray_summary_for(items):
     return counts
 
 
-def vieworks_item_to_dict(item):
-    """Serialize one standalone Vieworks item for the table and mobile cards."""
+def vieworks_item_to_dict(item, calibration_approval=_NOT_GIVEN, linked_product=_NOT_GIVEN):
+    """Serialize one standalone Vieworks item for the table and mobile cards.
+
+    List routes pass precomputed calibration and machine-link values so the query count stays flat.
+    """
     start_date = getattr(item, 'start_warranty_date', None)
     end_date = getattr(item, 'end_warranty_date', None)
     owner = getattr(item, 'owner', None)
-    calibration_approval = latest_approved_calibration_approvals_for_equipment([(item, 'vieworks')]).get(
-        ('vieworks', item.serial_number.casefold())
-    )
+    if calibration_approval is _NOT_GIVEN:
+        calibration_approval = latest_approved_calibration_approvals_for_equipment([(item, 'vieworks')]).get(
+            ('vieworks', item.serial_number.casefold())
+        )
+    if linked_product is _NOT_GIVEN:
+        linked_product = product_vieworks_parent_payload(item.serial_number)
     return {
         'serial_number': item.serial_number,
         'name': item.name,
@@ -34981,7 +35023,7 @@ def vieworks_item_to_dict(item):
         'source_label': OPERATIONAL_EQUIPMENT_SOURCE_LABELS['vieworks'],
         'with_vieworks_canon': False,
         'linked_vieworks': [],
-        'linked_product': product_vieworks_parent_payload(item.serial_number),
+        'linked_product': linked_product,
         'calibration_summary': calibration_summary_for_approval(calibration_approval, include_urls=True),
     }
 
@@ -35119,8 +35161,17 @@ def get_vieworks_items():
     if not can_access_vieworks_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_vieworks_item_table()
-    items = VieworksItem.query.order_by(VieworksItem.serial_number).all()
-    return jsonify([vieworks_item_to_dict(item) for item in items])
+    items = VieworksItem.query.options(joinedload(VieworksItem.owner)).order_by(VieworksItem.serial_number).all()
+    approvals = latest_approved_calibration_approvals_for_equipment([(item, 'vieworks') for item in items])
+    parents = product_vieworks_parent_payload_map(item.serial_number for item in items)
+    return jsonify([
+        vieworks_item_to_dict(
+            item,
+            calibration_approval=approvals.get(('vieworks', item.serial_number.casefold())),
+            linked_product=parents.get(item.serial_number),
+        )
+        for item in items
+    ])
 
 
 def service_history_asset_payload(source, record):
@@ -35276,8 +35327,15 @@ def get_genoray_items():
     if not can_access_genoray_inventory():
         return jsonify({'message': 'Denied'}), 403
     ensure_genoray_item_table()
-    items = GenorayItem.query.order_by(GenorayItem.serial_number).all()
-    return jsonify([genoray_item_to_dict(item) for item in items])
+    items = GenorayItem.query.options(joinedload(GenorayItem.owner)).order_by(GenorayItem.serial_number).all()
+    approvals = latest_approved_calibration_approvals_for_equipment([(item, 'genoray') for item in items])
+    return jsonify([
+        genoray_item_to_dict(
+            item,
+            calibration_approval=approvals.get(('genoray', item.serial_number.casefold())),
+        )
+        for item in items
+    ])
 
 
 @app.route('/api/genoray/summary', methods=['GET'])
@@ -65945,10 +66003,11 @@ def add_vieworks_item():
 
     link_note = f' (linked machine {linked_product_serial})' if linked_product_serial else ''
     log_activity(f'Added Vieworks equipment: {item.serial_number}{link_note}')
+    item_payload = vieworks_item_to_dict(item)
     return jsonify({
         'status': 'success',
-        'item': vieworks_item_to_dict(item),
-        **vieworks_item_to_dict(item),
+        'item': item_payload,
+        **item_payload,
     })
 
 
@@ -66081,6 +66140,7 @@ def update_vieworks_item(serial_number):
     link_changed = link_present and linked_product_serial.casefold() != (old_product_serial or '').casefold()
     link_note = ' (linked machine)' if link_changed else ''
     log_activity(f'Updated Vieworks equipment: {item.serial_number}{link_note}')
+    item_payload = vieworks_item_to_dict(item)
     return jsonify({
         'status': 'success',
         'serial_changed': new_serial != old_serial,
@@ -66088,8 +66148,8 @@ def update_vieworks_item(serial_number):
         'new_serial': new_serial,
         'linked_schedule_count': schedule_count,
         'pm_visit_count': pm_visit_count,
-        'item': vieworks_item_to_dict(item),
-        **vieworks_item_to_dict(item),
+        'item': item_payload,
+        **item_payload,
     })
 
 
@@ -66104,24 +66164,25 @@ def delete_vieworks_item(serial_number):
     ensure_inventory_pm_visit_table()
     requested_serial = (clean_str(serial_number) or '').upper()
     item = db.session.get(VieworksItem, requested_serial)
-    if item:
-        linked_pm_count = InventoryPmVisit.query.filter_by(
-            brand='vieworks', equipment_serial=item.serial_number
-        ).count()
-        if linked_pm_count:
-            return jsonify({
-                'status': 'blocked',
-                'message': (
-                    f'Cannot delete equipment while {linked_pm_count} '
-                    'planned PM visit(s) reference it.'
-                ),
-                'pm_visit_count': linked_pm_count,
-            }), 409
-        item_name = item.name
-        ProductVieworksLink.query.filter_by(vieworks_serial=item.serial_number).delete(synchronize_session=False)
-        db.session.delete(item)
-        db.session.commit()
-        log_activity(f'Purged Vieworks equipment: {item_name}')
+    if not item:
+        return jsonify({'message': 'Vieworks item not found.'}), 404
+    linked_pm_count = InventoryPmVisit.query.filter_by(
+        brand='vieworks', equipment_serial=item.serial_number
+    ).count()
+    if linked_pm_count:
+        return jsonify({
+            'status': 'blocked',
+            'message': (
+                f'Cannot delete equipment while {linked_pm_count} '
+                'planned PM visit(s) reference it.'
+            ),
+            'pm_visit_count': linked_pm_count,
+        }), 409
+    item_name = item.name
+    ProductVieworksLink.query.filter_by(vieworks_serial=item.serial_number).delete(synchronize_session=False)
+    db.session.delete(item)
+    db.session.commit()
+    log_activity(f'Purged Vieworks equipment: {item_name}')
     return jsonify({'status': 'success'})
 
 
@@ -66149,10 +66210,24 @@ def import_vieworks_items():
         has_contract_column = csv_has_header(
             reader.fieldnames, 'Contract', 'Under Contract', 'Contract Status'
         )
+        # An existing item only changes the fields its CSV actually carries.
+        has_room_column = csv_has_header(reader.fieldnames, 'Room', 'Room Name')
+        has_owner_column = csv_has_header(
+            reader.fieldnames, 'Current Owner', 'Owner', 'Client', 'Client Name',
+            'Medical Center', 'Medical Center Name'
+        )
+        has_start_column = csv_has_header(
+            reader.fieldnames, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date'
+        )
+        has_end_column = csv_has_header(
+            reader.fieldnames, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date'
+        )
         created_count = 0
         updated_count = 0
         skipped_count = 0
         unresolved_owner_count = 0
+        fuzzy_owner_count = 0
+        link_conflict_count = 0
         seen_serials = set()
 
         for row in reader:
@@ -66179,9 +66254,13 @@ def import_vieworks_items():
                 row, 'Current Owner', 'Owner', 'Client', 'Client Name',
                 'Medical Center', 'Medical Center Name'
             ))
-            client_id = csv_find_client_id(owner_name)
+            if (owner_name or '').casefold() == 'n/a':
+                owner_name = ''
+            client_id, exact_owner = csv_find_client_match(owner_name)
             if owner_name and not client_id:
                 unresolved_owner_count += 1
+            elif client_id and not exact_owner:
+                fuzzy_owner_count += 1
 
             start_value = csv_get(row, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date')
             end_value = csv_get(row, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date')
@@ -66195,16 +66274,28 @@ def import_vieworks_items():
                 continue
 
             existing = db.session.get(VieworksItem, serial)
+            if existing and has_owner_column:
+                # A linked item must stay with its machine's medical center (same rule as Edit).
+                links = product_vieworks_linked_items(vieworks_serial=existing.serial_number)
+                parent = db.session.get(Product, links[0][0].product_serial) if links else None
+                if parent and clean_int(parent.client_id) != clean_int(client_id):
+                    link_conflict_count += 1
+                    skipped_count += 1
+                    continue
             contract_value = parse_bool_flag(
                 csv_get(row, 'Contract', 'Under Contract', 'Contract Status')
             ) if has_contract_column else None
 
             if existing:
                 existing.name = product_name
-                existing.room = room
-                existing.client_id = client_id
-                existing.start_warranty_date = start_date
-                existing.end_warranty_date = end_date
+                if has_room_column:
+                    existing.room = room
+                if has_owner_column:
+                    existing.client_id = client_id
+                if has_start_column:
+                    existing.start_warranty_date = start_date
+                if has_end_column:
+                    existing.end_warranty_date = end_date
                 if has_contract_column:
                     existing.under_contract = contract_value
                 # CSV updates intentionally preserve the stored BSID, including
@@ -66231,6 +66322,13 @@ def import_vieworks_items():
         )
         if unresolved_owner_count:
             message += f' {unresolved_owner_count} owner name(s) were not matched and were left blank.'
+        if fuzzy_owner_count:
+            message += f' {fuzzy_owner_count} owner name(s) were matched approximately — check them.'
+        if link_conflict_count:
+            message += (
+                f' {link_conflict_count} row(s) skipped: a linked Vieworks item must stay with '
+                "its machine's medical center."
+            )
         log_activity(
             f'Imported Vieworks CSV: {created_count} created, '
             f'{updated_count} updated, {skipped_count} skipped'
@@ -66242,6 +66340,8 @@ def import_vieworks_items():
             'updated': updated_count,
             'skipped': skipped_count,
             'unresolved_owners': unresolved_owner_count,
+            'fuzzy_owner_matches': fuzzy_owner_count,
+            'link_conflicts': link_conflict_count,
             'total': total,
         })
     except UnicodeDecodeError:
@@ -66337,10 +66437,11 @@ def add_genoray_item():
         return jsonify({'message': 'Unable to add Genoray item. Please try again.'}), 500
 
     log_activity(f'Added Genoray equipment: {item.serial_number}')
+    item_payload = genoray_item_to_dict(item)
     return jsonify({
         'status': 'success',
-        'item': genoray_item_to_dict(item),
-        **genoray_item_to_dict(item),
+        'item': item_payload,
+        **item_payload,
     })
 
 
@@ -66451,6 +66552,7 @@ def update_genoray_item(serial_number):
         return jsonify({'message': 'Unable to update Genoray item. Please try again.'}), 500
 
     log_activity(f'Updated Genoray equipment: {item.serial_number}')
+    item_payload = genoray_item_to_dict(item)
     return jsonify({
         'status': 'success',
         'serial_changed': new_serial != old_serial,
@@ -66458,8 +66560,8 @@ def update_genoray_item(serial_number):
         'new_serial': new_serial,
         'linked_schedule_count': schedule_count,
         'pm_visit_count': pm_visit_count,
-        'item': genoray_item_to_dict(item),
-        **genoray_item_to_dict(item),
+        'item': item_payload,
+        **item_payload,
     })
 
 
@@ -66473,23 +66575,24 @@ def delete_genoray_item(serial_number):
     ensure_inventory_pm_visit_table()
     requested_serial = (clean_str(serial_number) or '').upper()
     item = db.session.get(GenorayItem, requested_serial)
-    if item:
-        linked_pm_count = InventoryPmVisit.query.filter_by(
-            brand='genoray', equipment_serial=item.serial_number
-        ).count()
-        if linked_pm_count:
-            return jsonify({
-                'status': 'blocked',
-                'message': (
-                    f'Cannot delete equipment while {linked_pm_count} '
-                    'planned PM visit(s) reference it.'
-                ),
-                'pm_visit_count': linked_pm_count,
-            }), 409
-        item_name = item.name
-        db.session.delete(item)
-        db.session.commit()
-        log_activity(f'Purged Genoray equipment: {item_name}')
+    if not item:
+        return jsonify({'message': 'Genoray item not found.'}), 404
+    linked_pm_count = InventoryPmVisit.query.filter_by(
+        brand='genoray', equipment_serial=item.serial_number
+    ).count()
+    if linked_pm_count:
+        return jsonify({
+            'status': 'blocked',
+            'message': (
+                f'Cannot delete equipment while {linked_pm_count} '
+                'planned PM visit(s) reference it.'
+            ),
+            'pm_visit_count': linked_pm_count,
+        }), 409
+    item_name = item.name
+    db.session.delete(item)
+    db.session.commit()
+    log_activity(f'Purged Genoray equipment: {item_name}')
     return jsonify({'status': 'success'})
 
 
@@ -66517,10 +66620,23 @@ def import_genoray_items():
         has_contract_column = csv_has_header(
             reader.fieldnames, 'Contract', 'Under Contract', 'Contract Status'
         )
+        # An existing item only changes the fields its CSV actually carries.
+        has_room_column = csv_has_header(reader.fieldnames, 'Room', 'Room Name')
+        has_owner_column = csv_has_header(
+            reader.fieldnames, 'Current Owner', 'Owner', 'Client', 'Client Name',
+            'Medical Center', 'Medical Center Name'
+        )
+        has_start_column = csv_has_header(
+            reader.fieldnames, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date'
+        )
+        has_end_column = csv_has_header(
+            reader.fieldnames, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date'
+        )
         created_count = 0
         updated_count = 0
         skipped_count = 0
         unresolved_owner_count = 0
+        fuzzy_owner_count = 0
         seen_serials = set()
 
         for row in reader:
@@ -66547,9 +66663,13 @@ def import_genoray_items():
                 row, 'Current Owner', 'Owner', 'Client', 'Client Name',
                 'Medical Center', 'Medical Center Name'
             ))
-            client_id = csv_find_client_id(owner_name)
+            if (owner_name or '').casefold() == 'n/a':
+                owner_name = ''
+            client_id, exact_owner = csv_find_client_match(owner_name)
             if owner_name and not client_id:
                 unresolved_owner_count += 1
+            elif client_id and not exact_owner:
+                fuzzy_owner_count += 1
 
             start_value = csv_get(row, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date')
             end_value = csv_get(row, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date')
@@ -66570,10 +66690,14 @@ def import_genoray_items():
 
             if existing:
                 existing.name = product_name
-                existing.room = room
-                existing.client_id = client_id
-                existing.start_warranty_date = start_date
-                existing.end_warranty_date = end_date
+                if has_room_column:
+                    existing.room = room
+                if has_owner_column:
+                    existing.client_id = client_id
+                if has_start_column:
+                    existing.start_warranty_date = start_date
+                if has_end_column:
+                    existing.end_warranty_date = end_date
                 if has_contract_column:
                     existing.under_contract = contract_value
                 updated_count += 1
@@ -66598,6 +66722,8 @@ def import_genoray_items():
         )
         if unresolved_owner_count:
             message += f' {unresolved_owner_count} owner name(s) were not matched and were left blank.'
+        if fuzzy_owner_count:
+            message += f' {fuzzy_owner_count} owner name(s) were matched approximately — check them.'
         log_activity(
             f'Imported Genoray CSV: {created_count} created, '
             f'{updated_count} updated, {skipped_count} skipped'
@@ -66609,6 +66735,7 @@ def import_genoray_items():
             'updated': updated_count,
             'skipped': skipped_count,
             'unresolved_owners': unresolved_owner_count,
+            'fuzzy_owner_matches': fuzzy_owner_count,
             'total': total,
         })
     except UnicodeDecodeError:
