@@ -5251,6 +5251,29 @@ function syncStandaloneTSRAddressFromSchedule(schedule){
   return true;
 }
 
+// Draft reopen only (openStandaloneTSRDraft): the schedule's equipment may have been corrected on
+// Calendar after the draft was saved, and both fields are locked here. Saved TSRs never reach this.
+function syncStandaloneTSREquipmentFromSchedule(schedule){
+  if(!standaloneScheduleOptionsAreLive || !schedule) return false;
+  if(isOnlineTSRRevisionMode() || isOnlineTSRCalibrationMode()) return false;
+  const matchedSchedule = standaloneScheduleOptions.find(item =>
+    item === schedule && isSameScheduleSelection(selectedStandaloneScheduleId, item)
+  );
+  if(!matchedSchedule) return false;
+  const nextModel = String(schedule.product_name || '');
+  if(!nextModel.trim()) return false;
+
+  let changed = false;
+  [['tsr-equipment-model', nextModel], ['tsr-serial-no', String(schedule.product_id || '')]].forEach(([id, value]) => {
+    const field = document.getElementById(id);
+    if(field && field.value !== value){
+      field.value = value;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function applyStandaloneTSRDraftData(data){
   if(!data){
     initializeBlankStandaloneTSR();
@@ -6719,8 +6742,12 @@ async function openStandaloneTSRDraft(id){
       console.warn('[Offline TSR] Schedule refresh before draft open failed', err);
     }
     applyStandaloneTSRDraftData(Object.assign({}, record.payload, { _draft_id: record.id }));
+    const equipmentRefreshed = hasStandaloneScheduleSelection() && syncStandaloneTSREquipmentFromSchedule(
+      standaloneScheduleOptions.find(item => isSameScheduleSelection(selectedStandaloneScheduleId, item))
+    );
     const draftMessage = hasStandaloneScheduleSelection()
-      ? (record.source === 'server_draft' ? 'Loaded saved TSR draft from your account backup.' : 'Loaded saved TSR draft from this device.')
+      ? (record.source === 'server_draft' ? 'Loaded saved TSR draft from your account backup.' : 'Loaded saved TSR draft from this device.') +
+        (equipmentRefreshed ? ' Equipment updated from the edited schedule. Check the Calibration Report if one was started.' : '')
       : (awaitingScheduleRepick
         ? 'Loaded saved TSR draft. Everything you typed is still here, but its schedule is no longer in your list — pick the schedule again to continue and save.'
         : 'Loaded saved TSR draft for visibility. Select a schedule first to continue editing or saving.');

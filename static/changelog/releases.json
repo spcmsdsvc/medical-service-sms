@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-18-tsr-draft-equipment",
+      "release_date": "2026-10-18",
+      "title": "TSR drafts show the corrected equipment",
+      "summary": "Reopening a TSR draft shows the schedule's current equipment.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-18-tsr-draft-equipment-refresh",
+          "category": "TSR",
+          "description": "If you change the equipment on a schedule after saving a TSR draft, reopening the draft now shows the new Equipment Model and Serial No. Everything else you typed, including signatures, stays as saved."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-16-calibration-signature",
       "release_date": "2026-10-16",
       "title": "Calibration Report signature",

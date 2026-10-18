@@ -573,6 +573,60 @@ class TSRAddressRehydrationTests(unittest.TestCase):
         self.assertNotIn('submission.payload.', correction)
 
 
+class TSRDraftEquipmentRefreshTests(unittest.TestCase):
+    """Reopening a draft shows the schedule's corrected equipment; saved TSRs are never touched."""
+
+    HELPER_CALL = 'syncStandaloneTSREquipmentFromSchedule('
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tsr = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+
+    def section(self, start, end='\nfunction '):
+        self.assertIn(start, self.tsr)
+        return self.tsr.split(start, 1)[1].split(end, 1)[0]
+
+    def test_helper_sets_only_model_and_serial_from_the_live_matched_schedule(self):
+        helper = self.section('function syncStandaloneTSREquipmentFromSchedule(')
+        for guard in (
+            'if(!standaloneScheduleOptionsAreLive || !schedule) return false;',
+            'isOnlineTSRRevisionMode()',
+            'isOnlineTSRCalibrationMode()',
+            'item === schedule && isSameScheduleSelection(selectedStandaloneScheduleId, item)',
+            'if(!nextModel.trim()) return false;',
+        ):
+            self.assertIn(guard, helper, guard)
+        self.assertIn("String(schedule.product_name || '')", helper)
+        self.assertIn("['tsr-serial-no', String(schedule.product_id || '')]", helper)
+        self.assertIn("'tsr-equipment-model'", helper)
+        self.assertIn('field.value = value;', helper)
+        for forbidden in ('setFieldValue(', 'dispatchEvent(', 'saveStandaloneTSRDraft', 'tsr-address',
+                          'clearStandaloneTSRWorkFieldsForScheduleChange', 'applyScheduleToStandaloneTSR'):
+            self.assertNotIn(forbidden, helper, forbidden)
+
+    def test_open_draft_refreshes_equipment_after_applying_the_draft(self):
+        open_draft = self.section('async function openStandaloneTSRDraft(', '\nasync function ')
+        apply_at = open_draft.find('applyStandaloneTSRDraftData(')
+        sync_at = open_draft.find(self.HELPER_CALL)
+        message_at = open_draft.find("showTSRStatus(draftMessage")
+        self.assertGreaterEqual(apply_at, 0)
+        self.assertGreater(sync_at, apply_at, 'equipment refresh must follow draft hydration')
+        self.assertGreater(message_at, sync_at)
+        self.assertIn('hasStandaloneScheduleSelection() && ' + self.HELPER_CALL, open_draft)
+        self.assertIn('Equipment updated from the edited schedule.', open_draft)
+        self.assertNotIn('saveStandaloneTSRDraft(', open_draft)
+
+    def test_saved_tsr_paths_never_refresh_equipment(self):
+        # applyStandaloneTSRDraftData also hydrates corrections, late Calibration Reports and copies.
+        self.assertNotIn(self.HELPER_CALL, self.section('function applyStandaloneTSRDraftData('))
+        self.assertNotIn(self.HELPER_CALL, self.section('function syncStandaloneTSRAddressFromSchedule('))
+        self.assertNotIn(self.HELPER_CALL, self.section('async function loadOnlineTSRRevisionFromUrl(', '\nasync function '))
+        self.assertNotIn(self.HELPER_CALL, self.section('async function refreshStandaloneScheduleOptions(',
+                                                        '\nfunction clearStandaloneTSRWorkFieldsForScheduleChange'))
+        # One definition plus the single draft-open call.
+        self.assertEqual(self.tsr.count(self.HELPER_CALL), 2)
+
+
 class ServiceWorkerCacheVersionTests(unittest.TestCase):
     def test_the_cache_version_moved_for_the_changed_shell(self):
         """/offline-tsr is precached, so devices need the new copy of the page."""

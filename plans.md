@@ -37,6 +37,117 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# TSR draft — refresh equipment model and serial from the edited schedule (1 batch)
+
+**Status:** Executed locally 2026-10-18, not committed (on "Execute the TSR draft equipment refresh plan in
+plans.md."). Approved 2026-10-18 ("Approved. Record it in plans.md."). One commit. Browser check also confirmed both
+signatures survive a page reload plus the equipment refresh (owner asked); Review & Save TSR not run in the browser.
+
+### Amendments during execution
+
+- Step 2 moved: `applyStandaloneTSRDraftData` is also called by the online correction load (`:5418`), the late
+  Calibration Report load (`:5710`) and the copy/version load (`:6696`), so calling the helper inside it would reach
+  saved TSRs. The helper is called from `openStandaloneTSRDraft` instead, right after `applyStandaloneTSRDraftData`,
+  with the live option matching `selectedStandaloneScheduleId`. The note is appended to the existing "Loaded saved TSR
+  draft…" status (a separate `showTSRStatus` would be overwritten by it). The helper also returns early in
+  `isOnlineTSRCalibrationMode()`. Test (2) checks `openStandaloneTSRDraft`, and that `applyStandaloneTSRDraftData` does
+  not call the helper.
+
+## Context
+
+Owner scenario (2026-10-18): an engineer picks the wrong machine on a schedule, creates a TSR and saves a draft, then
+corrects the schedule's equipment on Calendar. Reopening the draft still shows the old (wrong) Equipment Model and
+Serial No. Both fields are locked on the Create TSR page, so the engineer cannot fix them there; the only workaround is
+to re-pick the schedule. Intended outcome: reopening the draft shows the schedule's current equipment, and nothing else
+the engineer typed changes.
+
+## Decisions taken (owner, 2026-10-18)
+
+- Reopening a draft refreshes Equipment Model and Serial No. from the live schedule (owner: "Plan a fix so reopening a
+  TSR draft refreshes equipment model and serial from the edited schedule").
+- Only those two fields. All other draft work (complaint, actions, parts, signatures, attachments, times, dates) stays
+  as saved.
+
+## Investigation (verified 2026-10-18, code read only)
+
+- The draft is a frozen snapshot. Server copy: `TsrDraft.payload_json` (`app.py:3854–3875`); device copy: IndexedDB /
+  localStorage. No schedule-edit route touches `TsrDraft` (every `TsrDraft.query` is in the draft routes,
+  `app.py:18970–19602`).
+- `applyStandaloneTSRDraftData` (`templates/offline_tsr.html:5254`) copies every `.tsr-field` from the draft (`:5265`),
+  including `tsr-equipment-model` and `tsr-serial-no`. In the matched-schedule branch (`:5282–5285`) it only calls
+  `syncStandaloneTSRAddressFromSchedule(matchedOption)`, which refreshes the address and the snapshot, nothing else
+  (`:5237–5252`; guarded by `standaloneScheduleOptionsAreLive` and not revision mode).
+- `renderSelectedStandaloneScheduleCard(matchedOption)` (`:5299`) then shows the live schedule card, so the card shows
+  the new machine while the locked fields keep the old one.
+- `openStandaloneTSRDraft` awaits `refreshStandaloneScheduleOptions(false)` before applying the draft (pinned by
+  `tests/test_offline_resilience.py:491`), so live options exist when the matched branch runs online.
+- A fresh pick fills the fields from the schedule: `applyScheduleToStandaloneTSR` sets `tsr-equipment-model` ←
+  `schedule.product_name`, `tsr-serial-no` ← `schedule.product_id` (`:2746–2747`).
+- Saving reads the form fields (`:3484`), so the TSR records whatever the fields show.
+- `syncStandaloneTSRAddressFromSchedule` is also called on schedule refresh (`:2537`), the online correction load
+  (`:5412`) and the late Calibration Report load for a saved TSR (`:5694`). Changing equipment there would touch saved
+  TSRs, so that helper must stay address-only; existing tests pin it (`tests/test_offline_resilience.py:441–489`:
+  no `setFieldValue(`, no `dispatchEvent(`, no save call in the helper).
+
+## Execution steps
+
+1. `templates/offline_tsr.html`: add `syncStandaloneTSREquipmentFromSchedule(schedule)` next to
+   `syncStandaloneTSRAddressFromSchedule`. Same guards (return `false` unless `standaloneScheduleOptionsAreLive`, not
+   `isOnlineTSRRevisionMode()`, and the schedule is the live matched option). If `schedule.product_name` is empty, do
+   nothing (no-equipment schedules keep the draft's values). Otherwise set `tsr-equipment-model` ← `product_name` and
+   `tsr-serial-no` ← `product_id` by direct `.value` assignment (no `setFieldValue`, no `dispatchEvent`, no save). Return
+   `true` when either value changed. Done: helper exists, returns true only on a real change.
+2. `applyStandaloneTSRDraftData`, matched branch only: call the new helper right after
+   `syncStandaloneTSRAddressFromSchedule(matchedOption);`. When it returns `true`, after the `finally` block call
+   `showTSRStatus('Equipment updated from the edited schedule. Check the Calibration Report if one was started.',
+   'info')`. Done: the other three callers of the address helper are unchanged.
+3. No change to the draft-list title/subtitle; they update on the next autosave or save.
+
+## Deliberately excluded
+
+- Calling the new helper on schedule refresh (`:2537`), online correction (`:5412`) or late Calibration Report
+  (`:5694`): those touch saved TSRs or revision mode, where equipment changes go through the correction flow.
+- Rewriting stored drafts on the server or device when a schedule is edited: drafts are never rewritten in bulk (comment
+  at `:5271–5274`); the fix applies when the draft is opened.
+- Resetting the Calibration Report when equipment changes: it may hold real work; the status message tells the engineer
+  to check it.
+- Offline reopen (cached options): `standaloneScheduleOptionsAreLive` is false, so the draft keeps its saved values, same
+  as the address today.
+
+## Verification
+
+- New tests in `tests/test_offline_resilience.py`: (1) the new helper exists, has the live/revision guards, the empty
+  `product_name` guard, assigns both field values, and has no `setFieldValue(`, `dispatchEvent(` or save call;
+  (2) in `applyStandaloneTSRDraftData` the matched branch calls it after the address sync, and the `else if` /
+  `else` branches do not; (3) the three other address-helper callers do not call it.
+- Positive control: run the new tests in-process against `git show HEAD:templates/offline_tsr.html` (never
+  `git stash`); each must fail there.
+- Focused modules: `tests.test_offline_resilience`, `tests.test_tsr_draft_sync`. No full suite (one page only).
+- Browser check on a copy of `scheduler.db` with an engineer test account: schedule with product A → Create TSR, type a
+  complaint, save draft → edit the schedule to product B on Calendar → reopen the draft: model/serial show B, complaint
+  kept, status message shown; reopen again with no change: no message; a no-equipment schedule draft keeps its values;
+  Review & Save TSR records B. 375 px, console and server log clean. Clean up the DB copy, test account and launch
+  entry.
+
+## After implementation
+
+- Self-review the diff; confirm `applyStandaloneTSRDraftData`, `openStandaloneTSRDraft`,
+  `syncStandaloneTSRAddressFromSchedule`, `applyScheduleToStandaloneTSR`, save draft, Review & Save TSR, attachments
+  and signatures still work, and no id or handler was removed.
+- Prove the new tests fail without the fix, focused modules, browser check, service worker `CACHE_VERSION` bump in
+  `app.py:28074` (v332 → v333), `static/changelog/releases.json` entry ("TSR drafts show the corrected equipment"),
+  `changes.md`, Status here.
+- On "commit and push": only `templates/offline_tsr.html`, `tests/test_offline_resilience.py`, `app.py` (SW bump),
+  `static/changelog/releases.json`, `plans.md`, `changes.md`; never `scheduler.db`, `output/`, `tmp/`, handoffs or
+  other dirty files. Verify `origin/main` and Railway deployment metadata.
+
+## Risks
+
+- A draft for a schedule whose equipment was changed on purpose to a different machine now shows the new one — that is
+  the intended behaviour; the status message makes it visible.
+- Blast radius: the Create TSR page's draft reopen only. Saved TSRs, corrections and late Calibration Reports are
+  untouched (excluded callers, pinned by test 3).
+
 # TSR without equipment — update two tests to the User roles rule (1 batch, tests only)
 
 **Status:** Executed (2026-10-16, on "commit and push together", taken as the go-ahead). Published to `main` as `73315f9`
