@@ -37,6 +37,121 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Mailjet fallback — send through Mailjet when Brevo refuses an email (1 batch)
+
+**Status:** Executed, not committed — 2026-10-19, on "Execute the Mailjet fallback plan in plans.md. Don't publish yet." Approved 2026-10-19 ("approved"), detailed 2026-10-19.
+
+### Amendments during execution
+
+- The fallback decision lives in one helper, `send_with_mailjet_fallback(brevo_result, ...)`, called by both gateways,
+  with `mailjet_is_configured()` and `EMAIL_FALLBACK_SKIP_REASONS` beside it, instead of repeating the check in each
+  gateway.
+- Positive control: with `HEAD`'s `app.py`, 4 of the 7 new tests fail (the Brevo-fails cases); the other 3 pass, as
+  expected. Focused email modules: 30 tests OK. Full suite: 2175 tests, no new failures against `tests/known_failures.txt`.
+
+## Context
+
+Brevo's free plan allows 300 emails a day. September 2026 averaged ~185 per working day (4,048 for the month), but
+2026-10-19 hit 301. Today, when Brevo refuses an email it is lost: the send returns `False`, one `[EMAIL] Brevo failed`
+log line is printed, and nothing retries. The owner chose a free second provider as an automatic backup instead of a
+paid Brevo plan or a retry queue.
+
+## Decisions taken (owner, 2026-10-19)
+
+- **Option A**: on a Brevo failure, send the same email immediately through Mailjet (free, 200/day, 6,000/month).
+  Option B (save and retry after midnight) and a paid Brevo plan were not chosen.
+- Mailjet sender `spcmsdsvc@gmail.com` (the same address Brevo uses, `MAIL_SENDER_EMAIL`) is verified and **Active**
+  in Mailjet as a Transactional sender — single-address verification, no DNS needed.
+- `MAILJET_API_KEY` and `MAILJET_SECRET_KEY` are already set in Railway (owner, 2026-10-19; redeployed). They are
+  unused until this code ships. Keys are never written to the repo or the chat.
+- A rare duplicate (Brevo timed out but actually sent, then Mailjet also sends) is acceptable; a lost email is not.
+
+## Investigation (verified 2026-10-19, code read)
+
+- Email config: `app.py:199-222` — sender `SMTP_SENDER_EMAIL`/`SMTP_SENDER_NAME` (from `MAIL_SENDER_*`),
+  `EMAIL_NOTIFICATIONS_ENABLED`, `EMAIL_PROVIDER` (default `brevo`), `BREVO_API_KEY`, `BREVO_API_URL`,
+  `BREVO_TIMEOUT`.
+- `send_brevo_email_notification(to_emails, subject, text_body, html_body)` (`app.py:12510`) and
+  `send_brevo_email_with_attachments(..., attachments, cc_emails)` (`app.py:12581`) return `(ok, message)`. Non-Brevo
+  refusal reasons they return: `'Email notifications disabled.'`, `'No recipient email addresses.'`,
+  `'BREVO_API_KEY is not configured.'`. API failures return `'Brevo failed: <status> <body>'`; exceptions return
+  `str(error)`.
+- Attachments are dicts with `display_name`/`original_filename`/`filename` and `path` (`app.py:12628-12638`); missing
+  files are skipped. CC goes through `normalize_email_list(cc_emails)`.
+- **The two Brevo functions are called only by the two gateways**: `send_email_with_attachments` (`app.py:12666`,
+  calls Brevo at `12671`) and `send_email_notification` (`app.py:12735`, calls Brevo at `12740`). Every module
+  (schedule, TSR client email, travel, reimbursement, cash advance, liquidations, LPR, leave) sends through these, so
+  one change in each gateway covers all pages.
+- No existing tests reference `send_brevo_*` or `BREVO_API`. Related email tests: `tests/test_schedule_email_attachments.py`,
+  `tests/test_tsr_email_preview_cc.py`, `tests/test_email_recipient_settings.py`, `tests/test_email_template_settings.py`.
+
+## Execution steps
+
+1. **Config** (`app.py`, after `BREVO_TIMEOUT`, line 222): `MAILJET_API_KEY`, `MAILJET_SECRET_KEY` from env;
+   `MAILJET_API_URL` default `https://api.mailjet.com/v3.1/send`. Done: config reads them; absent → `None`.
+2. **`send_mailjet_email(to_emails, subject, text_body, html_body=None, attachments=None, cc_emails=None)`**
+   (`app.py`, after `send_brevo_email_with_attachments`): returns `(False, 'Mailjet is not configured.')` when either
+   key is missing. Same recipient de-duplication as Brevo, `normalize_email_list` for CC, same sender email/name.
+   POST `{"Messages": [{From, To, Cc?, Subject, TextPart, HTMLPart?, Attachments?}]}` with
+   `auth=(api_key, secret_key)`, `timeout=BREVO_TIMEOUT`. Attachments: same name/path rules as Brevo, base64
+   `Base64Content`, `ContentType` from `mimetypes.guess_type` (fallback `application/octet-stream`). Success = 2xx and
+   `Messages[0].Status == 'success'`. Logs `[EMAIL] Mailjet fallback success/failed/exception …` (recipients only, never
+   keys). Done: returns `(True, 'Mailjet email sent to N recipient(s).')` on success.
+3. **Gateway fallback** (`send_email_notification` and `send_email_with_attachments`): in the `provider == 'brevo'`
+   branch, call Brevo; if `ok`, return it. If the message is `'Email notifications disabled.'` or
+   `'No recipient email addresses.'`, return Brevo's result unchanged. Otherwise print
+   `[EMAIL] Brevo failed, trying Mailjet fallback: <reason>` and return `send_mailjet_email(...)` — except when Mailjet
+   is not configured, in which case return Brevo's original result (so behaviour is identical to today without keys).
+   Done: Brevo functions themselves are untouched; SMTP branch untouched.
+4. **Tests** — new `tests/test_email_fallback.py`, patching `app.requests.post` (no real sends) and the Mailjet config:
+   - Brevo 2xx → one POST (Brevo), Mailjet not called.
+   - Brevo 4xx (e.g. 429 quota) → second POST to the Mailjet URL with the same to/subject/text/html; returns `True`.
+   - Attachments gateway: Brevo fails → Mailjet payload carries CC and a base64 attachment from a temp file.
+   - Brevo raises an exception → Mailjet is tried.
+   - Mailjet keys absent → Brevo's original `(False, 'Brevo failed: …')` returned, only one POST.
+   - `EMAIL_NOTIFICATIONS_ENABLED=False` → no POST at all.
+   - Mailjet returns 2xx with `Status: 'error'` → `False`.
+   Positive control: run the fallback tests against `HEAD` (gateways without the fallback) — the Brevo-fails cases
+   must fail.
+
+## Deliberately excluded
+
+- **Retry queue / delayed resend** (option B): not chosen; a lost email after both providers fail stays lost, as today.
+- **Brevo functions, SMTP path, `EMAIL_PROVIDER` values**: unchanged; Mailjet is a fallback only, never the primary.
+- **Daily counters, dashboards, admin settings UI** for the fallback: Railway logs are enough.
+- **Page or template changes**: none; no service worker bump, no `?v=` bump.
+
+## Verification
+
+- Focused: `tests.test_email_fallback`, `tests.test_schedule_email_attachments`, `tests.test_tsr_email_preview_cc`,
+  `tests.test_email_recipient_settings`, `tests.test_email_template_settings`.
+- Gateways are shared `app.py` helpers, so run the full suite once before publishing:
+  `venv/Scripts/python.exe scripts/run_suite.py` from the main project folder.
+- No browser check: nothing renders differently. Do **not** add Mailjet keys to the local `.env` (a local run with a
+  missing Brevo key would then email real people through Mailjet).
+
+## After implementation
+
+- Self-review: both gateways still return `(ok, message)`; every caller of `send_email_notification` /
+  `send_email_with_attachments` is unchanged; no key is printed in any log line.
+- No `static/changelog/releases.json` entry (no user-visible change) unless the owner wants one.
+- `changes.md` entry; this Status line with the commit hash; memory note.
+- On "commit and push": only `app.py`, `tests/test_email_fallback.py`, and this plan's `plans.md`/`changes.md` text.
+  Never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files. Verify `origin/main` and Railway deployment
+  metadata.
+- **Owner's live test after publishing**: in Railway set `BREVO_API_KEY` to a wrong value, trigger one notification to
+  yourself, confirm it arrives (inbox, not spam) and that the logs show `Mailjet fallback success`, then restore the
+  real `BREVO_API_KEY`. Both variable changes redeploy, so do it at a quiet time.
+
+## Risks
+
+- **Spam placement**: Mailjet sending "as" a Gmail address may land in spam more often than Brevo (Mailjet warned when
+  the sender was added). Safety net: the owner's live test; Brevo stays primary, so only overflow emails are affected.
+- **Duplicates**: a Brevo timeout that actually delivered, followed by a Mailjet send. Accepted by the owner.
+- **Both providers full** (>500/day): the email is lost, as today, with both failures in the logs.
+- **Blast radius**: every email in the app passes through the two gateways; the fallback only runs after a Brevo
+  failure, and with no Mailjet keys the code path returns exactly what it returns today.
+
 # Download approved package — one button in Approvals that downloads what the approval email attaches (1 batch)
 
 **Status:** Executed locally, not committed (2026-10-19, on "Execute the Download approved package plan in plans.md.

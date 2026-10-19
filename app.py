@@ -220,6 +220,10 @@ app.config['EMAIL_PROVIDER'] = os.environ.get('EMAIL_PROVIDER', 'brevo').strip()
 app.config['BREVO_API_KEY'] = os.environ.get('BREVO_API_KEY')
 app.config['BREVO_API_URL'] = os.environ.get('BREVO_API_URL', 'https://api.brevo.com/v3/smtp/email')
 app.config['BREVO_TIMEOUT'] = int(os.environ.get('BREVO_TIMEOUT', '12'))
+# Mailjet is a fallback only: used when Brevo refuses an email (e.g. the free daily limit).
+app.config['MAILJET_API_KEY'] = os.environ.get('MAILJET_API_KEY')
+app.config['MAILJET_SECRET_KEY'] = os.environ.get('MAILJET_SECRET_KEY')
+app.config['MAILJET_API_URL'] = os.environ.get('MAILJET_API_URL', 'https://api.mailjet.com/v3.1/send')
 
 
 def env_flag_enabled(name, default=False):
@@ -12663,12 +12667,114 @@ def send_brevo_email_with_attachments(to_emails, subject, text_body, html_body=N
         return False, str(brevo_error)
 
 
+def mailjet_is_configured():
+    return bool(app.config.get('MAILJET_API_KEY') and app.config.get('MAILJET_SECRET_KEY'))
+
+
+# Brevo refusals that are not Brevo's fault; Mailjet would refuse them too.
+EMAIL_FALLBACK_SKIP_REASONS = {'Email notifications disabled.', 'No recipient email addresses.'}
+
+
+def send_mailjet_email(to_emails, subject, text_body, html_body=None, attachments=None, cc_emails=None):
+    """Send email through the Mailjet API. Used as the fallback when Brevo fails."""
+    if not app.config.get('EMAIL_NOTIFICATIONS_ENABLED'):
+        return False, 'Email notifications disabled.'
+
+    if not mailjet_is_configured():
+        return False, 'Mailjet is not configured.'
+
+    clean_recipients = []
+    seen = set()
+    for email_addr in to_emails or []:
+        email_addr = clean_str(email_addr)
+        if not email_addr:
+            continue
+        normalized = email_addr.lower()
+        if normalized not in seen:
+            seen.add(normalized)
+            clean_recipients.append(email_addr)
+
+    if not clean_recipients:
+        return False, 'No recipient email addresses.'
+
+    sender_email = app.config.get('SMTP_SENDER_EMAIL') or app.config.get('SMTP_USERNAME')
+    sender_name = app.config.get('SMTP_SENDER_NAME') or 'SPC-Medical Service Scheduler'
+
+    message = {
+        'From': {'Email': sender_email, 'Name': sender_name},
+        'To': [{'Email': email_addr} for email_addr in clean_recipients],
+        'Subject': subject,
+        'TextPart': text_body
+    }
+
+    clean_cc_recipients = normalize_email_list(cc_emails)
+    if clean_cc_recipients:
+        message['Cc'] = [{'Email': email_addr} for email_addr in clean_cc_recipients]
+
+    if html_body:
+        message['HTMLPart'] = html_body
+
+    attachment_payload = []
+    for attachment in attachments or []:
+        filename = attachment.get('display_name') or attachment.get('original_filename') or attachment.get('filename')
+        file_path = attachment.get('path')
+        if not filename or not file_path or not os.path.exists(file_path):
+            continue
+
+        with open(file_path, 'rb') as file_obj:
+            attachment_payload.append({
+                'ContentType': mimetypes.guess_type(filename)[0] or 'application/octet-stream',
+                'Filename': filename,
+                'Base64Content': base64.b64encode(file_obj.read()).decode('ascii')
+            })
+
+    if attachment_payload:
+        message['Attachments'] = attachment_payload
+
+    try:
+        print(f"[EMAIL] Mailjet fallback sending to {', '.join(clean_recipients)}", flush=True)
+        response = requests.post(
+            app.config.get('MAILJET_API_URL'),
+            auth=(app.config.get('MAILJET_API_KEY'), app.config.get('MAILJET_SECRET_KEY')),
+            json={'Messages': [message]},
+            timeout=app.config.get('BREVO_TIMEOUT')
+        )
+
+        status = ''
+        if 200 <= response.status_code < 300:
+            try:
+                status = (response.json().get('Messages') or [{}])[0].get('Status', '')
+            except ValueError:
+                status = ''
+            if status == 'success':
+                print(f"[EMAIL] Mailjet fallback success: {response.status_code}", flush=True)
+                return True, f"Mailjet email sent to {len(clean_recipients)} recipient(s)."
+
+        print(f"[EMAIL] Mailjet fallback failed: {response.status_code} {response.text}", flush=True)
+        return False, f"Mailjet failed: {response.status_code} {response.text}"
+
+    except Exception as mailjet_error:
+        print(f"[EMAIL] Mailjet fallback exception: {mailjet_error}", flush=True)
+        return False, str(mailjet_error)
+
+
+def send_with_mailjet_fallback(brevo_result, to_emails, subject, text_body, html_body=None, attachments=None, cc_emails=None):
+    """Return Brevo's result, or Mailjet's when Brevo failed and Mailjet is configured."""
+    ok, message = brevo_result
+    if ok or message in EMAIL_FALLBACK_SKIP_REASONS or not mailjet_is_configured():
+        return brevo_result
+
+    print(f"[EMAIL] Brevo failed, trying Mailjet fallback: {message}", flush=True)
+    return send_mailjet_email(to_emails, subject, text_body, html_body, attachments, cc_emails=cc_emails)
+
+
 def send_email_with_attachments(to_emails, subject, text_body, html_body=None, attachments=None, cc_emails=None):
     """Send email with optional attachments through configured provider."""
     provider = app.config.get('EMAIL_PROVIDER', 'brevo')
 
     if provider == 'brevo':
-        return send_brevo_email_with_attachments(to_emails, subject, text_body, html_body, attachments, cc_emails=cc_emails)
+        brevo_result = send_brevo_email_with_attachments(to_emails, subject, text_body, html_body, attachments, cc_emails=cc_emails)
+        return send_with_mailjet_fallback(brevo_result, to_emails, subject, text_body, html_body, attachments, cc_emails=cc_emails)
 
     if not app.config.get('EMAIL_NOTIFICATIONS_ENABLED'):
         return False, 'Email notifications disabled.'
@@ -12737,7 +12843,8 @@ def send_email_notification(to_emails, subject, text_body, html_body=None):
     provider = app.config.get('EMAIL_PROVIDER', 'brevo')
 
     if provider == 'brevo':
-        return send_brevo_email_notification(to_emails, subject, text_body, html_body)
+        brevo_result = send_brevo_email_notification(to_emails, subject, text_body, html_body)
+        return send_with_mailjet_fallback(brevo_result, to_emails, subject, text_body, html_body)
 
     print("[EMAIL] SMTP schedule email notification requested.", flush=True)
 
