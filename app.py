@@ -1757,6 +1757,8 @@ class User(UserMixin, db.Model):
     is_protected_account = db.Column(db.Boolean, default=False, nullable=False)
     # New accounts are routed to every active default approver when they are created.
     is_default_approver = db.Column(db.Boolean, default=False, nullable=False)
+    # Sees every Approval Center request and its details; can never decide one.
+    approvals_view_only = db.Column(db.Boolean, default=False, nullable=False)
 
     # Last successful sign-in. Older accounts stay NULL until their next login.
     last_login_at = db.Column(db.DateTime, nullable=True)
@@ -6270,6 +6272,7 @@ def ensure_user_admin_capability_columns():
                 'reimbursement_tracker_access',
                 'is_protected_account',
                 'is_default_approver',
+                'approvals_view_only',
             ):
                 if column_name not in user_columns:
                     connection.exec_driver_sql(
@@ -8807,9 +8810,32 @@ def stock_inventory_can_administer(user=None):
     return is_superadmin_user(user or current_user)
 
 
+def is_approvals_view_only_user(user=None):
+    """Return True for an active account with the Settings "Approvals view only" switch."""
+    target = user or current_user
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'approvals_view_only', False)) and
+        bool(getattr(target, 'is_active', True))
+    )
+
+
+def can_read_all_approvals(user=None):
+    """View-only accounts read every approval, on GET/HEAD requests only.
+
+    Read and decide share the routing gates, so the read widening is limited to
+    GET/HEAD. Every approve/reject/return/resend endpoint is POST and must stay
+    POST, or a view-only account could decide through it.
+    """
+    if not has_request_context():
+        return False
+    return is_approvals_view_only_user(user) and request.method in ('GET', 'HEAD')
+
+
 def is_approval_center_user(user=None):
-    """Return True for users allowed to enter Approval Center (active configured approvers)."""
-    return bool(is_configured_approver_user(user))
+    """Return True for users allowed to enter Approval Center (active approvers or view-only accounts)."""
+    return bool(is_configured_approver_user(user) or is_approvals_view_only_user(user))
 
 
 def require_approval_center_user():
@@ -11403,6 +11429,8 @@ def can_user_approve_for_requester(approver_user, requester_user_id, request_sco
     """Workflow gate: True when user is one of the assigned approvers."""
     if not approver_user or not getattr(approver_user, 'is_authenticated', False):
         return False
+    if can_read_all_approvals(approver_user):
+        return True
     approver_id = clean_int(getattr(approver_user, 'id', None))
     if not approver_id:
         return False
@@ -11420,6 +11448,8 @@ def get_requester_user_ids_for_approver(approver_user=None, request_scope='all')
     works additively because it filters by the current approver ID.
     """
     target = approver_user or current_user
+    if can_read_all_approvals(target):
+        return [row[0] for row in db.session.query(User.id).all()]
     if not is_configured_approver_user(target):
         return []
 
@@ -11467,7 +11497,7 @@ def can_user_approve_reimbursement_header(approver_user, header):
     if not header:
         return False
 
-    if not is_configured_approver_user(approver_user):
+    if not (is_configured_approver_user(approver_user) or can_read_all_approvals(approver_user)):
         return False
 
     return clean_int(getattr(header, 'user_id', None)) in set(
@@ -11481,7 +11511,7 @@ def can_user_approve_travel_liquidation(approver_user, liquidation):
     if not liquidation:
         return False
 
-    if not is_configured_approver_user(approver_user):
+    if not (is_configured_approver_user(approver_user) or can_read_all_approvals(approver_user)):
         return False
 
     requester_id = clean_int(getattr(liquidation, 'user_id', None))
@@ -11608,6 +11638,7 @@ def approval_user_to_dict(user):
         'can_create_tsr_without_equipment': bool(getattr(user, 'can_create_tsr_without_equipment', False)),
         'is_protected_account': bool(getattr(user, 'is_protected_account', False)),
         'is_default_approver': bool(getattr(user, 'is_default_approver', False)),
+        'approvals_view_only': bool(getattr(user, 'approvals_view_only', False)),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -29816,6 +29847,7 @@ def approvals_page():
         'approvals.html',
         approval_center_user=getattr(current_user, 'username', ''),
         approval_center_is_configured_approver=is_configured_approver_user(),
+        approval_center_view_only=is_approvals_view_only_user(),
         approval_center_is_legacy_manager=False,
         approval_center_requester_ids=get_requester_user_ids_for_approver(current_user, 'all'),
         # Kept for API/template compatibility. The current approvals template
@@ -30771,7 +30803,7 @@ def resolve_staff_permission_request(payload, target_user=None):
 
 
 def resolve_account_flag_request(payload, target_user):
-    """Validate the protected-account and default-approver switches. Returns (values, error)."""
+    """Validate the protected-account, default-approver and view-only switches. Returns (values, error)."""
     protected = bool(getattr(target_user, 'is_protected_account', False))
     if 'is_protected_account' in payload:
         requested = bool(payload.get('is_protected_account'))
@@ -30789,7 +30821,16 @@ def resolve_account_flag_request(payload, target_user):
         return None, 'A default approver must be enabled as an approver.'
     if default_approver and not bool(payload.get('is_active', True)):
         return None, 'An inactive account cannot be a default approver.'
-    return {'is_protected_account': protected, 'is_default_approver': default_approver}, None
+    view_only = bool(getattr(target_user, 'approvals_view_only', False))
+    if 'approvals_view_only' in payload:
+        view_only = bool(payload.get('approvals_view_only'))
+    if view_only and can_approve:
+        return None, 'An approver cannot also be view only.'
+    return {
+        'is_protected_account': protected,
+        'is_default_approver': default_approver,
+        'approvals_view_only': view_only,
+    }, None
 
 
 @app.route('/settings/update-approval-user', methods=['POST'])
@@ -30835,6 +30876,7 @@ def settings_update_approval_user():
         'can_create_tsr_without_equipment',
         'is_protected_account',
         'is_default_approver',
+        'approvals_view_only',
     )
     old_permission_values = {}
     for field in tracked_permission_fields:
@@ -30866,6 +30908,7 @@ def settings_update_approval_user():
     target_user.can_create_tsr_without_equipment = permission_values['can_create_tsr_without_equipment']
     target_user.is_protected_account = permission_values['is_protected_account']
     target_user.is_default_approver = permission_values['is_default_approver']
+    target_user.approvals_view_only = permission_values['approvals_view_only']
 
     if approver_only_requested:
         target_user.role = 'approver'
@@ -44095,7 +44138,7 @@ def can_user_review_travel_request(approver_user, request_rec):
     """Return True only for the Settings-assigned Travel Request approver."""
     if not request_rec or not approver_user or not getattr(approver_user, 'is_authenticated', False):
         return False
-    if not is_configured_approver_user(approver_user):
+    if not (is_configured_approver_user(approver_user) or can_read_all_approvals(approver_user)):
         return False
     return can_user_approve_for_requester(approver_user, request_rec.user_id, 'travel_request')
 
@@ -70073,7 +70116,7 @@ def cash_advance_query_for_current_approver(status_filter='Submitted'):
     ensure_cash_advance_tables()
     query = CashAdvanceHeader.query
 
-    if is_configured_approver_user(current_user):
+    if is_configured_approver_user(current_user) or can_read_all_approvals(current_user):
         requester_ids = get_requester_user_ids_for_approver(current_user, 'cash_advance')
         if not requester_ids:
             requester_ids = get_requester_user_ids_for_approver(current_user, 'all')
@@ -70133,7 +70176,7 @@ def can_user_approve_cash_advance(approver_user, header):
     if not header:
         return False
 
-    if not is_configured_approver_user(approver_user):
+    if not (is_configured_approver_user(approver_user) or can_read_all_approvals(approver_user)):
         return False
 
     requester_id = clean_int(getattr(header, 'user_id', None))
@@ -74049,7 +74092,7 @@ def can_user_approve_cash_advance_liquidation(approver_user, liquidation):
     """Return True if user can approve/return this standalone Cash Advance Liquidation."""
     if not liquidation:
         return False
-    if not is_configured_approver_user(approver_user):
+    if not (is_configured_approver_user(approver_user) or can_read_all_approvals(approver_user)):
         return False
     requester_id = clean_int(getattr(liquidation, 'user_id', None))
     allowed_ids = set(get_requester_user_ids_for_approver(approver_user, 'cash_advance_liquidation'))
@@ -74064,7 +74107,7 @@ def cash_advance_liquidation_query_for_current_approver(status_filter='Submitted
     ensure_cash_advance_liquidation_tables()
     query = CashAdvanceLiquidationHeader.query
 
-    if is_configured_approver_user(current_user):
+    if is_configured_approver_user(current_user) or can_read_all_approvals(current_user):
         requester_ids = set(get_requester_user_ids_for_approver(current_user, 'cash_advance_liquidation'))
         requester_ids.update(get_requester_user_ids_for_approver(current_user, 'cash_advance'))
         requester_ids.update(get_requester_user_ids_for_approver(current_user, 'all'))

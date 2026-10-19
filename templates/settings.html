@@ -2237,6 +2237,9 @@
                             ${approvalSwitchHtml(user, 'protected', 'approval-protected-input', user.is_protected_account, 'Protected developer account', protectedHelp)
                                 .replace('type="checkbox"', approvalViewerIsProtected ? 'type="checkbox"' : 'type="checkbox" disabled')}
                         </div>
+                        <div class="col-md-6">
+                            ${approvalSwitchHtml(user, 'approvals-view-only', 'approval-view-only-input', user.approvals_view_only, 'Approvals view only', 'Sees every approval request and its details. Cannot approve, reject or return. Turn off Approver first.')}
+                        </div>
                     </div>`;
 
         return `
@@ -2436,7 +2439,8 @@
             reimbursement_tracker_access: Boolean(card.querySelector('.reimbursement-tracker-access-input')?.checked),
             approval_title: card.querySelector('.approval-title-input')?.value || '',
             is_active: Boolean(card.querySelector('.approval-active-input')?.checked),
-            is_default_approver: Boolean(card.querySelector('.approval-default-approver-input')?.checked)
+            is_default_approver: Boolean(card.querySelector('.approval-default-approver-input')?.checked),
+            approvals_view_only: Boolean(card.querySelector('.approval-view-only-input')?.checked)
         };
         const targetUser = approvalUserById(userId);
         if (approvalUserCanHoldTsrGrant(targetUser)) {

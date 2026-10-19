@@ -2405,6 +2405,13 @@
             <button type="button" class="approval-btn approval-btn-danger" id="approvalRejectBtn" onclick="rejectSelectedApproval()">Return for Correction</button>
             <button type="button" class="approval-btn approval-btn-success" id="approvalApproveBtn" onclick="approveSelectedApproval()">Approve</button>
         </div>
+        {% if approval_center_view_only %}
+        <style>
+            #approvalApproveBtn, #approvalRejectBtn, #approvalResendEmailBtn,
+            #approvalRemarks, #approvalRemarksLabel { display: none !important; }
+        </style>
+        <p class="text-muted small mb-0" style="text-align:right;margin-top:12px;">View only — you cannot approve or return.</p>
+        {% endif %}
     </div>
 </div>
 

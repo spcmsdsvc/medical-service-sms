@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-19-approvals-view-only",
+      "release_date": "2026-10-19",
+      "title": "Approvals view only",
+      "summary": "An account can now see every approval request without being able to decide one.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-19-approvals-view-only-switch",
+          "category": "Settings",
+          "description": "Settings has a new 'Approvals view only' switch. That account sees every request in Approvals with its details and attachments, but no Approve or Return buttons. It cannot be on together with Approver."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-19-pm-page-fixes",
       "release_date": "2026-10-19",
       "title": "PM page fixes",

@@ -37,6 +37,154 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Approvals view only — a Settings switch that lets an account read every approval without deciding (1 batch)
+
+**Status:** Executed locally, not committed (2026-10-19, on "Execute the Approvals view only plan in plans.md. Don't
+publish yet."). Approved 2026-10-19 ("Yes, write the Approval viewer (view only) plan into plans.md."). Detailed
+2026-10-19.
+
+### Amendments during execution
+
+- **Two more read gates.** `cash_advance_query_for_current_approver` and the CA Liquidation queue builder each had
+  their own `if is_configured_approver_user(current_user):` branch (`app.py` ~70106, ~74097), not in the
+  Investigation list; both now also accept `can_read_all_approvals(current_user)`.
+- **Step 5 done with one CSS block, not six JS edits.** Every module reuses the same `#approvalApproveBtn`,
+  `#approvalRejectBtn`, `#approvalResendEmailBtn`, `#approvalRemarks` elements, so a `{% if approval_center_view_only %}`
+  `<style>` block hides them with `!important` (the existing JS show/hide lines stay untouched), plus the
+  "View only — you cannot approve or return." line under the action bar.
+- **Positive control:** `HEAD` cannot even create a view-only user (no column), so the control was run in-process
+  instead: with `can_read_all_approvals` stubbed to `False`, `test_view_only_reads_unrouted_queues_and_details` fails.
+- No service worker bump: `/approvals` and `/settings` are not in `APP_SHELL`.
+- Settings switch not clicked in the browser (the check used the view-only account, not a superadmin); covered by
+  the save-endpoint test and the source test.
+
+## Context
+
+The `diary` account opens Approvals but every queue is empty and no detail opens. The owner wants diary to see all
+approval requests and their details without being able to approve, reject or return anything, set by a tickbox in
+Settings → Approval users.
+
+## Decisions taken (owner, 2026-10-19)
+
+- A new per-account switch in Settings, **"Approvals view only"**, rather than routing diary as a real approver.
+- View only means: every requester, every module, every status, details and attachments; no decision buttons and no
+  decision endpoint accepts the account.
+
+## Investigation (verified 2026-10-19, code read and a read-only query of the local `scheduler.db`)
+
+- Local DB: `diary` is user 4, role `superadmin`, `can_approve_requests = 1`, active, and has **no active
+  `approval_routing` rows**. That is the whole cause: `/approvals` (`app.py:29797`) only checks
+  `is_approval_center_user()` (`app.py:8810` → `is_configured_approver_user`, `app.py:8295`), so the page opens, but
+  every queue goes through `apply_assigned_approver_filter` (`app.py:11454`) or `get_requester_user_ids_for_approver`
+  (`app.py:11416`), which return nothing without routes, and every detail goes through `can_user_approve_for_requester`
+  (`app.py:11402`) or a per-module gate, which answers 403. Production not checked; confirm diary's row there before
+  publishing (read-only).
+- **Read and decide share the same gates.** e.g. `can_user_approve_travel_request` simply returns
+  `can_user_review_travel_request` (`app.py:44111`). So "view only" cannot be done by widening the gates alone; the
+  widening must apply to read requests only.
+- **Every decision endpoint is POST**: approve/reject/return for calibration certificate (`app.py:26856`, `26995`),
+  travel request (`45500`, `45656`), travel liquidation (`47006`, `47161`), reimbursement (`47319`, `52666`), cash
+  advance (`70216`, `70457`), CA liquidation (`74186`, `74641`), LPR (`76880`, `76912`), leave
+  (`leave_feature.py:1139`, `1213`, resend-HR `1236`). Every queue, detail, preview, PDF and attachment read is GET.
+  So "viewer on a GET/HEAD request" is a safe single condition for read access.
+- The routing gates are concentrated in three helpers plus six `is_configured_approver_user` pre-checks inside
+  routing helpers: `app.py:11423` (`get_requester_user_ids_for_approver`), `11470` (reimbursement header), `11484`
+  (travel liquidation), `44098` (travel request), `70136` (cash advance), `74052` (CA liquidation). The leave gate
+  (`leave_feature.py:336`) and calibration gates (`app.py:13577`, `26684`) call `can_user_approve_for_requester`.
+- **Existing overrides, untouched:** leave `can_approve` returns True for any superadmin (`leave_feature.py:342`) and
+  `can_user_approve_lpr` returns True for admins (`app.py:75747`). diary is a superadmin, so the API would still accept
+  her leave/LPR decisions; the UI will not offer them (step 5).
+- Settings flags: `User` model `app.py:1715` (`is_default_approver` at `1759`), startup column migration list
+  `app.py:6265`, `approval_user_to_dict` `app.py:11610`, `resolve_account_flag_request` `app.py:30773`, save in
+  `settings_update_approval_user` `app.py:30795` (tracked-fields audit list `30823`). UI switches
+  `templates/settings.html:2230–2240` (`approvalSwitchHtml`), payload `settings.html:2439`. Note `approvalViewer…` is
+  already a settings.html name for *the person looking at Settings*, so the new field is `approvals_view_only`.
+- Decision buttons in `templates/approvals.html` (318k chars; use Grep): `approvalApproveBtn` and its Reject/Return
+  siblings are shown per module at `approvals.html:2548`, `3622`, `4398`, `4642`, `4869`, `5727` with
+  `style.display = isSubmitted ? '' : 'none'`; resend email `approvalResendEmailBtn` at `2402`.
+
+## Execution steps
+
+1. **Column and flag** (`app.py`): add `approvals_view_only = db.Column(db.Boolean, default=False, nullable=False)` to
+   `User` next to `is_default_approver`; add `'approvals_view_only'` to the migration tuple at `app.py:6265`. Done: app
+   starts on a DB copy and prints `[DB MIGRATION] Added user.approvals_view_only` once.
+2. **Helpers** (`app.py`, near `is_configured_approver_user`):
+   - `is_approvals_view_only_user(user=None)`: authenticated, active, `approvals_view_only` true.
+   - `can_read_all_approvals(user=None)`: `is_approvals_view_only_user(user)` and `request.method in ('GET', 'HEAD')`
+     (False outside a request context).
+   - `is_approval_center_user` → `is_configured_approver_user(user) or is_approvals_view_only_user(user)`.
+   Done: helpers exist; `require_approval_center_user` lets a view-only account through.
+3. **Read access** (`app.py`, `leave_feature.py` unchanged): in `get_requester_user_ids_for_approver`, before the
+   `is_configured_approver_user` check, return every `User.id` (active or not, so old requests stay visible) when
+   `can_read_all_approvals(target)`; in `can_user_approve_for_requester`, return True when
+   `can_read_all_approvals(approver_user)`. At the five per-module pre-checks (`11470`, `11484`, `44098`, `70136`,
+   `74052`) change `if not is_configured_approver_user(x)` to
+   `if not (is_configured_approver_user(x) or can_read_all_approvals(x))`. `apply_assigned_approver_filter` and the
+   leave/calibration gates then follow automatically. Done: a view-only account's GET queue/detail calls return every
+   requester's records; every POST decision still answers 403.
+4. **Settings** (`app.py`, `templates/settings.html`): `approval_user_to_dict` reports `approvals_view_only`;
+   `resolve_account_flag_request` reads it and returns error **"An approver cannot also be view only."** when it is
+   on together with `can_approve_requests`/`approver_only`; `settings_update_approval_user` saves it and adds it to
+   `tracked_permission_fields` (audit line). New `approvalSwitchHtml(user, 'approvals-view-only',
+   'approval-view-only-input', user.approvals_view_only, 'Approvals view only', 'Sees every approval request and its
+   details. Cannot approve, reject or return.')` in `accountFlagControls`, and `approvals_view_only` in the save
+   payload at `settings.html:2439`. Done: ticking it on diary (after unticking Approver) saves and survives reload.
+5. **Hide decisions** (`app.py` `approvals_page`, `templates/approvals.html`): pass
+   `approval_center_view_only=is_approvals_view_only_user()`; in the script read it once into a const, and in each of
+   the six button blocks use `isSubmitted && !APPROVAL_VIEW_ONLY` for Approve/Reject/Return and keep resend-email
+   hidden. Show a small muted line in the detail action bar, "View only — you cannot approve or return.", when the
+   flag is on. Done: no decision button renders for a view-only account in any module.
+6. **Tests**: new `tests/test_approvals_view_only.py` (style of `tests/test_approval_routing_settings.py` and
+   `tests/test_approval_center_pagination.py`): view-only user with no routes → `/approvals` 200;
+   `/get_approval_center_queue` and `/get_travel_request_approval/<id>` show another user's submitted request;
+   `POST /approve_travel_request/<id>`, `/reject_reimbursement/<id>`, `/api/leave-requests/<id>/approve` (as a
+   non-superadmin view-only user) → 403 and status unchanged; Settings save with both Approver and view only → 400;
+   a plain user without either flag → `/approvals` redirects. Positive control: run the module against `HEAD`'s
+   `app.py` (via `git show HEAD:app.py` into a scratch copy, never `git stash`) and confirm the read tests fail.
+
+## Deliberately excluded
+
+- **Removing the superadmin leave and admin LPR decision overrides.** They predate this and affect other admins;
+  the buttons are hidden for view-only accounts, which is what the owner asked for. Raise separately if diary must
+  be blocked at the API for leave/LPR too.
+- **Dashboard approval counts / notifications** (`app.py:13161–13163`): a view-only account is not pinged to decide.
+- **Calibration Center** (`can_access_calibration_center`): separate page and permission.
+- **Changing diary's account** on production: the owner ticks the switch in Settings after publish.
+
+## Verification
+
+- Focused: `tests.test_approvals_view_only`, `tests.test_approval_routing_settings`,
+  `tests.test_approval_center_pagination`, `tests.test_admin_capabilities`, `tests.test_lpr_feature_switch`.
+- Full suite once before publishing (auth/permissions and a schema column are shared code):
+  `venv/Scripts/python.exe scripts/run_suite.py` in the main folder.
+- Browser (local server on a `scheduler.db` copy): in Settings untick Approver and tick "Approvals view only" on a
+  temporary test account; log in as it → Approvals shows items in every module tab; open a Travel Request, a
+  Reimbursement and a Leave Request → details and attachments open, no Approve/Reject/Return buttons, view-only line
+  shown. As a routed approver → buttons still there and Approve still works (Protect Existing Functions). 375 px:
+  no horizontal scroll; console clean.
+- Clean up the DB copy, test accounts and any temporary `.claude/launch.json` entry.
+
+## After implementation
+
+- Self-review the diff; confirm every function `approvals.html` and `settings.html` call is still defined and Save on
+  an Approval-user card, Approve, Reject and Return still work for a routed approver.
+- `?v=` bump not needed (inline scripts); service worker `CACHE_VERSION` bump to `v335-…` only if the templates are
+  in `APP_SHELL` precache (check `app.py:28071`); one `static/changelog/releases.json` entry: "Settings: new
+  'Approvals view only' switch lets an account see every approval without deciding."
+- `changes.md` entry; this Status line with the commit hash; memory note.
+- On "commit and push": only `app.py`, the two templates, the new test, `releases.json` (and SW if bumped),
+  `plans.md`/`changes.md` hunks for this plan. Never `scheduler.db`, `output/`, `tmp/`, handoffs. Verify `origin/main`
+  and Railway deployment metadata.
+
+## Risks
+
+- **A read gate leaking into a decision.** Guarded by the GET/HEAD condition and the 403 tests on POST. If a future
+  decision endpoint is added as GET, a view-only account could decide; the helper docstring states the POST rule.
+- **Wider data exposure**: a view-only account sees every requester's financial and leave records. That is the
+  intent; only superadmins can set the switch, and each change is audited.
+- Approver and view only are mutually exclusive, so diary must lose "Approver" — if she is a default approver or
+  routed anywhere on production, the save will refuse until that is cleared (check before telling the owner to tick).
+
 # Schedule edits orphan TSRs and Calibration Reports — fix, guard, and repair (2 batches)
 
 **Status:** Batch 1 executed 2026-10-19 (not committed) on "Execute Batch 1 of the schedule-orphan plan in plans.md.
