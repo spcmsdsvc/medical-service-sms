@@ -47,9 +47,14 @@ because the plain script exceeded the command-line length): 22 deleted schedule 
 includes #4420 → #4603 with conversion #63 → files 1747/1748, and one "Test Customer" record #1744 → #1970),
 **3 DELETED** (#1082 Davao Doctors, #1754 Abra, #4225 Cardinal Santos — no live schedule holds the TSR file),
 **2 AMBIGUOUS** (#1972 Umingan — TSR file is on #2117 of another client name; #2195 Davao Doctors MPIC — file on
-#2258 and #2259), 0 blocked. Both batches published to `main` together on "Commit and push Batches 1 and 2. Never the
+#2258 and #2259), 0 blocked. Both batches published to `main` together as `13b06ea` on "Commit and push Batches 1 and 2. Never the
 db and dirty. After the deploy succeeds, run the repair with --apply on production for the 17 REBUILT rows." (that
-message is also the owner OK for `--apply`).
+message is also the owner OK for `--apply`). Railway deployment of `13b06ea` SUCCESS 2026-10-19 10:30. **Executed**
+2026-10-19: on "Back up the DB, then run the repair with --apply on production for the 17 REBUILT rows." the volume
+DB was backed up to `/data/backup-before-orphan-repair-20261019.db`, the dry-run re-checked (still 17), and `--apply`
+repaired 17 schedule ids (17 activity-log lines). Re-run afterwards: rebuilt 0; the 3 DELETED and 2 AMBIGUOUS remain
+untouched for the owner to decide. Verified read-only: approval #58, submission #730 and files 1746–1748/1753–1754 are
+on #4603, marker → 1747/1748, conversion #63 → 1747/1748 `ready`, DOCX upload token restored.
 
 ### Amendments during execution (Batch 2)
 
