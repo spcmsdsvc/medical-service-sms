@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-19-approved-package-download",
+      "release_date": "2026-10-19",
+      "title": "Download approved package",
+      "summary": "Approved requests in Approvals can be downloaded in one click, as the same files Accounting received.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-19-approved-package-download-button",
+          "category": "Approvals",
+          "description": "Opening an approved Travel Request, Cash Advance, Reimbursement or Liquidation shows a Download button. It gives the same form PDF or ZIP package that the accounting email sent. View-only accounts can use it too."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-19-calibration-uploaded-tsr",
       "release_date": "2026-10-19",
       "title": "Calibration Reports for uploaded TSRs",

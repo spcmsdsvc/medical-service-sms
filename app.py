@@ -74955,6 +74955,125 @@ def reject_cash_advance_liquidation(liquidation_id):
 
 
 
+class ApprovedPackageError(Exception):
+    """A refused approved-package download, carrying its HTTP status."""
+
+    def __init__(self, message, status_code):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def approved_package_record_and_bytes(module, record_id):
+    """Return (filename, bytes, mimetype) for one approved record's accounting email attachment.
+
+    Raises ApprovedPackageError with the HTTP status for a refusal. The file is
+    built by the same builder the accounting email uses, from the record's approver
+    and approval remarks, so the download matches what Accounting received.
+    """
+    def is_approved(status):
+        return str(status or '').strip().lower() == 'approved'
+
+    def approver_of(record):
+        approver_id = clean_int(getattr(record, 'approved_by_id', None))
+        return db.session.get(User, approver_id) if approver_id else None
+
+    def can_read(gate, record):
+        return is_admin_authorized() or gate(current_user, record)
+
+    if module == 'travel_request':
+        record = db.session.get(TravelRequest, record_id)
+        if not record:
+            raise ApprovedPackageError('Travel Request not found.', 404)
+        if not can_read(can_user_review_travel_request, record):
+            raise ApprovedPackageError('This travel request is not assigned to you.', 403)
+        if not clean_int(getattr(record, 'approved_by_id', None)) and travel_request_normalize_status(getattr(record, 'status', None)) != 'Approved':
+            raise ApprovedPackageError('Only approved requests have an approved package.', 409)
+        pdf_bytes = build_travel_request_accounting_pdf_bytes(
+            record, approved_by_user=approver_of(record), remarks=clean_str(getattr(record, 'approval_remarks', None)) or ''
+        )
+        return travel_request_pdf_filename(record), pdf_bytes, 'application/pdf'
+
+    if module == 'cash_advance':
+        ensure_cash_advance_tables()
+        record = db.session.get(CashAdvanceHeader, record_id)
+        if not record:
+            raise ApprovedPackageError('Cash Advance request not found.', 404)
+        if not can_read(can_user_approve_cash_advance, record):
+            raise ApprovedPackageError('This cash advance is not assigned to you.', 403)
+        if not is_approved(getattr(record, 'status', None)):
+            raise ApprovedPackageError('Only approved requests have an approved package.', 409)
+        pdf_bytes = build_cash_advance_accounting_pdf_bytes(
+            record, approved_by_user=approver_of(record), remarks=clean_str(getattr(record, 'approval_remarks', None)) or ''
+        )
+        return cash_advance_accounting_pdf_filename(record), pdf_bytes, 'application/pdf'
+
+    if module == 'reimbursement':
+        ensure_reimbursement_accounting_columns()
+        record = db.session.get(ReimbursementHeader, record_id)
+        if not record:
+            raise ApprovedPackageError('Reimbursement not found.', 404)
+        if not can_read(can_user_approve_reimbursement_header, record):
+            raise ApprovedPackageError('This reimbursement is not assigned to you.', 403)
+        if not is_approved(getattr(record, 'status', None)):
+            raise ApprovedPackageError('Only approved requests have an approved package.', 409)
+        filename, package_bytes = build_reimbursement_package_zip_bytes(record)
+        return filename, package_bytes, 'application/zip'
+
+    if module == 'travel_liquidation':
+        record = db.session.get(TravelLiquidationHeader, record_id)
+        if not record:
+            raise ApprovedPackageError('Travel Liquidation not found.', 404)
+        if not can_read(can_user_approve_travel_liquidation, record):
+            raise ApprovedPackageError('This travel liquidation is not assigned to you.', 403)
+        if normalize_travel_liquidation_status(getattr(record, 'status', None)) != 'Approved':
+            raise ApprovedPackageError('Only approved requests have an approved package.', 409)
+        filename, package_bytes = build_travel_liquidation_accounting_package_zip_bytes(
+            record, approved_by_user=approver_of(record), remarks=clean_str(getattr(record, 'approval_remarks', None)) or ''
+        )
+        return filename, package_bytes, 'application/zip'
+
+    if module == 'cash_advance_liquidation':
+        ensure_cash_advance_tables()
+        ensure_cash_advance_liquidation_tables()
+        record = db.session.get(CashAdvanceLiquidationHeader, record_id)
+        if not record:
+            raise ApprovedPackageError('Cash Advance Liquidation not found.', 404)
+        if not can_read(can_user_approve_cash_advance_liquidation, record):
+            raise ApprovedPackageError('This cash advance liquidation is not assigned to you.', 403)
+        if cash_advance_liquidation_normalize_status(getattr(record, 'status', None)) != 'Approved':
+            raise ApprovedPackageError('Only approved requests have an approved package.', 409)
+        filename, package_bytes = build_cash_advance_liquidation_accounting_package_zip_bytes(
+            record, approved_by_user=approver_of(record), remarks=clean_str(getattr(record, 'approval_remarks', None)) or ''
+        )
+        return filename, package_bytes, 'application/zip'
+
+    raise ApprovedPackageError('This request type has no approved package.', 400)
+
+
+@app.route('/download_approved_package/<module>/<int:record_id>')
+@login_required
+def download_approved_package(module, record_id):
+    """Approval Center: download the approved record's accounting email attachment.
+
+    The one deliberate download on the Approvals page (everything else previews).
+    """
+    module = (clean_str(module) or '').strip().lower().replace('-', '_')
+    try:
+        filename, file_bytes, mimetype = approved_package_record_and_bytes(module, record_id)
+    except ApprovedPackageError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), exc.status_code
+    except Exception as exc:
+        print(f"[Approvals] Approved package build failed for {module} #{record_id}: {exc}", flush=True)
+        return jsonify({'success': False, 'error': 'Unable to build the approved package.'}), 500
+
+    try:
+        log_activity(f"Downloaded approved package {module} #{record_id}")
+    except Exception as log_err:
+        print(f"[Approvals] Package download log skipped: {log_err}")
+
+    return send_file(io.BytesIO(file_bytes), as_attachment=True, download_name=filename, mimetype=mimetype)
+
+
 # F4A5G12: Approval Center Global Resend Email Controls
 @app.route('/resend_approved_request_email', methods=['POST'])
 @csrf.exempt

@@ -2399,6 +2399,9 @@
             <textarea class="approval-remarks" id="approvalRemarks" placeholder="Optional for approval."></textarea>
         </div>
         <div class="approval-actions" style="justify-content:flex-end;margin-top:12px;">
+            <a class="approval-btn approval-btn-secondary" id="approvalDownloadPackageBtn" style="display:none;text-decoration:none;" href="#" download>
+                <i class="fa-solid fa-download me-1"></i>Download approved package
+            </a>
             <button type="button" class="approval-btn approval-btn-secondary" id="approvalResendEmailBtn" style="display:none;" onclick="resendSelectedApprovedRequestEmail()">
                 <i class="fa-solid fa-paper-plane me-1"></i>Resend Email
             </button>
@@ -3067,6 +3070,16 @@
         btn.disabled = false;
         btn.dataset.originalHtml = `<i class="fa-solid fa-paper-plane me-1"></i>${approvalEscape(approvalResendEmailLabel(moduleKey))}`;
         btn.innerHTML = btn.dataset.originalHtml;
+
+        // The approved package is exactly what the accounting email attached:
+        // one PDF for Travel Request and Cash Advance, a ZIP for the rest.
+        const downloadBtn = document.getElementById('approvalDownloadPackageBtn');
+        if (downloadBtn) {
+            const isPdf = moduleKey === 'travel_request' || moduleKey === 'cash_advance';
+            downloadBtn.style.display = canShow ? '' : 'none';
+            downloadBtn.href = canShow ? `/download_approved_package/${encodeURIComponent(moduleKey)}/${recordId}` : '#';
+            downloadBtn.innerHTML = `<i class="fa-solid fa-download me-1"></i>${isPdf ? 'Download approved form (PDF)' : 'Download approved package (ZIP)'}`;
+        }
     }
 
     async function resendSelectedApprovedRequestEmail() {
@@ -4197,6 +4210,7 @@ Recipient count: ${recipientCount}` : ''),
 
         // F3C Preview Guard:
         // Approval Center is manager-review only. Never open download endpoints here.
+        // The one deliberate exception is #approvalDownloadPackageBtn (approved package).
         // Normalize every known legacy download route into a preview/open route
         // before window.open() is allowed to run.
         cleanUrl = cleanUrl

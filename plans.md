@@ -37,6 +37,141 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Download approved package — one button in Approvals that downloads what the approval email attaches (1 batch)
+
+**Status:** Executed locally, not committed (2026-10-19, on "Execute the Download approved package plan in plans.md.
+Don't publish yet.").
+
+### Amendments during execution
+
+- Refusals use a small `ApprovedPackageError(message, status_code)` instead of `LookupError`/`PermissionError`/
+  `ValueError`, so an error inside a builder (e.g. a `KeyError`) is reported as 500, never as a 404/409 refusal. The
+  per-module lookup lives in `approved_package_record_and_bytes`; the route only maps errors and sends the file.
+- The button is an `<a download>`; `text-decoration:none` added inline so it matches the buttons beside it.
+- Builders checked: none writes to the database.
+- Positive control: `HEAD` has neither the route nor the button; with the route stubbed to 404 all 4 workflow tests
+  fail.
+- Browser: no approved Cash Advance exists in the local DB copy, so Cash Advance was covered by the test only. Real
+  downloads as the view-only account: Travel Request PDF 59 KB, Reimbursement ZIP 186 KB, Travel Liquidation ZIP
+  903 KB, CA Liquidation ZIP 869 KB, all with the email's file names. Approved 2026-10-19 ("Yes, record the Download approved package plan in
+plans.md: one GET endpoint returning exactly what the approval email attaches (zip for reimbursement and both
+liquidations, the official PDF for travel request and cash advance), Approved items only, shown to routed approvers,
+admins and view-only ac[counts]"). Detailed 2026-10-19.
+
+## Context
+
+After `7ff9c7a` (Approvals view only), the owner found that opening an approved request in Approvals does not show its
+approved forms. They asked for the forms to be downloadable, as the same package the approval email sends, so it is a
+single download.
+
+## Decisions taken (owner, 2026-10-19)
+
+- One GET endpoint; the file is **exactly what the accounting email attaches**: a zip for Reimbursement, Travel
+  Liquidation and Cash Advance Liquidation; the official PDF for Travel Request and Cash Advance (their email sends one
+  PDF, not a zip).
+- Approved items only. Available to routed approvers, admins and view-only accounts.
+
+## Investigation (verified 2026-10-19, local browser check on a DB copy with a view-only account, and code read)
+
+- **Not a view-only bug.** Travel Request (`renderTravelApprovalDetail`, `approvals.html:3625`) and Reimbursement
+  (`renderReimbursementApprovalDetail`, `approvals.html:5730`) details render no form links for anyone. Only Travel
+  Liquidation and CA Liquidation show their package documents (Open/preview links), and those already worked for the
+  view-only account. Form gates such as `can_current_user_view_approved_travel_request_form` (`app.py:50851`) and
+  `can_current_user_view_travel_liquidation_form` (`app.py:49664`) already admit `is_approval_center_user()`.
+- **Approvals is deliberately preview-only today**: `normalizeLiquidationPreviewUrl` (`approvals.html` ~4195) rewrites
+  every `/download_*` route to a preview route ("Approval Center is manager-review only. Never open download endpoints
+  here."). This plan adds one deliberate exception: the new package button.
+- **What each email attaches** (the builders to reuse, unchanged):
+  - Travel Request: `build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user, remarks)`
+    (`app.py:10048`), name `travel_request_pdf_filename` (`9749`); sent by
+    `send_travel_request_accounting_email_async` (`10653`).
+  - Cash Advance: `build_cash_advance_accounting_pdf_bytes(header, approved_by_user, remarks)` (`69004`), name
+    `cash_advance_accounting_pdf_filename` (`68897`); sent by `send_cash_advance_accounting_email_async` (`69332`).
+  - Reimbursement: `build_reimbursement_package_zip_bytes(header)` (`11048`) → `(filename, bytes)`.
+  - Travel Liquidation: `build_travel_liquidation_accounting_package_zip_bytes(liquidation, approved_by_user, remarks)`
+    (`46737`) → `(filename, bytes)`.
+  - CA Liquidation: `build_cash_advance_liquidation_accounting_package_zip_bytes(liquidation, approved_by_user, remarks)`
+    (`73786`) → `(filename, bytes)`.
+- **Approver and remarks** come from the record, as `resend_approved_request_email` (`app.py` ~74962) does:
+  `approved_by_id` → `User`, `approval_remarks`. That endpoint is the model for the per-module lookup and the
+  "is Approved" checks (reimbursement/cash advance: `status.lower() == 'approved'`; travel request: `approved_by_id`
+  or `travel_request_normalize_status(status) == 'Approved'`; the liquidations: same as resend).
+- **Read gates** (all admit view-only accounts on GET since `7ff9c7a`): `can_user_review_travel_request` (`44289`),
+  `can_user_approve_cash_advance` (`70326`), `can_user_approve_reimbursement_header` (`11495`),
+  `can_user_approve_travel_liquidation` (`11509`), `can_user_approve_cash_advance_liquidation` (`74243`).
+- **UI hook**: `updateApprovalResendButton(data)` (`approvals.html:3060`) already shows "Resend … Accounting Email" for
+  exactly these five modules when the record is approved (`approvalModuleCanResendEmail`,
+  `approvalRecordIsApprovedForResend`, `approvalCurrentRecordIdForModule`). The view-only CSS block (`approvals.html`
+  ~2408) hides `#approvalResendEmailBtn`; the new button must not be in that list.
+- Not in the email-package set: Leave Request (HR email), LPR (procurement email), Calibration certificates (already
+  have their own PDF preview in the detail).
+
+## Execution steps
+
+1. **Endpoint** (`app.py`, next to `resend_approved_request_email`): `@app.route('/download_approved_package/<module>/<int:record_id>')`,
+   `@login_required`, GET only. Normalize `module` to one of `travel_request`, `cash_advance`, `reimbursement`,
+   `travel_liquidation`, `cash_advance_liquidation` (else 400). For each: load the record (404 if missing); allow when
+   `is_admin_authorized()` or the module's read gate above passes (else 403); require Approved (else 409 "Only approved
+   requests have an approved package."); resolve `approved_by_user` and `remarks` from the record; call the builder;
+   `log_activity(f"Downloaded approved package {module} #{record_id}")`; return `send_file(io.BytesIO(bytes),
+   as_attachment=True, download_name=filename, mimetype='application/zip' or 'application/pdf')`. Builder errors →
+   500 JSON "Unable to build the approved package." (logged). Done: each module returns the same file name the email
+   uses.
+2. **Button** (`templates/approvals.html`): add `<a id="approvalDownloadPackageBtn" class="approval-btn
+   approval-btn-secondary" style="display:none;" download>` before the Resend button in the action bar (~2402).
+   In `updateApprovalResendButton(data)` set its `href` to `/download_approved_package/${moduleKey}/${recordId}`, its
+   label to "Download approved package (ZIP)" or "Download approved form (PDF)" (PDF for `travel_request` and
+   `cash_advance`), and show it on the same `canShow` condition. Do not add it to the view-only hide list. Note in a
+   comment above `normalizeLiquidationPreviewUrl` that this button is the one deliberate download. Done: approved
+   items in the five modules show the button for approvers, admins and view-only accounts; non-approved items do not.
+3. **Tests**: new `tests/test_download_approved_package.py` (style of `tests/test_approvals_view_only.py`): approved
+   Travel Request and Cash Advance → 200, `application/pdf`, attachment named by the email filename helper; approved
+   Reimbursement → 200 zip whose bytes open with `zipfile`; view-only account → 200; a plain account → 403; a
+   Submitted record → 409; unknown module → 400; source test that the button is wired in `updateApprovalResendButton`
+   and not in the view-only hide block. Positive control: the endpoint tests fail on `HEAD` (route missing → 404),
+   run in-process against `git show HEAD:templates/approvals.html` for the source test.
+
+## Deliberately excluded
+
+- **Leave Request, LPR, Calibration**: their emails are not accounting packages (HR, procurement, certificate preview
+  already exists). Raise separately if wanted.
+- **Changing what the emails attach** (e.g. zipping Travel Request / Cash Advance): the owner chose "exactly what the
+  email attaches".
+- **Download buttons on My Requests or Accounting Center**: out of scope; those pages have their own downloads.
+- **Caching built packages**: built on demand, like the email; volumes are small.
+
+## Verification
+
+- Focused: `tests.test_download_approved_package`, `tests.test_approvals_view_only`,
+  `tests.test_approval_center_pagination`, `tests.test_reimbursement_tracker`. Change is confined to one new endpoint
+  and one page, so no full suite unless a shared helper ends up touched.
+- Browser (local server on a `scheduler.db` copy): as a view-only test account and as a routed approver, open an
+  approved Travel Request, Reimbursement, Travel Liquidation and CA Liquidation → button visible with the right label;
+  `fetch` its `href` → 200 with the right content type and file name; a submitted item → no button. 375 px: action
+  bar wraps without horizontal scroll; console clean.
+- Clean up the DB copy, test accounts and the temporary `.claude/launch.json` path.
+
+## After implementation
+
+- Self-review; confirm Approve, Return and Resend still work for a routed approver, and every function the action bar
+  calls is still defined.
+- No `?v=` or service worker bump (inline script; `/approvals` is not precached). One `static/changelog/releases.json`
+  entry: "Approvals: approved requests have a Download approved package button — the same files the accounting email
+  sends."
+- `changes.md` entry; this Status line with the commit hash; memory note.
+- On "commit and push": only `app.py`, `templates/approvals.html`, the new test, `releases.json`, and this plan's
+  `plans.md`/`changes.md` text. Never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files. Verify
+  `origin/main` and Railway deployment metadata.
+
+## Risks
+
+- **Heavier downloads than previews**: the zips include receipts and can be several MB; built on request only.
+- **Wider exposure**: anyone who can read an approval can now download its full package, including view-only
+  accounts. That is the owner's request; the gate is the same read gate as the detail view and every download is
+  logged.
+- **Builder side effects**: the builders are the email's; confirm during step 1 that none writes to the database (e.g.
+  sets `accounting_status`) — if one does, call only its pure part or stop and amend this plan.
+
 # Calibration Report for a schedule whose TSR was uploaded, not system-made (1 batch)
 
 **Status:** Executed 2026-10-19 on "Go ahead with the uploaded-TSR calibration plan."; not committed. Approved
