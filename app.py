@@ -27645,6 +27645,80 @@ def get_online_tsr_submission(submission_id):
     })
 
 
+def online_tsr_is_uploaded_tsr_carrier(submission):
+    """True for the light TSR record that only carries a Calibration Report for an uploaded TSR."""
+    return bool(submission and parse_online_tsr_payload_json(submission).get('_uploaded_tsr_carrier'))
+
+
+@app.route('/calibration-report/uploaded-tsr/<int:shift_id>', methods=['POST'])
+@login_required
+def create_uploaded_tsr_calibration_record(shift_id):
+    """Create (once) a light TSR record so a schedule whose TSR was uploaded can take a Calibration Report."""
+    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+        return denied()
+    ensure_online_tsr_submission_table()
+    shift = db.session.get(Shift, shift_id)
+    if not shift:
+        return jsonify({'status': 'error', 'message': 'Schedule not found.'}), 404
+    if not can_work_on_existing_schedule_shift(shift):
+        return denied('You are not allowed to add a Calibration Report to this schedule.')
+
+    existing = get_latest_online_tsr_submission_for_shift(shift.id)
+    if online_tsr_is_uploaded_tsr_carrier(existing):
+        return jsonify({'status': 'success', 'submission_id': existing.id, 'tsr_number': existing.tsr_number or ''})
+    if existing and existing.status == 'completed':
+        return jsonify({'status': 'error', 'message': 'This schedule already has a TSR made in the system. Open its Calibration Report from the Calendar.'}), 409
+    if not shift_has_tsr_file(shift):
+        return jsonify({'status': 'error', 'message': 'Upload the TSR to this schedule first.'}), 409
+
+    data = request.get_json(silent=True) or {}
+    tsr_number = (clean_str(data.get('tsr_number')) or '').strip()
+    if not tsr_number:
+        return jsonify({'status': 'error', 'message': 'Enter the TSR No. of the uploaded TSR.'}), 400
+    if len(tsr_number) > 120:
+        return jsonify({'status': 'error', 'message': 'The TSR No. must be 120 characters or fewer.'}), 400
+    number_key = tsr_number.upper()
+    used_by_tsr = OnlineTsrSubmission.query.filter(db.func.upper(OnlineTsrSubmission.tsr_number) == number_key).first()
+    reserved = TsrNumberReservation.query.filter(db.func.upper(TsrNumberReservation.tsr_number) == number_key).first()
+    if used_by_tsr or (reserved and reserved.user_id != getattr(current_user, 'id', None)):
+        return jsonify({'status': 'error', 'message': f'TSR No. {tsr_number} is already used by another TSR. Check the number on the uploaded TSR.'}), 409
+
+    equipment = resolve_shift_equipment(shift)
+    client_name = (getattr(shift.client, 'name', None) or '')[:200]
+    product_name = (getattr(equipment, 'name', None) or '')[:200]
+    serial_number = (clean_str(shift.product_id) or '')[:120]
+    submitted_by = tsr_knowledge_current_engineer_name()[:120]
+    payload = {
+        '_uploaded_tsr_carrier': True,
+        'schedule_id': shift.id,
+        'tsr-number': tsr_number,
+        'tsr_number': tsr_number,
+        'tsr-customer-name': client_name,
+        'tsr-address': getattr(shift.client, 'address', None) or '',
+        'tsr-equipment-model': product_name,
+        'tsr-serial-no': serial_number,
+        'tsr-service-date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
+        'tsr-serviced-by': submitted_by,
+    }
+    submission = OnlineTsrSubmission(
+        shift_id=shift.id,
+        tsr_number=tsr_number,
+        client_name=client_name,
+        product_name=product_name,
+        serial_number=serial_number,
+        submitted_by_user_id=getattr(current_user, 'id', None),
+        submitted_by_name=submitted_by,
+        status='completed',
+        submission_token=f'uploaded-tsr-{secrets.token_hex(16)}',
+        payload_json=json.dumps(payload, ensure_ascii=False),
+        revision_no=1,
+        is_latest=True,
+    )
+    db.session.add(submission)
+    db.session.commit()
+    return jsonify({'status': 'success', 'submission_id': submission.id, 'tsr_number': tsr_number})
+
+
 @app.route('/get_latest_online_tsr_for_shift/<int:shift_id>', methods=['GET'])
 @login_required
 def get_latest_online_tsr_for_shift(shift_id):
@@ -27691,6 +27765,8 @@ def revise_online_tsr_submission(submission_id):
 
     if not can_work_on_existing_schedule_shift(shift):
         return denied('You are not allowed to revise this TSR.')
+    if online_tsr_is_uploaded_tsr_carrier(original):
+        return jsonify({'status': 'error', 'message': 'This TSR was uploaded, not created in the system, so it cannot be revised here.'}), 409
 
     if request.is_json:
         payload = request.get_json(silent=True) or {}
@@ -28175,7 +28251,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v336-tsr-sent-draft';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

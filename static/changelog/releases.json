@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-19-calibration-uploaded-tsr",
+      "release_date": "2026-10-19",
+      "title": "Calibration Reports for uploaded TSRs",
+      "summary": "You can now send a Calibration Report for a schedule whose TSR you uploaded instead of creating it in the system.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-19-calibration-uploaded-tsr-send",
+          "category": "Calibration Report",
+          "description": "On a completed schedule with an uploaded TSR, Create Calibration Report asks for the TSR No. printed on it, then opens the report. Save Final Report uploads it and sends it to your approver, and it shows in My Calibrations. A report you started earlier on the same phone is loaded for you."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-19-tsr-sent-draft",
       "release_date": "2026-10-19",
       "title": "Sent TSRs stay out of saved drafts",

@@ -20777,10 +20777,89 @@ function redirectToCalibrationReportFromSchedule(shiftPayload, engineerId, dayIs
     if(submissionId){
         context.submission_id = submissionId;
         context.mode = 'calibration_report';
+    }else if(isScheduleCompleted(shift)){
+        // Completed with an uploaded (not system-made) TSR: the server makes a light TSR record first.
+        openUploadedTSRCalibrationReport(shift, context);
+        return;
     }else{
         context.open_calibration_report = true;
     }
     redirectToCreateTSRPage(context);
+}
+
+// Asks for the uploaded TSR's number, creates its light TSR record, then opens the Calibration Report page.
+function openUploadedTSRCalibrationReport(shift, context){
+    const backdrop = document.getElementById('timeline-dialog-backdrop');
+    const dialog = document.getElementById('timeline-dialog-box');
+    const icon = document.getElementById('timeline-dialog-icon');
+    const title = document.getElementById('timeline-dialog-title');
+    const message = document.getElementById('timeline-dialog-message');
+    const cancelBtn = document.getElementById('timeline-dialog-cancel');
+    const confirmBtn = document.getElementById('timeline-dialog-confirm');
+    if(!backdrop || !dialog || !title || !message || !cancelBtn || !confirmBtn){
+        timelineAlert('Calibration Report could not be opened. Reload the Calendar and try again.');
+        return;
+    }
+    dialog.className = 'timeline-dialog';
+    if(icon) icon.innerHTML = '<i class="fa-solid fa-file-circle-check"></i>';
+    title.textContent = 'Calibration Report';
+    message.innerHTML = `
+        <p class="mb-2">This schedule's TSR was uploaded. Enter the TSR No. printed on it.</p>
+        <label for="uploaded-tsr-number-input" class="form-label small fw-bold mb-1">TSR No.</label>
+        <input type="text" id="uploaded-tsr-number-input" class="form-control" maxlength="120" autocomplete="off">
+        <div id="uploaded-tsr-number-error" class="small text-danger mt-1" role="alert"></div>`;
+    const input = document.getElementById('uploaded-tsr-number-input');
+    const errorBox = document.getElementById('uploaded-tsr-number-error');
+    cancelBtn.textContent = 'Cancel';
+    confirmBtn.textContent = 'Open Report';
+    confirmBtn.className = 'btn btn-sm fw-bold px-4 btn-primary';
+    confirmBtn.disabled = false;
+
+    let busy = false;
+    const close = function(){
+        backdrop.classList.remove('show');
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        backdrop.onclick = null;
+        confirmBtn.disabled = false;
+        document.removeEventListener('keydown', keyHandler);
+    };
+    const submit = async function(){
+        if(busy) return;
+        const tsrNumber = String(input?.value || '').trim();
+        if(!tsrNumber){ errorBox.textContent = 'Enter the TSR No. of the uploaded TSR.'; input?.focus(); return; }
+        busy = true;
+        confirmBtn.disabled = true;
+        errorBox.textContent = '';
+        try{
+            const response = await fetch(`/calibration-report/uploaded-tsr/${encodeURIComponent(shift.id)}`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRFToken': getCSRFToken() },
+                body: JSON.stringify({ tsr_number: tsrNumber })
+            });
+            const result = await response.json().catch(() => ({}));
+            if(!response.ok || result.status !== 'success' || !result.submission_id){
+                throw new Error(result.message || 'Calibration Report could not be opened.');
+            }
+            close();
+            redirectToCreateTSRPage(Object.assign({}, context, { submission_id: result.submission_id, mode: 'calibration_report' }));
+        }catch(error){
+            errorBox.textContent = navigator.onLine ? (error?.message || 'Calibration Report could not be opened.') : 'You are offline. Connect, then try again.';
+            confirmBtn.disabled = false;
+            busy = false;
+        }
+    };
+    const keyHandler = function(event){
+        if(event.key === 'Escape') close();
+        if(event.key === 'Enter' && event.target === input){ event.preventDefault(); submit(); }
+    };
+    confirmBtn.onclick = submit;
+    cancelBtn.onclick = close;
+    backdrop.onclick = function(event){ if(event.target === backdrop) close(); };
+    document.addEventListener('keydown', keyHandler);
+    backdrop.classList.add('show');
+    window.setTimeout(function(){ input?.focus(); }, 60);
 }
 
 function openOfflineTSRDraftFromShiftModal(){

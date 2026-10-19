@@ -5717,6 +5717,16 @@ async function restoreStandaloneLateCalibrationDraft(submissionId){
     }
   }
   if(!candidate?.payload?.calibration_report) candidate = null;
+  // An uploaded (not system-made) TSR: the report may still sit in the schedule's Create TSR draft.
+  // Take only its report, never its TSR fields.
+  if(!candidate && onlineTSRCalibrationContext?.uploaded_tsr_carrier){
+    const shiftId = String(onlineTSRCalibrationContext.shift_id || '').trim();
+    const scheduleDraft = records
+      .filter(record => shiftId && String(record?.payload?.schedule_id || '') === shiftId)
+      .filter(record => record.payload.calibration_report && record.payload.calibration_report.status !== 'not_started')
+      .sort((a, b) => (Date.parse(b.payload.calibration_report.updated_at || '') || 0) - (Date.parse(a.payload.calibration_report.updated_at || '') || 0))[0];
+    if(scheduleDraft) candidate = { id:draftKey, payload:{ calibration_report:scheduleDraft.payload.calibration_report }, source:'schedule_draft' };
+  }
   // The account copy wins when it is newer (saved on another device, or this device was cleared).
   const accountCopy = await loadLateCalibrationReportAccountCopy(targetId);
   const reportSavedAt = report => Date.parse(report?.updated_at || '') || 0;
@@ -5734,6 +5744,14 @@ async function restoreStandaloneLateCalibrationDraft(submissionId){
   if(onlineTSRCalibrationContext){
     onlineTSRCalibrationContext.local_draft_id = localId;
     onlineTSRCalibrationContext.recovered_local_draft_id = localId;
+  }
+  if(candidate.source === 'schedule_draft'){
+    window.calibrationReport?.apply(candidate.payload.calibration_report);
+    await saveStandaloneTSRDraftLocally(
+      prepareStandaloneLateCalibrationDraft(collectTSRData(), targetId), { serverSync:'none' }
+    ).catch(err => console.warn('[Calibration Report] Device copy of the schedule draft report failed', err));
+    showTSRStatus('Loaded the Calibration Report you started in Create TSR. Press Save Final Report to upload it.', 'info');
+    return candidate;
   }
   if(candidate.source === 'account'){
     window.calibrationReport?.apply(candidate.payload.calibration_report);
@@ -5791,7 +5809,8 @@ async function loadOnlineTSRCalibrationFromUrl(){
       calibration_report_returned: String(submission.calibration_certificate?.status || '').toLowerCase() === 'returned',
       calibration_report_returned_at: submission.calibration_certificate?.returned_at || '',
       local_draft_id: '',
-      recovered_local_draft_id: ''
+      recovered_local_draft_id: '',
+      uploaded_tsr_carrier: payload._uploaded_tsr_carrier === true
     };
     onlineTSRRevisionContext = null;
     applyStandaloneTSRDraftData(payload);

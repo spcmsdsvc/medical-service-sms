@@ -37,6 +37,133 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Calibration Report for a schedule whose TSR was uploaded, not system-made (1 batch)
+
+**Status:** Executed 2026-10-19 on "Go ahead with the uploaded-TSR calibration plan."; not committed. Approved
+2026-10-19 ("just allow engineer to upload calibration report even when tsr is not system made").
+
+### Amendments during execution
+
+- Step 3: the Calendar checks only "Completed and no system TSR"; the uploaded-TSR check is left to the server (409
+  "Upload the TSR to this schedule first."), because some Calendar button payloads carry no file details.
+- Step 1: a TSR No. reserved by the **same** engineer is accepted (their earlier Create TSR draft may hold it); one used
+  by any TSR or reserved by another user is refused.
+- Step 4: the carried-over report is saved under the late-report key with its own notice ("Loaded the Calibration
+  Report you started in Create TSR…"); the original Create TSR draft is left on the device for the engineer to delete.
+- Results: 7 new tests, all fail on `HEAD`; focused 101 OK; version/changelog 105 OK; full suite no new failures.
+  Browser flow on a DB copy passed end to end (details in `changes.md`).
+
+## Context
+
+An engineer uploaded a TSR that was not created in the system, saved the schedule, and it is now Completed. They had
+started a Calibration Report earlier in Create TSR. On the Calendar, **Create Calibration Report** opens that device
+draft, but **Save Final Report** never uploads: nothing appears in My Calibrations or Approvals. Engineers must be
+able to upload the Calibration Report and send it for approval on such schedules. Urgent: a real report is stuck.
+
+## Decisions taken
+
+- The engineer types the **TSR No. of the uploaded TSR** once, when opening the report. It is the only value the
+  report/certificate needs from a TSR (certificate line "TSR No."); everything else comes from the schedule and the
+  report itself.
+- Behind the scenes the server creates a **light TSR record** (an `OnlineTsrSubmission` marked
+  `_uploaded_tsr_carrier`) for that schedule, so the existing Calibration Report page, late upload, My Calibrations,
+  Approvals and certificate flow work unchanged. No schema change.
+- Signatures: the engineer's calibration signature is drawn in the report (unchanged); the approver's is stamped at
+  approval (unchanged); the client's TSR signature is not used by the report or certificate.
+
+## Investigation
+
+- Calendar sends a schedule with no system TSR to plain Create TSR (`redirectToCalibrationReportFromSchedule`,
+  `templates/timeline.html:20745`; `canOpenCalibrationReportForSchedule` returns true with no submission,
+  `:16317`). There `saveFinalReport` (`static/js/app-calibration-report.js:1803`) takes the non-calibration branch and
+  only saves into the device TSR draft ("certificate will queue after TSR sync", `:1831`). On a Completed schedule with
+  an uploaded TSR, no system TSR is ever saved, so the report never reaches the server.
+- The whole server chain is keyed by a TSR record: late upload `/upload_online_tsr_attachment/<submission_id>`
+  (`app.py:27255`, needs `status == 'completed'`); `CalibrationCertificateApproval.online_tsr_submission_id` is
+  NOT NULL + unique (`app.py:3808`).
+- Certificate values (`calibration_certificate_values`, `app.py:24039`) read only `tsr-number` from the TSR payload.
+- Light-record side effects checked at every `OnlineTsrSubmission.query` site: TSR number reservation
+  (`_tsr_number_is_reserved_or_submitted`, `app.py:15103`) will now count the typed number — wanted; PDF repair
+  (`_tsr_repair_candidate_rows`, `:17501`) skips payloads without `_tsr_form_version == 'vector-pdf-v2'` — the light
+  record has none; TSR Archive and file lists (`:54855`, `:59152`, `:60887`) key on `_attached_file_id` — the light
+  record has none, so no phantom TSR row; Calendar (`:53579`) sets `online_tsr_submission_id`, which the Calendar uses
+  only to gate Create TSR (already hidden on Completed) and to send the report button to `/calibration-report` — wanted.
+  **Revise TSR** (`revise_online_tsr_submission`, `:27677`) must refuse a light record.
+- The engineer's earlier report lives in a normal Create TSR device draft whose payload has `schedule_id`
+  (`collectTSRData`, `templates/offline_tsr.html:3501`). `restoreStandaloneLateCalibrationDraft`
+  (`templates/offline_tsr.html:5697`) only finds late-draft keys, so it must also pick up that draft.
+
+## Execution steps
+
+1. **Server — create the light record.** `app.py`: new route `POST /calibration-report/uploaded-tsr/<int:shift_id>`
+   (`login_required`, engineer or admin, `can_work_on_existing_schedule_shift`). Requires: schedule exists,
+   `shift_has_tsr_file(shift)` (`app.py:54544`) is true, no latest completed system TSR for it
+   (`get_latest_online_tsr_submission_for_shift`); if a light record already exists, return it (idempotent).
+   Validates `tsr_number` (trimmed, ≤ 120 chars, not used by another TSR via `_tsr_number_is_reserved_or_submitted`
+   — clear message if taken). Creates `OnlineTsrSubmission(status='completed', is_latest=True, revision_no=1,
+   tsr_number, client_name, product_name, serial_number, submitted_by_*)` with payload: `tsr-number`, customer,
+   address, equipment model, serial, service date, serviced by, `schedule_id`, `_uploaded_tsr_carrier: true`.
+   Returns `{status:'success', submission_id}`. Done: endpoint returns the id; a second call returns the same id.
+2. **Server — block revision of a light record.** `revise_online_tsr_submission`: return 409 "This TSR was uploaded,
+   not created in the system, so it cannot be revised here." when the payload has `_uploaded_tsr_carrier`.
+3. **Calendar — ask for the TSR No.** `templates/timeline.html` `redirectToCalibrationReportFromSchedule`: when there
+   is no submission id **and** `hasScheduleTSRAttachment(shift)` **and** `isScheduleCompleted(shift)`, show a small
+   dialog (reuse the `timeline-dialog` markup/pattern of `timelineConfirmDialog`, plus one text input "TSR No. of the
+   uploaded TSR"), POST step 1 with the CSRF token, then redirect with `mode:'calibration_report'` and the returned
+   `submission_id`. Errors show in the dialog. Schedules without an uploaded TSR keep today's path.
+4. **Calibration page — carry over the earlier report.** `templates/offline_tsr.html`
+   `restoreStandaloneLateCalibrationDraft`: when no late draft or account copy is found and the context's submission
+   is a light record, take the newest device draft whose `payload.schedule_id` equals the context's `shift_id` and
+   has an active `calibration_report`; apply only its `calibration_report` (never its TSR fields). Done: opening the
+   page shows the engineer's earlier report.
+5. **No change** to `saveFinalReport`, `saveStandaloneCalibrationReport` or `/upload_online_tsr_attachment` — with a
+   light record they take the existing late-upload path. Confirm by test, not by edit.
+6. Service worker `CACHE_VERSION` → `v337-calibration-uploaded-tsr` (`app.py:28178`); `releases.json` release
+   "Calibration Reports for uploaded TSRs"; `changes.md` entry.
+
+## Deliberately excluded
+
+- No schema change (making the approval's TSR link optional) — larger migration and touches every approval query.
+- No reading the TSR No. from the uploaded PDF — unreliable on scans; the engineer types it.
+- The light record never gets a TSR PDF, is never emailed as a TSR, and cannot be revised.
+- Not changing schedules that are not Completed: there the engineer can still create a system TSR.
+
+## Verification
+
+- New `tests/test_calibration_uploaded_tsr.py`:
+  - creates the light record for a Completed schedule with an uploaded TSR; second call returns the same id;
+  - refuses: no uploaded TSR, a schedule that already has a system TSR, a TSR No. already used, another engineer's
+    schedule;
+  - late upload to `/upload_online_tsr_attachment/<light id>` succeeds and creates the certificate approval (shows in
+    `_my_calibration_rows`);
+  - revise of a light record returns 409; the light record does not appear in the TSR Archive or PDF repair list;
+  - Node/source check that `restoreStandaloneLateCalibrationDraft` picks the schedule draft's report.
+  - Positive control: run the new tests on `HEAD` first — the endpoint tests fail (404) before step 1.
+- Focused modules: the new file plus `test_calibration_late_upload_feedback`, `test_my_calibrations`,
+  `test_calibration_report_returned_fix`, `test_tsr_calibration_report`, `test_offline_tsr_pending_schedule`.
+  Full suite once before publish (touches shared `app.py` routes and the Calendar).
+- Browser, on a DB copy: Completed schedule with an uploaded TSR and a device draft holding a report → Calendar
+  **Create Calibration Report** → type TSR No. → page opens with the earlier report → **Save Final Report** → "uploaded
+  and sent to the approver"; My Calibrations shows it pending; approver sees it in Approvals. 375 px check of the
+  dialog; no console or server errors. Clean up the DB copy, test accounts and launch entry.
+
+## After implementation
+
+Self-review the diff against "Protect Existing Functions" (every function the Calendar and calibration page call still
+exists; Create TSR, Save Final Report on a system TSR, and Revise TSR still work); record results and any amendments
+under this plan; update `changes.md`; then wait for "commit and push". Commit only the touched files — never
+`scheduler.db`, handoffs, `output/`, `tmp/`, `.impeccable/`, `.claude/`.
+
+## Risks
+
+- A light record is a new kind of TSR record: any other screen that lists TSR records without checking for a PDF
+  could show it. Mitigation: every query site was checked above; the marker `_uploaded_tsr_carrier` lets any missed
+  site exclude it.
+- A wrong TSR No. typed by the engineer goes on the certificate. Mitigation: the approver reviews the report and can
+  return it; the value is shown on the report page.
+- Production repair for the stuck engineer: after publish they reopen the report from the Calendar on the same device
+  (the report lives in that device's draft).
+
 # Sent TSR reappears as a saved draft after an offline queue syncs (1 batch)
 
 **Status:** Executed 2026-10-19 on "go ahead", not committed. Approved 2026-10-19 ("Write the one-batch fix for the
