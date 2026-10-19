@@ -63327,13 +63327,6 @@ def update_shift(id):
     old_ids = [s.id for s in old_chain]
     original_created_at = master_shift.created_at
 
-    # Preserve existing file links across the chain. Physical files remain on disk.
-    preserved_files = []
-    for old_shift in old_chain:
-        for file_rec in old_shift.files:
-            if file_rec.filename not in preserved_files:
-                preserved_files.append(file_rec.filename)
-
     old_shift_date_map = {old_shift.start_time.date(): old_shift for old_shift in old_chain}
     old_parent_date_by_id = {old_shift.id: old_date for old_date, old_shift in old_shift_date_map.items()}
     old_travel_source_by_date = {
@@ -63411,11 +63404,8 @@ def update_shift(id):
         force_completed=completing_full_chain,
     )
 
-    for old_shift in old_chain:
-        delete_shift_engineer_links(old_shift.id)
-        db.session.delete(old_shift)
-    db.session.flush()
-
+    # New rows are created before the old ones are deleted, so files, TSR submissions,
+    # certificate approvals and other links can move to them with their ids intact.
     first_new_shift = None
     new_shift_by_date = {}
     for iter_date in requested_schedule_dates:
@@ -63452,10 +63442,22 @@ def update_shift(id):
         for e_id in base_engineers_for_date:
             db.session.add(ShiftEngineer(shift_id=new_shift.id, engineer_id=e_id))
 
+    if first_new_shift:
+        repoint_schedule_dependents({
+            old_shift.id: (new_shift_by_date.get(old_shift.start_time.date()) or first_new_shift).id
+            for old_shift in old_chain
+        })
+
+    try:
+        for old_shift in old_chain:
+            delete_shift_engineer_links(old_shift.id)
+            db.session.delete(old_shift)
+        db.session.flush()
+    except ScheduleHasLinkedWorkError:
+        return schedule_linked_work_response()
+
     saved_files = []
     if first_new_shift:
-        for filename in preserved_files:
-            db.session.add(ShiftFile(shift_id=first_new_shift.id, filename=filename))
         saved_files = save_uploaded_shift_files(first_new_shift)
 
     # Re-link custom-time child schedules to the newly rebuilt parent shift for the same date.
@@ -63845,6 +63847,137 @@ def detach_engineer_from_shift_for_delete(shift, engineer_id):
     return False
 
 
+SCHEDULE_LINKED_WORK_MESSAGE = (
+    'This schedule has a submitted TSR or Calibration Certificate and cannot be deleted. Edit it instead.'
+)
+
+
+class ScheduleHasLinkedWorkError(RuntimeError):
+    """A schedule row that a TSR submission or certificate approval still points at was deleted."""
+
+    def __init__(self, shift_ids=None):
+        self.shift_ids = sorted(shift_ids or [])
+        super().__init__(f'{SCHEDULE_LINKED_WORK_MESSAGE} (schedule ids: {self.shift_ids})')
+
+
+SCHEDULE_LINKED_WORK_MODELS = ('OnlineTsrSubmission', 'CalibrationCertificateApproval')
+SCHEDULE_DEPENDENT_MODELS = (
+    'ShiftFile', 'OnlineTsrSubmission', 'CalibrationCertificateApproval',
+    'ReimbursementRow', 'ReimbursementReceipt', 'InventoryPmVisit',
+)
+
+
+def schedule_ids_with_linked_work(shift_ids, session=None):
+    """Return the schedule ids a TSR submission or certificate approval still points at.
+
+    Unflushed in-session changes win over the database, so a record re-pointed in this
+    session no longer counts for its old schedule."""
+    ids = {clean_int(value) for value in shift_ids or [] if clean_int(value)}
+    if not ids:
+        return set()
+    session = session or db.session
+    linked = set()
+    with session.no_autoflush:
+        for model_name in SCHEDULE_LINKED_WORK_MODELS:
+            model = globals()[model_name]
+            try:
+                rows = session.query(model.id, model.shift_id).filter(model.shift_id.in_(sorted(ids))).all()
+            except OperationalError as table_error:
+                if 'no such table' not in str(table_error).lower():
+                    raise
+                continue
+            current = {('db', clean_int(row[0])): clean_int(row[1]) for row in rows}
+            for obj in [*session.identity_map.values(), *session.new]:
+                if not isinstance(obj, model):
+                    continue
+                key = ('db', clean_int(obj.__dict__.get('id'))) if obj.__dict__.get('id') else ('new', id(obj))
+                if obj in session.deleted:
+                    current.pop(key, None)
+                elif 'shift_id' in obj.__dict__:
+                    current[key] = clean_int(obj.__dict__['shift_id'])
+            linked.update(shift_id for shift_id in current.values() if shift_id in ids)
+    return linked
+
+
+@event.listens_for(SqlAlchemySession, 'before_flush')
+def refuse_deleting_schedules_with_linked_work(session_obj, flush_context, instances):
+    """Never let any code path delete a schedule that still owns a TSR or certificate."""
+    shift_ids = [
+        clean_int(obj.__dict__.get('id'))
+        for obj in session_obj.deleted
+        if isinstance(obj, Shift) and obj.__dict__.get('id')
+    ]
+    linked = schedule_ids_with_linked_work(shift_ids, session=session_obj) if shift_ids else set()
+    if linked:
+        raise ScheduleHasLinkedWorkError(linked)
+
+
+def repoint_schedule_dependents(old_to_new):
+    """Move every record that references a rebuilt schedule row to its replacement row.
+
+    Flushes, then expires the old rows' file lists so deleting them cannot cascade
+    into the files that moved."""
+    mapping = {
+        clean_int(old_id): clean_int(new_id)
+        for old_id, new_id in (old_to_new or {}).items()
+        if clean_int(old_id) and clean_int(new_id) and clean_int(old_id) != clean_int(new_id)
+    }
+    if not mapping:
+        return 0
+    moved = 0
+    for model_name in SCHEDULE_DEPENDENT_MODELS:
+        model = globals()[model_name]
+        try:
+            rows = model.query.filter(model.shift_id.in_(sorted(mapping))).all()
+        except OperationalError as table_error:
+            if 'no such table' not in str(table_error).lower():
+                raise
+            continue
+        for row in rows:
+            if model is OnlineTsrSubmission:
+                payload = parse_online_tsr_payload_json(row)
+                completed_ids = payload.get('_completed_shift_ids') if isinstance(payload, dict) else None
+                if isinstance(completed_ids, list):
+                    payload['_completed_shift_ids'] = [mapping.get(clean_int(value), value) for value in completed_ids]
+                    row.payload_json = json.dumps(payload, ensure_ascii=False)
+            row.shift_id = mapping[clean_int(row.shift_id)]
+            moved += 1
+    db.session.flush()
+    for old_id in mapping:
+        old_shift = db.session.get(Shift, old_id)
+        if old_shift:
+            db.session.expire(old_shift, ['files'])
+    return moved
+
+
+def shift_delete_detaches_only(shift, delete_mode, engineer_id):
+    """Single/engineer-range delete on a shared row removes only that engineer."""
+    assigned_engineer_ids = get_shift_assigned_engineer_ids(shift)
+    return bool(
+        (clean_str(delete_mode) or 'single') in {'single', 'engineer_range'} and
+        engineer_id and
+        int(engineer_id) in [int(eid) for eid in assigned_engineer_ids if eid] and
+        not is_shift_time_override(shift) and
+        len(set(map(int, assigned_engineer_ids))) > 1
+    )
+
+
+def blocked_delete_shift_ids(candidates, delete_mode, engineer_id=None):
+    """Schedule ids this delete would remove although they own a TSR or certificate."""
+    removing = [
+        shift.id for shift in candidates or []
+        if shift and not clean_int(getattr(shift, 'leave_request_id', None))
+        and not shift_delete_detaches_only(shift, delete_mode, engineer_id)
+    ]
+    return schedule_ids_with_linked_work(removing)
+
+
+def schedule_linked_work_response():
+    """409 for a delete or rebuild refused because the schedule owns TSR/certificate work."""
+    db.session.rollback()
+    return jsonify({'status': 'error', 'error_code': 'schedule_has_linked_work', 'message': SCHEDULE_LINKED_WORK_MESSAGE}), 409
+
+
 def delete_shift_rows_with_cleanup(candidates, delete_mode=None, engineer_id=None):
     """Delete or detach schedule rows safely.
 
@@ -63871,17 +64004,15 @@ def delete_shift_rows_with_cleanup(candidates, delete_mode=None, engineer_id=Non
         seen_ids.add(shift.id)
         unique_candidates.append(shift)
 
+    blocked_ids = blocked_delete_shift_ids(unique_candidates, mode, engineer_id)
+    if blocked_ids:
+        raise ScheduleHasLinkedWorkError(blocked_ids)
+
     for shift in unique_candidates:
         assigned_engineer_ids = get_shift_assigned_engineer_ids(shift)
         snapshot = build_deleted_shift_snapshot(shift)
 
-        should_detach_only = (
-            mode in {'single', 'engineer_range'} and
-            engineer_id and
-            int(engineer_id) in [int(eid) for eid in assigned_engineer_ids if eid] and
-            not is_shift_time_override(shift) and
-            len(set(map(int, assigned_engineer_ids))) > 1
-        )
+        should_detach_only = shift_delete_detaches_only(shift, mode, engineer_id)
 
         if should_detach_only and detach_engineer_from_shift_for_delete(shift, engineer_id):
             detached_ids.append(shift.id)
@@ -63951,6 +64082,9 @@ def preview_delete_shifts():
     if not can_modify_schedule_for_engineer_ids(affected_ids_for_auth):
         return denied('You are not authorized to delete one or more schedules in this preview.')
 
+    if blocked_delete_shift_ids(candidates, delete_mode, engineer_id):
+        return schedule_linked_work_response()
+
     return jsonify(build_delete_preview_payload(candidates, delete_mode))
 
 
@@ -64000,8 +64134,11 @@ def delete_shifts_previewed():
         return denied('You are not authorized to delete one or more selected schedules.')
 
     preview_payload = build_delete_preview_payload(candidates, delete_mode)
-    deleted_ids, notified_snapshots, detached_ids = delete_shift_rows_with_cleanup(candidates, delete_mode=delete_mode, engineer_id=engineer_id)
-    db.session.commit()
+    try:
+        deleted_ids, notified_snapshots, detached_ids = delete_shift_rows_with_cleanup(candidates, delete_mode=delete_mode, engineer_id=engineer_id)
+        db.session.commit()
+    except ScheduleHasLinkedWorkError:
+        return schedule_linked_work_response()
 
     actor_name = current_user.username.capitalize()
     mode_labels = {
@@ -64150,8 +64287,11 @@ def delete_shift(id):
             return denied('You are not authorized to delete this schedule.')
 
         title = target.title
-        deleted_ids, notified_snapshots, _detached_ids = delete_shift_rows_with_cleanup([target], delete_mode='linked_chain')
-        db.session.commit()
+        try:
+            deleted_ids, notified_snapshots, _detached_ids = delete_shift_rows_with_cleanup([target], delete_mode='linked_chain')
+            db.session.commit()
+        except ScheduleHasLinkedWorkError:
+            return schedule_linked_work_response()
         log_activity(f"Deleted technical record: {title}")
 
         for snapshot, assigned_engineer_ids in notified_snapshots:
@@ -64207,12 +64347,18 @@ def batch_delete_shifts():
         .all()
     )
 
+    if blocked_delete_shift_ids(purge_list, 'engineer_range', eng_id):
+        return schedule_linked_work_response()
+
     preview_payload = build_delete_preview_payload(purge_list, 'engineer_range')
     if preview_only:
         return jsonify(preview_payload)
 
-    deleted_ids, notified_snapshots, detached_ids = delete_shift_rows_with_cleanup(purge_list, delete_mode='engineer_range', engineer_id=eng_id)
-    db.session.commit()
+    try:
+        deleted_ids, notified_snapshots, detached_ids = delete_shift_rows_with_cleanup(purge_list, delete_mode='engineer_range', engineer_id=eng_id)
+        db.session.commit()
+    except ScheduleHasLinkedWorkError:
+        return schedule_linked_work_response()
 
     count = len(deleted_ids) + len(detached_ids)
     log_activity(f"Bulk-purged {count} entries for {engineer.name}")

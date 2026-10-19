@@ -37,6 +37,205 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Schedule edits orphan TSRs and Calibration Reports — fix, guard, and repair (2 batches)
+
+**Status:** Batch 1 executed 2026-10-19 (not committed) on "Execute Batch 1 of the schedule-orphan plan in plans.md.
+Blocking deletes of schedules with a TSR or certificate is fine." (confirms the delete-block default). Batch 2 script
+and tests written 2026-10-19 (not committed) on "Don't publish yet. Execute Batch 2 of the schedule-orphan plan
+(repair script, dry-run only)."; production dry-run run 2026-10-19 (read-only, piped gzip+base64 over `railway ssh`
+because the plain script exceeded the command-line length): 22 deleted schedule ids — **17 REBUILT** (repairable;
+includes #4420 → #4603 with conversion #63 → files 1747/1748, and one "Test Customer" record #1744 → #1970),
+**3 DELETED** (#1082 Davao Doctors, #1754 Abra, #4225 Cardinal Santos — no live schedule holds the TSR file),
+**2 AMBIGUOUS** (#1972 Umingan — TSR file is on #2117 of another client name; #2195 Davao Doctors MPIC — file on
+#2258 and #2259), 0 blocked. Both batches published to `main` together on "Commit and push Batches 1 and 2. Never the
+db and dirty. After the deploy succeeds, run the repair with --apply on production for the 17 REBUILT rows." (that
+message is also the owner OK for `--apply`).
+
+### Amendments during execution (Batch 2)
+
+- The script is standalone (`sqlite3` only): importing `app.py` on Railway runs startup migrations, which a
+  dry-run must not do. It is piped over `railway ssh` the same way as the read-only queries.
+- No sha256 check: report files live in the private storage bucket, not on the container disk. Identity checks
+  replace it: exact TSR filename on exactly one live schedule, same client name, the report DOCX/PDF matched by the
+  marker's exact filenames among files not linked to another submission, and the conversion job found by the old
+  source id with the marker's PDF id. Any mismatch → `blocked`, nothing written for that schedule.
+- Files are linked to the latest submission revision of each deleted schedule only; older revisions get only the
+  schedule id and `_completed_shift_ids` re-pointed.
+- An approval on a deleted schedule with no TSR submission is printed as a NOTE, not repaired.
+- Tests: `tests/test_repair_orphaned_schedule_links.py` (3): dry-run writes nothing and reports REBUILT; `--apply`
+  turns the report from unavailable to available, re-links TSR/approval/payload, logs one activity line, and a second
+  run finds nothing; a truly deleted schedule is left untouched. 3/3 pass. Local `scheduler.db` copy dry-run: no
+  orphans (its data predates the affected edits). Approved 2026-10-19 ("approved. make sure this never happens again so the fix should include that
+also"). Two commits, one per batch.
+
+### Amendments during execution (Batch 1)
+
+- Step 2: the old→new map is by date, so files on day 2 of a chain now stay on day 2's new row (before, every file
+  was re-added to the first row). Required: the report lookup needs file, submission and approval on the same row.
+- Step 4 also covers `/batch_delete_shifts` (engineer range purge), which uses the same cleanup helper; the
+  detach-only rule moved into `shift_delete_detaches_only` so the preview and the delete agree.
+- Step 5: no template change. `templates/timeline.html:18267`, `:18301`, `:18339` already show the server's
+  `message`, so no service worker bump or `releases.json` entry.
+- `tests/test_timeline_tsr_file_details.py` tearDownClass deleted its schedule before its TSR submission; the guard
+  now refuses that, so the cleanup deletes the submission first (test-only change).
+- Browser check skipped: no page changed, and the four routes are exercised end to end by the new tests.
+- Results: new module 5/5; positive control on `HEAD` (archive copy) fails all four behaviour tests on the real bug
+  (lost `online_tsr_submission_id`, files on the wrong day, delete allowed, no guard). Focused modules
+  (`test_hr_schedule_viewer`, `test_inventory_pm`, `test_roles_from_database`, `test_schedule_email_attachments`,
+  `test_tsr_signature_recovery`, `test_calibration_center`, `test_timeline_tsr_file_details`) all pass; full suite
+  2127 tests, "No new failures."
+
+## Context
+
+Calibration Center showed certificate `2026-1014-195472` (TSR `20261014-02-JMM`, Batangas Medical Center, RADspeed Pro,
+John Michael Marfil) as **Not ready — "Calibration Report PDF is unavailable."** although the report had been
+generated, converted and approved. The cause is not the calibration code: **editing a schedule's engineer team (or
+dates) deletes the schedule row and creates a new one**, and everything that pointed at the old row by id is left
+pointing at a schedule that no longer exists. The owner wants the bug fixed, **a guard so it can never happen again
+by any path**, and the existing broken records repaired.
+
+## Decisions taken (owner, 2026-10-19)
+
+- Fix the rebuild, add a guard that makes the failure impossible by any code path, and repair existing records.
+- Repair runs as a script: dry-run by default, the owner sees the dry-run output before `--apply` is run on production.
+- **Executor's default, confirm at go-ahead:** an explicit user *delete* of a schedule that owns a submitted TSR or a
+  Calibration Certificate approval is **refused** (409, clear message) instead of silently orphaning them. Removing
+  that work first (or an admin decision) is required. This is the only behaviour change users will notice.
+
+## Investigation (verified 2026-10-19; production read-only over `railway ssh`, local code read)
+
+Production timeline for schedule #4420:
+
+1. 2026-10-14 21:32 — John saved TSR submission #730 on schedule #4420 (TSR PDF file 1724).
+2. 2026-10-14 22:08 — Calibration Report DOCX uploaded (file 1726, private source, token
+   `calibration-report-9ad54cda`), converted to PDF (file 1727; `calibration_report_conversion` #63 `ready`);
+   approval #58 submitted (Pending).
+3. 2026-10-15 14:09:40–59 — Diary edited the three Batangas 2026-10-14 schedules (#4419, #4420, #4591) to add Mark
+   Felongco (activity log 19489–19491). All three rows were deleted and rebuilt as #4602, #4603, #4604.
+4. 2026-10-15 17:22 — Robert approved #58; signed certificate files 1753/1754 were created with `shift_id = 4420`
+   (a schedule that no longer existed; SQLite does not enforce the foreign key).
+5. Result: submission #730 and approval #58 still say `shift_id 4420`; files 1724/1726/1727 no longer exist;
+   #4603 holds **new** rows 1746 (TSR PDF), 1747 (report DOCX), 1748 (report PDF) with only `filename` /
+   `original_filename` set — no `online_tsr_submission_id`, no `upload_token`. The physical files are intact.
+   File 1747 is no longer recognised as the private report source, so the editable DOCX may now show as an
+   ordinary attachment.
+
+Code:
+
+- `update_shift` fast in-place path (`app.py:63177–63306`) is used only when dates **and** base engineers are
+  unchanged (`structure_matches`, `:63200–63211`). Any team or date change falls through to the full rebuild.
+- Full rebuild (`app.py:63318–63488`): collects `preserved_files` as **filenames only** (`:63331–63335`), deletes every
+  old row (`:63414–63417`; `Shift.files` has `cascade="all, delete-orphan"`, `app.py:3679–3684`, so every `ShiftFile`
+  row is deleted with it), creates new rows, then re-adds `ShiftFile(shift_id=first_new_shift.id, filename=…)`
+  (`:63457–63458`). Nothing re-points `OnlineTsrSubmission.shift_id` (`:3725`), `CalibrationCertificateApproval.shift_id`
+  (`:3805`), `ReimbursementRow.shift_id` (`:2332`), `ReimbursementReceipt.shift_id` (`:2367`) or
+  `InventoryPmVisit.shift_id` (`:2863`, `ondelete='SET NULL'`), nor the `_completed_shift_ids` list inside submission
+  payloads. Time-override children are re-linked (`:63462–63483`) and PM history is captured
+  (`capture_inventory_pm_histories_for_shifts`, `:63409`, `:63485`) — those already work.
+- Explicit deletes go through `delete_shift_rows_with_cleanup` (`app.py:63848`), used by `/delete_shifts_previewed`
+  (`:63959`) and `/delete_shift/<id>` (`:64143`); they delete rows with no check for TSR/approval ownership.
+  `restore_leave_calendar_after_recall` (`:77842`) deletes leave rows only (no TSR possible).
+- Calibration Center resolves the report through the submission payload marker `_generated_calibration_report.file_id`
+  and requires the file's `shift_id` and `online_tsr_submission_id` to match the approval
+  (`calibration_certificate_generated_report_source_file`, `app.py:24774`), then the conversion job
+  (`is_system_generated_calibration_report_pdf_file`, `:20229`). Any of these ids going stale yields "unavailable"
+  (`_calibration_center_record`, `:25208–25215`).
+- **Scope in production:** 15 TSR submissions created since 2026-09-01 point at deleted schedules (#391, #423, #548,
+  #549, #575, #645–#650, #729, #730, #731, #733) and one approval (#58). Not yet known which were rebuilds (a live
+  schedule holds the same TSR filename) and which were real deletions — the repair dry-run classifies them.
+
+## Execution steps
+
+### Batch 1 — stop it and guard it (`app.py`, new test module)
+
+1. New helper `repoint_schedule_dependents(old_to_new)` near `delete_shift_rows_with_cleanup`: for a `{old_id: new_id}`
+   map, update `shift_id` on `ShiftFile`, `OnlineTsrSubmission`, `CalibrationCertificateApproval`, `ReimbursementRow`,
+   `ReimbursementReceipt`, `InventoryPmVisit`, and replace old ids inside each affected submission's
+   `_completed_shift_ids` payload list. Done: one function, no other behaviour.
+2. `update_shift` full rebuild (`app.py:63330–63459`): build `old_to_new` by date (old row's date → new row for that
+   date; a date with no new row maps to `first_new_shift`). **Before** deleting old rows, call
+   `repoint_schedule_dependents(old_to_new)` (after the new rows are flushed — reorder so new rows are created first,
+   then re-point, then delete old rows), and remove the filename-only `preserved_files` re-add (`:63331–63335`,
+   `:63457–63458`) because the original `ShiftFile` rows now move with their ids, tokens and submission links. Keep
+   `save_uploaded_shift_files(first_new_shift)`. Done: after an engineer-add edit, file ids, submission and approval
+   all point at the new row; the Calibration Center row stays ready.
+3. Guard for every path — `before_flush` SQLAlchemy listener (registered once, next to the models): if the session is
+   deleting a `Shift` that still has an `OnlineTsrSubmission` or `CalibrationCertificateApproval` pointing at it,
+   raise `ScheduleHasLinkedWorkError`. This catches today's paths and any future one. Done: deleting such a row in a
+   test raises; deleting a row without linked work still works.
+4. Explicit deletes: in `delete_shift_rows_with_cleanup` check first and return the blocked rows; `/preview_delete_shifts`,
+   `/delete_shifts_previewed` and `/delete_shift/<id>` answer 409 "This schedule has a submitted TSR or Calibration
+   Certificate and cannot be deleted. Edit it instead." `update_shift` catches `ScheduleHasLinkedWorkError` as a
+   safety net, rolls back and returns 409 with the same wording (should be unreachable after step 2). Done: no
+   unhandled 500 anywhere.
+5. Check the calendar delete UI shows the 409 message (existing error toast). Done: no template change needed, or a
+   one-line message change if the toast hides server text.
+
+### Batch 2 — repair existing records (`scripts/repair_orphaned_schedule_links.py`, test)
+
+6. Script, dry-run by default, `--apply` to write, `--db <path>` (production default `/data/scheduler.db` when run on
+   Railway). For each `OnlineTsrSubmission` and `CalibrationCertificateApproval` whose `shift_id` has no `Shift`:
+   - Find the rebuilt schedule: a live `Shift` holding a `ShiftFile` whose filename equals the submission's
+     `_attached_disk_filename` (or display name) — same client, same date. Exactly one match → `rebuilt`; none →
+     `deleted` (reported, not changed); more than one → `ambiguous` (reported, not changed).
+   - For `rebuilt`: re-point submission, approval, orphan `ShiftFile` rows (e.g. 1753/1754) and the payload
+     `_completed_shift_ids`; set `online_tsr_submission_id` on the rebuilt TSR file and the report DOCX/PDF rows;
+     restore `upload_token` on the DOCX row from the marker; update `_attached_file_id`,
+     `_generated_calibration_report.file_id/pdf_file_id`, `calibration_report.generated.file_id/pdf_file_id`, and
+     `calibration_report_conversion.source_shift_file_id/pdf_shift_file_id` to the rebuilt rows' ids. Verify the DOCX
+     sha256 equals the conversion job's `source_sha256` before linking; mismatch → `blocked`.
+   - Prints one line per record (status, old → new ids). With `--apply`, one transaction, writes an
+     `ActivityLog` line per repaired record.
+7. Test on a fixture DB that reproduces #730 (rebuild-orphaned submission + approval + report) → after `--apply`,
+   `_calibration_center_record` reports the row ready; dry-run writes nothing; a `deleted` case is left untouched.
+8. Production: run the dry-run over `railway ssh`, show the owner the output, run `--apply` **only on the owner's
+   separate OK**. Done: TSR `20261014-02-JMM` shows Ready in Calibration Center, report preview/download work, and the
+   DOCX is private again.
+
+## Deliberately excluded
+
+- Making team-only edits update in place (skip the rebuild). Step 2 makes the rebuild safe; changing which path runs
+  is a larger behaviour change to multi-day/override logic with no extra benefit for this bug.
+- Enabling SQLite foreign-key enforcement (`PRAGMA foreign_keys=ON`): would make many legacy rows fail at once; the
+  `before_flush` guard covers the TSR/approval links without that risk.
+- Recovering the `deleted` (truly removed) schedules — reported by the dry-run for the owner to decide.
+- Railway variables, redeploys, or changes to the conversion/approval code.
+
+## Verification
+
+- New `tests/test_schedule_rebuild_links.py`:
+  - Edit a completed schedule with TSR + report + Pending approval to add an engineer → submission, approval and
+    original file ids follow the new row; Calibration Center row `can_send` after approval. **Positive control:**
+    fails on `HEAD` (in-process with the old `update_shift`, per memory note — never `git stash`).
+  - Date-range change of a 2-day linked schedule with TSR on day 1 → links follow day 1's new row.
+  - Explicit delete of a schedule with a submission → 409, row and files still present; delete without linked work
+    still succeeds.
+  - Direct `db.session.delete(shift)` with a linked submission → `ScheduleHasLinkedWorkError`.
+  - Repair script tests from step 7.
+- Focused existing modules: schedule edit/delete tests (`grep -l "update_shift\|delete_shifts_previewed" tests/`),
+  `tests.test_calibration_center`, `tests.test_offline_resilience`.
+- Full suite once before publishing (shared `app.py` schedule code and a session-wide listener):
+  `PYTHONIOENCODING=utf-8 PYTHONUTF8=1 venv/Scripts/python.exe scripts/run_suite.py` in the main folder.
+- Browser check on a DB copy: Calendar → edit a completed schedule with a TSR, add an engineer → Calibration
+  Center/Timeline still show its files; try deleting it → the 409 message appears.
+
+## After implementation
+
+- Self-review each batch's diff; confirm every function `update_shift` and the delete routes call still exists.
+- Service worker bump and `releases.json` entry only if a template/static file changes in step 5.
+- `changes.md` entry per batch; Status here with commit hashes; update memory with the outcome.
+- On "commit and push": only this plan's files (never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty
+  files); verify `origin/main` and Railway deployment metadata. The production `--apply` is a separate owner OK.
+
+## Risks
+
+- Step 2 reorders a destructive path: a mistake could leave duplicate rows. Safety net: the whole rebuild is one
+  transaction; the tests cover single-day, multi-day and override cases.
+- The guard could block a legitimate delete the owner expects to work (e.g. clearing a wrong schedule). The 409 says
+  why; if needed later, an admin-only override can be added — not in this plan.
+- Repair writes to production data. Dry-run first, sha256 check before linking, one transaction, daily DB backup
+  exists; ambiguous/deleted records are left untouched.
+
 # Outdated suite tests — calibration script version and products freeze label (1 batch, tests only)
 
 **Status:** Executed 2026-10-19 (on "Execute the outdated suite tests plan in plans.md."); not yet committed. Result:

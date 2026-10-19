@@ -236,6 +236,10 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
             app_module.CalibrationCertificateApproval.query.filter_by(
                 online_tsr_submission_id=cls.submission_id,
             ).delete(synchronize_session=False)
+            # The submission goes first: a schedule that still owns a TSR cannot be deleted.
+            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, cls.submission_id)
+            if submission:
+                app_module.db.session.delete(submission)
             shift = app_module.db.session.get(app_module.Shift, cls.shift_id)
             if shift:
                 app_module.ShiftEngineer.query.filter_by(shift_id=cls.shift_id).delete()
@@ -244,9 +248,6 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
                 ).delete(synchronize_session=False)
                 app_module.ShiftFile.query.filter_by(shift_id=cls.shift_id).delete()
                 app_module.db.session.delete(shift)
-            submission = app_module.db.session.get(app_module.OnlineTsrSubmission, cls.submission_id)
-            if submission:
-                app_module.db.session.delete(submission)
             engineer = app_module.db.session.get(app_module.Engineer, cls.engineer_id)
             if engineer:
                 app_module.db.session.delete(engineer)
