@@ -148,6 +148,212 @@ the engineer typed changes.
 - Blast radius: the Create TSR page's draft reopen only. Saved TSRs, corrections and late Calibration Reports are
   untouched (excluded callers, pinned by test 3).
 
+# Genoray PM and Vieworks PM — scan and design-scan fixes (4 batches)
+
+**Status:** Executed 2026-10-19 (on "Execute the Genoray/Vieworks PM plan in plans.md, all 4 batches."); not yet committed. Approved 2026-10-16 ("Write the 4 PM batches to plans.md as approved, then
+wait."); amended the same day to include the detail page's sidebar highlight ("include the sidebar"). Each
+batch is one commit. Start only on a separate go-ahead.
+
+### Amendments during execution
+
+- Step 5: the overview link is built in the page as `/${BRAND}/pm/<serial>` instead of `pm_url`, which resolves to the
+  alias `/<brand>_pm/<serial>` that the sidebar highlight does not cover (noted under step 5).
+- Step 13 caused two contrast drops on the page ground, both found and fixed in the browser check: the subtitle
+  (`--app-muted` 4.41:1 in light → `--app-text`) and Bootstrap's grey outline header buttons (3.43–4.48:1 → themed
+  `.pm-hero-actions .btn`, 12–16:1 text, border 4.35–9.7:1).
+- Step 12: summary-card status shows as a coloured label in light (dark keeps the status colour pairs); the 5px green
+  left border on history cards was removed too (same side-tab pattern).
+- Results: 11 new tests (`tests/test_inventory_pm.py`: 4 route tests, 7 source tests); all 11 fail on `HEAD`
+  (checked in a `git archive HEAD` copy, no stash). Focused modules 160/160. Full suite: 2122 tests, the known list plus
+  two failures outside this change (`test_calibration_center` still expects `app-calibration-report.js?v=50`, bumped
+  to 51 by `d5042fc`; `test_product_calibration_certificate` frozen-columns label changed by `fdded98`); `run_suite.py`
+  needs `PYTHONIOENCODING=utf-8` or it crashes printing a failure with a non-ASCII character.
+- Browser check (DB copy, both brands): one POST on a double click; a linked visit moved to December is refused with
+  "linked to schedule #879 in November…", unlink then succeeds; Escape closes the dialog and returns focus; errors stay;
+  overview link opens the detail page with "Vieworks PM" highlighted and tab "Vieworks PM · Medical Service"; lowest text
+  contrast 4.50:1 (white on the classic accent table header) in light, Graphite and AMOLED; 375 px: no horizontal
+  scroll, no tap under 44px, visits start at 637px (was 1176px), editor last, phone bar "Inventory"; 700 px shows cards.
+
+## Context
+
+The owner moved on to the PM pages and asked for `/page-scan` and `/page-design-scan` of Genoray PM and Vieworks PM
+(2026-10-16). Both pages are one template, `templates/inventory_pm.html`, and one set of routes (`/<brand>/pm`,
+`/<brand>/pm/<serial>`, `/api/<brand>/pm/...`, `app.py:65267–65970`) with helpers at `app.py:4295–5207`, so every fix
+lands on both brands. The design critique snapshot is
+`.impeccable/critique/2026-10-16T07-32-32Z__templates-inventory-pm-html.md` (22/40, 2 × P1, degraded single-context run).
+This list is closed (critique-loop rule): nothing is added during execution; anything new goes under "Amendments".
+
+## Decisions taken (owner, 2026-10-16)
+
+- Four batches, smallest first: server safety, page behaviour, dark mode and colours, layout.
+- Vieworks plans keep their fixed one-year cycle (no warranty cutoff); that is intended (see the Genoray/Vieworks plan).
+- A visit whose date moves out of its linked schedule's month is **refused** with a clear message (unlink, or pick a
+  schedule in the new month), not silently unlinked.
+- The detail page (`/<brand>/pm/<serial>`) gets its sidebar highlight too (owner: "include the sidebar", 2026-10-16).
+  That is a `layout.html` change (shared code), so the full suite runs once before publishing.
+
+## Investigation (verified 2026-10-16, browser check on a DB copy, admin and engineer test accounts)
+
+Permissions: every page and API route checks `can_access_inventory_pm` (admin gate, `app.py:4557`); an engineer gets 403
+on pages, GET, POST and DELETE (verified with a valid CSRF token). No server errors in the log; console errors were only
+from the deliberate bad-input requests.
+
+Logic findings:
+
+1. **Medium · stale schedule link after a date move** — `inventory_pm_visit_api` (`app.py:65880–65887`) re-validates the
+   link only when `shift_id` changes. The UI sends no `shift_id` when "Keep current schedule" is in effect
+   (`inventory_pm.html:657`), so moving a visit from 2026-11-10 to 2026-12-10 kept schedule #879 (12 Nov). Reproduced:
+   PUT `{target_date:'2026-12-10'}` → 200, `shift_id` 879, while December's options list is empty.
+2. **Low · no date range** — `inventory_pm_target_date_from_payload` (`:65462`) and the POST `start_date` (`:65734`)
+   accept any parseable date: POST `start_date: '0001-01-01'` created four visits in year 0001. The fiscal-year input
+   already limits 1900–2200 (`app.py:4584`, `inventory_pm.html:216`).
+3. **Low · Create Plan double submit** — `saveVisit` (`inventory_pm.html:637`) never disables the button; two quick
+   clicks gave "Created 4 PM visits" and an error notice "All generated PM visit dates already exist". Data stays safe
+   (date check + unique index). Same for Delete (`deleteVisit`, `:682`).
+4. **Medium · overview is a dead end** — rows show the serial as text; `pm_url` is already in each item payload
+   (`app.py:5133`) but no template uses it. The detail page is reachable only from the inventory pages' PM button.
+5. **Low · "Filter by client" matches serial and name** — `visitMatchesFilters` (`:311–314`) uses the same haystack for
+   search and client; typing a serial in the client box kept 2 of 2 visits.
+6. **Low · wording** — subtitle says "showing N of M planned visits" (`:360`) while counting Completed and Overdue too.
+7. **Low · detail page has no sidebar highlight and a generic tab title** — `nav_link` marks a link active only on an
+   exact path match (`layout.html:140`), so `/<brand>/pm/<serial>` has no `aria-current` link, and the layout script
+   that names the tab and the phone top bar from that link (`layout.html:505–516`) leaves "Medical Service". The page's
+   own `<title>` in `page_head` (`inventory_pm.html:4`) is a second `<title>` after layout's (`layout.html:48`) and is
+   ignored.
+8. **Low · speed** — `inventory_pm_visit_to_dict` (`app.py:4950`) loads each linked Shift twice (`db.session.get` then the
+   same query with options, `:4955–4965`) and runs `inventory_pm_rebuild_metadata` (one plan query per visit, `:5116`)
+   even for the overview, which never reads `cadence_rebuild` (only `updateEditCadenceState`, `inventory_pm.html:494`,
+   on the detail page).
+9. **Simplify** — `decorateVisit` / `itemBySerial` (`inventory_pm.html:317–324`) rebuild `item_name` and `client_name`
+   that the server already sends in each visit (`app.py:5077–5079`), with a linear search per visit, twice per render.
+
+Not findings: cadence rebuild is atomic and blocked for linked or completed visits; completed history is immutable
+(409); purge is blocked while PM visits exist; serial renames carry PM visits; HTML is escaped; 375 px has no horizontal
+scroll and no tap target under 44 px.
+
+Design findings (measured, light / Graphite / AMOLED):
+
+10. **P1 · dark mode** — overview count numbers `.pm-summary-card strong` `#0f172a` on `#292a2d` = **1.24:1** (Graphite);
+    `.pm-summary-card span`, `.pm-state`, `.pm-month-heading span` `#64748b` = 3.02:1 Graphite, 4.0:1 AMOLED; editor
+    eyebrow `#0f766e` = 2.62:1; visit cards, equipment fields and the confirm dialog stay white `#fff`/`#f8fafc` on the
+    dark page. Cause: hex colours in the page `<style>` (`inventory_pm.html:735–787`; detector: 25 design-system-color).
+11. **P2 · off-system colours** — table headers `#0f3d56` and the gradient hero ignore `--app-primary` (DESIGN "Don't
+    hardcode an accent hex"); status chips `#b91c1c/#fee2e2` (Overdue), `#047857/#d1fae5` (Completed) differ from the
+    documented semantic pairs (`#a1121f/#fde8ea`, `#166534/#dcfce7`, DESIGN "Inventory status"); summary cards use a
+    5px left border on a 16px radius (detector: 3 × side-tab); radii 13px and 15px (DESIGN: cards 10–12, phone 16);
+    weights 750–950 (DESIGN: above 600 renders as 600).
+12. **P2 · ≤768 px rule** — at 621–768 px the 1100px-min table shows (horizontal scroll) instead of cards (DESIGN
+    Layout: tables become stacked cards at ≤768); the switch is at 620 px (`:785`).
+13. **P2 · phone order** — at 375 px the hero is 188px tall and the planned visits start at 1176px, below the equipment
+    card and the whole editor.
+14. **P3 · dialog and notices** — `pmConfirm` (`:235`) has no Escape and does not return focus; error notices remove
+    themselves after 7 s (`:232`).
+
+## Execution steps
+
+### Batch 1 — server safety and speed (`app.py` only)
+
+1. `inventory_pm_visit_api` (`app.py:65880`): when no link field is sent, `visit.shift_id` is set and the new
+   `target_date` is in a different calendar month than the current `target_date`, run
+   `validate_inventory_pm_schedule_link(item, visit.shift_id, target_date)`; on error return 400 with "This visit is
+   linked to schedule #N in <Month>. Unlink it or choose a schedule in the new month." Done: the reproduction above
+   returns 400; a same-month date change still returns 200.
+2. Date range: in `inventory_pm_target_date_from_payload` and the POST `start_date` path, refuse dates outside
+   1900-01-01–2200-12-31 with "Target date must be between 1900 and 2200." Done: year 0001 → 400, nothing created.
+3. `inventory_pm_visit_to_dict`: replace the `db.session.get` + re-query pair with the single options query; add
+   `include_rebuild=True` and pass `False` from `inventory_pm_overview_payload` and the GET list in
+   `inventory_pm_visits_api` (key `cadence_rebuild` becomes `None` there). Done: detail payload unchanged; overview
+   output identical apart from `cadence_rebuild`.
+
+### Batch 2 — page behaviour (`templates/inventory_pm.html` script)
+
+4. `saveVisit` / `deleteVisit`: disable the Save button (and the clicked Delete) while the request runs; re-enable in
+   `finally`. Done: two quick clicks send one POST.
+5. Overview: the serial in the table row and phone card links to the item's `pm_url` (from `data.items`); fall back to
+   text when absent. Done: clicking opens `/<brand>/pm/<serial>`.
+   *Amended during execution:* `pm_url` resolves to the alias route `/<brand>_pm/<serial>` (seen in the browser check),
+   which the sidebar highlight does not cover, so the link is built in the page as `/${BRAND}/pm/<serial>` for serials
+   present in `data.items`, the same way `products.html` builds its PM link (`inventoryPMBaseUrl`, `:1488`).
+6. `visitMatchesFilters`: client box matches `client_name` only. Subtitle: "showing N of M visits".
+7. Remove `decorateVisit` / `itemBySerial` and use the server's `item_name` / `client_name` (keep `pm_url` lookup from a
+   serial → item map built once per render). Grep first: no other caller.
+8. `pmConfirm`: Escape cancels, focus returns to the button that opened it. Error notices stay until dismissed (success
+   notices keep 4 s).
+9. Sidebar highlight and tab title: in `nav_link` (`layout.html:140`) also treat a link as active when its `href` is
+   `/genoray/pm` or `/vieworks/pm` and `request.path` starts with `href ~ '/'` (PM hrefs only; every other link keeps
+   the exact match). The existing title script then names the tab "Genoray PM · Medical Service" / "Vieworks PM · …"
+   and the phone top bar shows Inventory. Drop the ignored `<title>` from `inventory_pm.html` `page_head`. Done: the
+   detail page has exactly one `aria-current="page"` link (Genoray PM or Vieworks PM), `/genoray` and `/vieworks` stay
+   inactive on PM pages, and no other page's highlight changes.
+
+### Batch 3 — dark mode and colours (page `<style>`; DESIGN.md)
+
+10. Replace hex text and surface colours with tokens: text `var(--app-text)`, muted `var(--app-muted)`, cards and field
+    boxes `var(--app-surface)` / `var(--app-surface-raised)`, borders `var(--app-border)`; editor eyebrow
+    `var(--app-primary-text)`; table header `var(--app-primary)` with white text; confirm dialog and notices on
+    `var(--app-surface)`. Done: every measured element ≥4.5:1 in light, Graphite and AMOLED.
+11. Status chips: Overdue `#a1121f/#fde8ea`, Completed `#166534/#dcfce7`, Planned keeps `#1d4ed8/#dbeafe`; dark pairs as
+    Inventory status (`#fecdd3/#5c1a22`, `#bbf7d0/#14532d`) plus Planned `#bfdbfe/#1e3a8a`. Record the PM pairs in
+    DESIGN.md "Chips / Badges".
+12. Summary cards: remove the 5px left border; status shown by the label colour only paired with its text. Radii 13→12,
+    15→16; weights above 600 → 600.
+
+### Batch 4 — layout (page markup and `<style>`)
+
+13. Replace the gradient hero with a plain page header on the page surface: Bootstrap heading, one-line subtitle, the
+    existing outline buttons (keep `#pm-print-btn`, the back/inventory link and all ids). Print styles stay white.
+14. Move the table → card switch from 620 px to 768 px (`.pm-table-wrap` hidden, `.pm-mobile-visits` shown).
+15. Detail page at ≤768 px: show "Planned visits" and "PM History" before the editor (CSS `order` on a flex column
+    wrapper); desktop order unchanged.
+
+## Deliberately excluded
+
+- Listing equipment that has no PM plan in the overview: a new feature, not a fix.
+- Removing the server-side overview filters (`inventory_pm_filtered_overview_payload`) and the route/response aliases:
+  tests use `?scheduled_month=` (`tests/test_inventory_pm.py:405`) and aliases may be used by bookmarks; no gain worth
+  the risk.
+- Vieworks warranty cutoff: intended (Decisions).
+
+## Verification
+
+- New tests in `tests/test_inventory_pm.py`: (1) month-changing PUT on a linked visit → 400, same-month → 200;
+  (2) POST and PUT with year 0001 → 400 and no rows; (3) overview visits carry `cadence_rebuild is None`, detail visits
+  keep it. New source tests for the template (pattern of `tests/test_dashboard_critique_fixes.py`): Save disabled
+  during request, `pm_url` link rendered, client filter uses `client_name`, Escape handler, no `#0f172a`/`#64748b` in
+  the PM `<style>`, card switch at 768px, no `<title>` in `page_head`. In `tests/test_layout_sidebar.py`: rendering
+  `/genoray/pm/<serial>` and `/vieworks/pm/<serial>` marks only the matching PM link `aria-current="page"`; `/genoray`
+  and `/products_page` keep their exact-match highlight.
+- Positive control: run each new test in-process against `git show HEAD:app.py` / `HEAD:templates/inventory_pm.html`
+  (never `git stash`); each must fail there.
+- Focused modules: `tests.test_inventory_pm`, `tests.test_genoray_inventory`, `tests.test_vieworks_inventory`,
+  `tests.test_operational_equipment_workflows`, `tests.test_dashboard_critique_fixes`, `tests.test_layout_sidebar`.
+  Full suite once before publishing (`layout.html` is shared), from the main project folder.
+- Browser check on a DB copy (both brands): create plan, double-click, edit date in and out of month with a linked
+  schedule, unlink, delete with Escape and Continue, overview link to detail, filters, sidebar highlight and tab title on both detail pages (desktop rail, pinned
+  sidebar and phone top bar); contrast re-measured in light,
+  Graphite and AMOLED; 375 px and 700 px (cards, no horizontal scroll, taps ≥44px); console and server log clean.
+- Re-check the critique's closed list item by item; one fresh critique in a new session afterwards, not a loop.
+
+## After implementation
+
+- Self-review the diff; confirm `loadOverview`, `renderOverview`, `loadDetail`, `saveVisit`, `deleteVisit`,
+  `startVisitEdit`, `resetVisitForm`, `loadScheduleOptions`, `previewRecurringPlan`, `updateEditCadenceState`, Print,
+  Keep/Unlink schedule still work and no id or handler other code uses was removed. Products page PM buttons unchanged.
+- Prove the new tests fail without the fix, focused modules, browser check, service worker `CACHE_VERSION` bump,
+  `static/changelog/releases.json` entry ("PM page fixes"), DESIGN.md PM chip pairs, `changes.md`, Status here.
+- On "commit and push": only the intended files (never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty
+  files); verify `origin/main` and Railway deployment metadata.
+
+## Risks
+
+- Step 1 could refuse an edit an admin expects to pass: the message names the fix (unlink or choose a schedule), and
+  same-month edits are untouched.
+- Step 3 changes the overview payload (`cadence_rebuild` null): only the detail editor reads it; covered by test (3).
+- Step 9 touches the shell macro every page uses: limited to the two PM hrefs, pinned by the sidebar tests and the
+  full suite; the browser check also opens Dashboard and Genoray inventory to confirm their highlight is unchanged.
+- Batches 3–4 restyle the page: functions and ids stay; print output stays white with black text; browser check in all
+  three themes. Blast radius is the two PM pages only.
+
 # TSR without equipment — update two tests to the User roles rule (1 batch, tests only)
 
 **Status:** Executed (2026-10-16, on "commit and push together", taken as the go-ahead). Published to `main` as `73315f9`

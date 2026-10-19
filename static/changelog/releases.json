@@ -1,6 +1,30 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-19-pm-page-fixes",
+      "release_date": "2026-10-19",
+      "title": "PM page fixes",
+      "summary": "Genoray PM and Vieworks PM are easier to use, safer to edit and readable in dark themes.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-19-pm-page-fixes-links",
+          "category": "Inventory",
+          "description": "On the PM overview, the serial number opens that equipment's PM page. The detail page keeps its sidebar link highlighted, and the client filter matches the client only."
+        },
+        {
+          "item_key": "2026-10-19-pm-page-fixes-safety",
+          "category": "Inventory",
+          "description": "A visit linked to a schedule cannot move to another month until you unlink it or pick a schedule in the new month. Dates must be between 1900 and 2200, and a double click creates a plan only once."
+        },
+        {
+          "item_key": "2026-10-19-pm-page-fixes-look",
+          "category": "Inventory",
+          "description": "The PM pages follow your theme in Graphite and AMOLED, show cards on tablets and phones, and list planned visits before the editor on phones. Error messages stay until you close them."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-18-tsr-draft-equipment",
       "release_date": "2026-10-18",
       "title": "TSR drafts show the corrected equipment",

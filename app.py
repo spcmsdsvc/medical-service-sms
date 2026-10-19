@@ -4947,24 +4947,21 @@ def inventory_pm_history_file_links(snapshot, shift=None):
     return links
 
 
-def inventory_pm_visit_to_dict(visit, item=None):
-    """Serialize a PM visit using immutable history when it has been completed."""
+def inventory_pm_visit_to_dict(visit, item=None, include_rebuild=True):
+    """Serialize a PM visit using immutable history when it has been completed.
+
+    The overview and list views pass include_rebuild=False: only the detail editor
+    reads cadence_rebuild, and it costs one plan query per visit.
+    """
     brand = normalize_inventory_pm_brand(getattr(visit, 'brand', None))
     item = item or resolve_inventory_pm_item(brand, getattr(visit, 'equipment_serial', None))
     original_shift_id = clean_int(getattr(visit, 'shift_id', None))
-    shift = db.session.get(Shift, original_shift_id) if original_shift_id else None
-    if shift:
-        try:
-            # Loading through the normal query keeps dynamic file/engineer reads fresh
-            # even when this serializer receives a previously cached Shift instance.
-            shift = (
-                Shift.query
-                .options(joinedload(Shift.client), joinedload(Shift.product), joinedload(Shift.engineer), selectinload(Shift.files))
-                .filter(Shift.id == shift.id)
-                .first()
-            ) or shift
-        except Exception:
-            pass
+    shift = (
+        Shift.query
+        .options(joinedload(Shift.client), joinedload(Shift.product), joinedload(Shift.engineer), selectinload(Shift.files))
+        .filter(Shift.id == original_shift_id)
+        .first()
+    ) if original_shift_id else None
 
     snapshot = inventory_pm_load_completion_snapshot(visit)
     is_history = bool(getattr(visit, 'completed_at', None) and snapshot)
@@ -5113,7 +5110,7 @@ def inventory_pm_visit_to_dict(visit, item=None):
         'completed_at': visit.completed_at.isoformat() if getattr(visit, 'completed_at', None) else '',
         'completion_snapshot': snapshot,
         'history_snapshot': snapshot,
-        'cadence_rebuild': inventory_pm_rebuild_metadata(visit),
+        'cadence_rebuild': inventory_pm_rebuild_metadata(visit) if include_rebuild else None,
         'files': file_links,
         'file_links': file_links,
         'created_at': visit.created_at.isoformat() if getattr(visit, 'created_at', None) else '',
@@ -5154,7 +5151,7 @@ def inventory_pm_overview_payload(brand, fiscal_year=None):
     model = inventory_pm_item_model(normalized)
     item_map = {item.serial_number: item for item in model.query.order_by(model.serial_number).all()} if model else {}
     serialized_visits = [
-        inventory_pm_visit_to_dict(visit, item_map.get(visit.equipment_serial))
+        inventory_pm_visit_to_dict(visit, item_map.get(visit.equipment_serial), include_rebuild=False)
         for visit in visits
     ]
 
@@ -28071,7 +28068,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v333-tsr-draft-equipment';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v334-pm-page-fixes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -65459,6 +65456,16 @@ def inventory_pm_item_visits_api(brand, serial_number):
     return response
 
 
+INVENTORY_PM_MIN_DATE = date(1900, 1, 1)
+INVENTORY_PM_MAX_DATE = date(2200, 12, 31)
+INVENTORY_PM_DATE_RANGE_ERROR = 'Target date must be between 1900 and 2200.'
+
+
+def inventory_pm_date_in_range(value):
+    """Keep PM dates inside the same 1900-2200 window as the fiscal-year input."""
+    return INVENTORY_PM_MIN_DATE <= value <= INVENTORY_PM_MAX_DATE
+
+
 def inventory_pm_target_date_from_payload(payload, existing=None):
     """Parse an exact YYYY-MM-DD PM target date."""
     payload = payload or {}
@@ -65468,12 +65475,15 @@ def inventory_pm_target_date_from_payload(payload, existing=None):
         return existing, None
     raw_value = payload.get(key)
     if isinstance(raw_value, datetime):
-        return raw_value.date(), None
-    if isinstance(raw_value, date):
-        return raw_value, None
-    parsed = parse_date(raw_value)
+        parsed = raw_value.date()
+    elif isinstance(raw_value, date):
+        parsed = raw_value
+    else:
+        parsed = parse_date(raw_value)
     if not parsed:
         return None, 'Target date must be a valid date in YYYY-MM-DD format.'
+    if not inventory_pm_date_in_range(parsed):
+        return None, INVENTORY_PM_DATE_RANGE_ERROR
     return parsed, None
 
 
@@ -65712,7 +65722,10 @@ def inventory_pm_visits_api(brand, serial_number=None):
         visits = query.order_by(InventoryPmVisit.target_date.asc(), InventoryPmVisit.id.asc()).all()
         item_model = inventory_pm_item_model(normalized)
         item_map = {item.serial_number: item for item in item_model.query.all()}
-        rows = [inventory_pm_visit_to_dict(visit, item_map.get(visit.equipment_serial)) for visit in visits]
+        rows = [
+            inventory_pm_visit_to_dict(visit, item_map.get(visit.equipment_serial), include_rebuild=False)
+            for visit in visits
+        ]
         return jsonify({
             'success': True,
             'status': 'success',
@@ -65735,6 +65748,8 @@ def inventory_pm_visits_api(brand, serial_number=None):
     start_date = raw_start_date if isinstance(raw_start_date, date) else parse_date(raw_start_date)
     if not start_date:
         return jsonify({'message': 'Start date must be a valid date in YYYY-MM-DD format.'}), 400
+    if not inventory_pm_date_in_range(start_date):
+        return jsonify({'message': INVENTORY_PM_DATE_RANGE_ERROR}), 400
     link_present, link_value = inventory_pm_link_payload_value(payload)
     if link_present and clean_str(link_value):
         return jsonify({'message': 'Schedule links are added to individual visits after plan creation.'}), 400
@@ -65881,10 +65896,26 @@ def inventory_pm_visit_api(brand, visit_id):
     new_shift_id = visit.shift_id
     if link_present:
         new_shift_id = clean_int(link_value)
-        if new_shift_id and new_shift_id != visit.shift_id:
-            _, link_error = validate_inventory_pm_schedule_link(item, new_shift_id, target_date)
-            if link_error:
-                return jsonify({'message': link_error}), 400
+    # A kept link is re-checked when the visit moves to another month, so a visit
+    # never stays linked to a schedule outside its own month.
+    month_changed = bool(
+        visit.target_date and
+        (target_date.year, target_date.month) != (visit.target_date.year, visit.target_date.month)
+    )
+    if new_shift_id and (new_shift_id != visit.shift_id or month_changed):
+        _, link_error = validate_inventory_pm_schedule_link(item, new_shift_id, target_date)
+        if link_error:
+            if new_shift_id == visit.shift_id:
+                kept_shift = db.session.get(Shift, new_shift_id)
+                linked_month = (
+                    kept_shift.start_time.strftime('%B') if kept_shift and kept_shift.start_time
+                    else visit.target_date.strftime('%B')
+                )
+                link_error = (
+                    f'This visit is linked to schedule #{new_shift_id} in {linked_month}. '
+                    'Unlink it or choose a schedule in the new month.'
+                )
+            return jsonify({'message': link_error}), 400
 
     collision = (
         InventoryPmVisit.query

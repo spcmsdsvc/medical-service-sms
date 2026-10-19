@@ -137,7 +137,8 @@
             rail; CSS shows it only there. It is the label itself, except for two
             rare accounts whose only links have long names (stock-only, HR schedule). -#}
         {% macro nav_link(href, icon, label, extra_class='', badge_id='') -%}
-            {%- set is_active = (request.path == href) -%}
+            {#- PM detail pages (/genoray/pm/<serial>) keep their PM link highlighted. -#}
+            {%- set is_active = (request.path == href) or (href in ('/genoray/pm', '/vieworks/pm') and request.path.startswith(href ~ '/')) -%}
             {%- set rail_caption = {'Stock Inventory': 'Stock', 'Password Settings': 'Password'}.get(label, label) -%}
             {#- One line per page for the Menu guide (shell critique 2026-10-09). -#}
             {%- set guide_line = {

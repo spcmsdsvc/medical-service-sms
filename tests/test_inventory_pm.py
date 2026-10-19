@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import re
 import tempfile
 import unittest
 import uuid
@@ -1269,6 +1270,129 @@ class InventoryPmTests(unittest.TestCase):
         self.assertEqual(client.get("/api/vieworks/pm").get_json()["visits"][0]["brand"], "vieworks")
         self.assertEqual(client.get("/api/genoray/pm").get_json()["visits"], [])
         self.assertEqual(client.get("/api/vieworks/pm/items/" + self.gen_serial).status_code, 404)
+
+    def visit_id_for(self, target_date, brand="genoray"):
+        with self.app.app_context():
+            return app_module.InventoryPmVisit.query.filter_by(
+                brand=brand, target_date=app_module.parse_date(target_date)
+            ).one().id
+
+    def test_kept_link_is_rechecked_when_visit_moves_month(self):
+        client = self.client_for(self.ids["admin"])
+        self.assertEqual(self.create_plan(client, start_date="2026-11-10").status_code, 200)
+        visit_id = self.visit_id_for("2026-11-10")
+        shift_id = self.make_shift(title="Preventive Maintenance PM", start_date=date(2026, 11, 12))
+        url = f"/api/genoray/pm/visits/{visit_id}"
+        self.assertEqual(client.put(url, json={"target_date": "2026-11-10", "shift_id": shift_id}).status_code, 200)
+
+        same_month = client.put(url, json={"target_date": "2026-11-20"})
+        self.assertEqual(same_month.status_code, 200, same_month.get_data(as_text=True))
+        self.assertEqual(same_month.get_json()["visit"]["shift_id"], shift_id)
+
+        for body in ({"target_date": "2026-12-10"}, {"target_date": "2026-12-10", "shift_id": shift_id}):
+            moved = client.put(url, json=body)
+            self.assertEqual(moved.status_code, 400, moved.get_data(as_text=True))
+            self.assertIn(f"#{shift_id} in November", moved.get_json()["message"])
+        with self.app.app_context():
+            visit = app_module.db.session.get(app_module.InventoryPmVisit, visit_id)
+            self.assertEqual(visit.target_date, date(2026, 11, 20))
+            self.assertEqual(visit.shift_id, shift_id)
+
+        unlinked = client.put(url, json={"target_date": "2026-12-10", "shift_id": None})
+        self.assertEqual(unlinked.status_code, 200, unlinked.get_data(as_text=True))
+        self.assertIsNone(unlinked.get_json()["visit"]["shift_id"])
+
+    def test_pm_dates_outside_1900_to_2200_are_refused(self):
+        client = self.client_for(self.ids["admin"])
+        for start in ("0001-01-01", "1899-12-31", "2201-01-01"):
+            response = self.create_plan(client, start_date=start)
+            self.assertEqual(response.status_code, 400, start)
+            self.assertIn("between 1900 and 2200", response.get_json()["message"])
+        self.assertEqual(self.visit_dates(), [])
+
+        self.assertEqual(self.create_plan(client, start_date="2026-04-10").status_code, 200)
+        visit_id = self.visit_id_for("2026-04-10")
+        response = client.put(f"/api/genoray/pm/visits/{visit_id}", json={"target_date": "0001-04-10"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("between 1900 and 2200", response.get_json()["message"])
+
+    def test_overview_skips_rebuild_metadata_and_detail_keeps_it(self):
+        client = self.client_for(self.ids["admin"])
+        self.assertEqual(self.create_plan(client, start_date="2026-04-10").status_code, 200)
+        overview = client.get("/api/genoray/pm?fiscal_year=2026").get_json()
+        self.assertTrue(overview["visits"])
+        self.assertTrue(all(visit["cadence_rebuild"] is None for visit in overview["visits"]))
+        listed = client.get("/api/genoray/pm/visits?fiscal_year=2026").get_json()
+        self.assertTrue(all(visit["cadence_rebuild"] is None for visit in listed["visits"]))
+        detail = client.get(f"/api/genoray/pm/items/{self.gen_serial}?fiscal_year=2026").get_json()
+        self.assertTrue(all(isinstance(visit["cadence_rebuild"], dict) for visit in detail["visits"]))
+
+    def active_nav_hrefs(self, html):
+        return re.findall(r'<a href="([^"]+)"[^>]*aria-current="page"', html)
+
+    def test_pm_detail_pages_keep_their_sidebar_link_active(self):
+        client = self.client_for(self.ids["admin"])
+        self.assertEqual(self.active_nav_hrefs(client.get(f"/genoray/pm/{self.gen_serial}").get_data(as_text=True)), ["/genoray/pm"])
+        self.assertEqual(self.active_nav_hrefs(client.get(f"/vieworks/pm/{self.view_serial}").get_data(as_text=True)), ["/vieworks/pm"])
+        self.assertEqual(self.active_nav_hrefs(client.get("/genoray/pm").get_data(as_text=True)), ["/genoray/pm"])
+        self.assertEqual(self.active_nav_hrefs(client.get("/genoray").get_data(as_text=True)), ["/genoray"])
+        self.assertEqual(self.active_nav_hrefs(client.get("/products_page").get_data(as_text=True)), ["/products_page"])
+        detail = client.get(f"/genoray/pm/{self.gen_serial}").get_data(as_text=True)
+        self.assertEqual(detail.count("<title>"), 1)
+
+
+class InventoryPmPageFixTests(unittest.TestCase):
+    """Source checks for the 2026-10-19 PM page fixes (plans.md, Genoray PM and Vieworks PM)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.template = (ROOT / "templates" / "inventory_pm.html").read_text(encoding="utf-8")
+
+    def test_save_and_delete_send_one_request_per_click(self):
+        self.assertIn("if (saveButton.disabled) return;", self.template)
+        self.assertIn("finally { saveButton.disabled = false; }", self.template)
+        self.assertIn("deleteVisit(button.dataset.id, button)", self.template)
+
+    def test_overview_serial_links_to_equipment_pm_page(self):
+        self.assertIn("`/${BRAND}/pm/${encodeURIComponent(visit.equipment_serial)}`", self.template)
+        self.assertIn('class="pm-equipment-link"', self.template)
+        self.assertNotIn("function decorateVisit", self.template)
+        self.assertNotIn("function itemBySerial", self.template)
+
+    def test_client_filter_matches_client_only_and_subtitle_counts_visits(self):
+        self.assertIn("(!client || clientName.includes(client))", self.template)
+        self.assertNotIn("planned visit${allVisits.length", self.template)
+
+    def test_confirm_dialog_escape_and_errors_stay(self):
+        self.assertIn("event.key === 'Escape'", self.template)
+        self.assertIn("opener.focus()", self.template)
+        self.assertIn("if (tone !== 'error') window.setTimeout", self.template)
+
+    def test_page_has_no_second_title_tag(self):
+        self.assertNotIn("<title>", self.template)
+
+    def page_style(self):
+        return self.template[self.template.index("<style>"):self.template.index("</style>")]
+
+    def test_colours_come_from_theme_tokens_with_dark_status_pairs(self):
+        style = self.page_style()
+        for hex_value in ("#0f172a", "#64748b", "#0f3d56", "#126e82", "#b91c1c", "#047857"):
+            self.assertNotIn(hex_value, style)
+        self.assertIn("background: var(--app-primary)", style)
+        self.assertIn(':root[data-app-theme="dark"] .inventory-pm-page', style)
+        self.assertIn("--pm-overdue-fg: #a1121f; --pm-overdue-bg: #fde8ea;", style)
+        self.assertNotIn("border-left: 5px", style)
+        self.assertNotRegex(style, r"font-weight: [7-9]\d\d")
+
+    def test_cards_at_768_and_visits_before_editor_on_phones(self):
+        style = self.page_style()
+        block = style[style.index("@media (max-width: 768px)"):style.index("@media (max-width: 620px)")]
+        self.assertIn(".pm-table-wrap { display: none; }", block)
+        self.assertIn(".pm-detail-page > .pm-editor { order: 4; }", style)
+        self.assertIn("pm-detail-page' if is_detail", self.template)
+        self.assertIn('<header class="pm-hero mb-3">', self.template)
+        self.assertNotIn("linear-gradient", style)
+        self.assertIn(".pm-hero-actions .btn { color: var(--app-text); border-color: var(--app-muted);", style)
 
 
 if __name__ == "__main__":
