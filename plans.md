@@ -37,6 +37,74 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Outdated suite tests — calibration script version and products freeze label (1 batch, tests only)
+
+**Status:** Executed 2026-10-19 (on "Execute the outdated suite tests plan in plans.md."); not yet committed. Result:
+focused modules 98/98; full suite 2122 tests, "No new failures" and no NOW PASSING line. Requested 2026-10-19 ("Do this task here: Fix two outdated suite tests
+(calibration, products)"); the plan is recorded first, as AGENTS.md requires. One commit. Start only on a separate
+go-ahead.
+
+## Context
+
+The full suite after the PM publish (`7d15e45`) listed two NEW FAILURE lines that are not in `tests/known_failures.txt`.
+Both are source tests that were not updated when the app code changed on purpose. The suite also reported one known
+failure as NOW PASSING. Goal: the suite shows no NEW FAILURE and no NOW PASSING lines. No app behaviour changes.
+
+## Decisions taken
+
+- The app code is right and the tests are outdated; change only the tests and the known-failures list.
+- No service worker bump and no `releases.json` entry: nothing users see changes.
+
+## Investigation (verified 2026-10-19)
+
+1. `tests/test_calibration_center.py:559` (`test_registry_contract_and_complete_field_apply_guards_are_present`)
+   expects `app-calibration-report.js') }}?v=50`. `templates/calibration_center.html:659` and `offline_tsr.html:36`
+   load `?v=51`, bumped on purpose by `d5042fc` (calibration signature ink). `tests/test_tsr_calibration_report.py:1030`
+   and `:1072` already expect `v=51`.
+2. `tests/test_product_calibration_certificate.py:412` (`test_products_markup_supports_user_selectable_frozen_columns`)
+   expects the literal `Product Name + Actions`. Since `73315f9` (Genoray/Vieworks batches; earlier note said
+   `fdded98`, which is wrong) the option is `{{ inventory_name_label }} + Actions` (`templates/products.html:129`), with
+   `inventory_name_label` set to `'Product Name'` for Product Inventory and `'Equipment Name'` for Genoray/Vieworks
+   (`:12`). Product Inventory still shows "Product Name + Actions".
+3. `tests/known_failures.txt:3` lists
+   `tests.test_offline_resilience.TSRAddressRehydrationTests.test_online_correction_syncs_address_after_existing_load_without_mutating_history`;
+   it passes alone and in the suite on `main` (after `1aab0ea`, which changed that module).
+
+## Execution steps
+
+1. `tests/test_calibration_center.py:559`: `?v=50` → `?v=51`. Done: the test passes.
+2. `tests/test_product_calibration_certificate.py:412`: assert `{{ inventory_name_label }} + Actions` and
+   `inventory_name_label = 'Equipment Name' if is_standalone_inventory else 'Product Name'`, so Product Inventory's
+   label stays pinned. Done: the test passes.
+3. `tests/known_failures.txt`: remove the line for the now-passing offline-resilience test (no `--update-known`, so no
+   other line changes). Done: the suite no longer reports NOW PASSING.
+
+## Deliberately excluded
+
+- Any app, template or static change.
+- The other 18 known failures: unchanged and out of scope.
+
+## Verification
+
+- The two tests fail on `main` now (both shown as NEW FAILURE in the 2026-10-19 runs); after steps 1–2 they pass.
+- Focused modules: `tests.test_calibration_center`, `tests.test_product_calibration_certificate`,
+  `tests.test_offline_resilience`.
+- Full suite once in the main folder with `PYTHONIOENCODING=utf-8 PYTHONUTF8=1 venv/Scripts/python.exe
+  scripts/run_suite.py`: no NEW FAILURE, no NOW PASSING.
+- No browser check (tests only).
+
+## After implementation
+
+- Self-review the diff (three test files only). `changes.md`, Status here.
+- On "commit and push": only these three files plus this plan's and entry's hunks of `plans.md`/`changes.md` (never
+  `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files); verify `origin/main` and Railway deployment
+  metadata.
+
+## Risks
+
+- Loosening a test: step 2 still pins both labels through the template variable, so a regression in Product
+  Inventory's label still fails. Blast radius: tests only.
+
 # TSR draft — refresh equipment model and serial from the edited schedule (1 batch)
 
 **Status:** Executed locally 2026-10-18, not committed (on "Execute the TSR draft equipment refresh plan in

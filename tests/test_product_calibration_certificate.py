@@ -409,7 +409,9 @@ class ProductCalibrationCertificateTests(unittest.TestCase):
         for value in ('none', 'serial', 'name', 'bsid', 'owner', 'start', 'end', 'status'):
             self.assertIn(f'<option value="{value}"', source)
         self.assertNotIn('<option value="certificate"', source)
-        self.assertIn('Product Name + Actions', source)
+        # Brand-aware since 73315f9: Product Inventory still reads "Product Name + Actions".
+        self.assertIn('{{ inventory_name_label }} + Actions', source)
+        self.assertIn("inventory_name_label = 'Equipment Name' if is_standalone_inventory else 'Product Name'", source)
         self.assertIn('function setProductFreezeColumn(value)', source)
         self.assertIn('function restoreProductFreezePreference()', source)
         self.assertIn('PRODUCT_FREEZE_STORAGE_KEY', source)
