@@ -37,9 +37,128 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Sent TSR reappears as a saved draft after an offline queue syncs (1 batch)
+
+**Status:** Executed 2026-10-19 on "go ahead", not committed. Approved 2026-10-19 ("Write the one-batch fix for the
+reappearing sent-TSR draft to plans.md, then wait for my go-ahead.").
+
+### Amendments during execution
+
+- `persistDraft:false` also skips the open-draft **page state**, not only storage: on a fresh page the reconcile set
+  `#tsr-number` and `standaloneTSRReservationToken` to the sent TSR's number and token, so the next new TSR could start
+  from a consumed reservation. With the option off, `reserveTSRNumberForDraft` neither reads nor sets the page token.
+- Results: 4 new tests in `tests/test_tsr_weak_signal_draft_safety.py` (Node runs of `reconcileTSRReservationFromServer`
+  plus a source check); the three behaviour tests fail on `HEAD` (it writes the sent TSR to IndexedDB and the fallback),
+  the open-draft test passes on both. Focused modules 233 tests OK; version/changelog/calibration modules 114 OK.
+- Browser (fresh DB copy, real flow): online backup reserved 20260505-01-KM into the open draft (unchanged); offline
+  Review & Save → Save Anyway → Confirm Save TSR queued it and cleared the device; **reload online: queue synced
+  (submission #36), no draft in IndexedDB, the fallback or the draft list, page number and token blank**, marker
+  `deleted`, no account draft left. A device-only draft (363) was still backed up on load and got 20260428-02-KM on
+  device and account. No console or server errors. DB copy, test password and launch entry removed.
+- Service worker `v336-tsr-sent-draft`; release "Sent TSRs stay out of saved drafts".
+
+## Context
+
+The upgrade check for `86375d6` showed a TSR that had been queued offline coming back as a saved draft after it
+synced. The owner asked for it to be investigated in this session ("Do this task here: Investigate reappearing TSR
+draft after queueing"). The investigation reproduced it **through the real flow**, so it is not an artifact of the
+earlier test. An engineer sees the already-sent TSR in Continue Saved Work. Opening it clears its delete marker and
+loads the sent TSR's content, number and reservation token, which invites a second submission of the same work.
+Intended outcome: once a queued TSR has been sent, its draft stays gone. Nothing else changes.
+
+## Decisions taken (owner, 2026-10-19)
+
+- One batch, the smallest change at the source.
+- Owner rule (from the weak-signal plan): no change may delete or hide an engineer's draft. This fix stops a
+  **write** of an already-sent TSR back into draft storage; it adds no delete and hides nothing that exists.
+
+## Investigation (verified 2026-10-19; real flow on a `scheduler.db` copy, code read)
+
+- **Reproduction (real UI, engineer account, port 5067 copy):** select schedule 315 → fill and sign → save the draft
+  while online, so the backup reserves TSR 20260505-01-KM → go offline → **Review & Save TSR** → "Save Anyway" →
+  **Confirm Save TSR**. Result: "Offline TSR queued locally…"; device draft, localStorage fallback and
+  `standaloneCurrentDraftId` all cleared; delete marker `pending`; nothing re-wrote them in the next 15 s. **Reload
+  online:** the queue syncs and the marker becomes `deleted`, but draft `standalone_tsr_draft_315-2026-05-05` is back
+  in IndexedDB **and** the fallback, listed by `getStandaloneTSRDraftRecords` and shown as the draft card "Gregorio
+  Matas District Hospital - 2026-05-05".
+- **Cause:** sending a queued TSR, `uploadQueuedOfflineTSR` (`templates/offline_tsr.html:8665`) confirms the number
+  through `reserveTSRNumberForDraft` (`:8696`), passing `_draft_id: payload._draft_id || item.draft_key || item.id`.
+  `reserveTSRNumberForDraft` (`:1083`) ends in `reconcileTSRReservationFromServer` (`:1120` → `:1038`), which treats the
+  draft as active when `!sourceDraftId || !activeDraftId || sourceDraftId === activeDraftId` and then calls
+  `saveStandaloneTSRDraftToIndexedDB(payload)` and `saveStandaloneTSRDraftToLocalStorageFallback(payload)`. On a fresh
+  page nothing is open (`activeDraftId === ''`), so the sent TSR's payload is written back as a draft. The delete
+  marker is not checked.
+- Other callers of the reconcile, to keep working: `prepareTSRForFinalSave` → `reserveTSRNumberForDraft` (`:1154`),
+  where the draft is the open one; `syncStandaloneTSRDraftToServer` (`:4437`), which updates the number on a device
+  draft that still exists and has not been sent.
+- `migrateStandaloneDraftLocalStorageToIndexedDB` (`:7345`) and `loadStandaloneTSRDraftFromLocalStorageFallback`
+  (`:5273`, scoped key) also ignore the delete marker. They only re-import a fallback that still exists. After the
+  fix above none is written back for a sent TSR, so they are left alone; a marker check there could hide a genuine
+  new draft for the same schedule and date (same draft id).
+- **Second observation not reproduced:** a draft saved offline (schedule 363) was uploaded to the account on the next
+  online load (`/save_tsr_draft` called by `mergeServerStandaloneTSRDrafts`; server listed it). The earlier failure
+  came from the two-server upgrade test, not the app. No change planned.
+
+## Execution steps
+
+1. `reconcileTSRReservationFromServer(result, sourceData=null, { persistDraft=true } = {})`: write the local draft
+   only when `persistDraft` is true **and** `!isStandaloneTSRDraftDeletionTombstoned(sourceDraftId)`. The in-memory
+   updates for the open draft (reservation token, `#tsr-number`) are unchanged. Done: a deleted or sent draft is never
+   written back by this function.
+2. `reserveTSRNumberForDraft(data, { required=true, persistDraft=true } = {})`: pass `persistDraft` through to the
+   reconcile at `:1120`.
+3. `uploadQueuedOfflineTSR` (`:8696`): call `reserveTSRNumberForDraft(..., { persistDraft:false })`. The queue item
+   owns this TSR; its reserved payload is still stored on the queue item (`patchOfflineTSRQueueItem`, unchanged).
+   Done: sending a queued TSR never touches draft storage.
+4. No change to `prepareTSRForFinalSave`, `syncStandaloneTSRDraftToServer`, the fallback loader or the migration.
+
+## Deliberately excluded
+
+- Removing ghost drafts already on engineers' phones. They are copies of sent TSRs, but the owner rule forbids
+  automatic deletion; the engineer can delete one from Continue Saved Work. Raise separately if wanted.
+- Marker checks in the fallback loader / migration (see Investigation: could hide a real new draft with the same id).
+- Server-side duplicate protection for re-submitting a sent TSR's number; not investigated here.
+
+## Verification
+
+- New tests in `tests/test_tsr_weak_signal_draft_safety.py` (Node sandbox of `reconcileTSRReservationFromServer`, as
+  that module already does for the cleanup):
+  - no open draft + `persistDraft:false` → no IndexedDB or fallback write;
+  - no open draft + marked deleted → no write;
+  - open draft, not marked, default options → writes as today (keeps the online reservation path);
+  - source check: `uploadQueuedOfflineTSR` passes `{ persistDraft:false }`.
+  - **Positive control:** the first two fail on `HEAD` (Node run against `git show HEAD:templates/offline_tsr.html`).
+- Draft-safety guard test still passes (no new delete calls; storage names unchanged).
+- Focused modules: `test_tsr_weak_signal_draft_safety`, `test_offline_resilience`, `test_tsr_sync_reliability`,
+  `test_tsr_draft_sync`, `test_tsr_offline_scan_fixes`, `test_tsr_offline_followup`, `test_offline_tsr_pending_schedule`,
+  `test_tsr_signature_recovery`, `test_calibration_report_page`, `test_sw_cache_version`. Full suite not needed (one
+  page).
+- Browser (DB copy, temporary password on a copy-only engineer, own port): repeat the exact reproduction above →
+  after the reload the queue syncs and **no** 315 draft appears in IndexedDB, the fallback or Continue Saved Work.
+  Also: an online Review & Save of an open draft still reserves its number and the draft keeps it; a device draft
+  backed up on load still gets its number. No console errors, 375 px unchanged. Clean up the copy, password and launch
+  entry.
+
+## After implementation
+
+- Self-review; confirm `reserveTSRNumberForDraft`, `reconcileTSRReservationFromServer`, `uploadQueuedOfflineTSR`,
+  `prepareTSRForFinalSave` and `syncStandaloneTSRDraftToServer` keep their call shapes for existing callers.
+- Service worker `CACHE_VERSION` → next number (template change); one `releases.json` item ("A TSR sent from the
+  offline queue no longer comes back as a saved draft.").
+- `changes.md` entry; this Status with the commit; update the `tsr-weak-signal-batches` memory (open item closed).
+- On "commit and push": only this plan's files; never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files;
+  verify `origin/main` and Railway metadata.
+
+## Risks
+
+- A path that relied on the reconcile writing a draft when nothing is open would stop updating the device copy's
+  number. Only the queue upload opts out, and the marker check only skips drafts already deleted. Safety net: the
+  third test and the browser check of the online reservation and on-load backup paths.
+- Blast radius: Create TSR only; no server, schema or storage-name change.
+
 # Create TSR and Calibration Report — weak-signal save, report backup retry, faster schedule list (3 batches)
 
-**Status:** Executed 2026-10-19 on "go ahead" (all three batches), **not committed**. Approved 2026-10-19 ("Write the
+**Status:** Executed 2026-10-19 on "go ahead" (all three batches); published to `main` as `86375d6` on "Commit and push the TSR weak-signal batches. Never the db and dirty." (Railway building at push time). Approved 2026-10-19 ("Write the
 plan for batches 1, 2 and 3 (weak-signal save, calibration backup retry, schedule list speed) to plans.md, then wait
 for my go-ahead.").
 

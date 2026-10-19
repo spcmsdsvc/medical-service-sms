@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-19-tsr-sent-draft",
+      "release_date": "2026-10-19",
+      "title": "Sent TSRs stay out of saved drafts",
+      "summary": "A TSR sent from the offline queue no longer comes back as a saved draft.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-19-tsr-sent-draft-fix",
+          "category": "Create TSR",
+          "description": "When a TSR you saved without signal is sent later, it no longer reappears in Continue Saved Work. Your other drafts are not affected."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-19-tsr-weak-signal",
       "release_date": "2026-10-19",
       "title": "Create TSR on a weak signal",

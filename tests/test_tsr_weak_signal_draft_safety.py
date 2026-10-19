@@ -193,6 +193,58 @@ class DraftSafetyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout.strip()), ['held_by_account'])
 
+    def _reconcile(self, *, active_draft, tombstoned, options):
+        """Run reconcileTSRReservationFromServer in Node; return the draft writes and page state."""
+        script = '\n'.join([
+            f'let standaloneCurrentDraftId = {json.dumps(active_draft)};',
+            "let standaloneTSRReservationToken = 'page-token';",
+            "const field = { value:'' };",
+            'const document = { getElementById: () => field };',
+            'const writes = [];',
+            'function normalizeTSRReservationToken(value){ return String(value || "").trim(); }',
+            f'function isStandaloneTSRDraftDeletionTombstoned(id){{ return {json.dumps(tombstoned)}.includes(id); }}',
+            'async function saveStandaloneTSRDraftToIndexedDB(payload){ writes.push("idb:" + payload._draft_id); }',
+            'function saveStandaloneTSRDraftToLocalStorageFallback(payload){ writes.push("fallback:" + payload._draft_id); }',
+            function_source(self.source, 'reconcileTSRReservationFromServer'),
+            "const result = { status:'success', tsr_number:'20260505-01-KM', reservation_token:'sent-token' };",
+            "const source = { _draft_id:'standalone_tsr_draft_315-2026-05-05', 'tsr-complaint':'sent' };",
+            f'reconcileTSRReservationFromServer(result, source, {json.dumps(options)}).then(payload => console.log(JSON.stringify({{',
+            '  writes, number: field.value, token: standaloneTSRReservationToken, returned: payload && payload["tsr-number"]',
+            '})));',
+        ])
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout.strip())
+
+    @unittest.skipUnless(shutil.which('node'), 'node is required for the reconcile behaviour check')
+    def test_sending_a_queued_tsr_does_not_recreate_its_draft(self):
+        # Fresh page (nothing open), as when the queue syncs right after a reload.
+        out = self._reconcile(active_draft='', tombstoned=[], options={'persistDraft': False})
+        self.assertEqual(out['writes'], [])
+        self.assertEqual(out['number'], '')
+        self.assertEqual(out['token'], 'page-token')
+        self.assertEqual(out['returned'], '20260505-01-KM')
+
+    @unittest.skipUnless(shutil.which('node'), 'node is required for the reconcile behaviour check')
+    def test_a_deleted_draft_is_never_written_back(self):
+        out = self._reconcile(active_draft='', tombstoned=['standalone_tsr_draft_315-2026-05-05'], options={})
+        self.assertEqual(out['writes'], [])
+
+    @unittest.skipUnless(shutil.which('node'), 'node is required for the reconcile behaviour check')
+    def test_the_open_draft_still_keeps_its_reserved_number(self):
+        out = self._reconcile(active_draft='standalone_tsr_draft_315-2026-05-05', tombstoned=[], options={})
+        self.assertEqual(out['writes'], ['idb:standalone_tsr_draft_315-2026-05-05',
+                                         'fallback:standalone_tsr_draft_315-2026-05-05'])
+        self.assertEqual(out['number'], '20260505-01-KM')
+        self.assertEqual(out['token'], 'sent-token')
+
+    def test_queue_upload_confirms_its_number_without_touching_drafts(self):
+        upload = function_source(self.source, 'uploadQueuedOfflineTSR')
+        self.assertRegex(upload, r'reserveTSRNumberForDraft\(Object\.assign\(\{\}, finalizedPayload, \{[^}]*\}\), \{ persistDraft:false \}\)')
+        reserve = function_source(self.source, 'reserveTSRNumberForDraft')
+        self.assertIn('{ persistDraft })', reserve)
+        self.assertIn('if(persistDraft) standaloneTSRReservationToken = token;', reserve)
+
     def test_backup_mark_is_written_only_for_the_uploaded_version(self):
         mark = function_source(self.source, 'markStandaloneTSRDraftBackedUp')
         self.assertIn("String(local.updated_at || '') !== uploadedAt", mark)

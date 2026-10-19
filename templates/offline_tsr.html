@@ -1035,7 +1035,10 @@ function recheckOfflineTSRServerReachability(){
   void checkOfflineTSRSyncHealth({ timeoutMs:6000 }).catch(() => null);
 }
 
-async function reconcileTSRReservationFromServer(result, sourceData=null){
+// `persistDraft:false` is for a TSR the offline queue owns: it is already sent or being sent, so
+// its number must not land in draft storage or in the page's open-draft state. Without it, a queue
+// sync on a fresh page (nothing open) wrote the sent TSR back as a saved draft.
+async function reconcileTSRReservationFromServer(result, sourceData=null, { persistDraft=true } = {}){
   const reservation = result?.reservation || {};
   const token = normalizeTSRReservationToken(
     result?.reservation_token ||
@@ -1057,7 +1060,7 @@ async function reconcileTSRReservationFromServer(result, sourceData=null){
 
   const sourceDraftId = String(sourceData?._draft_id || sourceData?.draft_id || '').trim();
   const activeDraftId = String(standaloneCurrentDraftId || '').trim();
-  const active = !sourceDraftId || !activeDraftId || sourceDraftId === activeDraftId;
+  const active = persistDraft && (!sourceDraftId || !activeDraftId || sourceDraftId === activeDraftId);
   if(active){
     standaloneTSRReservationToken = token;
     const field = document.getElementById('tsr-number');
@@ -1069,7 +1072,8 @@ async function reconcileTSRReservationFromServer(result, sourceData=null){
   payload.tsr_reservation_token = token;
   payload['tsr-number'] = number;
   payload.tsr_number = number;
-  if(active && sourceDraftId){
+  // A draft deleted on this device (sent, or removed by the engineer) is never written back.
+  if(active && sourceDraftId && !isStandaloneTSRDraftDeletionTombstoned(sourceDraftId)){
     try{
       await saveStandaloneTSRDraftToIndexedDB(payload, { updateActiveState:false });
       saveStandaloneTSRDraftToLocalStorageFallback(payload);
@@ -1080,15 +1084,15 @@ async function reconcileTSRReservationFromServer(result, sourceData=null){
   return payload;
 }
 
-async function reserveTSRNumberForDraft(data, { required=true } = {}){
+async function reserveTSRNumberForDraft(data, { required=true, persistDraft=true } = {}){
   const payload = Object.assign({}, data || {});
   const draftKey = resolveStandaloneTSRDraftId(payload);
   const token = ensureTSRReservationToken(
-    payload.reservation_token || payload.tsr_reservation_token || standaloneTSRReservationToken
+    payload.reservation_token || payload.tsr_reservation_token || (persistDraft ? standaloneTSRReservationToken : '')
   );
   payload.reservation_token = token;
   payload.tsr_reservation_token = token;
-  standaloneTSRReservationToken = token;
+  if(persistDraft) standaloneTSRReservationToken = token;
   if(!navigator.onLine){
     if(required){
       throw makeTSRSyncError('Connect to the server once to reserve the authoritative TSR number. Your Pending draft remains safe on this device.', {
@@ -1117,7 +1121,7 @@ async function reserveTSRNumberForDraft(data, { required=true } = {}){
       phase:'assigning_tsr_number', errorCode:'number_reservation_failed', retryable:false, result
     });
   }
-  return (await reconcileTSRReservationFromServer(result, Object.assign({}, payload, { _draft_id:draftKey }))) || payload;
+  return (await reconcileTSRReservationFromServer(result, Object.assign({}, payload, { _draft_id:draftKey }), { persistDraft })) || payload;
 }
 window.reserveTSRNumberForDraft = reserveTSRNumberForDraft;
 
@@ -8693,11 +8697,12 @@ async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
   if(!result?.submission_id){
     await patchOfflineTSRQueueItem(item.id, { sync_phase:'assigning_tsr_number', last_error:'' });
     if(isVectorQueue){
+      // The queue item owns this TSR now; confirming its number must not recreate its draft.
       const reservedPayload = await reserveTSRNumberForDraft(Object.assign({}, finalizedPayload, {
         reservation_token:payload.reservation_token,
         tsr_reservation_token:payload.reservation_token,
         _draft_id:payload._draft_id || item?.draft_key || item?.id
-      }));
+      }), { persistDraft:false });
       finalizedPayload = Object.assign({}, finalizedPayload, reservedPayload);
       await patchOfflineTSRQueueItem(item.id, {
         reservation_token:finalizedPayload.reservation_token,
