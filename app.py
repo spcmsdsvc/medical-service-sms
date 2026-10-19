@@ -12671,6 +12671,53 @@ def mailjet_is_configured():
     return bool(app.config.get('MAILJET_API_KEY') and app.config.get('MAILJET_SECRET_KEY'))
 
 
+# Over its daily limit Brevo still answers 201 but drops the email, so ask first.
+# A "0 left" answer is remembered briefly; Brevo does not say when it resets.
+BREVO_ACCOUNT_URL = 'https://api.brevo.com/v3/account'
+BREVO_QUOTA_RECHECK_SECONDS = 15 * 60
+_brevo_quota_lock = threading.Lock()
+_brevo_quota_exhausted_until = 0.0
+
+
+def brevo_daily_quota_exhausted():
+    """True only when Brevo reports no free sends left. Any check failure returns False."""
+    global _brevo_quota_exhausted_until
+    with _brevo_quota_lock:
+        if time.monotonic() < _brevo_quota_exhausted_until:
+            return True
+
+    api_key = app.config.get('BREVO_API_KEY')
+    if not api_key:
+        return False
+
+    try:
+        response = requests.get(
+            BREVO_ACCOUNT_URL,
+            headers={'accept': 'application/json', 'api-key': api_key},
+            timeout=5
+        )
+        if not 200 <= response.status_code < 300:
+            print(f"[EMAIL] Brevo quota check failed: {response.status_code}", flush=True)
+            return False
+        plans = response.json().get('plan') or []
+    except Exception as quota_error:
+        print(f"[EMAIL] Brevo quota check failed: {quota_error}", flush=True)
+        return False
+
+    send_limits = [
+        plan.get('credits') for plan in plans
+        if isinstance(plan, dict) and plan.get('creditsType') == 'sendLimit'
+        and isinstance(plan.get('credits'), (int, float))
+    ]
+    if not send_limits or max(send_limits) > 0:
+        return False
+
+    with _brevo_quota_lock:
+        _brevo_quota_exhausted_until = time.monotonic() + BREVO_QUOTA_RECHECK_SECONDS
+    print("[EMAIL] Brevo daily limit reached; using Mailjet (rechecking in 15 minutes).", flush=True)
+    return True
+
+
 # Brevo refusals that are not Brevo's fault; Mailjet would refuse them too.
 EMAIL_FALLBACK_SKIP_REASONS = {'Email notifications disabled.', 'No recipient email addresses.'}
 
@@ -12773,6 +12820,8 @@ def send_email_with_attachments(to_emails, subject, text_body, html_body=None, a
     provider = app.config.get('EMAIL_PROVIDER', 'brevo')
 
     if provider == 'brevo':
+        if mailjet_is_configured() and brevo_daily_quota_exhausted():
+            return send_mailjet_email(to_emails, subject, text_body, html_body, attachments, cc_emails=cc_emails)
         brevo_result = send_brevo_email_with_attachments(to_emails, subject, text_body, html_body, attachments, cc_emails=cc_emails)
         return send_with_mailjet_fallback(brevo_result, to_emails, subject, text_body, html_body, attachments, cc_emails=cc_emails)
 
@@ -12843,6 +12892,8 @@ def send_email_notification(to_emails, subject, text_body, html_body=None):
     provider = app.config.get('EMAIL_PROVIDER', 'brevo')
 
     if provider == 'brevo':
+        if mailjet_is_configured() and brevo_daily_quota_exhausted():
+            return send_mailjet_email(to_emails, subject, text_body, html_body)
         brevo_result = send_brevo_email_notification(to_emails, subject, text_body, html_body)
         return send_with_mailjet_fallback(brevo_result, to_emails, subject, text_body, html_body)
 

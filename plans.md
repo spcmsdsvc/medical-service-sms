@@ -37,9 +37,122 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Brevo quota pre-check — go straight to Mailjet when Brevo's free emails are used up (1 batch)
+
+**Status:** Executed, not committed — 2026-10-20, on "Execute the Brevo quota pre-check plan in plans.md. Don't publish yet." Approved 2026-10-20 ("approve"), detailed 2026-10-20. Follow-up to the
+Mailjet fallback plan below (`834a608`).
+
+### Amendments during execution
+
+- Step 1 run by the agent with the local `.env` Brevo key (printing only the `plan` list), instead of the owner:
+  `GET /v3/account` → 200, `plan: [{"type": "free", "credits": 0, "creditsType": "sendLimit"}]` at 23:06 UTC
+  (07:06 Manila). No reset time is returned.
+- Because Brevo gives no reset time, a "0 left" answer is remembered for **15 minutes**
+  (`BREVO_QUOTA_RECHECK_SECONDS`, `time.monotonic`), not until 00:00 UTC. A wrong reset guess can then cost at most
+  15 minutes of Mailjet, never a day.
+- Positive control: against `HEAD`'s `app.py`, the 3 quota-dependent tests fail; the "check failed" and "no Mailjet
+  keys" tests pass there by nature (HEAD never checks). 12 tests in `tests/test_email_fallback.py`; focused email
+  modules 35 OK; full suite 2180 tests, no new failures.
+
+## Context
+
+The Mailjet fallback (`834a608`) only runs when Brevo **refuses** an email. A production test on 2026-10-20 06:58
+(Manila) showed that when the free 300/day is used up, Brevo **accepts** the email (`Brevo success: 201` with a
+`messageId`) and then silently drops it: no Brevo log entry, nothing delivered, and the fallback never ran. So the
+fallback does not cover the case it was built for, and emails sent after the limit is reached are lost without trace.
+
+## Decisions taken (owner, 2026-10-20)
+
+- Before sending through Brevo, ask Brevo how many emails are left. If none, send through Mailjet directly.
+- Once Brevo reports 0, remember it until Brevo's daily reset so the check is not repeated for every email.
+- If the check itself fails (timeout, error, unexpected answer), send through Brevo as today; the existing
+  refuse-then-Mailjet fallback still applies.
+- The exact shape of Brevo's answer is confirmed with a one-off local script the owner runs with their own key
+  (as with the Mailjet test); keys never go into the chat, the repo or the local `.env`.
+
+## Investigation (verified 2026-10-20, production logs, Brevo dashboard, code read)
+
+- Railway log 2026-10-20 06:58:22: `Brevo success: 201 {"messageId":"<202610192258...@smtp-relay.mailin.fr>"}` for
+  shift #4843 → `Background final result: sent=True`. Brevo dashboard "Your plan usage": `0 left out of 300 until
+  20/10/2026`. Brevo Transactional Logs for 19–20/10 (no filters, 703 events): newest event 19/10 20:27, nothing for
+  the 06:58 email. The owner received nothing.
+- Brevo's daily count appears to reset at 00:00 UTC (08:00 Manila): the messageId timestamp `202610192258` is UTC and
+  the dashboard still showed 0 left at 06:58 Manila. To confirm with the owner's script.
+- Brevo account API: `GET https://api.brevo.com/v3/account` with header `api-key`; expected to return a `plan` list
+  whose free entry carries `credits` and `creditsType` (e.g. `sendLimit`). **Unconfirmed** — step 1 confirms it.
+- Current code: config `app.py:219-226`; `mailjet_is_configured` (`app.py:12670`), `EMAIL_FALLBACK_SKIP_REASONS`
+  (`12675`), `send_mailjet_email` (`12678`), `send_with_mailjet_fallback` (`12761`); gateways
+  `send_email_with_attachments` (`12771`, Brevo call + fallback at `12776-12777`) and `send_email_notification`
+  (`12841`, `12846-12847`). `threading` is already imported (`app.py:119`).
+
+## Execution steps
+
+1. **Confirm Brevo's answer** (no code change): a scratchpad script calls `GET /v3/account` with `BREVO_API_KEY`
+   from the owner's terminal and prints only the `plan` entries (type, credits, creditsType, any end/reset date) —
+   never the key or account email. The owner runs it and reports the output. Done: we know which field holds the
+   remaining free emails and whether a reset time is given. If the answer has no usable remaining count, stop and
+   amend this plan.
+2. **`brevo_daily_quota_exhausted()`** (`app.py`, after `mailjet_is_configured`): returns `True` only when Brevo's
+   account API reports 0 remaining sends. Module state `_brevo_quota_exhausted_until` (UTC datetime) behind a
+   `threading.Lock`: while now < that time, return `True` without calling Brevo. On a 0 answer, set it to the next
+   00:00 UTC (or the reset time from step 1, if Brevo gives one). Any error, timeout (short, e.g. 5 s), non-2xx or
+   missing field → log `[EMAIL] Brevo quota check failed: …` and return `False`. Log `[EMAIL] Brevo daily limit
+   reached; using Mailjet until <time> UTC` once when it flips. Done: one helper, no key in any log line.
+3. **Gateways** (`send_email_notification`, `send_email_with_attachments`, `provider == 'brevo'` branch): when
+   `mailjet_is_configured()` and `brevo_daily_quota_exhausted()`, return `send_mailjet_email(...)` directly; otherwise
+   unchanged (Brevo, then `send_with_mailjet_fallback`). The check runs only when Mailjet is configured, so without
+   Mailjet keys there is no extra request and behaviour is exactly as today. Done: Brevo send functions untouched.
+4. **Tests** in `tests/test_email_fallback.py` (reset the module state in `setUp`):
+   - quota check reports credits left → Brevo is used.
+   - quota check reports 0 → Mailjet is used, Brevo send URL not called; a second email within the window makes no
+     second quota call.
+   - window expired → the quota is checked again.
+   - quota check raises / returns 500 → Brevo is used (and the refuse fallback still works).
+   - Mailjet keys absent → no quota call at all.
+   - Existing 7 tests keep passing (they mock `requests.post`; the quota call uses `requests.get`, which they must
+     also stub to "credits left").
+   Positive control: the new quota tests fail against `HEAD`'s `app.py`.
+
+## Deliberately excluded
+
+- **Recovering emails already lost** while Brevo was over its limit: Brevo has no record of them; they cannot be
+  resent automatically.
+- **Counting sends ourselves** instead of asking Brevo: drifts from Brevo's real count (resets, other senders).
+- **A paid Brevo plan or own sending domain**: owner decided against for now; Mailjet emails landing in Junk is
+  accepted for a backup.
+- **Any page, template or settings UI change**.
+
+## Verification
+
+- Focused: `tests.test_email_fallback` plus the four related email test modules (as in the Mailjet plan).
+- Shared `app.py` email gateways → full suite once before publishing
+  (`venv/Scripts/python.exe scripts/run_suite.py`, main project folder).
+- Local live check (owner, own terminal, keys set only in that terminal, DB copy): a scratchpad script runs one
+  `send_email_notification` to the owner's address. While Brevo shows 0 left, the log must show the quota message
+  and `Mailjet fallback success`, and the email must arrive (Junk is expected). If Brevo has credits by then, the log
+  must show Brevo used and no Mailjet. No browser check (nothing renders).
+
+## After implementation
+
+- Self-review: both gateways still return `(ok, message)`; callers unchanged; no key or account e-mail printed.
+- No `releases.json` entry, no service worker or `?v=` bump.
+- `changes.md`; this Status line with the commit hash; memory note `mailjet-fallback.md`.
+- On "commit and push": only `app.py`, `tests/test_email_fallback.py`, and this plan's `plans.md`/`changes.md` text.
+  Never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty files. Verify `origin/main` and Railway
+  deployment metadata.
+
+## Risks
+
+- **Brevo reports credits differently than expected**: step 1 confirms before any code; a wrong reading fails safe
+  (check returns `False` → Brevo as today).
+- **Wrong reset time**: too early → some emails go to Brevo and are dropped until the next check flips; too late →
+  Mailjet used longer than needed (up to 200/day, in Junk). Step 1 confirms where possible.
+- **Extra latency**: one short GET before each email while Brevo has credits; sends run in background threads.
+- **Both providers exhausted** (>500/day): emails lost, as before, now with log lines from both.
+
 # Mailjet fallback — send through Mailjet when Brevo refuses an email (1 batch)
 
-**Status:** Executed, not committed — 2026-10-19, on "Execute the Mailjet fallback plan in plans.md. Don't publish yet." Approved 2026-10-19 ("approved"), detailed 2026-10-19.
+**Status:** Executed — published to `main` as `834a608` on "Commit and push the Mailjet fallback. Never the db and dirty files." (Railway production deploying at push time). Executed 2026-10-19, on "Execute the Mailjet fallback plan in plans.md. Don't publish yet." Approved 2026-10-19 ("approved"), detailed 2026-10-19.
 
 ### Amendments during execution
 
@@ -48,6 +161,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
   gateway.
 - Positive control: with `HEAD`'s `app.py`, 4 of the 7 new tests fail (the Brevo-fails cases); the other 3 pass, as
   expected. Focused email modules: 30 tests OK. Full suite: 2175 tests, no new failures against `tests/known_failures.txt`.
+- Found after publish (2026-10-20): over its daily limit Brevo returns `201` and silently drops the email, so this
+  fallback never runs in that case. Covered by the follow-up plan "Brevo quota pre-check" above.
 
 ## Context
 
