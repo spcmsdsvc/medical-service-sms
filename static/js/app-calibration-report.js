@@ -31,6 +31,7 @@
   // Most measurement rows (Small + Large) that still leave room for Performance Criteria on the same page.
   var CALIBRATION_REPORT_SHARED_PAGE_MAX_ROWS = 8;
   var DEFAULT_MANUFACTURER = 'Shimadzu';
+  var SAMPLE_PDF_TIMEOUT_MS = 90000;
   var CERTIFICATE_TEMPORARY_MODEL_MAX_LENGTH = 40;
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   var PDF_MIME = 'application/pdf';
@@ -1563,12 +1564,20 @@
       }
     }catch(tokenError){}
     var response;
+    // A weak signal must not leave the button spinning forever; the report itself is already saved.
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timeoutId = controller ? setTimeout(function(){ controller.abort(); }, SAMPLE_PDF_TIMEOUT_MS) : null;
     try{
-      response = await fetch('/convert_calibration_report_sample', { method:'POST', credentials:'same-origin', cache:'no-store', headers:headers, body:formData });
+      response = await fetch('/convert_calibration_report_sample', { method:'POST', credentials:'same-origin', cache:'no-store', headers:headers, body:formData, signal:controller ? controller.signal : undefined });
     }catch(fetchError){
-      var networkError = new Error('PDF conversion is unavailable while offline. Save the TSR and retry after synchronization.');
+      var timedOut = fetchError && fetchError.name === 'AbortError';
+      var networkError = new Error(timedOut
+        ? 'The server took too long to make the sample PDF. Your report is saved; try again with a better connection.'
+        : 'PDF conversion is unavailable while offline. Save the TSR and retry after synchronization.');
       networkError.code = 'calibration_report_pdf_unavailable';
       throw networkError;
+    }finally{
+      if(timeoutId) clearTimeout(timeoutId);
     }
     if(!response.ok){
       var errorPayload = await response.json().catch(function(){ return {}; });

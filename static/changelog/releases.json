@@ -1,6 +1,35 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-19-tsr-weak-signal",
+      "release_date": "2026-10-19",
+      "title": "Create TSR on a weak signal",
+      "summary": "Saving a TSR on a weak connection no longer makes you wait, Calibration Report backups retry by themselves, and the schedule list loads faster.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-19-tsr-weak-signal-save",
+          "category": "Create TSR",
+          "description": "When your phone shows a connection but the server can't be reached, Save TSR keeps the TSR on your phone within seconds instead of waiting up to two minutes, and the banner says \"Can't reach the server\". It is sent automatically when the connection returns."
+        },
+        {
+          "item_key": "2026-10-19-tsr-weak-signal-calibration-backup",
+          "category": "Calibration Report",
+          "description": "A Calibration Report backup that fails is retried automatically, and when you come back to the app. Reopening a report sends your phone's newer copy to your account. Sample PDF stops after 90 seconds with a clear message instead of spinning."
+        },
+        {
+          "item_key": "2026-10-19-tsr-weak-signal-drafts",
+          "category": "Create TSR",
+          "description": "Old drafts on your phone are only tidied away when your account already has the same copy. A draft that was never backed up stays on your phone."
+        },
+        {
+          "item_key": "2026-10-19-tsr-weak-signal-schedule-list",
+          "category": "Create TSR",
+          "description": "The schedule list in Create TSR loads faster, especially for multi-day schedules."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-19-approvals-view-only",
       "release_date": "2026-10-19",
       "title": "Approvals view only",

@@ -33,7 +33,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=51"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=52"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 {% if calibration_report_page %}
 {# Hide the TSR form from the first paint; applyOnlineTSRCalibrationOnlyGate hides the same parts after load. #}
@@ -993,19 +993,46 @@ async function fetchTSRSyncJSON(url, options={}, syncOptions={}){
   }
 }
 
-async function checkOfflineTSRSyncHealth(){
-  const { result } = await fetchTSRSyncJSON(`/offline_tsr_sync_ping?_=${Date.now()}`, {
-    headers:{ 'Accept':'application/json' },
-    cache:'no-store'
-  }, { phase:'checking_connection', timeoutMs:12000 });
-  if(result.status !== 'success'){
-    throw makeTSRSyncError('The server did not confirm the connection.', {
-      phase:'checking_connection',
-      errorCode:'health_check_failed',
-      retryable:true
-    });
+// navigator.onLine only knows the radio is on. A weak or captive connection still says
+// "online" while the server cannot be reached, so the last ping result is kept here and the
+// banner reads it. Unknown counts as reachable, so a fresh page never claims a failure.
+let offlineTSRServerReachable = true;
+let offlineTSRReachabilityCheckedAt = 0;
+const OFFLINE_TSR_REACHABILITY_RECHECK_MS = 30 * 1000;
+
+function setOfflineTSRServerReachable(reachable){
+  const changed = offlineTSRServerReachable !== reachable;
+  offlineTSRServerReachable = reachable;
+  if(changed && typeof updateOfflineTSRStatusIntelligence === 'function') updateOfflineTSRStatusIntelligence();
+}
+
+async function checkOfflineTSRSyncHealth({ timeoutMs=12000 } = {}){
+  offlineTSRReachabilityCheckedAt = Date.now();
+  try{
+    const { result } = await fetchTSRSyncJSON(`/offline_tsr_sync_ping?_=${Date.now()}`, {
+      headers:{ 'Accept':'application/json' },
+      cache:'no-store'
+    }, { phase:'checking_connection', timeoutMs });
+    if(result.status !== 'success'){
+      throw makeTSRSyncError('The server did not confirm the connection.', {
+        phase:'checking_connection',
+        errorCode:'health_check_failed',
+        retryable:true
+      });
+    }
+    setOfflineTSRServerReachable(true);
+    return result;
+  }catch(error){
+    // A signed-out session still reached the server; only a network-level failure means unreachable.
+    setOfflineTSRServerReachable(error?.requiresLogin === true);
+    throw error;
   }
-  return result;
+}
+
+function recheckOfflineTSRServerReachability(){
+  if(!navigator.onLine) return;
+  if(Date.now() - offlineTSRReachabilityCheckedAt < OFFLINE_TSR_REACHABILITY_RECHECK_MS) return;
+  void checkOfflineTSRSyncHealth({ timeoutMs:6000 }).catch(() => null);
 }
 
 async function reconcileTSRReservationFromServer(result, sourceData=null){
@@ -4072,6 +4099,26 @@ async function persistStandaloneTSRDraftServerMetadata(record, serverDraft){
   return true;
 }
 
+// Records which saved version of a device draft the account accepted, so the 30-day cleanup can
+// tell a draft the account holds from one it does not. Written only when the device copy is still
+// the one that was uploaded; any later save rebuilds the record without it.
+async function markStandaloneTSRDraftBackedUp(record){
+  const id = String(record?.id || '').trim();
+  const uploadedAt = String(record?.updated_at || '');
+  if(!id || !uploadedAt) return false;
+  const local = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, id).catch(() => null);
+  if(!local || String(local.updated_at || '') !== uploadedAt) return false;
+  local.account_backed_up_updated_at = uploadedAt;
+  await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, local).catch(() => null);
+  return true;
+}
+
+function standaloneTSRDraftHeldByAccount(record){
+  return Boolean(record?.server_revision) &&
+    Boolean(record?.account_backed_up_updated_at) &&
+    String(record.account_backed_up_updated_at) === String(record?.updated_at || '');
+}
+
 function standaloneTSRDraftComparableSignature(record){
   const payload = Object.assign({}, record?.payload || record || {});
   const identityNumber = record?.tsr_number || payload['tsr-number'] || payload.tsr_number || '';
@@ -4385,6 +4432,7 @@ async function syncStandaloneTSRDraftToServer(record){
     if(result.draft){
       await persistStandaloneTSRDraftServerMetadata(record, result.draft);
     }
+    if(!result.stale_ignored) await markStandaloneTSRDraftBackedUp(record);
     if(result.reservation_token || result.tsr_number || result.draft?.reservation_token){
       await reconcileTSRReservationFromServer(result, record?.payload || {});
     }
@@ -4696,13 +4744,21 @@ async function deleteStandaloneTSRServerDraftRemote(id){
   const headers = { 'Content-Type':'application/json', Accept:'application/json' };
   const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
   if(csrfToken) headers['X-CSRFToken'] = csrfToken;
-  const response = await fetch('/delete_tsr_draft', {
-    method:'POST',
-    credentials:'same-origin',
-    cache:'no-store',
-    headers,
-    body: JSON.stringify({ draft_key: draftKey })
-  });
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 15000) : null;
+  let response;
+  try{
+    response = await fetch('/delete_tsr_draft', {
+      method:'POST',
+      credentials:'same-origin',
+      cache:'no-store',
+      headers,
+      body: JSON.stringify({ draft_key: draftKey }),
+      signal: controller ? controller.signal : undefined
+    });
+  }finally{
+    if(timeoutId) clearTimeout(timeoutId);
+  }
   const result = await response.json().catch(() => ({}));
   if(response.status === 404) return { status:'success', success:true, deleted:false, not_found:true };
   if(!response.ok || result.status !== 'success'){
@@ -4828,7 +4884,9 @@ async function deleteStandaloneTSRDraftOnServer(id){
     standaloneTSRServerDraftSyncTimer = null;
     standaloneTSRServerDraftSyncTimerDraftId = '';
   }
-  if(!navigator.onLine){
+  // A server the last ping could not reach is treated like offline: the deletion stays queued
+  // (marked above) and is retried on reconnect, instead of holding up the save on a dead request.
+  if(!navigator.onLine || offlineTSRServerReachable === false){
     return { pending:true, server_delete_pending:true, reason:'offline' };
   }
   const operation = standaloneTSRServerDraftSyncChain
@@ -5536,6 +5594,7 @@ function onlineTSRCalibrationReportState(submission, payload){
 let lateCalibrationBackupTimer = null;
 let lateCalibrationBackupGeneration = 0;
 let lateCalibrationBackupPending = null;
+const LATE_CALIBRATION_BACKUP_RETRY_MS = [15000, 30000, 60000, 120000];
 
 function backupLateCalibrationReportDraft(submissionId, report, { immediate=false } = {}){
   const targetId = String(submissionId || '').trim();
@@ -5544,27 +5603,29 @@ function backupLateCalibrationReportDraft(submissionId, report, { immediate=fals
   const generation = ++lateCalibrationBackupGeneration;
   lateCalibrationBackupPending = { submissionId:targetId, report };
   const isLatest = () => generation === lateCalibrationBackupGeneration;
+  let attempts = 0;
   const run = async () => {
+    if(!isLatest()) return { skipped:true, reason:'superseded' };
     if(!navigator.onLine){
-      if(isLatest()) setStandaloneTSRSaveStatus('local-saved-pending', null, { message:'Saved on this device. Account backup will wait until you are online.' });
+      setStandaloneTSRSaveStatus('local-saved-pending', null, { message:'Saved on this device. Account backup will wait until you are online.' });
       return { pending:true, skipped:true, reason:'offline' };
     }
-    if(isLatest()) setStandaloneTSRSaveStatus('backup-in-progress');
+    setStandaloneTSRSaveStatus('backup-in-progress');
     const headers = { 'Content-Type':'application/json', Accept:'application/json' };
     const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
     if(csrfToken) headers['X-CSRFToken'] = csrfToken;
     try{
-      const response = await fetch(`/save_calibration_report_draft/${encodeURIComponent(targetId)}`, {
+      // Timed, like every other TSR request: a bare fetch on a weak signal could hang with the
+      // status stuck on "backing up".
+      const { result } = await fetchTSRSyncJSON(`/save_calibration_report_draft/${encodeURIComponent(targetId)}`, {
         method:'POST',
-        credentials:'same-origin',
         headers,
         body:JSON.stringify({ calibration_report:report, device_updated_at:new Date().toISOString() })
-      });
-      const result = await response.json().catch(() => ({}));
-      if(!response.ok || result.status !== 'success'){
-        const error = new Error(result.message || 'Calibration Report backup failed.');
-        error.httpStatus = response.status;
-        throw error;
+      }, { phase:'backing_up_calibration_report', timeoutMs:15000 });
+      if(result.status !== 'success'){
+        throw makeTSRSyncError(result.message || 'Calibration Report backup failed.', {
+          phase:'backing_up_calibration_report', errorCode:'backup_unconfirmed', retryable:false, result
+        });
       }
       if(isLatest()){
         lateCalibrationBackupPending = null;
@@ -5579,7 +5640,20 @@ function backupLateCalibrationReportDraft(submissionId, report, { immediate=fals
       return result;
     }catch(error){
       console.warn('[Calibration Report] Account backup failed', error);
-      if(isLatest()) setStandaloneTSRSaveStatus('account-backup-failed', null, { error });
+      if(isLatest()){
+        setStandaloneTSRSaveStatus('account-backup-failed', null, { error });
+        // Only a connection or server failure can heal by itself. The device copy is safe either
+        // way; a refused backup (4xx) waits for the next edit, as before.
+        if(isRetriableTSRSyncError(error)){
+          const delay = LATE_CALIBRATION_BACKUP_RETRY_MS[Math.min(attempts, LATE_CALIBRATION_BACKUP_RETRY_MS.length - 1)];
+          attempts += 1;
+          clearTimeout(lateCalibrationBackupTimer);
+          lateCalibrationBackupTimer = setTimeout(() => {
+            // A hidden page waits: the focus/visibility listener below retries when it is back.
+            if(document.visibilityState !== 'hidden') void run();
+          }, delay);
+        }
+      }
       return { failed:true, error };
     }
   };
@@ -5588,9 +5662,17 @@ function backupLateCalibrationReportDraft(submissionId, report, { immediate=fals
   return { pending:true, scheduled:true };
 }
 
-window.addEventListener('online', () => {
+function retryPendingLateCalibrationBackup(){
   const pending = lateCalibrationBackupPending;
-  if(pending && isOnlineTSRCalibrationMode()) backupLateCalibrationReportDraft(pending.submissionId, pending.report, { immediate:true });
+  if(pending && navigator.onLine && isOnlineTSRCalibrationMode()){
+    backupLateCalibrationReportDraft(pending.submissionId, pending.report, { immediate:true });
+  }
+}
+
+window.addEventListener('online', retryPendingLateCalibrationBackup);
+window.addEventListener('focus', retryPendingLateCalibrationBackup);
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible') retryPendingLateCalibrationBackup();
 });
 
 async function loadLateCalibrationReportAccountCopy(submissionId){
@@ -5659,6 +5741,12 @@ async function restoreStandaloneLateCalibrationDraft(submissionId){
     return candidate;
   }
   window.calibrationReport?.apply(candidate.payload.calibration_report);
+  // The device copy is newer than the account's (its last backup failed, or there is none yet):
+  // send it now rather than waiting for the next edit. Offline, this leaves it pending for the
+  // reconnect listener.
+  if(reportSavedAt(candidate.payload.calibration_report) > reportSavedAt(accountCopy)){
+    backupLateCalibrationReportDraft(targetId, candidate.payload.calibration_report);
+  }
   showTSRStatus('Recovered the Calibration Report saved on this device after the previous upload did not complete. It is still not uploaded.', 'warning', { replaceKey:'late-calibration-upload' });
   // A failed Save Final Report resumes uploading when its generated report is still on this device.
   if(candidate.payload._late_calibration_report_upload_failed && window.calibrationReport?.scheduleLateUploadRetry){
@@ -7747,6 +7835,10 @@ async function cleanupOfflineTSROldDraftRecords(){
   for(const draftRecord of drafts){
     if(!draftRecord?.id || draftRecord.id === OFFLINE_TSR_ACTIVE_DRAFT_ID) continue;
     if(String(draftRecord.account_id || '') !== STANDALONE_TSR_ACCOUNT_SCOPE) continue;
+    // Only a copy the account already holds may go. A draft whose backup never succeeded, was
+    // edited since, or is a Calibration Report for a saved TSR (its own backup) stays on the device.
+    if(String(draftRecord.id).includes('late_calibration_')) continue;
+    if(!standaloneTSRDraftHeldByAccount(draftRecord)) continue;
     const ageDays = offlineTSRRecordAgeDays(draftRecord, ['updated_at','created_at']);
     if(ageDays < OFFLINE_TSR_OLD_DRAFT_RETENTION_DAYS) continue;
     await offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, draftRecord.id);
@@ -7913,6 +8005,13 @@ function updateOfflineTSRStatusIntelligence(){
     setOfflineTSRConnectionBanner('offline', pending.length
       ? `Offline mode: ${pending.length} TSR${pending.length === 1 ? '' : 's'} waiting for sync.`
       : 'Offline mode: new TSR saves will be queued locally on this device.');
+    return;
+  }
+
+  if(offlineTSRServerReachable === false){
+    setOfflineTSRConnectionBanner('offline', pending.length
+      ? `Can't reach the server: ${pending.length} TSR${pending.length === 1 ? '' : 's'} waiting on this device. They will be sent when the connection returns.`
+      : "Can't reach the server: TSRs will be saved on this device and sent when the connection returns.");
     return;
   }
 
@@ -8958,11 +9057,13 @@ function scheduleOfflineTSRAutoSync(){
   window.addEventListener('online', () => {
     clearOfflineTSRSyncRetryTimer();
     void flushTSRReservationReleaseQueue();
+    offlineTSRReachabilityCheckedAt = 0;
     refreshOfflineTSRQueueStore().then(() => {
       updateOfflineTSRStatusIntelligence();
       showTSRStatus('Internet connection restored. Checking pending offline TSR queue...', 'info');
       return syncOfflineTSRQueue({ silent:false });
     }).then(() => {
+      recheckOfflineTSRServerReachability();
       // A reconnect may sync a pending reservation, but it must never recalculate a displayed
       // TSR number locally. The server draft/queue response is the only source of assignment.
     });
@@ -8970,6 +9071,8 @@ function scheduleOfflineTSRAutoSync(){
   });
   window.addEventListener('offline', () => {
     clearOfflineTSRSyncRetryTimer();
+    // Back to unknown: the plain offline banner says enough, and the next reconnect pings afresh.
+    offlineTSRServerReachable = true;
     refreshOfflineTSRQueueStore().then(() => {
       updateOfflineTSRStatusIntelligence();
       showTSRStatus('Offline mode enabled. TSR saves will be queued locally until internet returns.', 'warning');
@@ -8985,12 +9088,16 @@ function scheduleOfflineTSRAutoSync(){
     if(navigator.onLine) void mergeServerStandaloneTSRDrafts().then(() => renderStandaloneTSRDraftPanel());
     if(navigator.onLine && readOfflineTSRQueue().length){
       syncOfflineTSRQueue({ silent:true });
+    }else{
+      recheckOfflineTSRServerReachability();
     }
   });
   document.addEventListener('visibilitychange', () => {
     if(document.visibilityState === 'visible' && navigator.onLine) void mergeServerStandaloneTSRDrafts().then(() => renderStandaloneTSRDraftPanel());
     if(document.visibilityState === 'visible' && navigator.onLine && readOfflineTSRQueue().length){
       syncOfflineTSRQueue({ silent:true });
+    }else if(document.visibilityState === 'visible'){
+      recheckOfflineTSRServerReachability();
     }
   });
   window.addEventListener('pagehide', () => {
@@ -8999,7 +9106,9 @@ function scheduleOfflineTSRAutoSync(){
   });
   setTimeout(() => {
     verifyOfflineTSRQueuePersistence();
-    syncOfflineTSRQueue({ silent:true });
+    // The queue sync pings only when something is pending; an empty queue still needs the banner
+    // checked. After a ping the 30 s guard makes the recheck a no-op.
+    void syncOfflineTSRQueue({ silent:true }).then(() => recheckOfflineTSRServerReachability());
   }, 1500);
 }
 
@@ -9021,6 +9130,9 @@ async function submitStandaloneTSROnline(data, options={}){
   let coreResult = null;
   let uploadedAttachmentTokens = [];
   try{
+    // A quick ping first: on a dead-but-"online" connection the upload below would wait its full
+    // 120 s before the catch queues the TSR. A failed ping is retriable, so it queues in seconds.
+    await checkOfflineTSRSyncHealth({ timeoutMs:6000 });
     const headers = { 'Accept':'application/json', 'X-TSR-Submission-Token':payload.submission_token };
     try{
       if(typeof getCSRFToken === 'function'){

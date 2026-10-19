@@ -37,6 +37,301 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Create TSR and Calibration Report — weak-signal save, report backup retry, faster schedule list (3 batches)
+
+**Status:** Executed 2026-10-19 on "go ahead" (all three batches), **not committed**. Approved 2026-10-19 ("Write the
+plan for batches 1, 2 and 3 (weak-signal save, calibration backup retry, schedule list speed) to plans.md, then wait
+for my go-ahead.").
+
+### Amendments during execution
+
+- **Commits.** Batches 1 and 2 both edit `templates/offline_tsr.html` and share one service worker bump
+  (`v335-tsr-weak-signal`) and one `releases.json` release ("Create TSR on a weak signal"), so "one commit per batch"
+  would mean splitting hunks of one file. Proposed at publish: one commit for all three, or 1+2 and 3.
+- **Batch 1, added after the browser check:** with every request hanging, the TSR was queued in ~6 s, but the save
+  then hung on the account-draft delete (`deleteStandaloneTSRServerDraftRemote`, plain `fetch`, no timeout), so the
+  page never cleared. `deleteStandaloneTSRDraftOnServer` now treats `offlineTSRServerReachable === false` like offline
+  (the deletion stays marked and is retried on reconnect), and the remote delete has a 15 s timeout. This postpones a
+  delete; it adds none. After the fix the whole save finished in 6.0 s.
+- **Batch 1, step 4:** the load-time sync still always runs; the reachability recheck is chained after it (the 30 s
+  guard makes it a no-op when the sync already pinged). A signed-out ping (`requiresLogin`) counts as reachable.
+- **Step 5:** a backup superseded by a newer edit stops; the retry timer is shared, so a new edit resets the ladder.
+- **Step 7:** the reopen backup runs offline too (it then waits as pending for the reconnect/focus listeners), not
+  only when online.
+- **Step 8a:** content comparison was not reliable offline (the account hash is computed on the server), so a new
+  marker `account_backed_up_updated_at` is written by `markStandaloneTSRDraftBackedUp` only after a successful,
+  non-stale upload and only if the device record is still the uploaded version; any later save rebuilds the record
+  without it. The cleanup deletes only drafts where `standaloneTSRDraftHeldByAccount` (has `server_revision` and the
+  marker equals `updated_at`) and never `late_calibration_` drafts. Drafts saved before this release have no marker,
+  so the cleanup keeps them until their next successful backup.
+- **Step 12:** after steps 9–11 `can_create_tsr_without_equipment_for_shift` was the top remaining cost (one
+  `ShiftEngineer` query per schedule), so it gained an optional `assigned_ids` the route passes; other callers unchanged.
+- **Step 13 result:** every request costs ~90 queries before the route runs (runtime migration checks), so the
+  "under 120" target is read as route-only. Engineer with 66 schedules on the DB copy: **877 → 144 queries total
+  (~785 → ~52 for the route), 207 → 48 ms warm.** JSON identical for all 19 engineers compared (the 20th test account
+  changed user id between runs, so nothing to compare).
+- **Calibration script** `?v=51` → `?v=52` (`offline_tsr.html`, `calibration_center.html`, `APP_SHELL`, and the tests
+  that pin it).
+- **Harness update:** `tests/test_calibration_report_page.py` sandboxes now stub `backupLateCalibrationReportDraft` in
+  the restore sandbox (and assert the step 7 calls) and load the real `fetchTSRSyncJSON` helpers in the backup sandbox.
+- **Results:** new `tests/test_tsr_weak_signal_draft_safety.py` (13 tests; the 11 behaviour tests fail on `HEAD`, the
+  two guard tests pass on both by design); `test_offline_tsr_schedule_options_speed` +2 (budget test fails on `HEAD`:
+  8 chain days added 112 queries); focused modules 447 tests, all pass except
+  `test_changelog_workflow…test_manifest_entries_cannot_be_deleted`, which fails only when run in one process after
+  `test_calibration_report_page` — **identical on `HEAD`**, an existing test-order dependency. Full suite not run (no
+  shared shell/auth/schema change).
+- **Upgrade browser check (passed):** on a DB copy, `HEAD` code (SW v334) as an engineer: (a) device-only draft with
+  signature (schedule 363), (b) account-backed draft (362), (c) queued TSR 20260505-01-KM (315), (d) device-only
+  Calibration Report draft for TSR #35. Switched to the new code on the same origin; v335 activated and deleted the
+  v334 caches. All three drafts were present with identical payload sizes and signatures; (c) synced as submission
+  #36; reopening (d) uploaded it to the account. Dead-connection save: queued in 6.0 s with the "Can't reach the
+  server" banner, synced (#37, #38) and the banner returned to "Online mode" on focus once requests worked again.
+  Calibration Report backup blocked → timed out at 15 s → retried at 32 s without an edit → in the account. 375 px:
+  banner wraps, no horizontal scroll. No server errors; the only console error is an expected 404 from deleting an
+  already-deleted account draft (handled as success). DB copy, test password, `HEAD` copy and launch entries removed.
+- **Seen, not changed (pre-existing, outside this plan):** after the queued TSR (c), the localStorage fallback copy
+  of its draft survived and was re-created as a device draft on the next load (the server copy stayed deleted). This
+  may come from the check calling `finishStandaloneTSRFinalSave` directly instead of through the preview dialog;
+  worth a separate look. The device-only draft (a) was not uploaded to the account on load; it stays on the device
+  (and step 8a now keeps it).
+
+## Context
+
+After the offline review on 2026-10-19 the owner set the schedule queue aside ("let's skip the scheduling and focus
+on tsr and calibration") and asked what could be improved in Create TSR and the Calibration Report. The offline
+TSR queue is mature (durable IndexedDB + localStorage mirror, idempotent tokens, backoff retries, sync on
+load/focus/visibility, storage persistence and pressure warnings, all 258 offline tests passing). Three real
+weaknesses remain, all about a **weak or dead connection that the phone still calls "online"** (hospital basements,
+captive Wi-Fi) and about speed:
+
+1. Save TSR waits up to **2 minutes** before falling back to the device queue, and the banner keeps saying "Online
+   mode" while the server cannot be reached (open item from the 2026-10-14 Create TSR work).
+2. A Calibration Report written for an already-saved TSR backs up to the account only once per edit; if that one
+   attempt fails, nothing retries it until the next edit or an `online` event.
+3. The Create TSR schedule list (`/get_offline_tsr_schedule_options`) runs about 14 database queries per schedule.
+
+## Decisions taken (owner, 2026-10-19)
+
+- Three batches: 1 weak-signal save and honest banner, 2 Calibration Report backup retry, 3 schedule list speed.
+- The schedule queue (`static/js/app-offline-schedule.js`) is out of scope; see the abandoned "Offline sync" plan.
+- **Draft safety (owner, 2026-10-19: "make sure that if we publish these, the drafts wont be deleted on any
+  engineer").** Publishing must not delete or hide any engineer's TSR draft, Calibration Report draft or queued TSR —
+  on the device or in the account. Rules for every batch:
+  - Do not change `OFFLINE_TSR_DB_NAME`, `OFFLINE_TSR_DB_VERSION` (stays `1`), the store names in
+    `OFFLINE_TSR_DB_STORES`, the localStorage keys (`OFFLINE_TSR_QUEUE_KEY`, its backup/meta keys, the draft fallback
+    key, `standalone_tsr_draft_late_calibration_<user>_<submission>`), or the draft id format. A changed name or
+    version would make existing drafts invisible even though they are still stored.
+  - Add no call to `clearStandaloneTSRDraftLocally`, `deleteStandaloneTSRDraft`, `offlineTSRDBDelete`,
+    `deleteStandaloneTSRDraftOnServer`, `localStorage.removeItem` on draft/queue keys, `indexedDB.deleteDatabase`,
+    or a `Clear-Site-Data` header. The service worker change is only the `CACHE_VERSION` string.
+  - Batch 1's faster queueing reuses the existing path that clears the draft **only after** the queue write
+    succeeded with `requireDurable:true` (see Investigation); no new clear is added.
+  - Batch 3 changes a read-only route; it writes nothing.
+
+## Investigation (verified 2026-10-19, code read + profiling on a `scheduler.db` copy)
+
+**Draft safety — where drafts live and what can delete them**
+
+- Drafts and queued TSRs live in IndexedDB `medical_service_offline_tsr_db` v1 (stores `tsr_drafts`, `tsr_queue`,
+  `tsr_attachments`, `tsr_metadata`; `templates/offline_tsr.html:3514–3521`), a localStorage mirror
+  (`:3506`), and the account copy in the server tables `TsrDraft` / `TsrDraftVersion` (`app.py:3848`, `:3880`).
+- A publish only replaces the service worker. Its `activate` deletes old **Cache Storage** entries
+  (`app.py`, `pwa_service_worker`, `caches.keys()` filter) and `purgeAuthenticatedCaches` runs only on sign-out and
+  touches only caches; its comment says IndexedDB is deliberately left alone. No code in `templates/`, `static/js/` or
+  `app.py` calls `indexedDB.deleteDatabase`, `localStorage.clear()` or sends `Clear-Site-Data` (grep, 2026-10-19).
+- Device drafts are cleared only by: Clear page (`:1435`, with confirmation), explicit Delete (`:6773`), a successful
+  online save (`:9393`, `:9404`), and a successful device queueing (`:9432`, `:9471`) — the queue item then holds the
+  TSR, written by `queueStandaloneTSROffline` with `persistOfflineTSRQueueStore(queue, { requireDurable:true })`
+  before `err.queued` is set. The server deletes a `TsrDraft` only in `delete_tsr_draft` (`app.py:19460`).
+- **One existing risk, not caused by these batches:** `cleanupOfflineTSROldDraftRecords` (`:7743`) runs ~1.2 s after
+  every Create TSR load (`scheduleOfflineTSRRetentionCleanup`, `:7794`, `:11296`) and deletes any device draft not
+  touched for **30 days** (`OFFLINE_TSR_OLD_DRAFT_RETENTION_DAYS`, `:7666`), without checking that the account holds a
+  copy. A draft whose account backup never succeeded (or a late Calibration Report draft, which has its own backup and
+  no `server_revision`) is then gone for good. Backed-up drafts carry `server_revision` / `server_hash`
+  (`persistStandaloneTSRDraftServerMetadata`, `:4052`).
+
+**Batch 1 — weak signal**
+
+- Final save: `finishStandaloneTSRFinalSave` (`templates/offline_tsr.html:9369`) calls `submitStandaloneTSROnline`
+  only when `navigator.onLine` (`:9400–9402`). That uploads with `fetchTSRSyncJSON(... { timeoutMs:120000 })`
+  (`:9034–9037`). On any retriable error its catch queues the TSR on the device (`queueStandaloneTSROffline`,
+  `:9059–9067`) and the caller clears the page with "TSR queued locally…" (`:9430–9436`). So the fallback works, but
+  on a dead-but-"online" connection the engineer stares at a spinner for up to 120 s first.
+- Health check exists: `checkOfflineTSRSyncHealth` (`:996`) pings `/offline_tsr_sync_ping` with a 12 s timeout and is
+  already used before queue sync (`:8749`). It has no timeout parameter.
+- Banner: `updateOfflineTSRStatusIntelligence` (`:7902–7930`) decides "offline" only from `navigator.onLine`; there is
+  no "server unreachable" state, so it shows "Online mode…" whenever the radio is on.
+
+**Batch 2 — Calibration Report account backup**
+
+- `backupLateCalibrationReportDraft` (`:5540–5589`) POSTs `/save_calibration_report_draft/<submission>` with a plain
+  `fetch` (no timeout). On failure it sets `account-backup-failed` and returns; `lateCalibrationBackupPending` stays
+  set. The only retry is the `online` listener (`:5591–5594`), which does not fire on a weak signal. Called from
+  `saveStandaloneTSRDraft` (`:9546`).
+- When the report is reopened (`:5625–5660`), the account copy wins if newer; when the **device** copy is newer
+  (the backup failed earlier), nothing uploads it — the account copy stays stale until the next edit.
+- TSR drafts do not have this gap: `mergeServerStandaloneTSRDrafts` re-uploads newer device drafts on load, `focus`
+  and `visibilitychange` (`:4965–4973`, `:5017–5025`, `:8983–8992`).
+- Sample PDF: `app-calibration-report.js:1567` posts `/convert_calibration_report_sample` with no timeout; on a weak
+  signal the button can hang with no message.
+
+**Batch 3 — schedule list speed** (`app.py:14095`, `get_offline_tsr_schedule_options`)
+
+- Measured on a `scheduler.db` copy (558 schedules), engineer #14 with 66 schedules in the window: **909 queries,
+  ~360 ms warm; 2,572 queries, ~710 ms cold**. Production (bigger DB, Railway disk) was ~1.2 s cold on 2026-10-14.
+- Profile of the warm run (cumulative): `get_shift_assigned_engineer_ids` **424 calls, 0.31 s** — one `ShiftEngineer`
+  query per linked schedule, called from `get_tsr_schedule_coverage_rows` (`:14842`), 0.28 s total;
+  `get_tsr_completion_linked_shifts` (`:14769`) 66 calls, 0.10 s — re-queries the same `group_id` for every day of a
+  multi-day chain; `product_vieworks_link_payload` 111 calls, 0.08 s — called **twice** per schedule (`:14240`,
+  `:14241`); `offline_tsr_client_contact_payload` + `offline_tsr_client_contacts_payload` 0.10 s — per schedule, though
+  many schedules share a client; `can_create_tsr_without_equipment_for_shift` 0.05 s.
+- The route already batches the first `ShiftEngineer` lookup (`:14134–14144`) and calibration history (`:14184`); the
+  per-schedule helpers do not reuse it.
+- `get_tsr_schedule_coverage_rows` and `get_tsr_completion_linked_shifts` are also used by the TSR save paths, so
+  their default behaviour must not change.
+
+## Execution steps
+
+### Batch 1 — weak-signal save and an honest banner (`templates/offline_tsr.html`)
+
+1. `checkOfflineTSRSyncHealth({ timeoutMs=12000 } = {})`: pass the timeout through to `fetchTSRSyncJSON`; existing
+   callers unchanged. On success set `offlineTSRServerReachable = true`, on failure `false` (new module variable,
+   default `true`), then call `updateOfflineTSRStatusIntelligence()`. Done: one function records reachability.
+2. In `submitStandaloneTSROnline`, as the first statement inside the outer `try` (`:9023`), `await
+   checkOfflineTSRSyncHealth({ timeoutMs:6000 })`. Its error is retriable, so the existing catch queues the TSR with
+   reason `server_unavailable`. Done: on a dead connection Save queues within ~6 s instead of 120 s; a healthy
+   connection adds one small request.
+3. `updateOfflineTSRStatusIntelligence`: after the `!navigator.onLine` branch, if `offlineTSRServerReachable ===
+   false` show the `offline` style with "Can't reach the server: TSRs will be saved on this device and sent when the
+   connection returns." (with the pending count when there is one). Done: the banner no longer says "Online mode"
+   when the server is unreachable.
+4. Recheck reachability: on load (already 1.5 s after load via the sync call — when the queue is empty, ping
+   anyway), on `focus`/`visibilitychange` to visible, and on `online`; at most once per 30 s
+   (`offlineTSRReachabilityCheckedAt`). On `offline` set it back to unknown (`true`) so the plain offline banner wins.
+   Done: the banner returns to "Online mode" by itself once the server answers.
+
+### Batch 2 — Calibration Report backup retries (`templates/offline_tsr.html`, `static/js/app-calibration-report.js`)
+
+5. `backupLateCalibrationReportDraft`: send through `fetchTSRSyncJSON` (15 s timeout, same JSON/CSRF headers) instead
+   of a bare `fetch`. On a retriable failure schedule one retry (15 s, 30 s, 60 s, then every 120 s; one timer, reset
+   by a new edit, skipped while the page is hidden). Non-retriable (4xx) failures keep today's `account-backup-failed`
+   status and stop. Done: a failed backup heals itself while the page stays open.
+6. Also retry a pending backup on `focus` and `visibilitychange` to visible (beside the existing `online` listener,
+   `:5591`). Done: returning to the app re-sends a failed backup.
+7. On reopen (`:5635–5639`): when the device copy is newer than the account copy (or there is no account copy) and
+   the device is online, call `backupLateCalibrationReportDraft(targetId, report)` (debounced). Done: a report whose
+   backup failed last session reaches the account when it is next opened.
+8. `app-calibration-report.js` sample conversion (`:1567`): add an `AbortController` timeout of 90 s; on abort throw
+   the existing `calibration_report_pdf_unavailable` error with "The server took too long to make the sample PDF.
+   Your report is saved; try again with a better connection." Done: the button never hangs silently.
+8a. **Old-draft cleanup keeps anything not safely in the account** (owner's draft-safety request).
+   `cleanupOfflineTSROldDraftRecords` (`:7743`) skips a draft unless it has a `server_revision` **and** its current
+   content matches the account copy (compare with the same content check used for recovery,
+   `standaloneTSRDraftRecordsHaveSameContent`, or the stored `server_hash` — confirm which is reliable during
+   execution and record it here). Late Calibration Report drafts (`id` contains `late_calibration_`) are never deleted
+   by this cleanup. Everything else about the cleanup (30 days, orphan blobs, metadata) is unchanged. Done: the only
+   automatic draft deletion left removes copies that the account already holds.
+
+### Batch 3 — faster schedule list (`app.py`)
+
+9. `get_tsr_schedule_coverage_rows(shift, linked_shifts=None, engineer_ids_by_shift=None)`: when the map is given,
+   read engineer ids from it (falling back to `shift.engineer_id` exactly as `get_shift_assigned_engineer_ids` does)
+   instead of querying. Default `None` keeps today's behaviour for the save paths.
+10. In `get_offline_tsr_schedule_options`: cache `get_tsr_completion_linked_shifts` results per request by
+    `group_id` / `parent_shift_id` (a dict local to the route: compute once per chain, reuse for every day of it);
+    after collecting all linked shifts, load their `ShiftEngineer` rows in one chunked query (reuse the pattern at
+    `:14134–14144`) and their `Engineer` rows in one query so `db.session.get(Engineer, …)` hits the identity map;
+    pass the map to step 9.
+11. Same route: compute `product_vieworks_link_payload(serial)` once per schedule and derive `with_vieworks_canon`
+    from it; cache the two client-contact payloads per `client_id` for the request.
+12. Leave `can_create_tsr_without_equipment_for_shift` unless the profile after steps 9–11 still shows it in the top
+    three; if so, cache by the inputs it actually reads (check its body first, record the finding in this plan).
+13. Re-profile with the same script on the same DB copy (engineer #14). Done: **the JSON is identical** to before
+    (compare `json.dumps(sort_keys=True)` minus `generated_at`), and queries drop from 909 to **under 120** warm,
+    with the time recorded here.
+
+## Deliberately excluded
+
+- The offline schedule queue (abandoned plan) and Background Sync.
+- Changing the 120 s upload timeout itself: a large TSR with photos on a slow but working connection needs it; the
+  6 s ping is what separates "slow" from "dead".
+- Retrying the sample PDF automatically: it is an on-demand preview; a clear message is enough.
+- Shrinking the schedule window (365 days back, 90 ahead) or paging the list: engineers search old schedules
+  (comment at `:14106–14107`); the query fix should make it unnecessary.
+- New offline features for the Calibration Report (e.g. offline PDF conversion — needs the server's converter).
+
+## Verification
+
+- Batch 1 — `tests/test_tsr_sync_reliability.py` (or a new `tests/test_tsr_weak_signal.py`, source checks in the
+  style of `tests/test_offline_resilience.py`): the health check takes `timeoutMs`; `submitStandaloneTSROnline` pings
+  with 6000 before the upload; the banner has the "Can't reach the server" branch keyed on `offlineTSRServerReachable`;
+  the 30 s recheck guard exists.
+- Batch 2 — same style: the late-report backup goes through `fetchTSRSyncJSON`; retry ladder 15/30/60/120 s; `focus`
+  and `visibilitychange` retry; reopen uploads a newer device copy; sample conversion has an `AbortController` and the
+  new message.
+- Batch 3 — extend `tests/test_offline_tsr_schedule_options_speed.py`: a fixture with a 5-day chain shared by two
+  engineers plus a time override; assert the response equals the per-shift helpers' output (coverage rows, engineer
+  names, linked counts) and the request runs under a fixed query budget (count with the existing `event` listener);
+  `get_tsr_schedule_coverage_rows` without the map still queries as before.
+- **Positive control** for every new test: it fails on `HEAD` (checked in-process against `git show HEAD:<file>`,
+  never `git stash`).
+- **Draft-safety guard test** (new, in every batch's test module or one shared `tests/test_tsr_draft_safety.py`):
+  `OFFLINE_TSR_DB_NAME`, `OFFLINE_TSR_DB_VERSION = 1`, the four store names and the queue/draft localStorage keys are
+  unchanged; the count of `clearStandaloneTSRDraftLocally(`, `deleteStandaloneTSRDraft(`, `offlineTSRDBDelete(` and
+  `removeItem(` calls in `offline_tsr.html` is not higher than on `HEAD` (except the guarded cleanup of step 8a);
+  `indexedDB.deleteDatabase`, `localStorage.clear` and `Clear-Site-Data` appear nowhere; the service worker diff
+  against `HEAD` changes only `CACHE_VERSION`. Step 8a test: a 31-day-old draft without `server_revision`, one whose
+  content differs from the account copy, and a late Calibration Report draft are all kept; a 31-day-old draft
+  matching the account copy is removed.
+- **Upgrade browser check before each publish** (the real proof): on the DB copy, while still on `HEAD` code, as the
+  temporary engineer create (a) an unsaved TSR draft with a signature, (b) an account-backed TSR draft, (c) a queued
+  TSR (DevTools offline), (d) a late Calibration Report draft. Then switch to the batch's code, restart the server and
+  reload so the new service worker activates (confirm the new `CACHE_VERSION` in DevTools → Application). All four
+  must still be listed in Continue Saved Work / the queue with their content and signatures, and the queued TSR must
+  still sync. Repeat the reload once more after going offline.
+- Focused modules each batch: `test_offline_resilience`, `test_tsr_sync_reliability`, `test_tsr_draft_sync`,
+  `test_tsr_offline_scan_fixes`, `test_tsr_offline_followup`, `test_offline_tsr_pending_schedule`,
+  `test_offline_tsr_schedule_options_speed`, `test_tsr_calibration_report`, `test_calibration_report_page`,
+  `test_calibration_late_upload_feedback`, `test_sw_cache_version`. Full suite not needed: no shared shell, auth or
+  schema change (Batch 3 touches only the route and two TSR helpers, keeping their defaults).
+- Browser (local server on a `scheduler.db` copy, temporary engineer + schedule; DevTools request blocking):
+  - B1: online, block `/offline_tsr_sync_ping` and `/save_offline_tsr_online` → Save TSR queues within ~6 s, the
+    banner says "Can't reach the server"; unblock → banner returns to "Online mode" on focus and the queue syncs.
+  - B2: open a saved TSR's Calibration Report, block `/save_calibration_report_draft/*`, edit → backup failed; unblock
+    → retried within the ladder with no edit; reload with a newer device copy → it uploads.
+  - B3: Create TSR schedule list loads, same schedules and coverage text as before, multi-day chain still shows all
+    days and engineers.
+  - Each: 375 px no horizontal scroll, no console errors.
+- Clean up the DB copy, test account and temporary `.claude/launch.json` entry afterwards.
+
+## After implementation
+
+- Self-review each diff; confirm the functions Create TSR calls (`finishStandaloneTSRFinalSave`,
+  `submitStandaloneTSROnline`, `syncOfflineTSRQueue`, `backupLateCalibrationReportDraft`,
+  `window.calibrationReport.*`) still exist and Save TSR, Preview, Save Draft, Sample PDF and the queue buttons work.
+- Batches 1–2: bump `CACHE_VERSION` (`v335-…`, `v336-…`, or the next free number) and the `?v=` of
+  `app-calibration-report.js` (Batch 2) where it is referenced (`APP_SHELL` and the template;
+  `tests/test_calibration_center.py` pins it); one `static/changelog/releases.json` release each in plain words.
+  Batch 3 is server-only: no worker bump.
+- `changes.md` entry per batch; this Status line with commit hashes; update the Create TSR memory note (banner item
+  closed, speed item closed).
+- On "commit and push": only this plan's files (never `scheduler.db`, `output/`, `tmp/`, handoffs or other dirty
+  files); verify `origin/main` and Railway deployment metadata.
+
+## Risks
+
+- Draft loss on publish (the owner's main concern). Safety net: nothing in these batches renames, versions or
+  clears draft storage (rules under Decisions, enforced by the guard test), the upgrade browser check proves drafts
+  survive the worker swap, the account copy on the server is untouched, and step 8a removes the one existing
+  automatic deletion of drafts the account does not hold.
+- Batch 1's ping could misjudge a slow-but-working connection as dead and queue a TSR that would have saved. Safe:
+  the queue syncs it a moment later with the same submission token, so no duplicate; 6 s is generous for a tiny JSON
+  ping.
+- Batch 2 retries hit the server every 2 minutes per open report while it is down — negligible, one engineer, one
+  small JSON.
+- Batch 3 changes how a heavily used list is built. Safety net: identical-JSON check against `HEAD` on the DB copy,
+  helper defaults unchanged for the save paths, and a query-budget test.
+
 # Approvals view only — a Settings switch that lets an account read every approval without deciding (1 batch)
 
 **Status:** Executed locally, not committed (2026-10-19, on "Execute the Approvals view only plan in plans.md. Don't

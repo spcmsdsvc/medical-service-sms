@@ -14183,6 +14183,39 @@ def get_offline_tsr_schedule_options():
             equipment_for_history.append((equipment, source))
     calibration_history_map = approved_calibration_history_for_equipment(equipment_for_history)
 
+    # Linked schedules for every kept shift, sharing the chain queries, then their engineers in
+    # bulk: the per-shift lookups were about 14 queries per schedule.
+    linked_cache = {}
+    linked_shifts_by_id = {
+        shift.id: get_tsr_completion_linked_shifts(shift, cache=linked_cache)
+        for shift, _assigned_ids, _assigned_engineers in kept
+    }
+    all_linked_ids = sorted({linked.id for linked_list in linked_shifts_by_id.values() for linked in linked_list})
+    coverage_engineer_ids = {}
+    for chunk_start in range(0, len(all_linked_ids), 500):
+        rows = (
+            db.session.query(ShiftEngineer.shift_id, ShiftEngineer.engineer_id)
+            .filter(ShiftEngineer.shift_id.in_(all_linked_ids[chunk_start:chunk_start + 500]))
+            .order_by(ShiftEngineer.shift_id.asc(), ShiftEngineer.engineer_id.asc())
+            .all()
+        )
+        for shift_id, engineer_id in rows:
+            coverage_engineer_ids.setdefault(shift_id, []).append(engineer_id)
+    coverage_engineer_pk = {eid for ids in coverage_engineer_ids.values() for eid in ids if eid}
+    coverage_engineer_pk.update(
+        linked.engineer_id
+        for linked_list in linked_shifts_by_id.values()
+        for linked in linked_list
+        if linked.engineer_id
+    )
+    coverage_engineer_pk -= set(engineers_by_id)
+    if coverage_engineer_pk:
+        # Loaded into the session so db.session.get(Engineer, ...) in the coverage rows is free.
+        Engineer.query.filter(Engineer.id.in_(coverage_engineer_pk)).all()
+
+    contact_cache = {}
+    vieworks_cache = {}
+
     for shift, assigned_ids, assigned_engineers in kept:
         if current_engineer_profile:
             serviced_engineer = current_engineer_profile
@@ -14202,10 +14235,17 @@ def get_offline_tsr_schedule_options():
             equipment_source in OPERATIONAL_EQUIPMENT_SOURCES and
             clean_int(getattr(product, 'client_id', None)) == clean_int(shift.client_id)
         )
-        client_contact = offline_tsr_client_contact_payload(client)
-        client_contacts = offline_tsr_client_contacts_payload(client)
-        linked_shifts = get_tsr_completion_linked_shifts(shift)
-        schedule_coverage = get_tsr_schedule_coverage_rows(shift, linked_shifts=linked_shifts)
+        contact_key = getattr(client, 'id', None)
+        if contact_key not in contact_cache:
+            contact_cache[contact_key] = (
+                offline_tsr_client_contact_payload(client),
+                offline_tsr_client_contacts_payload(client),
+            )
+        client_contact, client_contacts = contact_cache[contact_key]
+        linked_shifts = linked_shifts_by_id[shift.id]
+        schedule_coverage = get_tsr_schedule_coverage_rows(
+            shift, linked_shifts=linked_shifts, engineer_ids_by_shift=coverage_engineer_ids
+        )
         coverage_engineer_names = list(dict.fromkeys(
             name
             for row in schedule_coverage
@@ -14217,6 +14257,13 @@ def get_offline_tsr_schedule_options():
             (clean_str(getattr(product, 'serial_number', None)) or '').casefold(),
         )
         calibration_history = calibration_history_map.get(calibration_key, [])
+        # Once per serial: it was computed twice per schedule, and a chain repeats the machine.
+        vieworks_links = None
+        if equipment_source == 'product':
+            vieworks_serial = getattr(product, 'serial_number', None)
+            if vieworks_serial not in vieworks_cache:
+                vieworks_cache[vieworks_serial] = product_vieworks_link_payload(vieworks_serial)
+            vieworks_links = vieworks_cache[vieworks_serial]
 
         options.append({
             'id': shift.id,
@@ -14236,9 +14283,9 @@ def get_offline_tsr_schedule_options():
             'product_bsid': (getattr(product, 'bsid', None) or '') if product else '',
             'equipment_source': equipment_source,
             'equipment_available': equipment_available,
-            'tsr_without_equipment_allowed': can_create_tsr_without_equipment_for_shift(shift),
-            'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(product, 'serial_number', None))),
-            'linked_vieworks': product_vieworks_link_payload(getattr(product, 'serial_number', None)) if equipment_source == 'product' and product else [],
+            'tsr_without_equipment_allowed': can_create_tsr_without_equipment_for_shift(shift, assigned_ids=assigned_ids),
+            'with_vieworks_canon': bool(vieworks_links),
+            'linked_vieworks': vieworks_links if equipment_source == 'product' and product else [],
             'engineers': assigned_ids,
             'engineer_names': [eng.name for eng in assigned_engineers],
             'serviced_by': serviced_engineer.name if serviced_engineer else '',
@@ -14766,29 +14813,43 @@ def generate_online_tsr_submission_pdf(submission, shift, payload):
     return pdf_filename
 
 
-def get_tsr_completion_linked_shifts(shift):
+def get_tsr_completion_linked_shifts(shift, cache=None):
     """Return schedules that should complete together after online TSR Save.
 
     Covers multi-day chains via group_id and linked engineer/day time overrides
     via parent_shift_id. For single multi-engineer schedules, updating the one
     shared Shift row is enough because every engineer card reads that same row.
+
+    `cache` (a dict owned by one request) reuses the group and override queries across the days
+    of one chain; the result and its order are the same with or without it.
     """
     if not shift:
         return []
 
+    def cached(key, load):
+        if cache is None:
+            return load()
+        if key not in cache:
+            cache[key] = load()
+        return cache[key]
+
+    def group_members(group_id):
+        return cached(('group', group_id), lambda: Shift.query.filter_by(group_id=group_id).all())
+
     linked_by_id = {shift.id: shift}
 
     if shift.group_id:
-        group_shifts = Shift.query.filter_by(group_id=shift.group_id).all()
+        group_shifts = group_members(shift.group_id)
         for group_shift in group_shifts:
             linked_by_id[group_shift.id] = group_shift
 
         group_ids = list(linked_by_id.keys())
         if group_ids:
-            overrides = Shift.query.filter(
+            # The shift is a member of its own group, so the id set is the same for every day.
+            overrides = cached(('overrides', shift.group_id), lambda: Shift.query.filter(
                 Shift.parent_shift_id.in_(group_ids),
                 Shift.override_kind == 'time_override'
-            ).all()
+            ).all())
             for override in overrides:
                 linked_by_id[override.id] = override
 
@@ -14797,14 +14858,18 @@ def get_tsr_completion_linked_shifts(shift):
         if parent_shift:
             linked_by_id[parent_shift.id] = parent_shift
             if parent_shift.group_id:
-                for group_shift in Shift.query.filter_by(group_id=parent_shift.group_id).all():
+                for group_shift in group_members(parent_shift.group_id):
                     linked_by_id[group_shift.id] = group_shift
 
     return list(linked_by_id.values())
 
 
-def get_tsr_schedule_coverage_rows(shift, linked_shifts=None):
-    """Build canonical date/time/engineer coverage for a TSR schedule group."""
+def get_tsr_schedule_coverage_rows(shift, linked_shifts=None, engineer_ids_by_shift=None):
+    """Build canonical date/time/engineer coverage for a TSR schedule group.
+
+    `engineer_ids_by_shift` ({shift_id: [ShiftEngineer engineer ids]}, loaded in bulk by the
+    caller) replaces the per-shift lookup; the fallback rule is get_shift_assigned_engineer_ids'.
+    """
     if not shift:
         return []
 
@@ -14839,7 +14904,14 @@ def get_tsr_schedule_coverage_rows(shift, linked_shifts=None):
         if linked_shift.status:
             row['status'] = linked_shift.status
 
-        for engineer_id in get_shift_assigned_engineer_ids(linked_shift):
+        if engineer_ids_by_shift is None:
+            assigned_engineer_ids = get_shift_assigned_engineer_ids(linked_shift)
+        else:
+            assigned_engineer_ids = (
+                engineer_ids_by_shift.get(linked_shift.id) or
+                ([linked_shift.engineer_id] if linked_shift.engineer_id else [])
+            )
+        for engineer_id in assigned_engineer_ids:
             engineer_id = clean_int(engineer_id)
             if engineer_id and engineer_id not in row['engineer_ids']:
                 row['engineer_ids'].append(engineer_id)
@@ -16121,13 +16193,17 @@ def is_site_visit_shift(shift):
     )
 
 
-def can_create_tsr_without_equipment_for_shift(shift, user=None):
-    """Return True for a Site Visit, or for an authorized Francis engineer on their client schedule."""
+def can_create_tsr_without_equipment_for_shift(shift, user=None, assigned_ids=None):
+    """Return True for a Site Visit, or for an authorized Francis engineer on their client schedule.
+
+    `assigned_ids` lets a caller that already loaded the schedule's engineers skip the lookup.
+    """
     if is_site_visit_shift(shift):
         return True
     target = user or current_user
     profile = getattr(target, 'engineer_profile', None) if target else None
-    assigned_ids = get_shift_assigned_engineer_ids(shift) if shift else []
+    if assigned_ids is None:
+        assigned_ids = get_shift_assigned_engineer_ids(shift) if shift else []
     return bool(
         shift and
         clean_int(getattr(shift, 'client_id', None)) and
@@ -28099,7 +28175,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v322-calibration-report-page.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v334-pm-page-fixes';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v335-tsr-weak-signal';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28129,7 +28205,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=51',
+  '/static/js/app-calibration-report.js?v=52',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

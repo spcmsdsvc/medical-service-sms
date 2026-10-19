@@ -212,6 +212,7 @@ function calendarUrl(ctx){
 async function restore({ records=[], fallback=null, account=null }){
   const applied = [];
   const localSaves = [];
+  const backups = [];
   const context = {
     console:{ warn:() => {} }, Promise, Date, String, JSON, encodeURIComponent,
     navigator:{ onLine:true },
@@ -226,25 +227,32 @@ async function restore({ records=[], fallback=null, account=null }){
     prepareStandaloneLateCalibrationDraft:(data, id) => Object.assign(data, { _draft_id:KEY }),
     saveStandaloneTSRDraftLocally:async data => { localSaves.push(data._draft_id); return {}; },
     showTSRStatus:() => {},
+    backupLateCalibrationReportDraft:(id, report) => backups.push(report.value),
     window:{ calibrationReport:{ apply:report => applied.push(report.value) } }
   };
   vm.createContext(context);
   vm.runInContext(section(template, 'async function loadLateCalibrationReportAccountCopy(', 'async function loadOnlineTSRCalibrationFromUrl('), context);
   const candidate = await context.restoreStandaloneLateCalibrationDraft(34);
-  return { source:candidate ? (candidate.source || 'indexeddb') : null, applied, localSaves };
+  return { source:candidate ? (candidate.source || 'indexeddb') : null, applied, localSaves, backups };
 }
 
 async function backup(online, response){
   const statuses = [];
   const context = {
-    console:{ warn:() => {} }, Promise, Date, String, JSON, encodeURIComponent, setTimeout, clearTimeout,
+    console:{ warn:() => {} }, Promise, Date, String, JSON, Number, Object, encodeURIComponent, setTimeout, clearTimeout,
+    AbortController,
     navigator:{ onLine:online },
     window:{ addEventListener:() => {} },
+    document:{ addEventListener:() => {}, visibilityState:'visible' },
     isOnlineTSRCalibrationMode:() => true,
     setStandaloneTSRSaveStatus:state => statuses.push(state),
-    fetch:async url => ({ ok:true, json:async () => Object.assign({ url }, response) })
+    fetch:async url => {
+      const body = JSON.stringify(Object.assign({ url }, response));
+      return { ok:true, status:200, redirected:false, url, text:async () => body, json:async () => JSON.parse(body) };
+    }
   };
   vm.createContext(context);
+  vm.runInContext(section(template, 'function makeTSRSyncError(', '// navigator.onLine only knows the radio is on.'), context);
   vm.runInContext(section(template, 'let lateCalibrationBackupTimer = null;', 'async function loadLateCalibrationReportAccountCopy('), context);
   const result = await context.backupLateCalibrationReportDraft('34', { status:'draft' }, { immediate:true });
   return { url:result.url || '', statuses };
@@ -319,6 +327,13 @@ class CalibrationReportPageClientTests(unittest.TestCase):
     def test_newer_copy_wins(self):
         self.assertEqual(self.out['accountNewer']['applied'], ['account-new'])
         self.assertEqual(self.out['deviceNewer']['applied'], ['device-old'])
+
+    def test_reopening_sends_a_device_copy_the_account_lacks(self):
+        # plans.md weak-signal plan, step 7: a newer device copy is backed up on reopen.
+        self.assertEqual(self.out['deviceNewer']['backups'], ['device-old'])
+        self.assertEqual(self.out['byKey']['backups'], ['device-old'])
+        self.assertEqual(self.out['accountNewer']['backups'], [])
+        self.assertEqual(self.out['clearedDevice']['backups'], [])
 
     def test_backup_posts_and_reports_status(self):
         self.assertEqual(self.out['backedUp']['url'], '/save_calibration_report_draft/34')
