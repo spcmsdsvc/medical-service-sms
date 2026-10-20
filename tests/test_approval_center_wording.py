@@ -67,10 +67,11 @@ class ApprovalCenterWordingTests(unittest.TestCase):
                 )
                 self.assertRegex(self.source, re.compile(pattern, re.DOTALL))
 
-        self.assertIn("<strong>Travel Liquidation</strong>", self.source)
-        self.assertIn("<strong>Cash Advance Liquidation</strong>", self.source)
-        self.assertIn("<strong>Leave Request</strong>", self.source)
-        self.assertNotIn("<strong>CA Liquidation</strong>", self.source)
+        # Module names as the approver sees them in the Module filter.
+        self.assertIn('<option value="travel_liquidation">Travel Liquidation</option>', self.source)
+        self.assertIn('<option value="cash_advance_liquidation">Cash Advance Liquidation</option>', self.source)
+        self.assertIn('<option value="leave_request">Leave Request</option>', self.source)
+        self.assertNotIn("CA Liquidation<", self.source)
         self.assertIn("'label': 'Calibration Report & Certificate'", self.app_source)
         self.assertIn(
             "'description': 'Finalized Calibration Reports & Certificates awaiting routed approval.'",
@@ -169,7 +170,9 @@ class ApprovalCenterWordingTests(unittest.TestCase):
         self.assertNotIn("{% if lpr_enabled %}<script>", self.source)
         self.assertIn("const approvalExtensionLprEnabled =", self.source)
         self.assertIn("if (!approvalExtensionLprEnabled || !lprId) return;", self.source)
-        self.assertIn("...(approvalExtensionLprEnabled ? ['lpr'] : [])", self.source)
+        # Leave and calibration cards build regardless of the LPR switch.
+        self.assertIn("if (moduleKey !== 'leave_request') return null;", self.source)
+        self.assertIn("if (moduleKey !== 'calibration_certificate') return null;", self.source)
 
 
 if __name__ == "__main__":

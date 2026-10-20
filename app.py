@@ -28410,7 +28410,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v323-tsr-design-scan.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v338-list-page-headers';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v339-approval-center-layout';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -46181,18 +46182,6 @@ def get_approval_center_summary():
     try:
         travel_query = TravelRequest.query
         travel_query = apply_assigned_approver_filter(travel_query, TravelRequest, current_user, 'travel_request')
-        travel_status_rows = (
-            db.session.query(TravelRequest.status, func.count(TravelRequest.id))
-            .select_from(travel_query.subquery())
-            .group_by(db.text('status'))
-            .all()
-        )
-    except Exception:
-        travel_status_rows = []
-
-    try:
-        travel_query = TravelRequest.query
-        travel_query = apply_assigned_approver_filter(travel_query, TravelRequest, current_user, 'travel_request')
         for raw_status, count_value in db.session.query(TravelRequest.status, func.count(TravelRequest.id)).filter(TravelRequest.id.in_([item.id for item in travel_query.all()])).group_by(TravelRequest.status).all():
             normalized = travel_request_normalize_status(raw_status)
             count_int = int(count_value or 0)
@@ -46602,8 +46591,23 @@ def get_approval_center_queue():
         )
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
+    # Unfiltered pending count and oldest submission for the page subtitle
+    # ("N waiting on you · oldest X days"); only the all-modules load has every entry.
+    pending_overview = None
+    if module_key == 'all':
+        pending_days = [
+            approval_center_queue_date(entry.get('action_date'))
+            for entry in entries
+            if approval_center_queue_status(entry.get('queue_status') or entry.get('status')) == 'pending'
+        ]
+        known_days = sorted(day for day in pending_days if day)
+        pending_overview = {
+            'count': len(pending_days),
+            'oldest_date': known_days[0].isoformat() if known_days else '',
+        }
     active_modules = approval_center_active_module_metadata()
     return jsonify({
+        'pending_overview': pending_overview,
         'success': True,
         'status': status,
         'module': module_key,

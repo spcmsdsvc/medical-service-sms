@@ -1,6 +1,30 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-20-approval-center-layout",
+      "release_date": "2026-10-20",
+      "title": "Approvals: your queue first",
+      "summary": "The Approvals page now opens on the requests waiting for you, shows how long each one has waited, and warns before approving an incomplete liquidation.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-20-approval-center-layout-queue-first",
+          "category": "Approvals",
+          "description": "The banner, count cards and module tiles are gone. The header says how many requests wait on you and how old the oldest is, the tabs show their counts, and the list starts right below. On phones only search shows; tap Filters for the rest."
+        },
+        {
+          "item_key": "2026-10-20-approval-center-layout-cards",
+          "category": "Approvals",
+          "description": "Every request card has the same layout, with a waiting-time chip (red after 30 days). Leave cards keep their duration and emergency note."
+        },
+        {
+          "item_key": "2026-10-20-approval-center-layout-review",
+          "category": "Approvals",
+          "description": "In the review window the remarks box sits next to the buttons, Escape closes it, and a liquidation with missing documents shows what is missing and asks before approving. Tick \"Open next pending after deciding\" to move straight to the next request."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-20-list-page-headers",
       "release_date": "2026-10-20",
       "title": "Cleaner Client and Inventory headers",
