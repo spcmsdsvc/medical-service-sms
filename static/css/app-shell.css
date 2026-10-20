@@ -1836,7 +1836,8 @@ body.sidebar-collapsed .shell-guide-header-button {
 .dash-page-sub {
     margin: 0.2rem 0 0;
     font-size: 0.9rem;
-    color: var(--app-muted, #64748b);
+    /* Muted nudged toward the text colour: plain muted is 4.41:1 on the light ground; this is 5.33:1. */
+    color: color-mix(in srgb, var(--app-muted, #64748b) 85%, var(--app-text, #172033));
 }
 
 .dash-page-actions {

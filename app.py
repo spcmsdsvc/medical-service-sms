@@ -28411,7 +28411,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v339-approval-center-layout';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v339-approval-center-layout.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v340-page-sub-contrast';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

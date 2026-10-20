@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-20-page-sub-contrast",
+      "release_date": "2026-10-20",
+      "title": "Easier-to-read page subtitles",
+      "summary": "The grey line under each page title is a little darker so it is easier to read in light mode.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-20-page-sub-contrast-subtitle",
+          "category": "Appearance",
+          "description": "Page subtitles on the Dashboard, My Requests, Approvals, the request forms, Client List, Inventory and My Calibrations now meet the readability standard in light mode. Dark modes are unchanged in look."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-20-approval-center-layout",
       "release_date": "2026-10-20",
       "title": "Approvals: your queue first",

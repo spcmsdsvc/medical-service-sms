@@ -181,8 +181,13 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
-        self.assertIn("app-shell.css') }}?v=45", self.layout)
+        self.assertIn("app-shell.css') }}?v=46", self.layout)
         assert_cache_version_at_least(self, 158, self.app_source)
+
+    def test_page_header_subtitle_meets_small_text_contrast(self):
+        # Plain --app-muted is 4.41:1 on the light ground; the mix toward --app-text is 5.33:1.
+        subtitle = self.shell_css.split('.dash-page-sub {', 1)[1].split('}', 1)[0]
+        self.assertIn('color: color-mix(in srgb, var(--app-muted, #64748b) 85%, var(--app-text, #172033));', subtitle)
 
     def test_icon_rail_and_docks_follow_the_shell_offset(self):
         self.assertIn('--sidebar-rail-width: 72px;', self.shell_css)
