@@ -20,29 +20,28 @@
         </div>
     </div>
 
-    <div class="card shadow-sm border-0 p-4 bg-white client-page-card">
-        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-            <h1 class="h4 mb-0"><i class="fa-solid fa-hospital me-2" aria-hidden="true"></i>Client List</h1>
-            <div class="btn-group">
-                {% if can_admin_clients %}
-                <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
-                <button class="btn btn-outline-primary btn-sm" id="client-import-btn" onclick="document.getElementById('csv-file').click()">
-                    <i class="fa-solid fa-file-import me-1"></i>Import CSV
-                </button>
-                <button class="btn btn-outline-success btn-sm" onclick="window.location.href='/export_clients'">Export</button>
-                {% endif %}
-
-                <button class="btn btn-outline-dark btn-sm" onclick="window.print()">Print</button>
-
-                {% if can_admin_clients %}
-                <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">+ Add Medical Center</button>
-                {% endif %}
-                {% if can_merge_clients %}
-                <button class="btn btn-outline-secondary btn-sm client-find-dup-btn" onclick="openClientDuplicatesModal()">Find duplicates</button>
-                {% endif %}
-            </div>
+    <header class="dash-page-header no-print">
+        <div>
+            <h1 class="dash-page-h1">Client List</h1>
+            <p class="dash-page-sub">Medical centers, their contacts and installed equipment.</p>
         </div>
+        <div class="dash-page-actions client-page-actions">
+            {% if can_admin_clients %}
+            <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
+            <button type="button" class="btn btn-outline-primary" id="client-import-btn" onclick="document.getElementById('csv-file').click()"><i class="fa-solid fa-file-import me-2" aria-hidden="true"></i>Import CSV</button>
+            <button type="button" class="btn btn-outline-primary" onclick="window.location.href='/export_clients'"><i class="fa-solid fa-file-excel me-2" aria-hidden="true"></i>Export</button>
+            {% endif %}
+            <button type="button" class="btn btn-outline-primary" onclick="window.print()"><i class="fa-solid fa-print me-2" aria-hidden="true"></i>Print</button>
+            {% if can_merge_clients %}
+            <button type="button" class="btn btn-outline-primary client-find-dup-btn" onclick="openClientDuplicatesModal()"><i class="fa-solid fa-clone me-2" aria-hidden="true"></i>Find duplicates</button>
+            {% endif %}
+            {% if can_admin_clients %}
+            <button type="button" class="btn btn-primary client-add-btn" onclick="openAddModal()"><i class="fa-solid fa-plus me-2" aria-hidden="true"></i>Add Medical Center</button>
+            {% endif %}
+        </div>
+    </header>
 
+    <div class="card shadow-sm border-0 p-4 bg-white client-page-card">
         <div class="row g-2 mb-3 no-print align-items-end">
             <div class="col-md-8">
                 <label class="small fw-bold" for="s-search">Search</label>
@@ -2085,51 +2084,31 @@ function applyFilters(){
             border-radius: 0;
         }
 
-        .container-fluid > .card > .d-flex.justify-content-between {
-            flex-direction: column;
-            align-items: flex-start !important;
-            gap: 0.85rem;
-        }
-
-        .container-fluid h1.h4 {
-            font-size: 1.12rem;
-            line-height: 1.25;
-        }
-
-        .container-fluid .btn-group {
+        .client-page-actions {
             width: 100%;
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0.5rem;
         }
 
-        .container-fluid .btn-group .btn {
-            border-radius: 0.8rem !important;
-            margin-left: 0 !important;
-            min-height: 2.45rem;
+        .client-page-actions .btn {
+            justify-content: center;
             padding-left: 0.4rem;
             padding-right: 0.4rem;
-            font-weight: 900;
             white-space: nowrap;
         }
 
-        /* Beats the shell's mobile button size (button:not(...) x3) so "Import CSV" fits a third of the row. */
-        .container-fluid .btn-group > .btn.btn-sm {
-            font-size: 0.85rem !important;
-        }
-
-        .container-fluid .btn-group .btn i {
+        .client-page-actions .btn i {
             display: none;
         }
 
-        /* Add on its own full-width row; a lone Print (non-admins) also fills the row. */
-        .container-fluid .btn-group .btn-primary,
-        .container-fluid .btn-group .btn:only-of-type {
+        /* Add on its own full-width row first; Find duplicates and a lone Print (non-admins) fill a row too. */
+        .client-page-actions .client-add-btn,
+        .client-page-actions .btn:only-of-type {
             grid-column: 1 / -1;
             order: -1;
         }
 
-        .container-fluid .btn-group .client-find-dup-btn {
+        .client-page-actions .client-find-dup-btn {
             grid-column: 1 / -1;
         }
 

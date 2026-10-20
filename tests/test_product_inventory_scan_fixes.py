@@ -183,7 +183,8 @@ class ProductInventoryScanPageSourceTests(unittest.TestCase):
     def test_hardcoded_slate_text_and_info_icon_removed(self):
         self.assertNotIn('color: #64748b;', TEMPLATE)
         self.assertNotIn('text-info"></i>', TEMPLATE)
-        self.assertIn(':root[data-app-theme="dark"] .product-page-actions .product-print-btn', TEMPLATE)
+        self.assertIn('<header class="dash-page-header no-print">', TEMPLATE)
+        self.assertIn('btn btn-outline-primary product-print-btn', TEMPLATE)
 
     # Batch 4
     def test_modal_scrolls_focuses_and_edit_header_is_neutral(self):

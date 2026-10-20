@@ -1813,6 +1813,52 @@ body.sidebar-collapsed .shell-guide-header-button {
 
 /* --- Print ---------------------------------------------------------------- */
 
+/* Page header: big title, subtitle and the page's buttons on the page background
+   (request pages, dashboard, Client List, Product Inventory). */
+.dash-page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.dash-page-h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    color: var(--app-text, #172033);
+}
+
+.dash-page-sub {
+    margin: 0.2rem 0 0;
+    font-size: 0.9rem;
+    color: var(--app-muted, #64748b);
+}
+
+.dash-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dash-page-tools { gap: 0.5rem; }
+
+.dash-page-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    font-weight: 600;
+}
+
+@media (max-width: 575.98px) {
+    .dash-page-h1 { font-size: 1.5rem; }
+    .dash-page-actions .btn { min-height: 44px; }
+}
+
 @media print {
     @page { size: landscape; margin: 10mm; }
 
