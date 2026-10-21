@@ -1197,6 +1197,7 @@ function renderLiquidationRows(items){
                     <div class="action-btns">
                         <a class="btn btn-sm btn-primary fw-bold" href="${esc(liquidationUrl)}"><i class="fa-solid fa-${actionIcon} me-1"></i>${esc(actionLabel)}</a>
                         ${formLink('liquidations', item)}
+                        ${item.can_withdraw ? `<button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="openRequestRecall('travel_liquidation', ${Number(item.id) || 0}, 'Travel Liquidation')"><i class="fa-solid fa-rotate-left me-1"></i>Withdraw</button>` : ''}
                         ${completeTravelLiquidationBtn}
                         <span class="liquidation-action-note">${esc(status === 'Draft' ? 'Still editable' : (isLiquidationCompleted ? 'Completed' : 'Tracking only'))}</span>
                     </div>
@@ -1316,6 +1317,7 @@ function renderCashAdvanceRows(items){
                         <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}"><i class="fa-solid fa-eye me-1"></i>Open</a>
                         ${paidBtn}
                         ${liquidationBtn}
+                        ${item.liquidation_can_withdraw ? `<button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="openRequestRecall('cash_advance_liquidation', ${Number(item.liquidation_id) || 0}, 'Cash Advance Liquidation')"><i class="fa-solid fa-rotate-left me-1"></i>Withdraw</button>` : ''}
                         ${formLink('cash_advances', item)}
                         ${completeLiquidationBtn}
                     </div>
@@ -1612,4 +1614,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshAccountingQueue();
 });
 </script>
+{% include '_request_recall_modal.html' %}
 {% endblock %}

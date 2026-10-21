@@ -168,6 +168,7 @@
             <button type="button" class="liq-ready-btn" id="liqReadyBtn" aria-expanded="false" aria-controls="liqReadiness" onclick="toggleLiquidationReadiness()">Checking…</button>
             <span class="liq-muted" id="liqActionNote" role="status" aria-live="polite"></span>
         </div>
+        <button type="button" class="btn btn-outline-danger fw-bold" id="liqWithdrawBtn" hidden onclick="openRequestRecall(LIQ.api, LIQUIDATION_ID, LIQ.title)"><i class="fa-solid fa-rotate-left me-1"></i>Withdraw</button>
         <div class="liq-dock-actions">
             <button type="button" class="btn btn-outline-danger fw-bold" id="clearDraftTopBtn" onclick="clearLiquidationForm()"><i class="fa-solid fa-eraser me-1"></i>Clear Form</button>
             <button type="button" class="btn btn-primary fw-bold" id="submitLiquidationTopBtn" onclick="submitLiquidation()"><i class="fa-solid fa-paper-plane me-1"></i>Submit</button>
@@ -295,6 +296,7 @@ function updateWorkflowButtons(){
     });
     document.querySelector('.liq-dock-actions').hidden = !isEditable();
     document.getElementById('liqReadyBtn').hidden = !isEditable();
+    document.getElementById('liqWithdrawBtn').hidden = !currentLiquidation?.can_withdraw;
     if (!isEditable()) toggleLiquidationReadiness(false);
     const note = document.getElementById('liqActionNote');
     if (!branchCode()) note.textContent = 'Your Engineer profile has no branch. Ask an admin to set Manila/Main, Cebu or Davao.';
@@ -602,4 +604,5 @@ function downloadLiquidationForm(){
 </script>
 {% block page_script %}{% endblock %}
 <script>document.addEventListener('DOMContentLoaded', loadLiquidation);</script>
+{% include '_request_recall_modal.html' %}
 {% endblock %}

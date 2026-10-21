@@ -28428,7 +28428,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v344-analytics';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v345-liquidation-recall';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -49346,6 +49346,7 @@ def travel_liquidation_to_dict(liquidation, include_rows=True):
         'completion_remarks': clean_str(getattr(liquidation, 'completion_remarks', None)) or '',
         'can_complete_liquidation': can_complete_liquidation,
         'can_mark_completed': can_complete_liquidation,
+        'can_withdraw': liquidation_can_withdraw(liquidation),
         'complete_liquidation_url': f'/complete_travel_liquidation/{liquidation.id}' if can_complete_liquidation else '',
         'return_reason': clean_str(getattr(liquidation, 'approval_remarks', None)) or '',
         'created_at': liquidation.created_at.isoformat() if getattr(liquidation, 'created_at', None) else None,
@@ -69988,6 +69989,7 @@ def cash_advance_liquidation_fields(header, status, liquidation):
         'liquidation_id': clean_int(getattr(liquidation, 'id', None)) if liquidation else None,
         'liquidation_no': clean_str(getattr(liquidation, 'liquidation_no', None)) if liquidation else '',
         'liquidation_status': cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None)) if liquidation else '',
+        'liquidation_can_withdraw': liquidation_can_withdraw(liquidation),
         'liquidation_url': f'/cash_advance_liquidation?liquidation_id={liquidation.id}' if liquidation else '',
         'can_create_liquidation': bool(ready_for_liquidation and not liquidation),
         'can_open_liquidation': bool(liquidation),
@@ -71499,7 +71501,8 @@ def cash_advance_liquidation_to_dict(liquidation, include_rows=True):
         'liquidation_url': f'/cash_advance_liquidation?liquidation_id={liquidation.id}',
         'cash_advance_detail_url': f'/cash_advance?cash_advance_id={liquidation.cash_advance_id}',
         'editable': status in {'Draft', 'Returned', 'Rejected'},
-        'locked': status not in {'Draft', 'Returned', 'Rejected'}
+        'locked': status not in {'Draft', 'Returned', 'Rejected'},
+        'can_withdraw': liquidation_can_withdraw(liquidation)
     }
     if include_rows:
         rows = (
@@ -78623,11 +78626,61 @@ RECALL_REQUEST_REGISTRY = {
         'owner_field': 'user_id',
         'destination': lambda record: 'Draft',
     },
+    'travel_liquidation': {
+        'model': TravelLiquidationHeader,
+        'label': 'Travel Liquidation',
+        'owner_field': 'user_id',
+        'destination': lambda record: 'Draft',
+        'approvers': travel_liquidation_submit_notification_approvers,
+        'after_recall': lambda record: restore_liquidation_parent_after_recall(
+            getattr(record, 'travel_request', None), 'travel_request', 'Ready for Liquidation'),
+    },
+    'cash_advance_liquidation': {
+        'model': CashAdvanceLiquidationHeader,
+        'label': 'Cash Advance Liquidation',
+        'owner_field': 'user_id',
+        'destination': lambda record: 'Draft',
+        'approvers': cash_advance_liquidation_submit_notification_approvers,
+        'after_recall': lambda record: restore_liquidation_parent_after_recall(
+            getattr(record, 'cash_advance', None), 'cash_advance', 'Liquidation Draft'),
+    },
 }
+
+
+def liquidation_can_withdraw(liquidation):
+    """Requester may withdraw a Submitted liquidation (visibility flag; the endpoint enforces)."""
+    return bool(
+        liquidation is not None and
+        getattr(current_user, 'is_authenticated', False) and
+        clean_int(getattr(liquidation, 'user_id', None)) == clean_int(current_user.id) and
+        (clean_str(getattr(liquidation, 'status', None)) or '').strip().lower() == 'submitted'
+    )
+
+
+def restore_liquidation_parent_after_recall(parent, parent_module, fallback_status):
+    """Put the Travel Request / Cash Advance back to its status before the liquidation was submitted."""
+    if not parent or (clean_str(getattr(parent, 'status', None)) or '').strip().lower() != 'liquidation submitted':
+        return None
+    submit_audit = (
+        UniversalApprovalAuditTrail.query
+        .filter_by(module=parent_module, record_id=parent.id, action='liquidation_submitted')
+        .order_by(UniversalApprovalAuditTrail.id.desc())
+        .first()
+    )
+    restored = clean_str(getattr(submit_audit, 'status_from', None)) or fallback_status
+    if restored.strip().lower() == 'liquidation submitted':
+        restored = fallback_status
+    parent.status = restored
+    parent.accounting_status = restored
+    if hasattr(parent, 'liquidation_completed_at'):
+        parent.liquidation_completed_at = None
+    parent.updated_at = get_manila_time()
+    return restored
 
 
 def recall_request_display_label(module, record, entry):
     identifier = (
+        getattr(record, 'liquidation_no', None) or
         getattr(record, 'request_no', None) or
         getattr(record, 'cash_advance_no', None) or
         getattr(record, 'lpr_no', None) or
@@ -78765,6 +78818,16 @@ def recall_submitted_request(module, record_id):
             cash_advance_add_audit(record, 'recalled', reason)
         elif module == 'lpr':
             lpr_add_audit(record, 'recalled', reason)
+        if entry.get('after_recall'):
+            parent_status = entry['after_recall'](record)
+            if parent_status:
+                parent_module = 'travel_request' if module == 'travel_liquidation' else 'cash_advance'
+                parent_id = getattr(record, 'travel_request_id', None) or getattr(record, 'cash_advance_id', None)
+                record_universal_approval_audit(
+                    parent_module, parent_id, 'liquidation_recalled',
+                    actor_user=current_user, status_from='Liquidation Submitted', status_to=parent_status,
+                    remarks=reason, metadata={'liquidation_id': record.id},
+                )
 
         display_label = recall_request_display_label(module, record, entry)
         record_universal_approval_audit(
@@ -78784,7 +78847,7 @@ def recall_submitted_request(module, record_id):
         )
         resolve_pending_approval_notifications(module, record.id, event='submitted')
 
-        approvers = get_assigned_approvers_for_requester(current_user.id, module)
+        approvers = entry['approvers'](record) if entry.get('approvers') else get_assigned_approvers_for_requester(current_user.id, module)
         requester_name = recall_request_owner_name(record)
         create_system_notifications_for_users(
             approvers,

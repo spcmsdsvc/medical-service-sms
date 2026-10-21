@@ -1166,6 +1166,7 @@
                     <div class="cash-actions">
                         <button type="button" class="cash-btn cash-btn-secondary" onclick="openCashAdvance(${Number(item.id) || 0})">Open</button>
                         ${item.can_open_liquidation || item.can_create_liquidation ? `<button type="button" class="cash-btn cash-btn-primary" onclick="openOrCreateCashAdvanceLiquidation(${Number(item.id) || 0})"><i class="fa-solid fa-file-invoice-dollar"></i> ${item.can_open_liquidation ? 'Open Liquidation' : 'Start Liquidation'}</button>` : ''}
+                        ${item.liquidation_can_withdraw ? `<button type="button" class="cash-btn cash-btn-danger" onclick="openRequestRecall('cash_advance_liquidation', ${Number(item.liquidation_id) || 0}, 'Cash Advance Liquidation')"><i class="fa-solid fa-rotate-left"></i> Withdraw Liquidation</button>` : ''}
                         ${statusKey === 'submitted' ? `<button type="button" class="cash-btn cash-btn-danger" onclick="openRequestRecall('cash_advance', ${Number(item.id) || 0}, 'Cash Advance')"><i class="fa-solid fa-rotate-left"></i> Withdraw</button>` : ''}
                     </div>
                 </div>

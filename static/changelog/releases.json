@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-21-liquidation-recall",
+      "release_date": "2026-10-21",
+      "title": "Withdraw a submitted liquidation",
+      "summary": "Travel and Cash Advance liquidations can now be withdrawn before your manager acts on them.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-21-liquidation-recall",
+          "category": "Liquidation",
+          "description": "Requesters can withdraw their own Submitted Travel or Cash Advance liquidation with a required reason, from the liquidation page, My Requests or the Cash Advance page. It returns to Draft for editing, the Travel Request or Cash Advance goes back to its earlier status, and approvers are told.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-21-analytics",
       "release_date": "2026-10-21",
       "title": "Analytics: correct numbers and more of them",

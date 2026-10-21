@@ -26,12 +26,28 @@ class RequestRecallSourceTests(unittest.TestCase):
         cls.releases = (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8')
 
     def test_registry_and_endpoint_cover_only_the_approved_modules(self):
-        for module in ('leave_request', 'reimbursement', 'travel_request', 'cash_advance', 'lpr'):
-            self.assertIn(f"'{module}':", self.app_source)
+        self.assertEqual(
+            set(app_module.RECALL_REQUEST_REGISTRY),
+            {'leave_request', 'reimbursement', 'travel_request', 'cash_advance', 'lpr',
+             'travel_liquidation', 'cash_advance_liquidation'},
+        )
         self.assertIn("@app.route('/api/requests/<module>/<int:record_id>/recall'", self.app_source)
-        self.assertNotIn("'travel_liquidation':", self.app_source[self.app_source.index('RECALL_REQUEST_REGISTRY'):self.app_source.index('def recall_request_display_label')])
-        self.assertNotIn("'cash_advance_liquidation':", self.app_source[self.app_source.index('RECALL_REQUEST_REGISTRY'):self.app_source.index('def recall_request_display_label')])
         self.assertIn("func.lower(func.trim(model.status)) == 'submitted'", self.app_source)
+        registry = app_module.RECALL_REQUEST_REGISTRY
+        self.assertIs(registry['travel_liquidation']['approvers'], app_module.travel_liquidation_submit_notification_approvers)
+        self.assertIs(registry['cash_advance_liquidation']['approvers'], app_module.cash_advance_liquidation_submit_notification_approvers)
+
+    def test_liquidation_withdraw_buttons_on_page_and_lists(self):
+        base = (ROOT / 'templates' / '_liquidation_base.html').read_text(encoding='utf-8')
+        self.assertIn('id="liqWithdrawBtn"', base)
+        self.assertIn('openRequestRecall(LIQ.api, LIQUIDATION_ID', base)
+        self.assertIn("{% include '_request_recall_modal.html' %}", base)
+        center = (ROOT / 'templates' / 'accounting_center.html').read_text(encoding='utf-8')
+        self.assertIn("{% include '_request_recall_modal.html' %}", center)
+        self.assertIn("openRequestRecall('travel_liquidation'", center)
+        self.assertIn("openRequestRecall('cash_advance_liquidation'", center)
+        cash = (ROOT / 'templates' / 'cash_advance.html').read_text(encoding='utf-8')
+        self.assertIn("openRequestRecall('cash_advance_liquidation'", cash)
 
     def test_shared_dialog_is_present_in_every_requester_surface(self):
         for template_name in ('leave_request.html', 'reimbursement.html', 'travel_request.html', 'cash_advance.html', 'lpr.html'):
@@ -99,7 +115,7 @@ class RequestRecallWorkflowTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         with cls.app.app_context():
-            for module, record_id in cls.created_ids:
+            for module, record_id in reversed(cls.created_ids):
                 entry = app_module.RECALL_REQUEST_REGISTRY[module]
                 record = app_module.db.session.get(entry['model'], record_id)
                 if record:
@@ -222,6 +238,97 @@ class RequestRecallWorkflowTests(unittest.TestCase):
             response = self._call_recall(self.requester_id, 'leave_request', provisional.id, {'reason': 'Add the formal signature.'})
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
             self.assertEqual(response.get_json()['status'], 'Provisional')
+
+    def _submitted_liquidations(self, travel_status_from=None):
+        suffix = uuid.uuid4().hex[:8]
+        travel = app_module.TravelRequest(
+            request_no=f'TR-20990102-{suffix}', user_id=self.requester_id, engineer_id=self.engineer_id,
+            purpose='Recall test liquidation', status='Liquidation Submitted',
+            accounting_status='Liquidation Submitted', liquidation_completed_at=datetime(2099, 1, 3),
+        )
+        cash = app_module.CashAdvanceHeader(
+            cash_advance_no=f'CA-20990102-{suffix}', user_id=self.requester_id,
+            request_date=date(2099, 1, 1), needed_date=date(2099, 1, 2),
+            purpose='Recall test liquidation', status='Liquidation Submitted',
+            accounting_status='Liquidation Submitted',
+        )
+        app_module.db.session.add_all([travel, cash])
+        app_module.db.session.flush()
+        travel_liq = app_module.TravelLiquidationHeader(
+            liquidation_no=f'TL-{suffix}', travel_request_id=travel.id, user_id=self.requester_id,
+            status='Submitted', accounting_status='Submitted for Approval', submitted_at=datetime(2099, 1, 3),
+        )
+        cash_liq = app_module.CashAdvanceLiquidationHeader(
+            liquidation_no=f'CAL-{suffix}', cash_advance_id=cash.id, user_id=self.requester_id,
+            status='Submitted', accounting_status='Submitted for Approval', submitted_at=datetime(2099, 1, 3),
+        )
+        app_module.db.session.add_all([travel_liq, cash_liq])
+        app_module.db.session.flush()
+        if travel_status_from:
+            app_module.record_universal_approval_audit(
+                'travel_request', travel.id, 'liquidation_submitted',
+                actor_user=app_module.db.session.get(app_module.User, self.requester_id),
+                status_from=travel_status_from, status_to='Liquidation Submitted',
+            )
+        app_module.db.session.commit()
+        self.created_ids.extend([
+            ('travel_request', travel.id), ('cash_advance', cash.id),
+            ('travel_liquidation', travel_liq.id), ('cash_advance_liquidation', cash_liq.id),
+        ])
+        return travel, cash, travel_liq, cash_liq
+
+    def _ensure_liquidation_tables(self):
+        app_module.ensure_travel_request_tables()
+        app_module.ensure_travel_liquidation_tables()
+        app_module.ensure_cash_advance_liquidation_tables()
+
+    def test_liquidation_recall_returns_to_draft_and_restores_parent(self):
+        with self.app.app_context():
+            self._ensure_liquidation_tables()
+            travel, cash, travel_liq, cash_liq = self._submitted_liquidations(travel_status_from='Funds Received')
+
+            response = self._call_recall(self.requester_id, 'travel_liquidation', travel_liq.id, {'reason': 'Wrong hotel amount.'})
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            self.assertEqual(response.get_json()['status'], 'Draft')
+            liq = app_module.db.session.get(app_module.TravelLiquidationHeader, travel_liq.id)
+            self.assertEqual(liq.status, 'Draft')
+            self.assertIsNone(liq.submitted_at)
+            self.assertIsNone(liq.accounting_status)
+            parent = app_module.db.session.get(app_module.TravelRequest, travel.id)
+            self.assertEqual(parent.status, 'Funds Received')
+            self.assertEqual(parent.accounting_status, 'Funds Received')
+            self.assertIsNone(parent.liquidation_completed_at)
+            self.assertIsNotNone(app_module.UniversalApprovalAuditTrail.query.filter_by(
+                module='travel_request', record_id=travel.id, action='liquidation_recalled').first())
+
+            # No submit audit row: falls back to the normal pre-submit status.
+            response = self._call_recall(self.requester_id, 'cash_advance_liquidation', cash_liq.id, {'reason': 'Missing receipt.'})
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            self.assertEqual(app_module.db.session.get(app_module.CashAdvanceLiquidationHeader, cash_liq.id).status, 'Draft')
+            self.assertEqual(app_module.db.session.get(app_module.CashAdvanceHeader, cash.id).status, 'Liquidation Draft')
+            self.assertIn('CAL-', response.get_json()['message'])
+
+    def test_liquidation_recall_guards_and_withdraw_flag(self):
+        with self.app.app_context():
+            self._ensure_liquidation_tables()
+            travel, cash, travel_liq, cash_liq = self._submitted_liquidations()
+
+            with self.app.test_request_context('/'):
+                login_user(app_module.db.session.get(app_module.User, self.requester_id))
+                self.assertTrue(app_module.travel_liquidation_to_dict(travel_liq, include_rows=False)['can_withdraw'])
+                self.assertTrue(app_module.cash_advance_liquidation_to_dict(cash_liq, include_rows=False)['can_withdraw'])
+                logout_user()
+                login_user(app_module.db.session.get(app_module.User, self.other_user_id))
+                self.assertFalse(app_module.travel_liquidation_to_dict(travel_liq, include_rows=False)['can_withdraw'])
+                logout_user()
+
+            wrong_owner = self._call_recall(self.other_user_id, 'travel_liquidation', travel_liq.id, {'reason': 'Not mine.'})
+            self.assertEqual(wrong_owner.status_code, 403)
+            cash_liq.status = 'Approved'
+            app_module.db.session.commit()
+            too_late = self._call_recall(self.requester_id, 'cash_advance_liquidation', cash_liq.id, {'reason': 'Too late.'})
+            self.assertEqual(too_late.status_code, 409)
+            self.assertEqual(app_module.db.session.get(app_module.CashAdvanceHeader, cash.id).status, 'Liquidation Submitted')
 
 
 if __name__ == '__main__':
