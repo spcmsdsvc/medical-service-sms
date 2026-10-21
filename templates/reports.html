@@ -7,7 +7,7 @@
       <h1 class="dash-page-h1">Reports</h1>
       <p class="dash-page-sub">
         {% if reports_admin_view %}
-          Missing TSRs, every TSR file, and TSR email activity.
+          Every TSR file, missing TSRs and TSR email activity.
         {% else %}
           TSR files from your schedules, ready to preview or download.
         {% endif %}
@@ -21,58 +21,6 @@
   {# Shown only for problems; loading shows in each list. #}
   <div id="reports-status" class="alert alert-danger mb-3" role="alert" hidden></div>
 
-  {% if reports_admin_view %}
-  <section class="card reports-card mb-3" aria-labelledby="missing-tsr-title">
-    <div class="reports-card-head">
-      <div>
-        <h2 id="missing-tsr-title" class="reports-card-title">Missing TSRs</h2>
-        <p class="reports-card-sub">Completed schedules with no TSR file. <span id="reports-range-badge">Current range</span></p>
-      </div>
-      <button class="btn btn-outline-primary no-print" type="button" onclick="exportReportsSummary()"><i class="fa-solid fa-file-arrow-down me-1" aria-hidden="true"></i>Export CSV</button>
-    </div>
-
-    <fieldset class="reports-range no-print">
-      <legend class="reports-field-label">Monitoring Range</legend>
-      <div class="reports-range-fields">
-        <div>
-          <label class="reports-field-label" for="reports-start-date">Start date</label>
-          <input id="reports-start-date" type="date" class="form-control">
-        </div>
-        <div>
-          <label class="reports-field-label" for="reports-end-date">End date</label>
-          <input id="reports-end-date" type="date" class="form-control">
-        </div>
-        <div>
-          <label class="reports-field-label" for="reports-branch">Branch</label>
-          <select id="reports-branch" class="form-select">
-            <option value="ALL">All branches</option>
-            <option value="Manila">Manila</option>
-            <option value="Cebu">Cebu</option>
-            <option value="Davao">Davao</option>
-          </select>
-        </div>
-      </div>
-    </fieldset>
-
-    <div class="reports-stats" id="reports-stats" aria-busy="true">
-      <div class="reports-stat"><span class="reports-stat-label">Services</span><strong id="stat-service" class="reports-stat-num">–</strong></div>
-      <div class="reports-stat"><span class="reports-stat-label">TSR attached</span><strong id="stat-tsr" class="reports-stat-num">–</strong></div>
-      <div class="reports-stat"><span class="reports-stat-label">Missing TSR</span><strong id="stat-missing" class="reports-stat-num">–</strong></div>
-      <div class="reports-stat"><span class="reports-stat-label">Emails sent</span><strong id="stat-email" class="reports-stat-num">–</strong></div>
-    </div>
-
-    <div class="table-responsive reports-table-desktop">
-      <table class="table table-sm align-middle mb-0 reports-missing-table">
-        <thead><tr><th scope="col">Date</th><th scope="col">Client</th><th scope="col">Product</th><th scope="col">Task</th><th scope="col">Engineer(s)</th></tr></thead>
-        <tbody id="missing-tsr-table"><tr><td colspan="5" class="reports-empty-cell"><i class="fa-solid fa-spinner fa-spin me-1" aria-hidden="true"></i>Loading missing TSRs…</td></tr></tbody>
-      </table>
-    </div>
-    <div id="missing-tsr-mobile" class="reports-mobile-list d-md-none"></div>
-  </section>
-  {% else %}
-  <input id="reports-branch" type="hidden" value="ALL">
-  {% endif %}
-
   <section class="card reports-card mb-3" id="reports-archive" aria-labelledby="archive-title" aria-busy="true">
     <div class="reports-card-head">
       <div>
@@ -85,7 +33,18 @@
     </div>
 
     <div class="reports-archive-tools no-print">
-      {% if not reports_admin_view %}
+      {% if reports_admin_view %}
+      <div class="reports-scope-field">
+        <label class="reports-field-label" for="reports-branch">Branch</label>
+        <select id="reports-branch" class="form-select">
+          <option value="ALL">All branches</option>
+          <option value="Manila">Manila</option>
+          <option value="Cebu">Cebu</option>
+          <option value="Davao">Davao</option>
+        </select>
+      </div>
+      {% else %}
+      <input id="reports-branch" type="hidden" value="ALL">
       <div class="reports-scope-field">
         <label class="reports-field-label" for="reports-scope">Show</label>
         <select id="reports-scope" class="form-select">
@@ -116,6 +75,52 @@
       </div>
     </div>
   </section>
+
+  {% if reports_admin_view %}
+  {# Collapsed by default: the TSR files come first; open this to follow up missing TSRs. #}
+  <details class="card reports-card reports-collapse mb-3" id="reports-missing">
+    <summary class="reports-collapse-summary">
+      <span>
+        <span id="missing-tsr-title" class="reports-card-title">Missing TSRs</span>
+        <span class="reports-collapse-count"><span id="missing-count-inline">–</span> in range</span>
+        <span class="reports-card-sub d-block">Completed schedules with no TSR file. <span id="reports-range-badge">Current range</span></span>
+      </span>
+      <i class="fa-solid fa-chevron-down reports-collapse-icon" aria-hidden="true"></i>
+    </summary>
+    <div class="reports-collapse-body">
+      <div class="reports-card-head">
+        <fieldset class="reports-range no-print">
+          <legend class="reports-field-label">Monitoring Range</legend>
+          <div class="reports-range-fields">
+            <div>
+              <label class="reports-field-label" for="reports-start-date">Start date</label>
+              <input id="reports-start-date" type="date" class="form-control">
+            </div>
+            <div>
+              <label class="reports-field-label" for="reports-end-date">End date</label>
+              <input id="reports-end-date" type="date" class="form-control">
+            </div>
+          </div>
+        </fieldset>
+        <button class="btn btn-outline-primary no-print" type="button" onclick="exportReportsSummary()"><i class="fa-solid fa-file-arrow-down me-1" aria-hidden="true"></i>Export CSV</button>
+      </div>
+      <div class="reports-stats" id="reports-stats" aria-busy="true">
+        <div class="reports-stat"><span class="reports-stat-label">Services</span><strong id="stat-service" class="reports-stat-num">–</strong></div>
+        <div class="reports-stat"><span class="reports-stat-label">TSR attached</span><strong id="stat-tsr" class="reports-stat-num">–</strong></div>
+        <div class="reports-stat"><span class="reports-stat-label">Missing TSR</span><strong id="stat-missing" class="reports-stat-num">–</strong></div>
+        <div class="reports-stat"><span class="reports-stat-label">Emails sent</span><strong id="stat-email" class="reports-stat-num">–</strong></div>
+      </div>
+
+      <div class="table-responsive reports-table-desktop">
+        <table class="table table-sm align-middle mb-0 reports-missing-table">
+          <thead><tr><th scope="col">Date</th><th scope="col">Client</th><th scope="col">Product</th><th scope="col">Task</th><th scope="col">Engineer(s)</th></tr></thead>
+          <tbody id="missing-tsr-table"><tr><td colspan="5" class="reports-empty-cell"><i class="fa-solid fa-spinner fa-spin me-1" aria-hidden="true"></i>Loading missing TSRs…</td></tr></tbody>
+        </table>
+      </div>
+      <div id="missing-tsr-mobile" class="reports-mobile-list d-md-none"></div>
+    </div>
+  </details>
+  {% endif %}
 
   {% if reports_admin_view %}
   <div class="reports-pair">
@@ -160,16 +165,25 @@
 .reports-card-title{font-size:1.05rem;font-weight:600;margin:0;color:var(--app-text)}
 .reports-card-sub{margin:.2rem 0 0;font-size:.86rem;color:var(--app-muted)}
 .reports-field-label{display:block;font-size:.8rem;font-weight:600;color:var(--app-muted);margin-bottom:.25rem;float:none;width:auto;padding:0}
-.reports-range{border:0;margin:0 0 1rem;padding:0;min-width:0}
+.reports-range{border:0;margin:0;padding:0;min-width:0}
+.reports-collapse{padding:0}
+.reports-collapse-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:1rem 1.25rem;cursor:pointer;list-style:none;min-height:44px}
+.reports-collapse-summary::-webkit-details-marker{display:none}
+.reports-collapse-summary:focus-visible{outline:2px solid var(--app-primary);outline-offset:-2px;border-radius:12px}
+.reports-collapse-summary .reports-card-title{display:inline}
+.reports-collapse-count{margin-left:.5rem;font-size:.86rem;font-weight:600;color:var(--app-muted)}
+.reports-collapse-icon{color:var(--app-muted);transition:transform .15s ease}
+.reports-collapse[open] .reports-collapse-icon{transform:rotate(180deg)}
+.reports-collapse-body{padding:0 1.25rem 1.25rem}
 .reports-range>legend{margin-bottom:.4rem}
-.reports-range-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.reports-range-fields{display:grid;grid-template-columns:repeat(2,minmax(10rem,14rem));gap:10px}
 .reports-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:1rem}
 .reports-stats-two{grid-template-columns:1fr 1fr}
 .reports-stat{border:1px solid var(--app-border);background:var(--app-surface-raised);border-radius:10px;padding:10px 12px}
 .reports-stat-label{display:block;font-size:.8rem;font-weight:500;color:var(--app-muted)}
 .reports-stat-num{display:block;font-size:1.5rem;font-weight:600;line-height:1.2;color:var(--app-text);font-variant-numeric:tabular-nums}
-.reports-stat-num.is-alert{color:#a1121f}
-:root[data-app-theme="dark"] .reports-stat-num.is-alert{color:#fecdd3}
+.reports-page .is-alert{color:#a1121f}
+:root[data-app-theme="dark"] .reports-page .is-alert{color:#fecdd3}
 .reports-empty-cell{color:var(--app-muted);text-align:center;padding:1.5rem .5rem!important}
 .reports-page .table{--bs-table-bg:transparent;--bs-table-color:var(--app-text);color:var(--app-text)}
 .reports-page .table thead th{font-size:.8rem;font-weight:600;color:var(--app-muted);background:var(--app-surface-raised);border-bottom-color:var(--app-border)}
@@ -218,7 +232,8 @@
   .reports-card{padding:1rem;border-radius:14px}
   .reports-table-desktop{display:none!important}
   .reports-range-fields{grid-template-columns:1fr 1fr}
-  .reports-range-fields>div:last-child{grid-column:1/-1}
+  .reports-collapse-summary{padding:1rem}
+  .reports-collapse-body{padding:0 1rem 1rem}
   .reports-stats{grid-template-columns:1fr 1fr}
   .reports-scope-field{flex:1 1 100%}
   .reports-page .form-control,.reports-page .form-select,.reports-card-head .btn,.dash-page-actions .btn{min-height:44px}
@@ -305,6 +320,8 @@ async function loadReportsSummary(updateStatus=true){
   setText('stat-service', data.tsr?.service_schedules ?? 0);
   setText('stat-tsr', data.tsr?.attached ?? 0);
   setText('stat-missing', missing);
+  setText('missing-count-inline', missing);
+  document.getElementById('missing-count-inline')?.classList.toggle('is-alert', missing > 0);
   document.getElementById('stat-missing')?.classList.toggle('is-alert', missing > 0);
   setText('stat-email', data.email?.sent_count ?? 0);
   setText('email-count-inline', data.email?.sent_count ?? 0);

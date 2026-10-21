@@ -209,8 +209,13 @@ class ReportsTemplateDesignTests(unittest.TestCase):
         self.assertIn('btn btn-sm btn-primary archive-download-btn', self.source)
         self.assertIn("nav_link('/reports_page', 'fa-file-lines', 'Reports')", self.layout)
 
-    def test_missing_tsrs_come_before_the_archive_for_admins(self):
-        self.assertLess(self.source.index('id="missing-tsr-title"'), self.source.index('id="archive-title"'))
+    def test_tsr_files_come_first_and_missing_tsrs_are_collapsed(self):
+        # Owner, 2026-10-21: TSR files first; Missing TSRs only as a collapsible section.
+        self.assertLess(self.source.index('id="archive-title"'), self.source.index('id="missing-tsr-title"'))
+        self.assertIn('<details class="card reports-card reports-collapse mb-3" id="reports-missing">', self.source)
+        self.assertNotIn('id="reports-missing" open', self.source)
+        # The branch filter drives both lists, so it stays visible beside the archive search.
+        self.assertLess(self.source.index('for="reports-branch"'), self.source.index('id="reports-missing"'))
 
 
 if __name__ == '__main__':

@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-21-reports-missing-collapsed",
+      "release_date": "2026-10-21",
+      "title": "Reports: TSR files first",
+      "summary": "TSR files are now the first thing on the Reports page; Missing TSRs is a section you open when you need it.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-21-reports-missing-collapsed-order",
+          "category": "Reports",
+          "description": "Administrators see TSR files first. Missing TSRs sits below as a closed section showing how many are missing; open it for the list, the date range and Export CSV. The branch filter is beside the TSR file search."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-21-reports-speed",
       "release_date": "2026-10-21",
       "title": "Reports opens faster",
