@@ -1,6 +1,30 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-21-reports-follow-up",
+      "release_date": "2026-10-21",
+      "title": "Reports: filters and shorter lists",
+      "summary": "Find TSR files by type and service date, act on missing TSRs from the Timeline, and read emails and products at a glance.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-21-reports-follow-up-filters",
+          "category": "Reports",
+          "description": "TSR files can be filtered by type (TSRs, calibration certificates, calibration reports) and by service date from and to. The list now appears before the monitoring numbers load."
+        },
+        {
+          "item_key": "2026-10-21-reports-follow-up-missing",
+          "category": "Reports",
+          "description": "Each missing TSR shows how many days it has waited (red past 30 days) and, if you can use the Timeline, a link that opens that week."
+        },
+        {
+          "item_key": "2026-10-21-reports-follow-up-lists",
+          "category": "Reports",
+          "description": "TSR emails sent shows one line per email: when, who, the task and how many recipients; hover or tap to see the addresses. Most-serviced products shows the top 5, one line each."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-21-reports-missing-collapsed",
       "release_date": "2026-10-21",
       "title": "Reports: TSR files first",

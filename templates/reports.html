@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<div class="reports-page" data-admin-view="{{ '1' if reports_admin_view else '0' }}">
+<div class="reports-page" data-admin-view="{{ '1' if reports_admin_view else '0' }}" data-can-timeline="{{ '1' if reports_can_open_timeline else '0' }}">
   <header class="dash-page-header">
     <div>
       <h1 class="dash-page-h1">Reports</h1>
@@ -56,6 +56,23 @@
       <div class="reports-search-field">
         <label class="reports-field-label" for="reports-search">Search TSR files</label>
         <input id="reports-search" type="search" class="form-control" placeholder="Client, product, serial, task, engineer or TSR number">
+      </div>
+      <div class="reports-kind-field">
+        <label class="reports-field-label" for="reports-kind">Type</label>
+        <select id="reports-kind" class="form-select">
+          <option value="all" selected>All files</option>
+          <option value="tsr">TSRs</option>
+          <option value="certificate">Calibration certificates</option>
+          <option value="report">Calibration reports</option>
+        </select>
+      </div>
+      <div class="reports-date-field">
+        <label class="reports-field-label" for="reports-from">Service from</label>
+        <input id="reports-from" type="date" class="form-control">
+      </div>
+      <div class="reports-date-field">
+        <label class="reports-field-label" for="reports-to">Service to</label>
+        <input id="reports-to" type="date" class="form-control">
       </div>
     </div>
 
@@ -113,8 +130,8 @@
 
       <div class="table-responsive reports-table-desktop">
         <table class="table table-sm align-middle mb-0 reports-missing-table">
-          <thead><tr><th scope="col">Date</th><th scope="col">Client</th><th scope="col">Product</th><th scope="col">Task</th><th scope="col">Engineer(s)</th></tr></thead>
-          <tbody id="missing-tsr-table"><tr><td colspan="5" class="reports-empty-cell"><i class="fa-solid fa-spinner fa-spin me-1" aria-hidden="true"></i>Loading missing TSRs…</td></tr></tbody>
+          <thead><tr><th scope="col">Date</th><th scope="col">Client</th><th scope="col">Product</th><th scope="col">Task</th><th scope="col">Engineer(s)</th><th scope="col">Waiting</th>{% if reports_can_open_timeline %}<th scope="col"><span class="visually-hidden">Open</span></th>{% endif %}</tr></thead>
+          <tbody id="missing-tsr-table"><tr><td colspan="7" class="reports-empty-cell"><i class="fa-solid fa-spinner fa-spin me-1" aria-hidden="true"></i>Loading missing TSRs…</td></tr></tbody>
         </table>
       </div>
       <div id="missing-tsr-mobile" class="reports-mobile-list d-md-none"></div>
@@ -128,7 +145,7 @@
       <div class="reports-card-head">
         <div>
           <h2 id="products-title" class="reports-card-title">Most-serviced products</h2>
-          <p class="reports-card-sub">In the monitoring range.</p>
+          <p class="reports-card-sub">Top 5 in the monitoring range. Hover a row for serial and last service.</p>
         </div>
       </div>
       <div class="reports-stats reports-stats-two">
@@ -146,9 +163,9 @@
         </div>
       </div>
       <div class="table-responsive reports-table-desktop">
-        <table class="table table-sm align-middle mb-0">
-          <thead><tr><th scope="col">Time</th><th scope="col">User</th><th scope="col">Action</th></tr></thead>
-          <tbody id="email-report-table"><tr><td colspan="3" class="reports-empty-cell">Loading…</td></tr></tbody>
+        <table class="table table-sm mb-0 reports-email-table">
+          <thead><tr><th scope="col">Sent</th><th scope="col">By</th><th scope="col">Task</th><th scope="col">Recipients</th></tr></thead>
+          <tbody id="email-report-table"><tr><td colspan="4" class="reports-empty-cell">Loading…</td></tr></tbody>
         </table>
       </div>
       <div id="email-report-mobile" class="reports-mobile-list d-md-none"></div>
@@ -212,11 +229,25 @@
 .archive-page-indicator{min-width:100px;text-align:center;color:var(--app-text);font-weight:600}
 .reports-pair{display:grid;grid-template-columns:5fr 7fr;gap:1rem;margin-bottom:1rem}
 .report-table-list{display:grid;gap:8px}
-.product-row{border:1px solid var(--app-border);border-radius:10px;padding:10px;background:var(--app-surface)}
-.product-row .top{display:flex;justify-content:space-between;gap:10px}
+.report-table-list{gap:0}
+.product-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--app-border)}
+.product-row:last-child{border-bottom:0}
+.product-row .product-main{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .product-row .name{font-weight:600;color:var(--app-text)}
-.product-row .meta{font-size:.82rem;color:var(--app-muted)}
-.product-row .count{font-weight:600;color:var(--app-text);font-size:1.1rem;font-variant-numeric:tabular-nums}
+.product-row .meta{font-size:.86rem;color:var(--app-muted)}
+.product-row .count{font-weight:600;color:var(--app-text);font-variant-numeric:tabular-nums}
+.reports-email-table td{vertical-align:top}
+.reports-email-when{white-space:nowrap;font-variant-numeric:tabular-nums}
+.reports-email-recipients{white-space:nowrap;color:var(--app-muted)}
+.reports-email-more summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--app-text);font-weight:600;font-size:.86rem}
+.reports-email-more div{font-size:.8rem;color:var(--app-muted);overflow-wrap:anywhere}
+.reports-age-chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.75rem;font-weight:600;white-space:nowrap;color:#334155;background:#f1f5f9}
+.reports-age-chip.is-late{color:#a1121f;background:#fde8ea}
+:root[data-app-theme="dark"] .reports-age-chip{color:#e2e8f0;background:#334155}
+:root[data-app-theme="dark"] .reports-age-chip.is-late{color:#fecdd3;background:#5c1a22}
+.reports-open-link{white-space:nowrap;font-weight:600}
+.reports-kind-field{flex:0 0 13rem}
+.reports-date-field{flex:0 0 10rem}
 /* minmax(0,1fr): the one-line filename must truncate, not widen the card past the screen. */
 .reports-mobile-list{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 .reports-mobile-card{min-width:0;border:1px solid var(--app-border);border-radius:16px;padding:12px;background:var(--app-surface)}
@@ -235,7 +266,10 @@
   .reports-collapse-summary{padding:1rem}
   .reports-collapse-body{padding:0 1rem 1rem}
   .reports-stats{grid-template-columns:1fr 1fr}
-  .reports-scope-field{flex:1 1 100%}
+  .reports-scope-field,.reports-kind-field{flex:1 1 100%}
+  .reports-date-field{flex:1 1 calc(50% - 5px);min-width:0}
+  .reports-date-field .form-control{min-width:0;width:100%}
+  .reports-open-link{display:inline-flex;align-items:center;min-height:44px}
   .reports-page .form-control,.reports-page .form-select,.reports-card-head .btn,.dash-page-actions .btn{min-height:44px}
   .archive-pagination{align-items:stretch;flex-direction:column}
   .archive-page-summary{text-align:center}
@@ -270,6 +304,9 @@ function archiveParams(page=archiveCurrentPage){
   params.set('branch', document.getElementById('reports-branch')?.value || 'ALL');
   params.set('q', document.getElementById('reports-search')?.value || '');
   params.set('scope', document.getElementById('reports-scope')?.value || 'my');
+  params.set('kind', document.getElementById('reports-kind')?.value || 'all');
+  params.set('from', document.getElementById('reports-from')?.value || '');
+  params.set('to', document.getElementById('reports-to')?.value || '');
   params.set('page', String(Math.max(Number(page) || 1, 1)));
   params.set('per_page', '10');
   return params;
@@ -298,12 +335,19 @@ function showStatus(type, message, icon){
   status.innerHTML = `<i class="fa-solid ${icon} me-1" aria-hidden="true"></i>${escapeHtml(message)}`;
   status.hidden = false;
 }
+// The TSR files list loads first; the admin summary starts only once it has settled.
+// Production runs one worker, so firing both at once made the list wait on the summary.
+async function loadArchiveThenSummary(page){
+  const archiveResult = await Promise.allSettled([loadTSRArchive(page)]);
+  const summaryResult = isReportsAdminView()
+    ? await Promise.allSettled([loadReportsSummary(false)])
+    : [{status:'fulfilled'}];
+  return [...archiveResult, ...summaryResult];
+}
 function refreshReportsPage(){
   setDefaultReportDates();
   showStatus('info','Loading reports...','fa-spinner fa-spin');
-  const archivePromise = loadTSRArchive(archiveCurrentPage);
-  const summaryPromise = isReportsAdminView() ? loadReportsSummary(false) : Promise.resolve();
-  Promise.allSettled([archivePromise, summaryPromise]).then(results => {
+  loadArchiveThenSummary(archiveCurrentPage).then(results => {
     const rejected = results.find(r => r.status === 'rejected');
     if(rejected){ showStatus('danger', rejected.reason?.message || 'Unable to load reports.', 'fa-triangle-exclamation'); return; }
     showStatus('success', isReportsAdminView() ? 'Reports loaded.' : 'TSR archive loaded.', 'fa-circle-check');
@@ -334,35 +378,57 @@ async function loadReportsSummary(updateStatus=true){
   setBusy('reports-stats', false);
   if(updateStatus) showStatus('success','Reports loaded.','fa-circle-check');
 }
+// "N days" since the service date: slate, red past 30 days (as on Approvals).
+function missingAgeChip(days){
+  if(days === null || days === undefined || days === '') return '';
+  const value = Number(days) || 0;
+  const label = value === 0 ? 'Today' : `${value} day${value === 1 ? '' : 's'}`;
+  return `<span class="reports-age-chip${value > 30 ? ' is-late' : ''}">${label}</span>`;
+}
+// One short line per email: "3 to · 9 CC"; old or cut-off log lines show their start.
+function emailRecipientSummary(row){
+  if(row.to_count === null || row.to_count === undefined){
+    const text = String(row.recipients || row.action || '');
+    return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  }
+  return `${row.to_count} to${row.cc_count ? ` · ${row.cc_count} CC` : ''}`;
+}
 function renderMissingTable(rows){
   const body = document.getElementById('missing-tsr-table');
   const mobile = document.getElementById('missing-tsr-mobile');
   if(!rows || !rows.length){
-    if(body) body.innerHTML = '<tr><td colspan="5" class="reports-empty-cell">No missing TSRs in this range.</td></tr>';
+    if(body) body.innerHTML = '<tr><td colspan="7" class="reports-empty-cell">No missing TSRs in this range.</td></tr>';
     if(mobile) mobile.innerHTML = '<div class="reports-empty">No missing TSRs in this range.</div>';
     return;
   }
   const sliced = rows.slice(0,10);
-  if(body) body.innerHTML = sliced.map(r => `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.client)}</td><td>${escapeHtml(r.product)}<div class="archive-context-secondary">${escapeHtml(r.serial)}</div></td><td>${escapeHtml(r.task)}</td><td>${escapeHtml(r.engineers)}</td></tr>`).join('');
-  if(mobile) mobile.innerHTML = sliced.map(r => `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(r.client)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.date)} · ${escapeHtml(r.task)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.product)} ${r.serial ? '('+escapeHtml(r.serial)+')' : ''}</div><div class="reports-mobile-card-meta">${escapeHtml(r.engineers)}</div></div>`).join('');
+  const canOpen = document.querySelector('.reports-page')?.getAttribute('data-can-timeline') === '1';
+  const openLink = r => canOpen && /^\d{4}-\d{2}-\d{2}$/.test(r.date || '')
+    ? `<a class="reports-open-link" href="/timeline?date=${escapeHtml(r.date)}">Open in Timeline</a>` : '';
+  if(body) body.innerHTML = sliced.map(r => `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.client)}</td><td>${escapeHtml(r.product)}<div class="archive-context-secondary">${escapeHtml(r.serial)}</div></td><td>${escapeHtml(r.task)}</td><td>${escapeHtml(r.engineers)}</td><td>${missingAgeChip(r.age_days)}</td>${canOpen ? `<td>${openLink(r)}</td>` : ''}</tr>`).join('');
+  if(mobile) mobile.innerHTML = sliced.map(r => `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(r.client)} ${missingAgeChip(r.age_days)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.date)} · ${escapeHtml(r.task)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.product)} ${r.serial ? '('+escapeHtml(r.serial)+')' : ''}</div><div class="reports-mobile-card-meta">${escapeHtml(r.engineers)}</div>${openLink(r)}</div>`).join('');
 }
 function renderProductList(rows){
   const el = document.getElementById('high-maintenance-list');
   if(!el) return;
   if(!rows || !rows.length){ el.innerHTML = '<div class="reports-empty">No product service in this range.</div>'; return; }
-  el.innerHTML = rows.slice(0,6).map(r => `<div class="product-row"><div class="top"><div><div class="name">${escapeHtml(r.product)}</div><div class="meta">${escapeHtml(r.client)} · ${escapeHtml(r.serial)}</div><div class="meta">Last service: ${escapeHtml(r.last_service || 'N/A')}</div></div><div class="count" aria-label="${Number(r.count) || 0} services">${Number(r.count) || 0}</div></div></div>`).join('');
+  el.innerHTML = rows.slice(0,5).map(r => {
+    const count = Number(r.count) || 0;
+    const detail = `Serial ${r.serial || 'N/A'} · Last service ${r.last_service || 'N/A'}`;
+    return `<div class="product-row" title="${escapeHtml(detail)}"><div class="product-main"><span class="name">${escapeHtml(r.product)}</span> <span class="meta">· ${escapeHtml(r.client)}</span></div><span class="count" aria-label="${count} services">${count}</span></div>`;
+  }).join('');
 }
 function renderEmailTable(rows){
   const body = document.getElementById('email-report-table');
   const mobile = document.getElementById('email-report-mobile');
   if(!rows || !rows.length){
-    if(body) body.innerHTML = '<tr><td colspan="3" class="reports-empty-cell">No TSR emails sent in this range.</td></tr>';
+    if(body) body.innerHTML = '<tr><td colspan="4" class="reports-empty-cell">No TSR emails sent in this range.</td></tr>';
     if(mobile) mobile.innerHTML = '<div class="reports-empty">No TSR emails sent in this range.</div>';
     return;
   }
   const sliced = rows.slice(0,8);
-  if(body) body.innerHTML = sliced.map(r => `<tr><td>${escapeHtml(r.timestamp)}</td><td>${escapeHtml(r.user)}</td><td>${escapeHtml(r.action)}</td></tr>`).join('');
-  if(mobile) mobile.innerHTML = sliced.map(r => `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(r.user)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.timestamp)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.action)}</div></div>`).join('');
+  if(body) body.innerHTML = sliced.map(r => `<tr title="${escapeHtml(r.recipients || r.action)}"><td class="reports-email-when">${escapeHtml(r.timestamp)}</td><td>${escapeHtml(r.user)}</td><td>${escapeHtml(r.task || '')}</td><td class="reports-email-recipients">${escapeHtml(emailRecipientSummary(r))}</td></tr>`).join('');
+  if(mobile) mobile.innerHTML = sliced.map(r => `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(r.user)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.timestamp)}${r.task ? ' · ' + escapeHtml(r.task) : ''}</div><details class="reports-email-more"><summary>${escapeHtml(emailRecipientSummary(r))}</summary><div>${escapeHtml(r.recipients || r.action)}</div></details></div>`).join('');
 }
 function formatArchiveFileSize(bytes){
   if(bytes === null || bytes === undefined || bytes === '') return '';
@@ -436,8 +502,8 @@ async function loadTSRArchive(page=archiveCurrentPage){
     setText('archive-count', data.total ?? data.count ?? 0);
     renderArchivePagination(data);
   if(!data.rows || !data.rows.length){
-    if(body) body.innerHTML = '<tr><td colspan="6" class="reports-empty-cell">No TSR files found. Try a different client, product, serial number, task or engineer.</td></tr>';
-    if(mobile) mobile.innerHTML = '<div class="reports-empty">No TSR files found. Try a different client, product, serial number, task or engineer.</div>';
+    if(body) body.innerHTML = '<tr><td colspan="6" class="reports-empty-cell">No TSR files found. Try a different search, type or service dates.</td></tr>';
+    if(mobile) mobile.innerHTML = '<div class="reports-empty">No TSR files found. Try a different search, type or service dates.</div>';
     return data;
   }
   if(body) body.innerHTML = data.rows.map(row => `<tr class="archive-row">
@@ -483,9 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const branchInput = document.getElementById('reports-branch');
   if(branchInput) branchInput.addEventListener('change', () => {
     archiveCurrentPage = 1;
-    const requests = [loadTSRArchive(1)];
-    if(isReportsAdminView()) requests.push(loadReportsSummary(false));
-    Promise.allSettled(requests).then(results => {
+    loadArchiveThenSummary(1).then(results => {
       const failed = results.find(result => result.status === 'rejected');
       if(failed) showStatus('danger', failed.reason?.message || 'Unable to refresh reports.', 'fa-triangle-exclamation');
     });
@@ -494,6 +558,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if(scopeInput) scopeInput.addEventListener('change', () => {
     archiveCurrentPage = 1;
     loadTSRArchive(1).catch(error => showStatus('danger', error.message || 'Unable to load TSR archive.', 'fa-triangle-exclamation'));
+  });
+  ['reports-kind','reports-from','reports-to'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      archiveCurrentPage = 1;
+      loadTSRArchive(1).catch(error => showStatus('danger', error.message || 'Unable to filter TSR files.', 'fa-triangle-exclamation'));
+    });
   });
   const searchInput = document.getElementById('reports-search');
   if(searchInput) searchInput.addEventListener('input', function(){

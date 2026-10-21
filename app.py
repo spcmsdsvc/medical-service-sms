@@ -28427,8 +28427,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v341-reports-speed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v342-reports-missing-collapsed';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v343-reports-follow-up';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -30088,7 +30088,8 @@ def reports_page():
         reports_admin=reports_admin_view,
         reports_engineer_only=(is_engineer_type() and not reports_admin_view),
         # New decluttered/professional reports.html expects this name.
-        reports_admin_view=reports_admin_view
+        reports_admin_view=reports_admin_view,
+        reports_can_open_timeline=can_access_timeline_page()
     )
 
 
@@ -55122,6 +55123,18 @@ def tsr_archive_assignment_filter(engineer_ids):
     )
 
 
+TSR_ARCHIVE_FILE_KINDS = ('all', 'tsr', 'certificate', 'report')
+
+
+def tsr_archive_row_kind(row):
+    """Type filter bucket for one archive row: certificate (incl. print copy), report or tsr."""
+    if row.get('is_managed_certificate'):
+        return 'certificate'
+    if row.get('is_calibration_report'):
+        return 'report'
+    return 'tsr'
+
+
 def tsr_archive_latest_submissions(shift_ids):
     """Latest online TSR submission per shift in one query.
 
@@ -55190,6 +55203,13 @@ def get_tsr_archive():
     requested_page = max(clean_int(request.args.get('page')) or 1, 1)
     requested_per_page = clean_int(request.args.get('per_page')) or 10
     per_page = min(max(requested_per_page, 1), 10)
+    file_kind = (clean_str(request.args.get('kind')) or 'all').lower()
+    if file_kind not in TSR_ARCHIVE_FILE_KINDS:
+        file_kind = 'all'
+    service_from = parse_date(request.args.get('from'))
+    service_to = parse_date(request.args.get('to'))
+    if service_from and service_to and service_to < service_from:
+        service_from, service_to = service_to, service_from
 
     query = (
         ShiftFile.query
@@ -55322,6 +55342,16 @@ def get_tsr_archive():
             '_file_rec': file_rec,
         }
 
+        if file_kind != 'all' and tsr_archive_row_kind(row) != file_kind:
+            continue
+        service_date = shift.start_time.date() if shift.start_time else None
+        if (service_from or service_to) and not service_date:
+            continue
+        if service_from and service_date < service_from:
+            continue
+        if service_to and service_date > service_to:
+            continue
+
         if query_text:
             haystack = ' '.join([
                 row['date'], row['client'], row['product'], row['serial'], row['task'],
@@ -55349,6 +55379,9 @@ def get_tsr_archive():
         'total_pages': total_pages,
         'sort': 'recently_added',
         'scope': scope,
+        'kind': file_kind,
+        'from': service_from.isoformat() if service_from else '',
+        'to': service_to.isoformat() if service_to else '',
         'admin': is_admin_authorized()
     })
 
@@ -55864,6 +55897,48 @@ def download_tsr_archive_file(file_id):
     return response
 
 
+def summarize_tsr_email_log(action):
+    """Split a TSR email log line into what the Reports list shows.
+
+    Current format: "Sent Service Files to client: <to> | CC: <cc> | Font: <font> | <task>";
+    older rows read "Sent TSR to client: <to> | CC: <cc> | <task>". CC and Font are optional.
+    Anything else falls back to the raw text so nothing disappears.
+    """
+    text = clean_str(action) or ''
+    fallback = {'task': '', 'to_count': None, 'cc_count': None, 'recipients': text}
+    prefix = next(
+        (candidate for candidate in ('Sent Service Files to client:', 'Sent TSR to client:') if text.startswith(candidate)),
+        None,
+    )
+    if not prefix:
+        return fallback
+    parts = [part.strip() for part in text[len(prefix):].split(' | ')]
+    if len(parts) < 2 or '@' not in parts[0]:
+        return fallback
+    task = parts[-1]
+    if task.startswith(('CC:', 'Font:')) or '@' in task:
+        return fallback
+
+    def count(addresses):
+        return len([address for address in addresses.split(',') if address.strip()])
+
+    to_text = parts[0]
+    cc_text = next((part[len('CC:'):].strip() for part in parts[1:-1] if part.startswith('CC:')), '')
+    return {
+        'task': task,
+        'to_count': count(to_text),
+        'cc_count': count(cc_text),
+        'recipients': to_text + (f' | CC: {cc_text}' if cc_text else ''),
+    }
+
+
+def tsr_missing_age_days(shift, today):
+    """Whole days since a schedule's service date (0 for today or later)."""
+    if not getattr(shift, 'start_time', None):
+        return None
+    return max((today - shift.start_time.date()).days, 0)
+
+
 @app.route('/get_reports_summary')
 @login_required
 def get_reports_summary():
@@ -55887,6 +55962,7 @@ def get_reports_summary():
     missing_tsr = [shift for shift in completed_service_shifts if not has_tsr_file(shift)]
 
     missing_rows = []
+    today = get_manila_time().date()
     for shift in missing_tsr[:15]:
         engineers = get_shift_engineer_records(shift)
         equipment = resolve_shift_equipment(shift)
@@ -55897,7 +55973,8 @@ def get_reports_summary():
             'product': getattr(equipment, 'name', None) or 'N/A',
             'serial': getattr(equipment, 'serial_number', None) or '',
             'task': shift.title or '',
-            'engineers': ', '.join([eng.name for eng in engineers]) or 'N/A'
+            'engineers': ', '.join([eng.name for eng in engineers]) or 'N/A',
+            'age_days': tsr_missing_age_days(shift, today),
         })
 
     # Only products serviced in the range can be "high maintenance", so only those load.
@@ -55949,7 +56026,8 @@ def get_reports_summary():
         recent_emails.append({
             'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M'),
             'user': log.user,
-            'action': log.action
+            'action': log.action,
+            **summarize_tsr_email_log(log.action),
         })
 
     return jsonify({

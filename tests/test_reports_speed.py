@@ -43,7 +43,9 @@ def count_queries():
         event.remove(engine, 'before_cursor_execute', before_cursor_execute)
 
 
-class ReportsSpeedTests(unittest.TestCase):
+class ReportsArchiveFixture(unittest.TestCase):
+    """Seeded admin, engineer and client; helpers to add schedules and count queries."""
+
     @classmethod
     def setUpClass(cls):
         cls.app = app_module.app
@@ -137,6 +139,7 @@ class ReportsSpeedTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return counter['n'], response.get_json()
 
+class ReportsSpeedTests(ReportsArchiveFixture):
     def test_archive_queries_do_not_grow_with_files(self):
         self.add_serviced_schedules(3)
         small, _ = self.archive_query_count()
@@ -180,6 +183,71 @@ class ReportsSpeedTests(unittest.TestCase):
             self.assertIn(key, data['email'])
 
 
+class ReportsFollowUpServerTests(ReportsArchiveFixture):
+    """Follow-up 2026-10-21: email lines, missing-TSR age, archive type/date filters."""
+
+    def test_summarize_tsr_email_log(self):
+        summary = app_module.summarize_tsr_email_log(
+            'Sent Service Files to client: a@x.ph, b@x.ph | CC: c@y.ph, d@y.ph, e@y.ph | Font: tenorite | Repair [Warranty]'
+        )
+        self.assertEqual(summary['task'], 'Repair [Warranty]')
+        self.assertEqual((summary['to_count'], summary['cc_count']), (2, 3))
+        self.assertEqual(summary['recipients'], 'a@x.ph, b@x.ph | CC: c@y.ph, d@y.ph, e@y.ph')
+
+        no_cc = app_module.summarize_tsr_email_log('Sent Service Files to client: a@x.ph | Font: arial | PM')
+        self.assertEqual((no_cc['task'], no_cc['to_count'], no_cc['cc_count']), ('PM', 1, 0))
+
+        older = app_module.summarize_tsr_email_log('Sent TSR to client: a@x.ph | CC: b@y.ph, c@y.ph | System Installation')
+        self.assertEqual((older['task'], older['to_count'], older['cc_count']), ('System Installation', 1, 2))
+
+        for raw in ('Sent TSR to client: a@x.ph', 'Sent Service Files to client: a@x.ph | CC: b@x.ph, c@', 'Logged in'):
+            fallback = app_module.summarize_tsr_email_log(raw)
+            self.assertIsNone(fallback['to_count'])
+            self.assertEqual(fallback['recipients'], raw)
+
+    def test_missing_rows_carry_their_age(self):
+        with self.app.app_context():
+            start = self.today - timedelta(days=12)
+            shift = app_module.Shift(
+                title='Missing visit', start_time=start, end_time=start + timedelta(hours=2),
+                engineer_id=self.engineer_id, client_id=self.client_id, status='Completed',
+            )
+            app_module.db.session.add(shift)
+            app_module.db.session.flush()
+            app_module.db.session.add(app_module.ShiftEngineer(shift_id=shift.id, engineer_id=self.engineer_id))
+            app_module.db.session.commit()
+        _, data = self.summary_query_count()
+        rows = [row for row in data['tsr']['missing_rows'] if row['task'] == 'Missing visit']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['age_days'], 12)
+
+    def test_archive_type_and_service_date_filters(self):
+        self.add_serviced_schedules(4)  # service dates today-1 .. today-4, all plain TSRs
+        client = self.admin_client()
+
+        def archive(query):
+            response = client.get(f'/get_tsr_archive?branch=ALL&q=&scope=all&page=1&per_page=10{query}')
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            return response.get_json()
+
+        self.assertEqual(archive('&kind=tsr')['total'], 4)
+        self.assertEqual(archive('&kind=certificate')['total'], 0)
+        self.assertEqual(archive('&kind=report')['total'], 0)
+        self.assertEqual(archive('&kind=nonsense')['kind'], 'all')
+        day = lambda offset: (self.today - timedelta(days=offset)).date().isoformat()
+        window = archive(f'&from={day(3)}&to={day(2)}')
+        self.assertEqual(window['total'], 2)
+        self.assertEqual({row['date'] for row in window['rows']}, {day(3), day(2)})
+        self.assertEqual(archive(f'&from={day(2)}&to={day(3)}')['total'], 2)  # reversed range
+        self.assertEqual(archive('&from=not-a-date')['total'], 4)
+
+    def test_row_kind_buckets(self):
+        kind = app_module.tsr_archive_row_kind
+        self.assertEqual(kind({'is_managed_certificate': True, 'is_calibration_report': False}), 'certificate')
+        self.assertEqual(kind({'is_managed_certificate': False, 'is_calibration_report': True}), 'report')
+        self.assertEqual(kind({'is_managed_certificate': False, 'is_calibration_report': False}), 'tsr')
+
+
 class ReportsTemplateDesignTests(unittest.TestCase):
     """Design scan 2026-10-21: dark-mode values at 1.02:1, unlabelled inputs, green Export CSV."""
 
@@ -193,12 +261,36 @@ class ReportsTemplateDesignTests(unittest.TestCase):
     def test_colours_come_from_theme_variables(self):
         import re
         hexes = set(re.findall(r'#[0-9a-fA-F]{3,8}\b', self.style))
-        # Only the semantic alert pair for a missing-TSR count above zero (DESIGN.md).
-        self.assertEqual(hexes, {'#a1121f', '#fecdd3'})
+        # Only semantic pairs from DESIGN.md: the alert pair and the Approvals "N days" chip.
+        self.assertEqual(hexes, {
+            '#a1121f', '#fecdd3', '#fde8ea', '#5c1a22',  # alert / late
+            '#334155', '#f1f5f9', '#e2e8f0',  # waiting chip
+        })
         self.assertNotRegex(self.style, r'font-weight:\s*(7|8|9)00')
 
+    def test_follow_up_template(self):
+        script = self.source.split('<script>', 1)[1]
+        # The summary starts only after the archive has settled.
+        refresh = script.split('function refreshReportsPage(){', 1)[1].split('\n}', 1)[0]
+        self.assertIn('loadArchiveThenSummary(', refresh)
+        self.assertNotIn('loadReportsSummary(', refresh)
+        helper = script.split('async function loadArchiveThenSummary(', 1)[1].split('\n}', 1)[0]
+        self.assertLess(helper.index('loadTSRArchive('), helper.index('loadReportsSummary('))
+        # Emails show a recipient summary, never the raw log text in the cell.
+        emails = script.split('function renderEmailTable(rows){', 1)[1].split('\nfunction ', 1)[0]
+        self.assertIn('emailRecipientSummary(r)', emails)
+        self.assertNotIn('<td>${escapeHtml(r.action)}</td>', emails)
+        # Missing TSRs: Timeline link only for users allowed there; age chip.
+        self.assertIn("data-can-timeline=\"{{ '1' if reports_can_open_timeline else '0' }}\"", self.source)
+        self.assertIn('/timeline?date=', script)
+        self.assertIn('missingAgeChip(r.age_days)', script)
+        # Filters are sent with every archive request.
+        for name in ('kind', 'from', 'to'):
+            self.assertIn(f"params.set('{name}'", script)
+
     def test_inputs_have_linked_labels(self):
-        for control in ('reports-start-date', 'reports-end-date', 'reports-branch', 'reports-search', 'reports-scope'):
+        for control in ('reports-start-date', 'reports-end-date', 'reports-branch', 'reports-search', 'reports-scope',
+                        'reports-kind', 'reports-from', 'reports-to'):
             self.assertIn(f'for="{control}"', self.source)
 
     def test_page_header_buttons_and_dead_preview_modal(self):
