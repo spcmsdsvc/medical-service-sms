@@ -2,224 +2,231 @@
 
 {% block content %}
 <div class="reports-page" data-admin-view="{{ '1' if reports_admin_view else '0' }}">
-  <div class="reports-hero mb-3">
-    <div class="reports-hero-main">
-      <div class="reports-eyebrow">TSR Files Module</div>
-      <h2 class="fw-bold mb-1"><i class="fa-solid fa-file-lines text-primary me-2"></i>TSR files</h2>
-      <p class="text-muted mb-0">
+  <header class="dash-page-header">
+    <div>
+      <h1 class="dash-page-h1">Reports</h1>
+      <p class="dash-page-sub">
         {% if reports_admin_view %}
-          TSR archive, missing TSR monitoring, product intelligence, and email report visibility.
+          Missing TSRs, every TSR file, and TSR email activity.
         {% else %}
-          Search and download TSR files from schedules assigned to you.
+          TSR files from your schedules, ready to preview or download.
         {% endif %}
       </p>
     </div>
-    <div class="reports-actions no-print">
-      <button class="btn btn-outline-primary fw-bold" type="button" onclick="refreshReportsPage()"><i class="fa-solid fa-rotate-right me-1"></i>Refresh</button>
-      {% if reports_admin_view %}
-      <button class="btn btn-success fw-bold" type="button" onclick="exportReportsSummary()"><i class="fa-solid fa-file-arrow-down me-1"></i>Export CSV</button>
-      {% endif %}
+    <div class="dash-page-actions no-print">
+      <button class="btn btn-outline-primary" type="button" onclick="refreshReportsPage()"><i class="fa-solid fa-rotate-right me-1" aria-hidden="true"></i>Refresh</button>
     </div>
-  </div>
+  </header>
 
-  <div class="card p-3 p-md-4 mb-3 no-print reports-filter-card">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  {# Shown only for problems; loading shows in each list. #}
+  <div id="reports-status" class="alert alert-danger mb-3" role="alert" hidden></div>
+
+  {% if reports_admin_view %}
+  <section class="card reports-card mb-3" aria-labelledby="missing-tsr-title">
+    <div class="reports-card-head">
       <div>
-        <div class="small fw-bold text-primary text-uppercase">Archive Search</div>
-        <div class="text-muted small">Search all accessible TSR files without a date limit.</div>
+        <h2 id="missing-tsr-title" class="reports-card-title">Missing TSRs</h2>
+        <p class="reports-card-sub">Completed schedules with no TSR file. <span id="reports-range-badge">Current range</span></p>
       </div>
-      <span id="reports-mode-badge" class="badge bg-primary-subtle text-primary border border-primary-subtle">
-        {% if reports_admin_view %}Admin reports{% else %}Engineer TSR archive{% endif %}
-      </span>
+      <button class="btn btn-outline-primary no-print" type="button" onclick="exportReportsSummary()"><i class="fa-solid fa-file-arrow-down me-1" aria-hidden="true"></i>Export CSV</button>
     </div>
-    <div class="row g-2 align-items-end">
-      {% if reports_admin_view %}
-      <div class="col-md-4">
-        <label class="small fw-bold text-muted text-uppercase">Branch</label>
-        <select id="reports-branch" class="form-select">
-          <option value="ALL">All Branches</option>
-          <option value="Manila">Manila</option>
-          <option value="Cebu">Cebu</option>
-          <option value="Davao">Davao</option>
-        </select>
+
+    <fieldset class="reports-range no-print">
+      <legend class="reports-field-label">Monitoring Range</legend>
+      <div class="reports-range-fields">
+        <div>
+          <label class="reports-field-label" for="reports-start-date">Start date</label>
+          <input id="reports-start-date" type="date" class="form-control">
+        </div>
+        <div>
+          <label class="reports-field-label" for="reports-end-date">End date</label>
+          <input id="reports-end-date" type="date" class="form-control">
+        </div>
+        <div>
+          <label class="reports-field-label" for="reports-branch">Branch</label>
+          <select id="reports-branch" class="form-select">
+            <option value="ALL">All branches</option>
+            <option value="Manila">Manila</option>
+            <option value="Cebu">Cebu</option>
+            <option value="Davao">Davao</option>
+          </select>
+        </div>
       </div>
-      {% else %}
-      <input id="reports-branch" type="hidden" value="ALL">
-      <div class="col-md-4">
-        <label class="small fw-bold text-muted text-uppercase">Archive Scope</label>
+    </fieldset>
+
+    <div class="reports-stats" id="reports-stats" aria-busy="true">
+      <div class="reports-stat"><span class="reports-stat-label">Services</span><strong id="stat-service" class="reports-stat-num">–</strong></div>
+      <div class="reports-stat"><span class="reports-stat-label">TSR attached</span><strong id="stat-tsr" class="reports-stat-num">–</strong></div>
+      <div class="reports-stat"><span class="reports-stat-label">Missing TSR</span><strong id="stat-missing" class="reports-stat-num">–</strong></div>
+      <div class="reports-stat"><span class="reports-stat-label">Emails sent</span><strong id="stat-email" class="reports-stat-num">–</strong></div>
+    </div>
+
+    <div class="table-responsive reports-table-desktop">
+      <table class="table table-sm align-middle mb-0 reports-missing-table">
+        <thead><tr><th scope="col">Date</th><th scope="col">Client</th><th scope="col">Product</th><th scope="col">Task</th><th scope="col">Engineer(s)</th></tr></thead>
+        <tbody id="missing-tsr-table"><tr><td colspan="5" class="reports-empty-cell"><i class="fa-solid fa-spinner fa-spin me-1" aria-hidden="true"></i>Loading missing TSRs…</td></tr></tbody>
+      </table>
+    </div>
+    <div id="missing-tsr-mobile" class="reports-mobile-list d-md-none"></div>
+  </section>
+  {% else %}
+  <input id="reports-branch" type="hidden" value="ALL">
+  {% endif %}
+
+  <section class="card reports-card mb-3" id="reports-archive" aria-labelledby="archive-title" aria-busy="true">
+    <div class="reports-card-head">
+      <div>
+        <h2 id="archive-title" class="reports-card-title">TSR files</h2>
+        <p class="reports-card-sub">
+          {% if reports_admin_view %}All history, newest first.{% else %}All history from your schedules, newest first.{% endif %}
+          <span id="archive-count">–</span> file(s).
+        </p>
+      </div>
+    </div>
+
+    <div class="reports-archive-tools no-print">
+      {% if not reports_admin_view %}
+      <div class="reports-scope-field">
+        <label class="reports-field-label" for="reports-scope">Show</label>
         <select id="reports-scope" class="form-select">
           <option value="my" selected>My TSRs</option>
           <option value="all">All TSRs</option>
         </select>
       </div>
       {% endif %}
-      <div class="col-md-8">
-        <label class="small fw-bold text-muted text-uppercase">Search TSR Archive</label>
-        <div class="input-group">
-          <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-primary"></i></span>
-          <input id="reports-search" type="search" class="form-control" placeholder="Client, product, serial, task, TSR...">
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="reports-status" class="alert alert-info border-0 shadow-sm mb-3">
-    <i class="fa-solid fa-circle-info me-1"></i>Loading reports...
-  </div>
-
-  <div class="card p-3 p-md-4 mb-3 reports-section-card">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-      <div>
-        <h5 class="fw-bold mb-1"><i class="fa-solid fa-folder-open text-primary me-2"></i>TSR Archive</h5>
-        <div class="small text-muted">
-          {% if reports_admin_view %}
-            Search and download TSR files across all available history.
-          {% else %}
-            Search and download TSR files from schedules assigned to you.
-          {% endif %}
-        </div>
-      </div>
-      <div class="archive-header-actions no-print">
-        <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">
-          <i class="fa-solid fa-arrow-down-wide-short me-1"></i>Recently Added First
-        </span>
-        <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><span id="archive-count">0</span> TSR file(s)</span>
-        <button id="archive-refresh-btn" class="btn btn-sm btn-outline-primary fw-bold" type="button"><i class="fa-solid fa-rotate-right me-1"></i>Refresh</button>
+      <div class="reports-search-field">
+        <label class="reports-field-label" for="reports-search">Search TSR files</label>
+        <input id="reports-search" type="search" class="form-control" placeholder="Client, product, serial, task, engineer or TSR number">
       </div>
     </div>
 
     <div class="table-responsive reports-table-desktop">
-      <table class="table table-sm align-middle mb-0">
-        <thead class="table-light"><tr><th>Service Date</th><th>Client</th><th>Product</th><th>Task</th><th>Engineer(s)</th><th>TSR File</th></tr></thead>
-        <tbody id="tsr-archive-table"><tr><td colspan="6" class="text-muted text-center py-4">No data loaded.</td></tr></tbody>
+      <table class="table table-sm mb-0 reports-archive-table">
+        <thead><tr><th scope="col">Service date</th><th scope="col">Client</th><th scope="col">Product</th><th scope="col">Task</th><th scope="col">Engineer(s)</th><th scope="col">TSR file</th></tr></thead>
+        <tbody id="tsr-archive-table"><tr><td colspan="6" class="reports-empty-cell"><i class="fa-solid fa-spinner fa-spin me-1" aria-hidden="true"></i>Loading TSR files…</td></tr></tbody>
       </table>
     </div>
     <div id="tsr-archive-mobile" class="reports-mobile-list d-md-none"></div>
     <div id="archive-pagination" class="archive-pagination no-print" hidden>
       <div id="archive-page-summary" class="archive-page-summary"></div>
-      <div class="archive-page-controls" aria-label="TSR archive pagination">
-        <button id="archive-prev-page" class="btn btn-outline-primary fw-bold" type="button"><i class="fa-solid fa-chevron-left"></i><span>Previous</span></button>
+      <div class="archive-page-controls" aria-label="TSR file pages">
+        <button id="archive-prev-page" class="btn btn-outline-primary" type="button"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i><span>Previous</span></button>
         <span id="archive-page-indicator" class="archive-page-indicator">Page 1 of 1</span>
-        <button id="archive-next-page" class="btn btn-outline-primary fw-bold" type="button"><span>Next</span><i class="fa-solid fa-chevron-right"></i></button>
+        <button id="archive-next-page" class="btn btn-outline-primary" type="button"><span>Next</span><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>
       </div>
     </div>
-  </div>
+  </section>
 
   {% if reports_admin_view %}
-  <div class="card p-3 p-md-4 mb-3 no-print reports-monitoring-card">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-      <div>
-        <div class="small fw-bold text-primary text-uppercase">Monitoring Range</div>
-        <div class="text-muted small">Controls the summaries, missing TSR queue, email activity, and CSV export below.</div>
-      </div>
-      <button class="btn btn-sm btn-outline-primary fw-bold" type="button" onclick="loadReportsSummary()"><i class="fa-solid fa-chart-column me-1"></i>Refresh Monitoring</button>
-    </div>
-    <div class="row g-2">
-      <div class="col-md-6">
-        <label class="small fw-bold text-muted text-uppercase">Start Date</label>
-        <input id="reports-start-date" type="date" class="form-control">
-      </div>
-      <div class="col-md-6">
-        <label class="small fw-bold text-muted text-uppercase">End Date</label>
-        <input id="reports-end-date" type="date" class="form-control">
-      </div>
-    </div>
-  </div>
-
-  <div class="row g-3 mb-3">
-    <div class="col-6 col-lg-3"><div class="report-stat-card"><div class="stat-label">Services</div><div id="stat-service" class="stat-value">0</div><div class="stat-sub">selected range</div></div></div>
-    <div class="col-6 col-lg-3"><div class="report-stat-card success"><div class="stat-label">TSR Attached</div><div id="stat-tsr" class="stat-value">0</div><div class="stat-sub">with TSR file</div></div></div>
-    <div class="col-6 col-lg-3"><div class="report-stat-card danger"><div class="stat-label">Missing TSR</div><div id="stat-missing" class="stat-value">0</div><div class="stat-sub">needs follow-up</div></div></div>
-    <div class="col-6 col-lg-3"><div class="report-stat-card warning"><div class="stat-label">Emails Sent</div><div id="stat-email" class="stat-value">0</div><div class="stat-sub">TSR email logs</div></div></div>
-  </div>
-
-  <div class="row g-3">
-    <div class="col-lg-7">
-      <div class="card p-3 p-md-4 h-100 reports-section-card">
-        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
-          <div>
-            <h5 class="fw-bold mb-1"><i class="fa-solid fa-file-circle-exclamation text-danger me-2"></i>Missing TSR Queue</h5>
-            <div class="small text-muted">Completed schedules without TSR attachments.</div>
-          </div>
-          <span id="reports-range-badge" class="badge bg-primary-subtle text-primary border border-primary-subtle">Current range</span>
+  <div class="reports-pair">
+    <section class="card reports-card" aria-labelledby="products-title">
+      <div class="reports-card-head">
+        <div>
+          <h2 id="products-title" class="reports-card-title">Most-serviced products</h2>
+          <p class="reports-card-sub">In the monitoring range.</p>
         </div>
-        <div class="table-responsive reports-table-desktop">
-          <table class="table table-sm align-middle mb-0">
-            <thead class="table-light"><tr><th>Date</th><th>Client</th><th>Product</th><th>Task</th><th>Engineer(s)</th></tr></thead>
-            <tbody id="missing-tsr-table"><tr><td colspan="5" class="text-muted text-center py-4">No data loaded.</td></tr></tbody>
-          </table>
-        </div>
-        <div id="missing-tsr-mobile" class="reports-mobile-list d-md-none"></div>
       </div>
-    </div>
+      <div class="reports-stats reports-stats-two">
+        <div class="reports-stat"><span class="reports-stat-label">Total products</span><strong id="prod-total" class="reports-stat-num">–</strong></div>
+        <div class="reports-stat"><span class="reports-stat-label">Serviced twice or more</span><strong id="prod-repeat" class="reports-stat-num">–</strong></div>
+      </div>
+      <div id="high-maintenance-list" class="report-table-list"></div>
+    </section>
 
-    <div class="col-lg-5">
-      <div class="card p-3 p-md-4 h-100 reports-section-card">
-        <h5 class="fw-bold mb-1"><i class="fa-solid fa-boxes-stacked text-primary me-2"></i>Product Intelligence</h5>
-        <div class="small text-muted mb-3">Top products with repeated service activity.</div>
-        <div class="compact-kpi-row mb-3">
-          <div><span>Total Products</span><strong id="prod-total">0</strong></div>
-          <div><span>Repeat Service</span><strong id="prod-repeat">0</strong></div>
+    <section class="card reports-card" aria-labelledby="email-title">
+      <div class="reports-card-head">
+        <div>
+          <h2 id="email-title" class="reports-card-title">TSR emails sent</h2>
+          <p class="reports-card-sub"><span id="email-count-inline">–</span> sent in the monitoring range.</p>
         </div>
-        <div id="high-maintenance-list" class="report-table-list"></div>
       </div>
-    </div>
-  </div>
-
-  <div class="card p-3 p-md-4 mt-3 reports-section-card">
-    <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
-      <div>
-        <h5 class="fw-bold mb-1"><i class="fa-solid fa-envelope-circle-check text-success me-2"></i>Email Reports</h5>
-        <div class="small text-muted">Recent TSR email activity from the system activity log.</div>
+      <div class="table-responsive reports-table-desktop">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th scope="col">Time</th><th scope="col">User</th><th scope="col">Action</th></tr></thead>
+          <tbody id="email-report-table"><tr><td colspan="3" class="reports-empty-cell">Loading…</td></tr></tbody>
+        </table>
       </div>
-      <span class="badge bg-success-subtle text-success border border-success-subtle"><span id="email-count-inline">0</span> sent</span>
-    </div>
-    <div class="table-responsive reports-table-desktop">
-      <table class="table table-sm align-middle mb-0">
-        <thead class="table-light"><tr><th>Time</th><th>User</th><th>Action</th></tr></thead>
-        <tbody id="email-report-table"><tr><td colspan="3" class="text-muted text-center py-4">No data loaded.</td></tr></tbody>
-      </table>
-    </div>
-    <div id="email-report-mobile" class="reports-mobile-list d-md-none"></div>
+      <div id="email-report-mobile" class="reports-mobile-list d-md-none"></div>
+    </section>
   </div>
   {% endif %}
 </div>
 
-
-<!-- TSR PREVIEW MODAL -->
-<div class="modal fade" id="tsrPreviewModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-    <div class="modal-content reports-preview-modal">
-      <div class="modal-header bg-dark text-white">
-        <div>
-          <h5 class="modal-title fw-bold"><i class="fa-solid fa-eye me-2"></i>TSR Preview</h5>
-          <div id="tsr-preview-filename" class="small text-white-50"></div>
-        </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body p-0">
-        <div id="tsr-preview-note" class="alert alert-info m-3 mb-0 small">
-          PDF files render as server-generated preview pages for Brave/mobile. Images and CSV files open inside the viewer. DOCX/XLSX files remain download-only.
-        </div>
-        <iframe id="tsr-preview-frame" title="TSR Preview" class="tsr-preview-frame"></iframe>
-      </div>
-      <div class="modal-footer no-print">
-        <a id="tsr-preview-open-link" class="btn btn-outline-primary fw-bold" target="_blank" rel="noopener">
-          <i class="fa-solid fa-up-right-from-square me-1"></i>Open in New Tab
-        </a>
-        <a id="tsr-preview-download-link" class="btn btn-primary fw-bold">
-          <i class="fa-solid fa-file-arrow-down me-1"></i>Download
-        </a>
-      </div>
-    </div>
-  </div>
-</div>
-
 <style>
-.reports-page{max-width:1180px;margin:0 auto}.reports-hero{display:flex;justify-content:space-between;align-items:center;gap:16px;background:linear-gradient(135deg,var(--app-surface),#f8fafc);border-radius:20px;padding:20px 22px;box-shadow:0 8px 24px rgba(15,23,42,.07);border:1px solid #edf2f7}.reports-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:var(--app-primary-text);letter-spacing:.08em}.reports-actions{display:flex;gap:8px;flex-wrap:wrap}.reports-filter-card{border-left:5px solid var(--app-primary)}.reports-section-card{border:1px solid #eef2f7}.report-stat-card{background:var(--app-surface);border-radius:16px;padding:16px;border-left:5px solid var(--app-primary);box-shadow:0 6px 20px rgba(15,23,42,.06);height:100%}.report-stat-card.success{border-left-color:#198754}.report-stat-card.danger{border-left-color:#dc3545}.report-stat-card.warning{border-left-color:#ffc107}.stat-label{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#64748b;letter-spacing:.06em}.stat-value{font-size:2rem;font-weight:900;color:#0f172a;line-height:1}.stat-sub{font-size:.8rem;color:#64748b;margin-top:4px}.compact-kpi-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.compact-kpi-row div{border:1px solid #e5e7eb;background:#f8fafc;border-radius:14px;padding:10px}.compact-kpi-row span{display:block;font-size:.72rem;text-transform:uppercase;color:#64748b;font-weight:900}.compact-kpi-row strong{font-size:1.4rem;color:#0f172a}.report-table-list{display:grid;gap:8px}.product-row{border:1px solid #e5e7eb;border-radius:14px;padding:10px;background:var(--app-surface)}.product-row .top{display:flex;justify-content:space-between;gap:10px}.product-row .name{font-weight:900;color:#0f172a}.product-row .meta{font-size:.82rem;color:#64748b}.product-row .count{font-weight:900;color:var(--app-primary-text);font-size:1.1rem}.archive-file-list{display:grid;gap:8px}.archive-file-entry{display:grid;gap:6px}.archive-file-actions{display:flex;flex-wrap:wrap;gap:6px}.archive-file-name{font-size:.82rem;font-weight:900;color:#334155;word-break:break-word}.archive-file-link,.archive-preview-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;font-weight:800;border-radius:10px;padding:7px 10px;line-height:1.15}.archive-preview-btn{border:1px solid var(--app-primary);background:var(--app-primary-soft);color:var(--app-primary-text)}.archive-preview-btn:hover{background:var(--app-primary);color:var(--app-surface)}.archive-download-btn{border:1px solid #198754;background:#eefaf3;color:#198754}.archive-download-btn:hover{background:#198754;color:var(--app-surface)}.reports-mobile-card-files .archive-file-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.reports-mobile-card-files .archive-file-link,.reports-mobile-card-files .archive-preview-btn{width:100%;min-height:44px;padding:10px 12px;box-shadow:0 6px 16px rgba(15,23,42,.08)}.reports-mobile-card-files .archive-download-btn{background:var(--app-primary);border-color:var(--app-primary);color:var(--app-surface)!important}.reports-mobile-card-files .archive-download-btn:hover{background:var(--app-primary-strong);color:var(--app-surface)!important}.tsr-preview-frame{width:100%;height:min(72vh,760px);border:0;background:#f8fafc}.reports-preview-modal{border:0;border-radius:18px;overflow:hidden}.table td,.table th{vertical-align:middle}.reports-mobile-list{display:grid;gap:10px}.reports-mobile-card{border:1px solid #e5e7eb;border-radius:16px;padding:12px;background:var(--app-surface);box-shadow:0 4px 14px rgba(15,23,42,.05)}.reports-mobile-card-title{font-weight:900;color:#0f172a}.reports-mobile-card-meta{font-size:.82rem;color:#64748b}.reports-mobile-card-files{display:grid;gap:6px;margin-top:10px}.reports-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:18px;text-align:center;color:#64748b;background:#f8fafc;font-weight:800}@media(max-width:768px){.reports-hero{flex-direction:column;align-items:stretch;border-radius:18px;padding:16px}.reports-actions .btn{width:100%}.stat-value{font-size:1.6rem}.reports-page .table th,.reports-page .table td{white-space:nowrap}.reports-table-desktop{display:none!important}.reports-filter-card .input-group-text{border-radius:12px 0 0 12px}.reports-section-card{border-radius:18px!important}}
-.archive-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.reports-monitoring-card{border-left:5px solid #198754}.reports-table-desktop table{table-layout:fixed}.reports-table-desktop th:nth-child(1){width:10%}.reports-table-desktop th:nth-child(2){width:18%}.reports-table-desktop th:nth-child(3){width:16%}.reports-table-desktop th:nth-child(4){width:17%}.reports-table-desktop th:nth-child(5){width:15%}.reports-table-desktop th:nth-child(6){width:24%}.archive-row td{padding-top:14px;padding-bottom:14px;vertical-align:top!important;white-space:normal;overflow-wrap:anywhere}.archive-file-entry{min-width:0}.archive-file-name{color:var(--app-text);font-size:.86rem;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}.archive-file-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--app-muted);font-size:.72rem;font-weight:700}.archive-file-meta-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid var(--app-border);border-radius:999px;background:var(--app-surface-raised);color:var(--app-muted)}.archive-file-locked{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--app-border);border-radius:10px;background:var(--app-surface-raised);color:var(--app-muted);font-weight:800;padding:7px 10px;line-height:1.15}.archive-context-primary{color:var(--app-text);font-weight:800;line-height:1.35}.archive-context-secondary{color:var(--app-muted);font-size:.78rem;line-height:1.35;margin-top:3px}.archive-pagination{display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid var(--app-border);margin-top:16px;padding-top:14px}.archive-page-summary{color:var(--app-muted);font-size:.82rem;font-weight:800}.archive-page-controls{display:flex;align-items:center;gap:10px}.archive-page-controls .btn{display:inline-flex;align-items:center;gap:7px;min-height:40px}.archive-page-indicator{min-width:100px;text-align:center;color:var(--app-text);font-weight:900}.reports-mobile-card-file{margin-top:10px;padding-top:10px;border-top:1px solid var(--app-border)}.reports-mobile-card .archive-file-name{font-size:.88rem}.reports-mobile-card .archive-file-meta{margin-top:6px}.reports-page :is(.reports-filter-card,.reports-monitoring-card,.reports-section-card,.reports-mobile-card,.reports-empty){background:var(--app-surface);color:var(--app-text);border-color:var(--app-border)}.reports-page :is(.archive-preview-btn,.archive-download-btn){transition:background-color .15s ease,color .15s ease,border-color .15s ease}.reports-page .archive-preview-btn{background:color-mix(in srgb,var(--app-primary) 10%,var(--app-surface));border-color:var(--app-primary);color:var(--app-primary)}
-:root[data-app-theme="dark"] .reports-page .archive-download-btn{background:#173b2c;color:#8ce0b2;border-color:#318c5d}:root[data-app-theme="dark"] .reports-page .archive-download-btn:hover{background:#258654;color:#fff}:root[data-app-theme="dark"] .reports-page .archive-file-name{color:var(--dark-text)!important}:root[data-app-theme="dark"] .reports-page :is(.archive-context-primary,.archive-page-indicator){color:var(--dark-text)}:root[data-app-theme="dark"] .reports-page :is(.archive-file-meta,.archive-context-secondary,.archive-page-summary){color:var(--dark-muted)}:root[data-app-theme="dark"] .reports-page .archive-file-meta-badge{background:var(--dark-card);border-color:var(--dark-border);color:var(--dark-text)}
-@media(max-width:768px){.archive-header-actions{width:100%;justify-content:space-between}.archive-pagination{align-items:stretch;flex-direction:column}.archive-page-summary{text-align:center}.archive-page-controls{display:grid;grid-template-columns:1fr auto 1fr}.archive-page-controls .btn{justify-content:center}.reports-mobile-card{border-radius:12px}.reports-mobile-card-files{margin-top:0}.reports-page .archive-file-actions{grid-template-columns:1fr 1fr}}
+/* Every colour comes from the theme variables, so light, graphite and AMOLED all read. */
+.reports-page{max-width:1220px;margin:0 auto}
+.reports-card{background:var(--app-surface);color:var(--app-text);border:1px solid var(--app-border);border-radius:12px;padding:1.25rem}
+.reports-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:1rem}
+.reports-card-title{font-size:1.05rem;font-weight:600;margin:0;color:var(--app-text)}
+.reports-card-sub{margin:.2rem 0 0;font-size:.86rem;color:var(--app-muted)}
+.reports-field-label{display:block;font-size:.8rem;font-weight:600;color:var(--app-muted);margin-bottom:.25rem;float:none;width:auto;padding:0}
+.reports-range{border:0;margin:0 0 1rem;padding:0;min-width:0}
+.reports-range>legend{margin-bottom:.4rem}
+.reports-range-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.reports-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:1rem}
+.reports-stats-two{grid-template-columns:1fr 1fr}
+.reports-stat{border:1px solid var(--app-border);background:var(--app-surface-raised);border-radius:10px;padding:10px 12px}
+.reports-stat-label{display:block;font-size:.8rem;font-weight:500;color:var(--app-muted)}
+.reports-stat-num{display:block;font-size:1.5rem;font-weight:600;line-height:1.2;color:var(--app-text);font-variant-numeric:tabular-nums}
+.reports-stat-num.is-alert{color:#a1121f}
+:root[data-app-theme="dark"] .reports-stat-num.is-alert{color:#fecdd3}
+.reports-empty-cell{color:var(--app-muted);text-align:center;padding:1.5rem .5rem!important}
+.reports-page .table{--bs-table-bg:transparent;--bs-table-color:var(--app-text);color:var(--app-text)}
+.reports-page .table thead th{font-size:.8rem;font-weight:600;color:var(--app-muted);background:var(--app-surface-raised);border-bottom-color:var(--app-border)}
+.reports-page .table td{border-color:var(--app-border)}
+.reports-archive-tools{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1rem}
+.reports-scope-field{flex:0 0 12rem}
+.reports-search-field{flex:1 1 18rem}
+#reports-archive[aria-busy="true"] .reports-table-desktop{min-height:24rem}
+.reports-archive-table{table-layout:fixed}
+.reports-archive-table th:nth-child(1){width:9%}.reports-archive-table th:nth-child(2){width:17%}.reports-archive-table th:nth-child(3){width:15%}.reports-archive-table th:nth-child(4){width:14%}.reports-archive-table th:nth-child(5){width:13%}.reports-archive-table th:nth-child(6){width:32%}
+.archive-row td{padding-top:10px;padding-bottom:10px;vertical-align:top;white-space:normal;overflow-wrap:anywhere}
+.archive-context-primary{color:var(--app-text);font-weight:500;line-height:1.35}
+.archive-context-secondary{color:var(--app-muted);font-size:.8rem;line-height:1.35}
+.archive-file-entry{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-width:0}
+.archive-file-text{min-width:0}
+.archive-ref{font-family:var(--bs-font-monospace);font-variant-numeric:tabular-nums;letter-spacing:.02em;font-weight:600;color:var(--app-text)}
+.archive-file-kind{font-weight:600;color:var(--app-text)}
+.archive-file-meta{font-size:.8rem;color:var(--app-muted);line-height:1.35}
+.archive-file-actions{display:flex;gap:6px;flex:0 0 auto}
+.archive-file-actions .btn{font-weight:600;white-space:nowrap}
+.archive-file-locked{font-size:.8rem;font-weight:600;color:var(--app-muted);white-space:nowrap}
+.archive-pagination{display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid var(--app-border);margin-top:1rem;padding-top:1rem}
+.archive-page-summary{color:var(--app-muted);font-size:.86rem}
+.archive-page-controls{display:flex;align-items:center;gap:10px}
+.archive-page-controls .btn{display:inline-flex;align-items:center;gap:7px;min-height:40px;font-weight:600}
+.archive-page-indicator{min-width:100px;text-align:center;color:var(--app-text);font-weight:600}
+.reports-pair{display:grid;grid-template-columns:5fr 7fr;gap:1rem;margin-bottom:1rem}
+.report-table-list{display:grid;gap:8px}
+.product-row{border:1px solid var(--app-border);border-radius:10px;padding:10px;background:var(--app-surface)}
+.product-row .top{display:flex;justify-content:space-between;gap:10px}
+.product-row .name{font-weight:600;color:var(--app-text)}
+.product-row .meta{font-size:.82rem;color:var(--app-muted)}
+.product-row .count{font-weight:600;color:var(--app-text);font-size:1.1rem;font-variant-numeric:tabular-nums}
+/* minmax(0,1fr): the one-line filename must truncate, not widen the card past the screen. */
+.reports-mobile-list{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.reports-mobile-card{min-width:0;border:1px solid var(--app-border);border-radius:16px;padding:12px;background:var(--app-surface)}
+.reports-mobile-card-title{font-weight:600;color:var(--app-text)}
+.reports-mobile-card-meta{font-size:.84rem;color:var(--app-muted)}
+.reports-mobile-card .archive-file-entry{flex-direction:column;align-items:stretch;margin-top:10px;padding-top:10px;border-top:1px solid var(--app-border)}
+.reports-mobile-card .archive-file-actions{display:grid;grid-template-columns:1fr 1fr}
+.reports-mobile-card .archive-file-actions .btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+.reports-mobile-card .archive-file-name{font-size:.8rem;color:var(--app-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reports-empty{border:1px dashed var(--app-border);border-radius:16px;padding:18px;text-align:center;color:var(--app-muted);background:var(--app-surface-raised)}
+@media(max-width:991.98px){.reports-pair{grid-template-columns:1fr}}
+@media(max-width:768px){
+  .reports-card{padding:1rem;border-radius:14px}
+  .reports-table-desktop{display:none!important}
+  .reports-range-fields{grid-template-columns:1fr 1fr}
+  .reports-range-fields>div:last-child{grid-column:1/-1}
+  .reports-stats{grid-template-columns:1fr 1fr}
+  .reports-scope-field{flex:1 1 100%}
+  .reports-page .form-control,.reports-page .form-select,.reports-card-head .btn,.dash-page-actions .btn{min-height:44px}
+  .archive-pagination{align-items:stretch;flex-direction:column}
+  .archive-page-summary{text-align:center}
+  .archive-page-controls{display:grid;grid-template-columns:1fr auto 1fr}
+  .archive-page-controls .btn{justify-content:center;min-height:44px}
+}
 </style>
 
 <script>
@@ -263,49 +270,18 @@ function archivePreviewUrl(rawUrl){
   url.searchParams.set('scope', currentArchiveScope());
   return url.pathname + url.search;
 }
-function openTSRPreviewFromButton(button, event){
-  if(event){
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  const previewUrl = button?.dataset?.previewUrl || '';
-  const downloadUrl = button?.dataset?.downloadUrl || '';
-  const filename = button?.dataset?.filename || 'TSR file';
-
-  if(!previewUrl){
-    showStatus('warning', 'Preview link is not available for this TSR file.', 'fa-triangle-exclamation');
-    return false;
-  }
-
-  openTSRPreview(previewUrl, downloadUrl || previewUrl, filename);
-  return false;
-}
-function openTSRPreview(previewUrl, downloadUrl, filename){
-  const modalEl = document.getElementById('tsrPreviewModal');
-  const frame = document.getElementById('tsr-preview-frame');
-  const title = document.getElementById('tsr-preview-filename');
-  const openLink = document.getElementById('tsr-preview-open-link');
-  const downloadLink = document.getElementById('tsr-preview-download-link');
-  const safePreviewUrl = archivePreviewUrl(previewUrl);
-  const safeDownloadUrl = archiveDownloadUrl(downloadUrl);
-  if(title) title.textContent = filename || 'TSR file';
-  if(frame) frame.src = safePreviewUrl;
-  if(openLink) openLink.href = safePreviewUrl;
-  if(downloadLink) downloadLink.href = safeDownloadUrl;
-  if(modalEl && window.bootstrap){
-    bootstrap.Modal.getOrCreateInstance(modalEl).show();
-  }else{
-    window.open(safePreviewUrl, '_blank', 'noopener');
-  }
-}
 function isReportsAdminView(){ return document.querySelector('.reports-page')?.getAttribute('data-admin-view') === '1'; }
 function setText(id, value){ const el=document.getElementById(id); if(el) el.textContent=value; }
+function setBusy(id, busy){ document.getElementById(id)?.setAttribute('aria-busy', busy ? 'true' : 'false'); }
 function escapeHtml(value){ return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+// Only problems are announced here; loading and success show in the lists themselves.
 function showStatus(type, message, icon){
   const status = document.getElementById('reports-status');
   if(!status) return;
-  status.className = `alert alert-${type} border-0 shadow-sm mb-3`;
-  status.innerHTML = `<i class="fa-solid ${icon} me-1"></i>${escapeHtml(message)}`;
+  if(type === 'success' || type === 'info'){ status.hidden = true; return; }
+  status.className = `alert alert-${type} mb-3`;
+  status.innerHTML = `<i class="fa-solid ${icon} me-1" aria-hidden="true"></i>${escapeHtml(message)}`;
+  status.hidden = false;
 }
 function refreshReportsPage(){
   setDefaultReportDates();
@@ -321,12 +297,15 @@ function refreshReportsPage(){
 async function loadReportsSummary(updateStatus=true){
   setDefaultReportDates();
   if(updateStatus) showStatus('info','Loading reports...','fa-spinner fa-spin');
+  setBusy('reports-stats', true);
   const res = await fetch(`/get_reports_summary?${reportParams().toString()}`);
   const data = await res.json().catch(() => ({}));
   if(!res.ok || data.status !== 'success') throw new Error(data.message || 'Unable to load reports summary.');
+  const missing = Number(data.tsr?.missing ?? 0);
   setText('stat-service', data.tsr?.service_schedules ?? 0);
   setText('stat-tsr', data.tsr?.attached ?? 0);
-  setText('stat-missing', data.tsr?.missing ?? 0);
+  setText('stat-missing', missing);
+  document.getElementById('stat-missing')?.classList.toggle('is-alert', missing > 0);
   setText('stat-email', data.email?.sent_count ?? 0);
   setText('email-count-inline', data.email?.sent_count ?? 0);
   setText('prod-total', data.product?.total ?? 0);
@@ -335,64 +314,74 @@ async function loadReportsSummary(updateStatus=true){
   renderMissingTable(data.tsr?.missing_rows || []);
   renderProductList(data.product?.high_maintenance || []);
   renderEmailTable(data.email?.recent || []);
+  setBusy('reports-stats', false);
   if(updateStatus) showStatus('success','Reports loaded.','fa-circle-check');
 }
 function renderMissingTable(rows){
   const body = document.getElementById('missing-tsr-table');
   const mobile = document.getElementById('missing-tsr-mobile');
   if(!rows || !rows.length){
-    if(body) body.innerHTML = '<tr><td colspan="5" class="text-muted text-center py-4">No missing TSRs in this range.</td></tr>';
+    if(body) body.innerHTML = '<tr><td colspan="5" class="reports-empty-cell">No missing TSRs in this range.</td></tr>';
     if(mobile) mobile.innerHTML = '<div class="reports-empty">No missing TSRs in this range.</div>';
     return;
   }
   const sliced = rows.slice(0,10);
-  if(body) body.innerHTML = sliced.map(r => `<tr><td>${escapeHtml(r.date)}</td><td class="fw-bold">${escapeHtml(r.client)}</td><td>${escapeHtml(r.product)}<div class="small text-muted">${escapeHtml(r.serial)}</div></td><td>${escapeHtml(r.task)}</td><td>${escapeHtml(r.engineers)}</td></tr>`).join('');
+  if(body) body.innerHTML = sliced.map(r => `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.client)}</td><td>${escapeHtml(r.product)}<div class="archive-context-secondary">${escapeHtml(r.serial)}</div></td><td>${escapeHtml(r.task)}</td><td>${escapeHtml(r.engineers)}</td></tr>`).join('');
   if(mobile) mobile.innerHTML = sliced.map(r => `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(r.client)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.date)} · ${escapeHtml(r.task)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.product)} ${r.serial ? '('+escapeHtml(r.serial)+')' : ''}</div><div class="reports-mobile-card-meta">${escapeHtml(r.engineers)}</div></div>`).join('');
 }
 function renderProductList(rows){
   const el = document.getElementById('high-maintenance-list');
   if(!el) return;
-  if(!rows || !rows.length){ el.innerHTML = '<div class="text-muted text-center py-4">No product service data in this range.</div>'; return; }
-  el.innerHTML = rows.slice(0,6).map(r => `<div class="product-row"><div class="top"><div><div class="name">${escapeHtml(r.product)}</div><div class="meta">${escapeHtml(r.client)} · ${escapeHtml(r.serial)}</div><div class="meta">Last service: ${escapeHtml(r.last_service || 'N/A')}</div></div><div class="count">${r.count}</div></div></div>`).join('');
+  if(!rows || !rows.length){ el.innerHTML = '<div class="reports-empty">No product service in this range.</div>'; return; }
+  el.innerHTML = rows.slice(0,6).map(r => `<div class="product-row"><div class="top"><div><div class="name">${escapeHtml(r.product)}</div><div class="meta">${escapeHtml(r.client)} · ${escapeHtml(r.serial)}</div><div class="meta">Last service: ${escapeHtml(r.last_service || 'N/A')}</div></div><div class="count" aria-label="${Number(r.count) || 0} services">${Number(r.count) || 0}</div></div></div>`).join('');
 }
 function renderEmailTable(rows){
   const body = document.getElementById('email-report-table');
   const mobile = document.getElementById('email-report-mobile');
   if(!rows || !rows.length){
-    if(body) body.innerHTML = '<tr><td colspan="3" class="text-muted text-center py-4">No TSR emails sent in this range.</td></tr>';
+    if(body) body.innerHTML = '<tr><td colspan="3" class="reports-empty-cell">No TSR emails sent in this range.</td></tr>';
     if(mobile) mobile.innerHTML = '<div class="reports-empty">No TSR emails sent in this range.</div>';
     return;
   }
   const sliced = rows.slice(0,8);
-  if(body) body.innerHTML = sliced.map(r => `<tr><td>${escapeHtml(r.timestamp)}</td><td class="fw-bold">${escapeHtml(r.user)}</td><td>${escapeHtml(r.action)}</td></tr>`).join('');
+  if(body) body.innerHTML = sliced.map(r => `<tr><td>${escapeHtml(r.timestamp)}</td><td>${escapeHtml(r.user)}</td><td>${escapeHtml(r.action)}</td></tr>`).join('');
   if(mobile) mobile.innerHTML = sliced.map(r => `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(r.user)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.timestamp)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.action)}</div></div>`).join('');
 }
 function formatArchiveFileSize(bytes){
+  if(bytes === null || bytes === undefined || bytes === '') return '';
   const value = Number(bytes);
   if(!Number.isFinite(value) || value < 0) return '';
   if(value < 1024) return `${value} B`;
   if(value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10240 ? 1 : 0)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
+// One file: TSR number (or the file's kind) first, then kind · type · size · saved date.
+// The long generated filename is the hover title and part of each link's name.
 function archiveFileMarkup(row, mobile=false){
+  const name = row.name || 'TSR file';
   const sizeLabel = formatArchiveFileSize(row.size);
   const typeLabel = String(row.file_type || 'file').toUpperCase();
   const locked = Boolean(row.locked || (row.is_no_signature && !row.can_preview));
+  const source = row.source || 'TSR';
+  const heading = row.tsr_number
+    ? `<span class="archive-ref">${escapeHtml(row.tsr_number)}</span>`
+    : `<span class="archive-file-kind">${escapeHtml(source)}</span>`;
   const meta = [
-    `<span class="archive-file-meta-badge"><i class="fa-solid fa-file-pdf"></i>${escapeHtml(row.source || 'TSR')}</span>`,
-    row.tsr_number ? `<span class="archive-file-meta-badge"><i class="fa-solid fa-hashtag"></i>${escapeHtml(row.tsr_number)}</span>` : '',
-    locked ? '<span class="archive-file-meta-badge"><i class="fa-solid fa-lock"></i>Admin download only</span>' : '',
-    `<span>${escapeHtml(typeLabel)}</span>`,
-    sizeLabel ? `<span>${escapeHtml(sizeLabel)}</span>` : '',
-    row.uploaded_at ? `<span>Saved ${escapeHtml(row.uploaded_at)}</span>` : ''
-  ].filter(Boolean).join('');
+    row.tsr_number ? source : '',
+    typeLabel,
+    sizeLabel,
+    row.uploaded_at ? `Saved ${row.uploaded_at}` : ''
+  ].filter(Boolean).map(escapeHtml).join(' · ');
   const actions = locked
-    ? '<span class="archive-file-locked"><i class="fa-solid fa-lock me-1"></i>Admin download only</span>'
-    : `<a class="archive-preview-btn" href="${escapeHtml(archivePreviewUrl(row.preview_url || row.download_url))}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i>Preview</a>
-      <a class="archive-file-link archive-download-btn" href="${escapeHtml(archiveDownloadUrl(row.download_url))}"><i class="fa-solid fa-file-arrow-down"></i>Download</a>`;
-  return `<div class="archive-file-entry${mobile ? ' reports-mobile-card-file' : ''}">
-    <div class="archive-file-name">${escapeHtml(row.name || 'TSR file')}</div>
-    <div class="archive-file-meta">${meta}</div>
+    ? '<span class="archive-file-locked"><i class="fa-solid fa-lock me-1" aria-hidden="true"></i>Admin download only</span>'
+    : `<a class="btn btn-sm btn-outline-primary archive-preview-btn" href="${escapeHtml(archivePreviewUrl(row.preview_url || row.download_url))}" target="_blank" rel="noopener" aria-label="Preview ${escapeHtml(name)}">Preview</a>
+      <a class="btn btn-sm btn-primary archive-download-btn" href="${escapeHtml(archiveDownloadUrl(row.download_url))}" aria-label="Download ${escapeHtml(name)}">Download</a>`;
+  return `<div class="archive-file-entry" title="${escapeHtml(name)}">
+    <div class="archive-file-text">
+      <div>${heading}</div>
+      <div class="archive-file-meta">${meta}</div>
+      ${mobile ? `<div class="archive-file-name">${escapeHtml(name)}</div>` : ''}
+    </div>
     <div class="archive-file-actions">${actions}</div>
   </div>`;
 }
@@ -417,13 +406,12 @@ function renderArchivePagination(data){
 async function loadTSRArchive(page=archiveCurrentPage){
   const body = document.getElementById('tsr-archive-table');
   const mobile = document.getElementById('tsr-archive-mobile');
-  const refreshButton = document.getElementById('archive-refresh-btn');
   if(archiveRequestController) archiveRequestController.abort();
   const requestController = new AbortController();
   archiveRequestController = requestController;
-  if(body) body.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading TSR archive...</td></tr>';
-  if(mobile) mobile.innerHTML = '<div class="reports-empty"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading TSR archive...</div>';
-  if(refreshButton) refreshButton.disabled = true;
+  setBusy('reports-archive', true);
+  if(body) body.innerHTML = '<tr><td colspan="6" class="reports-empty-cell"><i class="fa-solid fa-spinner fa-spin me-1" aria-hidden="true"></i>Loading TSR files…</td></tr>';
+  if(mobile) mobile.innerHTML = '<div class="reports-empty"><i class="fa-solid fa-spinner fa-spin me-1" aria-hidden="true"></i>Loading TSR files…</div>';
   try{
     const res = await fetch(`/get_tsr_archive?${archiveParams(page).toString()}`, {signal: requestController.signal});
     const data = await res.json().catch(() => ({}));
@@ -431,8 +419,8 @@ async function loadTSRArchive(page=archiveCurrentPage){
     setText('archive-count', data.total ?? data.count ?? 0);
     renderArchivePagination(data);
   if(!data.rows || !data.rows.length){
-    if(body) body.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-4">No TSR files found.</td></tr>';
-    if(mobile) mobile.innerHTML = '<div class="reports-empty">No TSR files found. Try a different client, filename, serial number, task, or engineer.</div>';
+    if(body) body.innerHTML = '<tr><td colspan="6" class="reports-empty-cell">No TSR files found. Try a different client, product, serial number, task or engineer.</td></tr>';
+    if(mobile) mobile.innerHTML = '<div class="reports-empty">No TSR files found. Try a different client, product, serial number, task or engineer.</div>';
     return data;
   }
   if(body) body.innerHTML = data.rows.map(row => `<tr class="archive-row">
@@ -447,19 +435,19 @@ async function loadTSRArchive(page=archiveCurrentPage){
     <div class="reports-mobile-card-title">${escapeHtml(row.client)}</div>
     <div class="reports-mobile-card-meta">${escapeHtml(row.date)} &middot; ${escapeHtml(row.task)}</div>
     <div class="reports-mobile-card-meta">${escapeHtml(row.product)}${row.serial ? ' ('+escapeHtml(row.serial)+')' : ''}</div>
-    <div class="reports-mobile-card-meta"><i class="fa-solid fa-user-gear me-1"></i>${escapeHtml(row.engineers)}</div>
-    <div class="reports-mobile-card-files">${archiveFileMarkup(row, true)}</div>
+    <div class="reports-mobile-card-meta"><i class="fa-solid fa-user-gear me-1" aria-hidden="true"></i>${escapeHtml(row.engineers)}</div>
+    ${archiveFileMarkup(row, true)}
   </article>`).join('');
   return data;
   }catch(error){
     if(error?.name === 'AbortError') return null;
-    if(body) body.innerHTML = `<tr><td colspan="6" class="text-danger text-center py-4">${escapeHtml(error.message || 'Unable to load TSR archive.')}</td></tr>`;
+    if(body) body.innerHTML = `<tr><td colspan="6" class="reports-empty-cell text-danger">${escapeHtml(error.message || 'Unable to load TSR archive.')}</td></tr>`;
     if(mobile) mobile.innerHTML = `<div class="reports-empty text-danger">${escapeHtml(error.message || 'Unable to load TSR archive.')}</div>`;
     throw error;
   }finally{
     if(archiveRequestController === requestController){
       archiveRequestController = null;
-      if(refreshButton) refreshButton.disabled = false;
+      setBusy('reports-archive', false);
     }
   }
 }
@@ -469,12 +457,6 @@ function exportReportsSummary(){ setDefaultReportDates(); window.location.href =
 // Preview opens the authenticated preview route in a new tab; Download calls
 // the authenticated download route directly. This avoids accidental Reports reloads.
 
-document.addEventListener('hidden.bs.modal', event => {
-  if(event.target && event.target.id === 'tsrPreviewModal'){
-    const frame = document.getElementById('tsr-preview-frame');
-    if(frame) frame.src = 'about:blank';
-  }
-});
 document.addEventListener('DOMContentLoaded', () => {
   setDefaultReportDates();
   ['reports-start-date','reports-end-date'].forEach(id => {
@@ -509,9 +491,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('archive-next-page')?.addEventListener('click', () => {
     if(archiveCurrentPage < archiveTotalPages) loadTSRArchive(archiveCurrentPage + 1).catch(error => showStatus('danger', error.message || 'Unable to load the next page.', 'fa-triangle-exclamation'));
-  });
-  document.getElementById('archive-refresh-btn')?.addEventListener('click', () => {
-    loadTSRArchive(archiveCurrentPage).catch(error => showStatus('danger', error.message || 'Unable to refresh the TSR archive.', 'fa-triangle-exclamation'));
   });
   refreshReportsPage();
 });

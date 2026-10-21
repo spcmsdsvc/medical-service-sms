@@ -3969,6 +3969,11 @@ _vieworks_bsid_counter_ready = False
 _product_vieworks_link_table_ready = False
 _calibration_report_conversion_table_ready = False
 _calibration_report_conversion_worker = None
+_runtime_create_all_ready = False
+_runtime_schema_helpers_ready = False
+_reimbursement_receipt_columns_ready = False
+_calibration_conversion_wake_at = float('-inf')
+CALIBRATION_CONVERSION_WAKE_SECONDS = 60
 _calibration_report_conversion_worker_lock = threading.Lock()
 _calibration_report_conversion_worker_wakeup = threading.Event()
 _calibration_report_conversion_backfill_checked = False
@@ -6972,6 +6977,9 @@ def sync_changelog_release_manifest():
 
 def ensure_reimbursement_receipt_columns():
     """Keep older live reimbursement receipt tables compatible with upload code."""
+    global _reimbursement_receipt_columns_ready
+    if _reimbursement_receipt_columns_ready:
+        return
     try:
         with db.engine.begin() as connection:
             table_exists = connection.exec_driver_sql(
@@ -7005,6 +7013,7 @@ def ensure_reimbursement_receipt_columns():
                 "ON reimbursement_receipt (reimbursement_id, content_sha256) "
                 "WHERE content_sha256 IS NOT NULL"
             )
+        _reimbursement_receipt_columns_ready = True
     except Exception as receipt_column_error:
         print(f"[ReimbursementReceipt] Unable to ensure receipt columns: {receipt_column_error}", flush=True)
         raise
@@ -20491,11 +20500,18 @@ def calibration_report_pdf_file_for_source(source_file_id, require_ready=True):
     return pdf_file
 
 
-def is_system_generated_calibration_report_pdf_file(file_rec):
-    """Identify a generated Calibration Report PDF by durable source linkage."""
+def is_system_generated_calibration_report_pdf_file(file_rec, conversions_by_pdf_id=None):
+    """Identify a generated Calibration Report PDF by durable source linkage.
+
+    `conversions_by_pdf_id` is an optional {pdf_shift_file_id: job} map a list caller
+    loaded in one query.
+    """
     if not file_rec or not calibration_report_filename_is_pdf(get_shift_file_display_name(file_rec)):
         return False
-    job = calibration_report_conversion_for_pdf(getattr(file_rec, 'id', None))
+    if conversions_by_pdf_id is not None:
+        job = conversions_by_pdf_id.get(clean_int(getattr(file_rec, 'id', None)))
+    else:
+        job = calibration_report_conversion_for_pdf(getattr(file_rec, 'id', None))
     if not job or job.state != 'ready' or clean_int(job.pdf_shift_file_id) != clean_int(file_rec.id):
         return False
     source_file = db.session.get(ShiftFile, job.source_shift_file_id)
@@ -28411,8 +28427,8 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v324-liquidation-scan-fixes.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
-    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v339-approval-center-layout.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v340-page-sub-contrast';
+    # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v340-page-sub-contrast.
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v341-reports-speed';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28997,7 +29013,7 @@ def changelog_user_branch(user=None):
 
 
 def changelog_visible_items(release, user=None, include_unpublished=False,
-                            audiences=None, branch_code=None):
+                            audiences=None, branch_code=None, viewer_branches=None):
     """Items one viewer can see.
 
     `audiences` and `branch_code` are overridable so admins can preview exactly what a
@@ -29007,7 +29023,7 @@ def changelog_visible_items(release, user=None, include_unpublished=False,
     explicit_branch = (clean_str(branch_code) or '').strip().upper()
     if branch_code is not None:
         viewer_branches = {explicit_branch} if explicit_branch else set()
-    else:
+    elif viewer_branches is None:
         viewer_branches = changelog_user_branch_codes(user)
 
     items = sorted(release.items or [], key=lambda item: (item.sort_order or 100, item.id or 0))
@@ -29076,17 +29092,26 @@ def changelog_acknowledgement_for(release_id, user_id):
 
 
 def changelog_release_to_dict(release, user=None, admin_view=False,
-                              audiences=None, branch_code=None):
+                              audiences=None, branch_code=None, acknowledgements=None,
+                              viewer_audiences=None, viewer_branches=None):
+    """List callers pass `acknowledgements` ({release_id: ack}) and the viewer's audiences and
+    branches, worked out once, so serializing a release costs no queries of its own."""
     target = user or current_user
     previewing = audiences is not None or branch_code is not None
 
     if admin_view and not previewing:
         items = sorted(release.items or [], key=lambda item: (item.sort_order or 100, item.id or 0))
     else:
-        items = changelog_visible_items(release, target, audiences=audiences, branch_code=branch_code)
+        items = changelog_visible_items(
+            release, target, audiences=audiences if audiences is not None else viewer_audiences,
+            branch_code=branch_code, viewer_branches=viewer_branches
+        )
 
     content_hash = changelog_visible_content_hash(release, items) if items else ''
-    acknowledgement = changelog_acknowledgement_for(release.id, getattr(target, 'id', None))
+    if acknowledgements is not None:
+        acknowledgement = acknowledgements.get(release.id)
+    else:
+        acknowledgement = changelog_acknowledgement_for(release.id, getattr(target, 'id', None))
     is_acknowledged = bool(content_hash and acknowledgement and acknowledgement.content_hash == content_hash)
     is_live = changelog_release_is_live(release)
     publish_at = getattr(release, 'publish_at', None)
@@ -29126,12 +29151,31 @@ def changelog_release_to_dict(release, user=None, admin_view=False,
 
 
 def get_visible_changelog_release_dicts(user=None, admin_view=False,
-                                        audiences=None, branch_code=None):
+                                        audiences=None, branch_code=None, since=None):
+    """`since` (a date) limits the list to releases on or after it, filtered in SQL."""
     target = user or current_user
-    query = ChangelogRelease.query
+    # Items and this viewer's acknowledgements load in one query each; serializing
+    # releases one by one cost two queries per release (570 for the shell's unread dot).
+    query = ChangelogRelease.query.options(selectinload(ChangelogRelease.items))
     if not admin_view:
         query = query.filter(ChangelogRelease.is_published.is_(True))
+    if since is not None:
+        query = query.filter(ChangelogRelease.release_date >= since)
     releases = query.order_by(ChangelogRelease.release_date.desc(), ChangelogRelease.id.desc()).all()
+    target_id = clean_int(getattr(target, 'id', None))
+    release_ids = [release.id for release in releases]
+    acknowledgements = {}
+    if target_id and release_ids:
+        acknowledgements = {
+            ack.release_id: ack
+            for ack in ChangelogAcknowledgement.query.filter(
+                ChangelogAcknowledgement.user_id == target_id,
+                ChangelogAcknowledgement.release_id.in_(release_ids),
+            ).all()
+        }
+    # A user without an engineer profile re-queried it for every release.
+    viewer_audiences = changelog_user_audiences(target) if audiences is None else None
+    viewer_branches = changelog_user_branch_codes(target) if branch_code is None else None
 
     result = []
     for release in releases:
@@ -29141,7 +29185,9 @@ def get_visible_changelog_release_dicts(user=None, admin_view=False,
             continue
         serialized = changelog_release_to_dict(
             release, target, admin_view=admin_view,
-            audiences=audiences, branch_code=branch_code
+            audiences=audiences, branch_code=branch_code,
+            acknowledgements=acknowledgements,
+            viewer_audiences=viewer_audiences, viewer_branches=viewer_branches
         )
         if serialized['items'] or admin_view:
             result.append(serialized)
@@ -29322,10 +29368,11 @@ def get_nav_pending_summary():
 @login_required
 def get_changelog_unread_summary():
     ensure_changelog_tables()
-    releases = get_visible_changelog_release_dicts(current_user, admin_view=False)
     # Only recent releases light the shell dot, so an old unread backlog cannot keep
     # it on forever. The What's New page still lists every release's read state.
-    cutoff = (get_manila_time().date() - timedelta(days=CHANGELOG_UNREAD_DOT_DAYS)).isoformat()
+    cutoff_date = get_manila_time().date() - timedelta(days=CHANGELOG_UNREAD_DOT_DAYS)
+    releases = get_visible_changelog_release_dicts(current_user, admin_view=False, since=cutoff_date)
+    cutoff = cutoff_date.isoformat()
     unread = [
         release for release in releases
         if release.get('is_unread') and (release.get('release_date') or '') >= cutoff
@@ -54836,8 +54883,17 @@ def legacy_tsr_replacement_text_is_complete(extracted_text):
     )
 
 
-def get_legacy_incomplete_tsr_file_policy(shift):
+_ARCHIVE_UNSET = object()
+# Stored report files never change once saved, so whether one reads as a complete TSR
+# is worked out once per process instead of re-reading the PDF on every archive load.
+_legacy_replacement_complete_cache = {}
+
+
+def get_legacy_incomplete_tsr_file_policy(shift, submission=_ARCHIVE_UNSET):
     """Identify a blank legacy primary TSR and its complete uploaded replacement.
+
+    `submission` may be passed by a caller that already loaded the shift's latest
+    online TSR submission (None when the shift has none).
 
     Early offline queues could save an image-only blank frontend PDF as the
     generated primary while also uploading the engineer's completed TSR. Keep
@@ -54854,7 +54910,8 @@ def get_legacy_incomplete_tsr_file_policy(shift):
 
     try:
         ensure_online_tsr_submission_table()
-        submission = get_latest_online_tsr_submission_for_shift(shift.id)
+        if submission is _ARCHIVE_UNSET:
+            submission = get_latest_online_tsr_submission_for_shift(shift.id)
         payload = parse_online_tsr_payload_json(submission)
         if not submission or clean_str(payload.get('_tsr_form_version')):
             return policy
@@ -54878,6 +54935,11 @@ def get_legacy_incomplete_tsr_file_policy(shift):
             if not disk_name or not clean_str(display_name or disk_name).lower().endswith('.pdf'):
                 continue
 
+            cached_complete = _legacy_replacement_complete_cache.get(disk_name)
+            if cached_complete is not None:
+                if cached_complete:
+                    policy['replacement_file_ids'].add(extra_file_id)
+                continue
             local_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
             readable_path = None
             try:
@@ -54886,7 +54948,9 @@ def get_legacy_incomplete_tsr_file_policy(shift):
                     readable_path,
                     display_name or disk_name,
                 )
-                if legacy_tsr_replacement_text_is_complete(extracted_text):
+                is_complete = bool(legacy_tsr_replacement_text_is_complete(extracted_text))
+                _legacy_replacement_complete_cache[disk_name] = is_complete
+                if is_complete:
                     policy['replacement_file_ids'].add(extra_file_id)
             except Exception as read_error:
                 print(
@@ -54989,6 +55053,11 @@ def tsr_archive_shift_to_dict(shift):
     }
 
 
+# Each archive page asked the bucket for up to ten sizes, one round trip each. A stored
+# object never changes under its key (a re-upload gets a new disk name), so remember them.
+_tsr_archive_bucket_size_cache = {}
+
+
 def tsr_archive_file_size(file_rec):
     """Return one archive file size without downloading the object body."""
     disk_name = get_shift_file_disk_name(file_rec)
@@ -55000,8 +55069,14 @@ def tsr_archive_file_size(file_rec):
         if os.path.isfile(local_path):
             return os.path.getsize(local_path)
         if file_storage.bucket_enabled and file_storage.bucket_configured:
-            object_info = file_storage.head(managed_storage_key(STORAGE_PREFIX_REPORTS, disk_name))
-            return object_info.size if object_info else None
+            storage_key = managed_storage_key(STORAGE_PREFIX_REPORTS, disk_name)
+            if storage_key in _tsr_archive_bucket_size_cache:
+                return _tsr_archive_bucket_size_cache[storage_key]
+            object_info = file_storage.head(storage_key)
+            size = object_info.size if object_info else None
+            if size is not None:
+                _tsr_archive_bucket_size_cache[storage_key] = size
+            return size
     except Exception as size_error:
         print(
             f"[TSR-ARCHIVE] Unable to read size for file #{getattr(file_rec, 'id', None)}: {size_error}",
@@ -55045,6 +55120,62 @@ def tsr_archive_assignment_filter(engineer_ids):
         Shift.engineer_id.in_(engineer_ids),
         Shift.override_engineer_id.in_(engineer_ids),
     )
+
+
+def tsr_archive_latest_submissions(shift_ids):
+    """Latest online TSR submission per shift in one query.
+
+    Same choice as get_latest_online_tsr_submission_for_shift: the newest `is_latest`
+    revision, else the newest submission of any kind.
+    """
+    shift_ids = [clean_int(shift_id) for shift_id in shift_ids if clean_int(shift_id)]
+    if not shift_ids:
+        return {}
+    ensure_online_tsr_submission_table()
+    rows = OnlineTsrSubmission.query.filter(
+        OnlineTsrSubmission.shift_id.in_(shift_ids)
+    ).all()
+
+    def newest(candidates, use_revision):
+        return max(candidates, key=lambda row: (
+            (row.revision_no or 0) if use_revision else 0,
+            row.created_at or datetime.min,
+            row.id or 0,
+        ))
+
+    by_shift = {}
+    for row in rows:
+        by_shift.setdefault(row.shift_id, []).append(row)
+    latest = {}
+    for shift_id, candidates in by_shift.items():
+        flagged = [row for row in candidates if row.is_latest]
+        latest[shift_id] = newest(flagged, True) if flagged else newest(candidates, False)
+    return latest
+
+
+def tsr_archive_conversions_by_pdf(file_records):
+    """Calibration Report conversion jobs keyed by their PDF file id, in one query.
+
+    Returns None when the lookup fails, so callers fall back to one lookup per file.
+    """
+    pdf_ids = [
+        clean_int(file_rec.id) for file_rec in file_records
+        if clean_int(getattr(file_rec, 'id', None)) and
+        calibration_report_filename_is_pdf(get_shift_file_display_name(file_rec))
+    ]
+    if not pdf_ids:
+        return {}
+    try:
+        ensure_calibration_report_conversion_table()
+        return {
+            clean_int(job.pdf_shift_file_id): job
+            for job in CalibrationReportConversion.query.filter(
+                CalibrationReportConversion.pdf_shift_file_id.in_(pdf_ids)
+            ).all()
+        }
+    except Exception as conversion_lookup_error:
+        print(f"[CalibrationReport] Archive PDF linkage lookup skipped: {conversion_lookup_error}", flush=True)
+        return None
 
 
 @app.route('/get_tsr_archive')
@@ -55104,6 +55235,8 @@ def get_tsr_archive():
 
     shift_ids = {file_rec.shift_id for file_rec in file_records if file_rec.shift_id}
     engineer_name_map = tsr_archive_engineer_names(shift_ids)
+    latest_submission_by_shift = tsr_archive_latest_submissions(shift_ids)
+    conversions_by_pdf_id = tsr_archive_conversions_by_pdf(file_records)
     legacy_policy_map = {}
     rows = []
     query_text = search.casefold()
@@ -55114,7 +55247,9 @@ def get_tsr_archive():
             continue
 
         if shift.id not in legacy_policy_map:
-            legacy_policy_map[shift.id] = get_legacy_incomplete_tsr_file_policy(shift)
+            legacy_policy_map[shift.id] = get_legacy_incomplete_tsr_file_policy(
+                shift, submission=latest_submission_by_shift.get(shift.id)
+            )
         legacy_policy = legacy_policy_map[shift.id]
         file_id = clean_int(file_rec.id)
         if file_id in (legacy_policy.get('suppressed_primary_ids') or set()):
@@ -55124,7 +55259,9 @@ def get_tsr_archive():
 
         submission = primary_submission_files.get(file_id)
         certificate_approval = certificate_approval_map.get(file_id)
-        is_calibration_report = is_system_generated_calibration_report_pdf_file(file_rec)
+        is_calibration_report = is_system_generated_calibration_report_pdf_file(
+            file_rec, conversions_by_pdf_id=conversions_by_pdf_id
+        )
         is_no_signature = bool(
             certificate_approval and certificate_approval.no_signature_shift_file_id == file_id
         )
@@ -55735,7 +55872,6 @@ def get_reports_summary():
         return denied()
 
     start_date, end_date = analytics_date_bounds()
-    today = get_manila_time().date()
 
     shifts = analytics_scoped_shifts(start_date, end_date).options(
         selectinload(Shift.files)
@@ -55764,28 +55900,9 @@ def get_reports_summary():
             'engineers': ', '.join([eng.name for eng in engineers]) or 'N/A'
         })
 
-    tsr_by_client = {}
-    tsr_by_engineer = {}
-    tsr_by_product = {}
-
-    for shift in tsr_attached:
-        client_name = shift.client.name if shift.client else 'N/A'
-        equipment = resolve_shift_equipment(shift)
-        product_name = getattr(equipment, 'name', None) or 'N/A'
-        product_serial = getattr(equipment, 'serial_number', None) or ''
-        product_label = product_name if not product_serial else f"{product_name} ({product_serial})"
-        tsr_by_client[client_name] = tsr_by_client.get(client_name, 0) + 1
-        tsr_by_product[product_label] = tsr_by_product.get(product_label, 0) + 1
-        for eng in get_shift_engineer_records(shift):
-            tsr_by_engineer[eng.name] = tsr_by_engineer.get(eng.name, 0) + 1
-
-    def top_items(counter, limit=8):
-        return [
-            {'label': label, 'count': count}
-            for label, count in sorted(counter.items(), key=lambda item: (-item[1], item[0]))[:limit]
-        ]
-
-    all_products = Product.query.options(joinedload(Product.owner)).all()
+    # Only products serviced in the range can be "high maintenance", so only those load.
+    # The page reads total, repeat count and the top rows; the warranty and breakdown
+    # counts this used to compute had no reader and cost a query per product and shift.
     product_service_counts = {}
     product_last_service = {}
 
@@ -55797,8 +55914,11 @@ def get_reports_summary():
         if not current_last or shift.start_time > current_last:
             product_last_service[shift.product_id] = shift.start_time
 
+    serviced_products = Product.query.options(joinedload(Product.owner)).filter(
+        Product.serial_number.in_(list(product_service_counts))
+    ).all() if product_service_counts else []
     high_maintenance = []
-    for product in all_products:
+    for product in serviced_products:
         count = product_service_counts.get(product.serial_number, 0)
         if count <= 0:
             continue
@@ -55812,34 +55932,6 @@ def get_reports_summary():
     high_maintenance.sort(key=lambda row: (-row['count'], row['client'], row['product']))
 
     repeat_service_products = [row for row in high_maintenance if row['count'] >= 2]
-
-    warranty_active = 0
-    warranty_expired = 0
-    warranty_expiring = 0
-    expired_under_contract = 0
-    expired_no_contract = 0
-    no_expiry_under_contract = 0
-    no_expiry_no_contract = 0
-    products_without_service = 0
-
-    for product in all_products:
-        if product.end_warranty_date:
-            if product.end_warranty_date >= today:
-                warranty_active += 1
-                if product.end_warranty_date <= today + timedelta(days=90):
-                    warranty_expiring += 1
-            else:
-                warranty_expired += 1
-                if product.under_contract:
-                    expired_under_contract += 1
-                else:
-                    expired_no_contract += 1
-        elif product.under_contract:
-            no_expiry_under_contract += 1
-        else:
-            no_expiry_no_contract += 1
-        if not product.shifts:
-            products_without_service += 1
 
     email_query = ActivityLog.query.filter(
         func.date(ActivityLog.timestamp) >= start_date,
@@ -55870,32 +55962,17 @@ def get_reports_summary():
         'branch_label': analytics_branch_label(analytics_requested_branch()),
         'tsr': {
             'service_schedules': len(service_shifts),
-            'completed_service_schedules': len(completed_service_shifts),
             'attached': len(tsr_attached),
             'missing': len(missing_tsr),
-            'unsigned': 0,
-            'pending_sync': 0,
-            'by_client': top_items(tsr_by_client),
-            'by_engineer': top_items(tsr_by_engineer),
-            'by_product': top_items(tsr_by_product),
             'missing_rows': missing_rows
         },
         'product': {
-            'total': len(all_products),
-            'warranty_active': warranty_active,
-            'warranty_expired': warranty_expired,
-            'warranty_expiring': warranty_expiring,
-            'expired_under_contract': expired_under_contract,
-            'expired_no_contract': expired_no_contract,
-            'no_expiry_under_contract': no_expiry_under_contract,
-            'no_expiry_no_contract': no_expiry_no_contract,
-            'without_service': products_without_service,
+            'total': Product.query.count(),
             'repeat_service_count': len(repeat_service_products),
             'high_maintenance': high_maintenance[:15]
         },
         'email': {
             'sent_count': email_sent_count,
-            'failed_count': 0,
             'recent': recent_emails
         }
     })
@@ -67713,13 +67790,23 @@ def ensure_runtime_sqlite_migrations_before_request():
     if request.endpoint == 'static':
         return
 
-    # Safe on existing SQLite databases; creates tables only when missing.
-    db.create_all()
+    global _runtime_create_all_ready, _runtime_schema_helpers_ready, _calibration_conversion_wake_at
+
+    # Safe on existing SQLite databases; creates tables only when missing. Once per
+    # process: it cost 65 PRAGMA queries on every request.
+    if not _runtime_create_all_ready:
+        db.create_all()
+        _runtime_create_all_ready = True
     ensure_client_group_column()
-    try:
-        schedule_calibration_report_conversion()
-    except Exception as conversion_worker_error:
-        print(f'[CalibrationReport] Startup conversion wake skipped: {conversion_worker_error}', flush=True)
+    # Explicit schedule calls (a new report upload) still wake the worker at once; this
+    # per-request wake only picks up retries, so once a minute is enough.
+    now_monotonic = time.monotonic()
+    if now_monotonic - _calibration_conversion_wake_at >= CALIBRATION_CONVERSION_WAKE_SECONDS:
+        _calibration_conversion_wake_at = now_monotonic
+        try:
+            schedule_calibration_report_conversion()
+        except Exception as conversion_worker_error:
+            print(f'[CalibrationReport] Startup conversion wake skipped: {conversion_worker_error}', flush=True)
     ensure_user_admin_capability_columns()
     run_role_migrations()
     ensure_purchase_order_schema()
@@ -67738,8 +67825,12 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_shift_product_identity_snapshot_columns()
     ensure_inventory_pm_visit_table()
     ensure_calibration_certificate_approval_table()
-    ensure_schedule_delete_indexes()
-    ensure_approval_routing_schema()
+    if not _runtime_schema_helpers_ready:
+        # These two have no ready flag of their own (routes and tests call them
+        # directly), so the hook runs them once per process instead of every request.
+        ensure_schedule_delete_indexes()
+        ensure_approval_routing_schema()
+        _runtime_schema_helpers_ready = True
     ensure_tsr_draft_schema()
     ensure_reimbursement_approval_columns()
     ensure_reimbursement_receipt_columns()

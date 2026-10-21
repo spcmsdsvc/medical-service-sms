@@ -350,10 +350,10 @@
             {% endif %}
 
             {# A collapsible group only earns its click when it holds more than one
-               destination. Management accounts get Analytics alongside Documents,
-               so the group stays. Everyone else has Documents and nothing else,
+               destination. Management accounts get Analytics alongside Reports,
+               so the group stays. Everyone else has Reports and nothing else,
                and wrapping one link in a collapsed group named after that same link meant
-               clicking "Documents" to reveal "Documents". They get the
+               clicking "Reports" to reveal "Reports". They get the
                link directly. The Office group below follows the same rule. #}
             {% if is_reports_admin_user %}
                 <button
@@ -372,12 +372,12 @@
                 <div id="reports-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}" role="group" aria-label="Reports">
                     <div class="sidebar-flyout-title" aria-hidden="true">Reports</div>
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
-                    {{ nav_link('/reports_page', 'fa-file-lines', 'Documents') }}
+                    {{ nav_link('/reports_page', 'fa-file-lines', 'Reports') }}
                 </div>
             {% elif can_manage_purchase_orders %}
                 {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
             {% elif is_reports_sidebar_user %}
-                {{ nav_link('/reports_page', 'fa-file-lines', 'Documents') }}
+                {{ nav_link('/reports_page', 'fa-file-lines', 'Reports') }}
             {% endif %}
 
             {% if current_user.is_authenticated and not is_approver_only_user %}

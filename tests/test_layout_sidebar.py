@@ -591,9 +591,9 @@ class SidebarSourceTests(unittest.TestCase):
     def test_critique_checklist_names_headings_guide_and_accordion(self):
         nav = self.layout.split('<nav class="sidebar-nav"', 1)[1].split('</nav>', 1)[0]
         # Point 1-2: one name per item; the caption is the label and may wrap to two lines.
-        for label in ("'Documents'", "'Settings'", "'Client List'", "'My Requests'", "'Create TSR'"):
+        for label in ("'fa-file-lines', 'Reports'", "'Settings'", "'Client List'", "'My Requests'", "'Create TSR'"):
             self.assertIn(label, nav)
-        for old in ("'Service Documents'", "'System Settings'", '>New Request<'):
+        for old in ("'Service Documents'", "'Documents'", "'System Settings'", '>New Request<'):
             self.assertNotIn(old, nav)
         self.assertIn('-webkit-line-clamp: 2;', self.shell_css)
         # Point 4-5: readable captions; section headings reach screen readers.

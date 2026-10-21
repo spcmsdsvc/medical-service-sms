@@ -1,6 +1,30 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-21-reports-speed",
+      "release_date": "2026-10-21",
+      "title": "Reports opens faster",
+      "summary": "The Reports page (formerly Documents) loads its TSR files much faster, and every page does a little less work in the background.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-21-reports-speed-archive",
+          "category": "Reports",
+          "description": "TSR files and the monitoring summary load in a fraction of the time, including while you search."
+        },
+        {
+          "item_key": "2026-10-21-reports-speed-layout",
+          "category": "Reports",
+          "description": "The menu link is now called Reports. Each TSR file shows its TSR number with Preview and Download beside it, and the long file name appears when you hover. Administrators see Missing TSRs first. Numbers and labels are readable in dark mode."
+        },
+        {
+          "item_key": "2026-10-21-reports-speed-shell",
+          "category": "General",
+          "description": "Every page checks for What's New updates and opens with less background work, so pages respond sooner."
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-20-page-sub-contrast",
       "release_date": "2026-10-20",
       "title": "Easier-to-read page subtitles",
