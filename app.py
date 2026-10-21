@@ -28428,7 +28428,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v343-reports-follow-up';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v344-analytics';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -54292,6 +54292,18 @@ def get_shift_details(shift_id):
 # --- ANALYTICS MODULE ---
 
 ANALYTICS_SYSTEM_START_DATE = date(2026, 5, 18)
+# The daily trend is built per day, so an unbounded range builds an unbounded payload.
+ANALYTICS_MAX_RANGE_DAYS = 731
+ANALYTICS_RANGE_LIMIT_MESSAGE = 'Choose a range of up to 2 years.'
+# Service work an engineer does in the field; leave, travel, office and training days are not.
+ANALYTICS_SERVICE_TYPES = ('Site Visit', 'Pull-out')
+# (label, last day in the bucket); None is open-ended.
+ANALYTICS_OVERDUE_BUCKETS = (('1–7 days', 7), ('8–30 days', 30), ('Over 30 days', None))
+ANALYTICS_TOP_CLIENT_LIMIT = 8
+
+
+def analytics_range_too_long(start_date, end_date):
+    return (end_date - start_date).days + 1 > ANALYTICS_MAX_RANGE_DAYS
 
 
 def analytics_date_bounds():
@@ -54320,6 +54332,10 @@ def classify_schedule_type(shift):
     if title == 'In Office' or title.startswith('In Office:'):
         return 'In Office'
     if title == 'Traveling to Client' or title.startswith('Traveling to Client:'):
+        return 'Travel'
+    # Approved Travel Requests create blocks titled "TRAVEL - Manila → …"; without this
+    # they fell through to Training.
+    if getattr(shift, 'schedule_type', None) == 'travel' or title.startswith('TRAVEL - '):
         return 'Travel'
     if title == 'Pull-out Parts' or title.startswith('Pull-out Parts:'):
         return 'Pull-out'
@@ -54383,11 +54399,9 @@ def analytics_visible_engineer_ids():
 
     engineer_query = db.session.query(Engineer.id)
 
-    if is_regional_admin_user():
-        # Kevin/regional_admin may view analytics for all branches, including Manila.
-        # Mutation endpoints still restrict write access to Cebu/Davao only.
-        pass
-    elif not (is_superadmin_user() or is_regional_admin_user() or can_view_admin_reports()):
+    # Kevin/regional_admin may view analytics for all branches, including Manila.
+    # Mutation endpoints still restrict write access to Cebu/Davao only.
+    if not (is_superadmin_user() or is_regional_admin_user() or can_view_admin_reports()):
         return []
 
     if branch == 'REGIONAL':
@@ -54401,9 +54415,6 @@ def analytics_visible_engineer_ids():
 def analytics_scope_query(query):
     """Apply role scope without multiplying a shift for each assignment."""
     visible_ids = analytics_visible_engineer_ids()
-
-    if visible_ids is None:
-        return query
 
     if not visible_ids:
         return query.filter(False)
@@ -54431,7 +54442,11 @@ def analytics_scoped_shifts(start_date=None, end_date=None, eager=True):
 
 
 def analytics_engineer_map(shifts):
-    """Load assigned engineers in two queries, preserving the legacy primary fallback."""
+    """Load the visible assigned engineers of each shift in one query.
+
+    The scope filter only admits shifts with a visible ShiftEngineer row, so there is no
+    primary-engineer fallback to apply here.
+    """
     shift_ids = {shift.id for shift in shifts if getattr(shift, 'id', None)}
     if not shift_ids:
         return {}
@@ -54445,32 +54460,14 @@ def analytics_engineer_map(shifts):
         ShiftEngineer.engineer_id.in_(visible_ids),
     ).all()
 
-    engineer_map = {}
+    engineer_map = {shift_id: [] for shift_id in shift_ids}
     seen_by_shift = {}
     for shift_id, engineer in linked_rows:
         seen = seen_by_shift.setdefault(shift_id, set())
         if engineer.id in seen:
             continue
         seen.add(engineer.id)
-        engineer_map.setdefault(shift_id, []).append(engineer)
-
-    primary_ids = {
-        shift.engineer_id for shift in shifts
-        if shift.id not in engineer_map
-        and getattr(shift, 'engineer_id', None) in visible_ids
-    }
-    primary_by_id = {}
-    if primary_ids:
-        primary_by_id = {
-            engineer.id: engineer
-            for engineer in Engineer.query.filter(Engineer.id.in_(primary_ids)).all()
-        }
-
-    for shift in shifts:
-        if shift.id not in engineer_map and shift.engineer_id in primary_by_id:
-            engineer_map[shift.id] = [primary_by_id[shift.engineer_id]]
-        else:
-            engineer_map.setdefault(shift.id, [])
+        engineer_map[shift_id].append(engineer)
 
     return engineer_map
 
@@ -54482,11 +54479,12 @@ def analytics_count_rows(start_date, end_date):
         Shift.status,
         Shift.client_id,
         Shift.title,
+        Shift.schedule_type,
     ).all()
 
 
 def analytics_branch_counts(start_date, end_date):
-    """Count distinct scoped shifts by assigned engineer branch."""
+    """Count scoped assignments by engineer branch, the unit the current period uses."""
     visible_ids = analytics_visible_engineer_ids()
     if not visible_ids:
         return {}
@@ -54500,7 +54498,7 @@ def analytics_branch_counts(start_date, end_date):
         (branch or 'Unassigned'): count
         for branch, count in query.with_entities(
             Engineer.branch,
-            func.count(func.distinct(Shift.id)),
+            func.count(func.distinct(ShiftEngineer.id)),
         ).group_by(Engineer.branch).all()
     }
 
@@ -54551,37 +54549,53 @@ def get_analytics_summary():
         return denied()
 
     start_date, end_date = analytics_date_bounds()
+    if analytics_range_too_long(start_date, end_date):
+        return jsonify({'status': 'error', 'message': ANALYTICS_RANGE_LIMIT_MESSAGE}), 400
     previous_start, previous_end = analytics_previous_bounds(start_date, end_date)
+    # A previous period that starts before the system existed has no comparable data, so
+    # it gets no arrows at all rather than "Down N" against an empty register.
+    comparison_available = previous_start >= ANALYTICS_SYSTEM_START_DATE
     shifts = analytics_scoped_shifts(start_date, end_date).order_by(Shift.start_time.asc()).all()
-    previous_rows = analytics_count_rows(previous_start, previous_end)
+    previous_rows = analytics_count_rows(previous_start, previous_end) if comparison_available else []
     engineer_map = analytics_engineer_map(shifts)
+    today = get_manila_time().date()
 
-    completed = sum(1 for shift in shifts if (shift.status or 'In Progress') == 'Completed')
-    active = len(shifts) - completed
-    open_client_work = sum(
-        1 for shift in shifts
-        if shift.client_id and (shift.status or 'In Progress') != 'Completed'
-    )
+    completed = 0
+    active = 0
+    open_client_work = 0
     branches = {}
     engineers = {}
+    field_days = {}
     categories = {}
     open_statuses = {}
+    clients = {}
+    overdue_buckets = {label: 0 for label, _ in ANALYTICS_OVERDUE_BUCKETS}
 
     total_assignment_count = 0
 
     for shift in shifts:
         schedule_type = classify_schedule_type(shift)
         categories[schedule_type] = categories.get(schedule_type, 0) + 1
+        is_field_work = schedule_type in ANALYTICS_SERVICE_TYPES
 
         status = shift.status or 'In Progress'
+        if status == 'Completed':
+            completed += 1
+        elif is_field_work:
+            active += 1
         if status != 'Completed' and shift.client_id:
+            open_client_work += 1
             open_statuses[status] = open_statuses.get(status, 0) + 1
+            age_days = (today - shift.end_time.date()).days
+            if age_days > 0:
+                for label, max_days in ANALYTICS_OVERDUE_BUCKETS:
+                    if max_days is None or age_days <= max_days:
+                        overdue_buckets[label] += 1
+                        break
+        if schedule_type == 'Site Visit' and shift.client:
+            clients[shift.client.name] = clients.get(shift.client.name, 0) + 1
 
         assigned_engineers = engineer_map.get(shift.id) or []
-        if not assigned_engineers:
-            branches['Unassigned'] = branches.get('Unassigned', 0) + 1
-            continue
-
         total_assignment_count += len(assigned_engineers)
 
         for eng in assigned_engineers:
@@ -54594,14 +54608,22 @@ def get_analytics_summary():
                     'branch': branch,
                     'count': 0,
                     'completed': 0,
-                    'active': 0
+                    'active': 0,
+                    'field_days': 0,
                 }
+                field_days[eng.id] = set()
 
             engineers[eng.id]['count'] += 1
             if status == 'Completed':
                 engineers[eng.id]['completed'] += 1
-            else:
+            elif is_field_work:
+                # Same rule as the Active card: open service work, not travel or leave days.
                 engineers[eng.id]['active'] += 1
+            if is_field_work:
+                field_days[eng.id].add(shift.start_time.date())
+
+    for engineer_id, days in field_days.items():
+        engineers[engineer_id]['field_days'] = len(days)
 
     busiest_engineers = sorted(
         engineers.values(),
@@ -54609,27 +54631,48 @@ def get_analytics_summary():
     )
 
     previous_category_counts = {}
+    previous_client_ids = {}
     for row in previous_rows:
         previous_category = classify_schedule_type(
-            types.SimpleNamespace(title=row[3] or '', client_id=row[2])
+            types.SimpleNamespace(title=row[3] or '', client_id=row[2], schedule_type=row[4])
         )
         previous_category_counts[previous_category] = previous_category_counts.get(previous_category, 0) + 1
+        if previous_category == 'Site Visit':
+            previous_client_ids[row[2]] = previous_client_ids.get(row[2], 0) + 1
+    previous_clients = {}
+    if previous_client_ids:
+        names = dict(db.session.query(Client.id, Client.name).filter(
+            Client.id.in_(previous_client_ids)
+        ).all())
+        for client_id, count in previous_client_ids.items():
+            name = names.get(client_id)
+            if name:
+                previous_clients[name] = previous_clients.get(name, 0) + count
 
-    # Only the window count is comparable. `active` is exactly `total - completed`, so a
-    # period arrow on it is an arrow on -completed: recent work has had less time to finish,
-    # which makes the current window look worse for a reason that is not performance. The
-    # same argument excluded `completed`, and it excludes its complement. `open_client_work`
-    # is a subset of active and inherits the bias. Previous-period counts for those are
+    # Only the window count is comparable. Active, open and completed are status as of
+    # today: recent work has had less time to finish, which would make the current window
+    # look worse for a reason that is not performance. Previous-period counts for those are
     # therefore not computed at all -- a value that must not be shown should not exist.
-    previous_total = len(previous_rows)
-    current_branch_counts = branches
-    previous_branch_counts = analytics_branch_counts(previous_start, previous_end)
+    previous_total = len(previous_rows) if comparison_available else None
+    previous_branch_counts = (
+        analytics_branch_counts(previous_start, previous_end) if comparison_available else None
+    )
     current_trend = analytics_trend_rows(
         [(shift.start_time,) for shift in shifts],
         start_date,
         end_date,
     )
-    previous_trend = analytics_trend_rows(previous_rows, previous_start, previous_end)
+    previous_trend = (
+        analytics_trend_rows(previous_rows, previous_start, previous_end)
+        if comparison_available else []
+    )
+
+    def ranked(current, previous):
+        rows = analytics_ranked_counts(current, previous)
+        if not comparison_available:
+            for row in rows:
+                row['previous'] = None
+        return rows
 
     return jsonify({
         'status': 'success',
@@ -54640,7 +54683,9 @@ def get_analytics_summary():
         'previous_range': {
             'start_date': previous_start.isoformat(),
             'end_date': previous_end.isoformat()
-        },
+        } if comparison_available else None,
+        'comparison_available': comparison_available,
+        'system_start_date': ANALYTICS_SYSTEM_START_DATE.isoformat(),
         'branch': analytics_requested_branch(),
         'branch_label': analytics_branch_label(analytics_requested_branch()),
         'range_total': len(shifts),
@@ -54655,6 +54700,14 @@ def get_analytics_summary():
             'active': {'value': active, 'basis': 'status as of today'},
             'open_client_work': {'value': open_client_work, 'basis': 'status as of today'},
             'completed': {'value': completed, 'basis': 'status as of today'},
+            'overdue_client_work': {
+                'value': sum(overdue_buckets.values()),
+                'basis': 'status as of today',
+                'buckets': [
+                    {'label': label, 'count': overdue_buckets[label]}
+                    for label, _ in ANALYTICS_OVERDUE_BUCKETS
+                ],
+            },
         },
         'trend': {
             'current': current_trend,
@@ -54662,10 +54715,11 @@ def get_analytics_summary():
             'current_total': len(shifts),
             'previous_total': previous_total,
         },
-        'branches': analytics_ranked_counts(current_branch_counts, previous_branch_counts),
+        'branches': ranked(branches, previous_branch_counts),
         'engineers': busiest_engineers,
         'engineer_total': len(engineers),
-        'categories': analytics_ranked_counts(categories, previous_category_counts),
+        'categories': ranked(categories, previous_category_counts),
+        'top_clients': ranked(clients, previous_clients)[:ANALYTICS_TOP_CLIENT_LIMIT],
         'open_statuses': [
             {'label': label, 'count': count}
             for label, count in sorted(open_statuses.items(), key=lambda item: (-item[1], item[0]))
@@ -56113,14 +56167,19 @@ def export_analytics_summary():
     start_date, end_date = analytics_date_bounds()
     branch = analytics_requested_branch()
 
+    if analytics_range_too_long(start_date, end_date):
+        return Response(ANALYTICS_RANGE_LIMIT_MESSAGE, status=400, mimetype='text/plain')
+
     shifts = analytics_scoped_shifts(start_date, end_date).order_by(Shift.start_time.asc()).all()
+    # One query for every row's engineers (the branch filter's visible ones, as on the page).
+    engineer_map = analytics_engineer_map(shifts)
 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['Date', 'Start', 'End', 'Client', 'Task', 'Product', 'Status', 'Type', 'Engineers', 'Branches'])
 
     for shift in shifts:
-        assigned_engineers = get_shift_engineer_records(shift)
+        assigned_engineers = engineer_map.get(shift.id) or []
         equipment = resolve_shift_equipment(shift)
         writer.writerow([
             shift.start_time.strftime('%Y-%m-%d'),

@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-21-analytics",
+      "release_date": "2026-10-21",
+      "title": "Analytics: correct numbers and more of them",
+      "summary": "Travel days, active work and branch comparisons now count correctly, with new overdue, top client and field day figures.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-21-analytics-numbers",
+          "category": "Analytics",
+          "description": "Approved travel days now count as Travel instead of Training, Active counts open service work only, branch comparisons count each engineer in both periods, and no comparison is shown against dates before the system started.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-21-analytics-new-figures",
+          "category": "Analytics",
+          "description": "New figures: overdue client work by age (1-7 days, 8-30 days, over 30 days), the top 8 clients by site visits, and field days per engineer. Engineer workload shows the busiest 8 with Show all for the rest.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-10-21-analytics-layout",
+          "category": "Analytics",
+          "description": "The page uses the same header and cards as the rest of the app, change arrows are neutral grey, and on phones the filters fold behind a Filters button so the numbers come first.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-21-reports-follow-up",
       "release_date": "2026-10-21",
       "title": "Reports: filters and shorter lists",

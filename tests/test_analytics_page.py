@@ -209,7 +209,7 @@ class AnalyticsPageTests(unittest.TestCase):
         self.assertIn('data-analytics-panel', self.template)
         self.assertIn('id="equipment-machine-link-total"', self.template)
         self.assertIn('machine_link_total', self.js)
-        self.assertIn('?v=80', self.template)
+        self.assertIn('app-analytics.js\') }}?v=82', self.template)
         self.assertIn('analytics_system_start_date=ANALYTICS_SYSTEM_START_DATE.isoformat()', self.source)
         self.assertIn('systemStartDate', self.template)
         self.assertIn('data-analytics-preset="all"', self.template)
@@ -246,12 +246,11 @@ class AnalyticsPageTests(unittest.TestCase):
         self.assertEqual(payload['flow']['total']['previous'], 1)
         self.assertNotIn('statuses', payload)
 
-        # Flow carries a comparison; stock never does. `active` is exactly
-        # `total - completed`, so an arrow on it is an arrow on -completed: recent work has
-        # had less time to finish. `completed` was already excluded for that reason and its
-        # complement has to be excluded on the same grounds.
+        # Flow carries a comparison; stock never does. Active, open and completed are status
+        # as of today: recent work has had less time to finish, so a period arrow on them
+        # would reward age rather than performance.
         self.assertIn('previous', payload['flow']['total'])
-        for stock_key in ('active', 'open_client_work', 'completed'):
+        for stock_key in ('active', 'open_client_work', 'completed', 'overdue_client_work'):
             self.assertNotIn(
                 'previous', payload['stock'][stock_key],
                 f'{stock_key} is stock and must not carry a period comparison',
@@ -259,8 +258,8 @@ class AnalyticsPageTests(unittest.TestCase):
             self.assertIn('basis', payload['stock'][stock_key])
         self.assertNotIn('active', payload['flow'])
 
-        # The arithmetic the exclusion rests on, asserted so it cannot drift.
-        self.assertEqual(
+        # Active is open service work only, so it never exceeds what is not completed.
+        self.assertLessEqual(
             payload['stock']['active']['value'] + payload['stock']['completed']['value'],
             payload['flow']['total']['value'],
         )

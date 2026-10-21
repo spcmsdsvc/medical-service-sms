@@ -1,28 +1,31 @@
 {% extends "layout.html" %}
 {% block page_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=75">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-analytics.css') }}?v=79">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-analytics.css') }}?v=81">
 {% endblock %}
 
 {% block content %}
 <div class="analytics-page" data-schedule-access="{{ 'true' if can_view_schedule_analytics else 'false' }}" data-po-access="{{ 'true' if can_view_po_analytics else 'false' }}">
-    <header class="analytics-header">
+    <header class="dash-page-header">
         <div>
-            <div class="analytics-eyebrow">Management Intelligence</div>
-            <h1><i class="fa-solid fa-chart-line me-2" aria-hidden="true"></i>Analytics</h1>
-            <p class="analytics-subtitle">{% if can_view_schedule_analytics %}How is service activity changing over this period, and where is it concentrated?{% else %}Which equipment is covered by purchase orders, and what still needs backfilling?{% endif %}</p>
+            <h1 class="dash-page-h1">Analytics</h1>
+            <p id="analytics-page-sub" class="dash-page-sub">{% if can_view_schedule_analytics %}Service activity since system start, all branches.{% else %}Purchase orders and the equipment they cover.{% endif %}</p>
         </div>
-        <div class="d-flex flex-wrap gap-2 no-print">
+        <div class="dash-page-actions no-print">
+            <span id="analytics-last-loaded" class="analytics-updated" role="status" aria-live="polite">Loading…</span>
             {% if can_view_schedule_analytics %}
             <button type="button" class="btn btn-outline-primary" onclick="window.exportAnalyticsCSV()"><i class="fa-solid fa-file-csv me-1" aria-hidden="true"></i>Export</button>
             {% endif %}
-            <span id="analytics-last-loaded" class="analytics-scope-line m-0" role="status" aria-live="polite">Waiting for data</span>
         </div>
     </header>
 
     <section class="analytics-filter-card no-print" aria-labelledby="analytics-filter-heading">
+        <h2 id="analytics-filter-heading" class="visually-hidden">Analytics filters</h2>
+        <div class="analytics-filter-summary">
+            <span id="analytics-filter-summary-text">Since system start · All Branches</span>
+            <button type="button" id="analytics-filter-toggle" class="btn btn-outline-secondary" aria-expanded="false" aria-controls="analytics-filter-form"><i class="fa-solid fa-sliders me-1" aria-hidden="true"></i>Filters</button>
+        </div>
         <form id="analytics-filter-form" class="analytics-filter-grid">
-            <h2 id="analytics-filter-heading" class="visually-hidden">Analytics filters</h2>
             <div class="analytics-filter-field">
                 <label for="analytics-start">From</label>
                 <input id="analytics-start" class="form-control" type="date" required>
@@ -44,10 +47,12 @@
             </div>
             {% endif %}
             <div class="analytics-filter-actions">
-                <button type="submit" class="btn btn-primary"><i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Apply filters</button>
-                <button type="button" class="btn btn-outline-secondary" data-analytics-preset="all">Since system start</button>
-                <button type="button" class="btn btn-outline-secondary" data-analytics-preset="week">This week</button>
-                <button type="button" class="btn btn-outline-secondary" data-analytics-preset="month">This month</button>
+                <button type="submit" class="btn btn-primary">Apply</button>
+                <div class="dash-segment" role="group" aria-label="Quick range">
+                    <button type="button" class="dash-segment-btn" data-analytics-preset="all" aria-pressed="true">Since system start</button>
+                    <button type="button" class="dash-segment-btn" data-analytics-preset="week" aria-pressed="false">This week</button>
+                    <button type="button" class="dash-segment-btn" data-analytics-preset="month" aria-pressed="false">This month</button>
+                </div>
             </div>
         </form>
     </section>
@@ -75,62 +80,65 @@
     {% if can_view_schedule_analytics %}
     <main id="schedule-analytics" class="analytics-tab-panel{% if tab_state.default == 'schedule' %} is-active{% endif %}" data-analytics-panel="schedule" role="tabpanel" aria-labelledby="schedule-tab" aria-hidden="{{ 'false' if tab_state.default == 'schedule' else 'true' }}">
         <div class="analytics-section-heading">
-            <div>
-                <h2 id="schedule-analytics-heading">Service activity</h2>
-                <p>Flow metrics compare with the immediately preceding period of the same length.</p>
-            </div>
-            <div id="schedule-scope-line" class="analytics-scope-line m-0" role="status" aria-live="polite">Loading schedule analytics…</div>
+            <h2 id="schedule-analytics-heading">Service activity</h2>
+            <p id="schedule-scope-line" class="analytics-scope-line" role="status" aria-live="polite">Loading service activity…</p>
         </div>
 
-        <section class="analytics-metric-grid mb-3" aria-label="Service activity metrics">
-            <article class="analytics-metric"><div class="analytics-metric-label">Total schedules</div><strong id="schedule-total" class="analytics-metric-value" data-schedule-value>—</strong><div id="schedule-total-delta" class="analytics-delta"></div><div class="analytics-metric-note">Selected period</div></article>
-            {# Active, open and completed are one measurement seen three ways: active is
-               exactly total minus completed. None of the three can carry a period arrow,
-               because recent work has had less time to finish, so they have no delta node
-               at all rather than an empty one. #}
-            <article class="analytics-metric"><div class="analytics-metric-label">Active schedules</div><strong id="schedule-active" class="analytics-metric-value" data-schedule-value>—</strong><div class="analytics-metric-note">Not completed; status as of today</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Open client work</div><strong id="schedule-open" class="analytics-metric-value" data-schedule-value>—</strong><div class="analytics-metric-note">Client work needing follow-up; status as of today</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Completed</div><strong id="schedule-completed" class="analytics-metric-value" data-schedule-value>—</strong><div class="analytics-metric-note">Status as of today</div></article>
+        {# Total is the only period-comparable count. Overdue, open and completed are status
+           as of today: recent work has had less time to finish, so they never carry an arrow
+           and have no delta node at all. #}
+        <section class="analytics-metric-grid" aria-label="Service activity metrics">
+            <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Total schedules</span></div><strong id="schedule-total" class="dash-stat-num" data-schedule-value>—</strong><div id="schedule-total-delta" class="analytics-delta"></div><div class="dash-stat-help">Each day of a job counts once</div></article>
+            <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Overdue client work</span></div><strong id="schedule-overdue" class="dash-stat-num" data-schedule-value>—</strong><div class="dash-stat-line">Past their date, not completed</div><div id="schedule-overdue-buckets" class="dash-stat-help">—</div></article>
+            <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Open client work</span></div><strong id="schedule-open" class="dash-stat-num" data-schedule-value>—</strong><div class="dash-stat-help">Site visits not yet marked Completed</div></article>
+            <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Completed</span></div><strong id="schedule-completed" class="dash-stat-num" data-schedule-value>—</strong><div class="dash-stat-help">Status as of today</div></article>
         </section>
 
-        <section class="analytics-panel mb-3" aria-labelledby="trend-heading">
-            <div class="analytics-panel-header"><div><h3 id="trend-heading">Service volume trend</h3><p>Daily schedule volume for the selected period.</p></div><span class="analytics-badge">Flow</span></div>
+        <section class="analytics-panel analytics-status-panel" aria-labelledby="status-heading">
+            <h3 id="status-heading">Open client work by status</h3>
+            <div id="status-list" class="analytics-status-list"></div>
+        </section>
+
+        <section class="analytics-panel" aria-labelledby="trend-heading">
+            <div class="analytics-panel-header"><div><h3 id="trend-heading">Service volume trend</h3><p>Schedules per day in the selected period.</p></div></div>
             <div id="trend-chart" class="analytics-chart-frame"></div>
-            <div class="analytics-legend"><span><i class="current-key"></i>Selected period</span><span><i class="previous-key"></i>Previous period</span></div>
+            <div class="analytics-legend"><span><i class="current-key"></i>Selected period</span><span id="trend-previous-key"><i class="previous-key"></i>Previous period</span></div>
             <table id="trend-table" class="analytics-chart-table"><caption>Service volume trend data</caption><thead><tr><th>Date</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="trend-table-body"></tbody></table>
         </section>
 
-        <div class="analytics-grid-2">
-            <section class="analytics-panel" aria-labelledby="branch-heading"><div class="analytics-panel-header"><div><h3 id="branch-heading">Branch concentration</h3><p>Assignment counts by branch.</p></div></div><div id="branch-chart" class="analytics-chart-frame"></div><table id="branch-table" class="analytics-chart-table"><caption>Branch concentration data</caption><thead><tr><th>Branch</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="branch-table-body"></tbody></table></section>
-            <section class="analytics-panel" aria-labelledby="category-heading"><div class="analytics-panel-header"><div><h3 id="category-heading">Service mix</h3><p>Schedule categories in the selected period.</p></div></div><div id="category-chart" class="analytics-chart-frame"></div><table id="category-table" class="analytics-chart-table"><caption>Service mix data</caption><thead><tr><th>Category</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="category-table-body"></tbody></table></section>
+        <div class="analytics-grid-3">
+            <section class="analytics-panel" aria-labelledby="category-heading"><div class="analytics-panel-header"><div><h3 id="category-heading">Service mix</h3><p>Schedules by type.</p></div></div><div id="category-chart" class="analytics-chart-frame"></div><table id="category-table" class="analytics-chart-table"><caption>Service mix data</caption><thead><tr><th>Category</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="category-table-body"></tbody></table></section>
+            <section class="analytics-panel" aria-labelledby="client-heading"><div class="analytics-panel-header"><div><h3 id="client-heading">Top clients</h3><p>Site visits per client, top 8.</p></div></div><div id="client-chart" class="analytics-chart-frame"></div><table id="client-table" class="analytics-chart-table"><caption>Top clients by site visits</caption><thead><tr><th>Client</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="client-table-body"></tbody></table></section>
+            <section class="analytics-panel" aria-labelledby="branch-heading"><div class="analytics-panel-header"><div><h3 id="branch-heading">Branch concentration</h3><p>Each engineer on a schedule counts once.</p></div></div><div id="branch-chart" class="analytics-chart-frame"></div><table id="branch-table" class="analytics-chart-table"><caption>Branch concentration data</caption><thead><tr><th>Branch</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="branch-table-body"></tbody></table></section>
         </div>
 
-        <div class="analytics-grid-2">
-            <section class="analytics-panel" aria-labelledby="status-heading"><div class="analytics-panel-header"><div><h3 id="status-heading">Open client work by status</h3><p>Stock view; no misleading period-over-period arrow.</p></div></div><div id="status-list" class="analytics-status-list"></div></section>
-            <section class="analytics-panel" aria-labelledby="workload-heading"><div class="analytics-panel-header"><div><h3 id="workload-heading">Engineer workload</h3><p id="workload-caption">Loading engineer workload…</p></div></div><div class="analytics-table-wrap"><table class="table analytics-table"><caption class="visually-hidden">Engineer workload</caption><thead><tr><th scope="col">Engineer</th><th scope="col">Branch</th><th scope="col">Total</th><th scope="col">Active</th><th scope="col">Completed</th></tr></thead><tbody id="engineer-table-body"></tbody></table></div><div id="engineer-mobile-list" class="analytics-workload-mobile"></div></section>
-        </div>
+        <section class="analytics-panel" aria-labelledby="workload-heading">
+            <div class="analytics-panel-header"><div><h3 id="workload-heading">Engineer workload</h3><p id="workload-caption">Loading engineer workload…</p></div></div>
+            <div class="analytics-table-wrap"><table class="table analytics-table"><caption class="visually-hidden">Engineer workload</caption><thead><tr><th scope="col">Engineer</th><th scope="col">Branch</th><th scope="col">Total</th><th scope="col">Field days</th><th scope="col">Active</th><th scope="col">Completed</th></tr></thead><tbody id="engineer-table-body"></tbody></table></div>
+            <div id="engineer-mobile-list" class="analytics-workload-mobile"></div>
+            <button type="button" id="workload-toggle" class="btn btn-outline-secondary analytics-workload-toggle" aria-expanded="false" aria-controls="engineer-table-body engineer-mobile-list" hidden>Show all</button>
+        </section>
     </main>
     {% endif %}
 
     {% if can_view_po_analytics %}
-    <section id="analytics-panel-purchase-orders" class="analytics-tab-panel analytics-panel mt-3{% if tab_state.default == 'purchase-orders' %} is-active{% endif %}" data-analytics-panel="purchase-orders" role="tabpanel" aria-labelledby="purchase-orders-tab" aria-hidden="{{ 'false' if tab_state.default == 'purchase-orders' else 'true' }}">
-        <div class="analytics-panel-header"><div><h2 id="po-heading" class="h3 mb-0">Purchase order reporting</h2><p id="po-scope-line">Company-wide · counts only; no money values are shown.</p></div><span class="analytics-badge">P.O. register</span></div>
-        <div class="analytics-po-kpi"><strong id="po-total" data-po-value>—</strong><span>Purchase orders in the selected monitoring period</span></div>
+    <section id="analytics-panel-purchase-orders" class="analytics-tab-panel analytics-panel{% if tab_state.default == 'purchase-orders' %} is-active{% endif %}" data-analytics-panel="purchase-orders" role="tabpanel" aria-labelledby="purchase-orders-tab" aria-hidden="{{ 'false' if tab_state.default == 'purchase-orders' else 'true' }}">
+        <div class="analytics-panel-header"><div><h2 id="po-heading" class="h3 mb-0">Purchase order reporting</h2><p id="po-scope-line">Company-wide · counts only; no money values are shown.</p></div></div>
+        <div class="analytics-po-kpi"><strong id="po-total" data-po-value>—</strong><span>Purchase orders in the selected period</span></div>
         <div class="analytics-grid-3">
-            <section><h3 class="h6 fw-bold">By type</h3><div id="po-type-bars" class="analytics-bars"></div><table id="po-type-table" class="analytics-chart-table"><caption>Purchase orders by type</caption><thead><tr><th scope="col">Type</th><th scope="col">Count</th></tr></thead><tbody id="po-type-table-body"></tbody></table></section>
-            <section><h3 class="h6 fw-bold">Top clients</h3><div id="po-client-bars" class="analytics-bars"></div><table id="po-client-table" class="analytics-chart-table"><caption>Purchase orders by client</caption><thead><tr><th scope="col">Client</th><th scope="col">Count</th></tr></thead><tbody id="po-client-table-body"></tbody></table></section>
-            <section><h3 class="h6 fw-bold">By month</h3><div id="po-month-bars" class="analytics-bars"></div><table id="po-month-table" class="analytics-chart-table"><caption>Purchase orders by month</caption><thead><tr><th scope="col">Month</th><th scope="col">Count</th></tr></thead><tbody id="po-month-table-body"></tbody></table></section>
+            <section><h3 class="analytics-subhead">By type</h3><div id="po-type-bars" class="analytics-bars"></div><table id="po-type-table" class="analytics-chart-table"><caption>Purchase orders by type</caption><thead><tr><th scope="col">Type</th><th scope="col">Count</th></tr></thead><tbody id="po-type-table-body"></tbody></table></section>
+            <section><h3 class="analytics-subhead">Top clients</h3><div id="po-client-bars" class="analytics-bars"></div><table id="po-client-table" class="analytics-chart-table"><caption>Purchase orders by client</caption><thead><tr><th scope="col">Client</th><th scope="col">Count</th></tr></thead><tbody id="po-client-table-body"></tbody></table></section>
+            <section><h3 class="analytics-subhead">By month</h3><div id="po-month-bars" class="analytics-bars"></div><table id="po-month-table" class="analytics-chart-table"><caption>Purchase orders by month</caption><thead><tr><th scope="col">Month</th><th scope="col">Count</th></tr></thead><tbody id="po-month-table-body"></tbody></table></section>
         </div>
     </section>
 
-    <section id="analytics-panel-equipment" class="analytics-tab-panel analytics-panel mt-3{% if tab_state.default == 'equipment' %} is-active{% endif %}" data-analytics-panel="equipment" role="tabpanel" aria-labelledby="equipment-tab" aria-hidden="{{ 'false' if tab_state.default == 'equipment' else 'true' }}">
-        <div class="analytics-panel-header"><div><h2 id="equipment-heading" class="h3 mb-0">Equipment</h2><p id="equipment-scope-line">Machine-linked purchase order counts and the remaining backfill worklist.</p></div><span class="analytics-badge">Counts only</span></div>
-        <div class="analytics-metric-grid equipment-metric-grid mb-3" aria-label="Equipment purchase order metrics">
-            <article class="analytics-metric"><div class="analytics-metric-label">Linked P.O.s</div><strong id="equipment-linked-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">With a registered machine</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Missing a machine</div><strong id="equipment-unlinked-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Legacy rows needing backfill</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Machine coverage</div><strong id="equipment-linked-pct" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Of P.O.s in this period</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Machines covered</div><strong id="equipment-machine-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Distinct registered serials</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Machine links</div><strong id="equipment-machine-link-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">P.O. to machine associations</div></article>
+    <section id="analytics-panel-equipment" class="analytics-tab-panel analytics-panel{% if tab_state.default == 'equipment' %} is-active{% endif %}" data-analytics-panel="equipment" role="tabpanel" aria-labelledby="equipment-tab" aria-hidden="{{ 'false' if tab_state.default == 'equipment' else 'true' }}">
+        <div class="analytics-panel-header"><div><h2 id="equipment-heading" class="h3 mb-0">Equipment</h2><p id="equipment-scope-line">Machine-linked purchase order counts and the remaining backfill worklist.</p></div></div>
+        <div class="analytics-metric-grid equipment-metric-grid" aria-label="Equipment purchase order metrics">
+            <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Linked P.O.s</span></div><strong id="equipment-linked-total" class="dash-stat-num" data-equipment-value>&mdash;</strong><div class="dash-stat-help">With a registered machine</div></article>
+            <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Missing a machine</span></div><strong id="equipment-unlinked-total" class="dash-stat-num" data-equipment-value>&mdash;</strong><div class="dash-stat-help">Legacy rows needing backfill</div></article>
+            <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Machine coverage</span></div><strong id="equipment-linked-pct" class="dash-stat-num" data-equipment-value>&mdash;</strong><div class="dash-stat-help">Of P.O.s in this period</div></article>
+            <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Machines covered</span></div><strong id="equipment-machine-total" class="dash-stat-num" data-equipment-value>&mdash;</strong><div class="dash-stat-help">Distinct serials · <span id="equipment-machine-link-total" data-equipment-value>&mdash;</span> P.O. links</div></article>
         </div>
 
         <div class="analytics-grid-2">
@@ -157,5 +165,5 @@ window.ANALYTICS_CONFIG = {
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=80"></script>
+<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=82"></script>
 {% endblock %}

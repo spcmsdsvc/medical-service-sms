@@ -25,10 +25,23 @@
     }
 
     function resetScheduleDisplay() {
-        document.querySelectorAll('[data-schedule-value]').forEach((node) => { node.textContent = '—'; });
-        ['trend-chart', 'branch-chart', 'category-chart', 'status-list', 'engineer-table-body', 'engineer-mobile-list'].forEach((id) => clearNode(byId(id)));
-        ['trend-table-body', 'branch-table-body', 'category-table-body'].forEach((id) => clearNode(byId(id)));
-        setText('schedule-scope-line', 'Schedule analytics is unavailable for this refresh.');
+        document.querySelectorAll('[data-schedule-value]').forEach((node) => { node.textContent = '—'; node.classList.remove('dashboard-metric-alert'); });
+        ['trend-chart', 'branch-chart', 'category-chart', 'client-chart', 'status-list', 'engineer-table-body', 'engineer-mobile-list'].forEach((id) => clearNode(byId(id)));
+        ['trend-table-body', 'branch-table-body', 'category-table-body', 'client-table-body'].forEach((id) => clearNode(byId(id)));
+        setText('schedule-overdue-buckets', '—');
+        setText('schedule-scope-line', 'Service activity could not be loaded for this refresh.');
+    }
+
+    // A row with nothing in either period is noise ("Holiday 0"); the data table keeps it.
+    function nonZeroRows(rows) {
+        return (Array.isArray(rows) ? rows : []).filter((row) => Number(row.count) || Number(row.previous));
+    }
+
+    // "2026-05-18" -> "May 18, 2026" in the reader's locale, for sentences rather than tables.
+    function readableDate(value) {
+        const date = new Date(`${value}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return value || '';
+        return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
     }
 
     function resetPoDisplay() {
@@ -139,11 +152,18 @@
     function renderTrend(data) {
         const current = data && data.current ? data.current : [];
         const previous = data && data.previous ? data.previous : [];
-        const svg = chartScaffold('trend-chart', 'Service activity trend', 'Current-period daily service volume compared with the immediately preceding period.');
+        const compare = previous.length > 0;
+        const svg = chartScaffold(
+            'trend-chart',
+            'Service activity trend',
+            compare
+                ? `Schedules per day: ${data.current_total} in the selected period, ${data.previous_total} in the previous period.`
+                : `Schedules per day: ${data && data.current_total != null ? data.current_total : 0} in the selected period.`
+        );
         const table = byId('trend-table-body');
         clearNode(table);
-        const rows = current.map((item, index) => ({ label: item.date, current: item.count, previous: previous[index] ? previous[index].count : 0 }));
-        rows.forEach((row) => addTableRow(table, [row.label, row.current, row.previous]));
+        const rows = current.map((item, index) => ({ label: item.date, current: item.count, previous: compare && previous[index] ? previous[index].count : 0 }));
+        rows.forEach((row) => addTableRow(table, [row.label, row.current, compare ? row.previous : '—']));
         if (!svg) return;
         const width = Number(svg.getAttribute('width'));
         if (!rows.length) {
@@ -160,14 +180,15 @@
         const labelStep = Math.max(1, Math.ceil(34 / slot));
         rows.forEach((row, index) => {
             const x = left + index * slot + Math.max(1, slot * 0.16);
-            const barWidth = Math.max(2, slot * 0.27);
+            // Without a comparison the single bar takes both bars' room.
+            const barWidth = Math.max(2, slot * (compare ? 0.27 : 0.6));
             const currentHeight = (row.current / max) * chartHeight;
             const previousHeight = (row.previous / max) * chartHeight;
             const group = svgElement('g', { class: 'analytics-chart-row' });
-            group.append(
-                svgElement('rect', { x, y: 170 - currentHeight, width: barWidth, height: currentHeight, rx: 2, class: 'chart-current' }),
-                svgElement('rect', { x: x + barWidth + 1, y: 170 - previousHeight, width: barWidth, height: previousHeight, rx: 2, class: 'chart-previous' })
-            );
+            group.append(svgElement('rect', { x, y: 170 - currentHeight, width: barWidth, height: currentHeight, rx: 2, class: 'chart-current' }));
+            if (compare) {
+                group.append(svgElement('rect', { x: x + barWidth + 1, y: 170 - previousHeight, width: barWidth, height: previousHeight, rx: 2, class: 'chart-previous' }));
+            }
             if (index % labelStep === 0) {
                 group.append(svgElement(
                     'text',
@@ -176,17 +197,18 @@
                 ));
             }
             // Every bar keeps its own tooltip even when its label was thinned out.
-            group.append(svgElement('title', {}, `${row.label}: ${row.current} (previous period ${row.previous})`));
+            group.append(svgElement('title', {}, compare ? `${row.label}: ${row.current} (previous period ${row.previous})` : `${row.label}: ${row.current}`));
             svg.append(group);
         });
     }
 
     function renderHorizontalChart(chartId, tableId, rows, title, description) {
-        const safeRows = Array.isArray(rows) ? rows.slice(0, 12) : [];
+        const allRows = Array.isArray(rows) ? rows.slice(0, 12) : [];
+        const safeRows = nonZeroRows(allRows);
         const svg = chartScaffold(chartId, title, description);
         const table = byId(`${tableId}-body`);
         clearNode(table);
-        safeRows.forEach((row) => addTableRow(table, [row.label, row.count, row.previous == null ? '—' : row.previous]));
+        allRows.forEach((row) => addTableRow(table, [row.label, row.count, row.previous == null ? '—' : row.previous]));
         if (!svg) return;
         const width = Number(svg.getAttribute('width'));
         if (!safeRows.length) {
@@ -250,7 +272,7 @@
     function renderBars(targetId, rows) {
         const target = byId(targetId);
         clearNode(target);
-        const safeRows = Array.isArray(rows) ? rows.slice(0, 12) : [];
+        const safeRows = nonZeroRows(rows).slice(0, 12);
         if (!target || !safeRows.length) {
             if (target) target.append(emptyMessage('No data in this range.'));
             return;
@@ -302,55 +324,56 @@
             return;
         }
         rows.forEach((row) => {
-            const item = document.createElement('div');
-            item.className = 'analytics-status-row';
-            const label = document.createElement('span');
-            label.textContent = row.label || 'Unlabelled';
+            const item = document.createElement('span');
+            item.className = 'analytics-status-chip';
             const value = document.createElement('strong');
             value.textContent = String(row.count || 0);
-            item.append(label, value);
+            item.append(document.createTextNode(`${row.label || 'Unlabelled'} `), value);
             target.append(item);
         });
     }
 
-    function workloadStatus(count) {
-        if (count >= 10) return 'High';
-        if (count >= 6) return 'Moderate';
-        return 'Light';
-    }
+    // The busiest few answer "who is loaded?"; the rest is one tap away.
+    const WORKLOAD_PREVIEW = 8;
+    let workloadExpanded = false;
 
     function renderWorkload(engineers, total) {
         const body = byId('engineer-table-body');
         const mobile = byId('engineer-mobile-list');
-        // "A filter labelled 5 must yield 5": say how many of how many, from the uncapped
-        // total the endpoint computes before its slice, rather than a vague sentence.
+        const toggle = byId('workload-toggle');
+        const all = Array.isArray(engineers) ? engineers : [];
+        const scoped = total == null ? all.length : total;
+        const shown = workloadExpanded ? all : all.slice(0, WORKLOAD_PREVIEW);
         const caption = byId('workload-caption');
         if (caption) {
-            const shown = Array.isArray(engineers) ? engineers.length : 0;
-            const scoped = total == null ? shown : total;
-            caption.textContent = scoped > shown
-                ? `Showing the ${shown} busiest of ${scoped} scoped engineers.`
-                : `Showing all ${scoped} scoped engineer${scoped === 1 ? '' : 's'}.`;
+            caption.textContent = shown.length < scoped
+                ? `Showing ${shown.length} of ${scoped} engineers, busiest first.`
+                : `${scoped} engineer${scoped === 1 ? '' : 's'}, busiest first. Field days: days with a site visit or pull-out.`;
+        }
+        if (toggle) {
+            toggle.hidden = all.length <= WORKLOAD_PREVIEW;
+            toggle.setAttribute('aria-expanded', workloadExpanded ? 'true' : 'false');
+            toggle.textContent = workloadExpanded ? 'Show fewer' : `Show all ${all.length}`;
         }
         clearNode(body);
         clearNode(mobile);
-        if (!engineers || !engineers.length) {
-            if (body) addTableRow(body, ['No workload found.', '', '', '', '']);
-            if (mobile) mobile.append(emptyMessage('No workload found.'));
+        if (!all.length) {
+            if (body) addTableRow(body, ['No engineer schedules in this range.', '', '', '', '', '']);
+            if (mobile) mobile.append(emptyMessage('No engineer schedules in this range.'));
             return;
         }
-        engineers.forEach((engineer) => {
-            addTableRow(body, [engineer.name, engineer.branch || 'Unassigned', engineer.count, engineer.active, engineer.completed]);
+        shown.forEach((engineer) => {
+            addTableRow(body, [engineer.name, engineer.branch || 'Unassigned', engineer.count, engineer.field_days, engineer.active, engineer.completed]);
             if (!mobile) return;
             const card = document.createElement('div');
             card.className = 'analytics-mobile-engineer-card';
             const name = document.createElement('strong');
             name.textContent = engineer.name || 'Engineer';
             const branch = document.createElement('small');
-            branch.textContent = `${engineer.branch || 'Unassigned'} · ${workloadStatus(Number(engineer.count || 0))}`;
+            branch.textContent = engineer.branch || 'Unassigned';
             const stats = document.createElement('div');
             stats.className = 'analytics-mobile-engineer-stats';
-            [['Total', engineer.count], ['Active', engineer.active], ['Completed', engineer.completed]].forEach(([label, value]) => {
+            [['Total', engineer.count], ['Field days', engineer.field_days], ['Active', engineer.active], ['Completed', engineer.completed]].forEach(([label, value]) => {
                 const stat = document.createElement('span');
                 stat.textContent = label;
                 const strong = document.createElement('b');
@@ -363,15 +386,18 @@
         });
     }
 
-    const CHART_FRAME_IDS = ['trend-chart', 'branch-chart', 'category-chart', 'equipment-machine-chart', 'equipment-model-chart'];
+    const CHART_FRAME_IDS = ['trend-chart', 'branch-chart', 'category-chart', 'client-chart', 'equipment-machine-chart', 'equipment-model-chart'];
+    const SCHEDULE_CHART_IDS = CHART_FRAME_IDS.slice(0, 4);
+    const EQUIPMENT_CHART_IDS = CHART_FRAME_IDS.slice(4);
     const lastChartWidths = {};
 
     function renderScheduleCharts(data) {
         if (!data) return;
         renderTrend(data.trend);
-        renderHorizontalChart('branch-chart', 'branch-table', data.branches, 'Branch concentration', 'Scoped schedule assignments by engineer branch.');
-        renderHorizontalChart('category-chart', 'category-table', data.categories, 'Service mix', 'Schedule categories in the selected period.');
-        CHART_FRAME_IDS.slice(0, 3).forEach((id) => {
+        renderHorizontalChart('category-chart', 'category-table', data.categories, 'Service mix', 'Schedules by type in the selected period.');
+        renderHorizontalChart('client-chart', 'client-table', data.top_clients, 'Top clients', 'Site visits per client, top 8.');
+        renderHorizontalChart('branch-chart', 'branch-table', data.branches, 'Branch concentration', 'Engineer assignments by branch.');
+        SCHEDULE_CHART_IDS.forEach((id) => {
             const node = byId(id);
             if (node && node.clientWidth > 0) lastChartWidths[id] = chartWidth(node);
         });
@@ -382,7 +408,7 @@
         if (!equipment) return;
         renderHorizontalChart('equipment-machine-chart', 'equipment-machine-table', equipment.by_machine, 'Top machines', 'Machine-linked purchase order counts by serial and model.');
         renderHorizontalChart('equipment-model-chart', 'equipment-model-table', equipment.by_model, 'Equipment models', 'Machine-linked purchase order counts by model.');
-        CHART_FRAME_IDS.slice(3).forEach((id) => {
+        EQUIPMENT_CHART_IDS.forEach((id) => {
             const node = byId(id);
             if (node && node.clientWidth > 0) lastChartWidths[id] = chartWidth(node);
         });
@@ -423,19 +449,34 @@
         const flow = data.flow || {};
         const stock = data.stock || {};
         renderMetric('schedule-total', flow.total, true);
-        renderMetric('schedule-active', stock.active, false);
         renderMetric('schedule-open', stock.open_client_work, false);
         renderMetric('schedule-completed', stock.completed, false);
+        const overdue = stock.overdue_client_work || {};
+        renderMetric('schedule-overdue', overdue, false);
+        // Alert tone only above zero, as the dashboard KPI tiles.
+        const overdueNode = byId('schedule-overdue');
+        if (overdueNode) overdueNode.classList.toggle('dashboard-metric-alert', Number(overdue.value || 0) > 0);
+        setText('schedule-overdue-buckets', (overdue.buckets || []).map((bucket) => `${bucket.label} ${bucket.count}`).join(' · '));
         renderScheduleCharts(data);
         renderStatusList(data.open_statuses);
         renderWorkload(data.engineers, data.engineer_total);
-        const line = byId('schedule-scope-line');
-        if (line) line.textContent = `Schedule range: ${data.range.start_date} to ${data.range.end_date} · ${data.branch_label || 'All Branches'} · ${data.range_total} schedules · ${data.assignment_total} assignments · Previous period: ${data.previous_range.start_date} to ${data.previous_range.end_date}`;
+        const previousKey = byId('trend-previous-key');
+        if (previousKey) previousKey.hidden = !data.comparison_available;
+        const range = `${readableDate(data.range.start_date)} to ${readableDate(data.range.end_date)}`;
+        const branch = data.branch_label || 'All Branches';
+        setText('analytics-page-sub', `Service activity, ${range}, ${branch}.`);
+        setText('analytics-filter-summary-text', `${range} · ${branch}`);
+        const comparison = data.comparison_available && data.previous_range
+            ? `Compared with ${readableDate(data.previous_range.start_date)} to ${readableDate(data.previous_range.end_date)}.`
+            : `No comparison: the previous period is before the system started (${readableDate(data.system_start_date)}).`;
+        const plural = (count, word) => `${count} ${word}${Number(count) === 1 ? '' : 's'}`;
+        setText('schedule-scope-line', `${plural(data.range_total, 'schedule')} · ${plural(data.assignment_total, 'engineer assignment')}. ${comparison}`);
     }
 
     function updatePo(data) {
         state.purchaseOrders = data;
         state.equipment = data.equipment || null;
+        if (!config.schedule && data.range) setText('analytics-filter-summary-text', `${readableDate(data.range.start_date)} to ${readableDate(data.range.end_date)}`);
         setText('po-total', data.total);
         const note = byId('po-scope-line');
         if (note) note.textContent = `${data.scope_label || 'Company-wide'} · ${data.range.start_date} to ${data.range.end_date} · counts only; no money values are shown.`;
@@ -570,7 +611,14 @@
         }
     };
 
+    function markPreset(mode) {
+        document.querySelectorAll('[data-analytics-preset]').forEach((button) => {
+            button.setAttribute('aria-pressed', button.dataset.analyticsPreset === mode ? 'true' : 'false');
+        });
+    }
+
     function setRangePreset(mode) {
+        markPreset(mode);
         const now = new Date();
         const start = new Date(now);
         const end = new Date(now);
@@ -599,6 +647,26 @@
         const form = byId('analytics-filter-form');
         if (form) form.addEventListener('submit', (event) => { event.preventDefault(); window.loadAnalytics(); });
         document.querySelectorAll('[data-analytics-preset]').forEach((button) => button.addEventListener('click', () => setRangePreset(button.dataset.analyticsPreset)));
+        // A hand-picked date is no longer the preset that filled it.
+        ['analytics-start', 'analytics-end'].forEach((id) => {
+            const input = byId(id);
+            if (input) input.addEventListener('input', () => markPreset(''));
+        });
+        const filterToggle = byId('analytics-filter-toggle');
+        if (filterToggle) {
+            filterToggle.addEventListener('click', () => {
+                const open = filterToggle.getAttribute('aria-expanded') !== 'true';
+                filterToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                if (form) form.classList.toggle('is-open', open);
+            });
+        }
+        const workloadToggle = byId('workload-toggle');
+        if (workloadToggle) {
+            workloadToggle.addEventListener('click', () => {
+                workloadExpanded = !workloadExpanded;
+                if (state.schedule) renderWorkload(state.schedule.engineers, state.schedule.engineer_total);
+            });
+        }
         initAnalyticsTabs();
         observeChartResize();
         setRangePreset('all');
