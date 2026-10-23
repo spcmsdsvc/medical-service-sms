@@ -682,7 +682,7 @@ class SidebarSourceTests(unittest.TestCase):
             "nav_link('/', 'fa-chart-line', 'Dashboard')",
             "nav_link('/approvals'",
             "nav_link('/accounting_center'",
-            "nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}\n                {% if nav_can_do_field_work %}{{ nav_link('/offline-tsr'",
+            "nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}\n            {% if not is_approver_only_user %}\n                {% if nav_can_do_field_work %}{{ nav_link('/offline-tsr'",
             'aria-level="2">Work</div>',
             'aria-label="Forms"',
             'aria-label="Clients"',

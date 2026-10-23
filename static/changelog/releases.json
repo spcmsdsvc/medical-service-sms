@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-23-approver-calendar",
+      "release_date": "2026-10-23",
+      "title": "Approvers can view the Calendar",
+      "summary": "Approver accounts now have Calendar in the menu, view-only.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-23-approver-calendar",
+          "category": "Calendar",
+          "description": "Approver accounts see Calendar in the menu and can browse every week's schedules. It is view-only: adding, editing and deleting schedules stay with the scheduling team.",
+          "audiences": [
+            "approvers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-23-personnel",
       "release_date": "2026-10-23",
       "title": "Personnel: Delete works again, clearer on phones and in dark mode",

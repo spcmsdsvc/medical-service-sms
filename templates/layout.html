@@ -240,8 +240,9 @@
                 {{ nav_link('/accounting_center', 'fa-inbox', 'My Requests', badge_id='nav-badge-my-requests') }}
             {% endif %}
 
+            {#- Approver-only accounts see the Calendar too; it opens view-only for them. -#}
+            {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}
             {% if not is_approver_only_user %}
-                {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}
                 {% if nav_can_do_field_work %}{{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}{% endif %}
                 {{ nav_link('/calibration-center', 'fa-certificate', 'My Calibrations') }}
             {% endif %}

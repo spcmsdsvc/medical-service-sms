@@ -28428,7 +28428,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v346-personnel';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v347-approver-calendar';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -30127,7 +30127,12 @@ def timeline_page():
         logged_in_engineer_id=engineer_id,
         logged_in_engineer_employee_id=engineer_employee_id,
         timeline_approver_view=is_configured_approver_user(),
-        timeline_read_only_approver=(is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile()),
+        # Approver-only accounts keep a Personnel row for their signature, so the profile
+        # check alone would hand them the full toolbar.
+        timeline_read_only_approver=(
+            is_approver_only_user() or
+            (is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile())
+        ),
         timeline_read_only_hr=is_hr_schedule_only_user(),
         timeline_read_only_support=is_support_engineer(),
         timeline_is_named_superadmin=is_superadmin_user(),
