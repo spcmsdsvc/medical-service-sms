@@ -28428,7 +28428,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v345-liquidation-recall';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v346-personnel';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -34930,6 +34930,10 @@ def get_engineers():
     admin_user_ids = {
         user.id for user in User.query.filter(User.role.in_(SUPERADMIN_FAMILY_ROLES | {'regional_admin'})).all()
     }
+    accounts_by_id = {}
+    if include_account_metadata and not hr_view:
+        linked_ids = [e.user_id for e in engineers if e.user_id]
+        accounts_by_id = {u.id: u for u in User.query.filter(User.id.in_(linked_ids)).all()} if linked_ids else {}
 
     for e in engineers:
         if hr_view:
@@ -34954,7 +34958,7 @@ def get_engineers():
         if include_account_metadata and not hr_view:
             # Cross-reference engineer ID with user database (Hard Link v5.4)
             # Only the real link counts; matching by first name attached the wrong login.
-            account = db.session.get(User, e.user_id) if e.user_id else None
+            account = accounts_by_id.get(e.user_id)
 
             row.update({
                 'account_role': account.role if account else None,
@@ -56254,8 +56258,10 @@ def export_engineers():
         'Emp ID', 'Engineer Name', 'Shorthand Initials', 'Branch', 'Phone', 'Email',
         'Username', 'Role', 'Account Status', 'Signature',
     ])
+    linked_ids = [e.user_id for e in engineers if e.user_id]
+    accounts_by_id = {u.id: u for u in User.query.filter(User.id.in_(linked_ids)).all()} if linked_ids else {}
     for e in engineers:
-        account = db.session.get(User, e.user_id) if e.user_id else None
+        account = accounts_by_id.get(e.user_id)
         status = 'No login' if not account else ('Active' if account.is_active else 'Inactive')
         writer.writerow([
             e.employee_id, e.name, e.initials, e.branch, e.phone, e.email,
@@ -65007,6 +65013,30 @@ def personnel_contact_error(phone, email, old_phone=None, old_email=None):
     return None
 
 
+PERSONNEL_BRANCHES = ('Manila', 'Cebu', 'Davao')
+# Initials stop at 5 (the form's limit): they print on TSR forms.
+PERSONNEL_FIELD_LIMITS = (
+    ('employee_id', 'Employee ID', 50),
+    ('name', 'Name', 100),
+    ('initials', 'Initials', 5),
+    ('phone', 'Mobile number', 20),
+    ('email', 'Email address', 100),
+)
+
+
+def personnel_field_error(p, fields=None):
+    """Check the branch and field lengths of a personnel payload; returns a message or None."""
+    branch = clean_str(p.get('branch'))
+    if fields is None and branch and branch not in PERSONNEL_BRANCHES:
+        return 'Branch must be Manila, Cebu or Davao.'
+    for key, label, limit in PERSONNEL_FIELD_LIMITS:
+        if fields is not None and key not in fields:
+            continue
+        if len(clean_str(p.get(key)) or '') > limit:
+            return f'{label} can be up to {limit} characters.'
+    return None
+
+
 @app.route('/add_engineer', methods=['POST'])
 @login_required
 def add_engineer():
@@ -65058,6 +65088,9 @@ def add_engineer():
         return jsonify({'message': f'Error: Employee ID {emp_id} is already taken.'}), 400
 
     if staff_type == 'engineer':
+        field_error = personnel_field_error(p)
+        if field_error:
+            return jsonify({'message': field_error}), 400
         branch_denial = personnel_branch_denial(clean_str(p.get('branch')))
         if branch_denial:
             return denied(branch_denial)
@@ -65188,7 +65221,10 @@ def update_engineer(id):
             return denied('Engineers can edit only their own contact information.')
 
         new_phone, new_email = clean_str(p.get('phone')), clean_str(p.get('email'))
-        contact_error = personnel_contact_error(new_phone, new_email, eng.phone, eng.email)
+        contact_error = (
+            personnel_field_error(p, fields={'phone', 'email'}) or
+            personnel_contact_error(new_phone, new_email, eng.phone, eng.email)
+        )
         if contact_error:
             return jsonify({'message': contact_error}), 400
         eng.phone = new_phone
@@ -65200,6 +65236,10 @@ def update_engineer(id):
 
     if not can_administer_personnel():
         return jsonify({'message': 'Denied'}), 403
+
+    field_error = personnel_field_error(p)
+    if field_error:
+        return jsonify({'message': field_error}), 400
 
     branch_denial = personnel_branch_denial(eng.branch, clean_str(p.get('branch')))
     if branch_denial:
@@ -65268,6 +65308,14 @@ def engineer_linked_record_counts(engineer):
         shift_ids.update(row[0] for row in (rows or []))
     counts['schedules'] = len(shift_ids)
 
+    user_id = engineer.user_id
+
+    def owned_by(model):
+        # Rows filed by the login count too, even when their engineer_id was left empty.
+        if user_id and hasattr(model, 'user_id'):
+            return or_(model.engineer_id == engineer.id, model.user_id == user_id)
+        return model.engineer_id == engineer.id
+
     for label, model in (
         ('reimbursement tracker entries', ReimbursementTrackerEntry),
         ('reimbursements', ReimbursementHeader),
@@ -65276,8 +65324,27 @@ def engineer_linked_record_counts(engineer):
         ('travel liquidations', TravelLiquidationHeader),
         ('cash advance liquidations', CashAdvanceLiquidationHeader),
         ('stock movements', StockInventoryMovement),
+        ('leave requests', LeaveRequest),
     ):
-        counts[label] = safe(lambda: model.query.filter(model.engineer_id == engineer.id).count()) or 0
+        counts[label] = safe(lambda: model.query.filter(owned_by(model)).count()) or 0
+
+    if user_id:
+        for label, model in (
+            ('cash advances', CashAdvanceHeader),
+            ('LPRs', LPRHeader),
+            ('TSR drafts', TsrDraft),
+            ('TSR number reservations', TsrNumberReservation),
+        ):
+            counts[label] = safe(lambda: model.query.filter(model.user_id == user_id).count()) or 0
+        # Approving other people's requests is history too: deleting the login would
+        # silently change who approves them.
+        counts['people they approve for'] = safe(lambda: db.session.query(
+            func.count(func.distinct(ApprovalRouting.requester_user_id))
+        ).filter(
+            ApprovalRouting.approver_user_id == user_id,
+            ApprovalRouting.requester_user_id != user_id,
+            ApprovalRouting.active.is_(True),
+        ).scalar()) or 0
     return counts
 
 
@@ -65348,9 +65415,19 @@ def delete_engineer(id):
             listed = found[0] if len(found) == 1 else ', '.join(found[:-1]) + ' and ' + found[-1]
             return jsonify({'message': f'{eng.name} has {listed}. Deactivate instead.'}), 409
         name = eng.name
-        # Delete linked account
+        # Delete linked account. Its own routes and personal notices go with it; the
+        # routes' User backrefs would otherwise try to null their NOT NULL user ids.
         user_acc = db.session.get(User, eng.user_id) if eng.user_id else None
-        if user_acc: db.session.delete(user_acc)
+        if user_acc:
+            with db.session.no_autoflush:
+                ApprovalRouting.query.filter(or_(
+                    ApprovalRouting.requester_user_id == user_acc.id,
+                    ApprovalRouting.approver_user_id == user_acc.id,
+                )).delete(synchronize_session=False)
+                SystemNotification.query.filter_by(user_id=user_acc.id).delete(synchronize_session=False)
+                ChangelogAcknowledgement.query.filter_by(user_id=user_acc.id).delete(synchronize_session=False)
+            db.session.expire(user_acc)
+            db.session.delete(user_acc)
 
         db.session.delete(eng); db.session.commit()
         log_activity(f"Permanently removed personnel: {name}")

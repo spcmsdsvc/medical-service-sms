@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-23-personnel",
+      "release_date": "2026-10-23",
+      "title": "Personnel: Delete works again, clearer on phones and in dark mode",
+      "summary": "Deleting an unused personnel record works again, and the Personnel page now reads clearly in dark mode and on phones.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-23-personnel-delete",
+          "category": "Personnel",
+          "description": "Delete works again for people with no history. Anyone with leave requests, cash advances, LPRs, TSR drafts, or who approves other people's requests, is refused with a note to deactivate instead. Branch must be Manila, Cebu or Davao, and initials are limited to 5 characters. A password reset now shows \"Temporary Password\".",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-23-personnel-display",
+          "category": "Personnel",
+          "description": "The Personnel page uses the same header as other pages, reads clearly in graphite and AMOLED dark mode, and on phones you tap a phone number or email to call or write.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-21-liquidation-recall",
       "release_date": "2026-10-21",
       "title": "Withdraw a submitted liquidation",

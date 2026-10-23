@@ -1,22 +1,9 @@
 {% extends "layout.html" %}
 
 {% block content %}
-<!-- 
-    ===========================================================================
-    MEDICAL SERVICE SYSTEM - TECHNICAL PERSONNEL DIRECTORY
-    ===========================================================================
-    Module: Version 5.2.1 (Manual Employee ID Overhaul)
-    File: engineers.html
-    
-    Update Log:
-    - Replaced auto-increment ID with manual Employee ID.
-    - Added unique Employee ID input to management modal.
-    - Integrated Manila, Cebu, and Davao branch office logic.
-    - Preserved SuperAdmin/Regional Admin modification privileges.
-    ===========================================================================
--->
+<!-- Personnel directory: technical personnel records and their logins. -->
 
-<div class="container-fluid">
+<div class="container-fluid personnel-page">
     <div id="engineer-alert-stack" class="engineer-alert-stack no-print" aria-live="polite" aria-atomic="true"></div>
 
     <div id="engineer-confirm-backdrop" class="engineer-confirm-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="engineer-confirm-title">
@@ -35,33 +22,29 @@
         </div>
     </div>
 
-    <div class="card shadow-sm border-0 p-4 bg-white">
-        
-        <!-- HEADER SECTION -->
-        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
-            <h2 class="h4 mb-0">
-                <i class="fa-solid fa-user-gear me-2 text-primary"></i>
-                Technical Personnel Directory
-            </h2>
-            <div class="btn-group">
-                {% if nav_can_administer_personnel %}
-                <button class="btn btn-outline-success btn-sm" onclick="window.location.href='/export_engineers'">
-                    <i class="fa-solid fa-file-excel me-1"></i>Export
-                </button>
-                {% endif %}
-                <button class="btn btn-outline-dark btn-sm" onclick="window.print()">
-                    <i class="fa-solid fa-print me-1"></i>Print
-                </button>
-                
-                <!-- v5.0 Privilege Guard: Engineers are View-Only -->
-                {% if nav_can_administer_personnel %}
-                <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">
-                    <i class="fa-solid fa-user-plus me-1"></i>Add Personnel
-                </button>
-                {% endif %}
-            </div>
+    <header class="dash-page-header no-print">
+        <div>
+            <h1 class="dash-page-h1">Personnel</h1>
+            <p class="dash-page-sub" id="engineer-directory-count" aria-live="polite">Loading personnel…</p>
         </div>
-        
+        <div class="dash-page-actions">
+            {% if nav_can_administer_personnel %}
+            <button type="button" class="btn btn-outline-primary d-none d-md-inline-flex" onclick="window.location.href='/export_engineers'">
+                <i class="fa-solid fa-file-excel me-2" aria-hidden="true"></i>Export
+            </button>
+            {% endif %}
+            <button type="button" class="btn btn-outline-primary d-none d-md-inline-flex" onclick="window.print()">
+                <i class="fa-solid fa-print me-2" aria-hidden="true"></i>Print
+            </button>
+            {% if nav_can_administer_personnel %}
+            <button type="button" class="btn btn-success" onclick="openAddModal()">
+                <i class="fa-solid fa-user-plus me-2" aria-hidden="true"></i>Add Personnel
+            </button>
+            {% endif %}
+        </div>
+    </header>
+
+    <div class="card shadow-sm border-0 p-4 personnel-panel">
         <!-- PRINT HEADER -->
         <div class="d-none d-print-block text-center mb-3">
             <h2>TECHNICAL PERSONNEL DIRECTORY - MEDICAL SERVICE</h2>
@@ -78,8 +61,8 @@
         <!-- SEARCH AND FILTER (desktop and mobile) -->
         <div class="engineer-mobile-toolbar no-print">
             <div class="engineer-mobile-search-wrap">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="search" id="engineer-mobile-search" placeholder="Search engineer, ID, branch, email..." aria-label="Search personnel" oninput="renderEngineerDirectory()">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input type="search" id="engineer-mobile-search" placeholder="Search name, ID, branch, email..." aria-label="Search personnel" oninput="renderEngineerDirectory()">
             </div>
             <select id="engineer-mobile-branch-filter" aria-label="Filter by branch" onchange="renderEngineerDirectory()">
                 <option value="">All Branches</option>
@@ -88,7 +71,6 @@
                 <option value="Davao">Davao</option>
             </select>
         </div>
-        <div id="engineer-directory-count" class="engineer-directory-count no-print" aria-live="polite"></div>
 
         <!-- PERSONNEL TABLE -->
         <div class="table-responsive">
@@ -119,13 +101,13 @@
 </div>
 
 <!-- ENGINEER MANAGEMENT MODAL (ADD/EDIT) -->
-<div class="modal fade no-print" id="engModal" tabindex="-1">
+<div class="modal fade no-print" id="engModal" tabindex="-1" aria-labelledby="modal-title" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
             
-            <div class="modal-header bg-primary text-white border-0 py-3">
+            <div class="modal-header bg-success text-white border-0 py-3">
                 <h5 id="modal-title" class="mb-0 fw-bold">Engineer Details</h5>
-                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             
             <div class="modal-body p-4">
@@ -133,7 +115,7 @@
                 <input type="hidden" id="edit-eng-db-id">
                 
                 <div class="mb-3" id="staff-type-wrap">
-                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Staff Type</label>
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1" for="e-staff-type">Staff Type</label>
                     <select id="e-staff-type" class="form-select shadow-none" onchange="syncStaffTypePermissionControls()">
                         <option value="engineer">Engineer</option>
                         {% if nav_is_superadmin %}
@@ -169,7 +151,7 @@
                             <label class="form-check-label small fw-bold" for="e-stock-inventory-only">Stock Inventory-only view</label>
                         </div>
                         <div id="staff-inventory-branch-wrap">
-                            <label class="small fw-bold d-block mb-1">Assigned Inventory Branch</label>
+                            <label class="small fw-bold d-block mb-1" for="e-stock-inventory-branch">Assigned Inventory Branch</label>
                             <select id="e-stock-inventory-branch" class="form-select form-select-sm shadow-none">
                                 <option value="">Select branch</option>
                                 <option value="BC01">BC01 - Manila/Main</option>
@@ -184,7 +166,7 @@
                 {% endif %}
 
                 <div class="mb-3" id="staff-company-branch-wrap">
-                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Company Branch</label>
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1" for="e-branch">Company Branch</label>
                     <select id="e-branch" class="form-select shadow-none">
                         <option value="">Select Location...</option>
                         <option value="Manila">Manila</option>
@@ -193,31 +175,30 @@
                     </select>
                 </div>
 
-                <!-- NEW v5.2.1: Manual Employee ID Input -->
                 <div class="mb-3" id="staff-employee-id-wrap">
-                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Employee ID (Unique)</label>
-                    <input type="text" id="e-emp-id" class="form-control shadow-none" placeholder="e.g. MS-2024-001">
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1" for="e-emp-id">Employee ID (Unique)</label>
+                    <input type="text" id="e-emp-id" class="form-control shadow-none" maxlength="50" placeholder="e.g. MS-2024-001">
                 </div>
 
                 <div class="mb-3">
-                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Full Name</label>
-                    <input type="text" id="e-name" class="form-control shadow-none" oninput="autoInitials()" placeholder="Enter first and last name">
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1" for="e-name">Full Name</label>
+                    <input type="text" id="e-name" class="form-control shadow-none" maxlength="100" oninput="autoInitials()" placeholder="Enter first and last name">
                 </div>
 
                 <div class="row">
                     <div class="col-md-6 mb-3" id="staff-initials-wrap">
-                        <label class="small fw-bold text-muted text-uppercase d-block mb-1">Initials</label>
+                        <label class="small fw-bold text-muted text-uppercase d-block mb-1" for="e-initials">Initials</label>
                         <input type="text" id="e-initials" class="form-control shadow-none" maxlength="5" placeholder="JD">
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label class="small fw-bold text-muted text-uppercase d-block mb-1">Mobile Number</label>
-                        <input type="text" id="e-phone" class="form-control shadow-none" placeholder="09XX XXX XXXX">
+                        <label class="small fw-bold text-muted text-uppercase d-block mb-1" for="e-phone">Mobile Number</label>
+                        <input type="tel" id="e-phone" class="form-control shadow-none" maxlength="20" placeholder="09XX XXX XXXX">
                     </div>
                 </div>
 
                 <div class="mb-3">
-                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Email Address</label>
-                    <input type="email" id="e-email" class="form-control shadow-none" placeholder="engineer@medicalservice.com">
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1" for="e-email">Email Address</label>
+                    <input type="email" id="e-email" class="form-control shadow-none" maxlength="100" placeholder="engineer@medicalservice.com">
                 </div>
 
                 <div class="alert alert-info border-0 small py-2 mb-0" id="engineer-modal-info">
@@ -227,7 +208,7 @@
             </div>
             
             <div class="modal-footer border-0 p-4 pt-0">
-                <button class="btn btn-light btn-sm px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-light btn-sm px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" id="eng-save-btn" class="btn btn-success btn-sm px-4 fw-bold shadow-sm" onclick="saveEngineer()">
                     <i class="fa-solid fa-floppy-disk me-1"></i>Save Personnel Record
                 </button>
@@ -305,6 +286,8 @@
                 icon.innerHTML = `<i class="fa-solid fa-${iconName}"></i>`;
             }
 
+            // Focus returns to the button that opened the dialog.
+            const opener = document.activeElement;
             let resolved = false;
             const cleanup = value => {
                 if(resolved) return;
@@ -314,11 +297,17 @@
                 cancelBtn.onclick = null;
                 backdrop.onclick = null;
                 document.removeEventListener('keydown', keyHandler);
+                if(opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
                 resolve(value);
             };
 
             const keyHandler = event => {
                 if(event.key === 'Escape') cleanup(false);
+                // Keep Tab inside the two buttons while the dialog is open.
+                if(event.key === 'Tab'){
+                    event.preventDefault();
+                    (document.activeElement === okBtn ? cancelBtn : okBtn).focus();
+                }
             };
 
             okBtn.onclick = () => cleanup(true);
@@ -329,7 +318,8 @@
             document.addEventListener('keydown', keyHandler);
 
             backdrop.classList.add('show');
-            setTimeout(() => okBtn.focus(), 60);
+            // A destructive action starts on Cancel, so Enter never deletes by accident.
+            setTimeout(() => (tone === 'danger' ? cancelBtn : okBtn).focus(), 60);
         });
     }
 
@@ -616,7 +606,7 @@
             container.innerHTML = `
                 <div class="engineer-mobile-empty">
                     <i class="fa-solid fa-user-slash"></i>
-                    <span>No engineers match your search.</span>
+                    <span>No personnel match your search.</span>
                 </div>`;
             return;
         }
@@ -626,12 +616,14 @@
             const initials = e.initials || '--';
             const phone = e.phone || '';
             const email = e.email || '';
-            const telAction = phone
-                ? `<a class="engineer-mobile-icon-action" href="tel:${escapeHtml(phone)}"><i class="fa-solid fa-phone"></i></a>`
-                : `<button class="engineer-mobile-icon-action disabled" disabled><i class="fa-solid fa-phone"></i></button>`;
-            const mailAction = email
-                ? `<a class="engineer-mobile-icon-action" href="mailto:${escapeHtml(email)}"><i class="fa-solid fa-envelope"></i></a>`
-                : `<button class="engineer-mobile-icon-action disabled" disabled><i class="fa-solid fa-envelope"></i></button>`;
+            const name = escapeHtml(e.name || 'this person');
+            // The visible value is the tap target, so nobody needs a second icon to call or email.
+            const phoneLine = phone
+                ? `<a class="engineer-mobile-contact-link" href="tel:${escapeHtml(phone)}" aria-label="Call ${name}, ${escapeHtml(phone)}"><i class="fa-solid fa-phone" aria-hidden="true"></i><span>${escapeHtml(phone)}</span></a>`
+                : `<div class="engineer-mobile-contact-link is-empty"><i class="fa-solid fa-phone" aria-hidden="true"></i><span>No phone saved</span></div>`;
+            const emailLine = email
+                ? `<a class="engineer-mobile-contact-link" href="mailto:${escapeHtml(email)}" aria-label="Email ${name}, ${escapeHtml(email)}"><i class="fa-solid fa-envelope" aria-hidden="true"></i><span>${escapeHtml(email)}</span></a>`
+                : `<div class="engineer-mobile-contact-link is-empty"><i class="fa-solid fa-envelope" aria-hidden="true"></i><span>No email saved</span></div>`;
 
             return `
                 <div class="engineer-mobile-card">
@@ -645,15 +637,11 @@
                                 ${engineerAccountBadge(e)}
                             </div>
                         </div>
-                        <div class="engineer-mobile-icon-actions">
-                            ${telAction}
-                            ${mailAction}
-                        </div>
                     </div>
 
                     <div class="engineer-mobile-contact">
-                        <div><i class="fa-solid fa-phone"></i><span>${escapeHtml(phone || 'No phone saved')}</span></div>
-                        <div><i class="fa-solid fa-envelope"></i><span>${escapeHtml(email || 'No email saved')}</span></div>
+                        ${phoneLine}
+                        ${emailLine}
                     </div>
 
                     ${getEngineerActionButtons(e)}
@@ -675,7 +663,7 @@
             actions = `
                 <td class="text-end no-print">
                     <div class="btn-group">
-                        <button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${e.id})" title="Edit" aria-label="Edit"><i class="fa-solid fa-pen"></i></button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="openEditModal(${e.id})" title="Edit" aria-label="Edit ${escapeHtml(e.name)}"><i class="fa-solid fa-pen"></i></button>
                         ${toggleMarkup}
                         ${resetTableMarkup}
                         ${deleteMarkup}
@@ -896,6 +884,7 @@
             loadEngineers(); 
 
             if (respData.temp_password) {
+                document.getElementById('cred-modal-title').textContent = 'Account Created';
                 const accountNote = document.getElementById('cred-account-note');
                 if(accountNote){
                     accountNote.textContent = respData.message || 'Account created successfully.';
@@ -921,36 +910,57 @@
     /**
      * DATABASE PERSISTENCE: Delete Record.
      */
-    async function deleteEngineer(dbId) { 
-        if(!(isSuperAdmin || isRegionalAdmin)) return;
+    // One account action at a time, so a double click cannot send it twice.
+    let personnelActionBusy = false;
+
+    async function runPersonnelAction(request){
+        if(personnelActionBusy) return null;
+        personnelActionBusy = true;
+        try {
+            const res = await request();
+            const respData = await res.json().catch(() => ({}));
+            return { res, respData };
+        } catch (err) {
+            engineerAlert("Could not reach the server. Try again.");
+            return null;
+        } finally {
+            personnelActionBusy = false;
+        }
+    }
+
+    async function deleteEngineer(dbId) {
+        if(!(isSuperAdmin || isRegionalAdmin) || personnelActionBusy) return;
+        const eng = engineersData.find(x => x.id == dbId);
+        const name = eng?.name || 'this person';
 
         const shouldDelete = await engineerConfirmDialog({
             title: 'Delete Engineer?',
-            message: 'Delete this person and their login permanently? This is only possible when they have no schedules or forms; otherwise deactivate them.',
+            message: `Delete ${name} and their login permanently? This is only possible when they have no schedules or forms; otherwise deactivate them.`,
             confirmText: 'Delete Engineer',
             cancelText: 'Cancel',
             tone: 'danger',
             icon: 'trash'
         });
+        if(!shouldDelete) return;
 
-        if(shouldDelete) {
-            const res = await fetch(`/delete_engineer/${dbId}`, { 
-                method: 'DELETE',
-                headers: { 'X-CSRFToken': getCSRFToken() } // SECURITY TOKEN ADDED
-            }); 
-            if(res.ok) loadEngineers(); 
-            else {
-                const respData = await res.json().catch(() => ({}));
-                engineerAlert(respData.message || "Action failed on server.");
-            }
-        } 
+        const result = await runPersonnelAction(() => fetch(`/delete_engineer/${dbId}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': getCSRFToken() }
+        }));
+        if(!result) return;
+        if(result.res.ok){
+            loadEngineers();
+            engineerToast(`${name} was deleted.`, 'success', 'Deleted');
+        } else {
+            engineerAlert(result.respData.message || "Action failed on server.");
+        }
     }
 
     /**
      * ACCOUNT STATUS: Deactivate keeps the person's history and blocks their login.
      */
     async function setEngineerActive(dbId, active) {
-        if(!(isSuperAdmin || isRegionalAdmin)) return;
+        if(!(isSuperAdmin || isRegionalAdmin) || personnelActionBusy) return;
         const eng = engineersData.find(x => x.id == dbId);
         const name = eng?.name || 'this person';
 
@@ -968,12 +978,13 @@
         });
         if(!confirmed) return;
 
-        const res = await fetch(`/set_engineer_active/${dbId}`, {
+        const result = await runPersonnelAction(() => fetch(`/set_engineer_active/${dbId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
             body: JSON.stringify({ active: Boolean(active) })
-        });
-        const respData = await res.json().catch(() => ({}));
+        }));
+        if(!result) return;
+        const { res, respData } = result;
         if(res.ok){
             loadEngineers();
             engineerToast(`${name} ${active ? 'can sign in again' : 'is deactivated'}.`, 'success', active ? 'Activated' : 'Deactivated');
@@ -987,7 +998,7 @@
      */
     async function resetEngineerPassword(dbId) {
         const eng = engineersData.find(x => x.id == dbId);
-        if(!(isSuperAdmin || isRegionalAdmin) || !eng?.user_id) return;
+        if(!(isSuperAdmin || isRegionalAdmin) || !eng?.user_id || personnelActionBusy) return;
 
         const confirmed = await engineerConfirmDialog({
             title: 'Reset Password?',
@@ -997,15 +1008,17 @@
         });
         if(!confirmed) return;
 
-        const res = await fetch(`/reset_user_password/${eng.user_id}`, {
+        const result = await runPersonnelAction(() => fetch(`/reset_user_password/${eng.user_id}`, {
             method: 'POST',
             headers: { 'X-CSRFToken': getCSRFToken() }
-        }).catch(() => null);
-        const respData = res ? await res.json().catch(() => ({})) : {};
-        if(!res || !res.ok || !respData.new_pw){
+        }));
+        if(!result) return;
+        const { res, respData } = result;
+        if(!res.ok || !respData.new_pw){
             return engineerAlert(respData.message || "Could not reset the password. Try again.");
         }
 
+        document.getElementById('cred-modal-title').textContent = 'Temporary Password';
         const accountNote = document.getElementById('cred-account-note');
         if(accountNote){
             accountNote.textContent = 'Temporary password. They must change it at next sign-in.';
@@ -1018,6 +1031,23 @@
 </script>
 
 <style>
+    /* Fixed pairs (DESIGN.md neutral and alert pairs) with their dark partners; everything
+       else comes from the theme variables so light, graphite and AMOLED all read. */
+    .personnel-page {
+        --personnel-muted: color-mix(in srgb, var(--app-muted) 85%, var(--app-text));
+        --personnel-chip-bg: #f1f5f9;
+        --personnel-chip-text: #334155;
+        --personnel-danger-bg: #fde8ea;
+        --personnel-danger-text: #a1121f;
+    }
+
+    :root[data-app-theme="dark"] .personnel-page {
+        --personnel-chip-bg: #334155;
+        --personnel-chip-text: #e2e8f0;
+        --personnel-danger-bg: #5c1a22;
+        --personnel-danger-text: #fecdd3;
+    }
+
     .engineer-alert-stack {
         position: fixed;
         top: 18px;
@@ -1031,11 +1061,11 @@
 
     .engineer-alert-toast {
         pointer-events: auto;
-        border-radius: 16px;
+        border-radius: 12px;
         padding: 12px 14px;
         border: 1px solid var(--app-primary-soft-border);
-        background: #ffffff;
-        color: #0f172a;
+        background: var(--app-surface);
+        color: var(--app-text);
         box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
         display: grid;
         grid-template-columns: 28px 1fr auto;
@@ -1058,6 +1088,25 @@
         color: #92400e;
     }
 
+    /* app-dark-pages.css flattens every toast to the dark panel; keep the meaning. */
+    :root[data-app-theme="dark"] .engineer-alert-toast.success,
+    :root[data-app-theme="dark"] .engineer-alert-toast.ok {
+        background: #14532d !important;
+        border-color: #166534 !important;
+        color: #bbf7d0 !important;
+    }
+
+    :root[data-app-theme="dark"] .engineer-alert-toast.warning,
+    :root[data-app-theme="dark"] .engineer-alert-toast.warn {
+        background: #4a3612 !important;
+        border-color: #7c6420 !important;
+        color: #fde68a !important;
+    }
+
+    :root[data-app-theme="dark"] .engineer-alert-toast:is(.success, .ok, .warning, .warn) :is(.engineer-alert-title, .engineer-alert-message) {
+        color: inherit !important;
+    }
+
     .engineer-alert-icon {
         width: 28px;
         height: 28px;
@@ -1070,12 +1119,12 @@
     }
 
     .engineer-alert-title {
-        font-weight: 950;
+        font-weight: 600;
         margin-bottom: 2px;
     }
 
     .engineer-alert-message {
-        font-weight: 800;
+        font-weight: 400;
         line-height: 1.35;
         font-size: .86rem;
         white-space: pre-wrap;
@@ -1086,7 +1135,7 @@
         background: transparent;
         color: inherit;
         font-size: 1.05rem;
-        font-weight: 950;
+        font-weight: 600;
         cursor: pointer;
         line-height: 1;
     }
@@ -1108,8 +1157,8 @@
 
     .engineer-confirm-box {
         width: min(460px, 100%);
-        background: #ffffff;
-        border-radius: 22px;
+        background: var(--app-surface);
+        border-radius: 12px;
         box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
         border: 1px solid var(--app-primary-soft-border);
         overflow: hidden;
@@ -1126,7 +1175,7 @@
     .engineer-confirm-icon {
         width: 42px;
         height: 42px;
-        border-radius: 16px;
+        border-radius: 12px;
         background: var(--app-primary-soft);
         color: var(--app-primary-text);
         display: inline-flex;
@@ -1137,21 +1186,21 @@
     }
 
     .engineer-confirm-box.danger .engineer-confirm-icon {
-        background: #fee2e2;
-        color: #b91c1c;
+        background: var(--personnel-danger-bg);
+        color: var(--personnel-danger-text);
     }
 
     .engineer-confirm-title {
         margin: 0;
-        color: #0f172a;
-        font-weight: 950;
-        font-size: 1.08rem;
+        color: var(--app-text);
+        font-weight: 600;
+        font-size: 1.05rem;
     }
 
     .engineer-confirm-message {
         margin-top: 5px;
-        color: #475569;
-        font-weight: 800;
+        color: var(--personnel-muted);
+        font-weight: 400;
         line-height: 1.45;
         white-space: pre-wrap;
     }
@@ -1174,12 +1223,39 @@
         to { opacity: 1; transform: translateY(0); }
     }
 
+    @media (prefers-reduced-motion: reduce) {
+        .engineer-alert-toast,
+        .engineer-confirm-box { animation: none; }
+    }
+
     /* PERSONNEL MANAGEMENT STYLING */
     .table-hover tbody tr:hover { background-color: rgba(var(--app-primary-rgb), 0.03); }
-    .font-monospace { font-family: 'Courier New', Courier, monospace; }
-    .xsmall { font-size: 0.65rem; }
+    /* Employee IDs read like logbook entries (DESIGN.md .logbook-ref). */
+    .personnel-page .font-monospace {
+        font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: .02em;
+    }
     .italic { font-style: italic; }
-    .rounded-4 { border-radius: 1rem !important; }
+
+    /* Outline buttons keep 4.5:1 text and 3:1 borders in graphite and AMOLED. */
+    :root[data-app-theme="dark"] .personnel-page .btn-outline-secondary {
+        color: var(--app-text);
+        border-color: var(--app-muted);
+    }
+
+    :root[data-app-theme="dark"] .personnel-page .btn-outline-danger {
+        color: #fca5a5;
+        border-color: #f87171;
+    }
+
+    :root[data-app-theme="dark"] .personnel-page :is(.btn-outline-secondary, .btn-outline-danger):hover {
+        color: var(--app-surface);
+        background: currentColor;
+    }
+
+    :root[data-app-theme="dark"] .personnel-page .btn-outline-secondary:hover { background: var(--app-text); }
+    :root[data-app-theme="dark"] .personnel-page .btn-outline-danger:hover { background: #fca5a5; }
 
     /* MOBILE ENGINEERS PAGE UPGRADE */
     .engineer-mobile-list {
@@ -1190,14 +1266,7 @@
         display: flex;
         gap: 0.65rem;
         max-width: 40rem;
-        margin-bottom: 0.5rem;
-    }
-
-    .engineer-directory-count {
-        color: #64748b;
-        font-size: 0.8rem;
-        font-weight: 700;
-        margin-bottom: 0.75rem;
+        margin-bottom: 1rem;
     }
 
     .engineer-mobile-search-wrap {
@@ -1210,20 +1279,20 @@
         left: 0.85rem;
         top: 50%;
         transform: translateY(-50%);
-        color: #64748b;
+        color: var(--personnel-muted);
         font-size: 0.85rem;
     }
 
     .engineer-mobile-search-wrap input,
     #engineer-mobile-branch-filter {
         width: 100%;
-        min-height: 2.65rem;
-        border: 1px solid #cbd5e1;
-        border-radius: 0.9rem;
-        background: #fff;
-        color: #0f172a;
-        font-size: 0.84rem;
-        font-weight: 800;
+        min-height: 2.75rem;
+        border: 1px solid var(--app-border);
+        border-radius: 10px;
+        background: var(--app-input-bg, var(--app-surface));
+        color: var(--app-text);
+        font-size: 0.9rem;
+        font-weight: 400;
         box-shadow: none;
     }
 
@@ -1240,9 +1309,10 @@
     }
 
     .engineer-mobile-card {
-        border: 1px solid #e2e8f0;
-        background: #fff;
-        border-radius: 1.05rem;
+        border: 1px solid var(--app-border);
+        background: var(--app-surface);
+        color: var(--app-text);
+        border-radius: 16px;
         padding: 0.95rem;
         margin-bottom: 0.75rem;
         box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
@@ -1257,13 +1327,13 @@
     .engineer-mobile-avatar {
         width: 2.65rem;
         height: 2.65rem;
-        border-radius: 0.9rem;
+        border-radius: 10px;
         background: var(--app-primary-soft);
         color: var(--app-primary-text);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-weight: 900;
+        font-weight: 600;
         font-size: 0.86rem;
         flex-shrink: 0;
     }
@@ -1274,10 +1344,10 @@
     }
 
     .engineer-mobile-name {
-        color: #0f172a;
-        font-size: 0.98rem;
-        font-weight: 900;
-        line-height: 1.2;
+        color: var(--app-text);
+        font-size: 1rem;
+        font-weight: 600;
+        line-height: 1.25;
     }
 
     .engineer-mobile-subline {
@@ -1292,63 +1362,42 @@
         display: inline-flex;
         align-items: center;
         border-radius: 999px;
-        padding: 0.28rem 0.5rem;
-        font-size: 0.64rem;
-        font-weight: 900;
+        padding: 0.25rem 0.55rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: var(--personnel-chip-bg);
+        color: var(--personnel-chip-text);
     }
 
     .engineer-mobile-id {
-        background: #f1f5f9;
-        color: #334155;
-        font-family: 'Courier New', Courier, monospace;
+        font-family: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-variant-numeric: tabular-nums;
     }
 
-    .engineer-mobile-branch {
-        background: #ecfdf5;
-        color: #047857;
+    /* Each contact line is the tap target: the value stays readable and calls or emails. */
+    .engineer-mobile-contact {
+        display: grid;
+        gap: 0.25rem;
+        margin-top: 0.65rem;
+        font-size: 0.86rem;
     }
 
-    .engineer-mobile-icon-actions {
-        display: flex;
-        gap: 0.4rem;
-    }
-
-    .engineer-mobile-icon-action {
-        width: 2.2rem;
-        height: 2.2rem;
-        border-radius: 999px;
-        border: 1px solid var(--app-primary-soft-border);
-        background: var(--app-primary-soft);
-        color: var(--app-primary-text);
-        display: inline-flex;
+    .engineer-mobile-contact-link {
+        display: grid;
+        grid-template-columns: 1.1rem 1fr;
         align-items: center;
-        justify-content: center;
+        gap: 0.5rem;
+        min-height: 44px;
+        min-width: 0;
+        color: var(--app-primary-text);
         text-decoration: none;
     }
 
-    .engineer-mobile-icon-action.disabled {
-        background: #f8fafc;
-        color: #94a3b8;
-        border-color: #e2e8f0;
+    .engineer-mobile-contact-link.is-empty {
+        color: var(--personnel-muted);
     }
 
-    .engineer-mobile-contact {
-        display: grid;
-        gap: 0.45rem;
-        margin-top: 0.85rem;
-        color: #64748b;
-        font-size: 0.78rem;
-        font-weight: 700;
-    }
-
-    .engineer-mobile-contact div {
-        display: grid;
-        grid-template-columns: 1.1rem 1fr;
-        gap: 0.5rem;
-        min-width: 0;
-    }
-
-    .engineer-mobile-contact span {
+    .engineer-mobile-contact-link span {
         overflow-wrap: anywhere;
     }
 
@@ -1356,15 +1405,15 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
         gap: 0.55rem;
-        margin-top: 0.9rem;
+        margin-top: 0.75rem;
     }
 
     .engineer-mobile-btn {
         border: none;
-        min-height: 2.45rem;
-        border-radius: 0.85rem;
-        font-size: 0.78rem;
-        font-weight: 900;
+        min-height: 44px;
+        border-radius: 10px;
+        font-size: 0.86rem;
+        font-weight: 600;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -1377,34 +1426,34 @@
     }
 
     .engineer-mobile-toggle {
-        background: #f1f5f9;
-        color: #334155;
+        background: var(--personnel-chip-bg);
+        color: var(--personnel-chip-text);
     }
 
     .engineer-mobile-delete {
-        background: #fee2e2;
-        color: #b91c1c;
+        background: var(--personnel-danger-bg);
+        color: var(--personnel-danger-text);
     }
 
     .engineer-mobile-readonly {
-        margin-top: 0.9rem;
-        color: #64748b;
-        font-size: 0.72rem;
-        font-weight: 900;
+        margin-top: 0.75rem;
+        color: var(--personnel-muted);
+        font-size: 0.78rem;
+        font-weight: 600;
         text-align: center;
-        background: #f8fafc;
-        border-radius: 0.85rem;
+        background: var(--app-surface-raised);
+        border-radius: 10px;
         padding: 0.65rem;
     }
 
     .engineer-mobile-empty {
-        border: 1px dashed #cbd5e1;
-        background: #f8fafc;
-        color: #64748b;
-        border-radius: 1rem;
+        border: 1px dashed var(--app-border);
+        background: var(--app-surface-raised);
+        color: var(--personnel-muted);
+        border-radius: 16px;
         padding: 1.3rem;
         text-align: center;
-        font-weight: 800;
+        font-weight: 500;
         display: grid;
         gap: 0.4rem;
     }
@@ -1424,43 +1473,26 @@
 
         .engineer-confirm-box {
             width: 100%;
-            border-radius: 20px;
+            border-radius: 18px;
         }
 
-        .container-fluid {
-            padding-left: 0.85rem;
-            padding-right: 0.85rem;
+        /* The page panel drops its padding so cards sit on the shell gutter (DESIGN.md). */
+        :root .personnel-page > .card.personnel-panel {
+            padding: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            border: 0 !important;
         }
 
-        .container-fluid > .card {
-            padding: 1rem !important;
-            border-radius: 1.1rem;
-        }
-
-        .container-fluid > .card > .d-flex.justify-content-between {
+        .engineer-mobile-toolbar {
             flex-direction: column;
-            align-items: flex-start !important;
-            gap: 0.85rem;
+            max-width: none;
         }
 
-        .container-fluid h2.h4 {
-            font-size: 1.12rem;
-            line-height: 1.25;
-        }
-
-        .container-fluid .btn-group {
+        #engineer-mobile-branch-filter {
+            flex: 1 1 auto;
             width: 100%;
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 0.5rem;
-        }
-
-        .container-fluid .btn-group .btn {
-            border-radius: 0.8rem !important;
-            margin-left: 0 !important;
-            min-height: 2.45rem;
-            font-size: 0.75rem;
-            font-weight: 900;
+            max-width: none;
         }
 
         .table-responsive {
@@ -1488,31 +1520,33 @@
 
         #engModal .modal-footer .btn {
             width: 100%;
-            min-height: 2.6rem;
+            min-height: 44px;
         }
     }
 </style>
 
 <!-- TEMP PASSWORD MODAL -->
-<div class="modal fade no-print" id="credModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+<div class="modal fade no-print" id="credModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="cred-modal-title" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
-                <h5 class="modal-title">Account Created</h5>
+                <h5 class="modal-title" id="cred-modal-title">Account Created</h5>
             </div>
             <div class="modal-body">
                 <div id="cred-account-note" class="alert alert-info small mb-3"></div>
-                <div class="mb-2">
-<b>Username:</b> <input id="cred-username" class="form-control d-inline w-auto" readonly>
-<button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyText('cred-username')">Copy</button>
-</div>
-                <div>
-<b>Password:</b> <input id="cred-password" class="form-control d-inline w-auto" readonly>
-<button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyText('cred-password')">Copy</button>
-</div>
+                <label class="small fw-bold d-block mb-1" for="cred-username">Username</label>
+                <div class="input-group mb-3">
+                    <input id="cred-username" class="form-control" readonly>
+                    <button type="button" class="btn btn-outline-secondary" onclick="copyText('cred-username')">Copy</button>
+                </div>
+                <label class="small fw-bold d-block mb-1" for="cred-password">Password</label>
+                <div class="input-group">
+                    <input id="cred-password" class="form-control" readonly aria-describedby="cred-password-note">
+                    <button type="button" class="btn btn-outline-secondary" onclick="copyText('cred-password')">Copy</button>
+                </div>
+                <div class="form-text" id="cred-password-note">This password is shown only once. Copy it before closing.</div>
             </div>
             <div class="modal-footer">
-                <span class="small text-muted me-auto">This password is shown only once.</span>
                 <button type="button" class="btn btn-success btn-sm px-4 fw-bold" data-bs-dismiss="modal">Done</button>
             </div>
         </div>
