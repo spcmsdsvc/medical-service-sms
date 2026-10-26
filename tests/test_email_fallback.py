@@ -1,5 +1,7 @@
 import base64
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -107,6 +109,13 @@ class EmailFallbackTests(unittest.TestCase):
         self.assertFalse(ok)
         post.assert_not_called()
 
+    def test_notifications_disabled_sends_no_attachment_email(self):
+        app_module.app.config['EMAIL_NOTIFICATIONS_ENABLED'] = False
+        with patch.object(app_module.requests, 'post') as post:
+            ok, _ = app_module.send_email_with_attachments(['a@example.com'], 'Subject', 'Text', cc_emails=['c@example.com'])
+        self.assertFalse(ok)
+        post.assert_not_called()
+
     def test_brevo_with_credits_left_is_used(self):
         (ok, _), post = self.send([fake_response(201)])
         self.assertTrue(ok)
@@ -157,6 +166,25 @@ class EmailFallbackTests(unittest.TestCase):
         (ok, message), _ = self.send([fake_response(429), mailjet_error])
         self.assertFalse(ok)
         self.assertIn('Mailjet failed', message)
+
+
+class TestDatabaseEmailGuardTests(unittest.TestCase):
+    def test_test_database_turns_outgoing_email_off(self):
+        # A browser check on a scheduler.db copy once emailed a real engineer (2026-10-26).
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        test_db = os.path.join(tempfile.gettempdir(), f'medical_service_email_guard_{os.getpid()}.db')
+        env = dict(os.environ, MEDICAL_SERVICE_TEST_DB=test_db, EMAIL_NOTIFICATIONS_ENABLED='true',
+                   PYTHONIOENCODING='utf-8')
+        try:
+            result = subprocess.run(
+                [sys.executable, '-c', "import app; print('ENABLED=' + str(app.app.config['EMAIL_NOTIFICATIONS_ENABLED']))"],
+                cwd=root, env=env, capture_output=True, text=True, encoding='utf-8', timeout=300,
+            )
+        finally:
+            if os.path.exists(test_db):
+                os.remove(test_db)
+        self.assertIn('ENABLED=False', result.stdout, result.stderr[-2000:])
+        self.assertIn('outgoing email is off', result.stdout)
 
 
 if __name__ == '__main__':

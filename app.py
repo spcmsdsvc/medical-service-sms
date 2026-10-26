@@ -211,6 +211,10 @@ app.config['SMTP_SENDER_NAME'] = (
     'SPC-Medical Service Scheduler'
 )
 app.config['EMAIL_NOTIFICATIONS_ENABLED'] = os.environ.get('EMAIL_NOTIFICATIONS_ENABLED', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
+# A test or browser-check database copy never emails real people, even with real keys in .env.
+if os.environ.get('MEDICAL_SERVICE_TEST_DB'):
+    app.config['EMAIL_NOTIFICATIONS_ENABLED'] = False
+    print('[EMAIL] Test database in use: outgoing email is off.', flush=True)
 
 # What's New digest sending. Deliberately defaults to FALSE and is checked independently
 # of EMAIL_NOTIFICATIONS_ENABLED, which defaults to true -- so a sandbox holding a real
