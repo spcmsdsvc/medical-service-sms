@@ -3,57 +3,61 @@
 {% block title %}Reimbursement Tracker{% endblock %}
 
 {% block page_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=75">
 <style>
     .rt-page { color: var(--app-text, #16243a); }
-    .rt-hero, .rt-panel, .rt-kpi, .rt-filter-panel {
+    .rt-page .dash-page-h1 { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; }
+    /* The active batch reads as the page's status chip, like the request pages. */
+    .rt-batch-chip {
+        background: var(--app-primary-soft, #e7f0ff);
+        border-radius: 999px;
+        color: var(--app-primary-text, #0a58ca);
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: .78rem;
+        font-weight: 600;
+        padding: .25rem .65rem;
+        white-space: nowrap;
+    }
+    .rt-panel, .rt-filter-panel {
         background: var(--app-surface, #fff);
         border: 1px solid var(--app-border, #d6e0ec);
-        border-radius: .9rem;
-        box-shadow: 0 .35rem 1.2rem rgba(16, 38, 69, .08);
+        border-radius: 10px;
+        box-shadow: 0 .35rem 1.2rem rgba(15, 23, 42, .08);
     }
-    .rt-hero {
-        background: linear-gradient(135deg, #14243a, #244d8f);
-        color: #fff;
-        padding: 1.5rem;
-    }
-    .rt-hero h1 { font-size: clamp(1.4rem, 2.4vw, 2.2rem); margin: 0; }
-    .rt-kpi { min-height: 6rem; padding: 1rem; }
-    .rt-kpi-label {
-        color: var(--app-muted-text, #60738d);
-        font-size: .72rem;
-        font-weight: 800;
-        letter-spacing: .08em;
-        text-transform: uppercase;
-    }
-    .rt-kpi-value { color: var(--app-text, #16243a); font-size: 1.7rem; font-weight: 900; }
+    /* Stat Cards (DESIGN.md): auto-fit, two across on phones. */
+    .rt-stat-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
     .rt-filter-panel { padding: 1rem; }
-    .rt-filter-panel label { color: var(--app-muted-text, #60738d); font-size: .72rem; font-weight: 800; text-transform: uppercase; }
+    .rt-filter-panel label { color: var(--app-muted-text, #60738d); font-size: .75rem; font-weight: 600; text-transform: uppercase; }
+    .rt-batch-tools { align-items: flex-end; display: flex; flex-wrap: wrap; gap: .5rem; }
+    .rt-batch-tools .rt-batch-select { flex: 1 1 12rem; max-width: 22rem; min-width: 0; }
     .rt-panel { overflow: hidden; }
     .rt-table-wrap { overflow-x: auto; }
     .rt-table { color: var(--app-text, #16243a); margin: 0; min-width: 1050px; }
     .rt-table thead th {
-        background: var(--app-table-head, #16243a);
+        background: var(--app-primary, #0d6efd);
         border: 0;
         color: #fff;
-        font-size: .72rem;
-        letter-spacing: .04em;
+        font-size: .75rem;
+        letter-spacing: .05em;
         text-transform: uppercase;
         white-space: nowrap;
     }
     .rt-table tbody td { border-color: var(--app-border, #d6e0ec); vertical-align: middle; }
     .rt-sort-button { background: transparent; border: 0; color: inherit; font: inherit; padding: 0; }
-    .rt-sort-button:focus-visible, .rt-icon-button:focus-visible { outline: 3px solid var(--app-focus-ring, #5aa7ff); outline-offset: 2px; }
-    .rt-control { color: var(--app-text, #16243a); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 800; white-space: nowrap; }
-    .rt-description { color: var(--app-text, #16243a); font-weight: 750; max-width: 25rem; overflow-wrap: anywhere; }
+    .rt-sort-button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+    .rt-control { color: var(--app-text, #16243a); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 600; white-space: nowrap; }
+    .rt-description { color: var(--app-text, #16243a); font-weight: 500; max-width: 25rem; overflow-wrap: anywhere; }
     .rt-muted { color: var(--app-muted-text, #60738d); }
-    .rt-amount { color: var(--app-text, #16243a); font-variant-numeric: tabular-nums; font-weight: 850; white-space: nowrap; }
-    .rt-status { border-radius: 999px; display: inline-flex; font-size: .72rem; font-weight: 800; padding: .35rem .6rem; white-space: nowrap; }
-    .rt-status.paid { background: #d9f7e7; color: #087443; }
-    .rt-status.unpaid { background: #fff0d6; color: #8a5300; }
+    .rt-amount { color: var(--app-text, #16243a); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+    .rt-status { border-radius: 999px; display: inline-flex; font-size: .75rem; font-weight: 600; padding: .35rem .6rem; white-space: nowrap; }
+    .rt-status.paid { background: #dcfce7; color: #166534; }
+    .rt-status.unpaid { background: #fff1d6; color: #8a5700; }
     .rt-actions { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
-    .rt-actions .btn { min-height: 2.5rem; }
+    .rt-actions .btn { min-height: 2.55rem; }
     .rt-mobile-list { display: none; }
-    .rt-mobile-card { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: .8rem; padding: 1rem; }
+    .rt-mobile-card { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: 16px; padding: 1rem; }
+    .rt-load-error { display: none; }
+    .rt-load-error.show { display: block; }
     .rt-modal-content { background: var(--app-surface, #fff); border: 1px solid var(--app-border, #d6e0ec); color: var(--app-text, #16243a); }
     /* Bootstrap's .modal-dialog-scrollable expects .modal-body to be a direct flex child of
        .modal-content, which caps its height and lets it scroll. This modal wraps the header,
@@ -63,7 +67,7 @@
        carry the flex column restores the intended behaviour. */
     .rt-modal-content > form { display: flex; flex-direction: column; max-height: 100%; min-height: 0; }
     .rt-modal-content > form > .modal-body { min-height: 0; overflow-y: auto; }
-    .rt-category-grid .form-label { color: var(--app-muted-text, #60738d); font-size: .75rem; font-weight: 800; }
+    .rt-category-grid .form-label { color: var(--app-muted-text, #60738d); font-size: .75rem; font-weight: 600; }
     .rt-suggestions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
     .rt-suggest-chip {
         background: var(--app-surface-raised, #f7fafd);
@@ -71,22 +75,22 @@
         border-radius: 999px;
         color: var(--app-muted-text, #60738d);
         cursor: pointer;
-        font-size: .72rem;
-        font-weight: 800;
+        font-size: .75rem;
+        font-weight: 600;
         line-height: 1.2;
         padding: .28rem .55rem;
     }
     .rt-suggest-chip:hover, .rt-suggest-chip:focus-visible {
         background: var(--app-surface, #fff);
-        border-color: #5aa7ff;
+        border-color: var(--app-primary, #0d6efd);
         color: var(--app-text, #16243a);
     }
-    .rt-suggest-chip:focus-visible { outline: 2px solid #5aa7ff; outline-offset: 2px; }
-    .rt-total-box { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: .7rem; padding: .75rem 1rem; }
-    .rt-total-value { color: var(--app-text, #16243a); font-size: 1.35rem; font-weight: 900; }
-    .rt-confirm-backdrop { align-items: center; background: rgba(6, 17, 32, .68); display: none; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 2060; }
+    .rt-suggest-chip:focus-visible { outline: 2px solid var(--app-primary, #0d6efd); outline-offset: 2px; }
+    .rt-total-box { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: 10px; padding: .75rem 1rem; }
+    .rt-total-value { color: var(--app-text, #16243a); font-size: 1.25rem; font-weight: 600; }
+    .rt-confirm-backdrop { align-items: center; background: rgba(15, 23, 42, .68); display: none; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 2060; }
     .rt-confirm-backdrop.show { display: flex; }
-    .rt-confirm-card { background: var(--app-surface, #fff); border: 1px solid var(--app-border, #d6e0ec); border-radius: .85rem; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .24); color: var(--app-text, #16243a); max-width: 30rem; padding: 1.25rem; width: 100%; }
+    .rt-confirm-card { background: var(--app-surface, #fff); border: 1px solid var(--app-border, #d6e0ec); border-radius: 12px; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .24); color: var(--app-text, #16243a); max-width: 30rem; padding: 1.25rem; width: 100%; }
     .page-toast-stack { display: grid; gap: .75rem; max-width: min(26rem, calc(100vw - 2rem)); pointer-events: none; position: fixed; right: 1rem; top: 1rem; width: 100%; z-index: 2080; }
     .page-toast { align-items: flex-start; background: var(--app-surface-raised, #f8fafc); border: 1px solid var(--app-border, #dbe3ea); border-left: .35rem solid var(--app-primary, #0d6efd); border-radius: .75rem; box-shadow: 0 .8rem 2rem rgba(15, 23, 42, .2); color: var(--app-text, #172033); display: flex; gap: .65rem; padding: .8rem 1rem; pointer-events: auto; }
     .page-toast.success { border-left-color: #198754; }
@@ -96,16 +100,22 @@
     .page-toast.success .page-toast-icon { color: #198754; }
     .page-toast.warning .page-toast-icon { color: #bf6b0f; }
     .page-toast.danger .page-toast-icon { color: #dc3545; }
-    [data-app-theme="dark"] .rt-hero { background: linear-gradient(135deg, #101b2c, #1c3f7e); }
-    [data-app-theme="dark"] .rt-status.paid { background: #103e2a; color: #9af1c1; }
-    [data-app-theme="dark"] .rt-status.unpaid { background: #4a3514; color: #ffd68a; }
+    [data-app-theme="dark"] .rt-status.paid { background: #14532d; color: #bbf7d0; }
+    [data-app-theme="dark"] .rt-status.unpaid { background: #4a3612; color: #fde68a; }
+    [data-app-theme="dark"] .rt-batch-chip { background: var(--app-surface-raised); color: var(--app-text); }
+    /* Bootstrap's dark table rule paints heads with the surface; keep a raised tone instead. */
+    :root[data-app-theme="dark"] .rt-table thead th { background: var(--app-surface-raised); color: var(--app-text); }
+    :root[data-app-theme="dark"] .rt-page .btn-outline-danger { border-color: #f87171; color: #fca5a5; }
+    :root[data-app-theme="dark"] .rt-page .btn-outline-danger:hover { background: #fca5a5; color: var(--app-surface); }
     @media (max-width: 767.98px) {
-        .rt-hero, .rt-filter-panel, .rt-panel { border-radius: .7rem; }
-        .rt-hero { padding: 1.1rem; }
+        .rt-filter-panel, .rt-panel { border-radius: 14px; }
+        .rt-stat-grid { gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .rt-filter-panel:not(.is-open) { display: none; }
         .rt-table-wrap { display: none; }
         .rt-mobile-list { display: grid; gap: .7rem; padding: .75rem; }
         .rt-actions { justify-content: stretch; }
         .rt-actions .btn { flex: 1 1 8rem; }
+        .rt-batch-tools .btn { min-height: 44px; }
     }
 </style>
 {% endblock %}
@@ -115,44 +125,44 @@
     <div id="rt-alert" class="visually-hidden no-print" role="status" aria-live="polite"></div>
     <div id="rt-toast-stack" class="page-toast-stack no-print" aria-hidden="true"></div>
 
-    <section class="rt-hero mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <header class="dash-page-header no-print">
         <div>
-            <div class="small text-uppercase fw-bold opacity-75">Accounting Register</div>
-            <h1><i class="fa-solid fa-receipt me-2" aria-hidden="true"></i>Reimbursement Tracker</h1>
-            <p class="mb-0 mt-2 opacity-75">Record standalone reimbursement batches and export the Accounting register.</p>
-            <div class="mt-3 d-flex flex-wrap align-items-center gap-2" aria-live="polite">
-                <span class="small text-uppercase fw-bold opacity-75">Current batch</span>
-                <strong id="rt-current-batch-reference">Loadingâ€¦</strong>
-                <span class="small opacity-75">New rows stay here until you start another batch.</span>
-            </div>
+            <h1 class="dash-page-h1">Reimbursement Tracker <span class="rt-batch-chip" id="rt-current-batch-reference" title="Current batch: new rows are filed here">Loading…</span></h1>
+            <p class="dash-page-sub">Standalone reimbursement batches and the Accounting register export</p>
         </div>
-        <div class="d-flex flex-wrap justify-content-end gap-2">
-            <button type="button" class="btn btn-outline-light fw-bold" id="rt-start-batch-button" disabled>
-                <i class="fa-solid fa-forward-step me-1" aria-hidden="true"></i>Start new batch
-            </button>
-            <button type="button" class="btn btn-light fw-bold" id="rt-add-button">
+        <div class="dash-page-actions">
+            <button type="button" class="btn btn-success" id="rt-add-button">
                 <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Add reimbursement
             </button>
         </div>
-    </section>
+    </header>
 
     <div id="rt-duplicate-warning" class="alert alert-warning d-none mb-3" role="alert"></div>
 
-    <section class="row g-3 mb-3" aria-label="Reimbursement tracker summary">
-        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Rows</div><div class="rt-kpi-value" id="rt-total-count">0</div></div></div>
-        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Paid in full</div><div class="rt-kpi-value" id="rt-paid-count">0</div></div></div>
-        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Unpaid</div><div class="rt-kpi-value" id="rt-unpaid-count">0</div></div></div>
-        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Total PHP</div><div class="rt-kpi-value" id="rt-total-amount">0.00</div><div class="small rt-muted mt-1" id="rt-kpi-scope">Showing all of the current batch</div></div></div>
+    <section class="rt-stat-grid mb-3" aria-label="Reimbursement tracker summary" aria-busy="true" id="rt-stats">
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Rows</span></div><strong class="dash-stat-num" id="rt-total-count">–</strong></article>
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Paid in full</span></div><strong class="dash-stat-num" id="rt-paid-count">–</strong></article>
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Unpaid</span></div><strong class="dash-stat-num" id="rt-unpaid-count">–</strong></article>
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Total PHP</span></div><strong class="dash-stat-num" id="rt-total-amount">–</strong><div class="dash-stat-help" id="rt-kpi-scope">Loading the current batch</div></article>
     </section>
 
-    <section class="rt-filter-panel mb-3 no-print" aria-label="Reimbursement tracker filters">
+    <button type="button" class="btn btn-outline-primary w-100 mb-3 d-md-none no-print rt-filters-toggle" id="rt-filters-toggle" aria-expanded="false" aria-controls="rt-filter-panel">
+        <i class="fa-solid fa-filter me-1" aria-hidden="true"></i><span id="rt-filters-toggle-label">Filters</span>
+    </button>
+
+    <section class="rt-filter-panel mb-3 no-print" id="rt-filter-panel" aria-label="Reimbursement tracker filters">
         <div class="row g-2 align-items-end">
-            <div class="col-12 col-md-4 col-lg-2">
+            <div class="col-12">
                 <label for="rt-batch-view">View batch</label>
-                <select class="form-select" id="rt-batch-view" aria-describedby="rt-batch-view-help">
-                    <option value="">Loading batchesâ€¦</option>
-                </select>
-                <div class="form-text" id="rt-batch-view-help">Choose the active or a previous batch to review.</div>
+                <div class="rt-batch-tools">
+                    <select class="form-select rt-batch-select" id="rt-batch-view" aria-describedby="rt-batch-view-help">
+                        <option value="">Loading batches…</option>
+                    </select>
+                    <button type="button" class="btn btn-outline-primary" id="rt-start-batch-button" disabled>
+                        <i class="fa-solid fa-forward-step me-1" aria-hidden="true"></i>Start new batch
+                    </button>
+                </div>
+                <div class="form-text" id="rt-batch-view-help">Choose the active or a previous batch. New rows stay in the active batch until you start the next one.</div>
             </div>
             <div class="col-12 col-md-4 col-lg-2">
                 <label for="rt-reference-filter">Reference</label>
@@ -183,10 +193,10 @@
                 </select>
             </div>
             <div class="col-12 d-flex flex-wrap gap-2 justify-content-between align-items-center mt-2">
-                <span class="small rt-muted" id="rt-result-count">0 rows</span>
+                <span class="small rt-muted" id="rt-result-count">Loading rows…</span>
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="rt-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm" id="rt-refresh-button"><i class="fa-solid fa-rotate me-1"></i>Refresh</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="rt-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1" aria-hidden="true"></i>Clear</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="rt-refresh-button"><i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Refresh</button>
                     <div>
                         <label class="visually-hidden" for="rt-export-scope">Export scope</label>
                         <select class="form-select form-select-sm" id="rt-export-scope" aria-label="Export scope">
@@ -194,7 +204,7 @@
                             <option value="all">All batches</option>
                         </select>
                     </div>
-                    <button type="button" class="btn btn-primary btn-sm" id="rt-export-button"><i class="fa-solid fa-file-excel me-1"></i>Export Excel</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="rt-export-button"><i class="fa-solid fa-file-excel me-1" aria-hidden="true"></i>Export Excel</button>
                 </div>
             </div>
         </div>
@@ -208,7 +218,11 @@
             </table>
         </div>
         <div class="rt-mobile-list" id="rt-mobile-list"></div>
-        <div id="rt-empty-state" class="p-4 text-center rt-muted">No reimbursement rows are saved in this batch.</div>
+        <div id="rt-empty-state" class="p-4 text-center rt-muted d-none">No reimbursement rows are saved in this batch.</div>
+        <div id="rt-load-error" class="p-4 text-center rt-load-error" role="alert">
+            <p class="mb-2">Reimbursement rows could not be loaded.</p>
+            <button type="button" class="btn btn-outline-primary" id="rt-retry-button"><i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Try again</button>
+        </div>
     </section>
 </main>
 
@@ -252,8 +266,8 @@
                             <select class="form-select" id="rt-engineer" required></select>
                         </div>
                         <div class="col-12 col-md-6">
-                            <label class="form-label">Control number preview</label>
-                            <div class="form-control bg-body-secondary rt-control" id="rt-control-preview">—</div>
+                            <span class="form-label d-block" id="rt-control-preview-label">Control number preview</span>
+                            <div class="form-control bg-body-secondary rt-control" id="rt-control-preview" aria-labelledby="rt-control-preview-label">—</div>
                         </div>
                         <div class="col-12">
                             <label class="form-label" for="rt-description">Reimbursement</label>
@@ -320,6 +334,18 @@
     const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
     const moneyNumber = (value) => Number.parseFloat(String(value ?? '').replace(/,/g, '')) || 0;
     const formatMoney = (value) => moneyNumber(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Today's date in Manila; toISOString() is UTC and gives yesterday before 08:00.
+    const manilaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(new Date());
+    const readJson = (response) => response.json().catch(() => ({}));
+    const replyError = (data, fallback) => data.error || data.message || fallback;
+
+    // A transfer date only means something once the row is paid in full.
+    function syncTransferDate() {
+        const paid = byId('rt-paid-in-full').checked;
+        const transfer = byId('rt-paid-transfer-date');
+        transfer.disabled = !paid;
+        if (!paid) transfer.value = '';
+    }
 
     function pageToast(message, kind = 'info') {
         const stack = byId('rt-toast-stack');
@@ -465,6 +491,7 @@
             }
         }
         byId('rt-export-button').disabled = invalidDateRange;
+        updateFiltersToggle();
         byId('rt-table-body').innerHTML = rows.map((row) => `<tr>
             <td><span class="rt-control">${escapeHtml(row.reference)}</span></td>
             <td>${escapeHtml(row.submission_date || '—')}</td>
@@ -556,12 +583,13 @@
         // The reference is server-owned. Every new engineer row stays in the shared current
         // batch until the user explicitly starts another one from the page header.
         byId('rt-reference').value = state.currentBatch?.reference || state.suggestedReference || '';
-        byId('rt-submission-date').value = new Date().toISOString().slice(0, 10);
+        byId('rt-submission-date').value = manilaToday();
         populateOfficeOptions('');
         populateEngineerOptions('');
         byId('rt-control-preview').textContent = '—';
         categories.forEach(([field]) => { byId(`rt-${field}`).value = ''; });
         byId('rt-form-total').textContent = 'PHP 0.00';
+        syncTransferDate();
         renderCategorySuggestions();
     }
 
@@ -581,6 +609,7 @@
             byId('rt-paid-in-full').checked = Boolean(row.paid_in_full);
             byId('rt-paid-transfer-date').value = row.paid_transfer_date || '';
             byId('rt-remarks').value = row.remarks || '';
+            syncTransferDate();
         }
         renderCategorySuggestions();
         updateControlPreview();
@@ -628,14 +657,25 @@
         byId('rt-form-total').textContent = `PHP ${formatMoney(total)}`;
     }
 
-    function confirmDeleteAction(row) {
+    // Opens on Cancel so Enter never deletes or starts a batch by accident.
+    function confirmAction({ title, message, confirmText, danger = false }) {
         return new Promise((resolve) => {
             const backdrop = byId('rt-confirm-backdrop');
+            const titleNode = byId('rt-confirm-title');
+            const messageNode = byId('rt-confirm-message');
             const cancelButton = byId('rt-confirm-cancel');
             const confirmButton = byId('rt-confirm-ok');
-            const message = byId('rt-confirm-message');
-            if (!backdrop || !cancelButton || !confirmButton || !message) { resolve(false); return; }
+            if (!backdrop || !titleNode || !messageNode || !cancelButton || !confirmButton) { resolve(false); return; }
             let finished = false;
+            const opener = document.activeElement;
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') cleanup(false);
+                // Keep Tab inside the two dialog buttons while it is open.
+                if (event.key === 'Tab') {
+                    event.preventDefault();
+                    (document.activeElement === cancelButton ? confirmButton : cancelButton).focus();
+                }
+            };
             const cleanup = (accepted) => {
                 if (finished) return;
                 finished = true;
@@ -645,17 +685,29 @@
                 confirmButton.onclick = null;
                 backdrop.onclick = null;
                 document.removeEventListener('keydown', onKeyDown);
+                if (opener && opener.isConnected && typeof opener.focus === 'function') opener.focus();
                 resolve(accepted);
             };
-            const onKeyDown = (event) => { if (event.key === 'Escape') cleanup(false); };
-            message.textContent = `Delete reimbursement row ${row.control_number}? This cannot be undone.`;
+            titleNode.textContent = title;
+            messageNode.textContent = message;
+            confirmButton.textContent = confirmText;
+            confirmButton.className = `btn ${danger ? 'btn-danger' : 'btn-primary'}`;
             cancelButton.onclick = () => cleanup(false);
             confirmButton.onclick = () => cleanup(true);
             backdrop.onclick = (event) => { if (event.target === backdrop) cleanup(false); };
             document.addEventListener('keydown', onKeyDown);
             backdrop.classList.add('show');
             backdrop.setAttribute('aria-hidden', 'false');
-            setTimeout(() => confirmButton.focus(), 0);
+            setTimeout(() => cancelButton.focus(), 0);
+        });
+    }
+
+    function confirmDeleteAction(row) {
+        return confirmAction({
+            title: 'Delete reimbursement row?',
+            message: `Delete reimbursement row ${row.control_number}? This cannot be undone.`,
+            confirmText: 'Delete row',
+            danger: true
         });
     }
 
@@ -664,18 +716,18 @@
         if (viewSequence !== null && viewSequence !== undefined) params.set('batch_sequence', viewSequence);
         const query = params.toString();
         const response = await fetch(`/get_reimbursement_tracker_entries${query ? `?${query}` : ''}`, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
-        const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || 'Reimbursement tracker could not be loaded.');
+        const data = await readJson(response);
+        if (!response.ok || !data.success) throw new Error(replyError(data, 'Reimbursement tracker could not be loaded.'));
         state.engineers = data.engineers || [];
         state.offices = data.offices || [];
         state.currentBatch = data.current_batch || null;
         state.viewBatch = data.view_batch || state.currentBatch;
         state.availableBatches = data.available_batches || (state.currentBatch ? [state.currentBatch] : []);
-        const viewSequenceValue = Number(state.viewBatch?.sequence || 0);
-        state.rows = viewSequenceValue
-            ? (data.entries || []).filter((row) => Number(row.batch_sequence) === viewSequenceValue)
-            : [];
+        state.rows = data.entries || [];
         state.suggestedReference = state.currentBatch?.reference || data.suggested_reference || '';
+        state.loaded = true;
+        byId('rt-stats').setAttribute('aria-busy', 'false');
+        byId('rt-load-error').classList.remove('show');
         renderCurrentBatch();
         renderBatchOptions();
         byId('rt-reference').placeholder = state.suggestedReference || 'BATCH-000';
@@ -686,6 +738,25 @@
             warning.textContent = `Duplicate engineer initials detected: ${data.duplicate_initials.join(', ')}. Control numbers may match until Personnel is corrected.`;
             warning.classList.remove('d-none');
         } else warning.classList.add('d-none');
+    }
+
+    // Before the first successful load there is nothing to show, so offer Try again instead of "No rows".
+    function showLoadError(error) {
+        if (!state.loaded) {
+            byId('rt-load-error').classList.add('show');
+            byId('rt-empty-state').classList.add('d-none');
+            byId('rt-result-count').textContent = 'Rows not loaded';
+        }
+        notify(error.message, 'danger');
+    }
+
+    function activeFilterCount() {
+        return Object.values(currentFilters()).filter(Boolean).length;
+    }
+
+    function updateFiltersToggle() {
+        const count = activeFilterCount();
+        byId('rt-filters-toggle-label').textContent = count ? `Filters · ${count}` : 'Filters';
     }
 
     async function switchBatchView(viewSequence, message = '', resetExportScope = false) {
@@ -701,7 +772,12 @@
         const currentBatch = state.currentBatch;
         if (!button || !currentBatch || currentBatch.sequence >= 999) return;
         const nextReference = `BATCH-${String(currentBatch.sequence + 1).padStart(3, '0')}`;
-        if (!window.confirm(`Start ${nextReference}? New reimbursement rows will use it, while existing rows remain in ${currentBatch.reference}.`)) return;
+        const accepted = await confirmAction({
+            title: `Start ${nextReference}?`,
+            message: `New reimbursement rows will use ${nextReference}. Existing rows stay in ${currentBatch.reference}.`,
+            confirmText: `Start ${nextReference}`
+        });
+        if (!accepted) return;
         button.disabled = true;
         try {
             const response = await fetch('/start_reimbursement_tracker_batch', {
@@ -709,13 +785,13 @@
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
                 body: JSON.stringify({ expected_batch_sequence: currentBatch.sequence })
             });
-            const data = await response.json().catch(() => ({}));
+            const data = await readJson(response);
             if (!response.ok || !data.success) {
                 if (data.current_batch) {
                     state.currentBatch = data.current_batch;
                     await switchBatchView(data.current_batch.sequence, '', true);
                 }
-                throw new Error(data.error || 'The new reimbursement batch could not be started.');
+                throw new Error(replyError(data, 'The new reimbursement batch could not be started.'));
             }
             state.currentBatch = data.current_batch;
             await switchBatchView(data.current_batch.sequence, '', true);
@@ -751,8 +827,8 @@
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok || !data.success) throw new Error(data.error || 'The reimbursement row could not be saved.');
+            const data = await readJson(response);
+            if (!response.ok || !data.success) throw new Error(replyError(data, 'The reimbursement row could not be saved.'));
             state.modal.hide();
             await loadData(state.viewBatch?.sequence);
             const savedRowVisible = data.entry && filteredRows().some((row) => String(row.id) === String(data.entry.id));
@@ -772,9 +848,11 @@
         if (!row || !(await confirmDeleteAction(row))) return;
         try {
             const response = await fetch(`/delete_reimbursement_tracker_entry/${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': csrf(), 'Accept': 'application/json' } });
-            const data = await response.json();
-            if (!response.ok || !data.success) throw new Error(data.error || 'The reimbursement row could not be deleted.');
-            await loadData(state.viewBatch?.sequence);
+            const data = await readJson(response);
+            if (!response.ok || !data.success) throw new Error(replyError(data, 'The reimbursement row could not be deleted.'));
+            // An older batch with no rows left no longer exists, so fall back to the active batch.
+            const batchStillExists = state.rows.length > 1 || state.viewBatch?.sequence === state.currentBatch?.sequence;
+            await loadData(batchStillExists ? state.viewBatch?.sequence : null);
             notify('Reimbursement row deleted.', 'success');
         } catch (error) { notify(error.message, 'danger'); }
     }
@@ -816,7 +894,7 @@
             if (filters.engineer) params.set('engineer_id', filters.engineer);
             if (scope === 'current' && state.viewBatch?.sequence) params.set('batch_sequence', state.viewBatch.sequence);
             const response = await fetch(`/export_reimbursement_tracker?${params.toString()}`, { headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } });
-            if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'The tracker could not be exported.'); }
+            if (!response.ok) { const data = await readJson(response); throw new Error(replyError(data, 'The tracker could not be exported.')); }
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a'); link.href = url; link.download = responseFilename(response); document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
@@ -853,7 +931,12 @@
         if (!sequence) return;
         switchBatchView(sequence, 'Viewing').catch((error) => notify(error.message, 'danger'));
     });
-    byId('rt-refresh-button').addEventListener('click', () => loadData(state.viewBatch?.sequence).catch((error) => notify(error.message, 'danger')));
+    byId('rt-refresh-button').addEventListener('click', () => loadData(state.viewBatch?.sequence).catch(showLoadError));
+    byId('rt-retry-button').addEventListener('click', () => loadData(state.viewBatch?.sequence).catch(showLoadError));
+    byId('rt-filters-toggle').addEventListener('click', () => {
+        const open = byId('rt-filter-panel').classList.toggle('is-open');
+        byId('rt-filters-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
     byId('rt-export-button').addEventListener('click', exportRegister);
     byId('rt-form').addEventListener('submit', saveForm);
     ['rt-reference-filter', 'rt-date-from', 'rt-date-to'].forEach((id) => byId(id).addEventListener('input', renderRows));
@@ -866,6 +949,7 @@
     byId('rt-engineer').addEventListener('change', () => { updateControlPreview(); renderCategorySuggestions(); });
     byId('rt-reference').addEventListener('input', updateControlPreview);
     byId('rt-submission-date').addEventListener('change', updateControlPreview);
+    byId('rt-paid-in-full').addEventListener('change', syncTransferDate);
 
     function initialize() {
         byId('rt-category-grid').innerHTML = categories.map(([field, label]) => `<div class="col-6 col-md-4 col-lg-3"><label class="form-label" for="rt-${field}">${escapeHtml(label)}</label><input class="form-control rt-category-input" id="rt-${field}" type="number" min="0" step="0.01" inputmode="decimal"><div class="rt-suggestions" id="rt-suggestions-${field}" aria-live="polite"></div></div>`).join('');
@@ -882,7 +966,7 @@
             input.focus();
         });
         renderHeader();
-        loadData().catch((error) => notify(error.message, 'danger'));
+        loadData().catch(showLoadError);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });
     else initialize();

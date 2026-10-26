@@ -2218,6 +2218,8 @@ REIMBURSEMENT_TRACKER_CONTROL_DATE_FORMAT = '{d.year}{d.month:02d}{d.day}'
 # 032. The state is advanced only by the explicit Start new batch action; it is never derived
 # from the number of rows or from the engineer currently being entered.
 REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER = 32
+# Submission dates outside 2000-01-01 .. today + 365 days are typing mistakes (1900-01-01 used to save).
+REIMBURSEMENT_TRACKER_EARLIEST_SUBMISSION_DATE = date(2000, 1, 1)
 
 
 class ReimbursementTrackerEntry(db.Model):
@@ -28432,7 +28434,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v348-po-details';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v349-reimbursement-tracker';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -58539,6 +58541,12 @@ def validate_reimbursement_tracker_payload(payload, existing=None):
         submission_date = parse_date(submission_raw)
     if not submission_date:
         return None, 'Select a valid submission date.'
+    latest_submission_date = get_manila_time().date() + timedelta(days=365)
+    if not REIMBURSEMENT_TRACKER_EARLIEST_SUBMISSION_DATE <= submission_date <= latest_submission_date:
+        return None, (
+            f'Submission date must be between {REIMBURSEMENT_TRACKER_EARLIEST_SUBMISSION_DATE.isoformat()} '
+            f'and {latest_submission_date.isoformat()}.'
+        )
 
     engineer_id = clean_int(_reimbursement_tracker_payload_value(payload, 'engineer_id', existing))
     engineer = db.session.get(Engineer, engineer_id) if engineer_id else None
@@ -58601,6 +58609,8 @@ def validate_reimbursement_tracker_payload(payload, existing=None):
             return None, amount_error
         category_values[field] = amount
     total = sum(category_values.values(), Decimal('0.00')).quantize(Decimal('0.01'))
+    if total <= 0:
+        return None, 'Enter at least one amount.'
 
     paid_in_full = reimbursement_tracker_bool(
         _reimbursement_tracker_payload_value(payload, 'paid_in_full', existing, False)
@@ -58617,6 +58627,9 @@ def validate_reimbursement_tracker_payload(payload, existing=None):
         paid_transfer_date = None
     if paid_transfer_raw and not paid_transfer_date:
         return None, 'Transfer date must be a valid date.'
+    # A sent transfer date on an unpaid row used to vanish without a word.
+    if not paid_in_full and clean_str(payload.get('paid_transfer_date')):
+        return None, 'Tick Paid in full to record a transfer date.'
     if not paid_in_full:
         paid_transfer_date = None
 
@@ -58708,13 +58721,6 @@ def reimbursement_tracker_export_records(batch_scope=None):
     engineer_id = clean_int(engineer_id_text) if engineer_id_text else None
     if engineer_id_text and (not engineer_id or engineer_id < 1):
         raise ValueError('The engineer filter is invalid.')
-    engineer_filter = (request.args.get('engineer') or '').strip().casefold()
-    if engineer_filter and engineer_filter.isdigit() and engineer_id is None:
-        print(
-            '[Reimbursement Tracker] Legacy engineer filter received an all-digit value; '
-            'retaining name matching for compatibility.',
-            flush=True,
-        )
     office_filter = (request.args.get('office') or '').strip().casefold()
     from_text = (request.args.get('from') or '').strip()
     to_text = (request.args.get('to') or '').strip()
@@ -58751,12 +58757,9 @@ def reimbursement_tracker_export_records(batch_scope=None):
     records = records_query.all()
     filtered = []
     for record in records:
-        engineer_name = record.engineer_name_snapshot or (record.engineer.name if record.engineer else '')
         if reference_filter and reference_filter not in (record.reference or '').casefold():
             continue
         if engineer_id is not None and record.engineer_id != engineer_id:
-            continue
-        if engineer_id is None and engineer_filter and engineer_filter not in engineer_name.casefold():
             continue
         if office_filter and office_filter not in (record.office or '').casefold():
             continue
@@ -59032,11 +59035,6 @@ def export_reimbursement_tracker():
         return denied('You do not have access to the Reimbursement Tracker.')
     ensure_reimbursement_tracker_schema()
     batch_scope = (clean_str(request.args.get('batch_scope')) or 'current').strip().lower()
-    if batch_scope not in {'current', 'all'}:
-        return jsonify({
-            'success': False,
-            'error': 'The export batch scope is invalid. Choose current or all.',
-        }), 400
     try:
         records, resolved_sequence = reimbursement_tracker_export_records(batch_scope=batch_scope)
     except RuntimeError as export_state_error:

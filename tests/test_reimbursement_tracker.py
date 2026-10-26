@@ -147,8 +147,12 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
             'paid_transfer_date': '',
             'remarks': '',
         }
-        for field, _label in app_module.REIMBURSEMENT_TRACKER_EXPENSE_FIELDS:
+        expense_fields = [field for field, _label in app_module.REIMBURSEMENT_TRACKER_EXPENSE_FIELDS]
+        for field in expense_fields:
             payload[field] = '0'
+        # A row needs at least one amount; tests that care about totals pass their own.
+        if not any(field in overrides for field in expense_fields):
+            payload['others_misc'] = '1.00'
         payload.update(overrides)
         return payload
 
@@ -840,7 +844,7 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertNotIn('engineer: filters.engineer', template)
         self.assertIn('responseFilename', template)
         self.assertIn("byId('rt-export-scope').value = 'current'", template)
-        self.assertIn('state.rows = viewSequenceValue', template)
+        self.assertIn('state.rows = data.entries || [];', template)
         self.assertIn('state.rows = [];', template)
         self.assertIn('function renderKpis(rows)', template)
         self.assertIn("byId('rt-total-amount').textContent = formatMoney(rows.reduce", template)
@@ -1007,6 +1011,110 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
                 engineer = app_module.db.session.get(app_module.Engineer, self.jfl_id)
                 engineer.branch = 'Manila'
                 app_module.db.session.commit()
+
+    # --- 2026-10-26 scan batches ---
+
+    @staticmethod
+    def _template():
+        return (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
+
+    def test_batch1_transfer_date_needs_paid_in_full(self):
+        client = self._client_for(self.tracker_user_id)
+        refused = client.post('/add_reimbursement_tracker_entry',
+                              json=self._payload(paid_transfer_date='2026-08-12'))
+        self.assertEqual(refused.status_code, 400)
+        self.assertEqual(refused.get_json()['error'], 'Tick Paid in full to record a transfer date.')
+        # Unticking Paid without resending the date still works.
+        row = self._add(client, paid_in_full=True, paid_transfer_date='2026-08-12')
+        unpaid = client.put(f"/update_reimbursement_tracker_entry/{row['id']}", json={'paid_in_full': False})
+        self.assertEqual(unpaid.status_code, 200, unpaid.get_data(as_text=True))
+        self.assertEqual(unpaid.get_json()['entry']['paid_transfer_date'], '')
+
+    def test_batch1_bad_amounts_are_refused(self):
+        client = self._client_for(self.tracker_user_id)
+        negative = client.post('/add_reimbursement_tracker_entry', json=self._payload(parking='-5'))
+        self.assertEqual(negative.status_code, 400)
+        self.assertIn('cannot be negative', negative.get_json()['error'])
+        precise = client.post('/add_reimbursement_tracker_entry', json=self._payload(parking='1.005'))
+        self.assertEqual(precise.status_code, 400)
+        self.assertIn('two decimal places', precise.get_json()['error'])
+
+    def test_batch1_delete_removes_the_row_and_logs_it(self):
+        client = self._client_for(self.tracker_user_id)
+        row = self._add(client)
+        response = client.delete(f"/delete_reimbursement_tracker_entry/{row['id']}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['deleted_id'], row['id'])
+        with self.app.app_context():
+            self.assertIsNone(app_module.db.session.get(app_module.ReimbursementTrackerEntry, row['id']))
+            self.assertTrue(app_module.ActivityLog.query.filter(
+                app_module.ActivityLog.action.contains(f"Deleted Reimbursement Tracker row {row['control_number']}")
+            ).count())
+        self.assertEqual(client.delete(f"/delete_reimbursement_tracker_entry/{row['id']}").status_code, 404)
+
+    def test_batch1_page_fixes(self):
+        template = self._template()
+        self.assertIn("timeZone: 'Asia/Manila'", template)
+        self.assertNotIn('toISOString().slice(0, 10)', template)
+        self.assertNotIn('â€', template, 'mojibake loading text')
+        self.assertIn('data.error || data.message || fallback', template)
+        self.assertNotIn('await response.json();', template)
+        self.assertIn('setTimeout(() => cancelButton.focus(), 0)', template)
+        self.assertIn('transfer.disabled = !paid', template)
+        self.assertIn('await loadData(batchStillExists ? state.viewBatch?.sequence : null);', template)
+
+    def test_batch2_row_needs_an_amount_and_a_sensible_date(self):
+        client = self._client_for(self.tracker_user_id)
+        empty = client.post('/add_reimbursement_tracker_entry', json=self._payload(others_misc='0'))
+        self.assertEqual(empty.status_code, 400)
+        self.assertEqual(empty.get_json()['error'], 'Enter at least one amount.')
+        for bad_date in ('1900-01-01', (date.today().replace(year=date.today().year + 2)).isoformat()):
+            response = client.post('/add_reimbursement_tracker_entry', json=self._payload(submission_date=bad_date))
+            self.assertEqual(response.status_code, 400, bad_date)
+            self.assertIn('Submission date must be between 2000-01-01', response.get_json()['error'])
+        self._add(client, submission_date=date.today().isoformat())
+
+    def test_batch2_export_cleanups(self):
+        client = self._client_for(self.tracker_user_id)
+        self._add(client, engineer_id=self.jfl_id, office='Manila')
+        self._add(client, engineer_id=self.raj_id, office='Cebu')
+        bad_scope = client.get('/export_reimbursement_tracker?batch_scope=everything')
+        self.assertEqual(bad_scope.status_code, 400)
+        self.assertEqual(bad_scope.get_json()['error'], 'The export batch scope is invalid. Choose current or all.')
+        # The old name filter is gone: engineer= no longer narrows the export.
+        response = client.get('/export_reimbursement_tracker?batch_scope=current&engineer=Jim')
+        self.assertEqual(response.status_code, 200)
+        worksheet = load_workbook(BytesIO(response.data), data_only=True)['Sheet']
+        self.assertEqual(worksheet['F4'].value, 'TOTAL')
+        self.assertNotIn('state.rows = viewSequenceValue', self._template())
+
+    def test_batch3_page_header_and_tokens(self):
+        template = self._template()
+        style = template.split('<style>', 1)[1].split('</style>', 1)[0]
+        self.assertIn('class="dash-page-header', template)
+        self.assertIn('class="dash-page-h1">Reimbursement Tracker <span class="rt-batch-chip" id="rt-current-batch-reference"', template)
+        self.assertEqual(template.count('class="dash-stat"'), 4)
+        for gone in ('rt-hero', 'rt-kpi-value', '#5aa7ff', 'window.confirm', '--app-table-head', 'rgba(6, 17, 32'):
+            self.assertNotIn(gone, template, gone)
+        self.assertNotRegex(style, r'font-weight:\s*[7-9]\d\d')
+        self.assertIn(':root[data-app-theme="dark"] .rt-page .btn-outline-danger { border-color: #f87171; color: #fca5a5; }', style)
+        tools = template.split('class="rt-batch-tools"', 1)[1].split('</div>', 1)[0]
+        self.assertIn('id="rt-batch-view"', tools)
+        self.assertIn('id="rt-start-batch-button"', tools)
+        self.assertIn('id="rt-add-button"', template.split('dash-page-actions', 1)[1].split('</header>', 1)[0])
+
+    def test_batch4_phone_filters_and_loading_state(self):
+        template = self._template()
+        self.assertIn('id="rt-filters-toggle" aria-expanded="false" aria-controls="rt-filter-panel"', template)
+        self.assertIn('.rt-filter-panel:not(.is-open) { display: none; }', template)
+        self.assertIn('`Filters · ${count}`', template)
+        self.assertIn('aria-busy="true" id="rt-stats"', template)
+        self.assertIn("byId('rt-stats').setAttribute('aria-busy', 'false')", template)
+        self.assertIn('Reimbursement rows could not be loaded.', template)
+        self.assertIn('id="rt-retry-button"', template)
+        # View batch has its own row, so the six filters share one desktop row (6 x 2 columns).
+        filters = template.split('id="rt-filter-panel"', 1)[1].split('id="rt-result-count"', 1)[0]
+        self.assertEqual(filters.count('col-lg-2"'), 6)
 
 
 if __name__ == '__main__':

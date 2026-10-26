@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-26-reimbursement-tracker",
+      "release_date": "2026-10-26",
+      "title": "Reimbursement Tracker: safer rows and a clearer page",
+      "summary": "Rows need an amount and a sensible date, transfer dates need Paid in full, and the page has the shared header and phone filters.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-26-reimbursement-tracker-rows",
+          "category": "Reimbursement Tracker",
+          "description": "A row now needs at least one amount and a submission date from 2000 up to a year ahead. A transfer date can be entered only when Paid in full is ticked, so it is no longer lost without a word. New rows start on today's Manila date, and Delete opens on Cancel.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-26-reimbursement-tracker-display",
+          "category": "Reimbursement Tracker",
+          "description": "The page has the same header and summary cards as the rest of the app, with the current batch beside the title. Start new batch sits next to View batch and asks in the page's own dialog. Filters fold behind a Filters button on phones, and a failed load offers Try again.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-26-po-details",
       "release_date": "2026-10-26",
       "title": "P.O. Details: add machines when editing, safer delete",
