@@ -28428,7 +28428,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v347-approver-calendar';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v348-po-details';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -57206,7 +57206,8 @@ def purchase_order_schedule(start_date, end_date, po_type, amount=None):
     return result
 
 
-def purchase_order_schedule_payload(start_date, end_date, po_type, amount=None):
+def purchase_order_schedule_payload(schedule):
+    """JSON-ready copy of purchase_order_schedule() rows."""
     return [
         {
             key: (
@@ -57216,7 +57217,7 @@ def purchase_order_schedule_payload(start_date, end_date, po_type, amount=None):
             )
             for key in ('date', 'date_string', 'fiscal_year', 'fiscal_quarter', 'amount', 'amount_string', 'amount_display')
         }
-        for item in purchase_order_schedule(start_date, end_date, po_type, amount)
+        for item in schedule
     ]
 
 
@@ -57441,14 +57442,15 @@ def purchase_order_to_dict(purchase_order):
         name = clean_str(getattr(product, 'name', None)) or ''
         display = ' — '.join(value for value in (serial, name) if value)
         machine_labels.append(display or serial)
+        machine_start, machine_end = purchase_order_product_dates(product)
         machines.append({
             'serial_number': serial,
             'name': name,
             'client_id': getattr(product, 'client_id', None) if product else None,
             'client_name': getattr(getattr(product, 'client', None), 'name', '') if product else '',
             'bsid': normalize_product_bsid(getattr(product, 'bsid', None)) if product else '',
-            'start_date': purchase_order_product_dates(product)[0].isoformat() if purchase_order_product_dates(product)[0] else '',
-            'end_date': purchase_order_product_dates(product)[1].isoformat() if purchase_order_product_dates(product)[1] else '',
+            'start_date': machine_start.isoformat() if machine_start else '',
+            'end_date': machine_end.isoformat() if machine_end else '',
             'under_contract': bool(getattr(product, 'under_contract', False)) if product else False,
             'contract_status': product_contract_status(product) if product else '',
             'one_time_eligible': purchase_order_product_is_one_time(product, po_type) if product else False,
@@ -57463,18 +57465,13 @@ def purchase_order_to_dict(purchase_order):
     first_machine = machines[0] if machines else None
     first_product = machine_links[0].product if machine_links and getattr(machine_links[0], 'product', None) else None
     product_start_date, product_end_date = purchase_order_product_dates(first_product)
-    schedule = purchase_order_schedule_payload(
-        purchase_order.po_date,
-        purchase_order.end_date,
-        po_type,
-        getattr(purchase_order, 'amount', None),
-    )
     schedule_objects = purchase_order_schedule(
         purchase_order.po_date,
         purchase_order.end_date,
         po_type,
         getattr(purchase_order, 'amount', None),
     )
+    schedule = purchase_order_schedule_payload(schedule_objects)
     per_visit_amount = purchase_order_per_visit_amount(schedule_objects)
     schedule_mode = purchase_order_schedule_mode(po_type, purchase_order.end_date)
     return {
@@ -57716,8 +57713,6 @@ def validate_purchase_order_payload(payload, existing=None):
         payload.get('po_type') if 'po_type' in payload else getattr(existing, 'po_type', None)
     )
     raw_amount = payload.get('amount') if 'amount' in payload else getattr(existing, 'amount', None)
-    if isinstance(raw_amount, str):
-        raw_amount = raw_amount.replace('\\u20b1', '')
     amount, amount_error = normalize_purchase_order_amount(raw_amount)
     if not client_id:
         return None, None, 'Select a medical center.'
@@ -57779,22 +57774,8 @@ def validate_purchase_order_payload(payload, existing=None):
             'amount': amount,
         }, machine_serials, None
     product_start, product_end, product_date_error = purchase_order_dates_from_products(products, po_type)
-    if product_date_error:
-        # A current-frequency edit retains its existing historical snapshot when the
-        # machine selection is unchanged.  New rows and machine changes must use Products.
-        existing_serials = [
-            clean_str(link.product_serial).casefold()
-            for link in purchase_order_machine_rows(existing)
-        ] if existing is not None else []
-        same_machines = sorted(existing_serials) == sorted(serial.casefold() for serial in machine_serials)
-        if not (
-            existing is not None
-            and purchase_order_is_current_type(existing.po_type)
-            and existing.po_type == po_type
-            and same_machines
-        ):
-            return None, None, product_date_error
-
+    # A current-frequency edit retains its existing historical snapshot when the
+    # machine selection is unchanged.  New rows and machine changes must use Products.
     existing_serials = [
         clean_str(link.product_serial).casefold()
         for link in purchase_order_machine_rows(existing)
@@ -57806,9 +57787,9 @@ def validate_purchase_order_payload(payload, existing=None):
         and existing.po_type == po_type
         and same_machines
     )
-    if (
-        preserving_snapshot
-    ):
+    if product_date_error and not preserving_snapshot:
+        return None, None, product_date_error
+    if preserving_snapshot:
         po_date = existing.po_date
         end_date = existing.end_date
     else:
@@ -57952,11 +57933,6 @@ def get_purchase_orders():
             'one_time_eligible': purchase_order_product_is_one_time(product, PO_TYPE_SINGLE),
             'start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
             'end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
-            'product_start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
-            'product_end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
-            'start_warranty_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
-            'end_warranty_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
-            'end_warranty': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
             'renewal_eligible': bool(context.get('renewal_eligible')),
             'latest_prior_end_date': latest_prior_end.isoformat() if latest_prior_end else '',
             'default_renewal_start_date': default_renewal_start.isoformat() if default_renewal_start else '',
@@ -58060,12 +58036,8 @@ def purchase_order_export_records():
         if sort_key == 'po_type':
             return (normalize_purchase_order_type(record.po_type) or PO_TYPE_SINGLE_VISIT).casefold()
         if sort_key == 'amount':
-            schedule = purchase_order_filtered_schedule(
-                record.po_date, record.end_date, record.po_type, record.amount,
-                filter_start, filter_end,
-            ) if purchase_order_is_current_type(record.po_type) else []
-            computed = purchase_order_schedule_amount(schedule)
-            return computed if computed is not None else Decimal('0')
+            # Same as the register's P.O. Amount column, so the file matches the screen.
+            return Decimal(str(record.amount)) if record.amount is not None else Decimal('0')
         if sort_key == 'end_date':
             return record.end_date or date.min
         return record.po_date or date.min
@@ -58195,7 +58167,9 @@ def export_purchase_orders():
         total_row = last_data_row + 2
         worksheet.cell(total_row, 1, 'TOTAL AMOUNT')
         worksheet.cell(total_row, 10, f'=SUM(J2:J{last_data_row})')
-        worksheet.cell(total_row, 11, f'=SUM(K2:K{last_data_row})')
+        if filter_start is not None or filter_end is not None:
+            # Unfiltered column K holds per-visit amounts; their sum means nothing.
+            worksheet.cell(total_row, 11, f'=SUM(K2:K{last_data_row})')
         worksheet.cell(total_row, 1).font = Font(bold=True)
         worksheet.cell(total_row, 10).font = Font(bold=True)
         worksheet.cell(total_row, 10).number_format = '#,##0.00'

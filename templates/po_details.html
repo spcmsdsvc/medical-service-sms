@@ -1,59 +1,25 @@
 {% extends "layout.html" %}
 
 {% block page_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=75">
 <style>
     .po-page {
         color: var(--app-text, #16243a);
     }
 
-    .po-hero {
-        background: linear-gradient(135deg, #14243a, #244d8f);
-        color: #fff;
-        border-radius: 1rem;
-        padding: 1.5rem;
-        box-shadow: 0 0.8rem 2rem rgba(11, 30, 58, 0.18);
-    }
-
-    .po-hero h1 {
-        font-size: clamp(1.45rem, 2.4vw, 2.25rem);
-        margin: 0;
-    }
-
     .po-panel,
-    .po-kpi,
     .po-filter-panel {
         background: var(--app-surface, #fff);
         border: 1px solid var(--app-border, #d6e0ec);
-        border-radius: 0.85rem;
+        border-radius: 10px;
         box-shadow: 0 0.35rem 1.2rem rgba(16, 38, 69, 0.08);
     }
 
-    .po-kpi {
-        padding: 1rem;
-        min-height: 6.2rem;
-    }
-
-    .po-kpi-label {
-        color: var(--app-muted-text, #60738d);
-        font-size: .74rem;
-        font-weight: 800;
-        letter-spacing: .08em;
-        text-transform: uppercase;
-    }
-
-    .po-kpi-value {
-        color: var(--app-text, #16243a);
-        font-size: 1.75rem;
-        font-weight: 900;
-    }
-
-    .po-kpi-total {
-        color: var(--app-muted-text, #60738d);
-        font-size: clamp(.86rem, 1.2vw, .96rem);
-        font-variant-numeric: tabular-nums;
-        font-weight: 750;
-        line-height: 1.35;
-        margin-top: .2rem;
+    /* Stat Cards (DESIGN.md): auto-fit like the manager KPI tiles, two across on phones. */
+    .po-stat-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     }
 
     .po-filter-panel {
@@ -63,7 +29,7 @@
     .po-filter-panel label {
         color: var(--app-muted-text, #60738d);
         font-size: .75rem;
-        font-weight: 800;
+        font-weight: 600;
         text-transform: uppercase;
     }
 
@@ -78,7 +44,7 @@
     }
 
     .po-table thead th {
-        background: var(--app-table-head, #16243a);
+        background: var(--app-primary, #0d6efd);
         color: #fff;
         border: 0;
         font-size: .75rem;
@@ -102,7 +68,7 @@
 
     .po-sort-button:focus-visible,
     .po-icon-button:focus-visible {
-        outline: 3px solid var(--app-focus-ring, #5aa7ff);
+        outline: 2px solid currentColor;
         outline-offset: 2px;
     }
 
@@ -110,7 +76,7 @@
         border-radius: 999px;
         display: inline-flex;
         font-size: .72rem;
-        font-weight: 800;
+        font-weight: 600;
         padding: .35rem .6rem;
         white-space: nowrap;
     }
@@ -142,14 +108,14 @@
 
     .po-number {
         color: var(--app-text, #16243a);
-        font-weight: 850;
+        font-weight: 600;
         overflow-wrap: anywhere;
     }
 
     .po-amount {
         color: var(--app-text, #16243a);
         font-variant-numeric: tabular-nums;
-        font-weight: 850;
+        font-weight: 600;
         white-space: nowrap;
     }
 
@@ -179,7 +145,7 @@
     .po-mobile-card {
         background: var(--app-surface-raised, #f7fafd);
         border: 1px solid var(--app-border, #d6e0ec);
-        border-radius: .8rem;
+        border-radius: 16px;
         padding: 1rem;
     }
 
@@ -240,7 +206,7 @@
         color: var(--app-text, #16243a);
         display: inline-flex;
         font-size: .84rem;
-        font-weight: 750;
+        font-weight: 600;
         gap: .45rem;
         line-height: 1.25;
         max-width: 100%;
@@ -355,10 +321,6 @@
         background: var(--app-surface, #172538);
     }
 
-    [data-app-theme="dark"] .po-hero {
-        background: linear-gradient(135deg, #101b2c, #1c3f7e);
-    }
-
     [data-app-theme="dark"] .po-type-badge.contract {
         background: #103e2a;
         color: #9af1c1;
@@ -369,15 +331,50 @@
         color: #a9ceff;
     }
 
+    [data-app-theme="dark"] .po-type-badge.single {
+        background: #1e3a8a;
+        color: #bfdbfe;
+    }
+
+    [data-app-theme="dark"] .po-type-badge.semi_annual {
+        background: #4a3612;
+        color: #fde68a;
+    }
+
+    [data-app-theme="dark"] .po-type-badge.quarterly {
+        background: #3b2470;
+        color: #ddd6fe;
+    }
+
+    /* Bootstrap's dark table rule paints heads with the surface; keep a raised tone instead. */
+    :root[data-app-theme="dark"] .po-table thead th {
+        background: var(--app-surface-raised);
+        color: var(--app-text);
+    }
+
+    :root[data-app-theme="dark"] .po-page .btn-outline-danger {
+        color: #fca5a5;
+        border-color: #f87171;
+    }
+
+    :root[data-app-theme="dark"] .po-page .btn-outline-danger:hover {
+        color: var(--app-surface);
+        background: #fca5a5;
+    }
+
     @media (max-width: 767.98px) {
-        .po-hero,
         .po-filter-panel,
         .po-panel {
-            border-radius: .7rem;
+            border-radius: 14px;
         }
 
-        .po-hero {
-            padding: 1.1rem;
+        .po-stat-grid {
+            gap: .75rem;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .po-filter-panel:not(.is-open) {
+            display: none;
         }
 
         .po-table-wrap {
@@ -405,26 +402,31 @@
     <div id="po-alert" class="visually-hidden no-print" role="status" aria-live="polite"></div>
     <div id="po-toast-stack" class="page-toast-stack no-print" aria-hidden="true"></div>
 
-    <section class="po-hero mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+    <header class="dash-page-header no-print">
         <div>
-            <div class="small text-uppercase fw-bold opacity-75">Client Records</div>
-            <h1><i class="fa-solid fa-file-invoice me-2" aria-hidden="true"></i>Service Contract P.O. Details</h1>
-            <p class="mb-0 mt-2 opacity-75">Record service frequency, coverage dates, and scheduled contract allocations.</p>
+            <h1 class="dash-page-h1">P.O. Details</h1>
+            <p class="dash-page-sub">Service contract P.O.s, coverage dates and scheduled allocations</p>
         </div>
-        <button type="button" class="btn btn-light fw-bold" id="po-add-button">
-            <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Add P.O.
-        </button>
+        <div class="dash-page-actions">
+            <button type="button" class="btn btn-success" id="po-add-button">
+                <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Add P.O.
+            </button>
+        </div>
+    </header>
+
+    <section class="po-stat-grid mb-3" aria-label="Purchase order summary" aria-busy="true" id="po-stats">
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Total P.O.s</span></div><strong class="dash-stat-num" id="po-total-count">–</strong></article>
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Single</span></div><strong class="dash-stat-num" id="po-single-count">–</strong><div class="dash-stat-help" id="po-single-total">Total amount: –</div></article>
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Semi Annual</span></div><strong class="dash-stat-num" id="po-semi-annual-count">–</strong><div class="dash-stat-help" id="po-semi-annual-total">Total amount: –</div></article>
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Quarterly</span></div><strong class="dash-stat-num" id="po-quarterly-count">–</strong><div class="dash-stat-help" id="po-quarterly-total">Total amount: –</div></article>
+        <article class="dash-stat"><div class="dash-stat-top"><span class="dash-stat-name">Medical Centers</span></div><strong class="dash-stat-num" id="po-client-count">–</strong></article>
     </section>
 
-    <section class="row g-3 mb-3" aria-label="Purchase order summary">
-        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Total P.O.s</div><div class="po-kpi-value" id="po-total-count">0</div></div></div>
-        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Single</div><div class="po-kpi-value" id="po-single-count">0</div><div class="po-kpi-total" id="po-single-total">Total amount: ₱0.00</div></div></div>
-        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Semi Annual</div><div class="po-kpi-value" id="po-semi-annual-count">0</div><div class="po-kpi-total" id="po-semi-annual-total">Total amount: ₱0.00</div></div></div>
-        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Quarterly</div><div class="po-kpi-value" id="po-quarterly-count">0</div><div class="po-kpi-total" id="po-quarterly-total">Total amount: ₱0.00</div></div></div>
-        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Medical Centers</div><div class="po-kpi-value" id="po-client-count">0</div></div></div>
-    </section>
+    <button type="button" class="btn btn-outline-primary w-100 mb-3 d-md-none no-print po-filters-toggle" id="po-filters-toggle" aria-expanded="false" aria-controls="po-filter-panel">
+        <i class="fa-solid fa-filter me-1" aria-hidden="true"></i><span id="po-filters-toggle-label">Filters</span>
+    </button>
 
-    <section class="po-filter-panel mb-3 no-print" aria-label="Purchase order filters">
+    <section class="po-filter-panel mb-3 no-print" id="po-filter-panel" aria-label="Purchase order filters">
         <div class="row g-2 align-items-end">
             <div class="col-12 col-lg-3">
                 <label for="po-client-search">Medical Center</label>
@@ -484,9 +486,12 @@
             <div>
                 <h2 class="h5 mb-1">Purchase Order Register</h2>
                 <div class="small po-muted" id="po-result-count">Loading P.O. records...</div>
+                <button type="button" class="btn btn-outline-primary btn-sm mt-2 d-none" id="po-retry-button">
+                    <i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Try again
+                </button>
             </div>
             <div class="d-flex flex-wrap gap-2 no-print">
-                <button type="button" class="btn btn-outline-success btn-sm" id="po-export-button">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="po-export-button">
                     <i class="fa-solid fa-file-excel me-1" aria-hidden="true"></i>Export Excel
                 </button>
                 <button type="button" class="btn btn-outline-primary btn-sm" id="po-refresh-button">
@@ -807,8 +812,14 @@
             }
 
             let finished = false;
+            const opener = document.activeElement;
             const onKeyDown = (event) => {
                 if (event.key === 'Escape') cleanup(false);
+                // Keep Tab inside the two dialog buttons while it is open.
+                if (event.key === 'Tab') {
+                    event.preventDefault();
+                    (document.activeElement === cancelButton ? confirmButton : cancelButton).focus();
+                }
             };
             const cleanup = (accepted) => {
                 if (finished) return;
@@ -819,6 +830,7 @@
                 confirmButton.onclick = null;
                 backdrop.onclick = null;
                 document.removeEventListener('keydown', onKeyDown);
+                if (opener && opener.isConnected && typeof opener.focus === 'function') opener.focus();
                 resolve(accepted);
             };
 
@@ -834,7 +846,8 @@
             document.addEventListener('keydown', onKeyDown);
             backdrop.classList.add('show');
             backdrop.setAttribute('aria-hidden', 'false');
-            setTimeout(() => confirmButton.focus(), 0);
+            // A destructive action opens on Cancel so a stray Enter cannot delete.
+            setTimeout(() => (danger ? cancelButton : confirmButton).focus(), 0);
         });
     }
 
@@ -866,8 +879,8 @@
             const legacyDate = row.start_date || row.po_date || '';
             const inDateRange = !hasDateFilter
                 || (row.allocation_schedule?.length ? schedule.length > 0 :
-                    (!filters.from || legacyDate >= filters.from) &&
-                    (!filters.to || legacyDate <= filters.to));
+                    (!(fiscal?.from || filters.from) || legacyDate >= (fiscal?.from || filters.from)) &&
+                    (!(fiscal?.to || filters.to) || legacyDate <= (fiscal?.to || filters.to)));
             return (!filters.client || client.includes(filters.client))
                 && (!filters.number || number.includes(filters.number))
                 && (!filters.machine || machine.includes(filters.machine))
@@ -905,6 +918,8 @@
         document.querySelectorAll('[data-sort-indicator]').forEach((indicator) => {
             const active = indicator.dataset.sortIndicator === state.sortKey;
             indicator.textContent = active ? (state.sortDirection === 'asc' ? '↑' : '↓') : '↕';
+            indicator.setAttribute('aria-hidden', 'true');
+            indicator.closest('th')?.setAttribute('aria-sort', active ? (state.sortDirection === 'asc' ? 'ascending' : 'descending') : 'none');
         });
     }
 
@@ -920,6 +935,7 @@
         byId('po-quarterly-count').textContent = quarterlyRows.length;
         byId('po-quarterly-total').textContent = `Total amount: ${formatPHP(totalAmount(quarterlyRows))}`;
         byId('po-client-count').textContent = new Set(state.rows.map((row) => row.client_id)).size;
+        byId('po-stats')?.setAttribute('aria-busy', 'false');
     }
 
     function actionHtml(row) {
@@ -930,8 +946,8 @@
     }
 
     function rowFields(row) {
-        return `<div class="po-number">${escapeHtml(row.client_name)}</div>
-            <div class="small po-muted">${escapeHtml(row.client_address || '')}</div>`;
+        const address = row.client_address ? `<div class="small po-muted">${escapeHtml(row.client_address)}</div>` : '';
+        return `<div class="po-number">${escapeHtml(row.client_name)}</div>${address}`;
     }
 
     function machineFields(row) {
@@ -1079,8 +1095,8 @@
 
     function syncProductCoverageDates() {
         const selected = state.selectedMachines;
-        const startDates = [...new Set(selected.map((machine) => String(machine?.start_date || machine?.product_start_date || '').trim()).filter(Boolean))];
-        const endDates = [...new Set(selected.map((machine) => String(machine?.end_date || machine?.product_end_date || '').trim()).filter(Boolean))];
+        const startDates = [...new Set(selected.map((machine) => String(machine?.start_date || '').trim()).filter(Boolean))];
+        const endDates = [...new Set(selected.map((machine) => String(machine?.end_date || '').trim()).filter(Boolean))];
         const dateInputs = [byId('po-date'), byId('po-end-date')];
         if (!selected.length) {
             state.dateMode = 'product';
@@ -1154,16 +1170,17 @@
             notify(message, 'warning');
             return false;
         }
-        const renewal = productIsRenewalEligible(product);
+        // Renewal is add-only; an edited P.O. keeps Product dates, as the server does.
+        const renewal = !state.editingId && productIsRenewalEligible(product);
         const existing = state.selectedMachines[0];
-        if (existing && renewal !== productIsRenewalEligible(existing)) {
+        if (existing && renewal !== (!state.editingId && productIsRenewalEligible(existing))) {
             const message = 'Mixed renewal and Product-date selections are not allowed.';
             setMachineNote(message);
             notify(message, 'danger');
             return false;
         }
-        const productStart = String(product?.start_date || product?.product_start_date || '').trim();
-        const productEnd = String(product?.end_date || product?.product_end_date || '').trim();
+        const productStart = String(product?.start_date || '').trim();
+        const productEnd = String(product?.end_date || '').trim();
         const oneTime = productIsOneTimeEligible(product);
         if (!renewal && (!productStart || (!productEnd && !oneTime))) {
             const message = oneTime
@@ -1173,8 +1190,8 @@
             notify(message, 'danger');
             return false;
         }
-        const existingStart = String(existing?.start_date || existing?.product_start_date || '').trim();
-        const existingEnd = String(existing?.end_date || existing?.product_end_date || '').trim();
+        const existingStart = String(existing?.start_date || '').trim();
+        const existingEnd = String(existing?.end_date || '').trim();
         const existingOneTime = Boolean(existing?.one_time_eligible && String(existing?.contract_status || '') === 'No Expiry Set - No Contract');
         if (!renewal && existing && (oneTime !== existingOneTime || productStart !== existingStart || (!oneTime && productEnd !== existingEnd))) {
             const message = oneTime || existingOneTime
@@ -1246,7 +1263,7 @@
     }
 
     function productCoverageDisplay(product) {
-        if (productIsRenewalEligible(product)) {
+        if (!state.editingId && productIsRenewalEligible(product)) {
             return `Renewal eligible — latest P.O. ended ${product.latest_prior_end_date}; Start Date defaults to ${product.default_renewal_start_date}`;
         }
         if (Boolean(product?.under_contract)) return 'Under Contract';
@@ -1257,8 +1274,7 @@
         const dates = product?.start_date && product?.end_date
             ? `${product.start_date} to ${product.end_date}`
             : 'Product dates incomplete';
-        if (!product?.start_date || !product?.end_date) return `${status}; ${dates}`;
-        return product?.end_warranty ? `${status}; ${dates}; Warranty ends ${product.end_warranty}` : `${status}; ${dates}`;
+        return `${status}; ${dates}`;
     }
 
     function appendAutocompleteMessage(results, message) {
@@ -1432,8 +1448,8 @@
         byId('po-machine-identity').textContent = productDisplay(product) || serial;
         byId('po-machine-owner').textContent = owner;
         byId('po-machine-bsid').textContent = product?.bsid || 'Not set';
-        byId('po-machine-start-date').value = product?.start_date || product?.start_warranty_date || '';
-        byId('po-machine-end-date').value = product?.end_date || product?.end_warranty_date || '';
+        byId('po-machine-start-date').value = product?.start_date || '';
+        byId('po-machine-end-date').value = product?.end_date || '';
         byId('po-machine-under-contract').checked = Boolean(product?.under_contract);
         const snapshotNote = byId('po-machine-snapshot-note');
         snapshotNote.classList.remove('d-none');
@@ -1563,6 +1579,7 @@
         const response = await fetch('/get_purchase_orders', { headers: { 'Accept': 'application/json' } });
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.error || 'P.O. records could not be loaded.');
+        byId('po-retry-button')?.classList.add('d-none');
         state.rows = data.purchase_orders || [];
         state.clients = data.clients || [];
         state.products = data.products || [];
@@ -1688,7 +1705,16 @@
     });
 
     byId('po-add-button').addEventListener('click', () => openForm());
-    byId('po-refresh-button').addEventListener('click', () => loadData().catch((error) => notify(error.message, 'danger')));
+    byId('po-refresh-button').addEventListener('click', () => loadData().catch(showLoadError));
+    byId('po-retry-button').addEventListener('click', () => loadData().catch(showLoadError));
+    byId('po-filters-toggle').addEventListener('click', () => {
+        const panel = byId('po-filter-panel');
+        const open = !panel.classList.contains('is-open');
+        panel.classList.toggle('is-open', open);
+        byId('po-filters-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    byId('po-filter-panel').addEventListener('input', updateFiltersToggle);
+    byId('po-filter-panel').addEventListener('change', updateFiltersToggle);
     byId('po-refresh-dates-button').addEventListener('click', refreshPurchaseOrderDates);
     byId('po-form').addEventListener('submit', saveForm);
     byId('po-machine-form').addEventListener('submit', saveMachineCoverage);
@@ -1738,6 +1764,7 @@
         byId('po-fiscal-year').value = '';
         byId('po-fiscal-quarter').value = '';
         syncFiscalControls();
+        updateFiltersToggle();
         renderRows();
     });
 
@@ -1770,7 +1797,8 @@
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'purchase_order_register.xlsx';
+            const disposition = response.headers.get('Content-Disposition') || '';
+            link.download = disposition.match(/filename="?([^";]+)"?/)?.[1] || 'purchase_order_register.xlsx';
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -1785,6 +1813,20 @@
 
     byId('po-export-button').addEventListener('click', exportRegister);
 
+    function showLoadError(error) {
+        byId('po-result-count').textContent = 'P.O. records could not be loaded.';
+        byId('po-retry-button')?.classList.remove('d-none');
+        notify(error.message, 'danger');
+    }
+
+    function updateFiltersToggle() {
+        const filters = currentFilters();
+        const active = ['client', 'number', 'machine', 'type', 'from', 'to', 'fiscalYear', 'fiscalQuarter']
+            .filter((key) => filters[key]).length;
+        const label = byId('po-filters-toggle-label');
+        if (label) label.textContent = active ? `Filters · ${active}` : 'Filters';
+    }
+
     async function initializePage() {
         state.modal = createModalController();
         state.machineModal = createModalController('po-machine-modal');
@@ -1795,7 +1837,7 @@
         updateEndDateRequirement();
         updateMachineAvailability();
         try { await loadData(); }
-        catch (error) { byId('po-result-count').textContent = 'Request failed.'; notify(error.message, 'danger'); }
+        catch (error) { showLoadError(error); }
     }
 
     if (document.readyState === 'loading') {

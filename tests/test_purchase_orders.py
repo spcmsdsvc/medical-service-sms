@@ -88,7 +88,7 @@ class ServiceContractAllocationHelperTests(unittest.TestCase):
     def test_template_has_new_heading_filters_and_status_confirmation_contract(self):
         template = (ROOT / 'templates' / 'po_details.html').read_text(encoding='utf-8')
         layout = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
-        self.assertIn('Service Contract P.O. Details', template)
+        self.assertIn('<h1 class="dash-page-h1">P.O. Details</h1>', template)
         self.assertIn("nav_link('/po_details', 'fa-file-invoice', 'P.O. Details')", layout)
         self.assertIn('1st Fiscal (Apr–Jun)', template)
         self.assertIn('id="po-fiscal-quarter" class="form-select" disabled', template)
@@ -873,7 +873,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         page = response.get_data(as_text=True)
         self.assertIn('id="po-semi-annual-total"', page)
         self.assertIn('id="po-single-total"', page)
-        self.assertIn('Total amount: ₱0.00', page)
+        self.assertIn('Total amount: –', page)
         self.assertIn("const formatPHP = (value) =>", page)
         self.assertIn("row.po_type === 'semi_annual'", page)
         self.assertIn("row.po_type === 'quarterly'", page)
@@ -1015,7 +1015,8 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertIn(self.product_one_serial, by_serial)
         self.assertEqual(by_serial[self.product_one_serial]['client_id'], self.client_one_id)
         self.assertTrue(by_serial[self.product_one_serial]['under_contract'])
-        self.assertIn('end_warranty', by_serial[self.product_one_serial])
+        self.assertIn('end_date', by_serial[self.product_one_serial])
+        self.assertNotIn('end_warranty', by_serial[self.product_one_serial])
 
     def test_machine_filter_and_sort_reach_excel_export(self):
         client = self._client_for(self.po_user_id)
@@ -1183,7 +1184,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         html = page.get_data(as_text=True)
         self.assertIn("function productCoverageDisplay(product)", html)
         self.assertIn("if (Boolean(product?.under_contract)) return 'Under Contract';", html)
-        self.assertIn("return product?.end_warranty ?", html)
+        self.assertNotIn('Warranty ends', html)
         self.assertIn("productCoverageDisplay(product),", html)
 
     def test_purchase_order_machine_picker_loads_all_client_equipment(self):
@@ -1807,7 +1808,8 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertEqual(worksheet['K3'].value, 6.25)
         self.assertEqual(worksheet['F2'].value, 'Test address one')
         self.assertEqual(worksheet['J5'].value, '=SUM(J2:J3)')
-        self.assertEqual(worksheet['K5'].value, '=SUM(K2:K3)')
+        # Unfiltered column K holds per-visit amounts, so it has no total.
+        self.assertIsNone(worksheet['K5'].value)
         self.assertEqual(worksheet.freeze_panes, 'A2')
         self.assertEqual(worksheet.auto_filter.ref, 'A1:O3')
 

@@ -1,6 +1,37 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-26-po-details",
+      "release_date": "2026-10-26",
+      "title": "P.O. Details: add machines when editing, safer delete",
+      "summary": "Editing a P.O. can add machines again, deleting asks more safely, and the page reads clearly in dark mode and on phones.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-26-po-details-edit",
+          "category": "P.O. Details",
+          "description": "When editing a P.O., you can add another machine again, even one whose last P.O. has ended. Delete now opens on Cancel, so pressing Enter no longer deletes by accident.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-26-po-details-display",
+          "category": "P.O. Details",
+          "description": "The page has the same header and summary cards as the rest of the app, the register sits higher, filters fold behind a Filters button on phones, and frequency badges and buttons are readable in dark mode. The Excel export now sorts by P.O. amount like the screen and keeps its dated file name.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-23-approver-calendar",
       "release_date": "2026-10-23",
       "title": "Approvers can view the Calendar",
