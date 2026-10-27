@@ -1,6 +1,34 @@
 {
   "releases": [
     {
+      "release_key": "2026-10-27-travel-amend-cancel",
+      "release_date": "2026-10-27",
+      "title": "Travel Request: amend or cancel after approval",
+      "summary": "An approved travel request can be reopened for changes or cancelled when the trip moves or is called off.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-10-27-travel-amend",
+          "category": "Travel Request",
+          "description": "If an approved trip is rescheduled, press Amend in My Travel Requests and give a reason. The request opens for changes (dates, routes, expenses), then you submit it again. Once it is approved again, the Calendar travel blocks move to the new dates and Accounting gets the amended form. This works before and after the cash advance is received, until liquidation starts.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-10-27-travel-cancel",
+          "category": "Travel Request",
+          "description": "If a trip is called off, press Cancel and give a reason. The request becomes Cancelled, its Calendar travel blocks are removed, liquidation reminders stop, and the approver, participants and Accounting are told. If the cash advance was already received, return it to Accounting.",
+          "audiences": [
+            "engineers",
+            "approvers"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-26-reimbursement-tracker",
       "release_date": "2026-10-26",
       "title": "Reimbursement Tracker: safer rows and a clearer page",

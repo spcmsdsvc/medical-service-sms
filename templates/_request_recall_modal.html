@@ -76,6 +76,7 @@
     }
     .request-recall-btn.secondary { background: var(--app-surface-muted, #e2e8f0); color: var(--app-text, #122033); }
     .request-recall-btn.danger { background: var(--app-danger, #c62828); color: #fff; }
+    .request-recall-btn.primary { background: var(--app-primary, #1d4ed8); color: #fff; }
     .request-recall-btn:disabled { opacity: .6; cursor: wait; }
     @media (max-width: 480px) {
         .request-recall-modal { padding: .5rem; align-items: flex-end; }
@@ -119,12 +120,19 @@
         box.classList.toggle('is-visible', Boolean(message));
     }
 
-    window.openRequestRecall = function (module, recordId, label) {
-        activeRecall = { module: String(module || ''), recordId: Number(recordId || 0), label: String(label || 'Request') };
+    // options (optional) reuses this reason dialog for other actions:
+    // {url, title, description, submitLabel, busyLabel, placeholder, onSuccess(payload)}.
+    window.openRequestRecall = function (module, recordId, label, options) {
+        const opts = options || {};
+        activeRecall = { module: String(module || ''), recordId: Number(recordId || 0), label: String(label || 'Request'), options: opts };
         const dialog = modal();
         if (!dialog || !activeRecall.recordId) return;
-        document.getElementById('requestRecallTitle').textContent = `Withdraw ${activeRecall.label}`;
-        document.getElementById('requestRecallDescription').textContent = `Withdraw this submitted ${activeRecall.label.toLowerCase()} before an approver acts on it. It will return to an editable state and require resubmission.`;
+        document.getElementById('requestRecallTitle').textContent = opts.title || `Withdraw ${activeRecall.label}`;
+        document.getElementById('requestRecallDescription').textContent = opts.description || `Withdraw this submitted ${activeRecall.label.toLowerCase()} before an approver acts on it. It will return to an editable state and require resubmission.`;
+        submitButton().textContent = opts.submitLabel || 'Withdraw Request';
+        submitButton().classList.toggle('primary', opts.tone === 'primary');
+        submitButton().classList.toggle('danger', opts.tone !== 'primary');
+        reason().placeholder = opts.placeholder || 'Explain what needs to be corrected.';
         reason().value = '';
         setRecallError('');
         dialog.classList.add('is-open');
@@ -146,17 +154,20 @@
     window.submitRequestRecall = async function () {
         if (!activeRecall) return;
         const text = String(reason().value || '').trim();
+        const opts = activeRecall.options || {};
+        const submitLabel = opts.submitLabel || 'Withdraw Request';
         if (!text) {
-            setRecallError('A reason is required before withdrawing this request.');
+            setRecallError('A reason is required.');
             reason().focus();
             return;
         }
         const button = submitButton();
         button.disabled = true;
-        button.textContent = 'Withdrawing...';
+        button.textContent = opts.busyLabel || 'Withdrawing...';
         setRecallError('');
         try {
-            const response = await fetch(`/api/requests/${encodeURIComponent(activeRecall.module)}/${encodeURIComponent(activeRecall.recordId)}/recall`, {
+            const url = opts.url || `/api/requests/${encodeURIComponent(activeRecall.module)}/${encodeURIComponent(activeRecall.recordId)}/recall`;
+            const response = await fetch(url, {
                 method: 'POST',
                 credentials: 'same-origin',
                 cache: 'no-store',
@@ -164,13 +175,15 @@
                 body: JSON.stringify({ reason: text })
             });
             const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload.success === false) throw new Error(payload.error || 'Unable to withdraw this request.');
+            if (!response.ok || payload.success === false) throw new Error(payload.error || 'Unable to complete this action.');
             window.closeRequestRecall();
-            window.location.reload();
-        } catch (err) {
-            setRecallError(err.message || 'Unable to withdraw this request.');
             button.disabled = false;
-            button.textContent = 'Withdraw Request';
+            if (typeof opts.onSuccess === 'function') opts.onSuccess(payload);
+            else window.location.reload();
+        } catch (err) {
+            setRecallError(err.message || 'Unable to complete this action.');
+            button.disabled = false;
+            button.textContent = submitLabel;
         }
     };
 

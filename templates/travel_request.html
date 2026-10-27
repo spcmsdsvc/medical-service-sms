@@ -140,6 +140,9 @@
     .travel-status-chip.accounting { background: #e0f2fe; color: #075985; }
     :root[data-app-theme="dark"] .travel-status-chip.accounting { background: rgba(14,165,233,.2) !important; color: #bae6fd !important; }
     .travel-status-chip.liquidation { background: var(--app-primary-soft); color: var(--app-primary-text); }
+    .travel-status-chip.amending { background: #fff1d6; color: #8a5700; }
+    :root[data-app-theme="dark"] .travel-status-chip.amending { background: #4a3612 !important; color: #fde68a !important; }
+    .travel-status-chip.cancelled { text-decoration: line-through; }
     .travel-empty { color: var(--app-muted); font-weight: 400; padding: 6px 0; }
 
     .travel-notification-item { border: 1px solid var(--app-primary-soft-border); background: var(--app-primary-soft); border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; cursor: pointer; }
@@ -370,9 +373,11 @@
                 <option value="submitted">Submitted</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
+                <option value="amending">Amending</option>
                 <option value="accounting">With Accounting</option>
                 <option value="liquidation">Liquidation</option>
                 <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
             </select>
         </div>
         <div id="travel-history-list" class="travel-history-list"><div class="travel-empty">Loading travel requests...</div></div>
@@ -645,7 +650,7 @@ function updateDepositFieldsState(){
 /* ---------- status / lock ---------- */
 function isTravelEditableStatus(statusValue){
     const status = normalizeTravelStatus(statusValue);
-    return !status || status === 'draft' || status === 'rejected';
+    return !status || status === 'draft' || status === 'rejected' || status === 'amending';
 }
 function isCurrentTravelEditable(){ return isTravelEditableStatus($t('travel-current-status')?.value || 'Draft'); }
 function isApprovedTravelStatus(value){ return normalizeTravelStatus(value) === 'approved'; }
@@ -664,13 +669,31 @@ function travelStatusGroup(status){
     if(value.includes('liquidation')) return 'liquidation';
     if(['sent to accounting', 'accounting approved', 'funds received'].includes(value)) return 'accounting';
     if(['travel completed', 'completed'].includes(value)) return 'completed';
-    if(['draft', 'submitted', 'approved'].includes(value)) return value;
+    if(['draft', 'submitted', 'approved', 'amending', 'cancelled'].includes(value)) return value;
     return 'other';
 }
 
 function travelStatusChipClass(status){
     const group = travelStatusGroup(status);
     return ['draft', 'completed', 'other'].includes(group) ? '' : group;
+}
+
+// Amend / Cancel an approved request (server rule: can_amend / can_cancel).
+function openTravelAmendCancel(action, id, fundsReceived){
+    const amend = action === 'amend';
+    const cashNote = fundsReceived ? ' The cash advance was already received: return it to Accounting.' : '';
+    openRequestRecall('travel_request', id, 'Travel Request', {
+        url: `/api/travel-requests/${Number(id) || 0}/${amend ? 'amend' : 'cancel'}`,
+        title: amend ? 'Amend Travel Request' : 'Cancel Travel Request',
+        description: amend
+            ? 'This reopens the approved request so you can change the dates, routes or expenses, then submit it again. The current approval is paused until the approver approves the changes.'
+            : 'This cancels the travel request and removes its Calendar travel blocks. The approver, participants and Accounting are notified. This cannot be undone.' + cashNote,
+        submitLabel: amend ? 'Reopen for Amendment' : 'Cancel Travel Request',
+        busyLabel: amend ? 'Reopening...' : 'Cancelling...',
+        placeholder: amend ? 'Why does the trip need to change? (e.g. rescheduled by the client)' : 'Why is the trip cancelled?',
+        tone: amend ? 'primary' : 'danger',
+        onSuccess: () => { window.location.href = `${window.location.pathname}?open_request_id=${Number(id) || 0}`; }
+    });
 }
 
 // Disable every form control while locked; re-enable only what the lock disabled.
@@ -691,8 +714,14 @@ function setTravelRequestLockedState(statusValue){
     const banner = $t('travelLockBanner');
     banner.hidden = editable;
     banner.textContent = editable ? '' : `This travel request is ${status} and can no longer be edited.`;
+    const amending = normalizeTravelStatus(status) === 'amending';
+    if(amending){
+        banner.hidden = false;
+        banner.textContent = 'Reopened for amendment. Make your changes, then submit it again. The earlier approval is paused until the approver approves the changes.';
+    }
 
-    const rejected = normalizeTravelStatus(status) === 'rejected';
+    // A rejected amendment returns to Amending, so show its rejection reason too.
+    const rejected = normalizeTravelStatus(status) === 'rejected' || (amending && item.rejected_at);
     $t('travelRejectBanner').hidden = !rejected;
     if(rejected){
         $t('travelRejectTitle').textContent = `Rejected${item.rejected_by ? ' by ' + item.rejected_by : ''}${item.rejected_at ? ' · ' + formatTravelDateTime(item.rejected_at) : ''}`;
@@ -1354,7 +1383,7 @@ async function deleteAllTravelRequestAttachments(){
 }
 
 /* ---------- approval history ---------- */
-const TRAVEL_AUDIT_LABELS = {submitted: 'Submitted', approved: 'Approved', rejected: 'Rejected', recalled: 'Withdrawn'};
+const TRAVEL_AUDIT_LABELS = {submitted: 'Submitted', approved: 'Approved', rejected: 'Rejected', recalled: 'Withdrawn', amend_started: 'Reopened for amendment', cancelled: 'Cancelled'};
 
 function renderTravelApprovalHistory(item){
     item = item || {};
@@ -1586,6 +1615,8 @@ function renderMyTravelRequests(){
                 <div class="travel-history-actions">
                     <button type="button" class="travel-btn travel-btn-secondary travel-btn-sm" onclick="openTravelRequest(${id})">Open</button>
                     ${normalizeTravelStatus(status) === 'submitted' && isTravelOwner(item) ? `<button type="button" class="travel-btn travel-btn-danger-outline travel-btn-sm" onclick="openRequestRecall('travel_request', ${id}, 'Travel Request')"><i class="fa-solid fa-rotate-left"></i> Withdraw</button>` : ''}
+                    ${item.can_amend ? `<button type="button" class="travel-btn travel-btn-secondary travel-btn-sm" onclick="openTravelAmendCancel('amend', ${id}, ${item.funds_received_at ? 'true' : 'false'})"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Amend</button>` : ''}
+                    ${item.can_cancel ? `<button type="button" class="travel-btn travel-btn-danger-outline travel-btn-sm" onclick="openTravelAmendCancel('cancel', ${id}, ${item.funds_received_at ? 'true' : 'false'})"><i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel</button>` : ''}
                     ${approved ? `<button type="button" class="travel-btn travel-btn-secondary travel-btn-sm" onclick="openTimelineForTravelRequest({id: ${id}, departure_date: '${travelEscape(item.departure_date || '')}'})"><i class="fa-solid fa-calendar-days"></i> Timeline</button>` : ''}
                 </div>
             </div>`;

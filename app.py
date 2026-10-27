@@ -2441,6 +2441,9 @@ class TravelRequest(db.Model):
 
     status = db.Column(db.String(40), nullable=False, default='Draft', index=True)
     accounting_status = db.Column(db.String(40), nullable=True, index=True)
+    # Set while an approved request is reopened for amendment: the status it had
+    # before Amend (Approved or Funds Received). Empty when no amendment is open.
+    amend_from_status = db.Column(db.String(40), nullable=True)
 
     created_at = db.Column(db.DateTime, default=get_manila_time)
     updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time)
@@ -5682,7 +5685,8 @@ def ensure_travel_request_tables():
                 'training_objective': 'ALTER TABLE travel_request ADD COLUMN training_objective TEXT',
                 'meeting_subject': 'ALTER TABLE travel_request ADD COLUMN meeting_subject VARCHAR(200)',
                 'meeting_with': 'ALTER TABLE travel_request ADD COLUMN meeting_with VARCHAR(200)',
-                'meeting_objective': 'ALTER TABLE travel_request ADD COLUMN meeting_objective TEXT'
+                'meeting_objective': 'ALTER TABLE travel_request ADD COLUMN meeting_objective TEXT',
+                'amend_from_status': 'ALTER TABLE travel_request ADD COLUMN amend_from_status VARCHAR(40)'
             }
             for column_name, ddl in travel_request_column_migrations.items():
                 if column_name not in travel_request_columns:
@@ -9598,13 +9602,20 @@ def format_travel_request_notification_email(action_label, request_rec, actor_us
     subject_map = {
         'submitted': f"Travel Request Awaiting Approval - {ctx['request_no']}",
         'approved': f"Travel Request Approved - {ctx['request_no']}",
-        'rejected': f"Travel Request Rejected - {ctx['request_no']}"
+        'rejected': f"Travel Request Rejected - {ctx['request_no']}",
+        'amend_started': f"Travel Request Reopened for Amendment - {ctx['request_no']}",
+        'cancelled': f"Travel Request Cancelled - {ctx['request_no']}"
     }
     title_map = {
         'submitted': 'Travel Request Awaiting Approval',
         'approved': 'Travel Request Approved',
-        'rejected': 'Travel Request Rejected'
+        'rejected': 'Travel Request Rejected',
+        'amend_started': 'Travel Request Reopened for Amendment',
+        'cancelled': 'Travel Request Cancelled'
     }
+    if action_label == 'submitted' and clean_str(getattr(request_rec, 'amend_from_status', None)):
+        subject_map['submitted'] = f"Amended Travel Request Awaiting Approval - {ctx['request_no']}"
+        title_map['submitted'] = 'Amended Travel Request Awaiting Approval'
 
     subject = subject_map.get(action_label, f"Travel Request Update - {ctx['request_no']}")
     title = title_map.get(action_label, 'Travel Request Update')
@@ -9620,6 +9631,14 @@ def format_travel_request_notification_email(action_label, request_rec, actor_us
     elif action_label == 'rejected':
         actor_label = 'Rejected By'
         action_note = 'This travel request was returned for correction. Please review the remarks, update the request, and resubmit if needed.'
+    elif action_label == 'amend_started':
+        actor_label = 'Reopened By'
+        action_note = 'The requester reopened this approved travel request to change it. The current approval is paused until the amended request is approved.'
+    elif action_label == 'cancelled':
+        actor_label = 'Cancelled By'
+        action_note = 'The requester cancelled this travel request. Its Calendar travel blocks were removed.'
+        if getattr(request_rec, 'funds_received_at', None):
+            action_note += ' The cash advance was already received and must be returned to Accounting.'
 
     text_lines = [
         title,
@@ -9643,8 +9662,9 @@ def format_travel_request_notification_email(action_label, request_rec, actor_us
 
     if actor_name:
         text_lines.append(f"{actor_label}: {actor_name}")
+    remarks_label = 'Reason' if action_label in {'amend_started', 'cancelled'} else 'Approval Remarks'
     if action_remarks:
-        text_lines.append(f"Approval Remarks: {action_remarks}")
+        text_lines.append(f"{remarks_label}: {action_remarks}")
 
     text_lines.extend([
         '',
@@ -9676,7 +9696,7 @@ def format_travel_request_notification_email(action_label, request_rec, actor_us
     ])
 
     if action_remarks:
-        rows.append(('Approval Remarks', action_remarks))
+        rows.append((remarks_label, action_remarks))
 
     detail_rows = ''.join(
         f"<tr><td style='padding:8px 10px;font-weight:700;border-bottom:1px solid #e5e7eb;color:#334155;vertical-align:top;'>{html.escape(label)}</td>"
@@ -9706,10 +9726,14 @@ def format_travel_request_notification_email(action_label, request_rec, actor_us
     return subject, text_body, html_body
 
 
-def send_travel_request_notification_email_async(app_obj, recipient_user_ids, travel_request_id, action_label, actor_user_id=None, remarks=''):
-    """Send Travel Request notification email in background."""
+def send_travel_request_notification_email_async(app_obj, recipient_user_ids, travel_request_id, action_label, actor_user_id=None, remarks='', extra_emails=None):
+    """Send Travel Request notification email in background.
+
+    extra_emails adds plain addresses (e.g. Accounting recipients on cancel).
+    """
     recipient_ids = [clean_int(item) for item in (recipient_user_ids or []) if clean_int(item)]
-    if not recipient_ids:
+    extra_emails = [clean_str(item) for item in (extra_emails or []) if clean_str(item)]
+    if not recipient_ids and not extra_emails:
         return
 
     def worker():
@@ -9722,7 +9746,9 @@ def send_travel_request_notification_email_async(app_obj, recipient_user_ids, tr
 
                 recipients = [db.session.get(User, user_id) for user_id in recipient_ids]
                 recipients = [user for user in recipients if user]
-                recipient_emails = get_users_email_addresses_for_notifications(recipients)
+                recipient_emails = list(dict.fromkeys(
+                    list(get_users_email_addresses_for_notifications(recipients) or []) + extra_emails
+                ))
                 if not recipient_emails:
                     print("[EMAIL] Travel notification skipped: no recipient email addresses.", flush=True)
                     return
@@ -10569,8 +10595,12 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         print(f'[TravelRequestPDF] Official template overlay failed: {official_pdf_error}', flush=True)
         raise
 
-def format_travel_request_accounting_email(request_rec, approved_by_user=None, remarks=''):
-    """Return subject/text/html for Accounting handoff after manager approval."""
+def format_travel_request_accounting_email(request_rec, approved_by_user=None, remarks='', amended=False):
+    """Return subject/text/html for Accounting handoff after manager approval.
+
+    amended=True marks a re-approval after the requester amended an approved
+    request; it replaces the earlier handoff.
+    """
     ctx = travel_request_email_context(request_rec)
     approved_by = universal_approval_actor_name(approved_by_user) if approved_by_user else 'Approver'
     approved_amount = travel_request_money(getattr(request_rec, 'approved_amount', 0) or getattr(request_rec, 'requested_amount', 0))
@@ -10597,6 +10627,12 @@ def format_travel_request_accounting_email(request_rec, approved_by_user=None, r
         'approved_amount': approved_amount_label,
         'approved_by': approved_by
     })
+    amended_note = (
+        'AMENDED: this request was changed by the requester and approved again. It replaces the earlier approved version.'
+        if amended else ''
+    )
+    if amended:
+        subject = f"AMENDED - {subject}"
 
     text_lines = [
         'Approved Travel Request for Accounting Handoff',
@@ -10605,6 +10641,10 @@ def format_travel_request_accounting_email(request_rec, approved_by_user=None, r
         '',
         'Please be informed that the travel request below has been approved by the manager and is ready for Accounting cash advance processing.',
         '',
+    ]
+    if amended:
+        text_lines.extend([amended_note, ''])
+    text_lines += [
         f"Request No.: {ctx['request_no']}",
         f"Request Type: {ctx['request_type']}",
         f"Requester: {ctx['requester_name']}",
@@ -10654,6 +10694,7 @@ def format_travel_request_accounting_email(request_rec, approved_by_user=None, r
         <h2 style="margin:0 0 12px;color:#0f172a;">Approved Travel Request for Accounting Handoff</h2>
         <p style="margin:0 0 14px;color:#374151;">Good day Accounting Team,</p>
         <p style="margin:0 0 14px;color:#374151;">A Travel Request has been approved by the manager and is ready for Accounting cash advance processing.</p>
+        {f'<p style="margin:0 0 14px;color:#8a5700;font-weight:700;">{html.escape(amended_note)}</p>' if amended else ''}
         <table style="border-collapse:collapse;border:1px solid #e5e7eb;min-width:420px;">
             {detail_rows}
         </table>
@@ -10669,7 +10710,7 @@ def format_travel_request_accounting_email(request_rec, approved_by_user=None, r
     return subject, text_body, html_body
 
 
-def send_travel_request_accounting_email_async(app_obj, travel_request_id, accounting_emails, approved_by_user_id=None, remarks=''):
+def send_travel_request_accounting_email_async(app_obj, travel_request_id, accounting_emails, approved_by_user_id=None, remarks='', amended=False):
     """Send approved Travel Request handoff email to Settings-managed Accounting recipients."""
     recipient_emails = normalize_email_list(accounting_emails)
     if not recipient_emails:
@@ -10688,7 +10729,8 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
                 subject, text_body, html_body = format_travel_request_accounting_email(
                     request_rec,
                     approved_by_user=approver,
-                    remarks=remarks
+                    remarks=remarks,
+                    amended=amended
                 )
 
                 pdf_filename = travel_request_pdf_filename(request_rec)
@@ -10735,9 +10777,12 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
                 )
                 print(f"[EMAIL] Travel accounting handoff with PDF attachment: sent={sent} | {message}", flush=True)
 
+                # An amended re-approval after the cash advance keeps 'Funds Received'.
+                keep_funds_received = bool(amended and getattr(request_rec, 'funds_received_at', None))
                 if sent:
                     request_rec.sent_to_accounting_at = get_manila_time()
-                    request_rec.accounting_status = 'Sent to Accounting'
+                    if not keep_funds_received:
+                        request_rec.accounting_status = 'Sent to Accounting'
                     request_rec.updated_at = get_manila_time()
                     db.session.add(ActivityLog(
                         user=universal_approval_actor_name(approver) if approver else 'System',
@@ -10745,7 +10790,8 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
                     ))
                     db.session.commit()
                 else:
-                    request_rec.accounting_status = 'Accounting Email Failed'
+                    if not keep_funds_received:
+                        request_rec.accounting_status = 'Accounting Email Failed'
                     request_rec.accounting_remarks = message or 'Unable to send accounting email with Travel Request PDF.'
                     request_rec.updated_at = get_manila_time()
                     db.session.add(ActivityLog(
@@ -10760,7 +10806,8 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
                 try:
                     failed_request = db.session.get(TravelRequest, clean_int(travel_request_id))
                     if failed_request:
-                        failed_request.accounting_status = 'Accounting Email Failed'
+                        if not (amended and getattr(failed_request, 'funds_received_at', None)):
+                            failed_request.accounting_status = 'Accounting Email Failed'
                         failed_request.accounting_remarks = clean_str(email_error) or 'Unable to prepare Travel Request accounting attachments.'
                         failed_request.updated_at = get_manila_time()
                         db.session.commit()
@@ -13500,7 +13547,9 @@ def travel_request_liquidation_reminder_terminal_statuses():
         'Liquidation Completed',
         'Completed',
         'Rejected',
-        'Draft'
+        'Draft',
+        'Amending',
+        'Cancelled'
     }
 
 
@@ -28434,7 +28483,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v349-reimbursement-tracker';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v350-travel-amend-cancel';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -43107,7 +43156,11 @@ def approval_center_reimbursement_counts():
 
 
 
-TRAVEL_REQUEST_EDITABLE_STATUSES = {'Draft', 'Rejected'}
+TRAVEL_REQUEST_EDITABLE_STATUSES = {'Draft', 'Rejected', 'Amending'}
+TRAVEL_REQUEST_DELETABLE_STATUSES = {'Draft', 'Rejected'}
+# Statuses where the requester may Amend (reopen for re-approval) or Cancel.
+TRAVEL_REQUEST_AMENDABLE_STATUSES = {'Approved', 'Funds Received'}
+TRAVEL_REQUEST_CANCELLABLE_STATUSES = {'Approved', 'Funds Received', 'Amending'}
 TRAVEL_REQUEST_MAX_DAYS = 90
 TRAVEL_REQUEST_MAX_DAYS_ERROR = f'A travel request can cover at most {TRAVEL_REQUEST_MAX_DAYS} days. Split longer trips into separate requests.'
 TRAVEL_REQUEST_MAX_AMOUNT = 10_000_000
@@ -43118,7 +43171,7 @@ def travel_request_exceeds_max_days(departure_date, return_date):
 
 
 def travel_request_is_approved_or_later(request_rec):
-    return travel_request_normalize_status(getattr(request_rec, 'status', None)) not in {'Draft', 'Submitted', 'Rejected'}
+    return travel_request_normalize_status(getattr(request_rec, 'status', None)) not in {'Draft', 'Submitted', 'Rejected', 'Amending', 'Cancelled'}
 
 
 def travel_request_amount_label(request_rec):
@@ -43162,6 +43215,8 @@ def travel_request_normalize_status(status_value):
         'submitted': 'Submitted',
         'approved': 'Approved',
         'rejected': 'Rejected',
+        'amending': 'Amending',
+        'cancelled': 'Cancelled',
         'sent_to_accounting': 'Sent to Accounting',
         'accounting_approved': 'Accounting Approved',
         'accounting_rejected': 'Accounting Rejected',
@@ -43301,7 +43356,7 @@ def travel_dates_overlap(start_a, end_a, start_b, end_b):
 
 def travel_request_conflict_statuses():
     """Statuses that should reserve a travel period."""
-    return ['Draft', 'Submitted', 'Approved']
+    return ['Draft', 'Submitted', 'Approved', 'Amending']
 
 
 def travel_request_conflict_item_to_dict(request_rec):
@@ -43430,7 +43485,7 @@ def find_travel_request_conflicts_for_user(
     schedule_conflicts = []
     if engineer_id:
         start_dt, end_dt = build_shift_datetime_bounds(start_date, end_date)
-        schedule_conflicts = (
+        schedule_query = (
             Shift.query
             .options(joinedload(Shift.client), joinedload(Shift.product))
             .filter(Shift.start_time < end_dt)
@@ -43443,9 +43498,15 @@ def find_travel_request_conflicts_for_user(
                     .filter(ShiftEngineer.engineer_id == engineer_id)
                 )
             ))
-            .order_by(Shift.start_time.asc(), Shift.id.asc())
-            .all()
         )
+        if exclude_request_id:
+            # An amendment's own travel blocks are not a conflict with itself.
+            schedule_query = schedule_query.filter(or_(
+                Shift.travel_request_id.is_(None),
+                Shift.travel_request_id != exclude_request_id,
+                Shift.schedule_type != 'travel'
+            ))
+        schedule_conflicts = schedule_query.order_by(Shift.start_time.asc(), Shift.id.asc()).all()
 
     request_client_ids, request_client_names = travel_request_client_identities(
         routes_payload=routes_payload,
@@ -44405,6 +44466,10 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
         'destination': request_rec.destination or '',
         'client_name': request_rec.client_name or '',
         'schedule_id': request_rec.schedule_id,
+        'amend_from_status': clean_str(getattr(request_rec, 'amend_from_status', None)) or '',
+        'is_amendment': bool(clean_str(getattr(request_rec, 'amend_from_status', None))),
+        'can_amend': travel_request_amend_cancel_refusal(request_rec, 'amend') is None,
+        'can_cancel': travel_request_amend_cancel_refusal(request_rec, 'cancel') is None,
         'departure_date': request_rec.departure_date.isoformat() if request_rec.departure_date else '',
         'return_date': request_rec.return_date.isoformat() if request_rec.return_date else '',
         'arrival_date': request_rec.arrival_date.isoformat() if request_rec.arrival_date else '',
@@ -44953,7 +45018,8 @@ def delete_travel_request_draft(travel_request_id=None):
         return jsonify({'success': False, 'error': 'You are not allowed to delete this travel request.'}), 403
 
     current_status = travel_request_normalize_status(request_rec.status)
-    if current_status not in TRAVEL_REQUEST_EDITABLE_STATUSES:
+    # An amendment was approved before, so it cannot be deleted (Cancel it instead).
+    if current_status not in TRAVEL_REQUEST_DELETABLE_STATUSES or clean_str(getattr(request_rec, 'amend_from_status', None)):
         return jsonify({
             'success': False,
             'error': f'Travel request is already {current_status} and cannot be deleted.'
@@ -45146,6 +45212,7 @@ def submit_travel_request(travel_request_id):
 
     now = get_manila_time()
     previous_status = request_rec.status or 'Draft'
+    is_amendment = bool(clean_str(getattr(request_rec, 'amend_from_status', None)))
     request_rec.status = 'Submitted'
     request_rec.submitted_at = now
     request_rec.approved_at = None
@@ -45163,11 +45230,12 @@ def submit_travel_request(travel_request_id):
         actor_user=current_user,
         status_from=previous_status,
         status_to='Submitted',
-        remarks='Submitted travel request for manager approval.',
+        remarks='Submitted amended travel request for manager approval.' if is_amendment else 'Submitted travel request for manager approval.',
         metadata={
             'request_no': request_rec.request_no,
             'travel_request_id': request_rec.id,
             'request_record_id': request_rec.id,
+            'is_amendment': is_amendment,
             'assigned_approver_id': getattr(approver, 'id', None),
             'assigned_approver': approval_user_display_name(approver),
             'assigned_approver_ids': [getattr(item, 'id', None) for item in approvers],
@@ -45176,11 +45244,12 @@ def submit_travel_request(travel_request_id):
     )
 
     submitter_name = approval_user_display_name(current_user) or getattr(current_user, 'username', 'Requester')
+    amended_label = 'an amended' if is_amendment else 'a'
     clear_existing_pending_approval_notifications('travel_request', request_rec.id)
     create_system_notifications_for_users(
         approvers,
-        title='New Travel Request Awaiting Approval',
-        message=f"{submitter_name} submitted {request_rec.request_no or 'a travel request'} for approval.",
+        title='Amended Travel Request Awaiting Approval' if is_amendment else 'New Travel Request Awaiting Approval',
+        message=f"{submitter_name} submitted {amended_label} {request_rec.request_no or 'travel request'} for approval.",
         module='travel_request',
         record_id=request_rec.id,
         target_url=travel_request_notification_url(request_rec),
@@ -45596,6 +45665,41 @@ def resolve_travel_request_engineer_ids(request_rec):
     return [fallback_id] if fallback_id else []
 
 
+def remove_active_travel_blocks(request_rec, actor_user=None):
+    """Delete a Travel Request's active Calendar travel blocks (amend re-approval / cancel).
+
+    Rows are deleted, not marked cancelled, because the timeline and conflict
+    queries do not skip cancelled blocks. Blocks a scheduler converted into
+    service work (travel_block_status='converted') are real schedules and stay.
+    """
+    ensure_shift_travel_block_columns()
+    if not request_rec:
+        return 0
+
+    blocks = (
+        Shift.query
+        .filter(Shift.travel_request_id == request_rec.id)
+        .filter(Shift.schedule_type == 'travel')
+        .filter(or_(Shift.travel_block_status.is_(None), Shift.travel_block_status != 'converted'))
+        .all()
+    )
+    removed_ids = {block.id for block in blocks}
+    for block in blocks:
+        ShiftEngineer.query.filter_by(shift_id=block.id).delete(synchronize_session=False)
+        db.session.delete(block)
+    if clean_int(getattr(request_rec, 'schedule_id', None)) in removed_ids:
+        request_rec.schedule_id = None
+
+    if removed_ids:
+        request_label = clean_str(getattr(request_rec, 'request_no', None)) or f"TR-{request_rec.id}"
+        db.session.add(ActivityLog(
+            user=universal_approval_actor_name(actor_user) if actor_user else 'System',
+            action=f"Removed {len(removed_ids)} travel block day(s) for {request_label}"
+        ))
+    db.session.flush()
+    return len(removed_ids)
+
+
 def create_or_get_travel_blocks_for_approved_request(request_rec, approved_by_user=None, approved_at=None):
     """S11H1B: Auto-create timeline Travel Block rows after manager approval.
 
@@ -45944,7 +46048,12 @@ def approve_travel_request(travel_request_id):
 
     now = get_manila_time()
     previous_status = request_rec.status or ''
-    request_rec.status = 'Approved'
+    # Re-approval of an amendment: the cash advance may already have been received.
+    is_amendment = bool(clean_str(getattr(request_rec, 'amend_from_status', None)))
+    keep_funds_received = is_amendment and bool(getattr(request_rec, 'funds_received_at', None))
+    new_status = 'Funds Received' if keep_funds_received else 'Approved'
+    request_rec.status = new_status
+    request_rec.amend_from_status = None
     request_rec.approved_at = now
     request_rec.approved_by_id = current_user.id
     request_rec.approved_amount = travel_request_money(approved_amount if approved_amount is not None else request_rec.requested_amount)
@@ -45957,6 +46066,8 @@ def approve_travel_request(travel_request_id):
 
     # S11H1B Travel Block Foundation:
     # Manager approval now creates duplicate-safe timeline Travel Block rows.
+    # An amendment replaces the old blocks with blocks for the new dates.
+    removed_block_count = remove_active_travel_blocks(request_rec, actor_user=current_user) if is_amendment else 0
     travel_block_result = create_or_get_travel_blocks_for_approved_request(
         request_rec,
         approved_by_user=current_user,
@@ -45969,11 +46080,13 @@ def approve_travel_request(travel_request_id):
         'approved',
         actor_user=current_user,
         status_from=previous_status,
-        status_to='Approved',
-        remarks=remarks or 'Approved travel request.',
+        status_to=new_status,
+        remarks=remarks or ('Approved amended travel request.' if is_amendment else 'Approved travel request.'),
         metadata={
             'travel_request_id': request_rec.id,
             'request_record_id': request_rec.id,
+            'is_amendment': is_amendment,
+            'travel_block_removed_count': removed_block_count,
             'approved_amount': request_rec.approved_amount,
             'approved_by': universal_approval_actor_name(current_user),
             'signature_snapshot_saved': bool(clean_str(getattr(request_rec, 'approval_signature_snapshot', None))),
@@ -46015,7 +46128,10 @@ def approve_travel_request(travel_request_id):
     accounting_warning = None
     accounting_email_queued = False
 
-    if accounting_emails:
+    if keep_funds_received:
+        # Cash already received (a withdraw during the amendment may have cleared it).
+        request_rec.accounting_status = 'Funds Received'
+    elif accounting_emails:
         request_rec.accounting_status = 'Accounting Email Queued'
         request_rec.accounting_remarks = None
     else:
@@ -46048,7 +46164,8 @@ def approve_travel_request(travel_request_id):
             request_rec.id,
             accounting_emails,
             approved_by_user_id=current_user.id,
-            remarks=remarks
+            remarks=remarks,
+            amended=is_amendment
         )
 
     response_payload = {
@@ -46070,6 +46187,172 @@ def approve_travel_request(travel_request_id):
         response_payload['message'] = 'Travel request approved. Accounting email was not sent because no Accounting recipients are configured.'
 
     return jsonify(response_payload)
+
+
+def travel_request_amend_cancel_refusal(request_rec, action):
+    """Return (error, http_status) when the current user cannot amend/cancel, else None.
+
+    Single rule for the endpoints and the can_amend / can_cancel flags.
+    """
+    if not request_rec:
+        return 'Travel request not found.', 404
+    try:
+        user_id = clean_int(getattr(current_user, 'id', None))
+    except Exception:
+        user_id = None
+    if not user_id or clean_int(request_rec.user_id) != user_id:
+        return f'Only the requester can {action} this travel request.', 403
+
+    status = travel_request_normalize_status(request_rec.status)
+    allowed = TRAVEL_REQUEST_AMENDABLE_STATUSES if action == 'amend' else TRAVEL_REQUEST_CANCELLABLE_STATUSES
+    if status not in allowed:
+        return f'This travel request is {status} and cannot be {"amended" if action == "amend" else "cancelled"}.', 409
+    if TravelLiquidationHeader.query.filter_by(travel_request_id=request_rec.id).first():
+        return 'Liquidation has started for this travel request, so it can no longer be changed.', 409
+    return None
+
+
+def travel_request_amend_cancel_recipient_ids(request_rec):
+    approver_ids = [getattr(user, 'id', None) for user in get_assigned_approvers_for_requester(request_rec.user_id, 'travel_request')]
+    ids = list(get_travel_request_notification_user_ids(request_rec) or []) + approver_ids
+    return [user_id for user_id in dict.fromkeys(clean_int(item) for item in ids) if user_id and user_id != current_user.id]
+
+
+@app.route('/api/travel-requests/<int:travel_request_id>/amend', methods=['POST'])
+@csrf.exempt
+@login_required
+def amend_travel_request(travel_request_id):
+    """Reopen an approved Travel Request for changes; it must be approved again."""
+    ensure_travel_request_tables()
+    request_rec = db.session.get(TravelRequest, travel_request_id)
+    refusal = travel_request_amend_cancel_refusal(request_rec, 'amend')
+    if refusal:
+        return jsonify({'success': False, 'error': refusal[0]}), refusal[1]
+
+    reason = (clean_str((request.get_json(silent=True) or {}).get('reason')) or '').strip()
+    if not reason:
+        return jsonify({'success': False, 'error': 'A reason is required to amend this travel request.'}), 400
+
+    previous_status = travel_request_normalize_status(request_rec.status)
+    # Race guard: only the status we checked may change.
+    changed = (
+        TravelRequest.query
+        .filter(TravelRequest.id == request_rec.id)
+        .filter(TravelRequest.status == request_rec.status)
+        .update({'status': 'Amending', 'amend_from_status': previous_status}, synchronize_session=False)
+    )
+    if changed != 1:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'This travel request changed. Please reload and try again.'}), 409
+
+    now = get_manila_time()
+    request_rec.status = 'Amending'
+    request_rec.amend_from_status = previous_status
+    request_rec.updated_at = now
+    clear_approval_signature_snapshot(request_rec)
+    approved_dates = format_travel_request_date_range(request_rec.departure_date, request_rec.return_date)
+    request_label = request_rec.request_no or f'TR-{request_rec.id}'
+    requester_name = approval_user_display_name(current_user) or getattr(current_user, 'username', 'Requester')
+
+    record_universal_approval_audit(
+        'travel_request', request_rec.id, 'amend_started',
+        actor_user=current_user, status_from=previous_status, status_to='Amending',
+        remarks=f'{reason} (approved dates: {approved_dates})',
+        metadata={
+            'reason': reason,
+            'approved_departure_date': request_rec.departure_date.isoformat() if request_rec.departure_date else '',
+            'approved_return_date': request_rec.return_date.isoformat() if request_rec.return_date else '',
+        }
+    )
+    recipient_ids = travel_request_amend_cancel_recipient_ids(request_rec)
+    create_system_notifications_for_users(
+        recipient_ids,
+        title='Travel Request Reopened for Amendment',
+        message=f"{requester_name} reopened {request_label} ({approved_dates}) to amend it. Reason: {reason}",
+        module='travel_request',
+        record_id=request_rec.id,
+        target_url=travel_request_notification_url(request_rec),
+        metadata={'event': 'amend_started', 'request_no': request_rec.request_no, 'reason': reason}
+    )
+    add_activity_log_entry(f"Travel Request reopened for amendment: {request_label} by {requester_name}")
+    db.session.commit()
+
+    send_travel_request_notification_email_async(
+        app, recipient_ids, request_rec.id, 'amend_started', actor_user_id=current_user.id, remarks=reason
+    )
+    return jsonify({
+        'success': True,
+        'message': 'Travel request reopened. Make your changes, then submit it for approval.',
+        'travel_request': travel_request_to_dict(request_rec, include_lines=True, include_audit=True)
+    })
+
+
+@app.route('/api/travel-requests/<int:travel_request_id>/cancel', methods=['POST'])
+@csrf.exempt
+@login_required
+def cancel_travel_request(travel_request_id):
+    """Requester cancels an approved (or amending) Travel Request."""
+    ensure_travel_request_tables()
+    request_rec = db.session.get(TravelRequest, travel_request_id)
+    refusal = travel_request_amend_cancel_refusal(request_rec, 'cancel')
+    if refusal:
+        return jsonify({'success': False, 'error': refusal[0]}), refusal[1]
+
+    reason = (clean_str((request.get_json(silent=True) or {}).get('reason')) or '').strip()
+    if not reason:
+        return jsonify({'success': False, 'error': 'A reason is required to cancel this travel request.'}), 400
+
+    previous_status = travel_request_normalize_status(request_rec.status)
+    changed = (
+        TravelRequest.query
+        .filter(TravelRequest.id == request_rec.id)
+        .filter(TravelRequest.status == request_rec.status)
+        .update({'status': 'Cancelled'}, synchronize_session=False)
+    )
+    if changed != 1:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'This travel request changed. Please reload and try again.'}), 409
+
+    now = get_manila_time()
+    request_rec.status = 'Cancelled'
+    request_rec.amend_from_status = None
+    request_rec.updated_at = now
+    removed_count = remove_active_travel_blocks(request_rec, actor_user=current_user)
+    request_label = request_rec.request_no or f'TR-{request_rec.id}'
+    requester_name = approval_user_display_name(current_user) or getattr(current_user, 'username', 'Requester')
+    cash_note = ' The cash advance was already received and must be returned to Accounting.' if request_rec.funds_received_at else ''
+
+    record_universal_approval_audit(
+        'travel_request', request_rec.id, 'cancelled',
+        actor_user=current_user, status_from=previous_status, status_to='Cancelled',
+        remarks=reason,
+        metadata={'reason': reason, 'travel_block_removed_count': removed_count,
+                  'funds_received': bool(request_rec.funds_received_at)}
+    )
+    resolve_pending_approval_notifications(module='travel_request', record_id=request_rec.id, event='submitted')
+    recipient_ids = travel_request_amend_cancel_recipient_ids(request_rec)
+    create_system_notifications_for_users(
+        recipient_ids,
+        title='Travel Request Cancelled',
+        message=f"{requester_name} cancelled {request_label}. Reason: {reason}{cash_note}",
+        module='travel_request',
+        record_id=request_rec.id,
+        target_url=travel_request_notification_url(request_rec),
+        metadata={'event': 'cancelled', 'request_no': request_rec.request_no, 'reason': reason}
+    )
+    add_activity_log_entry(f"Travel Request cancelled: {request_label} by {requester_name}")
+    db.session.commit()
+
+    send_travel_request_notification_email_async(
+        app, recipient_ids, request_rec.id, 'cancelled', actor_user_id=current_user.id, remarks=reason,
+        extra_emails=get_travel_accounting_recipient_emails()
+    )
+    return jsonify({
+        'success': True,
+        'message': 'Travel request cancelled.' + cash_note,
+        'travel_block_removed_count': removed_count,
+        'travel_request': travel_request_to_dict(request_rec, include_lines=True, include_audit=True)
+    })
 
 
 @app.route('/reject_travel_request/<int:travel_request_id>', methods=['POST'])
@@ -46099,7 +46382,10 @@ def reject_travel_request(travel_request_id):
 
     now = get_manila_time()
     previous_status = request_rec.status or ''
-    request_rec.status = 'Rejected'
+    # A rejected amendment returns to Amending (it was approved before, so it
+    # must not become a deletable Rejected request).
+    new_status = 'Amending' if clean_str(getattr(request_rec, 'amend_from_status', None)) else 'Rejected'
+    request_rec.status = new_status
     request_rec.rejected_at = now
     request_rec.rejected_by_id = current_user.id
     request_rec.approved_at = None
@@ -46114,7 +46400,7 @@ def reject_travel_request(travel_request_id):
         'rejected',
         actor_user=current_user,
         status_from=previous_status,
-        status_to='Rejected',
+        status_to=new_status,
         remarks=remarks,
         metadata={
             'travel_request_id': request_rec.id,
@@ -78670,7 +78956,8 @@ RECALL_REQUEST_REGISTRY = {
         'model': TravelRequest,
         'label': 'Travel Request',
         'owner_field': 'user_id',
-        'destination': lambda record: 'Draft',
+        # A withdrawn amendment returns to Amending, not Draft.
+        'destination': lambda record: 'Amending' if clean_str(getattr(record, 'amend_from_status', None)) else 'Draft',
     },
     'cash_advance': {
         'model': CashAdvanceHeader,
