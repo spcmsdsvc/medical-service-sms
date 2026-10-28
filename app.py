@@ -139,6 +139,9 @@ from functools import wraps
 from email.message import EmailMessage
 from email.utils import formataddr
 
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
+
 from storage_backend import (
     FileStorageBackend,
     StorageObjectConflict,
@@ -151,6 +154,137 @@ from storage_backend import (
 # Load local environment variables from .env when developing locally.
 # The real .env file must stay private and must not be included in zip/git.
 load_dotenv()
+
+# --- ERROR TRACKING (Sentry) ---
+# Data rules (plans.md "Monitoring"): only the error type, code location, URL rule,
+# time/release and fixed alert text may leave the server. Every event is rebuilt from
+# that allowlist; anything else -- or any failure while rebuilding -- drops the event.
+SYSTEM_HEALTH_ALERTS = {
+    # check: (text when it starts failing, text when it recovers)
+    'bucket': ('Bucket probe failed', 'Bucket probe recovered'),
+    'email': ('Brevo quota used up - Mailjet sending', 'Brevo quota available again'),
+    'backup': ('Daily backup missing or failed', 'Daily backup recovered'),
+    'disk': ('Disk 90% or more full', 'Disk below 90% again'),
+    'bucket_error': ('Bucket connection error', ''),
+}
+SENTRY_ALLOWED_MESSAGES = frozenset(text for pair in SYSTEM_HEALTH_ALERTS.values() for text in pair if text)
+SENTRY_LEVELS = frozenset({'fatal', 'error', 'warning', 'info', 'debug'})
+SENTRY_MAX_FRAMES = 40
+
+
+def _sentry_short_text(value, limit=200):
+    return value[:limit] if isinstance(value, str) and value else None
+
+
+def _sentry_safe_frame(frame):
+    safe = {}
+    filename = _sentry_short_text(frame.get('filename'))
+    if filename:
+        # Keep the relative code path; an absolute server path is cut to its file name.
+        if os.path.isabs(filename) or ':' in filename:
+            filename = os.path.basename(filename.replace('\\', '/'))
+        safe['filename'] = filename
+    for key in ('function', 'module'):
+        text = _sentry_short_text(frame.get(key))
+        if text:
+            safe[key] = text
+    if isinstance(frame.get('lineno'), int):
+        safe['lineno'] = frame['lineno']
+    if isinstance(frame.get('in_app'), bool):
+        safe['in_app'] = frame['in_app']
+    return safe
+
+
+def _sentry_rebuild_event(event):
+    safe = {'platform': 'python'}
+    for key in ('event_id', 'release', 'environment'):
+        text = _sentry_short_text(event.get(key))
+        if text:
+            safe[key] = text
+    if isinstance(event.get('timestamp'), (str, datetime)):
+        safe['timestamp'] = event['timestamp']
+    if event.get('level') in SENTRY_LEVELS:
+        safe['level'] = event['level']
+
+    # The URL rule ("/travel_request/<int:id>") is code; a real path or id is not kept.
+    transaction = event.get('transaction')
+    if isinstance(transaction, str) and transaction in {rule.rule for rule in app.url_map.iter_rules()}:
+        safe['transaction'] = transaction
+
+    values = []
+    for value in ((event.get('exception') or {}).get('values') or []):
+        if not isinstance(value, dict):
+            continue
+        safe_value = {}
+        for key in ('type', 'module'):
+            text = _sentry_short_text(value.get(key))
+            if text:
+                safe_value[key] = text
+        frames = ((value.get('stacktrace') or {}).get('frames') or [])[-SENTRY_MAX_FRAMES:]
+        safe_frames = [_sentry_safe_frame(frame) for frame in frames if isinstance(frame, dict)]
+        if safe_frames:
+            safe_value['stacktrace'] = {'frames': safe_frames}
+        if safe_value.get('type'):
+            values.append(safe_value)
+    if values:
+        safe['exception'] = {'values': values}
+
+    message = event.get('message')
+    if isinstance(message, str) and message in SENTRY_ALLOWED_MESSAGES:
+        safe['message'] = message
+
+    fingerprint = event.get('fingerprint')
+    if (isinstance(fingerprint, list) and len(fingerprint) == 2
+            and fingerprint[0] == 'system-health' and fingerprint[1] in SYSTEM_HEALTH_ALERTS):
+        safe['fingerprint'] = list(fingerprint)
+
+    return safe if ('exception' in safe or 'message' in safe) else None
+
+
+def sentry_allowlist_event(event, hint):
+    """before_send: return a new allowlist-only event, or None. Never raises (fail closed)."""
+    try:
+        return _sentry_rebuild_event(event)
+    except Exception:
+        return None
+
+
+def sentry_init_options():
+    """Every Sentry setting except the DSN; tests reuse it with a recording transport."""
+    return {
+        'integrations': [FlaskIntegration(transaction_style='url')],
+        'default_integrations': False,
+        'auto_enabling_integrations': False,
+        'send_default_pii': False,
+        'include_local_variables': False,
+        'include_source_context': False,
+        'max_breadcrumbs': 0,
+        'max_request_body_size': 'never',
+        'traces_sample_rate': 0,
+        'auto_session_tracking': False,
+        'send_client_reports': False,
+        'before_send': sentry_allowlist_event,
+        'before_send_transaction': lambda event, hint: None,
+        'before_breadcrumb': lambda crumb, hint: None,
+        'environment': os.environ.get('RAILWAY_ENVIRONMENT') or 'local',
+        'release': os.environ.get('RAILWAY_GIT_COMMIT_SHA') or None,
+    }
+
+
+if os.environ.get('SENTRY_DSN') and not os.environ.get('MEDICAL_SERVICE_TEST_DB'):
+    sentry_sdk.init(dsn=os.environ['SENTRY_DSN'], **sentry_init_options())
+
+
+def send_health_alert(check, recovered=False):
+    """The only Sentry message sender. Text comes from SYSTEM_HEALTH_ALERTS, never runtime values."""
+    failed_text, recovered_text = SYSTEM_HEALTH_ALERTS[check]
+    text = recovered_text if recovered else failed_text
+    if not text or not sentry_sdk.get_client().is_active():
+        return
+    with sentry_sdk.new_scope() as scope:
+        scope.fingerprint = ['system-health', check]
+        sentry_sdk.capture_message(text, level='info' if recovered else 'warning')
+
 
 app = Flask(__name__)
 
@@ -32924,6 +33058,122 @@ if (os.environ.get('RAILWAY_ENVIRONMENT')
     start_daily_backup_scheduler()
 
 
+# --- SYSTEM HEALTH CHECKS ---
+# Every 15 minutes: bucket write/read/delete, Brevo quota, daily backup age, disk.
+# Alerts once when a check starts failing and once when it recovers. The real error
+# goes only to the Railway log; Sentry gets the fixed SYSTEM_HEALTH_ALERTS text.
+SYSTEM_HEALTH_CHECK_SECONDS = 15 * 60
+SYSTEM_HEALTH_BACKUP_MAX_AGE_HOURS = 26
+SYSTEM_HEALTH_DISK_ALERT_PERCENT = 90
+SYSTEM_HEALTH_PROBE_KEY = 'system_health/probe.txt'
+SYSTEM_HEALTH_PROBE_BYTES = b'medical-service health probe'
+_system_health_failing = set()
+_system_health_monitor_lock = threading.Lock()
+_system_health_monitor_started = False
+
+
+def system_health_bucket_ok():
+    """The same write -> read -> delete path a TSR save takes. Skipped when no bucket is in use."""
+    if not (file_storage.writes_bucket and file_storage.bucket_configured):
+        return True
+    file_storage.upload_bytes(SYSTEM_HEALTH_PROBE_KEY, SYSTEM_HEALTH_PROBE_BYTES, content_type='text/plain')
+    matches = file_storage.download_bytes(SYSTEM_HEALTH_PROBE_KEY) == SYSTEM_HEALTH_PROBE_BYTES
+    file_storage.delete(SYSTEM_HEALTH_PROBE_KEY)
+    return matches
+
+
+def system_health_email_ok():
+    return not brevo_daily_quota_exhausted()
+
+
+def system_health_backup_ok(now=None):
+    if not daily_backup_storage_ready():
+        return True
+    state = load_daily_backup_state()
+    if not state.get('last_ok') or state.get('last_error') or not state.get('last_run_at'):
+        return False
+    age = (now or get_manila_time()) - datetime.fromisoformat(state['last_run_at'])
+    return age <= timedelta(hours=SYSTEM_HEALTH_BACKUP_MAX_AGE_HOURS)
+
+
+def system_health_disk_ok():
+    percent = volume_disk_usage_percent()
+    return percent is None or percent < SYSTEM_HEALTH_DISK_ALERT_PERCENT
+
+
+SYSTEM_HEALTH_CHECKS = (
+    ('bucket', system_health_bucket_ok),
+    ('email', system_health_email_ok),
+    ('backup', system_health_backup_ok),
+    ('disk', system_health_disk_ok),
+)
+
+
+def run_system_health_checks():
+    """Run every check; a crashing check counts as failing and never stops the others."""
+    results = {}
+    for name, check in SYSTEM_HEALTH_CHECKS:
+        detail = ''
+        try:
+            ok = bool(check())
+        except Exception as check_error:
+            ok = False
+            detail = clean_str(str(check_error)) or check_error.__class__.__name__
+        results[name] = ok
+        if not ok and name not in _system_health_failing:
+            _system_health_failing.add(name)
+            print(f"[HEALTH] {name} failing: {detail[:300] or 'check returned false'}", flush=True)
+            send_health_alert(name)
+        elif ok and name in _system_health_failing:
+            _system_health_failing.discard(name)
+            print(f"[HEALTH] {name} recovered", flush=True)
+            send_health_alert(name, recovered=True)
+    return results
+
+
+def _system_health_loop():
+    while True:
+        time.sleep(SYSTEM_HEALTH_CHECK_SECONDS)
+        try:
+            with app.app_context():
+                run_system_health_checks()
+        except Exception as loop_error:
+            print(f"[HEALTH] Check run failed: {loop_error}", flush=True)
+
+
+def start_system_health_monitor():
+    global _system_health_monitor_started
+    with _system_health_monitor_lock:
+        if _system_health_monitor_started:
+            return False
+        _system_health_monitor_started = True
+    threading.Thread(target=_system_health_loop, name='system-health', daemon=True).start()
+    return True
+
+
+if (os.environ.get('RAILWAY_ENVIRONMENT')
+        and not os.environ.get('MEDICAL_SERVICE_TEST_DB')
+        and str(os.environ.get('SYSTEM_HEALTH_DISABLED', '')).strip().lower() not in ('1', 'true', 'yes', 'on')):
+    start_system_health_monitor()
+
+
+def healthz_database_ok():
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        return True
+    except Exception:
+        db.session.rollback()
+        return False
+
+
+@app.route('/healthz')
+def healthz():
+    """Uptime probe: plain 'ok' or 'fail', never any detail (plans.md "Monitoring")."""
+    if healthz_database_ok():
+        return Response('ok', mimetype='text/plain')
+    return Response('fail', status=503, mimetype='text/plain')
+
+
 def record_bucket_connection_error_throttled(message):
     global bucket_connection_error_logged_at
     now = time.time()
@@ -32931,6 +33181,7 @@ def record_bucket_connection_error_throttled(message):
         return
     bucket_connection_error_logged_at = now
     record_storage_activity(f"Bucket connection error: {(clean_str(message) or 'Unknown error')[:180]}")
+    send_health_alert('bucket_error')
 
 
 @app.route('/admin/storage-bucket/status')

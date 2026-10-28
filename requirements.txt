@@ -12,6 +12,7 @@ pillow==12.2.0
 PyMuPDF==1.27.2.3
 python-dotenv==1.2.2
 reportlab==4.5.1
+sentry-sdk[flask]==2.73.0
 requests==2.33.1
 SQLAlchemy==2.0.45
 Werkzeug==3.1.5
