@@ -148,6 +148,7 @@ class ProductOwnerChangePurchaseOrderCountTests(unittest.TestCase):
             session['_fresh'] = True
         response = client.put(f'/update_product/{quote(self.serial, safe="")}', json={
             'serial_number': self.serial,
+            'bsid': f'B-{uuid.uuid4().hex[:12]}',
             'product_name_id': self.ids['catalog'],
             'client_id': self.ids['new'],
         })

@@ -37,6 +37,231 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Schedule form: warn when the machine has no BSID (1 batch)
+
+**Status:** Executed — not yet published (2026-11-03). Go-ahead 2026-11-03 ("Go ahead, both").
+Approved 2026-11-03 ("Approve plan"). Detailed 2026-11-03.
+
+## Amendments during execution (2026-11-03)
+- The warning reuses the existing amber `is-calibration-due` colours on
+  `.timeline-product-search-status`; that class caps `max-width` at 10.5rem, so the warning rule
+  sets `max-width: 100%` (found in the browser check: the box was 168 px wide).
+- `/timeline` is in the service worker's offline shell, so `CACHE_VERSION` was bumped to
+  `v352-calibration-bsid` (shared with the BSID-required plan).
+
+## Context
+Follows the two BSID plans below. Requiring the BSID stops new gaps, but ~99 legacy Product
+Inventory machines still have none (local Oct 23 copy). A warning when a scheduler picks such a
+machine surfaces the gap days before the visit, instead of after the calibration certificate fails.
+
+## Decisions taken
+- Warning only; never blocks saving (urgent visits must still be scheduled). Owner agreed.
+- Product Inventory machines only; Genoray/Vieworks always have an auto-assigned BSID.
+
+## Investigation
+- Schedule form in `templates/timeline.html`; machine picker fields `#f-prod-id`,
+  `#f-prod-source`, `#f-prod-search`; Calibration box `#product-calibration-status`
+  (`timeline.html:1039`) drawn by `renderProductCalibrationStatus` (`timeline.html:12538`), called
+  via `renderSelectedMachineCalibration` (`timeline.html:12562`) on machine pick, start-date change
+  (`timeline.html:1147`) and when an existing schedule opens (`timeline.html:15945`).
+- `selectedTimelineProduct()` (`timeline.html:12528`) returns the chosen machine from
+  `masterProducts`, which includes `bsid` (`app.py:35637`). No server change needed.
+
+## Execution steps
+1. `templates/timeline.html`: add a hidden amber warning element (e.g. `#product-bsid-warning`,
+   `role="status"`) under the machine picker, text "This machine has no BSID. Its calibration
+   certificate can't be sent until an admin adds one in Product Inventory." Styled with existing
+   amber tokens, readable in light and dark theme.
+2. Same file: new `renderProductBsidWarning(product)` — show when
+   `product && (product.equipment_source || 'product') === 'product' && !String(product.bsid || '').trim()`,
+   hide otherwise. Call it from `renderProductCalibrationStatus` (both the no-product and product
+   branches) so it follows every existing redraw. No change to save handlers.
+   Done: warning follows pick, change, clear and opening an existing schedule.
+3. Tests (new `tests/test_schedule_bsid_warning.py`): element present; function logic run in Node
+   (shown for product source + blank BSID; hidden with BSID, for genoray/vieworks, and with no
+   machine); wired into `renderProductCalibrationStatus`; save functions do not reference it.
+
+## Deliberately excluded
+- Blocking the save: urgent visits must stay schedulable.
+- Same warning on Create TSR: possible later step, not requested.
+- Server changes: data already on the page.
+
+## Verification
+- Positive control: new tests fail before the change.
+- Focused: new module plus existing timeline/schedule template tests. No full suite (one page).
+- Browser check on a copy of `scheduler.db`: pick a machine without BSID → warning; with BSID →
+  hidden; open an existing schedule → correct state; 375 px; dark theme contrast; no console errors.
+  Clean up copy, test account, launch entry.
+
+## After implementation
+- Self-review; confirm the schedule form's Save, machine search, Calibration box and offline queue
+  still work (AGENTS.md "Protect Existing Functions").
+- Service worker bump only if `timeline.html` or a changed static file is in its offline cache.
+- `releases.json` entry (schedulers); `changes.md`; update this Status line.
+- Commit only touched files; never `scheduler.db`, `output/`, `tmp/`, handoffs. Publish only on
+  "commit and push".
+
+## Risks
+Very low: display-only. Possible noise while many legacy machines lack a BSID — intended, it prompts
+the backfill. Safety net: revert the single commit.
+
+# Product Inventory: BSID required on add, edit and CSV import (1 batch)
+
+**Status:** Executed — not yet published (2026-11-03). Go-ahead 2026-11-03 ("Go ahead, both").
+Approved 2026-11-03 ("Approve plan"). Detailed 2026-11-03.
+
+## Amendments during execution (2026-11-03)
+- CSV import follows the route's existing idiom: a row without a resulting BSID is skipped and
+  counted ("N row(s) had no BSID." in the result message), not returned as a row-level error.
+- In `add_product` the BSID check runs after `product_payload_error`, so date/client/serial errors
+  keep their own `field` (an earlier placement broke `test_product_inventory_scan_fixes`).
+- The page sets `aria-required` (no HTML `required`), so the existing toast stays the only message.
+- Existing tests that saved Product Inventory machines without a BSID got one: batch1, mutations,
+  scan_fixes, name_standardization, new_vieworks_inline, room_catalog (incl. a BSID CSV column),
+  vieworks_links_history. Several `test_purchase_orders` failures seen in a combined run were
+  knock-on effects of those and cleared once they were updated.
+
+## Context
+Follows the calibration "missing BSID" fix below: four certificates (TSRs 865, 869, 872, 873)
+never reached an approver because their Product Inventory machines had no BSID, and the
+certificate number is calibration date + BSID. The owner asked to require the BSID when adding or
+editing equipment so new gaps cannot appear.
+
+## Decisions taken
+- Required on add **and** edit (owner: "adding/editing"). An edit of an older machine without a
+  BSID is refused until one is entered — accepted trade-off (alternative was add-only).
+- Only the main Product Inventory; Genoray and Vieworks already auto-assign BSIDs.
+
+## Investigation
+- `add_product` (`app.py:66067`): BSID optional (`app.py:66095`); validates length and duplicate.
+- `update_product` (`app.py:66287`): BSID optional (`app.py:66340`); length + duplicate checks.
+- `import_products` (`app.py:68354`): BSID optional (`app.py:68425`); existing rows keep their
+  stored BSID when the CSV has no BSID column (`has_bsid_column`, `app.py:68473`).
+- `templates/products.html:252-254`: BSID input `#p-bsid`, hint "Optional for legacy inventory;
+  certification requires a BSID."; client checks in the save handler near `products.html:2144-2167`
+  (`isStandaloneInventory` distinguishes Genoray/Vieworks pages, which share this template).
+- Genoray/Vieworks validation (`app.py:36202`, `app.py:36292`) auto-assigns on create.
+- Local `scheduler.db` (Oct 23 copy): 99 of 101 products have no BSID. Live count not taken
+  (Railway SSH timed out).
+- `correct_product_from_tsr_revision` (`app.py:16487`) creates a replacement Product copying the
+  existing row — not a form path.
+
+## Execution steps
+1. `app.py` `add_product`: after normalizing, blank BSID → 400
+   `{'message': 'BSID is required.', 'field': 'bsid'}`. Done: add without BSID refused.
+2. `app.py` `update_product`: same check on `new_bsid`. Done: edit without BSID refused, including
+   a legacy product that had none.
+3. `app.py` `import_products`: refuse a row (row-level error, `field: 'bsid'`) when the resulting
+   product would have no BSID — new serial with blank BSID, or existing product with no stored BSID
+   and none in the CSV. Existing products with a stored BSID keep it when the column is absent.
+4. `templates/products.html`: label shows required; hint becomes "Required. Used for the
+   calibration certificate number." (Product Inventory only; Genoray/Vieworks hint unchanged);
+   save handler refuses a blank BSID with "Validation Error: BSID is required." only when
+   `!isStandaloneInventory`.
+5. Tests (new module `tests/test_product_bsid_required.py`): add/edit blank → 400; legacy product
+   edit refused until BSID given; CSV new row without BSID refused; CSV existing row with stored
+   BSID and no column still updates; Genoray and Vieworks create without BSID still succeed;
+   template wiring. Update existing product tests that save without a BSID.
+
+## Deliberately excluded
+- DB `NOT NULL` constraint: 99 legacy rows are blank and would break.
+- `correct_product_from_tsr_revision` replacement row: copies existing data, not user input.
+- Backfilling BSIDs: admin data entry.
+
+## Verification
+- Positive control: new tests fail on the current code.
+- Focused: new module plus existing product/inventory modules (`grep -l "add_product\|update_product\|import_products" tests/`). No full suite (product routes + one template, not shared code).
+- Browser check on a copy of `scheduler.db`: Product Inventory add and edit with blank BSID blocked
+  with the message; with BSID saves; Genoray add still auto-assigns; 375 px; no console errors.
+  Clean up copy, test account, launch entry.
+
+## After implementation
+- Self-review; confirm Product Inventory Save, Add, Import, Delete and Genoray/Vieworks saves still
+  work (AGENTS.md "Protect Existing Functions").
+- Service worker bump only if a cached static file changes (template-only change needs none).
+- `releases.json` entry (admins); `changes.md`; update this Status line.
+- Commit only the touched files; never `scheduler.db`, `output/`, `tmp/`, handoffs. Publish only on
+  "commit and push" (may ship with the message fix below or separately).
+
+## Risks
+Admins cannot fix a small detail on a legacy machine without its BSID. Existing tests that save
+products without BSID will fail until updated. Safety net: revert the single commit.
+
+# Calibration certificate: clear "missing BSID" message (1 batch)
+
+**Status:** Executed — not yet published (2026-11-03). Go-ahead 2026-11-03 ("Go ahead").
+Approved 2026-11-03 ("Approve plan"). Detailed 2026-11-03.
+
+## Context
+An approver reported receiving no calibration certificate although the engineer said it was sent.
+A read-only production query (2026-11-03) found four TSRs whose certificate never reached any
+approver: 865 (dennis), 869 (rodito), 872 and 873 (alvin). Each failed with code
+`missing_values`, message "Certificate No.", and was retried on 2026-11-03 with the same result.
+Cause: their Product Inventory rows (serials 3YCFC6B74003, 0262R83301, M0002DG3013,
+MQD6DBDG3001) have no BSID, and the report snapshot BSID is blank, so the certificate number
+cannot be built. The TSR still saves, so the engineer believes it was sent. The message engineers
+see ("Missing values: Certificate No.", or just "Certificate No." after Retry) does not tell them
+what to fix. Outcome: the message names the missing BSID and the fix.
+
+## Decisions taken
+- Message only. No change to save, submit, or approval logic.
+- The four machines' BSIDs are a data fix in Product Inventory, done by the owner/admin, not code.
+
+## Investigation
+- Certificate No. = `{calibration date as YYYY-MMDD}-{BSID}`; blank if either is blank
+  (`app.py:24436`, `calibration_certificate_values`). BSID comes from the report snapshot, else
+  the shift's product (`app.py:24431`), so a Retry after adding the BSID succeeds.
+- `submit_calibration_certificate_for_submission` returns
+  `{'code': 'missing_values', 'missing': [...], 'message': ', '.join(missing)}` (`app.py:27003`).
+- `calibration_submit_failure_message` (`app.py:26925`) formats engineer-facing text; used by
+  `record_calibration_submit_failure` (marker shown in My Calibrations) and
+  `calibration_upload_certificate_payload` (Create TSR save response, `app.py:27607`).
+- The Retry route `submit_calibration_certificate` returns the raw `result.get('message')`
+  (`app.py:27197`), so Retry shows "Certificate No." with no prefix.
+- `templates/my_calibrations.html:167` displays `data.message` as-is; no template change needed.
+- Approval routing was verified fine (dennis/alvin → rodito, robert; rodito → anthony).
+
+## Execution steps
+1. `app.py` `calibration_submit_failure_message`: for `missing_values`, split the message on
+   ", ". If "Certificate No." is present and "Calibration Date" is not, return
+   "This machine has no BSID in Product Inventory, so the certificate number can't be made. Ask an
+   admin to add the BSID, then click Retry." followed by " Also missing: <rest>." when other labels
+   remain. All other inputs return exactly what they return today.
+   Done: the function returns the new text for the BSID case and old text otherwise.
+2. `app.py` `submit_calibration_certificate` (`app.py:27197`): return
+   `calibration_submit_failure_message(result.get('code'), result.get('message'))` as `message`.
+   Done: Retry, My Calibrations list, and Create TSR save response all show the same text.
+3. `tests/test_my_calibrations.py`: add tests for (a) "Certificate No." alone → BSID text;
+   (b) "Certificate No., Equipment Model" → BSID text + "Also missing: Equipment Model.";
+   (c) "Certificate No., Calibration Date" → old "Missing values: …" text; (d) Retry route
+   returns the formatted message. Existing `Missing values: Model` assertions stay unchanged.
+
+## Deliberately excluded
+- Blocking the TSR save or warning in Create TSR when the BSID is blank: larger change to the
+  save flow, not requested.
+- Fixing the four machines' BSIDs: data change, owner/admin action in Product Inventory.
+- Template/JS/CSS changes: the page already shows the server message.
+
+## Verification
+- Prove new tests (a), (b), (d) fail before the fix (positive control).
+- Focused: `tests/test_my_calibrations.py` and the calibration certificate test modules. No full
+  suite (one function + one route, not shared code).
+- Browser check on a copy of `scheduler.db`: a TSR whose product has no BSID, click Retry in My
+  Calibrations, confirm the new text; 375 px; no console errors. Clean up copy and test data.
+
+## After implementation
+- Self-review the diff; confirm `calibration_submit_failure_message`,
+  `record_calibration_submit_failure`, `calibration_upload_certificate_payload` and the Retry
+  button still work (AGENTS.md "Protect Existing Functions").
+- No service worker bump (no static files change).
+- `releases.json` entry; `changes.md` bullets; update this Status line.
+- Commit only `app.py`, `tests/test_my_calibrations.py`, `releases.json`, `changes.md`,
+  `plans.md`. Never `scheduler.db`, `output/`, `tmp/`, handoffs. Publish only on "commit and push".
+
+## Risks
+Low: only failure text changes. A test or caller matching the exact old wording would break; the
+focused tests cover that. Safety net: revert the single commit.
+
 # Create TSR: Continue Saved Work shows every draft (1 batch)
 
 **Status:** Executed 2026-11-03 — not yet published (awaiting "commit and push"). Go-ahead 2026-11-03 ("Go ahead").

@@ -95,6 +95,7 @@ class ProductNameStandardizationTests(unittest.TestCase):
             f"/update_product/{serial}",
             json={
                 "serial_number": serial,
+                "bsid": f"B-{uuid.uuid4().hex[:12]}",
                 "name": "Arbitrary Legacy Text",
                 "product_name_id": item.id,
                 "client_id": self.client_id,

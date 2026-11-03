@@ -110,6 +110,7 @@ class ProductRoomCatalogTests(unittest.TestCase):
             "/add_product",
             json={
                 "serial_number": "ROOM-CATALOG-PRODUCT",
+                "bsid": f"B-{uuid.uuid4().hex[:12]}",
                 "product_name_id": catalog["id"],
                 "room": "  Room 101 ",
                 "client_id": self.client_id,
@@ -149,9 +150,9 @@ class ProductRoomCatalogTests(unittest.TestCase):
 
     def test_product_csv_requires_catalog_for_new_rows_and_canonicalizes_existing_updates(self):
         body = (
-            "Serial Number,Description,Room\n"
-            "ROOM-CATALOG-CSV,  trinias   unity  ,CSV-101\n"
-            "ROOM-CATALOG-CSV-UNKNOWN,Not In Catalog,CSV-102\n"
+            "Serial Number,Description,Room,BSID\n"
+            f"ROOM-CATALOG-CSV,  trinias   unity  ,CSV-101,B-{uuid.uuid4().hex[:12]}\n"
+            f"ROOM-CATALOG-CSV-UNKNOWN,Not In Catalog,CSV-102,B-{uuid.uuid4().hex[:12]}\n"
         )
         imported = self.client.post(
             "/import_products",

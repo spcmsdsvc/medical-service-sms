@@ -3237,6 +3237,9 @@ def ensure_product_contract_column():
         raise
 
 
+PRODUCT_BSID_REQUIRED_MESSAGE = 'BSID is required. It is used for the calibration certificate number.'
+
+
 def normalize_product_bsid(value):
     """Trim a BSID while preserving the user's displayed casing."""
     return clean_str(value)[:40] if clean_str(value) else ''
@@ -26920,11 +26923,17 @@ def calibration_certificate_mapped_snapshot(raw_snapshot):
 
 CALIBRATION_SUBMIT_FAILURE_MARKER = '_calibration_submit_failure'
 CALIBRATION_SUBMIT_FAILURE_UNEXPECTED = 'Could not reach the approver. Retry, or contact admin if it keeps failing.'
+CALIBRATION_SUBMIT_FAILURE_NO_BSID = "This machine has no BSID in Product Inventory, so the certificate number can't be made. Ask an admin to add the BSID, then click Retry."
 
 
 def calibration_submit_failure_message(code, message=''):
     """Engineer-facing reason a certificate did not reach the approver."""
     if code == 'missing_values':
+        missing = [label.strip() for label in (clean_str(message) or '').split(',') if label.strip()]
+        # The certificate number is calibration date + BSID; with the date present, the BSID is blank.
+        if 'Certificate No.' in missing and 'Calibration Date' not in missing:
+            rest = [label for label in missing if label != 'Certificate No.']
+            return f'{CALIBRATION_SUBMIT_FAILURE_NO_BSID} Also missing: {", ".join(rest)}.' if rest else CALIBRATION_SUBMIT_FAILURE_NO_BSID
         return f'Missing values: {clean_str(message)}' if clean_str(message) else 'Some report values are missing.'
     if code in {'catalog_validation'} and clean_str(message):
         return clean_str(message)
@@ -27194,7 +27203,7 @@ def submit_calibration_certificate(submission_id):
         raise
     if not result.get('ok'):
         record_calibration_submit_failure(submission, result.get('code'), result.get('message'))
-        return jsonify({'success': False, 'status': 'error', 'code': result.get('code'), 'message': result.get('message'), 'missing': result.get('missing') or [], 'retryable': True}), 400
+        return jsonify({'success': False, 'status': 'error', 'code': result.get('code'), 'message': calibration_submit_failure_message(result.get('code'), result.get('message')), 'missing': result.get('missing') or [], 'retryable': True}), 400
     approval = result['approval']
     return jsonify({'success': True, 'status': 'success', 'duplicate': bool(result.get('duplicate')), 'approval': calibration_certificate_approval_to_dict(approval)})
 
@@ -28617,7 +28626,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v351-tsr-drafts-list';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v352-calibration-bsid';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -66100,6 +66109,8 @@ def add_product():
     payload_error = product_payload_error(d, serial_number, clean_int(d.get('client_id')))
     if payload_error:
         return jsonify({'message': payload_error[0], 'field': payload_error[1]}), 400
+    if not bsid:
+        return jsonify({'message': PRODUCT_BSID_REQUIRED_MESSAGE, 'field': 'bsid'}), 400
 
     existing_product = db.session.get(Product, serial_number)
     if existing_product:
@@ -66335,6 +66346,8 @@ def update_product(serial_number):
     if len(raw_bsid) > 40:
         return jsonify({'message': 'BSID must be 40 characters or fewer.', 'field': 'bsid'}), 400
     new_bsid = normalize_product_bsid(raw_bsid)
+    if not new_bsid:
+        return jsonify({'message': PRODUCT_BSID_REQUIRED_MESSAGE, 'field': 'bsid'}), 400
     bsid_product = product_bsid_duplicate(new_bsid, exclude_serial=old_serial)
     if bsid_product:
         return jsonify({
@@ -68389,6 +68402,7 @@ def import_products():
         invalid_product_name_count = 0
         unresolved_owner_count = 0
         fuzzy_owner_count = 0
+        missing_bsid_count = 0
         seen_bsids = {}
         catalog_by_normalized_name = {
             normalize_product_name_catalog_value(item.name).casefold(): item
@@ -68444,6 +68458,11 @@ def import_products():
                 fuzzy_owner_count += 1
 
             product = db.session.get(Product, serial)
+            # Every imported machine must end up with a BSID (certificate numbers need it).
+            if not (bsid if (has_bsid_column or not product) else normalize_product_bsid(product.bsid)):
+                skipped_count += 1
+                missing_bsid_count += 1
+                continue
             duplicate_bsid = product_bsid_duplicate(bsid, exclude_serial=serial)
             if duplicate_bsid:
                 db.session.rollback()
@@ -68486,6 +68505,8 @@ def import_products():
         message = f'Product import complete: {created_count} created, {updated_count} updated, {skipped_count} skipped.'
         if invalid_product_name_count:
             message += f' {invalid_product_name_count} row(s) had a Product Name not found in the catalog.'
+        if missing_bsid_count:
+            message += f' {missing_bsid_count} row(s) had no BSID.'
         if unresolved_owner_count:
             message += f' {unresolved_owner_count} owner name(s) were not matched and were left blank.'
         if fuzzy_owner_count:

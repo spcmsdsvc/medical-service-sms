@@ -1043,6 +1043,9 @@
                             </span>
                             <span id="product-calibration-badge" class="timeline-product-coverage-badge"></span>
                         </button>
+                        <div id="product-bsid-warning" class="timeline-product-search-status is-calibration-due timeline-product-bsid-warning d-none mt-2" role="status">
+                            <i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>This machine has no BSID. Its calibration certificate can't be sent until an admin adds one in Product Inventory.
+                        </div>
                     </div>
 
                     <!-- Site Visit Billing / Commercial Flags (Optional) -->
@@ -12535,6 +12538,16 @@ function collectMobileEngineerSchedules(){
         ) || null;
     }
 
+    // Product Inventory BSIDs are entered by hand; Genoray/Vieworks always get one automatically.
+    function renderProductBsidWarning(product){
+        const warning = document.getElementById('product-bsid-warning');
+        if(!warning) return;
+        const missing = Boolean(product) &&
+            String(product.equipment_source || 'product') === 'product' &&
+            !String(product.bsid || '').trim();
+        warning.classList.toggle('d-none', !missing);
+    }
+
     function renderProductCalibrationStatus(productOrSerial){
         const panel = document.getElementById('product-calibration-status');
         const badge = document.getElementById('product-calibration-badge');
@@ -12545,6 +12558,7 @@ function collectMobileEngineerSchedules(){
                 String(item.equipment_source || 'product') === String(document.getElementById('f-prod-source')?.value || 'product')
             )
             : productOrSerial;
+        renderProductBsidWarning(product);
         if(!product){
             panel.classList.add('d-none');
             badge.textContent = '';
@@ -21548,6 +21562,20 @@ document.addEventListener('DOMContentLoaded', function(){
         background: #e2e8f0;
         border-color: #cbd5e1;
         color: #334155;
+    }
+
+    .timeline-product-search-status.timeline-product-bsid-warning {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.65rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-align: left;
+        text-transform: none;
+        letter-spacing: normal;
+        white-space: normal;
     }
 
     :root[data-app-theme="dark"] .timeline-product-coverage {

@@ -93,6 +93,7 @@ class ProductInventoryScanServerTests(unittest.TestCase):
     def add(self, **overrides):
         payload = {
             'serial_number': f'{self.serial}N',
+            'bsid': f'B-{uuid.uuid4().hex[:12]}',
             'product_name_id': self.catalog_id,
             'client_id': self.client_id,
         }
@@ -140,6 +141,7 @@ class ProductInventoryScanServerTests(unittest.TestCase):
     def test_update_rejects_end_before_start(self):
         response = self.client.put(f'/update_product/{self.serial}', json={
             'serial_number': self.serial,
+            'bsid': f'B-{uuid.uuid4().hex[:12]}',
             'product_name_id': self.catalog_id,
             'client_id': self.client_id,
             'start_warranty': '2026-10-01',

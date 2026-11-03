@@ -89,6 +89,7 @@ class ProductInventoryMutationTests(unittest.TestCase):
             f'/update_product/{encoded_serial}',
             json={
                 'serial_number': self.serial,
+                'bsid': f'B-{uuid.uuid4().hex[:12]}',
                 'name': 'Edited Slash Serial Machine',
                 'product_name_id': self.product_name_id,
                 'client_id': self.client_id,

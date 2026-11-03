@@ -1,6 +1,43 @@
 {
   "releases": [
     {
+      "release_key": "2026-11-03-calibration-missing-bsid",
+      "release_date": "2026-11-03",
+      "title": "Machine BSIDs: required, warned and explained",
+      "summary": "Machines now need a BSID, the schedule form warns when one is missing, and an unsent calibration certificate says why.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-11-03-calibration-missing-bsid-message",
+          "category": "Calibration",
+          "description": "When a calibration certificate does not reach the approver because the machine has no BSID in Product Inventory, My Calibrations and Retry now say so, instead of only \"Certificate No.\". Ask an admin to add the BSID, then press Retry.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-11-03-product-bsid-required",
+          "category": "Product Inventory",
+          "description": "A BSID is now required when you add or edit a machine in Product Inventory, or import one from a CSV file. Older machines without a BSID need one the next time they are edited. Genoray and Vieworks items still get their BSID automatically.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-11-03-schedule-bsid-warning",
+          "category": "Calendar",
+          "description": "When you pick a machine that has no BSID on a schedule, a warning explains that its calibration certificate can't be sent until an admin adds one. You can still save the schedule.",
+          "audiences": [
+            "schedulers",
+            "admins"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-11-03-tsr-drafts-list",
       "release_date": "2026-11-03",
       "title": "Create TSR: all your saved drafts in Continue Saved Work",

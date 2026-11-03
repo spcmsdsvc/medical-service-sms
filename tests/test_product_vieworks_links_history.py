@@ -129,12 +129,12 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
                 product_serial = f"REGIONAL-PRODUCT-{index}-{uuid.uuid4().hex[:8].upper()}"
                 added_product = client.post(
                     "/add_product",
-                    json={"serial_number": product_serial, "name": "Regional Product", "product_name_id": self.product_name_id},
+                    json={"serial_number": product_serial, "bsid": f"B-{product_serial}", "name": "Regional Product", "product_name_id": self.product_name_id},
                 )
                 self.assertEqual(added_product.status_code, 200, added_product.get_data(as_text=True))
                 updated_product = client.put(
                     f"/update_product/{product_serial}",
-                    json={"serial_number": product_serial, "name": "Regional Product Updated", "product_name_id": self.product_name_id},
+                    json={"serial_number": product_serial, "bsid": f"B-{product_serial}", "name": "Regional Product Updated", "product_name_id": self.product_name_id},
                 )
                 self.assertEqual(updated_product.status_code, 200, updated_product.get_data(as_text=True))
 
@@ -242,6 +242,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             '/add_product',
             json={
                 'serial_number': linked_serial,
+                'bsid': f'B-{uuid.uuid4().hex[:12]}',
                 'name': 'Linked Product',
                 'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
@@ -267,6 +268,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             f'/update_product/{linked_serial.upper()}',
             json={
                 'serial_number': linked_serial.upper(),
+                'bsid': f'B-{uuid.uuid4().hex[:12]}',
                 'name': 'Linked Product',
                 'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
@@ -285,6 +287,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             '/add_product',
             json={
                 'serial_number': f'CONFLICT-{self.product_serial}',
+                'bsid': f'B-{uuid.uuid4().hex[:12]}',
                 'name': 'Conflicting Product',
                 'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
@@ -364,6 +367,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             f'/update_product/{old_product_serial.upper()}',
             json={
                 'serial_number': new_product_serial,
+                'bsid': f'B-{uuid.uuid4().hex[:12]}',
                 'name': 'Linked Product',
                 'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
@@ -439,6 +443,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             f'/update_product/{self.product_serial}',
             json={
                 'serial_number': self.product_serial,
+                'bsid': f'B-{uuid.uuid4().hex[:12]}',
                 'name': 'Linked Product',
                 'product_name_id': self.product_name_id,
                 'client_id': self.client_two_id,
@@ -451,6 +456,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             f'/update_product/{self.product_serial}',
             json={
                 'serial_number': self.product_serial,
+                'bsid': f'B-{uuid.uuid4().hex[:12]}',
                 'name': 'Linked Product',
                 'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,
@@ -463,6 +469,7 @@ class ProductVieworksLinkHistoryTests(unittest.TestCase):
             f'/update_product/{self.product_serial}',
             json={
                 'serial_number': self.product_serial,
+                'bsid': f'B-{uuid.uuid4().hex[:12]}',
                 'name': 'Linked Product',
                 'product_name_id': self.product_name_id,
                 'client_id': self.client_one_id,

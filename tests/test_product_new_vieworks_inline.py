@@ -99,6 +99,7 @@ class ProductNewVieworksInlineTests(unittest.TestCase):
         machine_serial = f"PNV-M-{self.suffix}"
         saved = self.client.post('/add_product', json={
             'serial_number': machine_serial,
+            'bsid': f'B-{uuid.uuid4().hex[:12]}',
             'name': self.catalog_name,
             'product_name_id': self.catalog_id,
             'client_id': self.center_id,

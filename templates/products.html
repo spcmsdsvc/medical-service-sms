@@ -249,9 +249,9 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="small fw-bold text-muted text-uppercase" for="p-bsid">BSID</label>
-                    <input type="text" id="p-bsid" class="form-control" maxlength="40" placeholder="{% if is_standalone_inventory %}Assigned automatically on save{% else %}Machine-level BSID{% endif %}">
-                    <div class="xsmall text-muted mt-1">{% if is_standalone_inventory %}Assigned automatically for new {{ inventory_label }} items. Existing BSIDs may be replaced but cannot be cleared.{% else %}Optional for legacy inventory; certification requires a BSID.{% endif %}</div>
+                    <label class="small fw-bold text-muted text-uppercase" for="p-bsid">BSID{% if not is_standalone_inventory %} <span class="text-danger" aria-hidden="true">*</span>{% endif %}</label>
+                    <input type="text" id="p-bsid" class="form-control" maxlength="40" placeholder="{% if is_standalone_inventory %}Assigned automatically on save{% else %}Machine-level BSID{% endif %}"{% if not is_standalone_inventory %} aria-required="true"{% endif %}>
+                    <div class="xsmall text-muted mt-1">{% if is_standalone_inventory %}Assigned automatically for new {{ inventory_label }} items. Existing BSIDs may be replaced but cannot be cleared.{% else %}Required. Used for the calibration certificate number.{% endif %}</div>
                 </div>
 
                 <!-- AUTOCOMPLETE CLIENT SEARCH -->
@@ -2151,6 +2151,10 @@ function openAddModal() {
 
         if (data.bsid.length > 40) {
             return productToast("Validation Error: BSID must be 40 characters or fewer.");
+        }
+
+        if (!isStandaloneInventory && !data.bsid) {
+            return productToast("Validation Error: BSID is required. It is used for the calibration certificate number.");
         }
 
         if (!data.serial_number) {

@@ -54,6 +54,17 @@ class MyCalibrationStatusTests(unittest.TestCase):
         self.assertEqual(self.status(failure, older)['key'], 'returned')
         self.assertEqual(self.status(failure, newer)['key'], 'failed')
 
+    def test_missing_certificate_number_names_the_bsid(self):
+        message = app_module.calibration_submit_failure_message
+        self.assertEqual(message('missing_values', 'Certificate No.'), app_module.CALIBRATION_SUBMIT_FAILURE_NO_BSID)
+        self.assertEqual(
+            message('missing_values', 'Certificate No., Equipment Model'),
+            f'{app_module.CALIBRATION_SUBMIT_FAILURE_NO_BSID} Also missing: Equipment Model.',
+        )
+        # A blank calibration date also blanks the number, so the BSID is not the cause.
+        self.assertEqual(message('missing_values', 'Certificate No., Calibration Date'), 'Missing values: Certificate No., Calibration Date')
+        self.assertEqual(message('missing_values', 'Model'), 'Missing values: Model')
+
 
 @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
 class MyCalibrationRouteTests(unittest.TestCase):
@@ -128,6 +139,7 @@ class MyCalibrationRouteTests(unittest.TestCase):
         user_id, submission_id, _, _ = self._fixture()
         response = self._submit(user_id, submission_id, return_value={'ok': False, 'code': 'missing_values', 'message': 'Model'})
         self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['message'], 'Missing values: Model')
         self.assertEqual(self._payload(submission_id)[MARKER]['message'], 'Missing values: Model')
 
         self._submit(user_id, submission_id, side_effect=RuntimeError('boom'))
