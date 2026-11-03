@@ -37,6 +37,117 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Create TSR: Continue Saved Work shows every draft (1 batch)
+
+**Status:** Executed 2026-11-03 — not yet published (awaiting "commit and push"). Go-ahead 2026-11-03 ("Go ahead").
+Approved 2026-11-03 ("Approve plan"). Detailed 2026-11-03.
+
+## Amendments during execution (2026-11-03)
+- Reused the existing `standaloneTSRDraftVersionTime` instead of a new time helper.
+- The "Show N more" count is computed after the open draft is kept (the browser check showed "Show 2 more" with only 1
+  hidden); the button shows only when something is hidden or the list is expanded.
+- The CSS is cached by `?v=`: bumped `app-offline-tsr.css?v=9` → `?v=10` (template, service worker list, two pinned
+  tests). The rail's height limit is reset to `none` in the ≤ 992 px block.
+- `let groups = groupStandaloneTSRDraftVersions(records);` kept verbatim (a calibration test slices the source at it);
+  the sort is on the next line.
+- An existing Node harness test needed a `standaloneTSRDraftVersionTime` stub.
+- `test_changelog_coverage` fails on the existing HEAD (`df1bcd7`, no release note by design); clears on commit.
+- Stage on publish also: `tests/test_tsr_page_design.py`, `tests/test_tsr_design_scan_fixes.py`.
+
+## Context
+An engineer reported that Continue Saved Work "only saves 5 drafts" and a newly created draft does not appear, and
+asked whether drafts are deleted. They are not deleted. The goal is that every draft is visible and reachable, the
+newest first, with simple navigation (count + "show more").
+
+## Decisions taken
+- Owner approved: real-time sort (newest first), count in the heading, 5 newest shown with a "Show N more drafts"
+  button, and the side rail scrolls on its own when taller than the screen.
+- Page-only change (Create TSR / `offline_tsr.html` + its CSS). No server or schema change.
+
+## Investigation
+- **No 5-draft cap anywhere.** `/get_tsr_drafts` returns every draft of the user, no `LIMIT`
+  (`app.py:19758`–`19781`). `renderStandaloneTSRDraftPanel` renders all groups, no slice
+  (`templates/offline_tsr.html:6639`). `TSR_DRAFT_HISTORY_MAX_VERSIONS = 5` (`app.py:19237`) caps the archived
+  **versions of one draft** (`purge_tsr_draft_history`, `app.py:19282`), not the number of drafts.
+- **Cause 1 — the rail clips the list.** `.offline-tsr-summary-rail` is `position: sticky; top: 1rem` with no
+  `max-height`/`overflow` on desktop (`static/css/app-offline-tsr.css:36`–`40`; static ≤ 992 px at `:268`). The rail
+  holds the schedule summary, the readiness summary, Continue Saved Work and the section nav
+  (`templates/offline_tsr.html:173`–`238`), so cards below the viewport cannot be scrolled into view while the form
+  column scrolls. About 5 cards fit.
+- **Cause 2 — mixed time formats break the order.** Device copies store `updated_at` as UTC
+  (`new Date().toISOString()`, e.g. `offline_tsr.html:5937`, `5954`); server copies serialize naive Manila time
+  (`tsr_draft_to_dict`, `draft.updated_at.isoformat()`). Both lists are sorted with `String.localeCompare`
+  (`offline_tsr.html:5176`, `6110`), so server drafts read up to 8 h "newer" and a draft saved just now on the device can
+  sort to the bottom — into the clipped part. Group order in `groupStandaloneTSRDraftVersions`
+  (`offline_tsr.html:4221`) follows first-seen record order. `parseOfflineTSRDate` (`offline_tsr.html:4254`) already
+  parses both formats to a time value.
+- Also confirmed: the schedule filter (`offline_tsr.html:6650`–`6653`) only narrows the list when a schedule is
+  selected, and its empty-state text says so; unchanged.
+- Not verified on production data: the local `scheduler.db` is stale (latest draft 2026-10-01). The browser check below
+  reproduces the bug with seeded drafts before the fix.
+
+## Execution steps
+1. **Sort by real time** — in `getStandaloneTSRDraftRecords` (`offline_tsr.html:6110`) and
+   `loadStandaloneTSRDraftRecordsFromIndexedDB` (`:5176`) replace the `localeCompare` sort with one on
+   `parseOfflineTSRDate(updated_at || payload.savedAt) || 0`, descending. In `renderStandaloneTSRDraftPanel`, sort
+   `groups` by their newest version's parsed time, descending. Done: a device-only draft saved now is first, above
+   server drafts from earlier today.
+2. **Count in the heading** — add `<span id="standalone-tsr-drafts-count">` inside the `<summary>` at
+   `offline_tsr.html:219` (keep the text "Continue Saved Work"; existing test `test_tsr_page_design.py:108` looks for
+   it); `renderStandaloneTSRDraftPanel` sets it to `(N)` or empty when 0. Done: heading reads "Continue Saved Work (7)".
+3. **Show 5, then "Show N more drafts"** — in `renderStandaloneTSRDraftPanel` render the first 5 groups; if more,
+   append a button `Show N more drafts` that sets a module flag `standaloneTSRDraftsShowAll = true` and re-renders
+   (and "Show fewer" when expanded). The open draft (`standaloneCurrentDraftId`) is always rendered even if outside the
+   first 5. Keep every existing button/handler (`useStandaloneTSRDraftCopy`, `beginStandaloneTSRSignatureRecovery`,
+   `refreshStandaloneTSRDraftPanel`) unchanged. Done: 7 drafts → 5 cards + "Show 2 more drafts"; click → all 7.
+4. **Rail scrolls** — in `app-offline-tsr.css`, desktop only (outside the `max-width: 992px` block):
+   `.offline-tsr-summary-rail { max-height: calc(100vh - 2rem); overflow-y: auto; overscroll-behavior: contain; }`.
+   Done: with all drafts expanded the last card is reachable by scrolling the rail; ≤ 992 px unchanged (static).
+5. **Tests** — add to `tests/test_tsr_draft_sync.py` (same static/JS-source style as its existing tests):
+   - sort uses `parseOfflineTSRDate`, not `localeCompare`, in both functions and groups are re-sorted;
+   - the count span exists inside the summary and the "Show N more drafts" control and 5-item limit exist;
+   - the open draft is kept when collapsed;
+   - the rail has `max-height` + `overflow-y: auto` outside the mobile block.
+
+## Deliberately excluded
+- **Numbered pagination / search box** — "show more" is enough for a handful to a few dozen drafts; smallest change.
+- **Server changes** (timezone-aware `updated_at`, limits) — the client fix covers ordering; changing the API format
+  could affect other readers.
+- **Draft history cap (5 versions per draft)** — working as designed; not what the engineer saw.
+- **Cleaning up old drafts** — owner rule: drafts are never deleted automatically.
+
+## Verification
+- Focused: `tests/test_tsr_draft_sync.py`, `tests/test_tsr_page_design.py`, `tests/test_offline_resilience.py`,
+  `tests/test_tsr_weak_signal_draft_safety.py`.
+- **Positive controls:** revert step 1 → the sort test fails; remove the rail `max-height` → the CSS test fails;
+  remove the open-draft keep → its test fails.
+- Full suite **not** needed (page-only change, no shared code).
+- **Browser** (local server on a copy of `scheduler.db`, test engineer account): seed 7 drafts (some server-backed with
+  earlier Manila times, one device-only saved now) → before fix: confirm newest is at the bottom and cut off; after:
+  newest first, heading "(7)", 5 cards + "Show 2 more drafts", expand → all 7 reachable by scrolling the rail; Continue
+  draft, Open instead and Refresh Drafts still work; 375 px view stacks with no horizontal scroll; no console errors;
+  dark theme readable. Clean up the DB copy, test account and launch entry afterwards.
+
+## After implementation
+1. Self-review: every function the panel calls is still defined; Save Draft, Clear Current TSR, Save Final Report and
+   the signature recovery still work.
+2. Positive controls → focused tests → browser check (screenshot as final proof).
+3. Bump the service worker `CACHE_VERSION` in `app.py:28620` (v350 → v351, suffix `-tsr-drafts-list`).
+4. `static/changelog/releases.json`: user-facing entry ("Continue Saved Work shows all your drafts, newest first, with a
+   count and Show more").
+5. `changes.md` (2026-11-03 section); memory note for this fix; set this plan's Status to `Executed` with the hash.
+6. On "commit and push": stage only `templates/offline_tsr.html`, `static/css/app-offline-tsr.css`, `app.py`,
+   `static/changelog/releases.json`, `tests/test_tsr_draft_sync.py`, `changes.md`, `plans.md` — never `scheduler.db`,
+   `output/`, `tmp/` or other dirty files; verify `git ls-remote origin refs/heads/main` and Railway's deployment.
+
+## Risks
+| Risk | Impact | Safety net |
+| --- | --- | --- |
+| A draft with no parsable time | Sorts last | `|| 0` fallback; still listed, never hidden |
+| Rail scroll feels nested on short screens | Minor UX | `overscroll-behavior: contain`; mobile layout unchanged |
+| Collapsed list hides the draft in use | Confusion | Open draft always rendered |
+| Re-render on "Show more" drops a version choice | Wrong copy opened | Uses the same `standaloneTSRDraftRecoveryChoices` map; covered by the browser check |
+
 # Brevo quota pre-check — go straight to Mailjet when Brevo's free emails are used up (1 batch)
 
 **Status:** Executed, not committed — 2026-10-20, on "Execute the Brevo quota pre-check plan in plans.md. Don't publish yet." Approved 2026-10-20 ("approve"), detailed 2026-10-20. Follow-up to the

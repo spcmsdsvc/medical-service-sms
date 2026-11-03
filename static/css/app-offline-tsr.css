@@ -37,6 +37,10 @@
   align-self: start;
   position: sticky;
   top: 1rem;
+  /* Pinned rail scrolls on its own so drafts below the screen stay reachable. */
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .offline-tsr-section-nav ol {
@@ -267,6 +271,8 @@
 @media (max-width: 992px) {
   .offline-tsr-summary-rail {
     position: static;
+    max-height: none;
+    overflow-y: visible;
   }
 
   .offline-tsr-section-nav ol {

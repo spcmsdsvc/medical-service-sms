@@ -61,9 +61,9 @@ class TSRDesignScanFixes(unittest.TestCase):
         self.assertIn("min-height: 44px;", block[:block.index("}")])
 
     def test_stylesheet_versions_are_bumped(self):
-        self.assertIn("css/app-offline-tsr.css') }}?v=9", self.template)
+        self.assertIn("css/app-offline-tsr.css') }}?v=10", self.template)
         self.assertIn("css/app-calibration-report.css') }}?v=13", self.template)
-        self.assertIn("'/static/css/app-offline-tsr.css?v=9'", self.app_source)
+        self.assertIn("'/static/css/app-offline-tsr.css?v=10'", self.app_source)
         self.assertIn("'/static/css/app-calibration-report.css?v=13'", self.app_source)
 
     # Batch 3

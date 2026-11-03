@@ -2,7 +2,7 @@
 
 {% block page_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=13">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=9">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-offline-tsr.css') }}?v=10">
 <script>
 (() => {
   const navigation = window.performance?.getEntriesByType?.('navigation')?.[0];
@@ -216,7 +216,7 @@ window.CalibrationReportConfig = {
       </section>
 
       <details id="standalone-tsr-drafts-disclosure" class="card p-3 p-md-4 mb-3 no-print offline-tsr-drafts-card">
-        <summary class="fw-bold">Continue Saved Work <span class="small text-muted">(optional)</span></summary>
+        <summary class="fw-bold">Continue Saved Work <span id="standalone-tsr-drafts-count"></span> <span class="small text-muted">(optional)</span></summary>
         <div class="small text-muted mt-2 mb-3">Drafts are saved on this device and backed up to your account when online, so interrupted TSRs can be opened again.</div>
         <button class="btn btn-outline-primary btn-sm fw-bold mb-3" type="button" onclick="refreshStandaloneTSRDraftPanel()">
           <i class="fa-solid fa-rotate-right me-1" aria-hidden="true"></i>Refresh Drafts
@@ -5173,7 +5173,8 @@ async function loadStandaloneTSRDraftRecordsFromIndexedDB({ includeEmpty=false, 
       return Object.assign({}, record, { payload });
     })
     .filter(record => includeEmpty || isStandaloneTSRDraftMeaningful(record.payload))
-    .sort((a,b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+    // Device copies save UTC and account copies save Manila time, so compare parsed times, not text.
+    .sort((a,b) => (standaloneTSRDraftVersionTime(b) || 0) - (standaloneTSRDraftVersionTime(a) || 0));
 }
 
 async function loadStandaloneTSRDraftRecordById(id){
@@ -6107,7 +6108,7 @@ async function getStandaloneTSRDraftRecords(){
   groupStandaloneTSRDraftVersions(records).forEach(group => {
     if(group.versions.length > 1) rememberStandaloneTSRDraftConflict(group.id, group.versions);
   });
-  return records.sort((a,b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  return records.sort((a,b) => (standaloneTSRDraftVersionTime(b) || 0) - (standaloneTSRDraftVersionTime(a) || 0));
 }
 
 function getStandaloneTSRSignatureRecoveryPayload(source){
@@ -6636,6 +6637,14 @@ async function applyStandaloneTSRSignatureRecovery(){
   return true;
 }
 
+const STANDALONE_TSR_DRAFTS_VISIBLE = 5;
+let standaloneTSRDraftsShowAll = false;
+
+function toggleStandaloneTSRDraftsShowAll(){
+  standaloneTSRDraftsShowAll = !standaloneTSRDraftsShowAll;
+  return renderStandaloneTSRDraftPanel();
+}
+
 async function renderStandaloneTSRDraftPanel(){
   const list = document.getElementById('standalone-tsr-drafts-list');
   if(!list) return;
@@ -6647,10 +6656,23 @@ async function renderStandaloneTSRDraftPanel(){
     console.warn('[Offline TSR] Unable to render draft panel', err);
   }
   let groups = groupStandaloneTSRDraftVersions(records);
+  const groupTime = group => Math.max(...group.versions.map(version => standaloneTSRDraftVersionTime(version) || 0));
+  groups.sort((a,b) => groupTime(b) - groupTime(a));
   const hasScheduleFilter = hasStandaloneScheduleSelection();
   if(hasScheduleFilter){
     groups = groups.filter(group => group.versions.some(record => draftMatchesSelectedStandaloneSchedule(record)));
   }
+  const count = document.getElementById('standalone-tsr-drafts-count');
+  if(count) count.textContent = groups.length ? `(${groups.length})` : '';
+  const totalCount = groups.length;
+  if(!standaloneTSRDraftsShowAll){
+    // The draft in use stays listed even when it is older than the newest few.
+    groups = groups.filter((group, index) => index < STANDALONE_TSR_DRAFTS_VISIBLE || group.id === standaloneCurrentDraftId);
+  }
+  const hiddenCount = totalCount - groups.length;
+  const toggle = hiddenCount || (standaloneTSRDraftsShowAll && totalCount > STANDALONE_TSR_DRAFTS_VISIBLE)
+    ? `<button class="btn btn-outline-secondary btn-sm fw-bold standalone-tsr-drafts-toggle" type="button" onclick="toggleStandaloneTSRDraftsShowAll()" aria-expanded="${standaloneTSRDraftsShowAll}">${standaloneTSRDraftsShowAll ? 'Show fewer drafts' : `Show ${hiddenCount} more draft${hiddenCount === 1 ? '' : 's'}`}</button>`
+    : '';
   const historyWarning = standaloneTSRDraftHistoryWarning
     ? `<div class="standalone-tsr-draft-meta text-warning" role="status" aria-live="polite">${escapeHTML(standaloneTSRDraftHistoryWarning)}</div>`
     : '';
@@ -6762,7 +6784,7 @@ async function renderStandaloneTSRDraftPanel(){
         <button class="btn btn-outline-danger btn-sm fw-bold" type="button" onclick="deleteStandaloneTSRDraft('${escapeAttr(draftId)}')"><i class="fa-solid fa-trash me-1"></i>Delete</button>
       </div>
     </div>`;
-  }).join('');
+  }).join('') + toggle;
 }
 
 async function useStandaloneTSRDraftCopy(id, sourceKey){

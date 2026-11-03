@@ -692,6 +692,7 @@ let STANDALONE_TSR_ACCOUNT_SCOPE='current';
 let LOGGED_IN_ENGINEER_NAME='Current Engineer';
 const OFFLINE_TSR_DB_STORES={drafts:'drafts'};
 const OFFLINE_TSR_ACTIVE_DRAFT_ID='active';
+function standaloneTSRDraftVersionTime(record){const stamp=Date.parse(String(record?.updated_at||record?.payload?.savedAt||''));return Number.isFinite(stamp)?stamp:null;}
 const localStorageValues=new Map();
 globalThis.localStorage={
   getItem(key){return localStorageValues.has(key)?localStorageValues.get(key):null;},
@@ -1601,6 +1602,61 @@ class TsrDraftAccessMatchesThePageGateTests(unittest.TestCase):
         self.assertIn("error?.httpStatus === 401", source)
         # The temporary wording must survive for the case where it is true.
         self.assertIn('temporarily unavailable and will retry', source)
+
+
+class ContinueSavedWorkListTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.template_source = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+
+    def test_draft_list_sorts_mixed_utc_and_manila_times_newest_first(self):
+        # A device copy saved now (UTC) must sort above an account copy saved earlier (naive Manila time).
+        helpers = self.template_source.split('function parseOfflineTSRDate', 1)[1].split('\n}\n', 1)[0]
+        version_time = self.template_source.split('function standaloneTSRDraftVersionTime', 1)[1].split('\n}\n', 1)[0]
+        records_fn = self.template_source.split('async function getStandaloneTSRDraftRecords', 1)[1].split('\n}\n', 1)[0]
+        loader_fn = self.template_source.split('async function loadStandaloneTSRDraftRecordsFromIndexedDB', 1)[1].split('\n}\n', 1)[0]
+        sort_line = records_fn.strip().splitlines()[-1].strip()
+        self.assertTrue(sort_line.startswith('return records.sort('), sort_line)
+        self.assertNotIn('localeCompare', records_fn)
+        self.assertNotIn('localeCompare', loader_fn)
+        script = (
+            'process.env.TZ="Asia/Manila";'
+            'function parseOfflineTSRDate' + helpers + '\n}\n'
+            'function standaloneTSRDraftVersionTime' + version_time + '\n}\n'
+            'const records=[{id:"account-earlier",updated_at:"2026-11-03T09:00:00"},'
+            '{id:"device-now",updated_at:"2026-11-03T02:30:00.000Z"},'
+            '{id:"no-time",updated_at:""}];\n'
+            + sort_line + '\n'
+        ).replace('return records.sort(', 'console.log(JSON.stringify(records.sort(').rstrip(';\n') + '.map(r=>r.id)));'
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, capture_output=True, text=True, check=False,
+                                env={**os.environ, 'TZ': 'Asia/Manila'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout.strip()), ['device-now', 'account-earlier', 'no-time'])
+
+    def test_draft_panel_counts_drafts_and_shows_more_without_hiding_the_open_draft(self):
+        self.assertRegex(self.template_source, r'<summary[^>]*>Continue Saved Work <span id="standalone-tsr-drafts-count">')
+        panel = self.template_source.split(
+            'async function renderStandaloneTSRDraftPanel', 1
+        )[1].split('async function openStandaloneTSRDraft', 1)[0]
+        self.assertIn('const STANDALONE_TSR_DRAFTS_VISIBLE = 5;', self.template_source)
+        self.assertIn("count.textContent = groups.length ? `(${groups.length})` : ''", panel)
+        self.assertIn('groups.sort((a,b) => groupTime(b) - groupTime(a));', panel)
+        self.assertIn('Show ${hiddenCount} more draft', panel)
+        self.assertIn("'Show fewer drafts'", panel)
+        self.assertIn('onclick="toggleStandaloneTSRDraftsShowAll()"', panel)
+        self.assertIn('index < STANDALONE_TSR_DRAFTS_VISIBLE || group.id === standaloneCurrentDraftId', panel)
+        self.assertIn('const hiddenCount = totalCount - groups.length;', panel)
+        self.assertIn(".join('') + toggle;", panel)
+
+    def test_pinned_summary_rail_scrolls_on_desktop_only(self):
+        css = (ROOT / 'static' / 'css' / 'app-offline-tsr.css').read_text(encoding='utf-8')
+        desktop = css.split('.offline-tsr-summary-rail {', 1)[1].split('}', 1)[0]
+        self.assertIn('position: sticky;', desktop)
+        self.assertIn('max-height: calc(100vh - 2rem);', desktop)
+        self.assertIn('overflow-y: auto;', desktop)
+        mobile = css.split('@media (max-width: 992px)', 1)[1].split('.offline-tsr-summary-rail {', 1)[1].split('}', 1)[0]
+        self.assertIn('max-height: none;', mobile)
+        self.assertIn('overflow-y: visible;', mobile)
 
 
 if __name__ == '__main__':

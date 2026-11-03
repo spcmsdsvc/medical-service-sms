@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-11-03-tsr-drafts-list",
+      "release_date": "2026-11-03",
+      "title": "Create TSR: all your saved drafts in Continue Saved Work",
+      "summary": "Every saved TSR draft is now easy to find, newest first.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-11-03-tsr-drafts-all-shown",
+          "category": "Create TSR",
+          "description": "Continue Saved Work shows how many drafts you have and lists the newest first, including a draft you just saved. The 5 newest are shown; press Show more drafts to see the rest. On a computer, the side panel now scrolls on its own, so no draft is cut off at the bottom of the screen. Your drafts were never deleted.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-10-27-travel-amend-cancel",
       "release_date": "2026-10-27",
       "title": "Travel Request: amend or cancel after approval",
