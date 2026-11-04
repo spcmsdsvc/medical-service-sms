@@ -1522,6 +1522,7 @@ function renderProductMobileCards(data){
         const meta = [];
         if(String(p.room || '').trim()) meta.push(`Room ${escapeHtml(p.room)}`);
         if(String(p.bsid || '').trim()) meta.push(`BSID ${escapeHtml(p.bsid)}`);
+        else if(p.bsid_to_follow) meta.push('BSID to follow');
         meta.push(p.start_warranty || p.end_warranty
             ? `${escapeHtml(p.start_warranty || '?')} – ${escapeHtml(p.end_warranty || '?')}`
             : 'No dates');
@@ -1792,9 +1793,12 @@ function compareProductValues(a, b, key, direction){
     }) * dir;
 }
 
+// Machines saved with BSID "To follow" stay pinned on top, whatever the sort.
 function sortProductRows(data){
-    if(!productSortState.key) return [...data];
-    return [...data].sort((a, b) => compareProductValues(a, b, productSortState.key, productSortState.direction));
+    const rows = productSortState.key
+        ? [...data].sort((a, b) => compareProductValues(a, b, productSortState.key, productSortState.direction))
+        : [...data];
+    return [...rows.filter(p => p.bsid_to_follow), ...rows.filter(p => !p.bsid_to_follow)];
 }
 
 function restoreProductSortPreference(){
@@ -1931,7 +1935,7 @@ function renderTable(data) {
                             </div>
                         </td>
                         <td><span class="text-primary fw-bold">${escapeHtml(p.room || '—')}</span></td>
-                        <td><span class="text-primary fw-bold">${escapeHtml(p.bsid || '-')}</span></td>
+                        <td>${p.bsid_to_follow ? '<span class="badge text-bg-warning">To follow</span>' : `<span class="text-primary fw-bold">${escapeHtml(p.bsid || '-')}</span>`}</td>
                         <td><span class="text-primary fw-bold">${ownerDisplay}</span></td>
                         <td><small>${escapeHtml(p.start_warranty || '-')}</small></td>
                         <td><small>${escapeHtml(p.end_warranty || '-')}</small></td>
@@ -1983,6 +1987,7 @@ function renderTable(data) {
             name: savedData.name || previousProduct.name,
             room: Object.prototype.hasOwnProperty.call(savedData, 'room') ? (savedData.room || '') : (previousProduct.room || ''),
             bsid: savedBsid,
+            bsid_to_follow: Boolean(savedData.bsid_to_follow) && !savedBsid,
             client_id: selectedClient ? selectedClient.id : savedData.client_id,
             client_name: savedData.client_name || selectedClient?.name || previousProduct.client_name || 'N/A',
             start_warranty: savedData.start_warranty || '',

@@ -138,6 +138,28 @@ class ProductBsidRequiredTests(unittest.TestCase):
         self.assertEqual(edited.status_code, 200, edited.get_data(as_text=True))
         self.assertIsNone(self.stored_bsid(self.serial))
 
+    def listed(self, serial):
+        rows = self.client.get('/get_products').get_json()
+        return next(row for row in rows if row['serial_number'] == serial)
+
+    def test_to_follow_machines_are_flagged_until_a_bsid_is_added(self):
+        # A legacy machine with no BSID is not pinned until edited with "To follow".
+        self.assertFalse(self.listed(self.serial)['bsid_to_follow'])
+        edit = {'serial_number': self.serial, 'product_name_id': self.catalog_id, 'bsid_to_follow': True}
+        response = self.client.put(f'/update_product/{self.serial}', json=edit)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['bsid_to_follow'])
+        self.assertTrue(self.listed(self.serial)['bsid_to_follow'])
+        # Serial change keeps the flag.
+        renamed = f'{self.serial}R'
+        moved = self.client.put(f'/update_product/{self.serial}', json={**edit, 'serial_number': renamed})
+        self.assertEqual(moved.status_code, 200, moved.get_data(as_text=True))
+        self.assertTrue(self.listed(renamed)['bsid_to_follow'])
+        # Adding the BSID unpins it.
+        saved = self.client.put(f'/update_product/{renamed}', json={'serial_number': renamed, 'product_name_id': self.catalog_id, 'bsid': f'B{self.suffix}P'})
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        self.assertFalse(self.listed(renamed)['bsid_to_follow'])
+
     def test_non_admin_to_follow_still_needs_bsid(self):
         payload = {'serial_number': f'{self.serial}E', 'product_name_id': self.catalog_id, 'bsid': '', 'bsid_to_follow': True}
         # An engineer allowed to edit inventory, but not an admin.
@@ -153,6 +175,7 @@ class ProductBsidRequiredTests(unittest.TestCase):
         self.assertIn('if (!isStandaloneInventory && !data.bsid && !data.bsid_to_follow) {', TEMPLATE)
         self.assertIn('{% if nav_is_admin and not is_standalone_inventory %}', TEMPLATE)
         self.assertIn('id="p-bsid-to-follow"', TEMPLATE)
+        self.assertIn('return [...rows.filter(p => p.bsid_to_follow), ...rows.filter(p => !p.bsid_to_follow)];', TEMPLATE)
         self.assertIn('Required. Used for the calibration certificate number.', TEMPLATE)
         self.assertNotIn('Optional for legacy inventory', TEMPLATE)
 

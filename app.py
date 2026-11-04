@@ -2892,6 +2892,8 @@ class Product(db.Model):
     # Machine-level calibration identity.  This is deliberately nullable so
     # legacy inventory remains usable until an administrator adds the BSID.
     bsid = db.Column(db.String(40), nullable=True, index=True)
+    # Saved by an admin with "To follow" ticked; pinned on top until a BSID is added.
+    bsid_to_follow = db.Column(db.Boolean, default=False, nullable=False, server_default='0')
     
     # History of technical visits for this asset
     shifts = db.relationship('Shift', backref='product', lazy=True)
@@ -3225,6 +3227,12 @@ def ensure_product_contract_column():
                     "ALTER TABLE product ADD COLUMN bsid VARCHAR(40)"
                 )
                 print("[DB MIGRATION] Added product.bsid", flush=True)
+
+            if 'bsid_to_follow' not in product_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE product ADD COLUMN bsid_to_follow BOOLEAN DEFAULT 0 NOT NULL"
+                )
+                print("[DB MIGRATION] Added product.bsid_to_follow", flush=True)
 
             connection.exec_driver_sql(
                 "UPDATE product SET under_contract = 0 WHERE under_contract IS NULL"
@@ -16604,6 +16612,7 @@ def correct_product_from_tsr_revision(shift, payload):
             name=new_name,
             room=getattr(product_rec, 'room', None),
             bsid=kept_bsid,
+            bsid_to_follow=bool(getattr(product_rec, 'bsid_to_follow', False)),
             client_id=getattr(product_rec, 'client_id', None),
             start_warranty_date=getattr(product_rec, 'start_warranty_date', None),
             end_warranty_date=getattr(product_rec, 'end_warranty_date', None),
@@ -28757,7 +28766,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v359-bsid-to-follow';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v360-bsid-to-follow-pinned';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -36742,6 +36751,7 @@ def get_products():
             'name': p.name,
             'room': getattr(p, 'room', None) or '',
             'bsid': getattr(p, 'bsid', None) or '',
+            'bsid_to_follow': bool(getattr(p, 'bsid_to_follow', False)) and not clean_str(getattr(p, 'bsid', None)),
             'client_id': p.client_id,
             'client_name': p.owner.name if p.owner else "N/A",
             'start_warranty': p.start_warranty_date.isoformat() if p.start_warranty_date else "",
@@ -67416,6 +67426,7 @@ def add_product():
         end_warranty_date=parse_date(d.get('end_warranty')),
         under_contract=parse_bool_flag(d.get('under_contract')),
         bsid=bsid or None,
+        bsid_to_follow=not bsid,
     )
     if link_fields_present:
         link_error = validate_product_vieworks_links(new_p.client_id, linked_vieworks_serials)
@@ -67451,6 +67462,7 @@ def add_product():
         'name': new_p.name,
         'room': new_p.room or '',
         'bsid': new_p.bsid or '',
+        'bsid_to_follow': bool(new_p.bsid_to_follow) and not new_p.bsid,
         'client_id': new_p.client_id,
         'client_name': new_p.owner.name if new_p.owner else 'N/A',
         'start_warranty': new_p.start_warranty_date.isoformat() if new_p.start_warranty_date else '',
@@ -67687,6 +67699,7 @@ def update_product(serial_number):
                 end_warranty_date=new_end,
                 under_contract=new_contract,
                 bsid=new_bsid or None,
+                bsid_to_follow=not new_bsid,
             )
             db.session.add(replacement)
             db.session.flush()
@@ -67745,6 +67758,7 @@ def update_product(serial_number):
                 'name': replacement.name,
                 'room': replacement.room or '',
                 'bsid': replacement.bsid or '',
+                'bsid_to_follow': bool(replacement.bsid_to_follow) and not replacement.bsid,
                 'client_id': replacement.client_id,
                 'client_name': replacement.owner.name if replacement.owner else 'N/A',
                 'start_warranty': replacement.start_warranty_date.isoformat() if replacement.start_warranty_date else '',
@@ -67765,6 +67779,7 @@ def update_product(serial_number):
         p.end_warranty_date = new_end
         p.under_contract = new_contract
         p.bsid = new_bsid or None
+        p.bsid_to_follow = not new_bsid
         replace_product_vieworks_links(p.serial_number, linked_vieworks_serials)
         db.session.commit()
 
@@ -67797,6 +67812,7 @@ def update_product(serial_number):
             'name': p.name,
             'room': p.room or '',
             'bsid': p.bsid or '',
+            'bsid_to_follow': bool(p.bsid_to_follow) and not p.bsid,
             'client_id': p.client_id,
             'client_name': p.owner.name if p.owner else 'N/A',
             'start_warranty': p.start_warranty_date.isoformat() if p.start_warranty_date else '',
