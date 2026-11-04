@@ -3754,6 +3754,51 @@ class StockInventoryMovement(db.Model):
     reversal_of = db.relationship('StockInventoryMovement', remote_side=[id], foreign_keys=[reversal_of_id])
 
 
+class PartsMonitoringItem(db.Model):
+    """Company-wide replacement part watched against a minimum stock (Parts Monitoring page)."""
+    __tablename__ = 'parts_monitoring_item'
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_number = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    item_description = db.Column(db.String(255), nullable=False)
+    stock = db.Column(db.Integer, default=0, nullable=False)
+    minimum_stock = db.Column(db.Integer, default=0, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    # Set once a low-stock email went out; cleared when Available rises above the minimum.
+    low_alert_sent = db.Column(db.Boolean, default=False, nullable=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
+
+
+class PartsMonitoringAllocation(db.Model):
+    """Quantity of a part committed to a client's machine or held in reserve.
+
+    Client and machine names are stored as text beside the ids so an entry stays readable if
+    the client is deleted or the machine's serial number changes later.
+    """
+    __tablename__ = 'parts_monitoring_allocation'
+
+    id = db.Column(db.Integer, primary_key=True)
+    part_id = db.Column(db.Integer, db.ForeignKey('parts_monitoring_item.id'), nullable=False, index=True)
+    kind = db.Column(db.String(16), nullable=False)  # 'committed' | 'reserved'
+    quantity = db.Column(db.Integer, nullable=False)
+    client_id = db.Column(db.Integer, nullable=True, index=True)
+    client_name = db.Column(db.String(180), nullable=True)
+    machine_source = db.Column(db.String(16), nullable=True)  # 'product' | 'genoray' | 'vieworks'
+    machine_serial = db.Column(db.String(100), nullable=True, index=True)
+    machine_label = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(16), default='open', nullable=False, index=True)  # 'open' | 'installed' | 'cancelled'
+    shift_id = db.Column(db.Integer, nullable=True, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+    closed_at = db.Column(db.DateTime, nullable=True)
+
+    part = db.relationship('PartsMonitoringItem', backref=db.backref('allocations', lazy=True))
+    created_by = db.relationship('User', foreign_keys=[created_by_id])
+
+
 class ShiftFile(db.Model):
     """
     Multi-Attachment Repository.
@@ -4111,6 +4156,7 @@ _shift_equipment_source_ready = False
 _shift_product_identity_snapshot_ready = False
 _travel_liquidation_tables_ready = False
 _stock_inventory_tables_ready = False
+_parts_monitoring_tables_ready = False
 _genoray_item_table_ready = False
 _genoray_bsid_counter_ready = False
 _vieworks_item_table_ready = False
@@ -6888,6 +6934,16 @@ def ensure_stock_inventory_tables():
         _stock_inventory_tables_ready = False
         print(f'[StockInventory] Unable to ensure stock inventory tables: {stock_error}', flush=True)
         raise
+
+
+def ensure_parts_monitoring_tables():
+    """Create the Parts Monitoring table on first use (additive; no existing table changes)."""
+    global _parts_monitoring_tables_ready
+    if _parts_monitoring_tables_ready:
+        return
+    PartsMonitoringItem.__table__.create(db.engine, checkfirst=True)
+    PartsMonitoringAllocation.__table__.create(db.engine, checkfirst=True)
+    _parts_monitoring_tables_ready = True
 
 
 def ensure_changelog_tables():
@@ -28652,7 +28708,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v353-offsite-backups';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v355-parts-commitments';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -30545,6 +30601,431 @@ def stock_inventory_page():
         stock_manage_branches=stock_inventory_managed_branch_codes(),
         stock_can_administer=stock_inventory_can_administer(),
     )
+
+
+PARTS_MONITORING_LOG_PREFIX = 'Parts Monitoring'
+
+
+def parts_monitoring_guard():
+    """Admins and superadmins only; engineers never reach Parts Monitoring."""
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Parts Monitoring is for admins only.'}), 403
+    ensure_parts_monitoring_tables()
+    return None
+
+
+def parts_monitoring_whole_number(value, field, label, minimum=0):
+    """Parse a whole number field, raising ValueError(field, message) when invalid."""
+    if isinstance(value, bool) or value is None or (isinstance(value, str) and not value.strip()):
+        raise ValueError(field, f'{label} is required.')
+    try:
+        if isinstance(value, float):
+            if not value.is_integer():
+                raise ValueError
+            number = int(value)
+        else:
+            number = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError(field, f'{label} must be a whole number.')
+    if number < minimum:
+        raise ValueError(field, f'{label} must be {minimum} or more.')
+    return number
+
+
+def parts_monitoring_text(value, field, label, max_length):
+    text = (clean_str(value) or '').strip()
+    if not text:
+        raise ValueError(field, f'{label} is required.')
+    if len(text) > max_length:
+        raise ValueError(field, f'{label} must be {max_length} characters or fewer.')
+    return text
+
+
+def parts_monitoring_item_number_taken(item_number, exclude_id=None):
+    query = PartsMonitoringItem.query.filter(
+        func.upper(PartsMonitoringItem.item_number) == item_number.upper()
+    )
+    if exclude_id is not None:
+        query = query.filter(PartsMonitoringItem.id != exclude_id)
+    return db.session.query(query.exists()).scalar()
+
+
+def parts_monitoring_open_totals(part_ids):
+    """Return {part_id: {'committed': n, 'reserved': n}} from open allocations."""
+    totals = {part_id: {'committed': 0, 'reserved': 0} for part_id in part_ids}
+    if not part_ids:
+        return totals
+    rows = (
+        db.session.query(
+            PartsMonitoringAllocation.part_id,
+            PartsMonitoringAllocation.kind,
+            func.coalesce(func.sum(PartsMonitoringAllocation.quantity), 0),
+        )
+        .filter(PartsMonitoringAllocation.part_id.in_(list(part_ids)))
+        .filter(PartsMonitoringAllocation.status == 'open')
+        .group_by(PartsMonitoringAllocation.part_id, PartsMonitoringAllocation.kind)
+        .all()
+    )
+    for part_id, kind, quantity in rows:
+        if kind in ('committed', 'reserved'):
+            totals[part_id][kind] = int(quantity or 0)
+    return totals
+
+
+def parts_monitoring_item_to_dict(item, totals=None):
+    if totals is None:
+        totals = parts_monitoring_open_totals([item.id])[item.id]
+    committed = totals['committed']
+    reserved = totals['reserved']
+    available = item.stock - committed - reserved
+    return {
+        'id': item.id,
+        'item_number': item.item_number,
+        'item_description': item.item_description,
+        'stock': item.stock,
+        'committed': committed,
+        'reserved': reserved,
+        'available': available,
+        'minimum_stock': item.minimum_stock,
+        'is_low': available <= item.minimum_stock,
+    }
+
+
+def parts_monitoring_error(exc):
+    field, message = exc.args if len(exc.args) == 2 else ('', str(exc))
+    return jsonify({'success': False, 'error': message, 'field': field}), 400
+
+
+def parts_monitoring_duplicate(item_number):
+    return jsonify({
+        'success': False,
+        'error': f'Item number {item_number} already exists.',
+        'field': 'item_number',
+    }), 409
+
+
+@app.route('/parts_monitoring')
+@login_required
+def parts_monitoring_page():
+    """Admin-only list of replacement parts with stock, minimum and a Low tag."""
+    if not is_admin_authorized():
+        return Response('Access denied.', status=403, mimetype='text/plain')
+    ensure_parts_monitoring_tables()
+    return render_template('parts_monitoring.html')
+
+
+@app.route('/api/parts-monitoring/items', methods=['GET'])
+@login_required
+def list_parts_monitoring_items():
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    items = (
+        PartsMonitoringItem.query.filter_by(is_active=True)
+        .order_by(func.upper(PartsMonitoringItem.item_number).asc(), PartsMonitoringItem.id.asc())
+        .all()
+    )
+    totals = parts_monitoring_open_totals([item.id for item in items])
+    return jsonify({'success': True, 'items': [parts_monitoring_item_to_dict(item, totals[item.id]) for item in items]})
+
+
+@app.route('/api/parts-monitoring/items', methods=['POST'])
+@login_required
+def add_parts_monitoring_item():
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    try:
+        item_number = parts_monitoring_text(payload.get('item_number'), 'item_number', 'Item Number', 64)
+        description = parts_monitoring_text(payload.get('item_description'), 'item_description', 'Item Description', 255)
+        stock = parts_monitoring_whole_number(payload.get('stock'), 'stock', 'Stock')
+        minimum = parts_monitoring_whole_number(payload.get('minimum_stock'), 'minimum_stock', 'Minimum')
+    except ValueError as exc:
+        return parts_monitoring_error(exc)
+    if parts_monitoring_item_number_taken(item_number):
+        return parts_monitoring_duplicate(item_number)
+    item = PartsMonitoringItem(
+        item_number=item_number,
+        item_description=description,
+        stock=stock,
+        minimum_stock=minimum,
+        created_by_id=current_user.id,
+        updated_by_id=current_user.id,
+    )
+    db.session.add(item)
+    add_activity_log_entry(
+        f'{PARTS_MONITORING_LOG_PREFIX}: added part {item_number} ({description}), stock {stock}, minimum {minimum}'
+    )
+    db.session.commit()
+    return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)}), 201
+
+
+def parts_monitoring_active_item_or_404(item_id):
+    item = db.session.get(PartsMonitoringItem, item_id)
+    if not item or not item.is_active:
+        return None, (jsonify({'success': False, 'error': 'Part not found.'}), 404)
+    return item, None
+
+
+@app.route('/api/parts-monitoring/items/<int:item_id>', methods=['PUT'])
+@login_required
+def update_parts_monitoring_item(item_id):
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    item, missing = parts_monitoring_active_item_or_404(item_id)
+    if missing:
+        return missing
+    payload = request.get_json(silent=True) or {}
+    try:
+        item_number = parts_monitoring_text(payload.get('item_number'), 'item_number', 'Item Number', 64)
+        description = parts_monitoring_text(payload.get('item_description'), 'item_description', 'Item Description', 255)
+        minimum = parts_monitoring_whole_number(payload.get('minimum_stock'), 'minimum_stock', 'Minimum')
+    except ValueError as exc:
+        return parts_monitoring_error(exc)
+    if parts_monitoring_item_number_taken(item_number, exclude_id=item.id):
+        return parts_monitoring_duplicate(item_number)
+    changes = []
+    if item.item_number != item_number:
+        changes.append(f'item number {item.item_number} → {item_number}')
+    if item.item_description != description:
+        changes.append('description')
+    if item.minimum_stock != minimum:
+        changes.append(f'minimum {item.minimum_stock} → {minimum}')
+    item.item_number = item_number
+    item.item_description = description
+    item.minimum_stock = minimum
+    item.updated_by_id = current_user.id
+    if changes:
+        add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: updated part {item_number} ({", ".join(changes)})')
+    db.session.commit()
+    return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)})
+
+
+@app.route('/api/parts-monitoring/items/<int:item_id>/stock', methods=['POST'])
+@login_required
+def add_parts_monitoring_stock(item_id):
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    item, missing = parts_monitoring_active_item_or_404(item_id)
+    if missing:
+        return missing
+    payload = request.get_json(silent=True) or {}
+    try:
+        quantity = parts_monitoring_whole_number(payload.get('quantity'), 'quantity', 'Quantity', minimum=1)
+    except ValueError as exc:
+        return parts_monitoring_error(exc)
+    previous = item.stock
+    item.stock = previous + quantity
+    item.updated_by_id = current_user.id
+    add_activity_log_entry(
+        f'{PARTS_MONITORING_LOG_PREFIX}: added {quantity} stock to part {item.item_number} ({previous} → {item.stock})'
+    )
+    db.session.commit()
+    return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)})
+
+
+@app.route('/api/parts-monitoring/items/<int:item_id>', methods=['DELETE'])
+@login_required
+def delete_parts_monitoring_item(item_id):
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    item, missing = parts_monitoring_active_item_or_404(item_id)
+    if missing:
+        return missing
+    open_count = PartsMonitoringAllocation.query.filter_by(part_id=item.id, status='open').count()
+    if open_count:
+        return jsonify({
+            'success': False,
+            'error': f'{item.item_number} still has {open_count} open commitment(s) or reserve(s). Cancel them first.',
+        }), 409
+    item_number = item.item_number
+    PartsMonitoringAllocation.query.filter_by(part_id=item.id).delete(synchronize_session=False)
+    db.session.delete(item)
+    add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: deleted part {item_number} ({item.item_description})')
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+PARTS_MONITORING_MACHINE_SOURCES = {
+    'product': ('Product Inventory', lambda: Product),
+    'genoray': ('Genoray', lambda: GenorayItem),
+    'vieworks': ('Vieworks', lambda: VieworksItem),
+}
+
+
+def parts_monitoring_machine_label(machine, source):
+    source_label = PARTS_MONITORING_MACHINE_SOURCES[source][0]
+    return f'{machine.name} (SN {machine.serial_number}) · {source_label}'
+
+
+def parts_monitoring_client_machines(client_id):
+    machines = []
+    for source, (_label, model_getter) in PARTS_MONITORING_MACHINE_SOURCES.items():
+        model = model_getter()
+        rows = model.query.filter(model.client_id == client_id).order_by(model.name.asc(), model.serial_number.asc()).all()
+        for machine in rows:
+            machines.append({
+                'source': source,
+                'serial_number': machine.serial_number,
+                'label': parts_monitoring_machine_label(machine, source),
+            })
+    return machines
+
+
+def parts_monitoring_allocation_to_dict(allocation):
+    return {
+        'id': allocation.id,
+        'kind': allocation.kind,
+        'quantity': allocation.quantity,
+        'client_id': allocation.client_id,
+        'client_name': allocation.client_name or '',
+        'machine_source': allocation.machine_source or '',
+        'machine_serial': allocation.machine_serial or '',
+        'machine_label': allocation.machine_label or '',
+        'status': allocation.status,
+        'created_by': allocation.created_by.username if allocation.created_by else '',
+        'created_at': allocation.created_at.strftime('%Y-%m-%d %H:%M') if allocation.created_at else '',
+    }
+
+
+@app.route('/api/parts-monitoring/clients', methods=['GET'])
+@login_required
+def list_parts_monitoring_clients():
+    """Clients that own at least one machine in Product Inventory, Genoray or Vieworks."""
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    owner_ids = set()
+    for _label, model_getter in PARTS_MONITORING_MACHINE_SOURCES.values():
+        model = model_getter()
+        owner_ids.update(
+            row[0] for row in db.session.query(model.client_id).filter(model.client_id.isnot(None)).distinct().all()
+        )
+    clients = []
+    if owner_ids:
+        clients = Client.query.filter(Client.id.in_(owner_ids)).order_by(Client.name.asc()).all()
+    return jsonify({'success': True, 'clients': [{'id': client.id, 'name': client.name} for client in clients]})
+
+
+@app.route('/api/parts-monitoring/machines', methods=['GET'])
+@login_required
+def list_parts_monitoring_machines():
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    client_id = request.args.get('client_id', type=int)
+    if not client_id or not db.session.get(Client, client_id):
+        return jsonify({'success': False, 'error': 'Choose a client.', 'field': 'client_id'}), 400
+    return jsonify({'success': True, 'machines': parts_monitoring_client_machines(client_id)})
+
+
+@app.route('/api/parts-monitoring/items/<int:item_id>/allocations', methods=['GET'])
+@login_required
+def list_parts_monitoring_allocations(item_id):
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    item, missing = parts_monitoring_active_item_or_404(item_id)
+    if missing:
+        return missing
+    allocations = (
+        PartsMonitoringAllocation.query.filter_by(part_id=item.id, status='open')
+        .order_by(PartsMonitoringAllocation.created_at.asc(), PartsMonitoringAllocation.id.asc())
+        .all()
+    )
+    return jsonify({'success': True, 'allocations': [parts_monitoring_allocation_to_dict(row) for row in allocations]})
+
+
+@app.route('/api/parts-monitoring/items/<int:item_id>/allocations', methods=['POST'])
+@login_required
+def add_parts_monitoring_allocation(item_id):
+    """Commit parts to a client's machine, or reserve them; never more than Available."""
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    item, missing = parts_monitoring_active_item_or_404(item_id)
+    if missing:
+        return missing
+    payload = request.get_json(silent=True) or {}
+    kind = (clean_str(payload.get('kind')) or '').strip().lower()
+    if kind not in ('committed', 'reserved'):
+        return jsonify({'success': False, 'error': 'Choose Commit or Reserve.', 'field': 'kind'}), 400
+    try:
+        quantity = parts_monitoring_whole_number(payload.get('quantity'), 'quantity', 'Quantity', minimum=1)
+    except ValueError as exc:
+        return parts_monitoring_error(exc)
+    allocation = PartsMonitoringAllocation(
+        part_id=item.id, kind=kind, quantity=quantity, status='open', created_by_id=current_user.id,
+    )
+    if kind == 'committed':
+        try:
+            client_id = int(payload.get('client_id'))
+        except (TypeError, ValueError):
+            client_id = None
+        client = db.session.get(Client, client_id) if client_id else None
+        if not client:
+            return jsonify({'success': False, 'error': 'Choose a client.', 'field': 'client_id'}), 400
+        source = (clean_str(payload.get('machine_source')) or '').strip().lower()
+        serial = (clean_str(payload.get('machine_serial')) or '').strip()
+        if source not in PARTS_MONITORING_MACHINE_SOURCES or not serial:
+            return jsonify({'success': False, 'error': 'Choose a machine.', 'field': 'machine'}), 400
+        machine = db.session.get(PARTS_MONITORING_MACHINE_SOURCES[source][1](), serial)
+        if not machine or machine.client_id != client.id:
+            return jsonify({'success': False, 'error': 'That machine does not belong to this client.', 'field': 'machine'}), 400
+        allocation.client_id = client.id
+        allocation.client_name = client.name
+        allocation.machine_source = source
+        allocation.machine_serial = machine.serial_number
+        allocation.machine_label = parts_monitoring_machine_label(machine, source)
+    db.session.add(allocation)
+    # Flushing takes SQLite's write lock, so a second admin saving at the same moment waits
+    # and then counts this row: Available can never be pushed below 0.
+    db.session.flush()
+    totals = parts_monitoring_open_totals([item.id])[item.id]
+    available_after = item.stock - totals['committed'] - totals['reserved']
+    if available_after < 0:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Only {max(available_after + quantity, 0)} available.',
+            'field': 'quantity',
+        }), 409
+    if kind == 'committed':
+        action = f'committed {quantity} of part {item.item_number} to {allocation.client_name}, {allocation.machine_label}'
+    else:
+        action = f'reserved {quantity} of part {item.item_number}'
+    add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: {action}')
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'allocation': parts_monitoring_allocation_to_dict(allocation),
+        'item': parts_monitoring_item_to_dict(item),
+    }), 201
+
+
+@app.route('/api/parts-monitoring/allocations/<int:allocation_id>/cancel', methods=['POST'])
+@login_required
+def cancel_parts_monitoring_allocation(allocation_id):
+    denied = parts_monitoring_guard()
+    if denied:
+        return denied
+    allocation = db.session.get(PartsMonitoringAllocation, allocation_id)
+    if not allocation or allocation.status != 'open':
+        return jsonify({'success': False, 'error': 'This commitment or reserve is no longer open.'}), 404
+    item = allocation.part
+    allocation.status = 'cancelled'
+    allocation.closed_at = get_manila_time()
+    if allocation.kind == 'committed':
+        detail = f'commitment of {allocation.quantity} to {allocation.client_name}, {allocation.machine_label}'
+    else:
+        detail = f'reserve of {allocation.quantity}'
+    add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: cancelled {detail} for part {item.item_number}')
+    db.session.commit()
+    return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)})
 
 
 @app.route('/settings')
@@ -34718,6 +35199,7 @@ def download_system_backup():
 # parts; a tuple inside that needs any of its parts. Text is padded with one
 # space on each side, so ' moved ' also matches at the start or end.
 ACTIVITY_CATEGORY_RULES = [
+    ('Parts Monitoring', ['parts monitoring']),
     ('Stock Inventory', ['stock inventory']),
     ('Leave Request', ['leave request', 'form to follow', 'lr-']),
     ('Security', ['password', 'unauthorized', 'denied', 'signed in', 'signed out', 'sign-in']),

@@ -1,0 +1,487 @@
+{% extends "layout.html" %}
+{% block title %}Parts Monitoring{% endblock %}
+
+{% block content %}
+<style>
+    .parts-shell { max-width: 1400px; margin: 0 auto; color: var(--app-text); }
+    .parts-header { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:16px; }
+    .parts-title { display:flex; align-items:center; gap:12px; }
+    .parts-title-icon { width:44px; height:44px; display:grid; place-items:center; border-radius:8px; color:#fff; background:var(--app-primary); font-size:1.2rem; }
+    .parts-title h1 { margin:0; font-size:1.65rem; letter-spacing:0; }
+    .parts-title p { margin:2px 0 0; color:var(--app-muted); }
+    .parts-btn { min-height:44px; border:1px solid var(--app-border); border-radius:6px; padding:9px 15px; display:inline-flex; align-items:center; justify-content:center; gap:8px; font-weight:800; cursor:pointer; white-space:nowrap; }
+    .parts-btn-primary { color:#fff; background:var(--app-primary); border-color:var(--app-primary); }
+    .parts-btn-neutral { color:var(--app-text); background:var(--app-surface-raised); }
+    .parts-btn-danger { color:#fff; background:#c92a3b; border-color:#c92a3b; }
+    .parts-btn:disabled { opacity:.55; cursor:not-allowed; }
+    .parts-panel { background:var(--app-surface); border:1px solid var(--app-border); border-radius:8px; overflow:hidden; }
+    .parts-toolbar { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--app-border); }
+    .parts-search-wrap { position:relative; flex:0 1 420px; min-width:0; }
+    .parts-input { width:100%; min-height:44px; border:1px solid var(--app-border); border-radius:6px; background:var(--app-input); color:var(--app-text); padding:9px 12px; }
+    .parts-input:focus { border-color:var(--app-primary); box-shadow:0 0 0 3px var(--app-focus); outline:0; }
+    .parts-search-wrap .parts-input { padding-left:38px; }
+    .parts-search-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--app-muted); pointer-events:none; }
+    .parts-count { color:var(--app-muted); font-size:.82rem; font-weight:800; white-space:nowrap; }
+    .parts-table-wrap { overflow:auto; }
+    .parts-table { width:100%; border-collapse:separate; border-spacing:0; min-width:980px; }
+    .parts-table th { background:var(--app-surface-raised); color:var(--app-text); padding:11px 12px; border-bottom:1px solid var(--app-border); text-align:left; font-size:.78rem; text-transform:uppercase; white-space:nowrap; }
+    .parts-table th.parts-num, .parts-table td.parts-num { text-align:right; }
+    .parts-table td { padding:11px 12px; border-bottom:1px solid var(--app-border); color:var(--app-text); vertical-align:middle; }
+    .parts-table tbody tr:last-child td { border-bottom:0; }
+    .parts-table tbody tr:hover { background:rgba(var(--app-primary-rgb),.06); }
+    .parts-item-number { font-family:ui-monospace, Consolas, monospace; font-variant-numeric:tabular-nums; letter-spacing:.02em; font-weight:800; white-space:nowrap; }
+    .parts-available { font-weight:900; }
+    .parts-tag { display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:999px; font-size:.76rem; font-weight:800; border:1px solid var(--app-border); color:var(--app-muted); background:var(--app-surface-raised); }
+    .parts-tag-low { color:#a51124; border-color:#ffa8a8; background:#fff5f5; }
+    .parts-actions { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+    .parts-count-link { min-width:44px; min-height:44px; padding:0 6px; border:0; border-radius:6px; background:transparent; color:var(--app-primary); font:inherit; font-weight:900; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+    .parts-count-link:hover { background:rgba(var(--app-primary-rgb),.1); }
+    .parts-alloc-list { list-style:none; margin:0; padding:0; }
+    .parts-alloc-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--app-border); }
+    .parts-alloc-row:last-child { border-bottom:0; }
+    .parts-alloc-qty { font-weight:900; }
+    .parts-alloc-meta { color:var(--app-muted); font-size:.84rem; margin-top:2px; }
+    .parts-select { width:100%; min-height:44px; border:1px solid var(--app-border); border-radius:6px; background:var(--app-input); color:var(--app-text); padding:9px 12px; }
+    .parts-select:focus { border-color:var(--app-primary); box-shadow:0 0 0 3px var(--app-focus); outline:0; }
+    .parts-select.is-invalid { border-color:#c92a3b; }
+    .parts-icon-btn { width:44px; height:44px; display:grid; place-items:center; border:1px solid var(--app-border); border-radius:6px; background:var(--app-surface-raised); color:var(--app-text); cursor:pointer; }
+    .parts-icon-btn:hover { border-color:var(--app-primary); color:var(--app-primary); }
+    .parts-icon-btn.parts-icon-danger:hover { border-color:#c92a3b; color:#c92a3b; }
+    .parts-empty { padding:48px 20px; text-align:center; color:var(--app-muted); }
+    .parts-empty strong { display:block; color:var(--app-text); margin-bottom:4px; }
+    .parts-mobile-list { display:none; padding:10px; }
+    .parts-card { padding:13px; margin-bottom:9px; border:1px solid var(--app-border); border-left:4px solid var(--app-primary); border-radius:8px; background:var(--app-surface-raised); }
+    .parts-card.is-low { border-left-color:#c92a3b; }
+    .parts-card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+    .parts-card-desc { margin-top:3px; color:var(--app-text); }
+    .parts-card-figures { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px 10px; margin-top:10px; font-size:.86rem; color:var(--app-muted); }
+    .parts-card-figures strong { display:block; color:var(--app-text); font-size:1rem; }
+    .parts-card .parts-actions { justify-content:flex-start; margin-top:10px; }
+    .parts-modal .modal-content { background:var(--app-surface); color:var(--app-text); border-color:var(--app-border); }
+    .parts-modal .modal-header, .parts-modal .modal-footer { border-color:var(--app-border); }
+    .parts-modal-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; }
+    .parts-field-wide { grid-column:1/-1; }
+    .parts-label { display:block; margin-bottom:6px; font-weight:800; color:var(--app-text); }
+    .parts-hint { margin:6px 0 0; color:var(--app-muted); font-size:.84rem; }
+    .parts-input.is-invalid { border-color:#c92a3b; }
+    .parts-alert { display:none; margin-bottom:12px; padding:11px 13px; border-radius:6px; border:1px solid transparent; }
+    .parts-alert.show { display:block; }
+    .parts-alert-error { background:#fff5f5; border-color:#ffa8a8; color:#a51124; }
+    .parts-alert-success { background:#ebfbee; border-color:#8ce99a; color:#087f5b; }
+    :root[data-app-theme="dark"] .parts-tag-low { color:#ffc9c9; background:#3a1920; border-color:#c92a3b; }
+    :root[data-app-theme="dark"] .parts-alert-error { color:#ffc9c9; background:#3a1920; border-color:#c92a3b; }
+    :root[data-app-theme="dark"] .parts-alert-success { color:#b2f2bb; background:#163923; border-color:#2f9e44; }
+    @media (max-width:900px) {
+        .parts-table-wrap { display:none; }
+        .parts-mobile-list { display:block; }
+        .parts-search-wrap { flex:1; }
+    }
+    @media (max-width:560px) {
+        .parts-header { flex-direction:column; align-items:stretch; }
+        .parts-header > .parts-btn { width:100%; }
+        .parts-title h1 { font-size:1.35rem; }
+        .parts-toolbar { flex-direction:column; align-items:stretch; }
+        .parts-modal-grid { grid-template-columns:1fr; }
+    }
+</style>
+
+<div class="parts-shell">
+    <div class="parts-header">
+        <div class="parts-title">
+            <div class="parts-title-icon" aria-hidden="true"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+            <div>
+                <h1>Parts Monitoring</h1>
+                <p>Replacement parts, their stock and minimum. Low = Available at or below the minimum.</p>
+            </div>
+        </div>
+        <button id="partsAddButton" class="parts-btn parts-btn-primary" type="button" onclick="openPartForm()"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add Part</button>
+    </div>
+
+    <div id="partsPageAlert" class="parts-alert" role="status" aria-live="polite"></div>
+
+    <section class="parts-panel" aria-labelledby="partsListTitle">
+        <h2 id="partsListTitle" class="visually-hidden">Parts</h2>
+        <div class="parts-toolbar">
+            <div class="parts-search-wrap">
+                <i class="fa-solid fa-magnifying-glass parts-search-icon" aria-hidden="true"></i>
+                <input id="partsSearch" class="parts-input" type="search" placeholder="Item number or description" aria-label="Search parts" oninput="renderParts()">
+            </div>
+            <span id="partsCount" class="parts-count"></span>
+        </div>
+        <div class="parts-table-wrap">
+            <table class="parts-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Item Number</th>
+                        <th scope="col">Description</th>
+                        <th scope="col" class="parts-num">Stock</th>
+                        <th scope="col" class="parts-num">Committed</th>
+                        <th scope="col" class="parts-num">Reserve</th>
+                        <th scope="col" class="parts-num">Available</th>
+                        <th scope="col" class="parts-num">Minimum</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" class="parts-num"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody id="partsTableBody"></tbody>
+            </table>
+        </div>
+        <div id="partsMobileList" class="parts-mobile-list"></div>
+        <div id="partsEmpty" class="parts-empty" hidden></div>
+    </section>
+</div>
+
+<div class="modal fade parts-modal" id="partFormModal" tabindex="-1" aria-labelledby="partFormTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h2 id="partFormTitle" class="modal-title fs-5">Add Part</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="partFormAlert" class="parts-alert" role="alert"></div>
+            <input type="hidden" id="partFormId">
+            <div class="parts-modal-grid">
+                <div class="parts-field-wide"><label class="parts-label" for="partItemNumber">Item Number</label><input id="partItemNumber" class="parts-input" maxlength="64" autocomplete="off" required></div>
+                <div class="parts-field-wide"><label class="parts-label" for="partDescription">Item Description</label><input id="partDescription" class="parts-input" maxlength="255" autocomplete="off" required></div>
+                <div id="partStockField"><label class="parts-label" for="partStock">Stock</label><input id="partStock" class="parts-input" type="number" min="0" step="1" inputmode="numeric" required></div>
+                <div><label class="parts-label" for="partMinimum">Minimum</label><input id="partMinimum" class="parts-input" type="number" min="0" step="1" inputmode="numeric" required></div>
+            </div>
+            <p id="partStockHint" class="parts-hint" hidden>Stock changes through Add Stock.</p>
+        </div>
+        <div class="modal-footer"><button class="parts-btn parts-btn-neutral" type="button" data-bs-dismiss="modal">Cancel</button><button id="partFormSave" class="parts-btn parts-btn-primary" type="button" onclick="savePartForm()"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save Part</button></div>
+    </div></div>
+</div>
+
+<div class="modal fade parts-modal" id="partStockModal" tabindex="-1" aria-labelledby="partStockTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><div><h2 id="partStockTitle" class="modal-title fs-5">Add Stock</h2><div id="partStockSubtitle" class="text-muted small"></div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="partStockAlert" class="parts-alert" role="alert"></div>
+            <label class="parts-label" for="partStockQuantity">Quantity received</label>
+            <input id="partStockQuantity" class="parts-input" type="number" min="1" step="1" inputmode="numeric" required>
+            <p id="partStockPreview" class="parts-hint"></p>
+        </div>
+        <div class="modal-footer"><button class="parts-btn parts-btn-neutral" type="button" data-bs-dismiss="modal">Cancel</button><button id="partStockSave" class="parts-btn parts-btn-primary" type="button" onclick="savePartStock()"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add Stock</button></div>
+    </div></div>
+</div>
+
+<div class="modal fade parts-modal" id="partAllocModal" tabindex="-1" aria-labelledby="partAllocTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><div><h2 id="partAllocTitle" class="modal-title fs-5">Commit Parts</h2><div id="partAllocSubtitle" class="text-muted small"></div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="partAllocAlert" class="parts-alert" role="alert"></div>
+            <div class="parts-modal-grid">
+                <div id="partAllocClientField" class="parts-field-wide"><label class="parts-label" for="partAllocClient">Client</label><select id="partAllocClient" class="parts-select" onchange="loadAllocMachines()"></select></div>
+                <div id="partAllocMachineField" class="parts-field-wide"><label class="parts-label" for="partAllocMachine">Machine</label><select id="partAllocMachine" class="parts-select" disabled><option value="">Choose a client first</option></select></div>
+                <div><label class="parts-label" for="partAllocQuantity">Quantity</label><input id="partAllocQuantity" class="parts-input" type="number" min="1" step="1" inputmode="numeric" required></div>
+            </div>
+            <p id="partAllocAvailable" class="parts-hint"></p>
+        </div>
+        <div class="modal-footer"><button class="parts-btn parts-btn-neutral" type="button" data-bs-dismiss="modal">Cancel</button><button id="partAllocSave" class="parts-btn parts-btn-primary" type="button" onclick="savePartAlloc()"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save</button></div>
+    </div></div>
+</div>
+
+<div class="modal fade parts-modal" id="partAllocListModal" tabindex="-1" aria-labelledby="partAllocListTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><div><h2 id="partAllocListTitle" class="modal-title fs-5">Committed</h2><div id="partAllocListSubtitle" class="text-muted small"></div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="partAllocListAlert" class="parts-alert" role="alert"></div>
+            <ul id="partAllocList" class="parts-alloc-list"></ul>
+        </div>
+        <div class="modal-footer"><button class="parts-btn parts-btn-neutral" type="button" data-bs-dismiss="modal">Close</button></div>
+    </div></div>
+</div>
+
+<div class="modal fade parts-modal" id="partDeleteModal" tabindex="-1" aria-labelledby="partDeleteTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h2 id="partDeleteTitle" class="modal-title fs-5">Delete Part</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="partDeleteAlert" class="parts-alert" role="alert"></div>
+            <p id="partDeleteSummary" class="mb-0"></p>
+        </div>
+        <div class="modal-footer"><button class="parts-btn parts-btn-neutral" type="button" data-bs-dismiss="modal">Cancel</button><button id="partDeleteConfirm" class="parts-btn parts-btn-danger" type="button" onclick="confirmPartDelete()"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete Part</button></div>
+    </div></div>
+</div>
+
+<script>
+const partsState = { items: [], activeId: null };
+
+function partsEscape(value){ const node=document.createElement('div'); node.textContent=String(value ?? ''); return node.innerHTML; }
+function partsHeaders(){ return {'Content-Type':'application/json','X-CSRFToken':getCSRFToken(),'Accept':'application/json'}; }
+async function partsJson(url, options={}){
+    const response=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});
+    let data={}; try{ data=await response.json(); }catch(_){ data={error:`Request failed (${response.status}).`}; }
+    if(!response.ok || data.success===false){ const err=new Error(data.error || `Request failed (${response.status}).`); err.field=data.field||''; throw err; }
+    return data;
+}
+function showPartsAlert(id,message,type='error'){
+    const box=document.getElementById(id); if(!box) return;
+    box.textContent=message||''; box.className=`parts-alert show parts-alert-${type}`;
+    if(id==='partsPageAlert') setTimeout(()=>box.classList.remove('show'),5000);
+}
+function clearPartsAlert(id){ const box=document.getElementById(id); if(box){ box.textContent=''; box.className='parts-alert'; } }
+function setPartsBusy(button,busy,label){ if(!button)return; if(!button.dataset.original)button.dataset.original=button.innerHTML; button.disabled=busy; button.innerHTML=busy?`<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> ${label}`:button.dataset.original; }
+function partsModal(id){ return bootstrap.Modal.getOrCreateInstance(document.getElementById(id)); }
+function findPart(id){ return partsState.items.find(item=>item.id===id); }
+const PARTS_FIELD_INPUTS = { item_number:'partItemNumber', item_description:'partDescription', stock:'partStock', minimum_stock:'partMinimum', quantity:'partStockQuantity' };
+function markPartsField(field){
+    document.querySelectorAll('.parts-modal .parts-input').forEach(input=>{ input.classList.remove('is-invalid'); input.removeAttribute('aria-invalid'); });
+    const input=document.getElementById(PARTS_FIELD_INPUTS[field]||''); if(input){ input.classList.add('is-invalid'); input.setAttribute('aria-invalid','true'); input.focus(); }
+}
+
+async function loadParts(){
+    try{
+        const data=await partsJson('/api/parts-monitoring/items');
+        partsState.items=data.items||[];
+    }catch(error){ showPartsAlert('partsPageAlert',error.message); }
+    renderParts();
+}
+
+function partStatusTag(item){
+    return item.is_low
+        ? '<span class="parts-tag parts-tag-low"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Low</span>'
+        : '<span class="parts-tag">OK</span>';
+}
+function partActions(item){
+    const label=partsEscape(item.item_number);
+    return `<div class="parts-actions">
+        <button class="parts-icon-btn" type="button" onclick="openPartAlloc(${item.id},'committed')" title="Commit to a client" aria-label="Commit ${label} to a client"><i class="fa-solid fa-handshake" aria-hidden="true"></i></button>
+        <button class="parts-icon-btn" type="button" onclick="openPartAlloc(${item.id},'reserved')" title="Reserve" aria-label="Reserve ${label}"><i class="fa-solid fa-bookmark" aria-hidden="true"></i></button>
+        <button class="parts-icon-btn" type="button" onclick="openPartStock(${item.id})" title="Add stock" aria-label="Add stock to ${label}"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+        <button class="parts-icon-btn" type="button" onclick="openPartForm(${item.id})" title="Edit part" aria-label="Edit ${label}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
+        <button class="parts-icon-btn parts-icon-danger" type="button" onclick="openPartDelete(${item.id})" title="Delete part" aria-label="Delete ${label}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+    </div>`;
+}
+
+function allocCount(item,kind){
+    const value=kind==='committed' ? item.committed : item.reserved;
+    if(!value) return '0';
+    const noun=kind==='committed' ? 'commitments' : 'reserves';
+    return `<button class="parts-count-link" type="button" onclick="openAllocList(${item.id},'${kind}')" aria-label="Show ${noun} for ${partsEscape(item.item_number)}">${value}</button>`;
+}
+
+function renderParts(){
+    const query=(document.getElementById('partsSearch').value||'').trim().toLowerCase();
+    const rows=query ? partsState.items.filter(item=>`${item.item_number} ${item.item_description}`.toLowerCase().includes(query)) : partsState.items;
+    document.getElementById('partsTableBody').innerHTML=rows.map(item=>`<tr>
+        <td class="parts-item-number">${partsEscape(item.item_number)}</td>
+        <td>${partsEscape(item.item_description)}</td>
+        <td class="parts-num">${item.stock}</td>
+        <td class="parts-num">${allocCount(item,'committed')}</td>
+        <td class="parts-num">${allocCount(item,'reserved')}</td>
+        <td class="parts-num parts-available">${item.available}</td>
+        <td class="parts-num">${item.minimum_stock}</td>
+        <td>${partStatusTag(item)}</td>
+        <td>${partActions(item)}</td>
+    </tr>`).join('');
+    document.getElementById('partsMobileList').innerHTML=rows.map(item=>`<article class="parts-card ${item.is_low?'is-low':''}">
+        <div class="parts-card-top"><span class="parts-item-number">${partsEscape(item.item_number)}</span>${partStatusTag(item)}</div>
+        <div class="parts-card-desc">${partsEscape(item.item_description)}</div>
+        <div class="parts-card-figures">
+            <span>Stock<strong>${item.stock}</strong></span><span>Committed<strong>${allocCount(item,'committed')}</strong></span><span>Reserve<strong>${allocCount(item,'reserved')}</strong></span>
+            <span>Available<strong>${item.available}</strong></span><span>Minimum<strong>${item.minimum_stock}</strong></span>
+        </div>
+        ${partActions(item)}
+    </article>`).join('');
+    const empty=document.getElementById('partsEmpty');
+    const hasRows=rows.length>0;
+    empty.hidden=hasRows;
+    document.querySelector('.parts-table').hidden=!hasRows;
+    if(!hasRows){
+        empty.innerHTML=partsState.items.length
+            ? `<strong>No parts match "${partsEscape(query)}"</strong>Try another item number or description.`
+            : '<strong>No parts yet</strong>Use Add Part to start monitoring a replacement part.';
+    }
+    const total=partsState.items.length;
+    document.getElementById('partsCount').textContent=query ? `${rows.length} of ${total} parts` : `${total} part${total===1?'':'s'}`;
+}
+
+function openPartForm(id){
+    const item=id ? findPart(id) : null;
+    clearPartsAlert('partFormAlert'); markPartsField('');
+    document.getElementById('partFormId').value=item ? item.id : '';
+    document.getElementById('partFormTitle').textContent=item ? 'Edit Part' : 'Add Part';
+    document.getElementById('partItemNumber').value=item ? item.item_number : '';
+    document.getElementById('partDescription').value=item ? item.item_description : '';
+    document.getElementById('partStock').value=item ? item.stock : '';
+    document.getElementById('partMinimum').value=item ? item.minimum_stock : '';
+    document.getElementById('partStockField').hidden=!!item;
+    document.getElementById('partStockHint').hidden=!item;
+    partsModal('partFormModal').show();
+}
+
+async function savePartForm(){
+    const id=document.getElementById('partFormId').value;
+    const payload={
+        item_number:document.getElementById('partItemNumber').value.trim(),
+        item_description:document.getElementById('partDescription').value.trim(),
+        minimum_stock:document.getElementById('partMinimum').value,
+    };
+    if(!id) payload.stock=document.getElementById('partStock').value;
+    const button=document.getElementById('partFormSave');
+    setPartsBusy(button,true,'Saving');
+    try{
+        await partsJson(id ? `/api/parts-monitoring/items/${id}` : '/api/parts-monitoring/items',{method:id?'PUT':'POST',headers:partsHeaders(),body:JSON.stringify(payload)});
+        partsModal('partFormModal').hide();
+        showPartsAlert('partsPageAlert',id ? `Part ${payload.item_number} updated.` : `Part ${payload.item_number} added.`,'success');
+        await loadParts();
+    }catch(error){ showPartsAlert('partFormAlert',error.message); markPartsField(error.field); }
+    finally{ setPartsBusy(button,false); }
+}
+
+function openPartStock(id){
+    const item=findPart(id); if(!item) return;
+    partsState.activeId=id;
+    clearPartsAlert('partStockAlert'); markPartsField('');
+    document.getElementById('partStockSubtitle').textContent=`${item.item_number} · ${item.item_description}`;
+    const input=document.getElementById('partStockQuantity'); input.value='';
+    updatePartStockPreview();
+    partsModal('partStockModal').show();
+}
+function updatePartStockPreview(){
+    const item=findPart(partsState.activeId); if(!item) return;
+    const qty=parseInt(document.getElementById('partStockQuantity').value,10);
+    document.getElementById('partStockPreview').textContent=qty>0 ? `Stock ${item.stock} → ${item.stock+qty}` : `Current stock: ${item.stock}`;
+}
+document.getElementById('partStockQuantity').addEventListener('input',updatePartStockPreview);
+
+async function savePartStock(){
+    const item=findPart(partsState.activeId); if(!item) return;
+    const button=document.getElementById('partStockSave');
+    setPartsBusy(button,true,'Saving');
+    try{
+        await partsJson(`/api/parts-monitoring/items/${item.id}/stock`,{method:'POST',headers:partsHeaders(),body:JSON.stringify({quantity:document.getElementById('partStockQuantity').value})});
+        partsModal('partStockModal').hide();
+        showPartsAlert('partsPageAlert',`Stock added to ${item.item_number}.`,'success');
+        await loadParts();
+    }catch(error){ showPartsAlert('partStockAlert',error.message); markPartsField(error.field); }
+    finally{ setPartsBusy(button,false); }
+}
+
+function openPartDelete(id){
+    const item=findPart(id); if(!item) return;
+    partsState.activeId=id;
+    clearPartsAlert('partDeleteAlert');
+    document.getElementById('partDeleteSummary').textContent=`Delete ${item.item_number} (${item.item_description})? This cannot be undone.`;
+    partsModal('partDeleteModal').show();
+}
+async function confirmPartDelete(){
+    const item=findPart(partsState.activeId); if(!item) return;
+    const button=document.getElementById('partDeleteConfirm');
+    setPartsBusy(button,true,'Deleting');
+    try{
+        await partsJson(`/api/parts-monitoring/items/${item.id}`,{method:'DELETE',headers:partsHeaders()});
+        partsModal('partDeleteModal').hide();
+        showPartsAlert('partsPageAlert',`Part ${item.item_number} deleted.`,'success');
+        await loadParts();
+    }catch(error){ showPartsAlert('partDeleteAlert',error.message); }
+    finally{ setPartsBusy(button,false); }
+}
+
+const PARTS_ALLOC_FIELDS = { client_id:'partAllocClient', machine:'partAllocMachine', quantity:'partAllocQuantity' };
+function markAllocField(field){
+    Object.values(PARTS_ALLOC_FIELDS).forEach(id=>{ const el=document.getElementById(id); el.classList.remove('is-invalid'); el.removeAttribute('aria-invalid'); });
+    const el=document.getElementById(PARTS_ALLOC_FIELDS[field]||''); if(el){ el.classList.add('is-invalid'); el.setAttribute('aria-invalid','true'); el.focus(); }
+}
+let partsClientsLoaded=false;
+async function loadAllocClients(){
+    if(partsClientsLoaded) return;
+    const data=await partsJson('/api/parts-monitoring/clients');
+    document.getElementById('partAllocClient').innerHTML='<option value="">Choose a client</option>'+data.clients.map(c=>`<option value="${c.id}">${partsEscape(c.name)}</option>`).join('');
+    partsClientsLoaded=true;
+}
+async function loadAllocMachines(){
+    const select=document.getElementById('partAllocMachine');
+    const clientId=document.getElementById('partAllocClient').value;
+    select.disabled=true;
+    if(!clientId){ select.innerHTML='<option value="">Choose a client first</option>'; return; }
+    select.innerHTML='<option value="">Loading machines…</option>';
+    try{
+        const data=await partsJson(`/api/parts-monitoring/machines?client_id=${encodeURIComponent(clientId)}`);
+        if(document.getElementById('partAllocClient').value!==clientId) return;
+        select.innerHTML=data.machines.length
+            ? '<option value="">Choose a machine</option>'+data.machines.map(m=>`<option value="${m.source}|${partsEscape(m.serial_number)}">${partsEscape(m.label)}</option>`).join('')
+            : '<option value="">This client has no machines</option>';
+        select.disabled=!data.machines.length;
+    }catch(error){ select.innerHTML='<option value="">Could not load machines</option>'; showPartsAlert('partAllocAlert',error.message); }
+}
+async function openPartAlloc(id,kind){
+    const item=findPart(id); if(!item) return;
+    partsState.activeId=id; partsState.allocKind=kind;
+    const commit=kind==='committed';
+    clearPartsAlert('partAllocAlert'); markAllocField('');
+    document.getElementById('partAllocTitle').textContent=commit ? 'Commit Parts' : 'Reserve Parts';
+    document.getElementById('partAllocSubtitle').textContent=`${item.item_number} · ${item.item_description}`;
+    document.getElementById('partAllocClientField').hidden=!commit;
+    document.getElementById('partAllocMachineField').hidden=!commit;
+    document.getElementById('partAllocQuantity').value='';
+    document.getElementById('partAllocAvailable').textContent=`Available: ${item.available}`;
+    document.getElementById('partAllocSave').disabled=item.available<1;
+    if(item.available<1) showPartsAlert('partAllocAlert','Nothing available to '+(commit?'commit':'reserve')+'.');
+    partsModal('partAllocModal').show();
+    if(commit){
+        document.getElementById('partAllocClient').value='';
+        await loadAllocMachines();
+        try{ await loadAllocClients(); }catch(error){ showPartsAlert('partAllocAlert',error.message); }
+    }
+}
+async function savePartAlloc(){
+    const item=findPart(partsState.activeId); if(!item) return;
+    const kind=partsState.allocKind;
+    const payload={kind, quantity:document.getElementById('partAllocQuantity').value};
+    if(kind==='committed'){
+        const [source,...serial]=(document.getElementById('partAllocMachine').value||'').split('|');
+        payload.client_id=document.getElementById('partAllocClient').value;
+        payload.machine_source=source||''; payload.machine_serial=serial.join('|');
+    }
+    const button=document.getElementById('partAllocSave');
+    setPartsBusy(button,true,'Saving');
+    try{
+        await partsJson(`/api/parts-monitoring/items/${item.id}/allocations`,{method:'POST',headers:partsHeaders(),body:JSON.stringify(payload)});
+        partsModal('partAllocModal').hide();
+        showPartsAlert('partsPageAlert',`${payload.quantity} of ${item.item_number} ${kind==='committed'?'committed':'reserved'}.`,'success');
+        await loadParts();
+    }catch(error){ showPartsAlert('partAllocAlert',error.message); markAllocField(error.field); }
+    finally{ setPartsBusy(button,false); }
+}
+
+async function openAllocList(id,kind){
+    const item=findPart(id); if(!item) return;
+    partsState.activeId=id; partsState.listKind=kind;
+    document.getElementById('partAllocListTitle').textContent=kind==='committed' ? 'Committed' : 'Reserved';
+    document.getElementById('partAllocListSubtitle').textContent=`${item.item_number} · ${item.item_description}`;
+    clearPartsAlert('partAllocListAlert');
+    document.getElementById('partAllocList').innerHTML='';
+    partsModal('partAllocListModal').show();
+    await renderAllocList();
+}
+async function renderAllocList(){
+    const list=document.getElementById('partAllocList');
+    try{
+        const data=await partsJson(`/api/parts-monitoring/items/${partsState.activeId}/allocations`);
+        const rows=data.allocations.filter(a=>a.kind===partsState.listKind);
+        list.innerHTML=rows.length ? rows.map(a=>`<li class="parts-alloc-row">
+            <div>
+                <div><span class="parts-alloc-qty">${a.quantity}</span> ${a.kind==='committed' ? `to ${partsEscape(a.client_name)}` : 'reserved'}</div>
+                ${a.kind==='committed' ? `<div class="parts-alloc-meta">${partsEscape(a.machine_label)}</div>` : ''}
+                <div class="parts-alloc-meta">${partsEscape(a.created_by)} · ${partsEscape(a.created_at)}</div>
+            </div>
+            <button class="parts-btn parts-btn-neutral" type="button" onclick="cancelAlloc(${a.id},this)" aria-label="Cancel this ${a.kind==='committed'?'commitment':'reserve'} of ${a.quantity}">Cancel</button>
+        </li>`).join('') : '<li class="parts-alloc-meta">Nothing open.</li>';
+    }catch(error){ showPartsAlert('partAllocListAlert',error.message); }
+}
+async function cancelAlloc(id,button){
+    setPartsBusy(button,true,'Cancelling');
+    try{
+        await partsJson(`/api/parts-monitoring/allocations/${id}/cancel`,{method:'POST',headers:partsHeaders()});
+        await loadParts();
+        await renderAllocList();
+        showPartsAlert('partAllocListAlert','Cancelled. The quantity is available again.','success');
+    }catch(error){ showPartsAlert('partAllocListAlert',error.message); setPartsBusy(button,false); }
+}
+
+document.getElementById('partAllocQuantity').addEventListener('keydown',event=>{ if(event.key==='Enter'){ event.preventDefault(); savePartAlloc(); } });
+
+document.querySelectorAll('#partFormModal .parts-input, #partStockQuantity').forEach(input=>{
+    input.addEventListener('keydown',event=>{ if(event.key==='Enter'){ event.preventDefault(); (input.id==='partStockQuantity'?savePartStock:savePartForm)(); } });
+});
+loadParts();
+</script>
+{% endblock %}

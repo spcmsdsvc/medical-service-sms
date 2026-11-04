@@ -703,7 +703,7 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertIn('{% if inventory_link_count > 1 %}', nav)
         self.assertIn('data-rail-caption="Inventory"', nav)
         # Captions are the labels; only two rare accounts keep short ones.
-        self.assertIn("{%- set rail_caption = {'Stock Inventory': 'Stock', 'Password Settings': 'Password'}.get(label, label) -%}", self.layout)
+        self.assertIn("{%- set rail_caption = {'Stock Inventory': 'Stock', 'Parts Monitoring': 'Parts', 'Password Settings': 'Password'}.get(label, label) -%}", self.layout)
         # Stock Inventory sits in WORK, not MAIN; only stock-only accounts keep it on top,
         # and the Stock page no longer lights up the Admin group.
         self.assertIn('{% if stock_inventory_view and stock_inventory_only_user and not hr_schedule_only_user %}', nav)

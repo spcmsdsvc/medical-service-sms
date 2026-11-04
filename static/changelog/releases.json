@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-11-04-parts-monitoring",
+      "release_date": "2026-11-04",
+      "title": "Parts Monitoring",
+      "summary": "A new Inventory page for admins to track replacement parts against a minimum stock.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-11-04-parts-monitoring-page",
+          "category": "Inventory",
+          "description": "Inventory → Parts Monitoring lists replacement parts with their stock, available quantity and minimum. Add, edit, add stock to or delete a part, and search by item number or description. A part shows a Low tag when its available stock is at or below its minimum.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-11-04-parts-monitoring-commitments",
+          "category": "Inventory",
+          "description": "Commit parts to a client's machine (Product Inventory, Genoray or Vieworks) when a P.O. arrives, or reserve them. Available = Stock − Committed − Reserve and can never go below 0. Tap a Committed or Reserve number to see who it is for and cancel an entry.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-11-04-offsite-backups",
       "release_date": "2026-11-04",
       "title": "Off-site database copies",

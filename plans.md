@@ -37,6 +37,218 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Parts Monitoring: new admin page, commitments, schedule parts installation, low-stock email (4 batches)
+
+**Status:** In progress — Batch 1 executed 2026-11-04 (go-ahead "Start Batch 1"), not yet published; Batch 2 executed 2026-11-04 (go-ahead "go for batch 2"), not yet published; Batches 3–4 awaiting go-ahead. Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
+Each batch is one commit; execute in order (each builds on the previous one).
+
+## Context
+Admins track replacement parts (e.g. X-ray tubes, batteries, FSR assemblies) in an Excel sheet
+("Replenishment as of October 22, 2026", owner's sample `Sir Rodito.xlsx`). The owner wants this in the
+app as a new page **Parts Monitoring** under Inventory, right below Stock Inventory: admins add parts with
+a minimum stock, commit parts to a client's machine when a P.O. arrives, use those commitments when a
+parts-installation schedule is created, and get an email when a part runs low. Only the Excel's Item
+Number, Description and stock/minimum idea are used; its other columns (UoM, NEPC/Main, MARAJO,
+Ordered, consumption, Max, Suggested Replenishment, replacement-PN notes) are deliberately dropped.
+
+## Decisions taken (owner, 2026-11-04)
+- **Access:** admins and superadmins only = `is_admin_authorized()` (superadmin/manager/scheduler +
+  regional_admin). No engineer access to the page or its APIs.
+- **One company-wide list** (no branches). Parts are new records, not taken from Stock Inventory and not
+  imported from Excel.
+- **Add Part fields:** Item Number, Item Description, Stock, Minimum — all required.
+- **Columns:** Item Number, Description, Stock, Committed, Reserve, Available, Minimum, Status.
+  **Available = Stock − Committed − Reserve.** **Low** tag when Available ≤ Minimum (the email uses the
+  same rule).
+- **Edit** (item number, description, minimum) and **Add Stock** (adds a positive quantity; stock is
+  never typed over). **Delete part** allowed.
+- **Search box** (filters by Item Number or Description as you type).
+- **Commit:** pick a client, then one of that client's machines from Product Inventory, Genoray or
+  Vieworks, then a quantity. **Reserve:** quantity only, no client/machine. Over-commit/over-reserve is
+  **blocked** (Available never below 0). **Cancel** on each commitment and reserve returns the quantity.
+- **Schedule integration:** checkbox "With Parts Installation?" on the schedule form; when ticked a
+  tick-box dropdown lists the **open commitments for the machine picked on the schedule**. Each ticked
+  commitment is used **whole**. On save: Stock −qty and Committed −qty (Available unchanged). Deleting the
+  schedule, unticking the part, or changing the machine on edit **returns** it to Committed (Stock back).
+- **Engineers** see a read-only "Parts: X-ray Tube ×2" line on their schedule.
+- Installed parts are **not** shown on the TSR for now.
+- **Email:** sent **once** when a part turns Low (Available goes from above Minimum to ≤ Minimum); not
+  again until it goes back above Minimum and drops again. Recipients: a new group **"Parts Low Stock
+  Alert"** in Settings → Email Recipients (typed addresses, like the other groups).
+
+### Decided by Claude (owner did not overrule)
+- Item numbers unique, case-insensitive, trimmed. Stock, Minimum and quantities are whole numbers
+  (Stock/Minimum ≥ 0, quantities ≥ 1).
+- Delete is refused while the part has open commitments or reserves; a part used on a schedule is
+  hidden (`is_active = False`), never erased, so schedules keep its name.
+- Parts checkbox on every schedule type, shown only to admins, enabled only when the schedule has a
+  client and a machine; disabled offline ("Parts can be added when online").
+- A schedule edit that does not send the parts field keeps its parts (engineer edits, drag-to-reschedule).
+- Multi-day schedules create one `Shift` row per date (`add_shift`, `app.py:63936`, loop over
+  `schedule_dates`): parts link to the **first day's row only**.
+- Commitments store snapshot text (client name, machine label) next to the ids, so entries stay
+  readable if a client is deleted or a serial number changes.
+- Placement: checkbox **below** the Task/Purpose input (`templates/timeline.html:985–986`), dropdown
+  right under it.
+- Every change writes an Activity Log line; new category "Parts Monitoring".
+- Table sorted by item number; Low parts not pulled to the top.
+
+## Investigation
+- Admin check: `is_admin_authorized()` `app.py:11944`; sidebar flag `nav_is_admin` from
+  `inject_navigation_access` `app.py:1619`.
+- Sidebar: Inventory group `templates/layout.html:206–208` (`inventory_paths`, `inventory_link_count`),
+  Stock Inventory link `layout.html:337–340`, Menu guide lines `layout.html:144–170`, rail captions
+  `layout.html:142`.
+- Pattern to copy: Stock Inventory — model `StockInventoryItem` `app.py:3700`, lazy table creation
+  `ensure_stock_inventory_tables` `app.py:6845`, page route `app.py:30527`, JSON APIs
+  `/api/stock-inventory/*` `app.py:78928+`, template `templates/stock_inventory.html` (CSRF header
+  `stockHeaders()` line 318).
+- `StockInventoryItem.minimum_stock` (`app.py:3710`) exists but is unused by the page; **not** reused
+  (separate list by owner decision).
+- Machines: `Product` `app.py:2865`, `GenorayItem` `app.py:2911`, `VieworksItem` `app.py:2940` — each has
+  `serial_number` (PK), `name`, `client_id`.
+- Schedule writes: `add_shift` `app.py:63936`, `update_shift` `app.py:64149`, deletes through
+  `delete_shift` `app.py:65583`, `delete_shift_rows_with_cleanup` `app.py:65284`,
+  `delete_shifts_previewed` `app.py:65396`. All three delete paths must return parts.
+- Activity: `add_activity_log_entry` `app.py:8240` (no auto-commit, use inside routes);
+  `ACTIVITY_CATEGORY_RULES` `app.py:34721`.
+- Email: `EMAIL_RECIPIENT_GROUPS` `app.py:540`, `get_active_email_recipients_by_group` `app.py:6001`,
+  `send_email_notification` `app.py:13092` (Brevo → Mailjet fallback, quota check), async pattern
+  `send_reimbursement_notification_email_async` `app.py:11073`; missing-recipient warning pattern
+  `travel_request_accounting_settings_warning_payload` `app.py:9918`.
+- Service worker: `CACHE_VERSION` `app.py:28655` (currently `v353-offsite-backups`); `/timeline` is in
+  the offline shell.
+
+## Execution steps
+
+### Batch 1 — page, search, Add, Edit, Add Stock, Delete, Low tag
+1. `app.py`: model `PartsMonitoringItem` (`parts_monitoring_item`): `id`, `item_number` (String 64,
+   unique), `item_description` (String 255), `stock` (int ≥ 0), `minimum_stock` (int ≥ 0),
+   `is_active` (bool, default True), `low_alert_sent` (bool, default False — used in Batch 4),
+   `created_by_id`, `updated_by_id`, `created_at`, `updated_at`. `ensure_parts_monitoring_tables()`
+   creates it with `checkfirst=True`. Done: table created on first page load; no existing table changed.
+2. `app.py`: helper `parts_monitoring_guard()` → 403 JSON unless `is_admin_authorized()`. Routes:
+   `GET /parts_monitoring` (403 text for non-admins); `GET /api/parts-monitoring/items` (active parts with
+   stock, committed, reserve, available, minimum, `is_low`); `POST /api/parts-monitoring/items` (add);
+   `PUT /api/parts-monitoring/items/<id>` (item number, description, minimum);
+   `POST /api/parts-monitoring/items/<id>/stock` (add quantity ≥ 1); `DELETE /api/parts-monitoring/items/<id>`.
+   Validation 400 with `field`; duplicate item number (case-insensitive, active or hidden) 409.
+   Committed/Reserve are 0 until Batch 2. Each write adds an Activity Log line ("Parts Monitoring: …");
+   add `('Parts Monitoring', ['parts monitoring'])` to `ACTIVITY_CATEGORY_RULES`.
+3. New `templates/parts_monitoring.html` (extends `layout.html`): header, **Add Part** button + modal,
+   search box (client-side filter, "No parts match '…'"), table with the 8 columns, Low tag (light/dark),
+   row actions Edit / Add Stock / Delete (confirm), empty state. 44 px tap targets, no sideways scroll at
+   375 px.
+4. `templates/layout.html`: `/parts_monitoring` in `inventory_paths`; `nav_is_admin` in
+   `inventory_link_count`; `{% if nav_is_admin %}{{ nav_link('/parts_monitoring', 'fa-screwdriver-wrench',
+   'Parts Monitoring') }}{% endif %}` after the Stock Inventory link; guide line "Replacement parts:
+   stock, commitments and low-stock alerts."; rail caption `'Parts Monitoring': 'Parts'`.
+5. Service worker `CACHE_VERSION` → `v354-parts-monitoring`; `static/changelog/releases.json` entry for
+   admins.
+
+### Batch 2 — Commit and Reserve, each with Cancel
+1. `app.py`: model `PartsMonitoringAllocation` (`parts_monitoring_allocation`): `id`, `part_id` (FK),
+   `kind` ('committed' | 'reserved'), `quantity` (≥ 1), `client_id`, `client_name`, `machine_source`
+   ('product' | 'genoray' | 'vieworks'), `machine_serial`, `machine_label`, `status` ('open' |
+   'installed' | 'cancelled'), `shift_id` (nullable, Batch 3), `created_by_id`, `created_at`,
+   `closed_at`. Created in `ensure_parts_monitoring_tables()`. Committed/Reserve on the items API =
+   sums of open rows by kind.
+2. `app.py` routes (admin guard): `GET /api/parts-monitoring/machines?client_id=` (that client's machines
+   from the three tables, labelled by source); `POST /api/parts-monitoring/items/<id>/allocations`
+   (commit needs client + machine belonging to that client, else 400; quantity > Available → 409 "Only N
+   available." computed inside the same transaction); `GET /api/parts-monitoring/items/<id>/allocations`
+   (open list); `POST /api/parts-monitoring/allocations/<id>/cancel` (open only). Activity Log for each.
+   Delete part (Batch 1) now refused while open allocations exist.
+3. `templates/parts_monitoring.html`: **Commit** and **Reserve** row buttons + modals (client picker →
+   machine picker → quantity; reserve = quantity only); clicking the Committed or Reserve number opens
+   the open list (client, machine, qty, by, date) with **Cancel** on each.
+4. Service worker → `v355-parts-commitments`; `releases.json` item.
+
+### Batch 3 — Parts Installation on schedules
+1. `app.py`: `GET /api/parts-monitoring/commitments?machine_source=&machine_serial=` (admin; open
+   commitments for that machine, plus any already linked to the schedule being edited via `shift_id=`).
+2. `add_shift`: optional `parts_allocation_ids`; admin only (ignored otherwise); each must be open,
+   committed, for the schedule's machine; in the same transaction set `status='installed'`,
+   `shift_id` = first created row, `part.stock -= quantity`. Any invalid id → 409 and nothing saved.
+3. `update_shift`: only when `parts_allocation_ids` is in the payload: unticked or machine-changed links
+   go back (`status='open'`, `shift_id=None`, stock +qty); newly ticked are installed as in step 2.
+   Absent field → parts untouched.
+4. All three delete paths (`delete_shift`, `delete_shift_rows_with_cleanup`, `delete_shifts_previewed`):
+   return linked parts before the rows are deleted (one shared helper).
+5. Schedule payload for viewers: `installed_parts` (name × qty) so engineers see "Parts: …" read-only.
+6. `templates/timeline.html`: below `#f-title`, checkbox "With Parts Installation?" (admins only,
+   disabled offline or until client+machine picked) and tick-box dropdown filled from step 1; cleared on
+   machine change; sent as `parts_allocation_ids`; read-only "Parts:" line in schedule details.
+   Check the offline queue never sends `parts_allocation_ids`.
+7. Service worker → `v356-schedule-parts` (`/timeline` in offline shell); `releases.json` item.
+
+### Batch 4 — Low-stock email
+1. `app.py`: `EMAIL_RECIPIENT_GROUPS['parts_low_stock']` = label "Parts Low Stock Alert", section
+   "Inventory", kind 'to', usage "Used by Parts Monitoring". Appears in Settings → Email Recipients with
+   no template change (verify).
+2. `app.py`: `parts_monitoring_check_low(part, cause)` called after every change that alters Available or
+   Minimum (add, edit, add stock, commit, reserve, cancel, install, return): Available ≤ Minimum and not
+   `low_alert_sent` → set flag and queue the email after commit; Available > Minimum → clear flag.
+3. `send_parts_low_stock_email_async`: subject "Low stock: <Item Number> <Description>"; body Stock,
+   Committed, Reserve, Available, Minimum, cause ("Committed 2 to <Client> by <user>"), link to
+   `/parts_monitoring`; via `send_email_notification`. Failure: server log + Activity Log line; never
+   undoes the change; flag stays set (no resend loop). No recipients: skip with a log line.
+4. `templates/parts_monitoring.html`: notice "Low-stock emails are off: no recipients in Settings → Email
+   Recipients" (link for superadmins) when the group is empty.
+5. Service worker → `v357-parts-low-stock-email` (only if a cached template changed); `releases.json` item.
+
+## Deliberately excluded
+- Branches, Excel import/export, UoM, Max, consumption, Suggested Replenishment, replacement-PN notes
+  (owner: disregard other columns).
+- Stock decrease other than through schedules, stock history view (Activity Log covers it).
+- Partial use of a commitment; parts on the TSR (owner: not now).
+- Daily low-stock summary, SMS/in-app alerts, per-branch recipients.
+- Reusing `StockInventoryItem.minimum_stock` (separate list).
+
+## Verification
+- New `tests/test_parts_monitoring.py`, grown per batch; each new test must fail on HEAD first
+  (positive control).
+  - B1: engineer 403 on page and APIs, superadmin and regional admin 200; add validation (blank,
+    negative, non-integer), duplicate item number in other case → 409; edit; add stock; delete; `is_low`;
+    Activity Log line; sidebar link only for admins.
+  - B2: 6 stock − commit 2 → available 4; commit 5 of 4 → 409; machine of another client → 400; commit
+    without client → 400; reserve without client OK; machines from all three tables; Low uses Available;
+    cancel returns quantity; delete refused with open allocations.
+  - B3: schedule with parts → stock 4, committed 0, available 4; multi-day → linked to first row only;
+    edit untick → returned; edit without field → unchanged; machine change → returned; each of the three
+    delete paths → returned; non-admin `parts_allocation_ids` ignored; used commitment cannot be used twice.
+  - B4: one email on first drop; none on second drop while Low; new email after Add Stock + drop; none
+    with no recipients; send failure does not fail the save; Settings group present. Email stubbed.
+- Focused tests per batch; full suite (`venv/Scripts/python.exe scripts/run_suite.py`, main folder)
+  before publishing each batch (B1 touches `layout.html`, B3 schedule code, B4 shared email helpers).
+- Browser check per batch on a copy of `scheduler.db` with a temporary superadmin and engineer:
+  B1 add/search/edit/add stock/delete, Low tag, engineer has no link and gets 403; B2 commit 2 of 6 →
+  available 4, commit 5 refused, reserve 1 → 3, cancel; B3 create/edit/delete schedules with and
+  without parts, numbers update, engineer sees "Parts:" line, existing schedule save/drag/delete still
+  work; B4 add a recipient, trigger Low, email stub called once. Standing bar: 375 px, dark mode, tap
+  targets, no console errors. Remove the copy, accounts and launch entries afterwards.
+
+## After implementation (each batch)
+- Self-review the diff; check every function the changed pages call is still defined and existing
+  buttons still work (schedule save, drag, delete, Settings Email Recipients add/edit).
+- Prove new tests fail without the fix; focused tests; full suite.
+- Service worker bump, `releases.json`, `changes.md`, this Status line, memory
+  (`parts-monitoring-batches`).
+- On "commit and push": commit only this batch's files and my sections of `changes.md` / `plans.md`;
+  never `scheduler.db`, `output/`, `tmp/` or other dirty files. Verify `git ls-remote origin
+  refs/heads/main` and Railway metadata.
+
+## Risks
+- **Batch 3 touches schedule save/delete** (most-used flow). A bug could block saving schedules or
+  double-use parts. Safety net: parts code runs only when `parts_allocation_ids` is sent or linked rows
+  exist; full suite + browser check of plain schedules.
+- Missing a delete path would leave parts "installed" on a deleted schedule (stock lost). Safety net:
+  one shared return helper, tested on all three paths.
+- Offline-queued schedules: parts never sent offline (checkbox disabled), so the queue cannot use stock.
+- Email quota (Brevo 300/day, Mailjet fallback): alerts fire once per Low crossing, so volume is tiny.
+- Two admins committing at once: availability checked inside the same transaction; SQLite serializes
+  writes.
+
 # Test suite: fix the 12 order-dependent failures (1 batch, tests only)
 
 **Status:** Executed 2026-11-04 (not yet committed). Go-ahead 2026-11-04 ("let's continue" → "Yes, execute it"). Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.

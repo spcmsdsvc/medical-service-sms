@@ -139,7 +139,7 @@
         {% macro nav_link(href, icon, label, extra_class='', badge_id='') -%}
             {#- PM detail pages (/genoray/pm/<serial>) keep their PM link highlighted. -#}
             {%- set is_active = (request.path == href) or (href in ('/genoray/pm', '/vieworks/pm') and request.path.startswith(href ~ '/')) -%}
-            {%- set rail_caption = {'Stock Inventory': 'Stock', 'Password Settings': 'Password'}.get(label, label) -%}
+            {%- set rail_caption = {'Stock Inventory': 'Stock', 'Parts Monitoring': 'Parts', 'Password Settings': 'Password'}.get(label, label) -%}
             {#- One line per page for the Menu guide (shell critique 2026-10-09). -#}
             {%- set guide_line = {
                 '/': "Your overview: what is waiting on you and today's work.",
@@ -161,6 +161,7 @@
                 '/vieworks': 'Vieworks equipment inventory.',
                 '/vieworks/pm': 'Preventive maintenance plans for Vieworks equipment.',
                 '/stock_inventory': "The company's own parts stock by branch.",
+                '/parts_monitoring': 'Replacement parts: stock, commitments and low-stock alerts.',
                 '/analytics_page': 'Charts and figures on service work.',
                 '/reports_page': 'Service report (TSR) files.',
                 '/engineers_page': 'Technical personnel directory.',
@@ -203,9 +204,9 @@
             {% set new_request_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
             {% if lpr_enabled %}{% set new_request_paths = new_request_paths + ['/lpr'] %}{% endif %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
-            {% set inventory_paths = ['/products_page', '/genoray', '/vieworks', '/genoray/pm', '/vieworks/pm', '/genoray_pm', '/vieworks_pm', '/stock_inventory'] %}
+            {% set inventory_paths = ['/products_page', '/genoray', '/vieworks', '/genoray/pm', '/vieworks/pm', '/genoray_pm', '/vieworks_pm', '/stock_inventory', '/parts_monitoring'] %}
             {% set inventory_active = request.path in inventory_paths or request.path.startswith(('/genoray/pm/', '/vieworks/pm/', '/genoray_pm/', '/vieworks_pm/')) %}
-            {% set inventory_link_count = [True, can_access_genoray_inventory, can_access_vieworks_inventory, stock_inventory_view]|select|list|length %}
+            {% set inventory_link_count = [True, can_access_genoray_inventory, can_access_vieworks_inventory, stock_inventory_view, nav_is_admin]|select|list|length %}
             {% set clients_paths = ['/clients_page', '/admin/calibration-center'] %}
             {% set office_paths = ['/engineers_page', '/po_details', '/reimbursement_tracker'] %}
             {% set admin_paths = ['/activity_page', '/settings'] %}
@@ -337,6 +338,9 @@
                     {% if stock_inventory_view %}
                         <div class="sidebar-subnav-divider" aria-hidden="true"></div>
                         {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
+                    {% endif %}
+                    {% if nav_is_admin %}
+                        {{ nav_link('/parts_monitoring', 'fa-screwdriver-wrench', 'Parts Monitoring') }}
                     {% endif %}
                 </div>
             {% else %}
