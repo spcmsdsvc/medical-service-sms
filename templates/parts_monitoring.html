@@ -68,6 +68,9 @@
     .parts-alert.show { display:block; }
     .parts-alert-error { background:#fff5f5; border-color:#ffa8a8; color:#a51124; }
     .parts-alert-success { background:#ebfbee; border-color:#8ce99a; color:#087f5b; }
+    .parts-alert-warning { background:#fff9db; border-color:#ffd43b; color:#664d03; }
+    .parts-alert-warning a { color:inherit; font-weight:800; text-decoration:underline; }
+    :root[data-app-theme="dark"] .parts-alert-warning { color:#ffe066; background:#3a3110; border-color:#a67c00; }
     :root[data-app-theme="dark"] .parts-tag-low { color:#ffc9c9; background:#3a1920; border-color:#c92a3b; }
     :root[data-app-theme="dark"] .parts-alert-error { color:#ffc9c9; background:#3a1920; border-color:#c92a3b; }
     :root[data-app-theme="dark"] .parts-alert-success { color:#b2f2bb; background:#163923; border-color:#2f9e44; }
@@ -98,6 +101,13 @@
     </div>
 
     <div id="partsPageAlert" class="parts-alert" role="status" aria-live="polite"></div>
+    {% if parts_low_stock_recipients_missing %}
+    <div id="partsEmailNotice" class="parts-alert show parts-alert-warning" role="status">
+        <i class="fa-solid fa-envelope-circle-check" aria-hidden="true"></i>
+        Low-stock emails are off: no recipients in Settings → Email Recipients → Parts Low Stock Alert.
+        {% if parts_can_open_email_settings %}<a href="/settings?section=email-recipients">Add recipients</a>{% endif %}
+    </div>
+    {% endif %}
 
     <section class="parts-panel" aria-labelledby="partsListTitle">
         <h2 id="partsListTitle" class="visually-hidden">Parts</h2>

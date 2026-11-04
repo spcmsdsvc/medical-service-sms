@@ -216,7 +216,7 @@ that engineer's On-Call day into a real Medical Center Visit so the engineer can
 
 # Parts Monitoring: new admin page, commitments, schedule parts installation, low-stock email (4 batches)
 
-**Status:** In progress — Batches 1–2 executed 2026-11-04 (go-aheads "Start Batch 1", "go for batch 2") and published together as `030e3fa` (Railway deployment `b1ed9349` building at push time); Batch 3 executed 2026-11-04 (go-ahead "proceed with batch 3"), not yet published; Batch 4 awaiting go-ahead. Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
+**Status:** In progress — Batches 1–2 executed 2026-11-04 (go-aheads "Start Batch 1", "go for batch 2") and published together as `030e3fa` (Railway deployment `b1ed9349` building at push time); Batch 3 executed 2026-11-04 (go-ahead "proceed with batch 3") and published as `1a61384` (Railway deployment `a057cc83` building at push time); Batch 4 executed 2026-11-04 (go-ahead "start batch 4 now"), not yet published. Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
 Each batch is one commit; execute in order (each builds on the previous one).
 
 ## Amendments during execution (2026-11-04)
@@ -225,6 +225,7 @@ Each batch is one commit; execute in order (each builds on the previous one).
 - Batch 3: instead of a return helper in each of the three delete paths, `parts_monitoring_release_orphans()` returns parts whose chain has no rows left, run on the Parts Monitoring list and the commitments API. This also covers bulk purges and any other path that deletes `Shift` rows.
 - Batch 3: `update_shift` has four separate commit points, so the parts change is validated before the save and applied in an `after_this_request` hook on a 200 response (a failed edit never touches parts).
 - Batch 3: the read-only "Parts:" line shows on every day of the chain, not only the first.
+- Batch 4: alerts are sent from an `after_request` hook (only when the response succeeded) rather than right after each commit, since some changes commit inside shared schedule code. Service worker went to v358 because the On-Call Schedule commit (`aaf212b`) took v357 meanwhile.
 
 ## Context
 Admins track replacement parts (e.g. X-ray tubes, batteries, FSR assemblies) in an Excel sheet

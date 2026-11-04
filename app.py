@@ -642,6 +642,13 @@ EMAIL_RECIPIENT_GROUPS = {
         'kind': 'primary',
         'usage': "Used by the What's New digest",
         'description': "Recipients of the manually sent What's New update digest. Unlike the other groups this is an announcement list, not a workflow handoff."
+    },
+    'parts_low_stock': {
+        'label': 'Parts Low Stock Alert',
+        'section': 'Inventory',
+        'kind': 'primary',
+        'usage': 'Used by Parts Monitoring',
+        'description': "Emailed once when a part's Available stock drops to or below its minimum on Parts Monitoring."
     }
 }
 
@@ -28745,7 +28752,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v357-on-call-schedule';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v358-parts-low-stock-email';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -30741,6 +30748,118 @@ def parts_monitoring_duplicate(item_number):
     }), 409
 
 
+PARTS_LOW_STOCK_GROUP = 'parts_low_stock'
+
+
+def parts_monitoring_check_low(part, cause):
+    """Queue one low-stock email when Available drops to or below the minimum.
+
+    The part's low_alert_sent flag is set with the change itself and cleared once Available
+    is above the minimum again, so the email goes out once per drop, not on every change.
+    The email is sent by parts_monitoring_send_pending_low_alerts after the response.
+    """
+    if not part or not part.is_active or part.id is None:
+        return
+    totals = parts_monitoring_open_totals([part.id])[part.id]
+    available = part.stock - totals['committed'] - totals['reserved']
+    if available <= part.minimum_stock:
+        if not part.low_alert_sent:
+            part.low_alert_sent = True
+            alerts = g.setdefault('_parts_low_alerts', [])
+            alerts.append({
+                'item_number': part.item_number,
+                'item_description': part.item_description,
+                'stock': part.stock,
+                'committed': totals['committed'],
+                'reserved': totals['reserved'],
+                'available': available,
+                'minimum_stock': part.minimum_stock,
+                'cause': cause,
+            })
+    elif part.low_alert_sent:
+        part.low_alert_sent = False
+
+
+def parts_monitoring_actor():
+    return getattr(current_user, 'username', None) or 'System'
+
+
+def parts_monitoring_low_stock_email(alert, page_url):
+    subject = f"Low stock: {alert['item_number']} {alert['item_description']}"
+    rows = [
+        ('Item Number', alert['item_number']),
+        ('Description', alert['item_description']),
+        ('Stock', alert['stock']),
+        ('Committed', alert['committed']),
+        ('Reserve', alert['reserved']),
+        ('Available', alert['available']),
+        ('Minimum', alert['minimum_stock']),
+    ]
+    text_body = (
+        f"{alert['item_number']} ({alert['item_description']}) is at or below its minimum stock.\n\n"
+        + '\n'.join(f'{label}: {value}' for label, value in rows)
+        + f"\n\nWhat changed: {alert['cause']}\n\nOpen Parts Monitoring: {page_url}\n"
+    )
+    html_rows = ''.join(
+        f'<tr><td style="padding:4px 12px 4px 0;color:#555">{html.escape(str(label))}</td>'
+        f'<td style="padding:4px 0;font-weight:bold">{html.escape(str(value))}</td></tr>'
+        for label, value in rows
+    )
+    html_body = (
+        f'<p><strong>{html.escape(alert["item_number"])}</strong> ({html.escape(alert["item_description"])}) '
+        'is at or below its minimum stock.</p>'
+        f'<table style="border-collapse:collapse">{html_rows}</table>'
+        f'<p>What changed: {html.escape(alert["cause"])}</p>'
+        f'<p><a href="{html.escape(page_url)}">Open Parts Monitoring</a></p>'
+    )
+    return subject, text_body, html_body
+
+
+def parts_monitoring_send_low_stock_emails(alerts, page_url):
+    """Worker body: one email per part to the Settings group; failures are logged, never raised."""
+    recipients = get_active_email_recipients_by_group(PARTS_LOW_STOCK_GROUP)
+    if not recipients:
+        print('[EMAIL] Parts low-stock alert skipped: no recipients in Settings > Email Recipients.', flush=True)
+        return
+    for alert in alerts:
+        try:
+            subject, text_body, html_body = parts_monitoring_low_stock_email(alert, page_url)
+            sent, message = send_email_notification(recipients, subject, text_body, html_body)
+        except Exception as exc:
+            sent, message = False, str(exc)
+        print(f"[EMAIL] Parts low-stock alert {alert['item_number']}: sent={sent} | {message}", flush=True)
+        if not sent:
+            try:
+                db.session.add(ActivityLog(
+                    user='System',
+                    action=f"{PARTS_MONITORING_LOG_PREFIX}: low-stock email for part {alert['item_number']} failed: {message}",
+                ))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+
+def parts_monitoring_queue_low_stock_emails(alerts, page_url):
+    def worker():
+        with app.app_context():
+            parts_monitoring_send_low_stock_emails(alerts, page_url)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+@app.after_request
+def parts_monitoring_send_pending_low_alerts(response):
+    """Send queued low-stock emails only after the change that caused them was saved."""
+    alerts = g.pop('_parts_low_alerts', None)
+    if alerts and response.status_code < 400:
+        try:
+            page_url = url_for('parts_monitoring_page', _external=True)
+        except Exception:
+            page_url = '/parts_monitoring'
+        parts_monitoring_queue_low_stock_emails(alerts, page_url)
+    return response
+
+
 @app.route('/parts_monitoring')
 @login_required
 def parts_monitoring_page():
@@ -30748,7 +30867,11 @@ def parts_monitoring_page():
     if not is_admin_authorized():
         return Response('Access denied.', status=403, mimetype='text/plain')
     ensure_parts_monitoring_tables()
-    return render_template('parts_monitoring.html')
+    return render_template(
+        'parts_monitoring.html',
+        parts_low_stock_recipients_missing=not get_active_email_recipients_by_group(PARTS_LOW_STOCK_GROUP),
+        parts_can_open_email_settings=is_superadmin_user(),
+    )
 
 
 @app.route('/api/parts-monitoring/items', methods=['GET'])
@@ -30792,9 +30915,11 @@ def add_parts_monitoring_item():
         updated_by_id=current_user.id,
     )
     db.session.add(item)
+    db.session.flush()
     add_activity_log_entry(
         f'{PARTS_MONITORING_LOG_PREFIX}: added part {item_number} ({description}), stock {stock}, minimum {minimum}'
     )
+    parts_monitoring_check_low(item, f'Part added with stock {stock} and minimum {minimum} by {parts_monitoring_actor()}')
     db.session.commit()
     return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)}), 201
 
@@ -30837,6 +30962,7 @@ def update_parts_monitoring_item(item_id):
     item.updated_by_id = current_user.id
     if changes:
         add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: updated part {item_number} ({", ".join(changes)})')
+    parts_monitoring_check_low(item, f'Minimum set to {minimum} by {parts_monitoring_actor()}')
     db.session.commit()
     return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)})
 
@@ -30861,6 +30987,7 @@ def add_parts_monitoring_stock(item_id):
     add_activity_log_entry(
         f'{PARTS_MONITORING_LOG_PREFIX}: added {quantity} stock to part {item.item_number} ({previous} → {item.stock})'
     )
+    parts_monitoring_check_low(item, f'{quantity} added to stock by {parts_monitoring_actor()}')
     db.session.commit()
     return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)})
 
@@ -31043,6 +31170,11 @@ def add_parts_monitoring_allocation(item_id):
     else:
         action = f'reserved {quantity} of part {item.item_number}'
     add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: {action}')
+    if kind == 'committed':
+        cause = f'Committed {quantity} to {allocation.client_name} ({allocation.machine_label}) by {parts_monitoring_actor()}'
+    else:
+        cause = f'Reserved {quantity} by {parts_monitoring_actor()}'
+    parts_monitoring_check_low(item, cause)
     db.session.commit()
     return jsonify({
         'success': True,
@@ -31068,6 +31200,7 @@ def cancel_parts_monitoring_allocation(allocation_id):
     else:
         detail = f'reserve of {allocation.quantity}'
     add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: cancelled {detail} for part {item.item_number}')
+    parts_monitoring_check_low(item, f'Cancelled {detail} by {parts_monitoring_actor()}')
     db.session.commit()
     return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)})
 
@@ -31132,6 +31265,7 @@ def parts_monitoring_install(rows, group_id, schedule_label):
             f'{PARTS_MONITORING_LOG_PREFIX}: installed {parts_monitoring_label(row)} on schedule '
             f'{schedule_label} ({row.client_name}, {row.machine_label}); stock {row.part.stock + row.quantity} → {row.part.stock}'
         )
+        parts_monitoring_check_low(row.part, f'Installed {row.quantity} on schedule {schedule_label} by {parts_monitoring_actor()}')
 
 
 def parts_monitoring_return(rows, reason):
@@ -31147,6 +31281,7 @@ def parts_monitoring_return(rows, reason):
             f'{PARTS_MONITORING_LOG_PREFIX}: returned {parts_monitoring_label(row)} to committed ({reason}); '
             f'stock {row.part.stock - row.quantity} → {row.part.stock}'
         )
+        parts_monitoring_check_low(row.part, f'Returned {row.quantity} to committed ({reason})')
 
 
 def parts_monitoring_release_orphans():

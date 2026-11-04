@@ -70,6 +70,15 @@
             "engineers"
           ],
           "sort_order": 3
+        },
+        {
+          "item_key": "2026-11-04-parts-monitoring-low-stock-email",
+          "category": "Inventory",
+          "description": "Low-stock email: when a part's Available stock drops to or below its minimum, one email goes to the addresses in Settings → Email Recipients → Parts Low Stock Alert, with the figures and what caused the drop. It is sent again only after the part goes back above its minimum and drops again. Parts Monitoring shows a notice while no recipients are set.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 4
         }
       ]
     },

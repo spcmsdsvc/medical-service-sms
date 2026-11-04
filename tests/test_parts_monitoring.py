@@ -3,6 +3,7 @@ import pathlib
 import unittest
 import uuid
 from datetime import timedelta
+from unittest import mock
 
 import app as app_module
 from tests.sw_cache_version import assert_cache_version_at_least
@@ -620,6 +621,152 @@ class PartsMonitoringScheduleTests(unittest.TestCase):
 
     def test_service_worker_bumped(self):
         assert_cache_version_at_least(self, 356)
+
+
+class PartsMonitoringLowStockEmailTests(unittest.TestCase):
+    """Parts Monitoring batch 4: one low-stock email per drop to the Settings group."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+        cls.suffix = uuid.uuid4().hex[:8]
+        db = app_module.db
+        with cls.app.app_context():
+            db.create_all()
+            admin = app_module.User(username=f'parts_mail_admin_{cls.suffix}',
+                                    password=app_module.generate_password_hash('test-password'),
+                                    role='superadmin', is_active=True)
+            client_row = app_module.Client(name=f'Parts Mail Client {cls.suffix}', address='M')
+            db.session.add_all([admin, client_row])
+            db.session.flush()
+            cls.serial = f'PM-MAIL-{cls.suffix}'
+            db.session.add(app_module.Product(serial_number=cls.serial, name='Mail CT', client_id=client_row.id))
+            db.session.commit()
+            cls.admin_id, cls.client_id = admin.id, client_row.id
+
+    @classmethod
+    def tearDownClass(cls):
+        db = app_module.db
+        with cls.app.app_context():
+            part_ids = [row.id for row in app_module.PartsMonitoringItem.query.filter(
+                app_module.PartsMonitoringItem.item_number.like(f'%{cls.suffix}%')).all()]
+            if part_ids:
+                app_module.PartsMonitoringAllocation.query.filter(
+                    app_module.PartsMonitoringAllocation.part_id.in_(part_ids)).delete(synchronize_session=False)
+                app_module.PartsMonitoringItem.query.filter(
+                    app_module.PartsMonitoringItem.id.in_(part_ids)).delete(synchronize_session=False)
+            app_module.ActivityLog.query.filter(
+                app_module.ActivityLog.action.like(f'%{cls.suffix}%')).delete(synchronize_session=False)
+            app_module.EmailRecipientSetting.query.filter(
+                app_module.EmailRecipientSetting.email.like(f'%{cls.suffix}%')).delete(synchronize_session=False)
+            app_module.Product.query.filter_by(serial_number=cls.serial).delete()
+            app_module.Client.query.filter_by(id=cls.client_id).delete()
+            app_module.User.query.filter_by(id=cls.admin_id).delete()
+            db.session.commit()
+            db.session.remove()
+
+    def setUp(self):
+        self.admin = self.app.test_client()
+        with self.admin.session_transaction() as session:
+            session['_user_id'] = str(self.admin_id)
+            session['_fresh'] = True
+        self.queued = []
+        patcher = mock.patch.object(app_module, 'parts_monitoring_queue_low_stock_emails',
+                                    side_effect=lambda alerts, url: self.queued.extend(alerts))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def new_part(self, label, stock, minimum):
+        response = self.admin.post('/api/parts-monitoring/items', json={
+            'item_number': f'{label}-{self.suffix}', 'item_description': f'Part {label}',
+            'stock': stock, 'minimum_stock': minimum,
+        })
+        self.assertEqual(response.status_code, 201)
+        return response.get_json()['item']['id']
+
+    def reserve(self, part_id, quantity):
+        return self.admin.post(f'/api/parts-monitoring/items/{part_id}/allocations',
+                               json={'kind': 'reserved', 'quantity': quantity})
+
+    def alerts_for(self, label):
+        return [a for a in self.queued if a['item_number'] == f'{label}-{self.suffix}']
+
+    def test_one_email_on_first_drop_none_while_still_low(self):
+        part_id = self.new_part('DROP', stock=6, minimum=4)
+        self.assertEqual(self.alerts_for('DROP'), [])
+        self.reserve(part_id, 2)
+        alerts = self.alerts_for('DROP')
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual((alerts[0]['available'], alerts[0]['minimum_stock']), (4, 4))
+        self.assertIn('Reserved 2', alerts[0]['cause'])
+        self.reserve(part_id, 1)
+        self.assertEqual(len(self.alerts_for('DROP')), 1)
+
+    def test_new_email_after_restock_and_second_drop(self):
+        part_id = self.new_part('AGAIN', stock=5, minimum=4)
+        self.reserve(part_id, 1)
+        self.assertEqual(len(self.alerts_for('AGAIN')), 1)
+        self.admin.post(f'/api/parts-monitoring/items/{part_id}/stock', json={'quantity': 5})
+        self.assertEqual(len(self.alerts_for('AGAIN')), 1)
+        self.reserve(part_id, 6)
+        self.assertEqual(len(self.alerts_for('AGAIN')), 2)
+
+    def test_part_added_already_low_and_minimum_raise_alert(self):
+        self.new_part('LOWNEW', stock=1, minimum=3)
+        self.assertEqual(len(self.alerts_for('LOWNEW')), 1)
+        part_id = self.new_part('RAISE', stock=5, minimum=1)
+        self.admin.put(f'/api/parts-monitoring/items/{part_id}', json={
+            'item_number': f'RAISE-{self.suffix}', 'item_description': 'Part RAISE', 'minimum_stock': 5})
+        self.assertEqual(len(self.alerts_for('RAISE')), 1)
+
+    def test_refused_change_sends_nothing(self):
+        part_id = self.new_part('REF', stock=2, minimum=0)
+        self.assertEqual(self.reserve(part_id, 5).status_code, 409)
+        self.assertEqual(self.alerts_for('REF'), [])
+
+    def test_sender_uses_the_settings_group_and_survives_failures(self):
+        alert = {'item_number': f'S-{self.suffix}', 'item_description': 'Tube <x>', 'stock': 1, 'committed': 0,
+                 'reserved': 0, 'available': 1, 'minimum_stock': 2, 'cause': 'Reserved 1 by admin'}
+        with self.app.app_context():
+            app_module.EmailRecipientSetting.query.filter_by(group_key='parts_low_stock').update({'is_active': False})
+            app_module.db.session.commit()
+            with mock.patch.object(app_module, 'send_email_notification') as send:
+                app_module.parts_monitoring_send_low_stock_emails([alert], 'http://x/parts_monitoring')
+                send.assert_not_called()  # no recipients yet
+            app_module.db.session.add(app_module.EmailRecipientSetting(
+                group_key='parts_low_stock', email=f'stock-{self.suffix}@example.com', is_active=True))
+            app_module.db.session.commit()
+            with mock.patch.object(app_module, 'send_email_notification', return_value=(True, 'ok')) as send:
+                app_module.parts_monitoring_send_low_stock_emails([alert], 'http://x/parts_monitoring')
+            recipients, subject, text_body, html_body = send.call_args[0]
+            self.assertIn(f'stock-{self.suffix}@example.com', recipients)
+            self.assertEqual(subject, f'Low stock: S-{self.suffix} Tube <x>')
+            self.assertIn('Available: 1', text_body)
+            self.assertIn('Tube &lt;x&gt;', html_body)
+            with mock.patch.object(app_module, 'send_email_notification', side_effect=RuntimeError('quota')):
+                app_module.parts_monitoring_send_low_stock_emails([alert], 'http://x/parts_monitoring')
+            logged = app_module.ActivityLog.query.filter(
+                app_module.ActivityLog.action.like(f'%low-stock email for part S-{self.suffix} failed%')).count()
+            self.assertEqual(logged, 1)
+
+    def test_settings_group_and_page_notice(self):
+        self.assertIn('parts_low_stock', app_module.EMAIL_RECIPIENT_GROUPS)
+        self.assertEqual(app_module.EMAIL_RECIPIENT_GROUPS['parts_low_stock']['label'], 'Parts Low Stock Alert')
+        with self.app.app_context():
+            app_module.EmailRecipientSetting.query.filter_by(group_key='parts_low_stock').update({'is_active': False})
+            app_module.db.session.commit()
+        page = self.admin.get('/parts_monitoring').get_data(as_text=True)
+        self.assertIn('Low-stock emails are off', page)
+        with self.app.app_context():
+            app_module.db.session.add(app_module.EmailRecipientSetting(
+                group_key='parts_low_stock', email=f'notice-{self.suffix}@example.com', is_active=True))
+            app_module.db.session.commit()
+        page = self.admin.get('/parts_monitoring').get_data(as_text=True)
+        self.assertNotIn('Low-stock emails are off', page)
+
+    def test_service_worker_bumped(self):
+        assert_cache_version_at_least(self, 358)
 
 
 if __name__ == '__main__':
