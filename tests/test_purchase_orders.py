@@ -169,13 +169,16 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
                 app_module.db.session.delete(denied_user)
             app_module.db.session.commit()
 
+    def _session_client(self, user_id):
+        # Session login: posting to /login before every test trips its 10-per-minute limit.
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(user_id)
+            session['_fresh'] = True
+        return client
+
     def setUp(self):
-        self.client = self.app.test_client()
-        response = self.client.post('/login', data={
-            'username': f'po_service_{self.suffix}',
-            'password': 'test-password',
-        })
-        self.assertIn(response.status_code, (302, 303))
+        self.client = self._session_client(self.user_id)
 
     def _create_po(self, number, serials=None, po_type='quarterly', amount='1200'):
         response = self.client.post('/add_purchase_order', json={
@@ -448,12 +451,7 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
             self.assertEqual(product.end_warranty_date, date(2028, 8, 25))
 
     def test_new_coverage_endpoints_require_po_access(self):
-        denied = self.app.test_client()
-        response = denied.post('/login', data={
-            'username': f'po_service_denied_{self.suffix}',
-            'password': 'test-password',
-        })
-        self.assertIn(response.status_code, (302, 303))
+        denied = self._session_client(self.denied_user_id)
         refresh = denied.post('/refresh_purchase_order_dates/999999')
         self.assertEqual(refresh.status_code, 403)
         machine = denied.put(f'/update_purchase_order_machine/{quote(self.serial, safe="")}', json={
@@ -1119,10 +1117,20 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         client = self._client_for(self.po_user_id)
         old_serial = f'PO-RENAME-OLD-{self.suffix}'
         new_serial = f'PO-RENAME-NEW-{self.suffix}'.upper()
+        bsid = f'BSID-RENAME-{self.suffix}'.upper()
         with self.app.app_context():
+            # Product saves require a catalog Product Name and a BSID.
+            app_module.ensure_product_name_catalog()
+            catalog = app_module.ProductNameCatalog.query.order_by(app_module.ProductNameCatalog.id.asc()).first()
+            if catalog is None:
+                catalog = app_module.ProductNameCatalog(name=f'Rename Catalog {self.suffix}')
+                app_module.db.session.add(catalog)
+                app_module.db.session.flush()
+            catalog_id, catalog_name = catalog.id, catalog.name
             app_module.db.session.add(app_module.Product(
                 serial_number=old_serial,
-                name=f'Rename Machine {self.suffix}',
+                name=catalog_name,
+                bsid=bsid,
                 client_id=self.client_one_id,
                 start_warranty_date=date(2026, 8, 1),
                 end_warranty_date=date(2027, 8, 1),
@@ -1144,7 +1152,9 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         superadmin = self._client_for(self.superadmin_id)
         renamed = superadmin.put(f'/update_product/{quote(old_serial, safe="")}', json={
             'serial_number': new_serial,
-            'name': f'Rename Machine {self.suffix}',
+            'name': catalog_name,
+            'product_name_id': catalog_id,
+            'bsid': bsid,
             'client_id': self.client_one_id,
             'under_contract': False,
         })

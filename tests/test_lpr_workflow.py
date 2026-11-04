@@ -268,10 +268,13 @@ class LPRWorkflowTests(unittest.TestCase):
                 engines = extension._app_engines[app_module.app]
                 original_engine = engines[None]
                 original_ready = app_module._lpr_tables_ready
+                # Local .env may pause new LPRs; this test needs creation open.
+                original_accepting_new = app_module.app.config.get('LPR_ACCEPTING_NEW', True)
                 test_engine = create_engine(f"sqlite:///{database_path.replace(os.sep, '/')}")
                 try:
                     engines[None] = test_engine
                     app_module._lpr_tables_ready = False
+                    app_module.app.config['LPR_ACCEPTING_NEW'] = True
                     app_module.db.create_all()
                     user = app_module.User(
                         username='lpr-idempotency-user',
@@ -362,6 +365,7 @@ class LPRWorkflowTests(unittest.TestCase):
                 finally:
                     app_module.db.session.remove()
                     app_module._lpr_tables_ready = original_ready
+                    app_module.app.config['LPR_ACCEPTING_NEW'] = original_accepting_new
                     engines[None] = original_engine
                     reset_schema_flags(app_module)
                     test_engine.dispose()

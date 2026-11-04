@@ -37,6 +37,128 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Test suite: fix the 13 known failures so the suite fully passes (1 batch, tests only)
+
+**Status:** Executed 2026-11-04, not yet published (awaiting "commit and push"). App fix approved 2026-11-04 ("Yes, fix it"). Go-ahead 2026-11-04 ("Go ahead"). Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
+
+## Amendments during execution (2026-11-04)
+- Steps 1, 3, 4 done: the 12 `ServiceContractPurchaseOrderEndpointTests` pass (both `/login` posts,
+  `setUp` and the denied-user login in `test_new_coverage_endpoints_require_po_access`, now go
+  through a `_session_client` helper); C and D pass, and their positive controls failed as
+  expected and were reverted.
+- **Step 2 (B) exposed a real production bug, so execution stopped per step 5.** `update_product`
+  serial change (`app.py:~66573`) inserts the replacement `Product` with the same `bsid` *before*
+  deleting the old row. The unique index `uq_product_bsid_nonblank` (`app.py:3231`) rejects it, and
+  the `except` branch returns 409 "BSID … already exists in inventory." Since `fd75461` made BSID
+  required, **changing any product's serial in Product Inventory fails.**
+- Related finding: `correct_product_from_tsr_revision` (`app.py:16493`) builds its replacement
+  `Product` without `bsid` (or `room`), so a serial corrected through a TSR revision silently
+  loses its BSID.
+- Proposed fix (needs owner approval: app code, outside "tests only"): in both paths, keep the old
+  BSID, clear it on the old row and flush, then create the replacement with the BSID (and room in
+  the TSR path). Add a regression test for the TSR path; the B test covers Product Inventory.
+- Owner approved the fix ("Yes, fix it"). Done in `update_product` (`p.bsid = None` + flush before
+  the replacement) and `correct_product_from_tsr_revision` (BSID kept and freed first, room
+  copied). New `tests/test_product_serial_bsid.py` passes, and fails without the fix (BSID `None`);
+  B failed with 409 before the fix. Not fixed (out of scope, noted): the TSR-revision path still
+  does not repoint P.O.s or Vieworks links the way `update_product` does.
+- Full suite: 2,314 tests, 0 failing alone, `known_failures.txt` now empty, exit 0. The runner
+  still reports **12 order-dependent failures** (pass alone; state leaking between files: `/login`
+  limiter 429s, approver assignment, product catalog/BSID, LPR switch, staff delete, reports
+  filter). They existed before this change and are not counted, so they do not block CI; they are
+  a separate cleanup.
+- No service worker bump or `releases.json` entry: the fix is server-only and no static file changed.
+
+## Context
+Dream roadmap #7 (Engineering hygiene), step 1 of: passing suite → CI (GitHub Actions) → split
+`app.py` → staging. `tests/known_failures.txt` (last changed 2026-10-19, `ed1d03a`) lists 13
+tolerated failures: 11 in `tests.test_purchase_orders`, 1 in `tests.test_product_contract_status`,
+1 in `tests.test_lpr_workflow`. CI on a suite that is already red teaches everyone to ignore red, so
+the list must be empty first. Outcome: `known_failures.txt` holds only its comment line, and a red
+test always means something is broken.
+
+## Decisions taken
+- Test-only change. No app code changes: the rate limit, BSID rule and catalog-name rule are correct.
+- Fix every test; delete none (all 13 are cheap to fix).
+- Do not disable the login rate limiter for tests; use the existing session-login pattern.
+- Step 2 (CI, `.env`-independent settings, Railway "Wait for CI") is a separate plan.
+
+## Investigation
+Ran the three modules (`venv/Scripts/python.exe -m unittest tests.test_purchase_orders
+tests.test_product_contract_status tests.test_lpr_workflow`): 78 tests, 13 failures. None is a
+production bug.
+- **A. 10 × `ServiceContractPurchaseOrderEndpointTests`**: `setUp`
+  (`tests/test_purchase_orders.py:172`) posts to `/login` before every test; `/login` is limited to
+  `10 per minute; 60 per hour` (`app.py:13452`, in-memory limiter `app.py:1033`), so later tests get
+  **429**. `PurchaseOrderWorkflowTests._client_for` (`tests/test_purchase_orders.py:757`) already
+  logs in by setting `_user_id` / `_fresh` in the session.
+- **B. `PurchaseOrderWorkflowTests.test_renaming_product_repoints_purchase_orders`**
+  (`tests/test_purchase_orders.py:1118`): `/update_product` returns 400 "Please select a valid
+  Product Name." (`app.py:66489`). A catalog `product_name_id` is required since `3f4b162`
+  (2026-09-29), and a BSID since `fd75461` (`app.py:~66523`, `PRODUCT_BSID_REQUIRED_MESSAGE`). The
+  test sends neither. Pattern for picking or creating a catalog row:
+  `tests/test_product_inventory_mutations.py:42`.
+- **C. `ProductContractStatusTests.test_product_save_stays_in_place_without_refetching_page_data`**
+  (`tests/test_product_contract_status.py:62`): checks the source for
+  `updateProductListAfterSave(data, editSN);`. `templates/products.html` `saveProduct()` now calls
+  `updateProductListAfterSave(responseData.item || responseData, editSN);` (uses the server's
+  saved record, which is better). The other two assertions (scroll restore, no `await loadData();`)
+  still hold.
+- **D. `LPRWorkflowTests.test_standalone_lpr_creation_is_single_flight_and_idempotent`**
+  (`tests/test_lpr_workflow.py:~262–315`): `/save_lpr` returns 403 "New Local Purchase
+  Requisitions are temporarily unavailable." because the local `.env` sets
+  `LPR_ACCEPTING_NEW=false` (read at `app.py:378`, used by `lpr_accepting_new()` `app.py:514`). The
+  test depends on whose machine runs it, which also matters for CI.
+
+## Execution steps
+1. **A.** `tests/test_purchase_orders.py` `ServiceContractPurchaseOrderEndpointTests.setUp`: replace
+   the `/login` post and 302 assertion with a session login (`session_transaction`, `_user_id` =
+   `str(self.user_id)`, `_fresh` = True), as in `_client_for`. Done: no 429; the 10 tests reach
+   their own assertions.
+2. **B.** `test_renaming_product_repoints_purchase_orders`: create the product with a catalog
+   `product_name_id` (first `ProductNameCatalog` row, or create one named after the test suffix and
+   clean it up) and a unique `bsid`; send `product_name_id` and the same `bsid` in the `PUT
+   /update_product` body. Keep every existing assertion (200, `linked_purchase_order_count == 1`,
+   P.O. and machine rows repointed). Done: test passes.
+3. **C.** `tests/test_product_contract_status.py:62`: expect
+   `updateProductListAfterSave(responseData.item || responseData, editSN);`. Done: test passes.
+4. **D.** `tests/test_lpr_workflow.py` idempotency test: save `app.config['LPR_ACCEPTING_NEW']`,
+   set it `True` before the requests, restore it in the existing `finally`. Done: test passes with
+   `.env` still `false`.
+5. Run the three modules: 78 tests, 0 failures. If a P.O. test now shows a *real* failure after
+   getting past login, stop, note it under this plan and ask the owner before touching app code.
+6. Positive controls (temporary, reverted at once):
+   - B: comment out the P.O. repoint in `update_product` → test fails.
+   - C: put `await loadData();` back in `saveProduct()` → test fails.
+   - D: set the flag `False` in the test → 403 failure.
+   - A changes only the login method; the assertions are untouched.
+7. Full suite once from the main project folder: `venv/Scripts/python.exe scripts/run_suite.py` →
+   no new failures and the 13 now pass; then `--update-known` so `tests/known_failures.txt` keeps
+   only its comment line. Rerun once to confirm exit 0.
+
+## Deliberately excluded
+- App code: the behaviour under test is correct.
+- Disabling the limiter in `tests/__init__.py`: would hide limiter behaviour from other tests.
+- The ~30 tests that fail only without `.env` (seen in worktrees): CI step 2; they pass here and are
+  not on the known list.
+- Service worker bump and `releases.json`: no user-visible change.
+
+## Verification
+Steps 5–7. No browser check: nothing the preview renders changes.
+
+## After implementation
+- Self-review the diff: only the 4 test files and `tests/known_failures.txt`.
+- `changes.md`; this Status line; memory (`dream-roadmap` #7 step 1 done, `po-details-batches`
+  "11 known failures" fixed).
+- On "commit and push": commit only the 4 test files, `tests/known_failures.txt`, `changes.md`,
+  `plans.md`; never `scheduler.db`, `output/`, `tmp/` or other dirty files. Push `main`, verify
+  `git ls-remote origin refs/heads/main` and Railway deployment metadata.
+
+## Risks
+- Blast radius: test files only; production behaviour cannot change.
+- The P.O. coverage tests have not reached their assertions since at least 2026-10-19 and may
+  reveal a real regression. Safety net: step 5 stops and asks before any app change.
+
 # Backups: hourly and daily copies off Railway to Cloudflare R2 (1 batch)
 
 **Status:** Executed — published to `main` as `ac92ec2` on "commit and push" (2026-11-04; Railway

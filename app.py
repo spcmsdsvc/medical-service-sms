@@ -16490,9 +16490,15 @@ def correct_product_from_tsr_revision(shift, payload):
                 'existing_name': clean_str(getattr(existing_product, 'name', None))
             }
 
+        # Keep the BSID and room; BSIDs are unique, so free it on the old row first.
+        kept_bsid = getattr(product_rec, 'bsid', None)
+        product_rec.bsid = None
+        db.session.flush()
         replacement = Product(
             serial_number=new_serial,
             name=new_name,
+            room=getattr(product_rec, 'room', None),
+            bsid=kept_bsid,
             client_id=getattr(product_rec, 'client_id', None),
             start_warranty_date=getattr(product_rec, 'start_warranty_date', None),
             end_warranty_date=getattr(product_rec, 'end_warranty_date', None),
@@ -66570,6 +66576,9 @@ def update_product(serial_number):
             ).count()
             linked_purchase_order_count = purchase_order_count_for_machine(old_serial)
 
+            # BSIDs are unique: free it on the old row before the replacement takes it.
+            p.bsid = None
+            db.session.flush()
             replacement = Product(
                 serial_number=new_serial,
                 name=product_name,

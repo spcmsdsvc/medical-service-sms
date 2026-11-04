@@ -59,7 +59,7 @@ class ProductContractStatusTests(unittest.TestCase):
         source = (ROOT / 'templates' / 'products.html').read_text(encoding='utf-8')
         save_source = source.split('async function saveProduct()', 1)[1].split('async function deleteProduct', 1)[0]
 
-        self.assertIn('updateProductListAfterSave(data, editSN);', save_source)
+        self.assertIn('updateProductListAfterSave(responseData.item || responseData, editSN);', save_source)
         self.assertIn('window.scrollTo(scrollX, scrollY)', save_source)
         self.assertNotIn('await loadData();', save_source)
 
