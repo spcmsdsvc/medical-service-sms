@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 
 try:
     import app as app_module
+    from tests.schema_flags import reset_schema_flags
 except Exception:
     app_module = None
 
@@ -123,6 +124,7 @@ class ReimbursementRangeReuseTests(unittest.TestCase):
                 finally:
                     app_module.db.session.remove()
                     engines[None] = original_engine
+                    reset_schema_flags(app_module)  # flags set on the temporary database
                     test_engine.dispose()
         finally:
             if os.path.exists(database_path):

@@ -66,6 +66,12 @@ class EngineerInitialsTests(unittest.TestCase):
                 engineer = app_module.db.session.get(app_module.Engineer, engineer_id)
                 if engineer:
                     app_module.db.session.delete(engineer)
+            # The one-time default-approver migration may have routed a created user to an approver.
+            if cls.created_user_ids:
+                app_module.ApprovalRouting.query.filter(app_module.or_(
+                    app_module.ApprovalRouting.requester_user_id.in_(cls.created_user_ids),
+                    app_module.ApprovalRouting.approver_user_id.in_(cls.created_user_ids),
+                )).delete(synchronize_session=False)
             for user_id in reversed(cls.created_user_ids):
                 user = app_module.db.session.get(app_module.User, user_id)
                 if user:

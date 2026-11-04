@@ -37,9 +37,114 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Test suite: fix the 12 order-dependent failures (1 batch, tests only)
+
+**Status:** Executed 2026-11-04 (not yet committed). Go-ahead 2026-11-04 ("let's continue" → "Yes, execute it"). Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
+
+## Amendments during execution (2026-11-04)
+- Culprit pairs found by bisecting with the worker's module order (positive control: each pair
+  failed on HEAD, passed fixed):
+  - `test_tsr_draft_sync` → `test_staff_creation`, `test_product_name_standardization`,
+    `test_offline_tsr_schedule_options_speed`, `test_changelog_workflow` (temporary database left
+    `_*_ready`, `_changelog_manifest_synced` and `_role_migrations_checked` describing itself).
+  - `test_timeline_tsr_file_details` → `test_lpr_feature_switch`; `test_layout_sidebar` →
+    `test_approval_notifications` (both victims relied on the one-time default-approver migration
+    running in their process).
+  - `test_inventory_pm` and `test_calibration_certificate_approval_workflow` → `test_reports_speed`
+    (leftover TSR files / certificates in a global archive count).
+  - `test_reimbursement_pc_code` → `test_product_bsid_required` (catalog flag).
+  - `test_product_bsid_required` login 429: no single culprit (cumulative per-process limit).
+- `test_staff_creation`'s cause was also a one-time migration (`roles_v1` makes `diary` a
+  scheduler), not leftover user rows; fixed in the victim.
+- Not an app bug anywhere (step 6 not triggered): the once-per-process flags and migrations behave
+  correctly in production, where one process uses one database.
+- Fixing changed file sizes and so the grouping, which exposed more of the same kinds (step 5):
+  three more `setUp` logins, `test_engineer_initials` teardown, `test_tsr_without_equipment` fixed
+  accounts and global Product count. To stop the whack-a-mole, every test file that swaps the
+  engine now resets flags (11 files), and `tests/schema_flags.py` covers the two non-`_ready`
+  flags. The full suite was checked with 6, 4, 3 and 2 processes, since CI will group differently.
+- `test_offsite_backup.test_skips_a_done_slot_and_an_unchanged_database` was a timing flake, not an
+  order leak (not reproducible next to its preceding files); fixed in its `write_row`.
+- `test_reports_speed` was fixed in the victim (search by its own client suffix) as well as the
+  `test_inventory_pm` source; the calibration certificate fixture class has no cleanup at all and
+  was left as is (the victim no longer depends on it).
+
+## Context
+Roadmap #7 step 1 left `tests/known_failures.txt` empty (`5a47e43`), but `scripts/run_suite.py`
+still reports **12 tests that fail only next to other test files** (they pass when their file runs
+alone, so the runner does not count them). CI (step 2) runs on a fresh machine where file order and
+grouping differ, so these must be gone for a green CI run to mean anything. Outcome: the full suite
+reports `0 fail only next to other test files`.
+
+## Decisions taken
+- Test files only; no app code. If a culprit turns out to be a real app bug, stop and ask the owner.
+- Fix at the source (the culprit's teardown) where possible; otherwise reset state in the victim's
+  setup. Never hide failures in `run_suite.py`, never disable the rate limiter globally.
+- Loose end "travel request routes" (`TravelRequestRouteVisit.product_id` not moved on a serial
+  change): **closed by design**. A travel request is a historical record; each visit stores
+  `product_name`, which the screens show (`app.py:~44066–44077`). No change.
+
+## Investigation
+Full suite 2026-11-04 (2,315 tests, 6 processes, logs kept): 12 order-dependent failures, in 7 groups.
+Worker module order is in each worker log ("Modules in order:"); groups are deterministic
+(`split()` in `scripts/run_suite.py`, biggest files first).
+
+| Victim | Symptom | Likely cause | Fix pattern |
+| --- | --- | --- | --- |
+| `test_product_bsid_required` (`test_legacy_machine_edit_needs_a_bsid`, `test_page_requires_bsid_only_for_product_inventory`) | `429 not found in (302, 303)` | `/login` limit `10 per minute; 60 per hour` (`app.py:13452`) is per process (in-memory limiter `app.py:1033`); earlier files used it up | Session login (`session_transaction`, `_user_id`, `_fresh`), as `_session_client` in `tests/test_purchase_orders.py` |
+| `test_lpr_feature_switch` (`test_off_entry_points_and_recall_are_explicitly_explained_or_denied`: `302 != 403`; `test_travel_and_cash_advance_approval_keep_linked_lpr_pdfs_when_off`: 403) and `test_approval_notifications` (`test_get_returns_valid_rows_and_skips_incomplete_rows`, `test_mark_all_read_only_marks_active_approval_rows`) | 403 "You are not assigned as an approver." | Approver assignment rows/settings changed (or cached) by an earlier file | Bisect; restore in the culprit's teardown, or set the approver in the victim's setup |
+| `test_product_name_standardization` (3 tests) | `NoneType` catalog row | Product name catalog empty after another file's `drop_all()` / DB swap left `_*_ready` flags set | `reset_schema_flags()` (`tests/schema_flags.py`) in the culprit or victim `setUpClass` |
+| `test_staff_creation.test_scheduler_can_deactivate_and_delete_engineers_but_not_admins` | `200 != 403` | Leftover user/role state (noted order-dependent on HEAD before, `changes.md` Reimbursement Tracker entry) | Bisect; teardown in the culprit |
+| `test_offline_tsr_schedule_options_speed.test_chain_coverage_matches_the_per_shift_helpers` | extra `engineer_ids` on a schedule | Leftover `ShiftEngineer` rows on a reused shift id (same class as the 2026-10-10 `test_inventory_pm` fix) | Culprit teardown deletes its shift-engineer rows |
+| `test_reports_speed.ReportsFollowUpServerTests.test_archive_type_and_service_date_filters` | `11 != 0` | Leftover report/TSR rows matching its filter | Bisect; culprit teardown, or narrow the test's filter to its own rows |
+
+Precedent: the 2026-10-10 cleanup (`changes-archive.md`, "Fixed the 20 tests that failed only when
+certain other test files ran first") fixed the same kinds of leaks.
+
+## Execution steps
+1. Reproduce each victim with its worker's preceding modules: `venv/Scripts/python.exe -m unittest
+   <preceding modules…> <victim module>`. Done: each victim fails in that run.
+2. Bisect each victim: halve the preceding list until one culprit module + victim reproduces the
+   failure (about 5 runs per victim; run long batches in the background). Record each pair under
+   this plan.
+3. Fix each pair in test files only, using the patterns in the table. Done: culprit + victim pass.
+4. Positive control per pair: the culprit + victim run fails before its fix and passes after (show
+   both results).
+5. Full suite from the main folder (`PYTHONIOENCODING=utf-8 PYTHONUTF8=1
+   venv/Scripts/python.exe scripts/run_suite.py`). Done: `0 fail alone too; 0 fail only next to
+   other test files`, exit 0. If new order-dependent failures appear (grouping shifts when files
+   change), repeat steps 1–4 for them and note them here.
+6. If a culprit is an app bug rather than a test leak: stop, note it here, ask the owner.
+
+## Deliberately excluded
+- `scripts/run_suite.py` changes, global limiter disable, deleting tests.
+- App code (unless the owner approves after step 6).
+- CI itself: roadmap #7 step 2, separate plan.
+- Travel request routes: closed by design (see Decisions).
+- Service worker bump and `releases.json`: tests only.
+
+## Verification
+Steps 4–5. No browser check: tests only.
+
+## After implementation
+- Self-review the diff: test files only.
+- `changes.md`; this Status line; memory (`dream-roadmap` #7).
+- On "commit and push": commit only the changed test files and my sections of `changes.md` /
+  `plans.md` (the earlier uncommitted publish notes go with them); never `scheduler.db`, `output/`,
+  `tmp/` or other dirty files. Verify `git ls-remote origin refs/heads/main` and Railway metadata.
+
+## Risks
+- Production cannot change (tests only). A teardown that deletes too much could break another test;
+  safety net: the full suite in step 5.
+- Bisecting may show that a failure needs two culprits together; then fix both and note it.
+
+## Separate loose end (owner action)
+- TSR-revision plan step 0 (read-only production orphan check) is still open: `railway ssh` port 22
+  times out from the owner's current network. Run it from a network that allows SSH.
+
 # TSR-revision serial correction: move P.O.s and Vieworks links, keep other schedules (1 batch)
 
-**Status:** Executed 2026-11-04, not yet published (awaiting "commit and push"); step 0 on production still open. Go-ahead 2026-11-04 ("Go ahead"). Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
+**Status:** Executed — published to `main` as `b4ae737` on "Commit and push" (2026-11-04; Railway deployment `db8fa35f` initializing at push time); step 0 on production still open. Go-ahead 2026-11-04 ("Go ahead"). Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
 
 ## Amendments during execution (2026-11-04)
 - Step 0: `railway ssh` timed out twice (port 22 to `ssh.railway.com` unreachable from this
@@ -430,7 +535,7 @@ night, so worst-case loss is about 1 hour, and still about 1 day if Railway itse
 
 # Schedule form: warn when the machine has no BSID (1 batch)
 
-**Status:** Executed — not yet published (2026-11-03). Go-ahead 2026-11-03 ("Go ahead, both").
+**Status:** Executed — published to `main` as `fd75461` on "commit and push. never db and dirty" (2026-11-03; Railway deployment `d09e6e99` building at push time). Go-ahead 2026-11-03 ("Go ahead, both").
 Approved 2026-11-03 ("Approve plan"). Detailed 2026-11-03.
 
 ## Amendments during execution (2026-11-03)
@@ -498,7 +603,7 @@ the backfill. Safety net: revert the single commit.
 
 # Product Inventory: BSID required on add, edit and CSV import (1 batch)
 
-**Status:** Executed — not yet published (2026-11-03). Go-ahead 2026-11-03 ("Go ahead, both").
+**Status:** Executed — published to `main` as `fd75461` on "commit and push. never db and dirty" (2026-11-03; Railway deployment `d09e6e99` building at push time). Go-ahead 2026-11-03 ("Go ahead, both").
 Approved 2026-11-03 ("Approve plan"). Detailed 2026-11-03.
 
 ## Amendments during execution (2026-11-03)
@@ -580,7 +685,7 @@ products without BSID will fail until updated. Safety net: revert the single com
 
 # Calibration certificate: clear "missing BSID" message (1 batch)
 
-**Status:** Executed — not yet published (2026-11-03). Go-ahead 2026-11-03 ("Go ahead").
+**Status:** Executed — published to `main` as `fd75461` on "commit and push. never db and dirty" (2026-11-03; Railway deployment `d09e6e99` building at push time). Go-ahead 2026-11-03 ("Go ahead").
 Approved 2026-11-03 ("Approve plan"). Detailed 2026-11-03.
 
 ## Context
@@ -655,7 +760,7 @@ focused tests cover that. Safety net: revert the single commit.
 
 # Create TSR: Continue Saved Work shows every draft (1 batch)
 
-**Status:** Executed 2026-11-03 — not yet published (awaiting "commit and push"). Go-ahead 2026-11-03 ("Go ahead").
+**Status:** Executed — published to `main` as `9c7b381` on "commit and push. never db and dirty" (2026-11-03; Railway deployment `35002858` building at push time). Go-ahead 2026-11-03 ("Go ahead").
 Approved 2026-11-03 ("Approve plan"). Detailed 2026-11-03.
 
 ## Amendments during execution (2026-11-03)

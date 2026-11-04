@@ -67,18 +67,25 @@ class TsrWithoutEquipmentWorkflowTests(unittest.TestCase):
             app_module.ensure_vieworks_item_table()
 
             suffix = uuid.uuid4().hex[:8]
-            cls.admin = app_module.User(
-                username="jonamar",
-                password=app_module.generate_password_hash("test-password"),
-                role="superadmin",
-                is_active=True,
-            )
-            cls.francis = app_module.User(
-                username="francis",
-                password=app_module.generate_password_hash("test-password"),
-                role="engineer",
-                is_active=True,
-            )
+            # Another test file may have left these fixed accounts behind: reuse them, restore their
+            # role afterwards and delete only the accounts created here.
+            cls.reused_roles = {}
+
+            def fixed_user(username, role):
+                user = app_module.User.query.filter_by(username=username).first()
+                if user:
+                    cls.reused_roles[user.id] = (user.role, user.is_active)
+                    user.role, user.is_active = role, True
+                    return user
+                return app_module.User(
+                    username=username,
+                    password=app_module.generate_password_hash("test-password"),
+                    role=role,
+                    is_active=True,
+                )
+
+            cls.admin = fixed_user("jonamar", "superadmin")
+            cls.francis = fixed_user("francis", "engineer")
             cls.other = app_module.User(
                 username=f"other_tsr_{suffix}",
                 password=app_module.generate_password_hash("test-password"),
@@ -135,7 +142,9 @@ class TsrWithoutEquipmentWorkflowTests(unittest.TestCase):
                 (app_module.User, cls.admin_id),
             ):
                 row = app_module.db.session.get(model, row_id)
-                if row:
+                if row and model is app_module.User and row_id in cls.reused_roles:
+                    row.role, row.is_active = cls.reused_roles[row_id]
+                elif row:
                     app_module.db.session.delete(row)
             app_module.db.session.commit()
             app_module.db.session.remove()
@@ -321,6 +330,7 @@ class TsrWithoutEquipmentWorkflowTests(unittest.TestCase):
             francis = app_module.db.session.get(app_module.User, self.francis_id)
             francis.can_create_tsr_without_equipment = True
             app_module.db.session.commit()
+            before_products = app_module.Product.query.count()
 
         payload = {
             "schedule_id": self.shift_id,
@@ -367,7 +377,7 @@ class TsrWithoutEquipmentWorkflowTests(unittest.TestCase):
             self.assertEqual(stored_payload.get("tsr-equipment-model"), "")
             self.assertEqual(stored_payload.get("tsr-serial-no"), "")
             self.assertEqual(stored_payload["selectedSchedule"].get("product_id"), "")
-            self.assertEqual(app_module.Product.query.count(), 0)
+            self.assertEqual(app_module.Product.query.count(), before_products)
 
         revision_payload = dict(payload)
         revision_payload["submission_token"] = f"francis-no-equipment-revision-{uuid.uuid4().hex}"

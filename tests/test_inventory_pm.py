@@ -165,6 +165,11 @@ class InventoryPmTests(unittest.TestCase):
         with cls.app.app_context():
             app_module.InventoryPmVisit.query.delete()
             # Deleted shifts leave their engineer rows; SQLite reuses the shift ids in later modules.
+            # Their TSR files go first, or they stay listed in the Reports archive.
+            app_module.ShiftFile.query.filter(app_module.ShiftFile.shift_id.in_(
+                app_module.db.session.query(app_module.Shift.id).filter(
+                    app_module.Shift.client_id.in_([cls.gen_client_id, cls.other_client_id]))
+            )).delete(synchronize_session=False)
             app_module.Shift.query.filter(
                 app_module.Shift.client_id.in_([cls.gen_client_id, cls.other_client_id])
             ).delete(synchronize_session=False)
@@ -191,6 +196,11 @@ class InventoryPmTests(unittest.TestCase):
     def setUp(self):
         with self.app.app_context():
             app_module.InventoryPmVisit.query.delete()
+            # Their TSR files go first, or they stay listed in the Reports archive.
+            app_module.ShiftFile.query.filter(app_module.ShiftFile.shift_id.in_(
+                app_module.db.session.query(app_module.Shift.id).filter(
+                    app_module.Shift.client_id.in_([self.gen_client_id, self.other_client_id]))
+            )).delete(synchronize_session=False)
             app_module.Shift.query.filter(
                 app_module.Shift.client_id.in_([self.gen_client_id, self.other_client_id])
             ).delete(synchronize_session=False)

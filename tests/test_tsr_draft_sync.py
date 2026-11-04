@@ -10,6 +10,7 @@ from datetime import timedelta
 
 from sqlalchemy import create_engine
 
+from tests.schema_flags import reset_schema_flags
 from tests.sw_cache_version import assert_cache_version_at_least
 
 
@@ -1132,6 +1133,8 @@ class TsrDraftRouteTests(unittest.TestCase):
                     app_module.db.session.remove()
                     if original_engine is not None:
                         extension._app_engines[app_module.app][None] = original_engine
+                        # Flags set while the temporary database was in use describe it, not this one.
+                        reset_schema_flags(app_module)
                     if original_ready is not None:
                         app_module._tsr_draft_table_ready = original_ready
                     if original_reservation_ready is not None:
@@ -1438,6 +1441,8 @@ class TsrDraftRouteTests(unittest.TestCase):
                     app_module.db.session.remove()
                     if original_engine is not None:
                         extension._app_engines[app_module.app][None] = original_engine
+                        # Flags set while the temporary database was in use describe it, not this one.
+                        reset_schema_flags(app_module)
                     if original_ready is not None:
                         app_module._tsr_draft_table_ready = original_ready
                     if original_csrf is not None:
@@ -1577,6 +1582,8 @@ class TsrDraftAccessMatchesThePageGateTests(unittest.TestCase):
                     app_module.db.session.remove()
                     if original_engine is not None:
                         extension._app_engines[app_module.app][None] = original_engine
+                        # Flags set while the temporary database was in use describe it, not this one.
+                        reset_schema_flags(app_module)
                     if original_ready is not None:
                         app_module._tsr_draft_table_ready = original_ready
                     if original_csrf is not None:

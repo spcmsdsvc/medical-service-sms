@@ -74,6 +74,10 @@ class OffsiteBackupTests(unittest.TestCase):
         connection.execute('INSERT INTO t VALUES (?)', (value,))
         connection.commit()
         connection.close()
+        # A one-row insert can keep the file size, and Windows' ~16 ms clock can keep the
+        # modified time, so the unchanged check would miss it; move the time on explicitly.
+        info = os.stat(self.db_path)
+        os.utime(self.db_path, ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
 
     def restored_rows(self, data):
         restored = os.path.join(self.temp_dir, f'restored-{uuid.uuid4().hex}.db')

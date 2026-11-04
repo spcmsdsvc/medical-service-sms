@@ -15,6 +15,7 @@ _TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / f'medical_service_request_
 os.environ.setdefault('MEDICAL_SERVICE_TEST_DB', str(_TEST_DB_PATH))
 
 import app as app_module  # noqa: E402
+from tests.schema_flags import reset_schema_flags  # noqa: E402
 from tests.sw_cache_version import assert_cache_version_at_least  # noqa: E402
 
 
@@ -130,6 +131,7 @@ class RequestRecallWorkflowTests(unittest.TestCase):
             app_module.db.session.remove()
             cls.test_engine.dispose()
             app_module.app.extensions['sqlalchemy']._app_engines[cls.app][None] = cls.original_engine
+            reset_schema_flags(app_module)  # flags set on the temporary database
 
     @classmethod
     def _submitted_records(cls):

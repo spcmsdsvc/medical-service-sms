@@ -7,8 +7,12 @@ process finds an empty Product name catalog or a missing table. Call this after 
 after putting the shared engine back; every `ensure_*` helper is safe to run again.
 """
 
+# Once-per-process flags not named `_*_ready`; both are safe to run again (the release manifest
+# sync is idempotent, role migrations are guarded by their `app_migration` markers).
+OTHER_FLAGS = ('_changelog_manifest_synced', '_role_migrations_checked')
+
 
 def reset_schema_flags(app_module):
     for name, value in list(vars(app_module).items()):
-        if name.startswith('_') and name.endswith('_ready') and value is True:
+        if name.startswith('_') and (name.endswith('_ready') or name in OTHER_FLAGS) and value is True:
             setattr(app_module, name, False)

@@ -75,12 +75,11 @@ class ProductInventoryMutationTests(unittest.TestCase):
             app_module.db.session.commit()
 
     def setUp(self):
+        # Session login: posting to /login before every test trips its 10-per-minute limit.
         self.client = self.app.test_client()
-        response = self.client.post('/login', data={
-            'username': self.username,
-            'password': 'test-password',
-        })
-        self.assertIn(response.status_code, (302, 303))
+        with self.client.session_transaction() as session:
+            session['_user_id'] = str(self.user_id)
+            session['_fresh'] = True
 
     def test_edit_and_delete_accept_encoded_slash_serial_numbers(self):
         encoded_serial = quote(self.serial, safe='')

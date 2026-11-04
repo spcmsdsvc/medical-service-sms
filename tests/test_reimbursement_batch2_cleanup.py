@@ -14,6 +14,7 @@ _TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / 'medical_service_reimburse
 os.environ.setdefault('MEDICAL_SERVICE_TEST_DB', str(_TEST_DB_PATH))
 
 import app as app_module  # noqa: E402
+from tests.schema_flags import reset_schema_flags  # noqa: E402
 
 APP_SOURCE = (ROOT / 'app.py').read_text(encoding='utf-8')
 
@@ -83,6 +84,7 @@ class ReimbursementScheduleRowsQueryTests(unittest.TestCase):
         with cls.app.app_context():
             app_module.db.session.remove()
         cls.app.extensions['sqlalchemy']._app_engines[cls.app][None] = cls.original_engine
+        reset_schema_flags(app_module)  # flags set on the temporary database
         cls.test_engine.dispose()
         try:
             _TEST_DB_PATH.unlink()

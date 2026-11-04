@@ -26,6 +26,7 @@ os.environ.setdefault('MEDICAL_SERVICE_TEST_DB', str(_TEST_DB_PATH))
 
 try:
     import app as app_module
+    from tests.schema_flags import reset_schema_flags
 except Exception as exc:  # pragma: no cover - allows source-only test runs
     app_module = None
     APP_IMPORT_ERROR = exc
@@ -129,6 +130,9 @@ class LPRFeatureSwitchWorkflowTests(unittest.TestCase):
         cls.original_cash_ready = app_module._cash_advance_tables_ready
         cls.original_travel_ready = app_module._travel_request_tables_ready
         app_module._lpr_tables_ready = False
+        # This module's own database is fresh, so let the one-time role migrations (which make
+        # 'rodito' the default approver) run on it even if another module already ran them.
+        app_module._role_migrations_checked = False
 
         with cls.app.app_context():
             app_module.db.create_all()
@@ -176,6 +180,7 @@ class LPRFeatureSwitchWorkflowTests(unittest.TestCase):
         with cls.app.app_context():
             app_module.db.session.remove()
         cls.app.extensions['sqlalchemy']._app_engines[cls.app][None] = cls.original_engine
+        reset_schema_flags(app_module)  # flags set on the temporary database
         cls.test_engine.dispose()
         app_module._lpr_tables_ready = cls.original_lpr_ready
         app_module._cash_advance_tables_ready = cls.original_cash_ready

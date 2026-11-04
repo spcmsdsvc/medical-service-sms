@@ -226,7 +226,8 @@ class ReportsFollowUpServerTests(ReportsArchiveFixture):
         client = self.admin_client()
 
         def archive(query):
-            response = client.get(f'/get_tsr_archive?branch=ALL&q=&scope=all&page=1&per_page=10{query}')
+            # Search by this test's client suffix so rows other test files leave behind never count.
+            response = client.get(f'/get_tsr_archive?branch=ALL&q={self.suffix}&scope=all&page=1&per_page=10{query}')
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
             return response.get_json()
 

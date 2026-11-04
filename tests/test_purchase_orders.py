@@ -1888,12 +1888,11 @@ class PurchaseOrderRenewalTests(unittest.TestCase):
             app_module.db.session.remove()
 
     def setUp(self):
+        # Session login: posting to /login before every test trips its 10-per-minute limit.
         self.client = self.app.test_client()
-        response = self.client.post('/login', data={
-            'username': f'po_renewal_{self.suffix}',
-            'password': 'test-password',
-        })
-        self.assertIn(response.status_code, (302, 303))
+        with self.client.session_transaction() as session:
+            session['_user_id'] = str(self.user_id)
+            session['_fresh'] = True
         self.created_serials = []
         with self.app.app_context():
             self.client_record = app_module.Client(

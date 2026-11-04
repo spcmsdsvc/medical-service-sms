@@ -60,6 +60,7 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
                     approver = app_module.db.session.get(app_module.User, cls.approver_id)
                     if approver:
                         approver.is_active = cls.approver_previous_active
+                        approver.can_approve_requests, approver.is_default_approver = cls.approver_previous_flags
                 app_module.db.session.commit()
             except Exception:
                 app_module.db.session.rollback()
@@ -89,6 +90,11 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
             cls.approver_was_existing = True
             cls.approver_previous_active = cls.approver.is_active
             cls.approver.is_active = True
+        # Set the approver directly: the one-time default-approver migration that would do it
+        # may already have run in this process.
+        cls.approver_previous_flags = (cls.approver.can_approve_requests, cls.approver.is_default_approver)
+        cls.approver.can_approve_requests = True
+        cls.approver.is_default_approver = True
 
         requester = app_module.User(
             username='approval_notification_requester',
@@ -179,6 +185,12 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
         cls.initial_routing_ids = {
             route.id for route in app_module.ApprovalRouting.query.all()
         }
+        # The route the default-approver migration would add (tearDownClass removes it).
+        db.session.add(app_module.ApprovalRouting(
+            requester_user_id=cls.requester_id, approver_user_id=cls.approver.id,
+            request_scope='all', active=True,
+        ))
+        db.session.commit()
         cls.valid_notification_id = valid.id
         cls.incomplete_notification_id = incomplete.id
         cls.unrelated_notification_id = unrelated.id

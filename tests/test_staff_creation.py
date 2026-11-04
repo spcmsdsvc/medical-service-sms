@@ -72,12 +72,17 @@ class StaffCreationTests(unittest.TestCase):
                 cls.scheduler = app_module.User(
                     username='diary',
                     password=app_module.generate_password_hash('test-password'),
-                    role='superadmin',
+                    role='scheduler',
                     is_active=True,
                 )
                 app_module.db.session.add(cls.scheduler)
                 app_module.db.session.commit()
                 cls.owned_base_user_ids.append(cls.scheduler.id)
+            # Do not rely on the one-time roles_v1 migration, which may already have run in this process.
+            cls.scheduler_original_role = cls.scheduler.role
+            if cls.scheduler.role != 'scheduler':
+                cls.scheduler.role = 'scheduler'
+                app_module.db.session.commit()
             cls.scheduler_id = cls.scheduler.id
 
     @classmethod
@@ -94,6 +99,9 @@ class StaffCreationTests(unittest.TestCase):
                 user = app_module.db.session.get(app_module.User, user_id)
                 if user:
                     app_module.db.session.delete(user)
+            scheduler = app_module.db.session.get(app_module.User, cls.scheduler_id)
+            if scheduler and cls.scheduler_id not in cls.owned_base_user_ids:
+                scheduler.role = cls.scheduler_original_role
             app_module.db.session.commit()
             app_module.db.session.remove()
 

@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 
 try:
     import app as app_module
+    from tests.schema_flags import reset_schema_flags
 except Exception as import_error:  # pragma: no cover - dependency-safe source runs
     app_module = None
     APP_IMPORT_ERROR = import_error
@@ -320,6 +321,7 @@ class ReimbursementManualCategorySourceTests(unittest.TestCase):
                 finally:
                     app_module.db.session.remove()
                     engines[None] = original_engine
+                    reset_schema_flags(app_module)  # flags set on the temporary database
                     app_module._lpr_tables_ready = original_lpr_tables_ready
                     test_engine.dispose()
         finally:
