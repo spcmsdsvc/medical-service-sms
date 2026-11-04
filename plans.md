@@ -37,6 +37,183 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# On-Call Schedule: new weekend schedule type, admin-only, convertible to a visit (2 batches)
+
+**Status:** In progress — Batches 1 and 2 executed together 2026-11-04 (go-ahead "start batch 1 and 2"); not yet published. Approved 2026-11-04 ("Approve plan") as written: weekend-only
+entry (no month-range shortcut), per-day conversion, Analytics untouched. Detailed 2026-11-04.
+Each batch is one commit; execute in order.
+
+## Amendments during execution (2026-11-04)
+- Both batches were executed together and share one service worker bump (`v357-on-call-schedule`),
+  so they will publish as one commit.
+- Dark-mode card colours live in `templates/timeline.html`, not `static/css/app-dark-pages.css`:
+  changing the shared file would need a `?v=` bump in `layout.html` plus five pinned tests.
+- Converting also refuses a missing client (400), and an engineer cannot turn an existing
+  schedule into On-Call (403).
+
+## Context
+Each month two engineers are on call for weekends (e.g. Alvin and Martin for November). Admins want
+that on the Calendar as a schedule type **"On-Call Schedule"**. When a hospital calls, the admin turns
+that engineer's On-Call day into a real Medical Center Visit so the engineer can do the job and TSR.
+
+## Decisions taken (owner, 2026-11-04)
+- New type **On-Call Schedule**, **no client**, muted amber color.
+- Only **admins/superadmins** can pick it (`is_admin_authorized()`); never engineers.
+- The option shows only when **every date in the range is Saturday or Sunday**.
+- Engineers **see** their On-Call on the calendar but can **never edit, move or delete** it.
+- Only **admins convert** it to a Medical Center Visit; the admin picks the date(s); days not
+  picked stay On-Call. Each engineer's On-Call is separate, so converting Alvin's never touches
+  Martin's.
+- The converted visit keeps an **"On-Call" badge** (same record, no duplicate on the calendar).
+- After conversion it is a normal visit: the engineer may edit/delete it like any visit.
+- Deleting a converted visit **puts the On-Call back**.
+- Engineer gets the normal new-schedule **email** when assigned.
+- **Analytics ignored** for now.
+
+### Decided by Claude (owner may overrule at approval)
+- Type stays encoded in the title like the other non-work types: `On-Call Schedule` or
+  `On-Call Schedule: <note>`. No new type column.
+- Picking two engineers when creating On-Call makes **one separate chain per engineer** (so each
+  can be converted on its own), each with its own email.
+- **Conversion is per day**: converting forces the "this day only" edit scope. A two-day call-out
+  is converted day by day (two linked-day visits are rare on weekends; whole-chain conversion
+  would need the chain-rebuild path, much riskier).
+- The converted day gets a **new `group_id`** so a later "edit entire schedule" on the remaining
+  On-Call day can never rebuild over the visit.
+- One new nullable column `shift.on_call_origin` (Text, JSON `{"engineer_id", "start", "end"}`):
+  set on conversion; it is both the badge flag and the data used to restore the On-Call.
+- Restore on delete runs for every delete path **except** the engineer range purge
+  (`batch_delete_shifts`), which is a deliberate wipe. No email for the restored On-Call; no
+  collision check on restore (the slot was just freed).
+- Admin moving/editing an On-Call onto a weekday is refused while it is still On-Call.
+
+## Investigation
+- Type dropdown `#f-category` `templates/timeline.html:947–956`; type prefixes
+  `NON_WORK_TYPE_PREFIXES` / `parseTypedScheduleTitle` `:12794–12821`; card class
+  `getScheduleSemanticClass` `:12823`; title builder `buildTypedScheduleTitle` `:13754`; form
+  toggling `toggleCategoryFields` `:14028` (no-client group `:14077`); save title mapping `:17907`;
+  weekend prompt + `include_weekends` `:18032–18048`; edit scope `#f-edit-scope` `:890` and its
+  submit `:18050–18082`; card colors/badges `:15335–15381`, card class `:15432–15438`; single
+  edit/delete/drag gate `canManageExistingScheduleForRow` `:15850` (also used by mobile views
+  `:11970`, `:12277`, `:13327`); print helpers `getPrintColor` / `getPrintTypeLabel` /
+  `buildPrintableShiftCard` `:19510–19544`; `.schedule-holiday` CSS `:2519`.
+- `add_shift` `app.py:64682`: one `Shift` per date in one `group_id`, all engineers on each row via
+  `ShiftEngineer`; email via `notify_engineers_for_new_schedule_async` `:64876` (no change needed).
+- `update_shift` `app.py:64909`; day-only path `:65078–65238` edits one row in place and **keeps
+  the chain's `group_id`** (`:65171`) — hence the new-group rule above; engineers are limited by
+  `can_work_on_existing_schedule_shift` `app.py:12309`.
+- `move_shift` (drag) `app.py:65590`. `scheduler_quick_reschedule_shift` `app.py:38043` refuses
+  schedules without a client, so On-Call is already excluded.
+- All deletes go through `delete_shift_rows_with_cleanup` `app.py:66051` (single, preview,
+  previewed, purge `:66350`, `:66102`, `:66163`, `:66382`); rows with TSR work are already blocked
+  by `blocked_delete_shift_ids`.
+- Schedule payload for the calendar: `app.py:55533` and `:55738` (where `installed_parts` is added).
+- Live column migrations run per request in the hook at `app.py:7505–7521` (pattern:
+  `ensure_shift_creation_token_column` `app.py:7282`).
+- `classify_schedule_type` `app.py:55830` would count On-Call as "Training" (left as is — owner:
+  ignore analytics).
+- Service worker `CACHE_VERSION` `app.py:28724` (now `v356-schedule-parts`; Parts batch 4 may take
+  v357 — use the next free number at execution).
+
+## Execution steps
+
+### Batch 1 — the type, who can use it, how it looks
+1. `app.py`: helpers `ON_CALL_TITLE = 'On-Call Schedule'`, `is_on_call_title(title)` (exact or
+   `On-Call Schedule:` prefix), `dates_are_all_weekend(dates)`. Done: unit-callable, no route change.
+2. `app.py` `add_shift`: when the title is On-Call — 403 unless `is_admin_authorized()`; 400 "On-Call
+   schedules can only be on Saturday or Sunday." unless every date from start to end is Sat/Sun
+   (force `include_weekends=True`); client/machine ignored (saved empty); with several engineers,
+   create **one chain per engineer** (own `group_id`, own `ShiftEngineer`), collision check per
+   engineer as today, one email per engineer. Non-On-Call path unchanged.
+3. `app.py` `update_shift` (top, before any branch): master is On-Call and user not admin → 403 "Only
+   an admin can change an On-Call schedule." If the result stays On-Call: weekend rule as step 2.
+4. `app.py` `move_shift`: On-Call + non-admin → 403; On-Call dropped on a weekday → 400.
+5. `app.py` delete routes (`delete_shift`, `preview_delete_shifts`, `delete_shifts_previewed`,
+   `batch_delete_shifts`): helper `on_call_delete_denied(candidates)` → 403 for non-admins when any
+   candidate is On-Call.
+6. `templates/timeline.html`:
+   - `<option value="OnCall" id="f-category-oncall">On-Call Schedule</option>` inside
+     `{% if nav_is_admin %}`, hidden by `refreshOnCallOption()` unless both date fields are filled and
+     every day is Sat/Sun; called on date change, modal open and edit open; if hidden while selected,
+     falls back to Medical Center Visit.
+   - `NON_WORK_TYPE_PREFIXES.oncall`, `buildTypedScheduleTitle('OnCall')`, `toggleCategoryFields` and
+     the save mapping (`:17907`) treat OnCall like Holiday (no client/status/files); skip the weekend
+     prompt and send `include_weekends=true` for OnCall.
+   - Card: `isOnCall` → class `schedule-oncall`, no status badge; CSS muted amber with light/dark
+     tokens next to `.schedule-holiday`, text contrast ≥ 4.5:1.
+   - `canManageExistingScheduleForRow`: On-Call row + not admin → false (hides Edit, Delete, drag
+     handle on desktop and mobile).
+   - Print: On-Call color/label/client text.
+7. Service worker bump; `static/changelog/releases.json` entry (admins: new type; engineers: you
+   will see your On-Call weekends).
+
+### Batch 2 — convert to a visit, badge, restore on delete
+1. `app.py`: `ensure_shift_on_call_origin_column()` (ADD COLUMN `on_call_origin TEXT`, nullable,
+   nothing backfilled) called in the hook at `app.py:7518`; `Shift.on_call_origin` on the model.
+2. `app.py` `update_shift`: **conversion** = master is On-Call and new title is not. Only admins
+   (else 403); only the day-only scope (400 "Convert one day at a time." for others); requires a
+   client (normal Work/Site Visit validation). In the day-only path: before overwriting, store
+   `on_call_origin` = the On-Call row's engineer and start/end; give the row a new `group_id`;
+   Activity Log "Converted On-Call to visit: <engineer> <date> → <client>"; existing "Updated"
+   email unchanged.
+3. `app.py` calendar payloads (`:55533`, `:55738`): `'from_on_call': bool(shift.on_call_origin)`.
+4. `app.py` `delete_shift_rows_with_cleanup(..., restore_on_call=True)`: for each deleted row with
+   `on_call_origin` (or a detached row whose detached engineer is the origin engineer) add a new
+   On-Call `Shift` (origin engineer, origin start/end, new `group_id`, `ShiftEngineer` link),
+   Activity Log "On-Call restored". `batch_delete_shifts` passes `restore_on_call=False`.
+5. `templates/timeline.html`: card badge "On-Call" when `s.from_on_call` (desktop + mobile);
+   in the edit modal of an On-Call row (admin), switching type to Medical Center Visit / Site Visit
+   sets edit scope to "this day only", disables the other scopes and shows "Converts this day
+   only. The other day stays On-Call."
+6. Service worker bump; `releases.json` item.
+
+## Deliberately excluded
+- Analytics/workload changes (owner). Note: On-Call currently falls into "Training" in
+  `classify_schedule_type`.
+- Whole-chain conversion in one step (risk of the chain rebuild path; per-day is enough).
+- Monthly auto-generation of weekends, on-call rotation tools, on-call allowance/pay.
+- Restoring On-Call after the engineer range purge.
+- Offline: On-Call creation/conversion needs online (admin-only; the offline queue is unchanged).
+
+## Verification
+- New `tests/test_on_call_schedule.py`; each test fails on HEAD first (positive control).
+  - B1: engineer creating On-Call → 403; admin Sat–Sun → 201, rows titled On-Call, no client;
+    Fri–Sun → 400; two engineers → two chains with different `group_id`, two emails (stubbed);
+    engineer edit/move/delete (all four delete routes) of own On-Call → 403; admin edit to a weekday
+    while On-Call → 400; admin move to weekday → 400; normal schedules unaffected (existing tests).
+  - B2: admin day-only conversion of Saturday → row has client, `on_call_origin` set, new
+    `group_id`, Sunday still On-Call in old group; entire-scope conversion → 400; engineer
+    conversion → 403; engineer may edit/delete the converted visit; delete → On-Call row back with
+    origin date/time/engineer; detach origin engineer from a shared converted row → restored;
+    range purge → not restored; payload has `from_on_call`.
+- Focused: `test_on_call_schedule.py`, `test_offline_schedule.py`, `test_parts_monitoring.py`,
+  `test_hr_schedule_viewer.py`. Full suite once before each publish (schedule save/delete is
+  shared code).
+- Browser (copy of `scheduler.db`, temp superadmin + engineer): option hidden on a weekday range,
+  shown on Sat–Sun; create for two engineers; amber cards; engineer sees no Edit/Delete/drag;
+  admin converts Saturday → badge, Sunday still amber; engineer edits the visit; delete → amber
+  On-Call back; existing schedule save/drag/delete/TSR buttons still work. 375 px, dark mode,
+  console clean. Remove copy, accounts, launch entries.
+
+## After implementation (each batch)
+- Self-review; check every function `timeline.html` calls still exists and save/add/drag/delete/
+  upload still work.
+- Positive controls, focused tests, full suite.
+- Service worker bump, `releases.json`, `changes.md`, this Status line, memory
+  (`on-call-schedule`).
+- On "commit and push": only this batch's files and my sections of `changes.md` / `plans.md`; never
+  `scheduler.db`, `output/`, `tmp/`. Verify `git ls-remote origin refs/heads/main` and Railway.
+
+## Risks
+- **Schedule save/delete is the most-used flow.** Every new check is gated on `is_on_call_title`
+  or `on_call_origin`, so other schedules take the same code path as today; full suite + browser
+  check of plain schedules.
+- Day-only conversion leaving the row in the old chain would let a whole-chain edit wipe the
+  visit — prevented by the new `group_id` (tested).
+- Restore could overlap a schedule added to that slot after the visit was deleted; accepted (rare,
+  visible on the calendar).
+- Client-side hiding is not security: every rule is enforced in `app.py` too (tested).
+
 # Parts Monitoring: new admin page, commitments, schedule parts installation, low-stock email (4 batches)
 
 **Status:** In progress — Batches 1–2 executed 2026-11-04 (go-aheads "Start Batch 1", "go for batch 2") and published together as `030e3fa` (Railway deployment `b1ed9349` building at push time); Batch 3 executed 2026-11-04 (go-ahead "proceed with batch 3"), not yet published; Batch 4 awaiting go-ahead. Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.

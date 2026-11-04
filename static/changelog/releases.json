@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-11-04-on-call-schedule",
+      "release_date": "2026-11-04",
+      "title": "On-Call Schedule",
+      "summary": "A new weekend schedule type for the engineers on call, which admins can turn into a visit when a call comes in.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-11-04-on-call-schedule-type",
+          "category": "Calendar",
+          "description": "Admins can pick Schedule Type \"On-Call Schedule\" when every day in the range is a Saturday or Sunday. It needs no client and shows in amber. Picking two engineers gives each one their own On-Call. Each engineer gets the usual new-schedule email.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-11-04-on-call-schedule-convert",
+          "category": "Calendar",
+          "description": "When a call comes in, open the engineer's On-Call day, change Schedule Type to Medical Center Visit and pick the client. It converts that day only and keeps an On-Call badge. If the visit is deleted, the On-Call comes back.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 2
+        },
+        {
+          "item_key": "2026-11-04-on-call-schedule-engineers",
+          "category": "Calendar",
+          "description": "You can see your On-Call weekends on the Calendar in amber. Only an admin can change or delete them. Once a day is converted to a visit, you work on it like any other schedule.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 3
+        }
+      ]
+    },
+    {
       "release_key": "2026-11-04-parts-monitoring",
       "release_date": "2026-11-04",
       "title": "Parts Monitoring",

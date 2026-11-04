@@ -3905,6 +3905,10 @@ class Shift(db.Model):
     travel_block_status = db.Column(db.String(30), default='active', nullable=True, index=True)
     leave_request_id = db.Column(db.Integer, db.ForeignKey('leave_request.id'), nullable=True, index=True)
 
+    # Set when an On-Call day is converted to a visit: JSON {"engineer_id", "start", "end"} of the
+    # On-Call. Drives the "On-Call" badge and restores the On-Call if the visit is deleted.
+    on_call_origin = db.Column(db.Text, nullable=True)
+
 
 class TsrKnowledgeEntry(db.Model):
     """Reusable TSR complaint/action knowledge captured from engineer TSR drafts."""
@@ -4155,6 +4159,7 @@ _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
 _shift_creation_token_ready = False
+_shift_on_call_origin_ready = False
 _shift_equipment_source_ready = False
 _shift_product_identity_snapshot_ready = False
 _travel_liquidation_tables_ready = False
@@ -7315,6 +7320,24 @@ def ensure_shift_creation_token_column():
         raise
 
 
+def ensure_shift_on_call_origin_column():
+    """Add shift.on_call_origin (nullable, nothing backfilled) for converted On-Call days."""
+    global _shift_on_call_origin_ready
+
+    if _shift_on_call_origin_ready:
+        return
+
+    with db.engine.begin() as connection:
+        shift_columns = {
+            row[1] for row in connection.exec_driver_sql("PRAGMA table_info(shift)").fetchall()
+        }
+        if 'on_call_origin' not in shift_columns:
+            connection.exec_driver_sql("ALTER TABLE shift ADD COLUMN on_call_origin TEXT")
+            print("[DB MIGRATION] Added shift.on_call_origin", flush=True)
+
+    _shift_on_call_origin_ready = True
+
+
 def ensure_shift_equipment_source_column():
     """Add the source discriminator needed for standalone operational equipment."""
     global _shift_equipment_source_ready
@@ -7516,6 +7539,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_email_template_setting_table()
     ensure_shift_travel_block_columns()
     ensure_shift_creation_token_column()
+    ensure_shift_on_call_origin_column()
     ensure_shift_equipment_source_column()
     ensure_shift_product_identity_snapshot_columns()
     ensure_stock_inventory_tables()
@@ -28721,7 +28745,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v356-schedule-parts';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v357-on-call-schedule';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -55531,6 +55555,7 @@ def get_timeline_data():
                 'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(equipment, 'serial_number', None))),
                 'linked_vieworks': product_vieworks_link_payload(getattr(equipment, 'serial_number', None)) if equipment_source == 'product' and equipment else [],
                 'installed_parts': parts_monitoring_installed_parts_for_group(getattr(shift, 'group_id', None)),
+                'from_on_call': bool(getattr(shift, 'on_call_origin', None)),
                 'status': shift.status,
                 # Keep default legacy payload unchanged.
                 # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
@@ -55736,6 +55761,7 @@ def get_shift_details(shift_id):
             'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(equipment, 'serial_number', None))),
             'linked_vieworks': product_vieworks_link_payload(getattr(equipment, 'serial_number', None)) if equipment_source == 'product' and equipment else [],
             'installed_parts': parts_monitoring_installed_parts_for_group(getattr(shift, 'group_id', None)),
+            'from_on_call': bool(getattr(shift, 'on_call_origin', None)),
             'status': shift.status,
             'files': [
                 get_shift_file_display_name(file_record) or file_record.filename
@@ -64677,6 +64703,76 @@ def build_schedule_replay_response(first_shift, chain):
     return build_schedule_ids_response(first_shift, chain, replay=True)
 
 
+ON_CALL_TITLE = 'On-Call Schedule'
+ON_CALL_WEEKEND_MESSAGE = 'On-Call schedules can only be on Saturday or Sunday.'
+
+
+def is_on_call_title(title):
+    """On-Call is a typed title like the other non-work types: exact or 'On-Call Schedule: note'."""
+    text = clean_str(title) or ''
+    return text == ON_CALL_TITLE or text.startswith(ON_CALL_TITLE + ':')
+
+
+def on_call_dates_valid(start_d, end_d):
+    """True when every date from start to end is a Saturday or Sunday."""
+    if not start_d or not end_d or end_d < start_d:
+        return False
+    return all(day.weekday() >= 5 for day in get_schedule_dates_between(start_d, end_d))
+
+
+def on_call_change_denied():
+    return denied('Only an admin can change an On-Call schedule.')
+
+
+def on_call_delete_denied(candidates):
+    """Engineers see their On-Call schedules but can never delete them."""
+    if is_admin_authorized():
+        return None
+    if any(shift is not None and is_on_call_title(shift.title) for shift in candidates or []):
+        return on_call_change_denied()
+    return None
+
+
+def restore_on_call_for_shift(shift, removed_engineer_id=None):
+    """Put the On-Call back when a converted visit (or its origin engineer) is removed.
+
+    Returns the new On-Call row, or None when the shift was not converted from On-Call or a
+    different engineer was removed.
+    """
+    raw_origin = getattr(shift, 'on_call_origin', None)
+    if not raw_origin:
+        return None
+    try:
+        origin = json.loads(raw_origin)
+        engineer_id = int(origin['engineer_id'])
+        start_dt = datetime.fromisoformat(origin['start'])
+        end_dt = datetime.fromisoformat(origin['end'])
+    except (ValueError, KeyError, TypeError):
+        return None
+    if removed_engineer_id and int(removed_engineer_id) != engineer_id:
+        return None
+    if not db.session.get(Engineer, engineer_id):
+        return None
+
+    import uuid
+    restored = Shift(
+        title=ON_CALL_TITLE,
+        start_time=start_dt,
+        end_time=end_dt,
+        engineer_id=engineer_id,
+        status='In Progress',
+        created_at=get_manila_time(),
+        group_id=str(uuid.uuid4()),
+    )
+    restored.schedule_type = 'service'
+    db.session.add(restored)
+    db.session.flush()
+    db.session.add(ShiftEngineer(shift_id=restored.id, engineer_id=engineer_id))
+    engineer = db.session.get(Engineer, engineer_id)
+    add_activity_log_entry(f"On-Call restored after visit removal: {engineer.name} on {start_dt.date().isoformat()}")
+    return restored
+
+
 @app.route('/add_shift', methods=['POST'])
 @login_required
 def add_shift():
@@ -64744,6 +64840,15 @@ def add_shift():
     if not can_create_schedule_for_engineer_ids(engineers):
         return denied('You are not authorized to add schedules for the selected engineer/branch.')
 
+    is_on_call = is_on_call_title(shift_title)
+    if is_on_call:
+        if not is_admin_authorized():
+            return denied('Only an admin can add an On-Call schedule.')
+        if not on_call_dates_valid(start_d, end_d):
+            return jsonify({'message': ON_CALL_WEEKEND_MESSAGE}), 400
+        include_weekends = True
+        schedule_dates = get_schedule_dates_between(start_d, end_d)
+
     requested_status = clean_str(payload.get('status')) or 'In Progress'
 
     schedule_activity_context = build_schedule_activity_context_from_payload(payload)
@@ -64753,10 +64858,13 @@ def add_shift():
         return jsonify({'message': equipment_error}), 400
     selected_product_id = selected_equipment.get('serial_number') if selected_equipment else ''
     selected_equipment_source = selected_equipment.get('equipment_source', 'product') if selected_equipment else 'product'
+    if is_on_call:
+        # On-Call never has a client or machine; conversion adds them later.
+        selected_client_id, selected_product_id, selected_equipment_source = None, '', 'product'
 
     # Parts Installation: admins only, never from the offline queue (it carries a creation token).
     parts_to_install = []
-    if not creation_token and is_admin_authorized():
+    if not creation_token and not is_on_call and is_admin_authorized():
         _parts_present, parts_ids = parts_monitoring_parse_allocation_ids(payload)
         if parts_ids:
             parts_to_install, parts_error = parts_monitoring_validate_install(
@@ -64787,47 +64895,57 @@ def add_shift():
                 if collision_response:
                     return collision_response
 
+    # On-Call: one chain per engineer, so each engineer's On-Call is converted on its own.
+    engineer_chains = [[e_id] for e_id in engineers] if is_on_call else [engineers]
+    chain_first_shifts = []
+
     first_shift = None
     created_shifts = []
-    for iter_date in schedule_dates:
-        st_obj = datetime.combine(iter_date, datetime.strptime(start_time, '%H:%M').time())
-        et_obj = datetime.combine(iter_date, datetime.strptime(end_time, '%H:%M').time())
+    for chain_index, chain_engineers in enumerate(engineer_chains):
+        chain_group_id = group_id if chain_index == 0 else str(uuid.uuid4())
+        chain_first_shift = None
+        for iter_date in schedule_dates:
+            st_obj = datetime.combine(iter_date, datetime.strptime(start_time, '%H:%M').time())
+            et_obj = datetime.combine(iter_date, datetime.strptime(end_time, '%H:%M').time())
 
-        new_shift = Shift(
-            title=shift_title,
-            start_time=st_obj,
-            end_time=et_obj,
-            engineer_id=engineers[0],
-            client_id=selected_client_id,
-            product_id=selected_product_id,
-            equipment_source=selected_equipment_source,
-            status=requested_status,
-            created_at=created_at,
-            group_id=group_id
-        )
+            new_shift = Shift(
+                title=shift_title,
+                start_time=st_obj,
+                end_time=et_obj,
+                engineer_id=chain_engineers[0],
+                client_id=selected_client_id,
+                product_id=selected_product_id,
+                equipment_source=selected_equipment_source,
+                status=requested_status,
+                created_at=created_at,
+                group_id=chain_group_id
+            )
 
-        # New schedules are normal service/internal schedule rows.
-        # Only existing linked Travel Blocks preserve/convert travel metadata in update_shift.
-        new_shift.schedule_type = 'service'
-        new_shift.travel_request_id = None
-        new_shift.travel_block_status = None
+            # New schedules are normal service/internal schedule rows.
+            # Only existing linked Travel Blocks preserve/convert travel metadata in update_shift.
+            new_shift.schedule_type = 'service'
+            new_shift.travel_request_id = None
+            new_shift.travel_block_status = None
 
-        # The token identifies the chain, not the row, so it goes on the first shift only.
-        # Putting it on every row would trip the unique index on a multi-day schedule.
-        if first_shift is None and creation_token:
-            new_shift.creation_token = creation_token
+            # The token identifies the chain, not the row, so it goes on the first shift only.
+            # Putting it on every row would trip the unique index on a multi-day schedule.
+            if first_shift is None and creation_token:
+                new_shift.creation_token = creation_token
 
-        db.session.add(new_shift)
-        db.session.flush()
-        delete_shift_engineer_links(new_shift.id)
-        # schedule_dates is ascending, so this list is already in the same order the replay
-        # path returns (Shift.start_time.asc()). A retry must not see the chain reshuffled.
-        created_shifts.append(new_shift)
-        if first_shift is None:
-            first_shift = new_shift
+            db.session.add(new_shift)
+            db.session.flush()
+            delete_shift_engineer_links(new_shift.id)
+            # schedule_dates is ascending, so this list is already in the same order the replay
+            # path returns (Shift.start_time.asc()). A retry must not see the chain reshuffled.
+            created_shifts.append(new_shift)
+            if first_shift is None:
+                first_shift = new_shift
+            if chain_first_shift is None:
+                chain_first_shift = new_shift
+                chain_first_shifts.append((chain_first_shift, chain_engineers))
 
-        for e_id in engineers:
-            db.session.add(ShiftEngineer(shift_id=new_shift.id, engineer_id=e_id))
+            for e_id in chain_engineers:
+                db.session.add(ShiftEngineer(shift_id=new_shift.id, engineer_id=e_id))
 
     saved_files = []
     if first_shift:
@@ -64872,11 +64990,11 @@ def add_shift():
                 return build_schedule_replay_response(existing_first, existing_chain)
         raise
 
-    if first_shift:
+    for chain_first_shift, chain_engineers in chain_first_shifts:
         notify_engineers_for_new_schedule_async(
             app,
-            first_shift.id,
-            engineers,
+            chain_first_shift.id,
+            chain_engineers,
             shift_title,
             date_label,
             current_user.username if current_user and current_user.is_authenticated else 'Scheduler'
@@ -64915,6 +65033,9 @@ def update_shift(id):
         return jsonify({'message': 'Missing'}), 404
     if clean_int(getattr(master_shift, 'leave_request_id', None)):
         return jsonify({'message': 'Leave Request calendar entries are managed from the Leave Request page.'}), 409
+    master_is_on_call = is_on_call_title(master_shift.title)
+    if master_is_on_call and not is_admin_authorized():
+        return on_call_change_denied()
 
     payload = get_shift_payload()
 
@@ -64936,6 +65057,10 @@ def update_shift(id):
     billing_tags_ok, billing_tags_error = validate_shift_billing_tags(shift_title)
     if not billing_tags_ok:
         return jsonify({'message': billing_tags_error}), 400
+    result_is_on_call = is_on_call_title(shift_title)
+    if result_is_on_call and not master_is_on_call and not is_admin_authorized():
+        return denied('Only an admin can add an On-Call schedule.')
+    converting_on_call = master_is_on_call and not result_is_on_call
 
     new_status = clean_str(payload.get('status')) or master_shift.status
     selected_client_id = clean_int(payload.get('client_id'))
@@ -64944,6 +65069,10 @@ def update_shift(id):
         return jsonify({'message': equipment_error}), 400
     selected_product_id = selected_equipment.get('serial_number') if selected_equipment else ''
     selected_equipment_source = selected_equipment.get('equipment_source', 'product') if selected_equipment else 'product'
+    if result_is_on_call:
+        selected_client_id, selected_product_id, selected_equipment_source = None, '', 'product'
+    if converting_on_call and not selected_client_id:
+        return jsonify({'message': 'Pick a client to convert this On-Call schedule to a visit.'}), 400
     ensure_parts_monitoring_tables()
     parts_plan, parts_error = parts_monitoring_prepare_schedule_update(
         master_shift, payload, selected_equipment_source, selected_product_id
@@ -64960,6 +65089,8 @@ def update_shift(id):
         return jsonify({'message': 'Missing date or time fields'}), 400
     if end_d < start_d:
         return jsonify({'message': 'End date cannot be earlier than start date'}), 400
+    if result_is_on_call and not on_call_dates_valid(start_d, end_d):
+        return jsonify({'message': ON_CALL_WEEKEND_MESSAGE}), 400
     if (
         not is_legacy_calendar_leave_title(master_shift.title)
         and block_new_calendar_leave_for_current_or_future(shift_title, start_d)
@@ -64975,6 +65106,8 @@ def update_shift(id):
 
     edit_scope = normalize_edit_scope(clean_str(payload.get('edit_scope')) or 'entire_schedule')
     override_engineer_id = clean_int(payload.get('override_engineer_id')) or clean_int(payload.get('engineer_id'))
+    if converting_on_call and edit_scope != 'assigned_engineers_day_only':
+        return jsonify({'message': 'Convert an On-Call schedule one day at a time ("this day only").'}), 400
 
     old_engineer_ids = get_shift_assigned_engineer_ids(master_shift)
     if not can_work_on_existing_schedule_shift(master_shift):
@@ -65171,6 +65304,17 @@ def update_shift(id):
         if not day_shift.group_id:
             day_shift.group_id = str(uuid.uuid4())
 
+        converted_on_call_day = converting_on_call and is_on_call_title(day_shift.title)
+        if converted_on_call_day:
+            # Remember the On-Call (badge + restore on delete) and leave its chain, so a later
+            # whole-chain edit of the remaining On-Call day can never rebuild over this visit.
+            day_shift.on_call_origin = json.dumps({
+                'engineer_id': (existing_day_engineer_ids or [day_shift.engineer_id])[0],
+                'start': day_shift.start_time.isoformat(),
+                'end': day_shift.end_time.isoformat(),
+            })
+            day_shift.group_id = str(uuid.uuid4())
+
         day_shift.title = shift_title
         day_shift.start_time = day_start
         day_shift.end_time = day_end
@@ -65215,6 +65359,10 @@ def update_shift(id):
             log_action += f" for {', '.join(engineer_names)}"
         if saved_files:
             log_action += f" and uploaded {len(saved_files)} report file(s)"
+        if converted_on_call_day:
+            log_action = f"Converted On-Call to visit: {shift_title} on {start_d.isoformat()}" + (
+                f" for {', '.join(engineer_names)}" if engineer_names else ''
+            )
 
         db.session.add(ActivityLog(user=current_user.username.capitalize(), action=log_action))
         db.session.commit()
@@ -65225,7 +65373,8 @@ def update_shift(id):
             engineers,
             'Updated',
             current_user.username if current_user and current_user.is_authenticated else 'Scheduler',
-            'This schedule was updated for this day only.'
+            'Your On-Call schedule was converted to a visit.' if converted_on_call_day
+            else 'This schedule was updated for this day only.'
         )
 
         return jsonify({
@@ -65616,6 +65765,9 @@ def move_shift():
         return jsonify({'message': 'Schedule not found.'}), 404
     if not target_engineer:
         return jsonify({'message': 'Target engineer not found.'}), 404
+    moving_on_call = is_on_call_title(master_shift.title)
+    if moving_on_call and not is_admin_authorized():
+        return on_call_change_denied()
 
     original_engineer_ids = get_shift_assigned_engineer_ids(master_shift)
     if not original_engineer_ids:
@@ -65666,6 +65818,10 @@ def move_shift():
     old_start_date = min(s.start_time.date() for s in old_chain)
     old_end_date = max(s.start_time.date() for s in old_chain)
     day_offset = (new_start_date - old_start_date).days
+    if moving_on_call and any(
+        (old_shift.start_time + timedelta(days=day_offset)).weekday() < 5 for old_shift in old_chain
+    ):
+        return jsonify({'message': ON_CALL_WEEKEND_MESSAGE}), 400
 
     for old_shift in old_chain:
         new_start = old_shift.start_time + timedelta(days=day_offset)
@@ -66048,7 +66204,7 @@ def schedule_linked_work_response():
     return jsonify({'status': 'error', 'error_code': 'schedule_has_linked_work', 'message': SCHEDULE_LINKED_WORK_MESSAGE}), 409
 
 
-def delete_shift_rows_with_cleanup(candidates, delete_mode=None, engineer_id=None):
+def delete_shift_rows_with_cleanup(candidates, delete_mode=None, engineer_id=None, restore_on_call=True):
     """Delete or detach schedule rows safely.
 
     Physical report files are intentionally not removed here because the same
@@ -66087,8 +66243,12 @@ def delete_shift_rows_with_cleanup(candidates, delete_mode=None, engineer_id=Non
         if should_detach_only and detach_engineer_from_shift_for_delete(shift, engineer_id):
             detached_ids.append(shift.id)
             notified_snapshots.append((snapshot, [engineer_id]))
+            if restore_on_call:
+                restore_on_call_for_shift(shift, removed_engineer_id=engineer_id)
             continue
 
+        if restore_on_call:
+            restore_on_call_for_shift(shift)
         delete_shift_engineer_links(shift.id)
         db.session.delete(shift)
         deleted_ids.append(shift.id)
@@ -66151,6 +66311,9 @@ def preview_delete_shifts():
 
     if not can_modify_schedule_for_engineer_ids(affected_ids_for_auth):
         return denied('You are not authorized to delete one or more schedules in this preview.')
+    on_call_denied = on_call_delete_denied(candidates)
+    if on_call_denied:
+        return on_call_denied
 
     if blocked_delete_shift_ids(candidates, delete_mode, engineer_id):
         return schedule_linked_work_response()
@@ -66202,6 +66365,9 @@ def delete_shifts_previewed():
 
     if not can_modify_schedule_for_engineer_ids(affected_ids_for_auth):
         return denied('You are not authorized to delete one or more selected schedules.')
+    on_call_denied = on_call_delete_denied(candidates)
+    if on_call_denied:
+        return on_call_denied
 
     preview_payload = build_delete_preview_payload(candidates, delete_mode)
     try:
@@ -66355,6 +66521,9 @@ def delete_shift(id):
             return jsonify({'message': 'Leave Request calendar entries cannot be deleted from Calendar.'}), 409
         if not can_modify_schedule_shift(target):
             return denied('You are not authorized to delete this schedule.')
+        on_call_denied = on_call_delete_denied([target])
+        if on_call_denied:
+            return on_call_denied
 
         title = target.title
         try:
@@ -66419,13 +66588,19 @@ def batch_delete_shifts():
 
     if blocked_delete_shift_ids(purge_list, 'engineer_range', eng_id):
         return schedule_linked_work_response()
+    on_call_denied = on_call_delete_denied(purge_list)
+    if on_call_denied:
+        return on_call_denied
 
     preview_payload = build_delete_preview_payload(purge_list, 'engineer_range')
     if preview_only:
         return jsonify(preview_payload)
 
     try:
-        deleted_ids, notified_snapshots, detached_ids = delete_shift_rows_with_cleanup(purge_list, delete_mode='engineer_range', engineer_id=eng_id)
+        # A range purge is a deliberate wipe: converted visits do not bring their On-Call back.
+        deleted_ids, notified_snapshots, detached_ids = delete_shift_rows_with_cleanup(
+            purge_list, delete_mode='engineer_range', engineer_id=eng_id, restore_on_call=False
+        )
         db.session.commit()
     except ScheduleHasLinkedWorkError:
         return schedule_linked_work_response()

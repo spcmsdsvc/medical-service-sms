@@ -519,6 +519,7 @@
             <div class="legend-pill"><span class="legend-dot legend-dot-travel"></span><i class="fa-solid fa-route"></i>Travel</div>
             <div class="legend-pill"><span class="legend-dot legend-dot-pullout"></span><i class="fa-solid fa-box-open"></i>Pull-out</div>
             <div class="legend-pill"><span class="legend-dot legend-dot-holiday"></span><i class="fa-solid fa-calendar-day"></i>Holiday</div>
+            <div class="legend-pill"><span class="legend-dot legend-dot-oncall"></span><i class="fa-solid fa-phone-volume"></i>On-Call</div>
             <div id="timeline-intelligence-legend" class="timeline-intelligence-legend d-none">
                 <div class="legend-pill intelligence-pill"><span class="workload-dot workload-free-dot"></span>Free</div>
                 <div class="legend-pill intelligence-pill"><span class="workload-dot workload-normal-dot"></span>Normal</div>
@@ -953,7 +954,11 @@
                         <option value="Travel">Traveling to Client</option>
                         <option value="Pullout">Pull-out Parts</option>
                         <option value="Holiday">Holiday</option>
+                        {% if nav_is_admin %}<option id="f-category-oncall" value="OnCall" hidden disabled>On-Call Schedule</option>{% endif %}
                     </select>
+                    <div id="oncall-convert-note" class="xsmall text-oncall-amber mt-1 d-none">
+                        <i class="fa-solid fa-phone-volume me-1"></i>Converts this day only. Any other On-Call day stays On-Call.
+                    </div>
                 </div>
 
                 <!-- HR Leave Fields (Visible only for 'Leave') -->
@@ -1162,7 +1167,7 @@
                     </div>
                     <div class="col-md-6">
                         <label class="small fw-bold text-uppercase mb-1 d-block">📅 End Date</label>
-                        <input type="date" id="f-end-date" class="form-control">
+                        <input type="date" id="f-end-date" class="form-control" onchange="refreshOnCallOption()">
                     </div>
                 </div>
 
@@ -2523,6 +2528,51 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 .text-holiday-purple {
     color: #6f42c1 !important;
+}
+
+/* On-Call Schedule: muted amber */
+.legend-dot-oncall {
+    background: #b7791f;
+}
+
+.schedule-oncall {
+    border-left: 4px solid #b7791f !important;
+    background: linear-gradient(135deg, #fdf6e7 0%, #ffffff 100%);
+}
+
+.text-oncall-amber {
+    color: #92600e !important;
+}
+
+.schedule-oncall-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin: 0.1rem 0.2rem 0.15rem 0;
+    padding: 0.05rem 0.4rem;
+    border-radius: 999px;
+    border: 1px solid #b7791f;
+    background: #fdf6e7;
+    color: #7a4f0c;
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1.4;
+}
+
+:root[data-app-theme="dark"] .schedule-oncall-badge {
+    background: #352b17;
+    border-color: #d4a24c;
+    color: #e8c37d;
+}
+
+:root[data-app-theme="dark"] .text-oncall-amber {
+    color: #e8c37d !important;
+}
+
+:root[data-app-theme="dark"] .schedule-card.schedule-oncall,
+:root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip).schedule-oncall {
+    --calendar-card-accent: #d4a24c;
+    --calendar-card-bg: #352b17;
 }
 
 /* S11H1C — Approved Travel Request Blocks */
@@ -10347,6 +10397,7 @@ function shouldUseEngineerMobileView(){
         return `
             <button type="button" class="mobile-full-calendar-lite-chip ${getScheduleSemanticClass(shift)} ${isTravelBlock ? 'mobile-travel-request-block' : ''}" data-mobile-lite-shift-id="${escapeHtml(shift?.id || '')}" data-mobile-lite-day="${escapeHtml(day?.iso || '')}" data-mobile-lite-engineer-id="${escapeHtml(engineer?.id || '')}" ${linkedScheduleKey ? `data-linked-schedule-key="${escapeHtml(linkedScheduleKey)}" data-linked-day="${escapeHtml(day?.iso || '')}"` : ''} aria-label="View schedule summary">
                 ${linkedScheduleBadge}
+                ${getOnCallOriginBadgeHtml(shift)}
                 ${isTravelBlock ? openTravelRequestButton : ''}
                 <div class="mobile-full-calendar-lite-chip-top">
                     <div class="mobile-full-calendar-lite-chip-client">${escapeHtml(clientLabel)}</div>
@@ -12049,6 +12100,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
         return `
             <div class="mobile-schedule-card ${getScheduleSemanticClass(shift)} ${isApprovedTravelBlock ? 'mobile-travel-request-block' : ''} ${getPureEngineerMobileWorkflowClass(shift, isWork, fileCount)} ${isSelected ? 'mobile-card-selected' : ''}" data-mobile-shift-id="${shift.id}" data-mobile-context-key="${escapeHtml(mobileContextKey)}" ${linkedScheduleKey ? `data-linked-schedule-key="${escapeHtml(linkedScheduleKey)}" data-linked-day="${escapeHtml(day?.iso || '')}"` : ''} onclick="if(!event.target.closest('button,a,input,select,textarea')) setMobileStickyActionContextByKey('${escapeHtml(mobileContextKey)}');">
                 ${linkedScheduleBadge}
+                ${getOnCallOriginBadgeHtml(shift)}
                 <div class="mobile-schedule-topline">
                     <div>
                         <div class="mobile-schedule-client">${escapeHtml(clientLabel || 'Schedule')}</div>
@@ -12795,7 +12847,8 @@ function collectMobileEngineerSchedules(){
         office: { category: 'Office', prefix: 'In Office', fallback: 'In Office' },
         travel: { category: 'Travel', prefix: 'Traveling to Client', fallback: 'Traveling to Client' },
         pullout: { category: 'Pullout', prefix: 'Pull-out Parts', fallback: 'Pull-out Parts' },
-        holiday: { category: 'Holiday', prefix: 'Holiday', fallback: 'Holiday' }
+        holiday: { category: 'Holiday', prefix: 'Holiday', fallback: 'Holiday' },
+        oncall: { category: 'OnCall', prefix: 'On-Call Schedule', fallback: 'On-Call Schedule' }
     };
 
     function parseTypedScheduleTitle(title){
@@ -12829,6 +12882,7 @@ function collectMobileEngineerSchedules(){
         if(typedCategory === 'Travel') return 'schedule-travel';
         if(typedCategory === 'Pullout') return 'schedule-pullout';
         if(typedCategory === 'Holiday') return 'schedule-holiday';
+        if(typedCategory === 'OnCall') return 'schedule-oncall';
         if(HR_CATEGORIES.includes(task)) return 'schedule-leave';
         if(shift?.client_id) return 'schedule-client-work';
         return 'schedule-internal';
@@ -13017,6 +13071,11 @@ function collectMobileEngineerSchedules(){
         });
 
         return uniqueDays.size;
+    }
+
+    function getOnCallOriginBadgeHtml(shift){
+        if(!shift?.from_on_call) return '';
+        return '<div class="schedule-oncall-badge" title="Converted from an On-Call schedule"><i class="fa-solid fa-phone-volume"></i>On-Call</div>';
     }
 
     function getLinkedScheduleBadgeHtml(shift, mode='desktop'){
@@ -13770,7 +13829,60 @@ function collectMobileEngineerSchedules(){
             return cleanTitle ? `Holiday: ${cleanTitle}` : 'Holiday';
         }
 
+        if(categoryVal === 'OnCall'){
+            return cleanTitle ? `On-Call Schedule: ${cleanTitle}` : 'On-Call Schedule';
+        }
+
         return cleanTitle;
+    }
+
+    // On-Call Schedule: admins only (the option is not rendered for others), and only when every
+    // day in the range is a Saturday or Sunday. The server enforces both rules too.
+    var timelineEditingOnCall = false;
+
+    function isWeekendOnlyRange(startIso, endIso){
+        if(!startIso || !endIso || endIso < startIso) return false;
+        const cursor = new Date(startIso + 'T00:00:00');
+        const end = new Date(endIso + 'T00:00:00');
+        let days = 0;
+        while(cursor <= end){
+            const weekday = cursor.getDay();
+            if(weekday !== 0 && weekday !== 6) return false;
+            cursor.setDate(cursor.getDate() + 1);
+            if(++days > 31) return false;
+        }
+        return true;
+    }
+
+    function refreshOnCallOption(){
+        const option = document.getElementById('f-category-oncall');
+        const category = document.getElementById('f-category');
+        if(!option || !category) return;
+        const startIso = document.getElementById('f-start-date')?.value || '';
+        const endIso = document.getElementById('f-end-date')?.value || startIso;
+        const allowed = timelineEditingOnCall || isWeekendOnlyRange(startIso, endIso);
+        option.hidden = !allowed;
+        option.disabled = !allowed;
+        if(!allowed && category.value === 'OnCall'){
+            category.value = 'Work';
+            toggleCategoryFields();
+        }
+    }
+
+    function applyOnCallConvertScope(){
+        const scopeSelect = document.getElementById('f-edit-scope');
+        const note = document.getElementById('oncall-convert-note');
+        const converting = timelineEditingOnCall && document.getElementById('f-category')?.value !== 'OnCall';
+        if(note) note.classList.toggle('d-none', !converting);
+        if(!scopeSelect) return;
+        const wasConverting = scopeSelect.dataset.onCallConvert === '1';
+        if(!converting && !wasConverting) return;
+        [...scopeSelect.options].forEach(opt => {
+            if(opt.value !== 'assigned_engineers_day_only') opt.disabled = converting;
+        });
+        scopeSelect.dataset.onCallConvert = converting ? '1' : '';
+        if(converting) scopeSelect.value = 'assigned_engineers_day_only';
+        handleEditScopeChange();
     }
 
     function resetEditScopeControls(){
@@ -13781,6 +13893,12 @@ function collectMobileEngineerSchedules(){
         const endDate = document.getElementById('f-end-date');
 
         if(scopeContainer) scopeContainer.classList.add('d-none');
+        timelineEditingOnCall = false;
+        if(scopeSelect && scopeSelect.dataset.onCallConvert === '1'){
+            [...scopeSelect.options].forEach(opt => { opt.disabled = false; });
+            scopeSelect.dataset.onCallConvert = '';
+        }
+        document.getElementById('oncall-convert-note')?.classList.add('d-none');
         if(scopeSelect) scopeSelect.value = 'entire_schedule';
         if(scopeHelp){
             scopeHelp.innerHTML = 'Choose whether to update the whole linked schedule, only the selected engineers for this day, or one engineer custom time.';
@@ -14010,6 +14128,7 @@ function collectMobileEngineerSchedules(){
         const editingExistingLeave = Boolean(document.getElementById('f-id')?.value) && category?.value === 'Leave';
         const historicalDate = Boolean(startDate && startDate < timelineTodayISO());
         const allowLegacyLeave = editingExistingLeave || historicalDate || canRecordProvisionalLeave;
+        refreshOnCallOption();
         if(!category || !leaveOption) return allowLegacyLeave;
 
         leaveOption.hidden = !allowLegacyLeave;
@@ -14049,6 +14168,8 @@ function collectMobileEngineerSchedules(){
                 titleField.placeholder = "Optional pull-out details, e.g. Pull-out analyzer part";
             }else if(selectedVal === "Holiday"){
                 titleField.placeholder = "Optional holiday name, e.g. Regular Holiday / Special Non-working Holiday";
+            }else if(selectedVal === "OnCall"){
+                titleField.placeholder = "Optional note, e.g. November on-call";
             }else if(selectedVal === "SiteVisit"){
                 titleField.placeholder = "Optional, e.g. Courtesy call / Site inspection";
             }else{
@@ -14074,8 +14195,8 @@ if (selectedVal === "Leave") {
             renderProductCoverageStatus(null);
             renderProductVieworksStatus(null);
             renderProductCalibrationStatus(null);
-        } else if (selectedVal === "Training" || selectedVal === "Office" || selectedVal === "Travel" || selectedVal === "Pullout" || selectedVal === "Holiday") {
-            // Internal Training / Office / Travel / Pull-out Logic
+        } else if (selectedVal === "Training" || selectedVal === "Office" || selectedVal === "Travel" || selectedVal === "Pullout" || selectedVal === "Holiday" || selectedVal === "OnCall") {
+            // Internal Training / Office / Travel / Pull-out / Holiday / On-Call Logic
             workArea.classList.add('d-none');
             leaveArea.classList.add('d-none');
             taskArea.classList.remove('d-none');
@@ -14117,6 +14238,7 @@ if (selectedVal === "Leave") {
                 fileArea.classList.remove('d-none');
             }
         }
+        applyOnCallConvertScope();
     }
 
     /**
@@ -15337,6 +15459,7 @@ async function loadGrid(options={}) {
                         let isTravel = isApprovedTravelBlock || typedSchedule.category === "Travel";
                         let isPullout = typedSchedule.category === "Pullout";
                         let isHoliday = typedSchedule.category === "Holiday";
+                        let isOnCall = typedSchedule.category === "OnCall";
 
                         let bgHex = "primary"; // Default Blue (In Progress)
                         if (isLeave) bgHex = "danger";
@@ -15344,6 +15467,7 @@ async function loadGrid(options={}) {
                         else if (isTravel) bgHex = "travel-purple";
                         else if (isPullout) bgHex = "pullout-orange";
                         else if (isHoliday) bgHex = "holiday-purple";
+                        else if (isOnCall) bgHex = "oncall-amber";
                         else if (isTraining) bgHex = "secondary";
                         else if (s.status === "Completed") bgHex = "success";
                         else if (s.status === "Waiting for P.O") bgHex = "warning text-dark";
@@ -15378,7 +15502,7 @@ async function loadGrid(options={}) {
                         // REQUIREMENT: REMOVE IN PROGRESS/STATUS DISPLAY FOR TRAINING OR LEAVE
                         let badgeHtml = isManagedLeaveBlock
                             ? `<span class="badge ${String(s.status||'').toLowerCase()==='approved'?'bg-success':String(s.status||'').toLowerCase().includes('rejected')?'bg-danger':'bg-warning text-dark'}" style="font-size:0.58rem; opacity:0.95;">${escapeHtml(s.status || 'Leave')}</span>`
-                            : ((isLeave || isTraining || isOffice || isTravel || isPullout || isHoliday) ? "" : `<span class="badge bg-${bgHex.split(' ')[0]}" style="font-size:0.58rem; opacity: 0.9;">${s.status || 'In Progress'}</span>`);
+                            : ((isLeave || isTraining || isOffice || isTravel || isPullout || isHoliday || isOnCall) ? "" : `<span class="badge bg-${bgHex.split(' ')[0]}" style="font-size:0.58rem; opacity: 0.9;">${s.status || 'In Progress'}</span>`);
 
                         let timeRange = (s.time_start && s.time_end)
                             ? `${t12(s.time_start)}–${t12(s.time_end)}`
@@ -15435,6 +15559,7 @@ async function loadGrid(options={}) {
                             bgHex === 'travel-purple' ? 'schedule-travel' :
                             bgHex === 'pullout-orange' ? 'schedule-pullout' :
                             bgHex === 'holiday-purple' ? 'schedule-holiday' :
+                            bgHex === 'oncall-amber' ? 'schedule-oncall' :
                             `border-${bgHex.split(' ')[0]}`
                         }"
                             draggable="false"
@@ -15463,6 +15588,7 @@ async function loadGrid(options={}) {
                             ${linkedScheduleBadge}
                             ${deliveryBadge}
                             ${s.is_time_override ? '<div class="schedule-override-badge no-print"><i class="fa-solid fa-clock"></i> Custom Time</div>' : ''}
+                            ${getOnCallOriginBadgeHtml(s)}
                             ${badgeHtml ? `<div class="schedule-status">${badgeHtml}</div>` : ''}
 
                             ${isApprovedTravelBlock ? `
@@ -15484,6 +15610,7 @@ async function loadGrid(options={}) {
                                 ${!isApprovedTravelBlock && isTravel ? '<i class="fa-solid fa-route schedule-type-icon text-travel-purple"></i>' : ''}
                                 ${isPullout ? '<i class="fa-solid fa-box-open schedule-type-icon text-pullout-orange"></i>' : ''}
                                 ${isHoliday ? '<i class="fa-solid fa-calendar-day schedule-type-icon text-holiday-purple"></i>' : ''}
+                                ${isOnCall ? '<i class="fa-solid fa-phone-volume schedule-type-icon text-oncall-amber"></i>' : ''}
                                 ${isTraining ? '<i class="fa-solid fa-graduation-cap schedule-type-icon text-secondary"></i>' : ''}
                                 ${isLeave ? '<i class="fa-solid fa-user-clock schedule-type-icon text-danger"></i>' : ''}
                                 ${isApprovedTravelBlock ? '' : formatScheduleTitleForCard(s.task)}
@@ -15855,6 +15982,8 @@ async function loadGrid(options={}) {
         if(isSuperAdmin) return true;
         if(canManageAnySchedule) return true;
         if(isRegionalAdmin) return engineerObj && regionalAllowedBranches.includes(engineerObj.branch);
+        // Engineers see their On-Call schedules but never edit, move or delete them.
+        if(parseTypedScheduleTitle(shiftObj?.task || '').category === 'OnCall') return false;
 
         if(isEngineer){
             const assignedIds = (shiftObj?.engineers || []).map(id => String(id));
@@ -16044,6 +16173,8 @@ if(shift.engineers){
             document.getElementById('f-leave-type').value = shift.task;
             document.getElementById('f-title').value = "";
         } else if (typedSchedule.category) {
+            timelineEditingOnCall = typedSchedule.category === 'OnCall';
+            if(timelineEditingOnCall) refreshOnCallOption();
             categoryDropdown.value = typedSchedule.category;
             document.getElementById('f-title').value = typedSchedule.editTitle;
         } else if (!shift.client_id) {
@@ -17904,7 +18035,7 @@ async function openTSRClientEmailModal(shiftId){
 
         if (categoryVal === "Leave") {
             finalTitle = document.getElementById('f-leave-type').value;
-        } else if (categoryVal === "Office" || categoryVal === "Travel" || categoryVal === "Pullout" || categoryVal === "Holiday") {
+        } else if (categoryVal === "Office" || categoryVal === "Travel" || categoryVal === "Pullout" || categoryVal === "Holiday" || categoryVal === "OnCall") {
             finalTitle = buildTypedScheduleTitle(categoryVal, finalTitle);
         } else if (categoryVal === "Training" && !finalTitle) {
             finalTitle = "Internal Technical Training";
@@ -18035,7 +18166,8 @@ async function openTSRClientEmailModal(shiftId){
         }
         let includeWeekends = true;
 
-        if(isWeekendPromptNeeded(activeID, editScopeForWeekendCheck, selectedStartDate, selectedEndDate)){
+        // On-Call is weekend-only by definition, so the weekend prompt never applies to it.
+        if(categoryVal !== "OnCall" && isWeekendPromptNeeded(activeID, editScopeForWeekendCheck, selectedStartDate, selectedEndDate)){
             const weekendChoice = await showWeekendInclusionModal(selectedStartDate, selectedEndDate);
 
             if(weekendChoice === 'cancel'){
@@ -19514,6 +19646,7 @@ function getPrintColor(s){
     if(s.task === "In Office") return "#ff5fa2";
     if(s.task === "Traveling to Client") return "#7c3aed";
     if(s.task === "Pull-out Parts") return "#f97316";
+    if(parseTypedScheduleTitle(s.task || "").category === "OnCall") return "#b7791f";
     if(!s.client_id) return "#6c757d";
     if(s.status === "Completed") return "#198754";
     if(s.status === "Waiting for P.O") return "#ffc107";
@@ -19528,6 +19661,7 @@ function getPrintTypeLabel(s){
     if(s.task === "In Office") return "Office";
     if(s.task === "Traveling to Client") return "Travel";
     if(s.task === "Pull-out Parts") return "Pull-out";
+    if(parseTypedScheduleTitle(s.task || "").category === "OnCall") return "On-Call";
     if(!s.client_id) return "Training";
     return s.status || "In Progress";
 }
@@ -19540,6 +19674,7 @@ function buildPrintableShiftCard(s){
         s.task === "In Office" ? "In Office" :
         s.task === "Traveling to Client" ? "Traveling to Client" :
         s.task === "Pull-out Parts" ? "Pull-out Parts" :
+        parseTypedScheduleTitle(s.task || "").category === "OnCall" ? "On-Call Schedule" :
         (!s.client_id ? "Internal Activity" : "")
     );
     const client = clientText ? `<div class="print-client print-client-primary">${escapeHtml(clientText)}</div>` : "";
