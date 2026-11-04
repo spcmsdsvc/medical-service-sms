@@ -1,6 +1,7 @@
 """Product Inventory: BSID required on add, edit and CSV import (plans.md, 2026-11-03)."""
 
 import io
+from unittest import mock
 import pathlib
 import unittest
 import uuid
@@ -126,8 +127,32 @@ class ProductBsidRequiredTests(unittest.TestCase):
                 response = self.client.post(path, json={'serial_number': serial, 'name': 'Auto BSID item'})
                 self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
+    def test_admin_to_follow_saves_without_bsid(self):
+        new_serial = f'{self.serial}F'
+        payload = {'serial_number': new_serial, 'product_name_id': self.catalog_id, 'bsid': '', 'bsid_to_follow': True}
+        added = self.client.post('/add_product', json=payload)
+        self.assertEqual(added.status_code, 200, added.get_data(as_text=True))
+        self.assertIsNone(self.stored_bsid(new_serial))
+        edit = {'serial_number': self.serial, 'product_name_id': self.catalog_id, 'room': 'Room 4', 'bsid_to_follow': True}
+        edited = self.client.put(f'/update_product/{self.serial}', json=edit)
+        self.assertEqual(edited.status_code, 200, edited.get_data(as_text=True))
+        self.assertIsNone(self.stored_bsid(self.serial))
+
+    def test_non_admin_to_follow_still_needs_bsid(self):
+        payload = {'serial_number': f'{self.serial}E', 'product_name_id': self.catalog_id, 'bsid': '', 'bsid_to_follow': True}
+        # An engineer allowed to edit inventory, but not an admin.
+        with mock.patch.object(app_module, 'is_admin_authorized', return_value=False),                 mock.patch.object(app_module, 'can_edit_products_inventory', return_value=True):
+            added = self.client.post('/add_product', json=payload)
+            edited = self.client.put(f'/update_product/{self.serial}', json={**payload, 'serial_number': self.serial})
+        for response in (added, edited):
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.get_json()['field'], 'bsid')
+        self.assertIsNone(self.stored_bsid(f'{self.serial}E'))
+
     def test_page_requires_bsid_only_for_product_inventory(self):
-        self.assertIn('if (!isStandaloneInventory && !data.bsid) {', TEMPLATE)
+        self.assertIn('if (!isStandaloneInventory && !data.bsid && !data.bsid_to_follow) {', TEMPLATE)
+        self.assertIn('{% if nav_is_admin and not is_standalone_inventory %}', TEMPLATE)
+        self.assertIn('id="p-bsid-to-follow"', TEMPLATE)
         self.assertIn('Required. Used for the calibration certificate number.', TEMPLATE)
         self.assertNotIn('Optional for legacy inventory', TEMPLATE)
 

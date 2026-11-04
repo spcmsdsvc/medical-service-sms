@@ -3250,6 +3250,11 @@ def ensure_product_contract_column():
 PRODUCT_BSID_REQUIRED_MESSAGE = 'BSID is required. It is used for the calibration certificate number.'
 
 
+def product_bsid_to_follow_allowed(payload):
+    """Admins may tick "To follow" to save a Product without a BSID for now."""
+    return bool(parse_bool_flag((payload or {}).get('bsid_to_follow')) and is_admin_authorized())
+
+
 def normalize_product_bsid(value):
     """Trim a BSID while preserving the user's displayed casing."""
     return clean_str(value)[:40] if clean_str(value) else ''
@@ -28752,7 +28757,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v358-parts-low-stock-email';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v359-bsid-to-follow';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -67382,7 +67387,7 @@ def add_product():
     payload_error = product_payload_error(d, serial_number, clean_int(d.get('client_id')))
     if payload_error:
         return jsonify({'message': payload_error[0], 'field': payload_error[1]}), 400
-    if not bsid:
+    if not bsid and not product_bsid_to_follow_allowed(d):
         return jsonify({'message': PRODUCT_BSID_REQUIRED_MESSAGE, 'field': 'bsid'}), 400
 
     existing_product = db.session.get(Product, serial_number)
@@ -67619,7 +67624,7 @@ def update_product(serial_number):
     if len(raw_bsid) > 40:
         return jsonify({'message': 'BSID must be 40 characters or fewer.', 'field': 'bsid'}), 400
     new_bsid = normalize_product_bsid(raw_bsid)
-    if not new_bsid:
+    if not new_bsid and not product_bsid_to_follow_allowed(d):
         return jsonify({'message': PRODUCT_BSID_REQUIRED_MESSAGE, 'field': 'bsid'}), 400
     bsid_product = product_bsid_duplicate(new_bsid, exclude_serial=old_serial)
     if bsid_product:

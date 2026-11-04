@@ -252,6 +252,12 @@
                     <label class="small fw-bold text-muted text-uppercase" for="p-bsid">BSID{% if not is_standalone_inventory %} <span class="text-danger" aria-hidden="true">*</span>{% endif %}</label>
                     <input type="text" id="p-bsid" class="form-control" maxlength="40" placeholder="{% if is_standalone_inventory %}Assigned automatically on save{% else %}Machine-level BSID{% endif %}"{% if not is_standalone_inventory %} aria-required="true"{% endif %}>
                     <div class="xsmall text-muted mt-1">{% if is_standalone_inventory %}Assigned automatically for new {{ inventory_label }} items. Existing BSIDs may be replaced but cannot be cleared.{% else %}Required. Used for the calibration certificate number.{% endif %}</div>
+                    {% if nav_is_admin and not is_standalone_inventory %}
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="p-bsid-to-follow" onchange="toggleBsidToFollow()">
+                        <label class="form-check-label small" for="p-bsid-to-follow">To follow (save without a BSID; calibration certificates cannot be sent until it is added)</label>
+                    </div>
+                    {% endif %}
                 </div>
 
                 <!-- AUTOCOMPLETE CLIENT SEARCH -->
@@ -2032,6 +2038,7 @@ function openAddModal() {
             bsidField.disabled = isStandaloneInventory;
             bsidField.placeholder = isStandaloneInventory ? 'Assigned automatically on save' : 'Machine-level BSID';
         }
+        setBsidToFollow(false);
         document.getElementById('p-under-contract').checked = false;
         const linkCheckbox = document.getElementById('p-with-vieworks');
         const linkSelect = document.getElementById('p-linked-vieworks');
@@ -2042,6 +2049,23 @@ function openAddModal() {
         toggleNewVieworksForm(false);
         
         prodModal.show(); 
+    }
+
+    // Admin-only "To follow": save a machine without a BSID for now.
+    function setBsidToFollow(checked) {
+        const box = document.getElementById('p-bsid-to-follow');
+        if (!box) return;
+        box.checked = Boolean(checked);
+        toggleBsidToFollow();
+    }
+
+    function toggleBsidToFollow() {
+        const box = document.getElementById('p-bsid-to-follow');
+        const field = document.getElementById('p-bsid');
+        if (!box || !field) return;
+        field.disabled = box.checked;
+        if (box.checked) field.value = '';
+        field.placeholder = box.checked ? 'BSID to follow' : 'Machine-level BSID';
     }
 
     function openEditModal(sn) { 
@@ -2071,6 +2095,7 @@ function openAddModal() {
         setProductNameForEdit(p.name);
         document.getElementById('p-room').value = p.room || '';
         document.getElementById('p-bsid').value = p.bsid || '';
+        setBsidToFollow(!String(p.bsid || '').trim());
         
         // Handle UI context for client search
         let clientDisp = p.client_name;
@@ -2153,7 +2178,10 @@ function openAddModal() {
             return productToast("Validation Error: BSID must be 40 characters or fewer.");
         }
 
-        if (!isStandaloneInventory && !data.bsid) {
+        data.bsid_to_follow = Boolean(document.getElementById('p-bsid-to-follow')?.checked);
+        if (data.bsid_to_follow) data.bsid = '';
+
+        if (!isStandaloneInventory && !data.bsid && !data.bsid_to_follow) {
             return productToast("Validation Error: BSID is required. It is used for the calibration certificate number.");
         }
 

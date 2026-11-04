@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-11-04-bsid-to-follow",
+      "release_date": "2026-11-04",
+      "title": "Product Inventory: BSID \"To follow\"",
+      "summary": "Admins can save a machine before its BSID is known.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-11-04-bsid-to-follow-tickbox",
+          "category": "Product Inventory",
+          "description": "When adding or editing a machine, tick \"To follow\" beside the BSID to save it without one. Add the BSID later: calibration certificates for that machine cannot be sent until it has one. Engineers still need to enter a BSID.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-11-04-on-call-schedule",
       "release_date": "2026-11-04",
       "title": "On-Call Schedule",
