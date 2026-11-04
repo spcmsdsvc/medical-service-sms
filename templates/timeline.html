@@ -984,6 +984,17 @@
                 <div id="task-desc-container" class="mb-3">
                     <label class="small fw-bold text-muted text-uppercase mb-1 d-block">📝 Task / Purpose</label>
                     <input type="text" id="f-title" class="form-control" list="task-list" placeholder="Briefly describe the task...">
+                    {% if nav_is_admin %}
+                    <div id="parts-install-wrap" class="timeline-parts-install d-none">
+                        <div class="form-check mt-2 mb-1">
+                            <input class="form-check-input" type="checkbox" id="f-parts-install" onchange="togglePartsInstallList()">
+                            <label class="form-check-label small fw-bold" for="f-parts-install">With Parts Installation?</label>
+                        </div>
+                        <div id="parts-install-list" class="timeline-parts-list d-none" role="group" aria-label="Committed parts for this machine"></div>
+                        <div id="parts-install-note" class="xsmall text-muted" aria-live="polite"></div>
+                    </div>
+                    {% endif %}
+                    <div id="parts-installed-readonly" class="small mt-2 d-none"></div>
                     <datalist id="task-list">
                         <option value="System Installation">
                         <option value="Corrective Maintenance">
@@ -12559,6 +12570,7 @@ function collectMobileEngineerSchedules(){
             )
             : productOrSerial;
         renderProductBsidWarning(product);
+        refreshPartsInstall();
         if(!product){
             panel.classList.add('d-none');
             badge.textContent = '';
@@ -12575,6 +12587,108 @@ function collectMobileEngineerSchedules(){
 
     function renderSelectedMachineCalibration(){
         renderProductCalibrationStatus(selectedTimelineProduct());
+    }
+
+    // Parts Installation (Parts Monitoring batch 3). Admins only; the server ignores the
+    // field from anyone else and from the offline queue.
+    const PARTS_INSTALL_ENABLED = {{ 'true' if nav_is_admin else 'false' }};
+    const partsInstallState = { key: '', loaded: false };
+
+    function resetPartsInstallState(){
+        partsInstallState.key = '';
+        partsInstallState.loaded = false;
+        const box = document.getElementById('f-parts-install');
+        if(box){ box.checked = false; box.disabled = false; }
+        const list = document.getElementById('parts-install-list');
+        if(list){ list.innerHTML = ''; list.classList.add('d-none'); }
+        const note = document.getElementById('parts-install-note');
+        if(note) note.textContent = '';
+        renderInstalledPartsReadonly(null);
+    }
+
+    function togglePartsInstallList(){
+        const box = document.getElementById('f-parts-install');
+        document.getElementById('parts-install-list')?.classList.toggle('d-none', !box?.checked);
+    }
+
+    async function refreshPartsInstall(){
+        if(!PARTS_INSTALL_ENABLED) return;
+        const wrap = document.getElementById('parts-install-wrap');
+        const box = document.getElementById('f-parts-install');
+        const list = document.getElementById('parts-install-list');
+        const note = document.getElementById('parts-install-note');
+        if(!wrap || !box || !list || !note) return;
+        const serial = document.getElementById('f-prod-id')?.value || '';
+        const source = document.getElementById('f-prod-source')?.value || 'product';
+        const shiftId = document.getElementById('f-id')?.value || '';
+        if(document.getElementById('f-category')?.value !== 'Work' || !serial){
+            wrap.classList.add('d-none');
+            partsInstallState.key = '';
+            partsInstallState.loaded = false;
+            return;
+        }
+        wrap.classList.remove('d-none');
+        const key = `${source}|${serial}|${shiftId}`;
+        // Date and time changes re-run the calibration badge; keep the admin's ticks then.
+        if(key === partsInstallState.key) return;
+        partsInstallState.key = key;
+        partsInstallState.loaded = false;
+        list.innerHTML = '';
+        if(!navigator.onLine){
+            box.checked = false;
+            box.disabled = true;
+            list.classList.add('d-none');
+            note.textContent = 'Parts can be added when online.';
+            return;
+        }
+        box.disabled = false;
+        note.textContent = 'Loading committed parts…';
+        try{
+            const params = new URLSearchParams({ machine_source: source, machine_serial: serial });
+            if(shiftId) params.set('shift_id', shiftId);
+            const response = await fetch(`/api/parts-monitoring/commitments?${params}`, { credentials: 'same-origin', cache: 'no-store' });
+            const data = await response.json().catch(() => ({}));
+            if(!response.ok || data.success === false) throw new Error(data.error || `Request failed (${response.status}).`);
+            if(partsInstallState.key !== key) return;
+            const items = data.commitments || [];
+            list.innerHTML = items.length
+                ? items.map(item => `<label class="form-check timeline-parts-option">
+                        <input class="form-check-input" type="checkbox" value="${Number(item.id)}" ${item.installed ? 'checked' : ''}>
+                        <span class="form-check-label">${timelineEscape(item.item_number)} · ${timelineEscape(item.item_description)} <strong>×${Number(item.quantity)}</strong>${item.installed ? ' <span class="text-muted">(on this schedule)</span>' : ''}</span>
+                    </label>`).join('')
+                : '<div class="xsmall text-muted">No committed parts for this machine.</div>';
+            box.checked = items.some(item => item.installed);
+            togglePartsInstallList();
+            note.textContent = '';
+            partsInstallState.loaded = true;
+        }catch(error){
+            if(partsInstallState.key !== key) return;
+            box.checked = false;
+            box.disabled = true;
+            list.classList.add('d-none');
+            note.textContent = 'Could not load committed parts. Parts on this schedule stay as they are.';
+        }
+    }
+
+    function appendPartsInstallPayload(dataSet){
+        // Sent only when the list really loaded: a failed load must never untick installed parts.
+        if(!PARTS_INSTALL_ENABLED || !partsInstallState.loaded) return;
+        if(document.getElementById('parts-install-wrap')?.classList.contains('d-none')) return;
+        const box = document.getElementById('f-parts-install');
+        const ids = box?.checked
+            ? [...document.querySelectorAll('#parts-install-list input:checked')].map(input => Number(input.value))
+            : [];
+        dataSet.append('parts_allocation_ids', JSON.stringify(ids));
+    }
+
+    function renderInstalledPartsReadonly(shift){
+        const line = document.getElementById('parts-installed-readonly');
+        if(!line) return;
+        const parts = (!PARTS_INSTALL_ENABLED && shift && Array.isArray(shift.installed_parts)) ? shift.installed_parts : [];
+        line.classList.toggle('d-none', !parts.length);
+        line.innerHTML = parts.length
+            ? `<i class="fa-solid fa-screwdriver-wrench me-1" aria-hidden="true"></i><strong>Parts:</strong> ${parts.map(part => `${timelineEscape(part.item_description || part.item_number)} ×${Number(part.quantity)}`).join(', ')}`
+            : '';
     }
 
     function sortCalibrationProducts(products){
@@ -13914,6 +14028,7 @@ function collectMobileEngineerSchedules(){
     function toggleCategoryFields() {
         const selectedVal = document.getElementById('f-category').value;
         setTimelineClientQuickAddState();
+        refreshPartsInstall();
         const recordID = document.getElementById('f-id').value;
         const titleField = document.getElementById('f-title');
 
@@ -15957,6 +16072,7 @@ if(shift.engineers){
         renderProductVieworksStatus(shift.product_id || null);
         document.getElementById('f-start-date').value = shift.start_date || date;
         renderSelectedMachineCalibration();
+        renderInstalledPartsReadonly(shift);
         document.getElementById('f-end-date').value = shift.end_date || shift.start_date || date;
         document.getElementById('f-original-start-date').value = shift.start_date || date;
         document.getElementById('f-original-end-date').value = shift.end_date || shift.start_date || date;
@@ -17967,6 +18083,7 @@ async function openTSRClientEmailModal(shiftId){
         }
 
         dataSet.append('engineers', JSON.stringify(selectedEngineersUI));
+        if(categoryVal === "Work") appendPartsInstallPayload(dataSet);
 
 
         /**
@@ -19054,6 +19171,7 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
 
         syncMobileRoleBadges();
         shiftModal = new bootstrap.Modal(document.getElementById('shiftModal'));
+        document.getElementById('shiftModal').addEventListener('hidden.bs.modal', resetPartsInstallState);
 
         document.getElementById('shiftModal').addEventListener('shown.bs.modal', resetMobileShiftModalScroll);
         document.getElementById('shiftModal').addEventListener('hidden.bs.modal', function(){
@@ -21535,6 +21653,26 @@ document.addEventListener('DOMContentLoaded', function(){
         outline: 3px solid rgba(37, 99, 235, .35);
         outline-offset: 2px;
     }
+
+    /* Parts Installation list under Task / Purpose (Parts Monitoring). */
+    .timeline-parts-list {
+        max-height: 220px;
+        overflow-y: auto;
+        padding: 4px 10px;
+        border: 1px solid rgba(127, 127, 127, .35);
+        border-radius: 8px;
+    }
+    .timeline-parts-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        min-height: 44px;
+        padding: 10px 0 10px 1.6em;
+        margin: 0;
+        border-bottom: 1px solid rgba(127, 127, 127, .2);
+        cursor: pointer;
+    }
+    .timeline-parts-option:last-child { border-bottom: 0; }
 
     .timeline-product-coverage-badge.is-calibration-valid,
     .timeline-product-search-status.is-calibration-valid {

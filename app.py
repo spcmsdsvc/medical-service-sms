@@ -3790,7 +3790,10 @@ class PartsMonitoringAllocation(db.Model):
     machine_serial = db.Column(db.String(100), nullable=True, index=True)
     machine_label = db.Column(db.String(255), nullable=True)
     status = db.Column(db.String(16), default='open', nullable=False, index=True)  # 'open' | 'installed' | 'cancelled'
-    shift_id = db.Column(db.Integer, nullable=True, index=True)
+    shift_id = db.Column(db.Integer, nullable=True, index=True)  # unused; parts link to the chain below
+    # Schedule chain (Shift.group_id) the parts were installed on. A chain keeps its group_id
+    # through every edit path, including the full-chain rebuild that recreates the rows.
+    shift_group_id = db.Column(db.String(64), nullable=True, index=True)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)
@@ -6943,6 +6946,16 @@ def ensure_parts_monitoring_tables():
         return
     PartsMonitoringItem.__table__.create(db.engine, checkfirst=True)
     PartsMonitoringAllocation.__table__.create(db.engine, checkfirst=True)
+    with db.engine.begin() as connection:
+        columns = {
+            row[1] for row in connection.exec_driver_sql("PRAGMA table_info(parts_monitoring_allocation)").fetchall()
+        }
+        if 'shift_group_id' not in columns:
+            connection.exec_driver_sql("ALTER TABLE parts_monitoring_allocation ADD COLUMN shift_group_id VARCHAR(64)")
+        connection.exec_driver_sql(
+            'CREATE INDEX IF NOT EXISTS ix_parts_monitoring_allocation_shift_group_id '
+            'ON parts_monitoring_allocation (shift_group_id)'
+        )
     _parts_monitoring_tables_ready = True
 
 
@@ -28708,7 +28721,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v355-parts-commitments';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v356-schedule-parts';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -30720,6 +30733,7 @@ def list_parts_monitoring_items():
     denied = parts_monitoring_guard()
     if denied:
         return denied
+    parts_monitoring_release_orphans()
     items = (
         PartsMonitoringItem.query.filter_by(is_active=True)
         .order_by(func.upper(PartsMonitoringItem.item_number).asc(), PartsMonitoringItem.id.asc())
@@ -30843,8 +30857,14 @@ def delete_parts_monitoring_item(item_id):
             'error': f'{item.item_number} still has {open_count} open commitment(s) or reserve(s). Cancel them first.',
         }), 409
     item_number = item.item_number
-    PartsMonitoringAllocation.query.filter_by(part_id=item.id).delete(synchronize_session=False)
-    db.session.delete(item)
+    has_installed = PartsMonitoringAllocation.query.filter_by(part_id=item.id, status='installed').count()
+    if has_installed:
+        # Schedules still show this part's name, so keep the row and hide it from the list.
+        item.is_active = False
+        item.updated_by_id = current_user.id
+    else:
+        PartsMonitoringAllocation.query.filter_by(part_id=item.id).delete(synchronize_session=False)
+        db.session.delete(item)
     add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: deleted part {item_number} ({item.item_description})')
     db.session.commit()
     return jsonify({'success': True})
@@ -31026,6 +31046,248 @@ def cancel_parts_monitoring_allocation(allocation_id):
     add_activity_log_entry(f'{PARTS_MONITORING_LOG_PREFIX}: cancelled {detail} for part {item.item_number}')
     db.session.commit()
     return jsonify({'success': True, 'item': parts_monitoring_item_to_dict(item)})
+
+
+# ---- Parts Installation on schedules (batch 3) ---------------------------------------------
+
+def parts_monitoring_parse_allocation_ids(payload):
+    """Return (present, ids) for the schedule form's parts_allocation_ids field.
+
+    Absent means "leave this schedule's parts alone" (engineer edits, drag moves); present
+    with an empty list means every part was unticked.
+    """
+    if not payload or 'parts_allocation_ids' not in payload:
+        return False, []
+    raw = payload.get('parts_allocation_ids')
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or '[]')
+        except (TypeError, ValueError):
+            raw = []
+    ids = []
+    for value in raw if isinstance(raw, (list, tuple)) else []:
+        number = clean_int(value)
+        if number and number not in ids:
+            ids.append(number)
+    return True, ids
+
+
+def parts_monitoring_label(allocation):
+    return f'{allocation.quantity} × {allocation.part.item_number}'
+
+
+def parts_monitoring_validate_install(ids, machine_source, machine_serial, group_id=None):
+    """Check every id is an open commitment for this machine (or already on this chain)."""
+    ensure_parts_monitoring_tables()
+    if not ids:
+        return [], None
+    rows = PartsMonitoringAllocation.query.filter(PartsMonitoringAllocation.id.in_(ids)).all()
+    if len(rows) != len(ids):
+        return None, 'A committed part is no longer available. Refresh the parts list and try again.'
+    source = normalize_equipment_source(machine_source, default='product')
+    serial = clean_str(machine_serial) or ''
+    for row in rows:
+        on_this_chain = row.status == 'installed' and group_id and row.shift_group_id == group_id
+        if row.kind != 'committed' or not (row.status == 'open' or on_this_chain):
+            return None, f'{row.part.item_number} is no longer committed and free. Refresh the parts list and try again.'
+        if row.machine_source != source or (row.machine_serial or '').lower() != serial.lower():
+            return None, f'{row.part.item_number} is committed to another machine. Choose parts for this machine.'
+    return rows, None
+
+
+def parts_monitoring_install(rows, group_id, schedule_label):
+    """Use whole commitments on a schedule chain: Stock and Committed both drop."""
+    for row in rows:
+        if row.status != 'open':
+            continue
+        row.status = 'installed'
+        row.shift_group_id = group_id
+        row.closed_at = get_manila_time()
+        row.part.stock = row.part.stock - row.quantity
+        add_activity_log_entry(
+            f'{PARTS_MONITORING_LOG_PREFIX}: installed {parts_monitoring_label(row)} on schedule '
+            f'{schedule_label} ({row.client_name}, {row.machine_label}); stock {row.part.stock + row.quantity} → {row.part.stock}'
+        )
+
+
+def parts_monitoring_return(rows, reason):
+    """Give installed parts back to Committed (same client and machine); Stock rises again."""
+    for row in rows:
+        if row.status != 'installed':
+            continue
+        row.status = 'open'
+        row.shift_group_id = None
+        row.closed_at = None
+        row.part.stock = row.part.stock + row.quantity
+        add_activity_log_entry(
+            f'{PARTS_MONITORING_LOG_PREFIX}: returned {parts_monitoring_label(row)} to committed ({reason}); '
+            f'stock {row.part.stock - row.quantity} → {row.part.stock}'
+        )
+
+
+def parts_monitoring_release_orphans():
+    """Return parts whose schedule chain no longer exists (any delete path). Commits."""
+    try:
+        ensure_parts_monitoring_tables()
+        live_groups = db.session.query(Shift.group_id).filter(Shift.group_id.isnot(None))
+        orphans = (
+            PartsMonitoringAllocation.query
+            .filter(PartsMonitoringAllocation.status == 'installed')
+            .filter(or_(
+                PartsMonitoringAllocation.shift_group_id.is_(None),
+                ~PartsMonitoringAllocation.shift_group_id.in_(live_groups),
+            ))
+            .all()
+        )
+        if orphans:
+            parts_monitoring_return(orphans, 'schedule deleted')
+            db.session.commit()
+    except Exception as exc:  # never break the page that triggered the sweep
+        db.session.rollback()
+        print(f'[PartsMonitoring] Unable to return parts of deleted schedules: {exc}', flush=True)
+
+
+def parts_monitoring_chain_machine(group_id):
+    first = (
+        Shift.query.filter(Shift.group_id == group_id)
+        .filter(or_(Shift.override_kind.is_(None), Shift.override_kind == ''))
+        .order_by(Shift.start_time.asc(), Shift.id.asc())
+        .first()
+    )
+    if not first:
+        return None, None, None
+    source = normalize_equipment_source(getattr(first, 'equipment_source', None), default='product')
+    return first, source, clean_str(first.product_id) or ''
+
+
+def parts_monitoring_sync_chain(group_id, wanted_ids=None):
+    """After a schedule edit: return parts no longer wanted or on a different machine, install new ones."""
+    first, source, serial = parts_monitoring_chain_machine(group_id)
+    if not first:
+        return
+    installed = PartsMonitoringAllocation.query.filter_by(status='installed', shift_group_id=group_id).all()
+    keep = []
+    for row in installed:
+        machine_changed = row.machine_source != source or (row.machine_serial or '').lower() != serial.lower()
+        if machine_changed:
+            parts_monitoring_return([row], 'schedule machine changed')
+        elif wanted_ids is not None and row.id not in wanted_ids:
+            parts_monitoring_return([row], 'unticked on the schedule')
+        else:
+            keep.append(row.id)
+    if wanted_ids:
+        new_ids = [allocation_id for allocation_id in wanted_ids if allocation_id not in keep]
+        rows, error = parts_monitoring_validate_install(new_ids, source, serial, group_id)
+        if rows:
+            parts_monitoring_install(rows, group_id, first.title or '')
+        elif error:
+            print(f'[PartsMonitoring] Parts not installed on schedule chain {group_id}: {error}', flush=True)
+
+
+def parts_monitoring_prepare_schedule_update(master_shift, payload, machine_source, machine_serial):
+    """Validate the edit form's parts before the schedule is saved; returns (plan, error)."""
+    if not is_admin_authorized():
+        present, wanted = False, []
+    else:
+        present, wanted = parts_monitoring_parse_allocation_ids(payload)
+    parent = master_shift
+    if is_shift_time_override(master_shift) and master_shift.parent_shift_id:
+        parent = db.session.get(Shift, master_shift.parent_shift_id) or master_shift
+    plan = {'shift_id': parent.id, 'group_id': parent.group_id, 'present': present, 'wanted': wanted}
+    if present and wanted:
+        _rows, error = parts_monitoring_validate_install(wanted, machine_source, machine_serial, parent.group_id)
+        if error:
+            return plan, error
+    return plan, None
+
+
+def parts_monitoring_finish_schedule_update(response, plan):
+    """after_this_request hook: apply the parts change once the schedule edit succeeded."""
+    try:
+        if response.status_code != 200:
+            return response
+        ensure_parts_monitoring_tables()
+        shift = db.session.get(Shift, plan['shift_id'])
+        group_id = (shift.group_id if shift else None) or plan['group_id']
+        if not group_id:
+            return response
+        if shift and not shift.group_id:
+            shift.group_id = group_id
+        parts_monitoring_sync_chain(group_id, plan['wanted'] if plan['present'] else None)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[PartsMonitoring] Unable to update schedule parts: {exc}', flush=True)
+    return response
+
+
+def parts_monitoring_installed_parts_for_group(group_id):
+    """Read-only 'Parts:' line data for a schedule chain; one query per request."""
+    if not group_id:
+        return []
+    cache = getattr(g, '_parts_monitoring_installed', None)
+    if cache is None:
+        cache = {}
+        try:
+            ensure_parts_monitoring_tables()
+            rows = (
+                db.session.query(PartsMonitoringAllocation, PartsMonitoringItem)
+                .join(PartsMonitoringItem, PartsMonitoringItem.id == PartsMonitoringAllocation.part_id)
+                .filter(PartsMonitoringAllocation.status == 'installed')
+                .all()
+            )
+            for allocation, part in rows:
+                cache.setdefault(allocation.shift_group_id, []).append({
+                    'item_number': part.item_number,
+                    'item_description': part.item_description,
+                    'quantity': allocation.quantity,
+                })
+        except Exception as exc:
+            print(f'[PartsMonitoring] Unable to read installed parts: {exc}', flush=True)
+        g._parts_monitoring_installed = cache
+    return cache.get(group_id, [])
+
+
+@app.route('/api/parts-monitoring/commitments', methods=['GET'])
+@login_required
+def list_parts_monitoring_commitments():
+    """Open commitments for one machine, plus those already installed on the schedule being edited."""
+    denied_response = parts_monitoring_guard()
+    if denied_response:
+        return denied_response
+    parts_monitoring_release_orphans()
+    source = normalize_equipment_source(request.args.get('machine_source'), default='product')
+    serial = clean_str(request.args.get('machine_serial')) or ''
+    if not serial:
+        return jsonify({'success': True, 'commitments': []})
+    group_id = None
+    shift_id = request.args.get('shift_id', type=int)
+    if shift_id:
+        shift = db.session.get(Shift, shift_id)
+        if shift and is_shift_time_override(shift) and shift.parent_shift_id:
+            shift = db.session.get(Shift, shift.parent_shift_id) or shift
+        group_id = shift.group_id if shift else None
+    query = (
+        PartsMonitoringAllocation.query
+        .filter(PartsMonitoringAllocation.kind == 'committed')
+        .filter(PartsMonitoringAllocation.machine_source == source)
+        .filter(func.lower(PartsMonitoringAllocation.machine_serial) == serial.lower())
+    )
+    if group_id:
+        query = query.filter(or_(
+            PartsMonitoringAllocation.status == 'open',
+            and_(PartsMonitoringAllocation.status == 'installed', PartsMonitoringAllocation.shift_group_id == group_id),
+        ))
+    else:
+        query = query.filter(PartsMonitoringAllocation.status == 'open')
+    rows = query.order_by(PartsMonitoringAllocation.created_at.asc(), PartsMonitoringAllocation.id.asc()).all()
+    return jsonify({'success': True, 'commitments': [{
+        'id': row.id,
+        'item_number': row.part.item_number,
+        'item_description': row.part.item_description,
+        'quantity': row.quantity,
+        'installed': row.status == 'installed',
+    } for row in rows]})
 
 
 @app.route('/settings')
@@ -55268,6 +55530,7 @@ def get_timeline_data():
                 'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
                 'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(equipment, 'serial_number', None))),
                 'linked_vieworks': product_vieworks_link_payload(getattr(equipment, 'serial_number', None)) if equipment_source == 'product' and equipment else [],
+                'installed_parts': parts_monitoring_installed_parts_for_group(getattr(shift, 'group_id', None)),
                 'status': shift.status,
                 # Keep default legacy payload unchanged.
                 # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
@@ -55472,6 +55735,7 @@ def get_shift_details(shift_id):
             'product_bsid': normalize_product_bsid(getattr(equipment, 'bsid', None)) if equipment else '',
             'with_vieworks_canon': bool(equipment_source == 'product' and product_vieworks_link_payload(getattr(equipment, 'serial_number', None))),
             'linked_vieworks': product_vieworks_link_payload(getattr(equipment, 'serial_number', None)) if equipment_source == 'product' and equipment else [],
+            'installed_parts': parts_monitoring_installed_parts_for_group(getattr(shift, 'group_id', None)),
             'status': shift.status,
             'files': [
                 get_shift_file_display_name(file_record) or file_record.filename
@@ -64490,6 +64754,17 @@ def add_shift():
     selected_product_id = selected_equipment.get('serial_number') if selected_equipment else ''
     selected_equipment_source = selected_equipment.get('equipment_source', 'product') if selected_equipment else 'product'
 
+    # Parts Installation: admins only, never from the offline queue (it carries a creation token).
+    parts_to_install = []
+    if not creation_token and is_admin_authorized():
+        _parts_present, parts_ids = parts_monitoring_parse_allocation_ids(payload)
+        if parts_ids:
+            parts_to_install, parts_error = parts_monitoring_validate_install(
+                parts_ids, selected_equipment_source, selected_product_id
+            )
+            if parts_error:
+                return jsonify({'message': parts_error}), 409
+
     is_work_schedule = bool(selected_client_id)
     if is_work_schedule and requested_status == 'Completed' and not uploaded_files_have_tsr():
         return jsonify({'message': 'A TSR file is required before marking this schedule as Completed.'}), 400
@@ -64581,6 +64856,9 @@ def add_shift():
 
     db.session.add(ActivityLog(user=current_user.username.capitalize(), action=log_action))
 
+    if parts_to_install and first_shift:
+        parts_monitoring_install(parts_to_install, group_id, f'{shift_title} on {date_label}')
+
     try:
         db.session.commit()
     except IntegrityError:
@@ -64666,6 +64944,13 @@ def update_shift(id):
         return jsonify({'message': equipment_error}), 400
     selected_product_id = selected_equipment.get('serial_number') if selected_equipment else ''
     selected_equipment_source = selected_equipment.get('equipment_source', 'product') if selected_equipment else 'product'
+    ensure_parts_monitoring_tables()
+    parts_plan, parts_error = parts_monitoring_prepare_schedule_update(
+        master_shift, payload, selected_equipment_source, selected_product_id
+    )
+    if parts_error:
+        return jsonify({'message': parts_error}), 409
+    after_this_request(lambda response: parts_monitoring_finish_schedule_update(response, parts_plan))
     start_d = parse_date(payload.get('start_date'))
     end_d = parse_date(payload.get('end_date'))
     new_start_time = payload.get('start_time')

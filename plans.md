@@ -39,8 +39,15 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Parts Monitoring: new admin page, commitments, schedule parts installation, low-stock email (4 batches)
 
-**Status:** In progress — Batch 1 executed 2026-11-04 (go-ahead "Start Batch 1"), not yet published; Batch 2 executed 2026-11-04 (go-ahead "go for batch 2"), not yet published; Batches 3–4 awaiting go-ahead. Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
+**Status:** In progress — Batches 1–2 executed 2026-11-04 (go-aheads "Start Batch 1", "go for batch 2") and published together as `030e3fa` (Railway deployment `b1ed9349` building at push time); Batch 3 executed 2026-11-04 (go-ahead "proceed with batch 3"), not yet published; Batch 4 awaiting go-ahead. Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
 Each batch is one commit; execute in order (each builds on the previous one).
+
+## Amendments during execution (2026-11-04)
+- Batches 1–2 were committed together (`030e3fa`): batch 2 reworks batch 1's functions in `app.py` and the page, so they could not be split cleanly.
+- Batch 3: parts link to the schedule **chain** (`Shift.group_id`, new column `shift_group_id`) instead of the first day's row id. `update_shift`'s full-chain rebuild deletes and recreates rows but keeps the group id, so a row-id link would have been lost. Effect is the same as planned: a multi-day schedule uses the parts once.
+- Batch 3: instead of a return helper in each of the three delete paths, `parts_monitoring_release_orphans()` returns parts whose chain has no rows left, run on the Parts Monitoring list and the commitments API. This also covers bulk purges and any other path that deletes `Shift` rows.
+- Batch 3: `update_shift` has four separate commit points, so the parts change is validated before the save and applied in an `after_this_request` hook on a 200 response (a failed edit never touches parts).
+- Batch 3: the read-only "Parts:" line shows on every day of the chain, not only the first.
 
 ## Context
 Admins track replacement parts (e.g. X-ray tubes, batteries, FSR assemblies) in an Excel sheet

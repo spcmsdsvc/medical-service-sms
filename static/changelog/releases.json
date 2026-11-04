@@ -24,6 +24,16 @@
             "admins"
           ],
           "sort_order": 2
+        },
+        {
+          "item_key": "2026-11-04-parts-monitoring-schedule-installation",
+          "category": "Calendar",
+          "description": "On a Work schedule, tick \"With Parts Installation?\" under Task / Purpose and choose the parts committed to that machine. Saving the schedule uses them: Stock and Committed both go down. Unticking a part, changing the machine or deleting the schedule puts them back to Committed. Engineers see the parts on their schedule.",
+          "audiences": [
+            "admins",
+            "engineers"
+          ],
+          "sort_order": 3
         }
       ]
     },

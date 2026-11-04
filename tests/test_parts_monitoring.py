@@ -1,6 +1,8 @@
+import json
 import pathlib
 import unittest
 import uuid
+from datetime import timedelta
 
 import app as app_module
 from tests.sw_cache_version import assert_cache_version_at_least
@@ -377,6 +379,247 @@ class PartsMonitoringCommitmentTests(unittest.TestCase):
 
     def test_service_worker_bumped(self):
         assert_cache_version_at_least(self, 355)
+
+
+class PartsMonitoringScheduleTests(unittest.TestCase):
+    """Parts Monitoring batch 3: Parts Installation on schedules."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+        cls.suffix = uuid.uuid4().hex[:8]
+        db = app_module.db
+        with cls.app.app_context():
+            db.create_all()
+            admin = app_module.User(username=f'parts_sched_admin_{cls.suffix}',
+                                    password=app_module.generate_password_hash('test-password'),
+                                    role='superadmin', is_active=True)
+            eng_user = app_module.User(username=f'parts_sched_eng_{cls.suffix}',
+                                       password=app_module.generate_password_hash('test-password'),
+                                       role='engineer', is_active=True)
+            client_row = app_module.Client(name=f'Parts Sched Client {cls.suffix}', address='X')
+            db.session.add_all([admin, eng_user, client_row])
+            db.session.flush()
+            engineer = app_module.Engineer(employee_id=f'PS-{cls.suffix}', name=f'Parts Sched Eng {cls.suffix}',
+                                           initials='PS', branch='Manila', user_id=eng_user.id)
+            db.session.add(engineer)
+            cls.serial_a = f'PS-A-{cls.suffix}'
+            cls.serial_b = f'PS-B-{cls.suffix}'
+            db.session.add_all([
+                app_module.Product(serial_number=cls.serial_a, name='Fluoro A', client_id=client_row.id),
+                app_module.Product(serial_number=cls.serial_b, name='Fluoro B', client_id=client_row.id),
+            ])
+            db.session.commit()
+            cls.admin_id, cls.eng_user_id = admin.id, eng_user.id
+            cls.client_id, cls.engineer_id = client_row.id, engineer.id
+
+    @classmethod
+    def tearDownClass(cls):
+        db = app_module.db
+        with cls.app.app_context():
+            for shift in app_module.Shift.query.filter(app_module.Shift.title.like(f'%{cls.suffix}%')).all():
+                app_module.ShiftEngineer.query.filter_by(shift_id=shift.id).delete()
+                db.session.delete(shift)
+            part_ids = [row.id for row in app_module.PartsMonitoringItem.query.filter(
+                app_module.PartsMonitoringItem.item_number.like(f'%{cls.suffix}%')).all()]
+            if part_ids:
+                app_module.PartsMonitoringAllocation.query.filter(
+                    app_module.PartsMonitoringAllocation.part_id.in_(part_ids)).delete(synchronize_session=False)
+                app_module.PartsMonitoringItem.query.filter(
+                    app_module.PartsMonitoringItem.id.in_(part_ids)).delete(synchronize_session=False)
+            app_module.ActivityLog.query.filter(
+                app_module.ActivityLog.action.like(f'%{cls.suffix}%')).delete(synchronize_session=False)
+            app_module.Product.query.filter(
+                app_module.Product.serial_number.in_([cls.serial_a, cls.serial_b])).delete(synchronize_session=False)
+            app_module.Engineer.query.filter_by(id=cls.engineer_id).delete()
+            app_module.Client.query.filter_by(id=cls.client_id).delete()
+            app_module.User.query.filter(app_module.User.id.in_([cls.admin_id, cls.eng_user_id])).delete(
+                synchronize_session=False)
+            db.session.commit()
+            db.session.remove()
+
+    def client_for(self, user_id):
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(user_id)
+            session['_fresh'] = True
+        return client
+
+    def setUp(self):
+        self.admin = self.client_for(self.admin_id)
+
+    # Fixtures
+    def new_commitment(self, label, stock=6, quantity=2, serial=None):
+        part = self.admin.post('/api/parts-monitoring/items', json={
+            'item_number': f'{label}-{self.suffix}', 'item_description': f'Tube {label}',
+            'stock': stock, 'minimum_stock': 0,
+        }).get_json()['item']
+        allocation = self.admin.post(f"/api/parts-monitoring/items/{part['id']}/allocations", json={
+            'kind': 'committed', 'quantity': quantity, 'client_id': self.client_id,
+            'machine_source': 'product', 'machine_serial': serial or self.serial_a,
+        }).get_json()['allocation']
+        return part['id'], allocation['id']
+
+    def schedule_payload(self, title, day_offset, days=0, serial=None, parts=None, **extra):
+        with self.app.app_context():
+            start = app_module.get_manila_today() + timedelta(days=day_offset)
+        data = {
+            'title': f'{title} {self.suffix}',
+            'start_date': start.isoformat(),
+            'end_date': (start + timedelta(days=days)).isoformat(),
+            'start_time': '09:00', 'end_time': '11:00',
+            'include_weekends': 'true',
+            'engineers': json.dumps([self.engineer_id]),
+            'engineer_id': str(self.engineer_id),
+            'client_id': str(self.client_id),
+            'product_id': serial or self.serial_a,
+            'equipment_source': 'product',
+            'status': 'In Progress',
+        }
+        if parts is not None:
+            data['parts_allocation_ids'] = json.dumps(parts)
+        data.update(extra)
+        return data
+
+    def chain(self, title):
+        with self.app.app_context():
+            return [row.id for row in app_module.Shift.query.filter_by(title=f'{title} {self.suffix}')
+                    .order_by(app_module.Shift.start_time).all()]
+
+    def figures(self, part_id):
+        items = self.admin.get('/api/parts-monitoring/items').get_json()['items']
+        item = next(row for row in items if row['id'] == part_id)
+        return item['stock'], item['committed'], item['available']
+
+    def status(self, allocation_id):
+        with self.app.app_context():
+            return app_module.db.session.get(app_module.PartsMonitoringAllocation, allocation_id).status
+
+    # Tests
+    def test_schedule_with_parts_uses_the_commitment(self):
+        part_id, allocation_id = self.new_commitment('INS')
+        response = self.admin.post('/add_shift', data=self.schedule_payload('Install', 101, parts=[allocation_id]))
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(self.figures(part_id), (4, 0, 4))
+        self.assertEqual(self.status(allocation_id), 'installed')
+
+    def test_multi_day_schedule_uses_parts_once(self):
+        part_id, allocation_id = self.new_commitment('MULTI')
+        response = self.admin.post('/add_shift', data=self.schedule_payload('Multi', 104, days=2, parts=[allocation_id]))
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(len(self.chain('Multi')), 3)
+        self.assertEqual(self.figures(part_id), (4, 0, 4))
+
+    def test_commitment_cannot_be_used_twice_or_on_another_machine(self):
+        _part_id, allocation_id = self.new_commitment('TWICE')
+        self.admin.post('/add_shift', data=self.schedule_payload('First', 108, parts=[allocation_id]))
+        again = self.admin.post('/add_shift', data=self.schedule_payload('Second', 109, parts=[allocation_id]))
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(self.chain('Second'), [])
+        _p2, other_machine = self.new_commitment('MACH', serial=self.serial_b)
+        wrong = self.admin.post('/add_shift', data=self.schedule_payload('Wrong', 110, parts=[other_machine]))
+        self.assertEqual(wrong.status_code, 409)
+        self.assertEqual(self.chain('Wrong'), [])
+
+    def test_edit_untick_returns_and_absent_field_keeps(self):
+        part_id, allocation_id = self.new_commitment('EDIT')
+        self.admin.post('/add_shift', data=self.schedule_payload('Edit', 112, parts=[allocation_id]))
+        shift_id = self.chain('Edit')[0]
+        kept = self.admin.post(f'/update_shift/{shift_id}', data=self.schedule_payload('Edit', 112))
+        self.assertEqual(kept.status_code, 200, kept.get_data(as_text=True))
+        self.assertEqual(self.status(allocation_id), 'installed')
+        unticked = self.admin.post(f'/update_shift/{shift_id}', data=self.schedule_payload('Edit', 112, parts=[]))
+        self.assertEqual(unticked.status_code, 200, unticked.get_data(as_text=True))
+        self.assertEqual(self.status(allocation_id), 'open')
+        self.assertEqual(self.figures(part_id), (6, 2, 4))
+        retick = self.admin.post(f'/update_shift/{shift_id}', data=self.schedule_payload('Edit', 112, parts=[allocation_id]))
+        self.assertEqual(retick.status_code, 200)
+        self.assertEqual(self.figures(part_id), (4, 0, 4))
+
+    def test_machine_change_returns_parts(self):
+        part_id, allocation_id = self.new_commitment('SWAP')
+        self.admin.post('/add_shift', data=self.schedule_payload('Swap', 115, parts=[allocation_id]))
+        self.assertEqual(self.status(allocation_id), 'installed')
+        shift_id = self.chain('Swap')[0]
+        response = self.admin.post(f'/update_shift/{shift_id}', data=self.schedule_payload('Swap', 115, serial=self.serial_b))
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(self.status(allocation_id), 'open')
+        self.assertEqual(self.figures(part_id), (6, 2, 4))
+
+    def test_deleted_schedule_returns_parts(self):
+        part_id, allocation_id = self.new_commitment('DELS')
+        self.admin.post('/add_shift', data=self.schedule_payload('Gone', 118, parts=[allocation_id]))
+        self.assertEqual(self.status(allocation_id), 'installed')
+        shift_id = self.chain('Gone')[0]
+        response = self.admin.delete(f'/delete_shift/{shift_id}')
+        self.assertIn(response.status_code, (200, 204), response.get_data(as_text=True))
+        self.assertEqual(self.chain('Gone'), [])
+        self.assertEqual(self.figures(part_id), (6, 2, 4))
+        self.assertEqual(self.status(allocation_id), 'open')
+
+    def test_any_delete_path_returns_parts(self):
+        """Bulk purges and previewed deletes remove rows directly; the sweep still returns parts."""
+        part_id, allocation_id = self.new_commitment('BULK')
+        self.admin.post('/add_shift', data=self.schedule_payload('Bulk', 121, days=1, parts=[allocation_id]))
+        self.assertEqual(self.figures(part_id), (4, 0, 4))
+        with self.app.app_context():
+            for shift in app_module.Shift.query.filter_by(title=f'Bulk {self.suffix}').all():
+                app_module.ShiftEngineer.query.filter_by(shift_id=shift.id).delete()
+                app_module.db.session.delete(shift)
+            app_module.db.session.commit()
+        self.assertEqual(self.figures(part_id), (6, 2, 4))
+
+    def test_non_admin_and_offline_queue_parts_are_ignored(self):
+        part_id, allocation_id = self.new_commitment('IGN')
+        engineer = self.client_for(self.eng_user_id)
+        response = engineer.post('/add_shift', data=self.schedule_payload('EngSched', 124, parts=[allocation_id]))
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(self.status(allocation_id), 'open')
+        queued = self.admin.post('/add_shift', data=self.schedule_payload(
+            'Queued', 125, parts=[allocation_id], creation_token=f'parts-queue-{self.suffix}'))
+        self.assertEqual(queued.status_code, 200, queued.get_data(as_text=True))
+        self.assertEqual(self.status(allocation_id), 'open')
+        self.assertEqual(engineer.get(
+            f'/api/parts-monitoring/commitments?machine_source=product&machine_serial={self.serial_a}').status_code, 403)
+
+    def test_commitments_api_lists_open_and_this_schedules_parts(self):
+        _part_id, allocation_id = self.new_commitment('LIST')
+        url = f'/api/parts-monitoring/commitments?machine_source=product&machine_serial={self.serial_a}'
+        ids = {row['id'] for row in self.admin.get(url).get_json()['commitments']}
+        self.assertIn(allocation_id, ids)
+        self.admin.post('/add_shift', data=self.schedule_payload('Listed', 127, parts=[allocation_id]))
+        shift_id = self.chain('Listed')[0]
+        self.assertNotIn(allocation_id, {row['id'] for row in self.admin.get(url).get_json()['commitments']})
+        rows = self.admin.get(f'{url}&shift_id={shift_id}').get_json()['commitments']
+        self.assertTrue(any(row['id'] == allocation_id and row['installed'] for row in rows))
+        other = self.admin.get(f'/api/parts-monitoring/commitments?machine_source=product&machine_serial={self.serial_b}')
+        self.assertNotIn(allocation_id, {row['id'] for row in other.get_json()['commitments']})
+
+    def test_installed_parts_shown_to_schedule_viewers(self):
+        _part_id, allocation_id = self.new_commitment('VIEW')
+        self.admin.post('/add_shift', data=self.schedule_payload('Viewed', 130, parts=[allocation_id]))
+        with self.app.app_context():
+            group_id = app_module.db.session.get(app_module.Shift, self.chain('Viewed')[0]).group_id
+        with self.app.test_request_context():
+            parts = app_module.parts_monitoring_installed_parts_for_group(group_id)
+        self.assertEqual(parts, [{'item_number': f'VIEW-{self.suffix}', 'item_description': 'Tube VIEW', 'quantity': 2}])
+        timeline = (ROOT / 'templates' / 'timeline.html').read_text(encoding='utf-8')
+        self.assertIn("'installed_parts': parts_monitoring_installed_parts_for_group(", (ROOT / 'app.py').read_text(encoding='utf-8'))
+        self.assertIn('renderInstalledPartsReadonly(shift);', timeline)
+        self.assertIn('With Parts Installation?', timeline)
+
+    def test_deleting_a_used_part_hides_it(self):
+        part_id, allocation_id = self.new_commitment('HIDE')
+        self.admin.post('/add_shift', data=self.schedule_payload('Hidden', 133, parts=[allocation_id]))
+        self.assertEqual(self.admin.delete(f'/api/parts-monitoring/items/{part_id}').status_code, 200)
+        with self.app.app_context():
+            part = app_module.db.session.get(app_module.PartsMonitoringItem, part_id)
+            self.assertIsNotNone(part)
+            self.assertFalse(part.is_active)
+
+    def test_service_worker_bumped(self):
+        assert_cache_version_at_least(self, 356)
 
 
 if __name__ == '__main__':
