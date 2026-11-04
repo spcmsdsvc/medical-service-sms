@@ -16518,8 +16518,23 @@ def correct_product_from_tsr_revision(shift, payload):
             synchronize_session=False
         )
         shift.product_id = new_serial
-        db.session.delete(product_rec)
+        # Match update_product: P.O.s and Vieworks links follow the serial.
+        linked_purchase_order_count = purchase_order_count_for_machine(old_serial)
+        PurchaseOrderMachine.query.filter_by(product_serial=old_serial).update(
+            {'product_serial': new_serial}, synchronize_session=False
+        )
+        PurchaseOrder.query.filter(PurchaseOrder.product_serial == old_serial).update(
+            {'product_serial': new_serial}, synchronize_session=False
+        )
+        ProductVieworksLink.query.filter_by(product_serial=old_serial).update(
+            {'product_serial': new_serial}, synchronize_session=False
+        )
+        # Delete the row directly: an ORM delete through Product.shifts would blank
+        # the serial on Genoray/Vieworks schedules that reuse it.
+        db.session.expunge(product_rec)
+        db.session.execute(Product.__table__.delete().where(Product.serial_number == old_serial))
     else:
+        linked_purchase_order_count = 0
         product_rec.name = new_name
         linked_schedule_count = Shift.query.filter(
             Shift.product_id == old_serial,
@@ -16534,7 +16549,8 @@ def correct_product_from_tsr_revision(shift, payload):
         action=(
             f"Corrected equipment from TSR revision: "
             f"{old_name or 'Unnamed'} ({old_serial}) -> {new_name} ({new_serial}); "
-            f"{linked_schedule_count} linked schedule(s) updated"
+            f"{linked_schedule_count} linked schedule(s) updated; "
+            f"{linked_purchase_order_count} linked P.O.(s) updated"
         )[:255]
     ))
 
@@ -16544,7 +16560,8 @@ def correct_product_from_tsr_revision(shift, payload):
         'new_serial': new_serial,
         'old_name': old_name,
         'new_name': new_name,
-        'linked_schedule_count': linked_schedule_count
+        'linked_schedule_count': linked_schedule_count,
+        'linked_purchase_order_count': linked_purchase_order_count,
     }
 
 

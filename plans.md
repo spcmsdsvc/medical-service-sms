@@ -37,9 +37,108 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# TSR-revision serial correction: move P.O.s and Vieworks links, keep other schedules (1 batch)
+
+**Status:** Executed 2026-11-04, not yet published (awaiting "commit and push"); step 0 on production still open. Go-ahead 2026-11-04 ("Go ahead"). Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
+
+## Amendments during execution (2026-11-04)
+- Step 0: `railway ssh` timed out twice (port 22 to `ssh.railway.com` unreachable from this
+  network), so production was **not** checked. The same read-only queries on the local
+  `scheduler.db` copy (dated 2026-10-23) found 0 TSR-revision corrections in the Activity Log, 0
+  orphaned P.O. / P.O. machine / Vieworks link rows, and 0 blank-serial Genoray/Vieworks schedules.
+  Rerun on production from a network that allows SSH (queries in the step above).
+- Steps 1–3 done as planned in `correct_product_from_tsr_revision`; the name-only branch reports
+  `linked_purchase_order_count = 0`.
+- Step 4 test needed an Engineer `initials` value (NOT NULL). The P.O.-count assertion was moved
+  last so the HEAD control fails on behaviour, not on the new dict key.
+- Step 5: on a HEAD copy the new test fails (`MOVE-OLD-… != MOVE-NEW-…`, P.O. left on the old
+  serial). Step 6: 94 focused tests pass (`test_product_serial_bsid`, `test_purchase_orders`,
+  `test_product_vieworks_links_history`, `test_product_inventory_mutations`,
+  `test_tsr_signature_recovery`).
+
+## Context
+Found while fixing the serial-change BSID bug (`5a47e43`). An engineer can correct a machine's
+serial from TSR revision mode; `correct_product_from_tsr_revision` (`app.py:16431`) then moves the
+Product row to the new serial but does far less than the Product Inventory save (`update_product`,
+`app.py:66471`). Outcome: both paths leave the same data behind after a serial change.
+
+## Decisions taken
+- Fix inside `correct_product_from_tsr_revision` only; no shared helper (owner: keep it simple).
+- Step 0 read-only production check comes first, to learn whether past corrections need repair.
+- Travel request routes stay out (see Deliberately excluded).
+
+## Investigation
+- `update_product` serial change (`app.py:~66592–66625`): creates the replacement, moves
+  `ProductVieworksLink` rows, Product-source `Shift.product_id`, `PurchaseOrderMachine.product_serial`
+  and the legacy mirror `PurchaseOrder.product_serial`, then `db.session.expunge(p)` and a direct
+  `Product.__table__.delete()`. Its comment explains why: deleting through the ORM nulls
+  `product_id` on Genoray/Vieworks schedules that reuse the serial.
+- `correct_product_from_tsr_revision` (`app.py:~16493–16520`): creates the replacement (BSID and
+  room kept since `5a47e43`), moves Product-source shifts, sets `shift.product_id`, then
+  `db.session.delete(product_rec)`. It does **not** move P.O.s or Vieworks links, and the ORM
+  delete goes through `Product.shifts = db.relationship('Shift', backref='product')`
+  (`app.py:~2890`), so remaining Genoray/Vieworks shifts with the old serial get `product_id = NULL`.
+- References to `product.serial_number`: `PurchaseOrder.product_serial` (`app.py:2269`),
+  `PurchaseOrderMachine.product_serial` (`app.py:2308`), `TravelRequestRoute.product_id`
+  (`app.py:2716`), `Shift.product_id` (`app.py:3815`). `ProductVieworksLink` has a composite PK
+  (`product_serial`, `vieworks_serial`) and no FK (`app.py:2971`). SQLite foreign keys are not
+  enforced, so orphans are silent.
+- Only caller: TSR save at `app.py:28272`; it handles `blocked` / `updated` and commits later.
+
+## Execution steps
+0. **Read-only production check** (sqlite3 over `railway ssh`, no app import, no writes): count
+   `purchase_order_machine` / `purchase_order.product_serial` / `product_vieworks_link.product_serial`
+   values with no matching `product.serial_number`, and Genoray/Vieworks-source shifts with a blank
+   `product_id`. Cross-check Activity Log lines "Corrected equipment from TSR revision". Report the
+   numbers to the owner; any repair is a separate decision. Done: numbers reported.
+1. `correct_product_from_tsr_revision`, after the Product-source shift update: bulk-update
+   `PurchaseOrderMachine`, `PurchaseOrder` (`product_serial == old_serial`) and
+   `ProductVieworksLink` (`product_serial == old_serial`) to `new_serial`
+   (`synchronize_session=False`). Count linked P.O.s first with
+   `purchase_order_count_for_machine(old_serial)`.
+2. Replace `db.session.delete(product_rec)` with `db.session.expunge(product_rec)` +
+   `db.session.execute(Product.__table__.delete().where(Product.serial_number == old_serial))`.
+   Keep the function's existing no-commit behaviour (the caller commits).
+3. Activity Log text: append "; N linked P.O.(s) updated"; add `linked_purchase_order_count` to the
+   returned dict.
+4. `tests/test_product_serial_bsid.py`: new test with a product that has a P.O. (with machine row),
+   a Vieworks link, and a Vieworks-source `Shift` using the same serial. After the correction: P.O.
+   and machine row point to the new serial, the link moved, the Vieworks shift keeps its serial,
+   the old product row is gone. Done: passes.
+5. Positive control on a HEAD copy (`git archive HEAD | tar -x -C <scratch> --exclude=scheduler.db`,
+   copy the test in, run it, delete the copy; never `git stash`): the new test fails there.
+6. Focused tests: `tests.test_product_serial_bsid`, `tests.test_purchase_orders`,
+   `tests.test_product_vieworks_links_history`, `tests.test_product_inventory_mutations`, and the
+   TSR revision/equipment modules (`grep -l "_tsr_equipment_correction_requested" tests`). No full
+   suite: the change stays inside one function.
+
+## Deliberately excluded
+- A shared "move product serial" helper for both paths: cleaner, but a refactor nobody asked for.
+- `TravelRequestRoute.product_id`: neither path moves it; routes also store `product_name`, so they
+  still display. Separate, smaller issue.
+- Repairing rows already orphaned in production: depends on step 0; separate owner decision.
+- Service worker bump and `releases.json`: server-only change.
+
+## Verification
+Steps 4–6. No browser check: TSR revision needs a real schedule and TSR flow, and the server logic
+is covered by the test.
+
+## After implementation
+- Self-review the diff (one function + one test file).
+- `changes.md`; this Status line; memory.
+- On "commit and push": commit only `app.py`, `tests/test_product_serial_bsid.py`, and my sections
+  of `changes.md` / `plans.md`; never `scheduler.db` or other dirty files. Verify
+  `git ls-remote origin refs/heads/main` and Railway deployment metadata.
+
+## Risks
+- A bulk update touching P.O.s of the wrong serial: filters are exact `== old_serial`, run only
+  after the duplicate-serial check. Safety net: revert the single commit; hourly R2 backups.
+- `ProductVieworksLink` PK clash if links already exist under the new serial: impossible, since
+  the new serial is checked to be free, and links follow product rows.
+
 # Test suite: fix the 13 known failures so the suite fully passes (1 batch, tests only)
 
-**Status:** Executed 2026-11-04, not yet published (awaiting "commit and push"). App fix approved 2026-11-04 ("Yes, fix it"). Go-ahead 2026-11-04 ("Go ahead"). Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
+**Status:** Executed — published to `main` as `5a47e43` on "Commit and push" (2026-11-04; Railway deployment `09d363cf` building at push time). App fix approved 2026-11-04 ("Yes, fix it"). Go-ahead 2026-11-04 ("Go ahead"). Approved 2026-11-04 ("Approve plan"). Detailed 2026-11-04.
 
 ## Amendments during execution (2026-11-04)
 - Steps 1, 3, 4 done: the 12 `ServiceContractPurchaseOrderEndpointTests` pass (both `/login` posts,
