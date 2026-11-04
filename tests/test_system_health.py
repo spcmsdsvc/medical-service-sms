@@ -242,6 +242,28 @@ class HealthCheckTests(unittest.TestCase):
         self.assertFalse(self.backup_ok({'last_ok': False, 'last_error': 'x', 'last_run_at': recent}))
         self.assertFalse(self.backup_ok({}))
 
+    def offsite_ok(self, state, ready=True):
+        saved = []
+        with patch.object(app_module, 'offsite_backup_ready', return_value=ready), \
+                patch.object(app_module, 'load_offsite_backup_state', return_value=dict(state)), \
+                patch.object(app_module, 'save_offsite_backup_state', saved.append):
+            return app_module.system_health_offsite_ok(now=NOW), saved
+
+    def test_offsite_backup_check(self):
+        recent = (NOW - timedelta(hours=7)).isoformat()
+        old = (NOW - timedelta(hours=27)).isoformat()
+        self.assertTrue(self.offsite_ok({}, ready=False)[0])
+        self.assertTrue(self.offsite_ok({'last_run_at': recent, 'last_ok': True, 'last_success_at': recent})[0])
+        self.assertFalse(self.offsite_ok({'last_run_at': old, 'last_ok': True, 'last_success_at': old})[0])
+        self.assertFalse(self.offsite_ok({'last_run_at': recent, 'last_ok': False, 'last_success_at': recent})[0])
+        ok, saved = self.offsite_ok({})  # just configured: the 26-hour clock starts now
+        self.assertTrue(ok)
+        self.assertEqual(saved[0]['watch_started_at'], NOW.isoformat())
+        self.assertFalse(self.offsite_ok({'watch_started_at': old})[0])
+        self.assertIn(('offsite_backup', app_module.system_health_offsite_ok), app_module.SYSTEM_HEALTH_CHECKS)
+        self.assertIn('Off-site backup missing or failed', app_module.SENTRY_ALLOWED_MESSAGES)
+        self.assertIn('Off-site backup recovered', app_module.SENTRY_ALLOWED_MESSAGES)
+
     def test_disk_check(self):
         for percent, expected in ((89, True), (90, False), (None, True)):
             with patch.object(app_module, 'volume_disk_usage_percent', return_value=percent):

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-11-04-offsite-backups",
+      "release_date": "2026-11-04",
+      "title": "Off-site database copies",
+      "summary": "The database is also copied off Railway every hour in working hours and every night.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-11-04-offsite-backups-status",
+          "category": "Backup",
+          "description": "The Build Backup page now shows when the last off-site copy (Cloudflare R2) was made and its size, or why it failed. Copies are made every hour from 8 AM to 7 PM when something changed, and every night.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 1
+        }
+      ]
+    },
+    {
       "release_key": "2026-11-03-calibration-missing-bsid",
       "release_date": "2026-11-03",
       "title": "Machine BSIDs: required, warned and explained",

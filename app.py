@@ -164,6 +164,7 @@ SYSTEM_HEALTH_ALERTS = {
     'bucket': ('Bucket probe failed', 'Bucket probe recovered'),
     'email': ('Brevo quota used up - Mailjet sending', 'Brevo quota available again'),
     'backup': ('Daily backup missing or failed', 'Daily backup recovered'),
+    'offsite_backup': ('Off-site backup missing or failed', 'Off-site backup recovered'),
     'disk': ('Disk 90% or more full', 'Disk below 90% again'),
     'bucket_error': ('Bucket connection error', ''),
 }
@@ -1131,6 +1132,8 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = max(int(os.environ.get('MAX_UPLOAD_MB', '40')), 40) * 1024 * 1024
 
 file_storage = FileStorageBackend()
+# Off-site database copies (Cloudflare R2). Dormant until the four OFFSITE_BACKUP_* variables are set.
+offsite_storage = FileStorageBackend(env_prefix='OFFSITE_BACKUP_')
 bucket_connection_error_logged_at = 0.0
 STORAGE_PREFIX_REPORTS = 'reports'
 STORAGE_PREFIX_REIMBURSEMENTS = 'reimbursements'
@@ -28626,7 +28629,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v352-calibration-bsid';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v353-offsite-backups';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -32925,6 +32928,19 @@ DAILY_BACKUP_HOUR = 2
 DAILY_BACKUP_CHECK_SECONDS = 15 * 60
 DAILY_BACKUP_KEY_PATTERN = re.compile(r'^medical_service_db_(\d{8})\.sqlite\.gz$')
 
+# Off-site copies (Cloudflare R2, plans.md "Backups: hourly and daily copies off Railway"):
+# a copy of every nightly backup (30 days) plus hourly copies 08:00-19:00 Manila (48 hours),
+# skipped when the database has not changed. Own state file, so the daily state is untouched.
+OFFSITE_HOURLY_PREFIX = 'hourly'
+OFFSITE_DAILY_PREFIX = 'daily'
+OFFSITE_HOURLY_START = 8
+OFFSITE_HOURLY_END = 19
+OFFSITE_HOURLY_RETENTION_HOURS = 48
+OFFSITE_KEY_PATTERNS = {
+    OFFSITE_DAILY_PREFIX: DAILY_BACKUP_KEY_PATTERN,
+    OFFSITE_HOURLY_PREFIX: re.compile(r'^medical_service_db_(\d{8}_\d{2})\.sqlite\.gz$'),
+}
+
 _daily_backup_scheduler_lock = threading.Lock()
 _daily_backup_scheduler_started = False
 
@@ -32934,17 +32950,36 @@ def daily_backup_state_path():
     return os.path.join(RUNTIME_STATE_DIR, '_daily_backup_state.json')
 
 
-def load_daily_backup_state():
+def offsite_backup_state_path():
+    return os.path.join(RUNTIME_STATE_DIR, '_offsite_backup_state.json')
+
+
+def _load_json_state(path):
     try:
-        with open(daily_backup_state_path(), 'r', encoding='utf-8') as state_file:
+        with open(path, 'r', encoding='utf-8') as state_file:
             state = json.load(state_file)
         return state if isinstance(state, dict) else {}
     except (OSError, ValueError, TypeError):
         return {}
 
 
+def load_daily_backup_state():
+    return _load_json_state(daily_backup_state_path())
+
+
+def load_offsite_backup_state():
+    return _load_json_state(offsite_backup_state_path())
+
+
 def save_daily_backup_state(state):
-    path = daily_backup_state_path()
+    _save_json_state(daily_backup_state_path(), state)
+
+
+def save_offsite_backup_state(state):
+    _save_json_state(offsite_backup_state_path(), state)
+
+
+def _save_json_state(path, state):
     temp_path = f"{path}.tmp-{secrets.token_hex(4)}"
     try:
         os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
@@ -32958,6 +32993,68 @@ def save_daily_backup_state(state):
 
 def daily_backup_storage_ready():
     return bool(file_storage.writes_bucket and file_storage.bucket_configured)
+
+
+def offsite_backup_ready():
+    return offsite_storage.bucket_configured
+
+
+def build_gzipped_snapshot(work_dir):
+    """Consistent snapshot of the live database, checked and gzipped. Returns the .gz path."""
+    snapshot_path = os.path.join(work_dir, 'snapshot.sqlite')
+    snapshot = create_sqlite_snapshot(DATABASE_PATH, snapshot_path)
+    if snapshot.get('quick_check') != 'ok':
+        raise RuntimeError(f"Database check failed: {snapshot.get('quick_check') or 'no result'}")
+    gz_path = snapshot_path + '.gz'
+    with open(snapshot_path, 'rb') as source, gzip.open(gz_path, 'wb') as target:
+        shutil.copyfileobj(source, target)
+    return gz_path
+
+
+def prune_dated_copies(storage, prefix, pattern, cutoff):
+    """Delete copies under prefix/ whose date stamp sorts before cutoff. Returns copies kept."""
+    kept = 0
+    for item in list(storage.iter_objects(prefix + '/')):
+        match = pattern.match(item.key[len(prefix) + 1:])
+        if not match:
+            continue
+        if match.group(1) < cutoff:
+            storage.delete(item.key)
+        else:
+            kept += 1
+    return kept
+
+
+def _record_offsite_result(error='', **fields):
+    state = load_offsite_backup_state()
+    state.update(fields)
+    state.update({'last_run_at': get_manila_time().isoformat(), 'last_ok': not error, 'last_error': error})
+    if not error:
+        state['last_success_at'] = state['last_run_at']
+    try:
+        save_offsite_backup_state(state)
+    except OSError as state_error:
+        print(f"[OFFSITE-BACKUP] State not saved: {state_error}", flush=True)
+
+
+def upload_offsite_copy(gz_path, prefix, stamp, cutoff, **success_fields):
+    """Upload one copy to the off-site bucket, then prune old ones. Never raises."""
+    started = time.monotonic()
+    key = f"{prefix}/medical_service_db_{stamp}.sqlite.gz"
+    try:
+        offsite_storage.upload_file(key, gz_path, content_type='application/gzip')
+        # Prune only after a successful upload, so stopped backups never delete the last good copies.
+        prune_dated_copies(offsite_storage, prefix, OFFSITE_KEY_PATTERNS[prefix], cutoff)
+        size = os.path.getsize(gz_path)
+    except Exception as upload_error:
+        message = clean_str(str(upload_error)) or upload_error.__class__.__name__
+        print(f"[OFFSITE-BACKUP] {key} failed: {message[:300]}", flush=True)
+        _record_offsite_result(message)
+        return False
+    print(f"[OFFSITE-BACKUP] {key} saved ({bytes_to_human_size(size)}, "
+          f"{time.monotonic() - started:.1f} s)", flush=True)
+    _record_offsite_result(last_key=key, last_size=size, **success_fields)
+    return True
 
 
 def record_daily_backup_activity(action):
@@ -32986,27 +33083,15 @@ def run_daily_database_backup(now=None):
     state.update({'last_date': now.strftime('%Y-%m-%d'), 'last_run_at': now.isoformat()})
     work_dir = tempfile.mkdtemp(prefix='daily-backup-')
     try:
-        snapshot_path = os.path.join(work_dir, 'snapshot.sqlite')
-        snapshot = create_sqlite_snapshot(DATABASE_PATH, snapshot_path)
-        if snapshot.get('quick_check') != 'ok':
-            raise RuntimeError(f"Database check failed: {snapshot.get('quick_check') or 'no result'}")
-        gz_path = snapshot_path + '.gz'
-        with open(snapshot_path, 'rb') as source, gzip.open(gz_path, 'wb') as target:
-            shutil.copyfileobj(source, target)
+        gz_path = build_gzipped_snapshot(work_dir)
+        cutoff = (now - timedelta(days=DAILY_BACKUP_RETENTION_DAYS)).strftime('%Y%m%d')
+        # Off-site first: if the Railway bucket keys break, R2 still gets tonight's copy.
+        if offsite_backup_ready():
+            upload_offsite_copy(gz_path, OFFSITE_DAILY_PREFIX, now.strftime('%Y%m%d'), cutoff)
         key = f"{DAILY_BACKUP_PREFIX}/medical_service_db_{now.strftime('%Y%m%d')}.sqlite.gz"
         file_storage.upload_file(key, gz_path, content_type='application/gzip')
         size = os.path.getsize(gz_path)
-
-        cutoff = (now - timedelta(days=DAILY_BACKUP_RETENTION_DAYS)).strftime('%Y%m%d')
-        kept = 0
-        for item in list(file_storage.iter_objects(DAILY_BACKUP_PREFIX + '/')):
-            match = DAILY_BACKUP_KEY_PATTERN.match(item.key[len(DAILY_BACKUP_PREFIX) + 1:])
-            if not match:
-                continue
-            if match.group(1) < cutoff:
-                file_storage.delete(item.key)
-            else:
-                kept += 1
+        kept = prune_dated_copies(file_storage, DAILY_BACKUP_PREFIX, DAILY_BACKUP_KEY_PATTERN, cutoff)
 
         state.update({'last_ok': True, 'last_key': key, 'last_size': size,
                       'last_error': '', 'copies_kept': kept})
@@ -33026,6 +33111,57 @@ def run_daily_database_backup(now=None):
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
+def database_fingerprint():
+    """Size + modified time of the database and its WAL, taken before a snapshot."""
+    parts = []
+    for path in (DATABASE_PATH, DATABASE_PATH + '-wal'):
+        try:
+            info = os.stat(path)
+            parts.append(f'{info.st_size}:{info.st_mtime_ns}')
+        except OSError:
+            parts.append('-')
+    return '|'.join(parts)
+
+
+def run_hourly_offsite_backup(now=None):
+    """One off-site copy per hour 08:00-19:00 Manila, only when the database changed. Never raises.
+
+    No ActivityLog row on success: writing one would change the database and defeat the
+    unchanged check, so quiet hours and days upload nothing.
+    """
+    if not offsite_backup_ready():
+        return 'skipped'
+    now = now or get_manila_time()
+    if not OFFSITE_HOURLY_START <= now.hour <= OFFSITE_HOURLY_END:
+        return 'outside'
+    slot = now.strftime('%Y%m%d_%H')
+    state = load_offsite_backup_state()
+    if state.get('last_slot') == slot:
+        return 'done'
+    fingerprint = database_fingerprint()
+    if fingerprint == state.get('last_fingerprint'):
+        state['last_slot'] = slot
+        try:
+            save_offsite_backup_state(state)
+        except OSError as state_error:
+            print(f"[OFFSITE-BACKUP] State not saved: {state_error}", flush=True)
+        return 'unchanged'
+    work_dir = tempfile.mkdtemp(prefix='offsite-backup-')
+    try:
+        gz_path = build_gzipped_snapshot(work_dir)
+        cutoff = (now - timedelta(hours=OFFSITE_HOURLY_RETENTION_HOURS)).strftime('%Y%m%d_%H')
+        ok = upload_offsite_copy(gz_path, OFFSITE_HOURLY_PREFIX, slot, cutoff,
+                                 last_slot=slot, last_fingerprint=fingerprint)
+        return 'ok' if ok else 'failed'
+    except Exception as snapshot_error:
+        message = clean_str(str(snapshot_error)) or snapshot_error.__class__.__name__
+        print(f"[OFFSITE-BACKUP] Hourly snapshot failed: {message[:300]}", flush=True)
+        _record_offsite_result(message)
+        return 'failed'
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def _daily_backup_loop():
     while True:
         time.sleep(DAILY_BACKUP_CHECK_SECONDS)
@@ -33035,6 +33171,10 @@ def _daily_backup_loop():
                     run_daily_database_backup()
         except Exception as loop_error:
             print(f"[DAILY-BACKUP] Check failed: {loop_error}", flush=True)
+        try:
+            run_hourly_offsite_backup()
+        except Exception as loop_error:
+            print(f"[OFFSITE-BACKUP] Check failed: {loop_error}", flush=True)
 
 
 def start_daily_backup_scheduler():
@@ -33057,6 +33197,20 @@ def daily_backup_status():
         'last_ok': bool(state.get('last_ok')),
         'last_size_human': bytes_to_human_size(state['last_size']) if state.get('last_size') else '',
         'copies_kept': int(state.get('copies_kept') or 0),
+        'last_error': state.get('last_error', ''),
+    }
+
+
+def offsite_backup_status():
+    state = load_offsite_backup_state()
+    ready = offsite_backup_ready()
+    return {
+        'enabled': ready and _daily_backup_scheduler_started,
+        'off_reason': '' if ready else 'not configured',
+        'has_run': bool(state.get('last_run_at')),
+        'last_ok': bool(state.get('last_ok')),
+        'last_success_at': str(state.get('last_success_at', ''))[:16].replace('T', ' '),
+        'last_size_human': bytes_to_human_size(state['last_size']) if state.get('last_size') else '',
         'last_error': state.get('last_error', ''),
     }
 
@@ -33105,6 +33259,23 @@ def system_health_backup_ok(now=None):
     return age <= timedelta(hours=SYSTEM_HEALTH_BACKUP_MAX_AGE_HOURS)
 
 
+def system_health_offsite_ok(now=None):
+    """False when the latest off-site attempt failed or nothing succeeded for 26 h."""
+    if not offsite_backup_ready():
+        return True
+    now = now or get_manila_time()
+    state = load_offsite_backup_state()
+    if state.get('last_run_at') and not state.get('last_ok'):
+        return False
+    since = state.get('last_success_at') or state.get('watch_started_at')
+    if not since:
+        # Just configured: start the 26-hour clock instead of alerting before the first copy.
+        state['watch_started_at'] = now.isoformat()
+        save_offsite_backup_state(state)
+        return True
+    return now - datetime.fromisoformat(since) <= timedelta(hours=SYSTEM_HEALTH_BACKUP_MAX_AGE_HOURS)
+
+
 def system_health_disk_ok():
     percent = volume_disk_usage_percent()
     return percent is None or percent < SYSTEM_HEALTH_DISK_ALERT_PERCENT
@@ -33114,6 +33285,7 @@ SYSTEM_HEALTH_CHECKS = (
     ('bucket', system_health_bucket_ok),
     ('email', system_health_email_ok),
     ('backup', system_health_backup_ok),
+    ('offsite_backup', system_health_offsite_ok),
     ('disk', system_health_disk_ok),
 )
 
@@ -34303,6 +34475,7 @@ def backup_status_payload():
         'last_backup_date': summary['last_backup_date'],
         'overdue': summary['overdue'],
         'daily_backup': daily_backup_status(),
+        'offsite_backup': offsite_backup_status(),
     }
 
 

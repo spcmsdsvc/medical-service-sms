@@ -37,6 +37,175 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+# Backups: hourly and daily copies off Railway to Cloudflare R2 (1 batch)
+
+**Status:** Executed 2026-11-04 — not yet published (awaiting "commit and push"). Owner steps 1
+(Cloudflare) and 8 (Railway variables) still to do. Go-ahead 2026-11-04 ("start the plan in plans.md").
+Approved 2026-11-04 ("Approve plan", defaults unchanged). Detailed 2026-11-04.
+
+## Amendments during execution (2026-11-04)
+- Hourly window is inclusive of the 19:00 hour (slots 08–19, last copy at the first check after
+  19:00), so work done until 19:00 is covered.
+- A failed hourly attempt does not mark its slot done; the next 15-minute check retries.
+- Health check: with no off-site success yet, the 26-hour clock starts when the check first sees
+  the variables (`watch_started_at` in the off-site state), so no alert fires before the first copy.
+- Status line when configured but no copy yet: "Off-site copies run hourly 8 AM–7 PM and nightly;
+  none has run yet."
+
+## Context
+Dream roadmap #1 (Reliability), "Next (cheap)". Today one database copy goes to the **Railway**
+bucket nightly at 02:00 Manila (30 days kept), plus a manual weekly zip to OneDrive. Two gaps:
+1. A database broken at 17:00 loses the whole working day (last copy was 02:00).
+2. Every automatic copy lives at Railway. If the Railway project, volume or account is lost, the
+   only copy left is the weekly OneDrive zip: up to 7 days lost, more if a week is skipped.
+Outcome: an automatic copy **off Railway** (Cloudflare R2) every hour in working hours and every
+night, so worst-case loss is about 1 hour, and still about 1 day if Railway itself is gone.
+
+## Decisions taken
+- **Cloudflare R2**, company-owned account (company email, company card or IT budget). The owner is
+  IT and approved it (2026-11-04). Not OneDrive: automatic upload needs an Entra app registration.
+- **Encryption: option A** — R2's built-in encryption at rest and HTTPS in transit. No password
+  encryption before upload (a lost password would make every backup useless). Replacement safeguards:
+  2FA on the Cloudflare account, private bucket, API token scoped to that one bucket, keys only in
+  Railway variables plus Bitwarden. Encrypting before upload can be added later if an audit asks.
+- Postgres stays parked (it does not make the data safer; it is still on Railway).
+- **Defaults the owner may change at go-ahead:** hourly window 08:00–19:00 Manila, every day
+  (Saturday work is covered; quiet days upload nothing because unchanged copies are skipped); hourly
+  copies kept 48 hours; daily copies kept 30 days in R2.
+
+## Investigation
+- Nightly backup: `run_daily_database_backup` (`app.py:32980`) → `create_sqlite_snapshot`
+  (`app.py:32090`, consistent SQLite backup API copy + `quick_check`) → gzip → upload to
+  `system_backups/daily/` → prune > 30 days → state in `/data/_daily_backup_state.json`
+  (`RUNTIME_STATE_DIR`, `app.py:32393`, on the volume, survives deploys) → ActivityLog line.
+- Loop `_daily_backup_loop` (`app.py:33029`) checks every 15 min; started only on Railway, not under
+  tests, not with `DAILY_BACKUP_DISABLED` (`app.py:33064`). Gunicorn runs **1 worker**, 8 threads
+  (`gunicorn.conf.py`), so exactly one loop runs. Good: no two processes racing.
+- Storage: `FileStorageBackend` (`storage_backend.py:66`) is S3 (boto3, s3v4), but reads **fixed**
+  env names (`STORAGE_BUCKET_*`, `AWS_*`). A second bucket needs the same class to read a different
+  set of names; R2 speaks S3, so no new library.
+- `upload_file` (`storage_backend.py:255`) reads the whole file into memory (~74 MB gz). The nightly
+  run already does this; hourly repeats the same spike, never two at once (same thread).
+- Health monitor **already exists** (`df1bcd7`): `SYSTEM_HEALTH_CHECKS` (`app.py:33113`) covers bucket
+  write/read/delete, Brevo quota, daily backup age (26 h), disk ≥ 90%, with fixed Sentry texts in
+  `SYSTEM_HEALTH_ALERTS` (`app.py:162`). **So roadmap item "alerts" is mostly done already**; the only
+  new alert needed is for the off-site copy. A "near quota" email alert is not needed: the Mailjet
+  fallback takes over when Brevo runs out.
+- Status line on Build Backup page: `#backup-daily-status` (`templates/system_backup.html:63`, filled
+  at `:256`) from `daily_backup_status()` (`app.py:33050`) via `backup_status_payload` (`app.py:34305`).
+- `/admin/backup` is in the service worker offline list (`app.py:28690`), so a template change needs
+  a `CACHE_VERSION` bump (now `v352-calibration-bsid`, `app.py:28629`).
+- **Trap found — "skip if unchanged" would never skip:** the nightly run writes an ActivityLog row,
+  and gzip stamps the time in its header, so neither a DB-file check nor a hash of the `.gz` would
+  ever match. Fix: compare the database file's size + modified time (and `-wal` if present), taken
+  before the snapshot, and **do not write an ActivityLog row on hourly success**.
+- No other background thread writes the database (only email workers on user actions, the backup
+  loop and the health loop, which touches the bucket only). So a quiet Sunday really uploads nothing.
+
+## Execution steps
+1. **Owner, in Cloudflare (before or after the code; the feature stays off until step 1 is done):**
+   company account with 2FA → enable R2 → bucket `medical-service-backups` (location hint Asia-Pacific,
+   public access off) → R2 API token "Object Read & Write" for **that bucket only** → save account
+   ID, access key, secret key in Bitwarden (company collection or Emergency Access for a second person).
+   Railway variables are set in step 8, not now.
+2. `storage_backend.py`: `FileStorageBackend.__init__(self, env_prefix='')`. Empty prefix = today's
+   behaviour exactly. With a prefix it reads only `{prefix}BUCKET`, `{prefix}ENDPOINT`,
+   `{prefix}ACCESS_KEY`, `{prefix}SECRET_KEY`, mode forced `bucket`, region `auto`, url style `path`,
+   no volume fallback. Done: existing storage tests unchanged and passing.
+3. `app.py`: `offsite_storage = FileStorageBackend(env_prefix='OFFSITE_BACKUP_')` next to
+   `file_storage` (`app.py:1133`); `offsite_backup_ready()` = `offsite_storage.bucket_configured`.
+   Constants `OFFSITE_HOURLY_PREFIX = 'hourly'`, `OFFSITE_DAILY_PREFIX = 'daily'`,
+   `OFFSITE_HOURLY_START = 8`, `OFFSITE_HOURLY_END = 19`, `OFFSITE_HOURLY_RETENTION_HOURS = 48`.
+   State in a separate file `/data/_offsite_backup_state.json` (same load/save pattern), so the
+   daily state that the health check and status page read is untouched.
+4. `app.py`, shared helpers extracted from `run_daily_database_backup` (behaviour unchanged):
+   `build_gzipped_snapshot(work_dir)` (snapshot + `quick_check` + gzip, returns the `.gz` path) and
+   `prune_dated_copies(storage, prefix, pattern, cutoff)` (returns copies kept). Daily uses both.
+   Done: all `tests/test_daily_backup.py` tests pass unchanged.
+5. `app.py`, nightly: inside `run_daily_database_backup`, right after the `.gz` is built and
+   **before** the Railway upload, call `upload_offsite_copy(gz_path, 'daily/…_YYYYMMDD.sqlite.gz',
+   retention)` in its own try/except. It records its own result in the off-site state and never
+   changes the daily result. Order matters: if the Railway bucket keys break (the known
+   `SignatureDoesNotMatch` case), R2 still gets that night's copy.
+6. `app.py`, hourly: `run_hourly_offsite_backup(now=None)`, never raises. Skips when R2 is not
+   configured, outside 08:00–19:00, when this hour's slot (`YYYYMMDD_HH`) is already done, or when
+   the database fingerprint (size + mtime of the DB and `-wal`) equals the last uploaded one (slot
+   still marked done). Otherwise: `build_gzipped_snapshot` → upload to
+   `hourly/medical_service_db_YYYYMMDD_HH.sqlite.gz` → prune hourly copies older than 48 h **only
+   after a successful upload** (if backups stop, old copies stay) → save state → one stdout line with
+   size and seconds taken. No ActivityLog row on success; failures go to state + stdout. Called from
+   `_daily_backup_loop` after the daily check, same thread, own try/except.
+7. Health + status:
+   - `SYSTEM_HEALTH_ALERTS['offsite_backup'] = ('Off-site backup missing or failed', 'Off-site backup recovered')`
+     (the Sentry allowlist builds itself from this dict).
+   - `system_health_offsite_ok()`: True when R2 is not configured; False when the latest off-site
+     attempt failed or no off-site success for 26 h. Added to `SYSTEM_HEALTH_CHECKS`.
+   - `offsite_backup_status()` → `backup_status_payload()['offsite_backup']`: enabled, last success
+     time, size, last error (no keys, endpoint or bucket name).
+   - `templates/system_backup.html`: one line `#backup-offsite-status` under `#backup-daily-status`,
+     same style: "Off-site copy (Cloudflare R2): last 2026-11-04 14:00 · 74 MB", red on failure,
+     "Off-site copies are off: not configured." when dormant.
+8. **Owner, after publish:** add Railway variables `OFFSITE_BACKUP_BUCKET`, `OFFSITE_BACKUP_ENDPOINT`
+   (`https://<account-id>.r2.cloudflarestorage.com`), `OFFSITE_BACKUP_ACCESS_KEY`,
+   `OFFSITE_BACKUP_SECRET_KEY`. That redeploys; the next hour in the window makes the first copy.
+9. `docs/restore-drill.md` (new, short): quarterly checklist — download the newest copy from the R2
+   dashboard, unzip (7-Zip), open in DB Browser for SQLite, run `PRAGMA integrity_check`, check the
+   newest TSR and user match the live system, note the date in the file. The first drill is the
+   live check in "Verification".
+
+## Deliberately excluded
+- **Restoring into production** (replacing the live database on the Railway volume): a separate,
+  rarer procedure; the drill only proves copies open and are current. Worth its own small plan.
+- Encrypting before upload (option B): decided against, see Decisions.
+- Moving the hourly copies to the Railway bucket too: does not protect against losing Railway, and
+  Railway bucket storage costs more.
+- New alerts for email quota, bucket keys or disk: already live in the health monitor.
+- R2 lifecycle rules: the app prunes, and only after a successful upload, so a stopped backup never
+  lets Cloudflare delete the last good copies.
+- Postgres, attachments off-site (the 850 MB of files): not requested; attachments are already in the
+  Railway bucket and the weekly OneDrive zip.
+
+## Verification
+- New `tests/test_offsite_backup.py` (fake buckets, temp DB), each failing on a HEAD copy first:
+  hourly uploads one valid gzipped DB that opens with the right row; skips outside the window, in a
+  done slot, and when unchanged; uploads again after a write; prunes only copies > 48 h and only
+  after success; failed upload recorded, not raised, keeps old copies; nightly still uploads to the
+  Railway bucket when R2 fails **and** to R2 when the Railway bucket fails; dormant without
+  variables; no thread under tests.
+- `tests/test_storage_backend.py`: `env_prefix` reads only prefixed names; default instance unchanged.
+- `tests/test_system_health.py`: off-site check true when dormant, false on failure / 26 h, alert text
+  in the Sentry allowlist. `tests/test_daily_backup.py` unchanged and passing.
+- Full suite once (shared code: `storage_backend.py`, `app.py` helpers), main folder,
+  `venv/Scripts/python.exe scripts/run_suite.py`.
+- Browser check on a copy of `scheduler.db`: Build Backup page shows the off-site line (dormant text
+  locally), daily line unchanged, Build Backup / Download / Delete still work, 375 px, dark theme, no
+  console errors. Clean up copy, account, launch entry.
+- **Live, after step 8 (this is the first restore drill):** status line shows a copy after the next
+  hour; R2 dashboard has the object; download it, unzip, `integrity_check` = ok, newest TSR present;
+  Railway log line shows size and seconds (if over ~60 s, note it — see Risks).
+
+## After implementation
+- Self-review; confirm nightly backup, Build Backup, health checks and the status page still work
+  (AGENTS.md "Protect Existing Functions").
+- Service worker `CACHE_VERSION` bump (`/admin/backup` is in the offline list).
+- `releases.json` entry for superadmins (off-site copies line on Build Backup page).
+- `changes.md`; this Status line; memory notes (roadmap, backup strategy).
+- Commit only touched files; never `scheduler.db`, `output/`, `tmp/`, handoffs. Publish only on
+  "commit and push". Check that the Sentry rule "Health and errors" picks up the new alert text.
+
+## Risks
+- **Cost creep:** Railway charges for data leaving it (~$0.05/GB): about 10 copies × 74 MB × working
+  days ≈ $1/mo. R2 storage ≈ 3.7 GB, inside the 10 GB free tier. Grows with the database.
+- **Slow pages during a copy:** snapshot + gzip of the live DB once an hour in working hours. Same work
+  as the nightly run; SQLite and zlib release the lock while copying. Measured from the log line in
+  the live check; if it hurts, lower the gzip level (one-line change), do not add machinery.
+- **Memory spike** ~74 MB per upload, same as nightly, one at a time.
+- **Leaked R2 key** could read or delete backups: token scoped to one bucket, keys only in Railway +
+  Bitwarden, 2FA on the account, Railway bucket and OneDrive copies stay as independent copies.
+- **Forgotten Bitwarden access / owner leaves:** company collection or Emergency Access (step 1).
+- Safety net: the feature is dormant without the four variables; removing them turns it off with no
+  code change. Revert is one commit.
+
 # Schedule form: warn when the machine has no BSID (1 batch)
 
 **Status:** Executed — not yet published (2026-11-03). Go-ahead 2026-11-03 ("Go ahead, both").

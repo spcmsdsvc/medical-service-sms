@@ -66,7 +66,29 @@ class StorageObjectInfo:
 class FileStorageBackend:
     """Storage adapter supporting volume, mirror, and private bucket modes."""
 
-    def __init__(self) -> None:
+    def __init__(self, env_prefix: str = "") -> None:
+        self._client = None
+        self._backup_client = None
+        self._backup_client_timeout = None
+        # This object is a module-level singleton shared by every gunicorn thread
+        # (the deploy runs gthread with 8 of them). Without this lock, a background
+        # backup and a storage-health request can both find _backup_client stale,
+        # both rebuild it, and one caller ends up using a client configured with
+        # the other's timeout -- which is exactly the wrong outcome for the client
+        # whose entire purpose is a short, bounded timeout.
+        self._client_lock = threading.Lock()
+        if env_prefix:
+            # A second bucket (off-site backups): only its own prefixed names, always
+            # bucket mode, never the volume and never the main bucket's variables.
+            self.mode = "bucket"
+            self.bucket_name = _first_env(f"{env_prefix}BUCKET")
+            self.endpoint_url = _first_env(f"{env_prefix}ENDPOINT").rstrip("/")
+            self.access_key = _first_env(f"{env_prefix}ACCESS_KEY")
+            self.secret_key = _first_env(f"{env_prefix}SECRET_KEY")
+            self.region = "auto"
+            self.url_style = "path"
+            self.volume_fallback = False
+            return
         requested_mode = _first_env("FILE_STORAGE_MODE", default="volume").lower()
         self.mode = requested_mode if requested_mode in VALID_MODES else "volume"
         self.bucket_name = _first_env(
@@ -94,16 +116,6 @@ class FileStorageBackend:
         self.volume_fallback = _first_env(
             "STORAGE_VOLUME_FALLBACK", default=fallback_default
         ).lower() in TRUE_VALUES
-        self._client = None
-        self._backup_client = None
-        self._backup_client_timeout = None
-        # This object is a module-level singleton shared by every gunicorn thread
-        # (the deploy runs gthread with 8 of them). Without this lock, a background
-        # backup and a storage-health request can both find _backup_client stale,
-        # both rebuild it, and one caller ends up using a client configured with
-        # the other's timeout -- which is exactly the wrong outcome for the client
-        # whose entire purpose is a short, bounded timeout.
-        self._client_lock = threading.Lock()
 
     @property
     def bucket_enabled(self) -> bool:

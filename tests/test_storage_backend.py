@@ -100,6 +100,36 @@ class FileStorageBackendTests(unittest.TestCase):
         self.assertFalse(backend.writes_bucket)
         self.assertTrue(backend.writes_volume)
 
+    def test_env_prefix_reads_only_its_own_names(self):
+        env = {
+            'FILE_STORAGE_MODE': 'volume',
+            'STORAGE_BUCKET_NAME': 'main-files',
+            'STORAGE_BUCKET_ENDPOINT': 'https://main.example.test',
+            'AWS_ACCESS_KEY_ID': 'main-access',
+            'AWS_SECRET_ACCESS_KEY': 'main-secret',
+        }
+        with patch.dict(os.environ, env, clear=True):
+            dormant = FileStorageBackend(env_prefix='OFFSITE_BACKUP_')
+        self.assertFalse(dormant.bucket_configured)
+        self.assertEqual((dormant.bucket_name, dormant.access_key), ('', ''))
+        env.update({
+            'OFFSITE_BACKUP_BUCKET': 'offsite',
+            'OFFSITE_BACKUP_ENDPOINT': 'https://acct.r2.example.test/',
+            'OFFSITE_BACKUP_ACCESS_KEY': 'r2-access',
+            'OFFSITE_BACKUP_SECRET_KEY': 'r2-secret',
+        })
+        with patch.dict(os.environ, env, clear=True):
+            offsite = FileStorageBackend(env_prefix='OFFSITE_BACKUP_')
+            default = FileStorageBackend()
+        self.assertTrue(offsite.bucket_configured)
+        self.assertEqual(
+            (offsite.mode, offsite.bucket_name, offsite.endpoint_url, offsite.access_key,
+             offsite.region, offsite.url_style, offsite.volume_fallback),
+            ('bucket', 'offsite', 'https://acct.r2.example.test', 'r2-access', 'auto', 'path', False),
+        )
+        self.assertEqual((default.mode, default.bucket_name, default.access_key),
+                         ('volume', 'main-files', 'main-access'))
+
     def test_upload_records_checksum_and_metadata(self):
         backend = self.build_backend()
         data = b'private receipt bytes'
