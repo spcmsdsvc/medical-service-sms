@@ -15,3 +15,4 @@ production; replacing the live database is a separate procedure.
 
 | Date | Copy checked | integrity_check | Newest TSR matched | By |
 | --- | --- | --- | --- | --- |
+| 2026-11-04 | `hourly/medical_service_db_20261104_09.sqlite.gz` (98.66 MB) | ok | yes — #882 (20261103-01-JJP, St. Paul's, 2026-11-03 21:58) = newest in live Activity Log | owner |

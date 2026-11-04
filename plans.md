@@ -39,8 +39,9 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 # Backups: hourly and daily copies off Railway to Cloudflare R2 (1 batch)
 
-**Status:** Executed 2026-11-04 — not yet published (awaiting "commit and push"). Owner steps 1
-(Cloudflare) and 8 (Railway variables) still to do. Go-ahead 2026-11-04 ("start the plan in plans.md").
+**Status:** Executed — published to `main` as `ac92ec2` on "commit and push" (2026-11-04; Railway
+deployment `0e3b2c73` building at push time). Owner steps 1 and 8 done 2026-11-04; first live copy
+09:19 Manila (94 MB, 8.2 s). First restore drill passed the same day. Go-ahead 2026-11-04 ("start the plan in plans.md").
 Approved 2026-11-04 ("Approve plan", defaults unchanged). Detailed 2026-11-04.
 
 ## Amendments during execution (2026-11-04)
