@@ -407,7 +407,7 @@ class ScheduleOptionIdentityTests(unittest.TestCase):
         """
         apply_fn = self.tsr.split('function applyScheduleToStandaloneTSR(')[1].split('\nfunction ')[0]
         self.assertIn('isSameScheduleSelection(selectedStandaloneScheduleId, schedule)', apply_fn)
-        self.assertIn('!isSameSchedule && !awaitingScheduleRepick', apply_fn)
+        self.assertIn('!isSameSchedule && !keepsRepickedDraft', apply_fn)
         # The clear must still happen for a genuinely different schedule.
         self.assertIn('clearStandaloneTSRWorkFieldsForScheduleChange();', apply_fn)
 

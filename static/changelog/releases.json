@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-11-05-tsr-draft-other-client",
+      "release_date": "2026-11-05",
+      "title": "Create TSR: drafts for different clients stay separate",
+      "summary": "A new client's TSR no longer replaces an older draft.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-11-05-tsr-draft-other-client-fix",
+          "category": "Create TSR",
+          "description": "When an older draft asked you to pick its schedule again and you picked another client's schedule, saving replaced the older draft. Picking another client now starts a new TSR, and the older draft stays in Continue Saved Work.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 1
+        },
+        {
+          "item_key": "2026-11-05-tsr-draft-hidden-note",
+          "category": "Create TSR",
+          "description": "While a schedule is selected, Continue Saved Work lists only that schedule's drafts. It now says how many drafts for other schedules are hidden, with a \"Show all drafts\" link.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 2
+        }
+      ]
+    },
+    {
       "release_key": "2026-11-04-bsid-to-follow",
       "release_date": "2026-11-04",
       "title": "Product Inventory: BSID \"To follow\"",

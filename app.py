@@ -28766,7 +28766,7 @@ def pwa_service_worker():
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v337-calibration-uploaded-tsr.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v338-list-page-headers.
     # Historical navigation-shell marker: medical-service-pwa-offline-navigation-v342-reports-missing-collapsed.
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v360-bsid-to-follow-pinned';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v361-tsr-draft-other-client';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

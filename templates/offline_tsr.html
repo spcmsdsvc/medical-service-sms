@@ -2739,6 +2739,16 @@ function applyScheduleComplaintDefault(schedule, overwrite=true){
   }
 }
 
+function isRepickForSameClient(schedule){
+  const previous = selectedStandaloneScheduleSnapshot || {};
+  const norm = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const previousId = norm(previous.client_id);
+  const nextId = norm(schedule?.client_id);
+  if(previousId && nextId) return previousId === nextId;
+  const previousName = norm(previous.client_name || document.getElementById('tsr-customer-name')?.value);
+  return Boolean(previousName) && previousName === norm(schedule?.client_name);
+}
+
 function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
   if(!schedule) return;
   if(!isScheduleTSREligible(schedule)){
@@ -2759,7 +2769,10 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true, options={}){
     // without this the pick itself -- '' to a real id -- would read as a change and wipe the
     // work that was just preserved.
     const isSameSchedule = isSameScheduleSelection(selectedStandaloneScheduleId, schedule);
-    if(!isSameSchedule && !awaitingScheduleRepick){
+    // A repick keeps the open draft only for the same client. Picking another client's
+    // schedule is a new TSR; keeping the draft id would save it over the old client's draft.
+    const keepsRepickedDraft = awaitingScheduleRepick && isRepickForSameClient(schedule);
+    if(!isSameSchedule && !keepsRepickedDraft){
       clearStandaloneTSRWorkFieldsForScheduleChange();
       standaloneCurrentDraftId = '';
       // A different schedule is a different TSR: it must not reuse the previous TSR's
@@ -6640,6 +6653,13 @@ async function applyStandaloneTSRSignatureRecovery(){
 const STANDALONE_TSR_DRAFTS_VISIBLE = 5;
 let standaloneTSRDraftsShowAll = false;
 
+let standaloneTSRDraftsIgnoreScheduleFilter = false;
+
+function showAllStandaloneTSRDraftSchedules(){
+  standaloneTSRDraftsIgnoreScheduleFilter = true;
+  return renderStandaloneTSRDraftPanel();
+}
+
 function toggleStandaloneTSRDraftsShowAll(){
   standaloneTSRDraftsShowAll = !standaloneTSRDraftsShowAll;
   return renderStandaloneTSRDraftPanel();
@@ -6658,10 +6678,16 @@ async function renderStandaloneTSRDraftPanel(){
   let groups = groupStandaloneTSRDraftVersions(records);
   const groupTime = group => Math.max(...group.versions.map(version => standaloneTSRDraftVersionTime(version) || 0));
   groups.sort((a,b) => groupTime(b) - groupTime(a));
-  const hasScheduleFilter = hasStandaloneScheduleSelection();
+  const hasScheduleFilter = hasStandaloneScheduleSelection() && !standaloneTSRDraftsIgnoreScheduleFilter;
+  const allGroupCount = groups.length;
   if(hasScheduleFilter){
     groups = groups.filter(group => group.versions.some(record => draftMatchesSelectedStandaloneSchedule(record)));
   }
+  // Drafts for other schedules are only hidden, never removed: say so, or they look deleted.
+  const otherScheduleCount = allGroupCount - groups.length;
+  const otherScheduleNote = otherScheduleCount
+    ? `<div class="standalone-tsr-draft-meta text-warning mb-2" role="status">${otherScheduleCount} draft${otherScheduleCount === 1 ? '' : 's'} for other schedules ${otherScheduleCount === 1 ? 'is' : 'are'} hidden while this schedule is selected. <button class="btn btn-link btn-sm p-0 fw-bold align-baseline" type="button" onclick="showAllStandaloneTSRDraftSchedules()">Show all drafts</button></div>`
+    : '';
   const count = document.getElementById('standalone-tsr-drafts-count');
   if(count) count.textContent = groups.length ? `(${groups.length})` : '';
   const totalCount = groups.length;
@@ -6678,11 +6704,11 @@ async function renderStandaloneTSRDraftPanel(){
     : '';
   if(!groups.length){
     list.innerHTML = hasScheduleFilter
-      ? `${historyWarning}<div class="standalone-tsr-draft-empty">No saved TSR drafts for the selected schedule.</div>`
+      ? `${historyWarning}${otherScheduleNote}<div class="standalone-tsr-draft-empty">No saved TSR drafts for the selected schedule.</div>`
       : `${historyWarning}<div class="standalone-tsr-draft-empty">No saved TSR drafts on this device or account.</div>`;
     return;
   }
-  list.innerHTML = historyWarning + groups.map(group => {
+  list.innerHTML = historyWarning + otherScheduleNote + groups.map(group => {
     const rankedVersions = group.versions.slice().sort(compareStandaloneTSRDraftVersions);
     const record = rankedVersions[0];
     const draftId = group.id;
